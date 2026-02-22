@@ -2,7 +2,6 @@ use std::{collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::partitioning::RepartitionSpec;
@@ -183,10 +182,6 @@ impl BlockingSink for RepartitionSink {
                 ]
             }
         }
-    }
-
-    fn max_concurrency(&self) -> usize {
-        get_compute_pool_num_threads()
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {

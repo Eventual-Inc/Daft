@@ -17,15 +17,16 @@ use common_scan_info::ScanTaskLikeRef;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
-    HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
-    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Sample, Sort,
-    SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
-    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
+    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
+    HashAggregate, HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext,
+    LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
+    Sample, Sort, SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot,
+    VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
     WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
-use daft_micropartition::{MicroPartition, MicroPartitionRef};
+use daft_micropartition::MicroPartitionRef;
+use daft_shuffles::client::FlightClientManager;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
 use opentelemetry::{InstrumentationScope, KeyValue, global, metrics::Meter};
@@ -43,6 +44,7 @@ use crate::{
         unpivot::UnpivotOperator,
     },
     join::{CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator},
+    pipeline_message::PipelineMessage,
     runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
@@ -63,9 +65,8 @@ use crate::{
         write::{WriteFormat, WriteSink},
     },
     sources::{
-        empty_scan::EmptyScanSource, flight_shuffle_read::FlightShuffleReadSource,
-        glob_scan::GlobScanSource, in_memory::InMemorySource, scan_task::ScanTaskSource,
-        source::SourceNode,
+        flight_shuffle_read::FlightShuffleReadSource, glob_scan::GlobScanSource,
+        in_memory::InMemorySource, scan_task::ScanTaskSource, source::SourceNode,
     },
     streaming_sink::{
         async_udf::AsyncUdfSink, base::StreamingSinkNode, limit::LimitSink,
@@ -164,7 +165,7 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>>;
+    ) -> crate::Result<crate::channel::Receiver<PipelineMessage>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 
@@ -337,9 +338,16 @@ pub fn translate_physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     cfg: &Arc<DaftExecutionConfig>,
     ctx: &BuilderContext,
+    flight_client_manager: Arc<tokio::sync::Mutex<FlightClientManager>>,
 ) -> crate::Result<(Box<dyn PipelineNode>, HashMap<SourceId, InputSender>)> {
     let mut input_senders = HashMap::new();
-    let mut pipeline_node = physical_plan_to_pipeline(physical_plan, cfg, ctx, &mut input_senders)?;
+    let mut pipeline_node = physical_plan_to_pipeline(
+        physical_plan,
+        cfg,
+        ctx,
+        &mut input_senders,
+        &flight_client_manager,
+    )?;
     pipeline_node.propagate_morsel_size_requirement(
         MorselSizeRequirement::Flexible(0, cfg.default_morsel_size),
         MorselSizeRequirement::Flexible(0, cfg.default_morsel_size),
@@ -352,18 +360,11 @@ fn physical_plan_to_pipeline(
     cfg: &Arc<DaftExecutionConfig>,
     ctx: &BuilderContext,
     input_senders: &mut HashMap<SourceId, InputSender>,
+    flight_client_manager: &Arc<tokio::sync::Mutex<FlightClientManager>>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     let pipeline_node: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::PlaceholderScan(_) => {
             panic!("PlaceholderScan should not be converted to a pipeline node")
-        }
-        LocalPhysicalPlan::EmptyScan(EmptyScan {
-            schema,
-            stats_state,
-            context,
-        }) => {
-            let source = EmptyScanSource::new(schema.clone());
-            SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
         }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan {
             source_id,
@@ -433,7 +434,8 @@ fn physical_plan_to_pipeline(
             aliases,
             context,
         }) => {
-            let input_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let input_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let window_partition_only_sink =
                 WindowPartitionOnlySink::new(aggregations, aliases, partition_by, schema)
                     .with_context(|_| PipelineCreationSnafu {
@@ -460,7 +462,8 @@ fn physical_plan_to_pipeline(
             aliases,
             context,
         }) => {
-            let input_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let input_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let window_partition_and_order_by_sink = WindowPartitionAndOrderBySink::new(
                 functions,
                 aliases,
@@ -496,7 +499,8 @@ fn physical_plan_to_pipeline(
             aliases,
             context,
         }) => {
-            let input_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let input_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let window_partition_and_dynamic_frame_sink = WindowPartitionAndDynamicFrameSink::new(
                 aggregations,
                 *min_periods,
@@ -531,7 +535,8 @@ fn physical_plan_to_pipeline(
             aliases,
             context,
         }) => {
-            let input_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let input_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let window_order_by_only_op = WindowOrderByOnlySink::new(
                 functions,
                 aliases,
@@ -563,7 +568,8 @@ fn physical_plan_to_pipeline(
                 .with_context(|_| PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
                 })?;
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             IntermediateNode::new(
                 Arc::new(proj_op),
                 child_node,
@@ -582,7 +588,8 @@ fn physical_plan_to_pipeline(
             schema,
             context,
         }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             if udf_properties.is_async
                 && udf_properties.concurrency.is_none()
                 && !udf_properties.use_process.unwrap_or(false)
@@ -648,7 +655,8 @@ fn physical_plan_to_pipeline(
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
             })?;
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             IntermediateNode::new(
                 Arc::new(distributed_actor_pool_project_op),
                 child_node,
@@ -669,7 +677,8 @@ fn physical_plan_to_pipeline(
         }) => {
             let sample_sink =
                 SampleSink::new(*sampling_method, *with_replacement, *seed, schema.clone());
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             StreamingSinkNode::new(
                 Arc::new(sample_sink),
                 child_node,
@@ -687,7 +696,8 @@ fn physical_plan_to_pipeline(
             ..
         }) => {
             let filter_op = FilterOperator::new(predicate.clone());
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             IntermediateNode::new(
                 Arc::new(filter_op),
                 child_node,
@@ -706,7 +716,8 @@ fn physical_plan_to_pipeline(
             ..
         }) => {
             let into_batches_op = IntoBatchesOperator::new(*batch_size, *strict);
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             IntermediateNode::new(
                 Arc::new(into_batches_op),
                 child_node,
@@ -730,7 +741,8 @@ fn physical_plan_to_pipeline(
                 *ignore_empty_and_null,
                 index_column.clone(),
             );
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             IntermediateNode::new(
                 Arc::new(explode_op),
                 child_node,
@@ -750,7 +762,8 @@ fn physical_plan_to_pipeline(
         }) => {
             let (offset, limit) = (*offset, *limit);
             let sink = LimitSink::new(limit as usize, offset.map(|x| x as usize));
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             StreamingSinkNode::new(
                 Arc::new(sink),
                 child_node,
@@ -767,8 +780,10 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
-            let left_child = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let right_child = physical_plan_to_pipeline(other, cfg, ctx, input_senders)?;
+            let left_child =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
+            let right_child =
+                physical_plan_to_pipeline(other, cfg, ctx, input_senders, flight_client_manager)?;
             ConcatNode::new(left_child, right_child, stats_state.clone(), ctx, context).boxed()
         }
         LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
@@ -778,7 +793,8 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let agg_sink = AggregateSink::new(aggregations, input.schema()).with_context(|_| {
                 PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
@@ -801,7 +817,8 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let agg_sink = GroupedAggregateSink::new(aggregations, group_by, input.schema(), cfg)
                 .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
@@ -822,7 +839,8 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let dedup_sink = DedupSink::new(columns).with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
             })?;
@@ -845,7 +863,8 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let unpivot_op = UnpivotOperator::new(
                 ids.clone(),
                 values.clone(),
@@ -873,7 +892,8 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let pivot_sink = PivotSink::new(
                 group_by.clone(),
                 pivot_column.clone(),
@@ -901,7 +921,8 @@ fn physical_plan_to_pipeline(
             ..
         }) => {
             let sort_sink = SortSink::new(sort_by.clone(), descending.clone(), nulls_first.clone());
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             BlockingSinkNode::new(
                 Arc::new(sort_sink),
                 child_node,
@@ -929,7 +950,8 @@ fn physical_plan_to_pipeline(
                 *limit as usize,
                 offset.map(|x| x as usize),
             );
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             BlockingSinkNode::new(
                 Arc::new(sink),
                 child_node,
@@ -948,7 +970,8 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let monotonically_increasing_id_sink = MonotonicallyIncreasingIdSink::new(
                 column_name.clone(),
                 *starting_offset,
@@ -1122,8 +1145,8 @@ fn physical_plan_to_pipeline(
                     common_join_cols,
                     schema.clone(),
                 )?;
-                let build_child_node = physical_plan_to_pipeline(build_child, cfg, ctx, input_senders)?;
-                let probe_child_node = physical_plan_to_pipeline(probe_child, cfg, ctx, input_senders)?;
+                let build_child_node = physical_plan_to_pipeline(build_child, cfg, ctx, input_senders, flight_client_manager)?;
+                let probe_child_node = physical_plan_to_pipeline(probe_child, cfg, ctx, input_senders, flight_client_manager)?;
 
                 Ok(JoinNode::new(
                     Arc::new(hash_join_op),
@@ -1175,8 +1198,20 @@ fn physical_plan_to_pipeline(
                 JoinSide::Right => (left, right),
             };
 
-            let build_child_node = physical_plan_to_pipeline(build_child, cfg, ctx, input_senders)?;
-            let probe_child_node = physical_plan_to_pipeline(probe_child, cfg, ctx, input_senders)?;
+            let build_child_node = physical_plan_to_pipeline(
+                build_child,
+                cfg,
+                ctx,
+                input_senders,
+                flight_client_manager,
+            )?;
+            let probe_child_node = physical_plan_to_pipeline(
+                probe_child,
+                cfg,
+                ctx,
+                input_senders,
+                flight_client_manager,
+            )?;
 
             let cross_join_op = CrossJoinOperator::new(schema.clone(), stream_side);
 
@@ -1200,8 +1235,10 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
-            let left_node = physical_plan_to_pipeline(left, cfg, ctx, input_senders)?;
-            let right_node = physical_plan_to_pipeline(right, cfg, ctx, input_senders)?;
+            let left_node =
+                physical_plan_to_pipeline(left, cfg, ctx, input_senders, flight_client_manager)?;
+            let right_node =
+                physical_plan_to_pipeline(right, cfg, ctx, input_senders, flight_client_manager)?;
 
             let sort_merge_join_op = SortMergeJoinOperator::new(
                 left_on.clone(),
@@ -1229,7 +1266,8 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let writer_factory = make_physical_writer_factory(file_info, input.schema(), cfg)
                 .with_context(|_| PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
@@ -1266,7 +1304,8 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let write_sink =
                 CommitWriteSink::new(data_schema.clone(), file_schema.clone(), file_info.clone());
             BlockingSinkNode::new(
@@ -1289,7 +1328,8 @@ fn physical_plan_to_pipeline(
         }) => {
             use daft_logical_plan::CatalogType;
 
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let (partition_by, write_format) = match catalog_type {
                 CatalogType::Iceberg(ic) => {
                     if !ic.partition_cols.is_empty() {
@@ -1341,7 +1381,8 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let writer_factory = daft_writers::make_lance_writer_factory(lance_info.clone());
             let write_sink = WriteSink::new(
                 WriteFormat::Lance,
@@ -1366,7 +1407,8 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let writer_factory =
                 daft_writers::make_data_sink_writer_factory(data_sink_info.clone());
             let write_sink = WriteSink::new(
@@ -1392,7 +1434,8 @@ fn physical_plan_to_pipeline(
             schema,
             context,
         }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let repartition_op =
                 RepartitionSink::new(repartition_spec.clone(), *num_partitions, schema.clone());
             BlockingSinkNode::new(
@@ -1411,7 +1454,8 @@ fn physical_plan_to_pipeline(
             schema,
             context,
         }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let into_partitions_op = IntoPartitionsSink::new(*num_partitions, schema.clone());
             BlockingSinkNode::new(
                 Arc::new(into_partitions_op),
@@ -1433,7 +1477,8 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             // Get cache_id (task_id) from context
             let cache_id = ctx
                 .context
@@ -1462,20 +1507,18 @@ fn physical_plan_to_pipeline(
             .boxed()
         }
         LocalPhysicalPlan::FlightShuffleRead(daft_local_plan::FlightShuffleRead {
-            shuffle_id,
-            partition_idx,
-            server_addresses,
-            server_cache_mapping,
+            source_id,
             schema,
             stats_state,
             context,
         }) => {
+            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
+            input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
             let source = FlightShuffleReadSource::new(
-                *shuffle_id,
-                *partition_idx,
-                server_addresses.clone(),
-                server_cache_mapping.clone(),
+                rx,
                 schema.clone(),
+                flight_client_manager.clone(),
+                cfg,
             );
             SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
         }
@@ -1488,7 +1531,8 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let child_node =
+                physical_plan_to_pipeline(input, cfg, ctx, input_senders, flight_client_manager)?;
             let vllm_sink = VLLMSink::new(
                 Arc::new(expr.clone()),
                 output_column_name.clone(),

@@ -173,7 +173,7 @@ impl Default for DaftExecutionConfig {
             default_morsel_size: NonZeroUsize::new(128 * 1024).unwrap(),
             shuffle_algorithm: "auto".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
-            scantask_max_parallel: 8,
+            scantask_max_parallel: std::thread::available_parallelism().unwrap().get(),
             native_parquet_writer: true,
             min_cpu_per_task: 0.5,
             actor_udf_ready_timeout: 120,

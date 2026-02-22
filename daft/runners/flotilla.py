@@ -130,6 +130,7 @@ class RaySwordfishActor:
             resolved_inputs: dict[int, Input | list[PyMicroPartition]] = {}
             list_items = [(source_id, part) for source_id, part in inputs.items() if isinstance(part, list)]
             non_list_items = [(source_id, part) for source_id, part in inputs.items() if not isinstance(part, list)]
+            task_id = int(context.get("task_id", "0")) if context else 0
             if list_items:
                 list_results = await asyncio.gather(*[asyncio.gather(*part) for _, part in list_items])
                 for (source_id, _), mps in zip(list_items, list_results):
@@ -140,7 +141,7 @@ class RaySwordfishActor:
 
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
-            task_id = int(context.get("task_id", "0")) if context else 0
+
             result_handle = await self.native_executor.run(
                 plan,
                 ctx,
@@ -156,7 +157,7 @@ class RaySwordfishActor:
                 metas.append(PartitionMetadata.from_table(mp))
                 yield mp
 
-            stats = await result_handle.finish()
+            stats = await result_handle.try_finish()
             yield SwordfishTaskMetadata(partition_metadatas=metas, stats=stats.encode())
 
 
