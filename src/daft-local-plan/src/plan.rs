@@ -42,7 +42,6 @@ pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
     PhysicalScan(PhysicalScan),
     GlobScan(GlobScan),
-    EmptyScan(EmptyScan),
     PlaceholderScan(PlaceholderScan),
     Project(Project),
     UDFProject(UDFProject),
@@ -120,7 +119,6 @@ impl LocalPhysicalPlan {
             | Self::PhysicalScan(PhysicalScan { stats_state, .. })
             | Self::GlobScan(GlobScan { stats_state, .. })
             | Self::PlaceholderScan(PlaceholderScan { stats_state, .. })
-            | Self::EmptyScan(EmptyScan { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::UDFProject(UDFProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
@@ -171,7 +169,6 @@ impl LocalPhysicalPlan {
             | Self::PhysicalScan(PhysicalScan { context, .. })
             | Self::GlobScan(GlobScan { context, .. })
             | Self::PlaceholderScan(PlaceholderScan { context, .. })
-            | Self::EmptyScan(EmptyScan { context, .. })
             | Self::Project(Project { context, .. })
             | Self::UDFProject(UDFProject { context, .. })
             | Self::Filter(Filter { context, .. })
@@ -274,15 +271,6 @@ impl LocalPhysicalPlan {
         Self::PlaceholderScan(PlaceholderScan {
             schema,
             stats_state,
-            context,
-        })
-        .arced()
-    }
-
-    pub fn empty_scan(schema: SchemaRef, context: LocalNodeContext) -> LocalPhysicalPlanRef {
-        Self::EmptyScan(EmptyScan {
-            schema,
-            stats_state: StatsState::Materialized(PlanStats::empty().into()),
             context,
         })
         .arced()
@@ -1038,7 +1026,6 @@ impl LocalPhysicalPlan {
             Self::PhysicalScan(PhysicalScan { schema, .. })
             | Self::GlobScan(GlobScan { schema, .. })
             | Self::PlaceholderScan(PlaceholderScan { schema, .. })
-            | Self::EmptyScan(EmptyScan { schema, .. })
             | Self::Filter(Filter { schema, .. })
             | Self::IntoBatches(IntoBatches { schema, .. })
             | Self::Limit(Limit { schema, .. })
@@ -1119,7 +1106,6 @@ impl LocalPhysicalPlan {
             Self::PhysicalScan(_)
             | Self::GlobScan(_)
             | Self::PlaceholderScan(_)
-            | Self::EmptyScan(_)
             | Self::InMemoryScan(_) => vec![],
             Self::Filter(Filter { input, .. })
             | Self::Limit(Limit { input, .. })
@@ -1175,12 +1161,11 @@ impl LocalPhysicalPlan {
                 "LocalPhysicalPlan::with_new_children: Empty children not handled for FlightShuffleRead"
             ),
             [new_child] => match self {
-                Self::PhysicalScan(_)
-                | Self::PlaceholderScan(_)
-                | Self::EmptyScan(_)
-                | Self::InMemoryScan(_) => panic!(
-                    "LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"
-                ),
+                Self::PhysicalScan(_) | Self::PlaceholderScan(_) | Self::InMemoryScan(_) => {
+                    panic!(
+                        "LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, and InMemoryScan do not have children"
+                    )
+                }
                 Self::Filter(Filter {
                     predicate, context, ..
                 }) => Self::filter(
@@ -1811,14 +1796,6 @@ pub struct GlobScan {
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PlaceholderScan {
-    pub schema: SchemaRef,
-    pub stats_state: StatsState,
-    pub context: LocalNodeContext,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(debug_assertions, derive(Debug))]
-pub struct EmptyScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
