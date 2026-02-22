@@ -356,7 +356,8 @@ impl LimitNode {
                             },
                         );
                         let empty_scan_builder =
-                            SwordfishTaskBuilder::new(empty_plan, self.as_ref());
+                            SwordfishTaskBuilder::new(empty_plan, self.as_ref())
+                                .with_psets(self.node_id(), vec![]);
                         if result_tx.send(empty_scan_builder).await.is_err() {
                             return Ok(());
                         }
