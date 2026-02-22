@@ -588,6 +588,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                             };
 
                             if let Entry::Vacant(e) = per_input_senders.entry(input_id) {
+                                println!("Spawning processor for input_id: {}", input_id);
                                 let (tx, rx) = create_channel(1);
                                 e.insert(tx);
 

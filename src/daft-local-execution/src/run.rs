@@ -188,14 +188,14 @@ impl PyNativeExecutor {
         }
     }
 
-    #[pyo3(signature = (local_physical_plan, daft_ctx, inputs, input_id, context=None))]
+    #[pyo3(signature = (local_physical_plan, daft_ctx, input_id, inputs, context=None))]
     pub fn run<'py>(
         &self,
         py: Python<'py>,
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
         daft_ctx: &PyDaftContext,
-        inputs: HashMap<SourceId, Input>,
         input_id: InputId,
+        inputs: HashMap<SourceId, Input>,
         context: Option<HashMap<String, String>>,
     ) -> PyResult<Bound<'py, pyo3::PyAny>> {
         let daft_ctx: &DaftContext = daft_ctx.into();
@@ -317,14 +317,6 @@ impl NativeExecutor {
         let plan_fingerprint = local_physical_plan.fingerprint();
         let fingerprint = plan_key(plan_fingerprint, query_id.clone());
         let enable_explain_analyze = should_enable_explain_analyze();
-
-        if !self.active_plans.plans.contains_key(&fingerprint) {
-            println!("New plan");
-            println!("{}", local_physical_plan.single_line_display());
-            println!("fingerprint: {fingerprint}");
-            println!("query_id: {query_id}");
-            println!("input id: {input_id}");
-        }
 
         // Get or create plan handle from registry
         let flight_client_manager = self.flight_client_manager.clone();
