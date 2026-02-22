@@ -33,7 +33,6 @@ impl InputSender {
         }
     }
 
-    #[allow(dead_code)]
     pub fn send_empty(&self, input_id: InputId) -> DaftResult<()> {
         match self {
             Self::ScanTasks(sender) => sender

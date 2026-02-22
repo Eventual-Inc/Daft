@@ -106,7 +106,6 @@ impl ExecutionRuntimeContext {
             .spawn(task.with_context(|_| PipelineExecutionSnafu { node_name }));
     }
 
-    #[allow(dead_code)]
     pub async fn join_next(&mut self) -> Option<DaftResult<()>> {
         match self.worker_set.join_next().await {
             Some(Ok(Ok(()))) => Some(Ok(())),
