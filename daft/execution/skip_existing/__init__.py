@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from daft.udf import cls, func, method
+from daft.udf import func
 from typing import TYPE_CHECKING, Any, cast
 from daft.datatype import DataType
 from daft.series import Series
@@ -50,7 +50,7 @@ class KeySpec:
 
 
 def _composite_keys_to_numpy(keys: list[Any], composite_key_fields: tuple[str, ...]) -> "np.ndarray":  # noqa: UP037
-    import numpy as np
+    from daft.dependencies import np
 
     keys_as_tuples: list[Any] = []
     for item in keys:
@@ -63,7 +63,7 @@ def _composite_keys_to_numpy(keys: list[Any], composite_key_fields: tuple[str, .
 
 
 def _iter_bucket_row_groups(input: Series, num_buckets: int) -> list[tuple[int, "np.ndarray"]]:  # noqa: UP037
-    import numpy as np
+    from daft.dependencies import np
 
     hash_arr = input.hash().to_arrow()
     hash_np = hash_arr.to_numpy(zero_copy_only=False).astype(np.uint64, copy=False)
@@ -91,7 +91,7 @@ async def _ingest_keys_udf(
     key_spec: KeySpec,
 ) -> Series:
     import asyncio
-    import pyarrow as pa
+    from daft.dependencies import pa
 
     num_rows = len(input)
     if num_rows == 0:
@@ -142,7 +142,7 @@ class KeyFilterActor:
         self.key_set.update(input_keys)
 
     def filter(self, input_keys: "np.ndarray") -> "np.ndarray":  # noqa: UP037
-        import numpy as np
+        from daft.dependencies import np
 
         # Convert numpy array to list for efficient set lookup
         # This avoids iterating over numpy array elements which can be slower due to unboxing overhead
@@ -163,9 +163,9 @@ def create_key_filter_udf(
 ) -> Callable[[Expression], Expression]:
     @func.batch(return_dtype=DataType.bool(), batch_size=key_filter_batch_size)
     async def key_filter(input: Series) -> Series:
-        import numpy as np
         import os
         import asyncio
+        from daft.dependencies import np
 
         if actor_handles is None:
             return Series.from_numpy(np.full(len(input), True, dtype=bool))
