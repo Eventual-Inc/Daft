@@ -108,7 +108,9 @@ def upload(
 
     Args:
         expr: The expression to upload.
-        location: a folder location or column of folder locations to upload data into
+        location: a folder location or column of folder locations to upload data into. If the location
+            contains "{}", it will be used as a filename template where "{}" is replaced with a UUID.
+            Examples: "s3://my-bucket/my-folder", "s3://my-bucket/my-folder/{}.png", col("paths")
         max_connections: The maximum number of connections to use per thread to use for uploading data. Defaults to 32.
         on_error: Behavior when a URL upload error is encountered - "raise" to raise the error immediately or "null" to log
             the error but fallback to a Null value. Defaults to "raise".
@@ -122,16 +124,16 @@ def upload(
         >>>
         >>> upload(df["data"], "s3://my-bucket/my-folder")  # doctest: +SKIP
 
+        Upload with custom filename template in location
+
+        >>> upload(df["data"], "s3://my-bucket/my-folder/{}.png")  # doctest: +SKIP
+
         Upload to row-specific URLs
 
         >>> upload(df["data"], df["paths"])  # doctest: +SKIP
 
     """
     multi_thread = _should_use_multithreading_tokio_runtime()
-    # If the user specifies a single location via a string, we should upload to a single folder. Otherwise,
-    # if the user gave an expression, we assume that each row has a specific url to upload to.
-    # Consider moving the check for is_single_folder to a lower IR.
-    is_single_folder = isinstance(location, str)
     io_config = _override_io_config_max_connections(max_connections, io_config)
 
     return Expression._call_builtin_scalar_fn(
@@ -141,7 +143,6 @@ def upload(
         max_connections=max_connections,
         on_error=on_error,
         multi_thread=multi_thread,
-        is_single_folder=is_single_folder,
         io_config=io_config,
     )
 
