@@ -34,7 +34,7 @@ def _assert_plan_count(dfs, expected_count, query_ids=None):
     ctx = daft.context.get_context()._ctx
 
     async def run(plan, inputs, i, qid):
-        return await executor.run(plan, ctx, dict(inputs), i, {"query_id": qid})
+        return await executor.run(plan, ctx, i, dict(inputs), {"query_id": qid})
 
     async def drain(h):
         while await h.__anext__() is not None:

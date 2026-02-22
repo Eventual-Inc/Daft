@@ -42,7 +42,7 @@ use crate::{
     },
     pipeline_message::PipelineMessage,
     resource_manager::get_or_init_memory_manager,
-    runtime_stats::{QueryEndState, RuntimeStatsManager, RuntimeStatsSnapshot},
+    runtime_stats::{QueryEndState, RuntimeStatsManager, RuntimeStatsManagerHandle},
 };
 
 /// Global tokio runtime shared by all NativeExecutor instances
@@ -120,7 +120,7 @@ impl MessageRouter {
 struct PlanState {
     task_handle: RuntimeTask<DaftResult<ExecutionEngineFinalResult>>,
     enqueue_input_sender: Sender<EnqueueInputMessage>,
-    stats_snapshot: RuntimeStatsSnapshot,
+    stats_handle: RuntimeStatsManagerHandle,
     active_input_ids: HashSet<InputId>,
 }
 
@@ -140,17 +140,17 @@ impl ActivePlansRegistry {
         F: FnOnce() -> DaftResult<(
             RuntimeTask<DaftResult<ExecutionEngineFinalResult>>,
             Sender<EnqueueInputMessage>,
-            RuntimeStatsSnapshot,
+            RuntimeStatsManagerHandle,
         )>,
     {
         if self.plans.contains_key(&fingerprint) {
             return Ok(());
         }
-        let (task_handle, enqueue_sender, stats_snapshot) = plan_factory()?;
+        let (task_handle, enqueue_sender, stats_handle) = plan_factory()?;
         let state = PlanState {
             task_handle,
             enqueue_input_sender: enqueue_sender,
-            stats_snapshot,
+            stats_handle,
             active_input_ids: HashSet::new(),
         };
         self.plans.insert(fingerprint, state);
@@ -330,7 +330,7 @@ impl NativeExecutor {
             let handle = get_global_runtime();
             let stats_manager =
                 RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
-            let stats_snapshot = stats_manager.snapshot_handle();
+            let stats_handle = stats_manager.snapshot_handle();
 
             let (enqueue_input_tx, mut enqueue_input_rx) =
                 create_channel::<EnqueueInputMessage>(1);
@@ -467,7 +467,7 @@ impl NativeExecutor {
 
             let handle = get_global_runtime();
             let task_handle = RuntimeTask::new(handle, task);
-            Ok((task_handle, enqueue_input_tx, stats_snapshot))
+            Ok((task_handle, enqueue_input_tx, stats_handle))
         })?;
 
         // Get the enqueue sender from the plan state
@@ -531,14 +531,14 @@ impl NativeExecutor {
             }
             .boxed())
         } else {
-            let stats_snapshot = self
+            let stats_handle = self
                 .active_plans
                 .plans
                 .get(&fingerprint)
                 .unwrap()
-                .stats_snapshot
+                .stats_handle
                 .clone();
-            Ok(async move { Ok(stats_snapshot.snapshot()) }.boxed())
+            Ok(async move { stats_handle.request_snapshot().await }.boxed())
         }
     }
 

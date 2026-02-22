@@ -100,11 +100,6 @@ async fn forward_partition_batch(
             })
             .await;
     } else {
-        println!(
-            "Sending {} partitions for input_id = {}",
-            partitions.len(),
-            input_id
-        );
         for partition in partitions {
             if sender
                 .send(PipelineMessage::Morsel {
@@ -118,7 +113,6 @@ async fn forward_partition_batch(
             }
         }
     }
-    println!("Sending flush for input_id = {}", input_id);
     let _ = sender.send(PipelineMessage::Flush(input_id)).await;
     Ok(())
 }

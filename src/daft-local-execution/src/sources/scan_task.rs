@@ -74,11 +74,10 @@ impl ScanTaskSource {
 
         // When maintain_order is true, spawn flattener so it drains stream outputs in order.
         let mut flattener_state: Option<(
-            UnboundedSender<(InputId, Receiver<Arc<MicroPartition>>, bool)>,
+            UnboundedSender<FlattenerMessage>,
             common_runtime::RuntimeTask<()>,
         )> = if maintain_order {
-            let (agg_tx, agg_rx) =
-                create_unbounded_channel::<(InputId, Receiver<Arc<MicroPartition>>, bool)>();
+            let (agg_tx, agg_rx) = create_unbounded_channel::<FlattenerMessage>();
             let flattener_handle = io_runtime.spawn(run_order_preserving_flattener(
                 agg_rx,
                 output_sender.clone(),
@@ -104,7 +103,7 @@ impl ScanTaskSource {
                     let sender = match &flattener_state {
                         Some((agg_tx, _)) => {
                             let (stream_tx, stream_rx) = create_channel::<Arc<MicroPartition>>(1);
-                            let _ = agg_tx.send((input_id, stream_rx, is_last));
+                            let _ = agg_tx.send(FlattenerMessage { input_id, inner_rx: stream_rx, is_last });
                             ScanTaskOutputSender::OrderPreserving(stream_tx)
                         }
                         None => ScanTaskOutputSender::Pipeline(output_sender.clone()),
@@ -131,7 +130,7 @@ impl ScanTaskSource {
                                             create_channel::<Arc<MicroPartition>>(1);
                                         let _ = stream_tx.send(empty).await;
                                         drop(stream_tx);
-                                        let _ = agg_tx.send((input_id, stream_rx, true));
+                                        let _ = agg_tx.send(FlattenerMessage { input_id, inner_rx: stream_rx, is_last: true });
                                     }
                                     None => {
                                         if output_sender.send(PipelineMessage::Morsel {
@@ -168,7 +167,6 @@ impl ScanTaskSource {
                                 }
                             }
                             None => {
-                                println!("Receiver exhausted in scan task processor");
                                 receiver_exhausted = true;
                             }
                         }
@@ -202,7 +200,6 @@ impl ScanTaskSource {
             debug_assert!(pending_tasks.is_empty(), "Pending tasks should be empty");
             debug_assert!(task_set.is_empty(), "Task set should be empty");
             debug_assert!(receiver_exhausted, "Receiver should be exhausted");
-            println!("Scan task processor finished");
             if let Some((agg_tx, flattener_handle)) = flattener_state {
                 drop(agg_tx);
                 flattener_handle
@@ -412,15 +409,26 @@ async fn get_delete_map(
         .await?
 }
 
+struct FlattenerMessage {
+    input_id: InputId,
+    inner_rx: Receiver<Arc<MicroPartition>>,
+    is_last: bool,
+}
+
 /// Drains a "receiver of (input_id, stream)" in order, forwarding each stream's
 /// micropartitions as Morsels. Sends Flush(input_id) only when the last receiver
 /// for that input_id has been drained (i.e. when we see a different input_id or
 /// the channel closes). Used when `maintain_order` is true.
 async fn run_order_preserving_flattener(
-    mut agg_rx: UnboundedReceiver<(InputId, Receiver<Arc<MicroPartition>>, bool)>,
+    mut agg_rx: UnboundedReceiver<FlattenerMessage>,
     output_sender: Sender<PipelineMessage>,
 ) {
-    while let Some((input_id, mut inner_rx, is_last)) = agg_rx.recv().await {
+    while let Some(FlattenerMessage {
+        input_id,
+        mut inner_rx,
+        is_last,
+    }) = agg_rx.recv().await
+    {
         while let Some(mp) = inner_rx.recv().await {
             if output_sender
                 .send(PipelineMessage::Morsel {
