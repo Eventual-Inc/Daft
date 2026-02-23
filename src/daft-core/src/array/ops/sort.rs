@@ -8,7 +8,7 @@ use common_error::DaftResult;
 use daft_arrow::{
     array::ord::{self, DynComparator},
     // A real tragedy. Arrow-rs has all these functions but uses 32 bit indices instead of 64 bit indices.
-    compute::sort::{sort, sort_to_indices},
+    compute::sort::sort_to_indices,
     types::Index,
 };
 
@@ -92,7 +92,7 @@ where
         let arrow_array = self.as_arrow()?;
 
         let result =
-            indices_sorted_unstable_by(&arrow_array, |l, r| l.cmp(r), descending, nulls_first);
+            indices_sorted_unstable_by(arrow_array, |l, r| l.cmp(r), descending, nulls_first);
 
         UInt64Array::from_arrow(
             Field::new(self.field().name.clone(), DataType::UInt64),
@@ -162,7 +162,7 @@ where
 
         let arrow_array = self.as_arrow()?;
 
-        let result = sort_by(&arrow_array, |l, r| l.cmp(r), &options, None);
+        let result = sort_by(arrow_array, |l, r| l.cmp(r), &options, None);
 
         Self::from_arrow(self.field().clone(), Arc::new(result))
     }
@@ -173,7 +173,7 @@ impl Float32Array {
         let arrow_array = self.as_arrow()?;
 
         let result =
-            indices_sorted_unstable_by(&arrow_array, cmp_float::<f32>, descending, nulls_first);
+            indices_sorted_unstable_by(arrow_array, cmp_float::<f32>, descending, nulls_first);
 
         UInt64Array::from_arrow(
             Field::new(self.field().name.clone(), DataType::UInt64),
@@ -243,7 +243,7 @@ impl Float32Array {
 
         let arrow_array = self.as_arrow()?;
 
-        let result = sort_by(&arrow_array, cmp_float::<f32>, &options, None);
+        let result = sort_by(arrow_array, cmp_float::<f32>, &options, None);
 
         Self::from_arrow(self.field().clone(), Arc::new(result))
     }
@@ -254,7 +254,7 @@ impl Float64Array {
         let arrow_array = self.as_arrow()?;
 
         let result =
-            indices_sorted_unstable_by(&arrow_array, cmp_float::<f64>, descending, nulls_first);
+            indices_sorted_unstable_by(arrow_array, cmp_float::<f64>, descending, nulls_first);
 
         UInt64Array::from_arrow(
             Field::new(self.field().name.clone(), DataType::UInt64),
@@ -324,7 +324,7 @@ impl Float64Array {
 
         let arrow_array = self.as_arrow()?;
 
-        let result = sort_by(&arrow_array, cmp_float::<f64>, &options, None);
+        let result = sort_by(arrow_array, cmp_float::<f64>, &options, None);
 
         Self::from_arrow(self.field().clone(), Arc::new(result))
     }
@@ -335,7 +335,7 @@ impl Decimal128Array {
         let arrow_array = self.as_arrow()?;
 
         let result =
-            indices_sorted_unstable_by(&arrow_array, |l, r| l.cmp(r), descending, nulls_first);
+            indices_sorted_unstable_by(arrow_array, |l, r| l.cmp(r), descending, nulls_first);
 
         UInt64Array::from_arrow(
             Field::new(self.field().name.clone(), DataType::UInt64),
@@ -405,7 +405,7 @@ impl Decimal128Array {
 
         let arrow_array = self.as_arrow()?;
 
-        let result = sort_by(&arrow_array, |l, r| l.cmp(r), &options, None);
+        let result = sort_by(arrow_array, |l, r| l.cmp(r), &options, None);
 
         Self::from_arrow(self.field().clone(), Arc::new(result))
     }
@@ -427,7 +427,7 @@ impl NullArray {
         let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
         let result = multi_column_idx_sort(
-            self.to_data().nulls(),
+            self.nulls(),
             |a: &u64, b: &u64| {
                 let a = a.to_usize();
                 let b = b.to_usize();
@@ -455,14 +455,12 @@ impl BooleanArray {
             descending,
             nulls_first,
         };
+        let arrow2_arr: Box<dyn daft_arrow::array::Array> = self.to_arrow().into();
 
-        let result = sort_to_indices::<u64>(self.data(), &options, None)?;
+        let result: Box<dyn daft_arrow::array::Array> =
+            Box::new(sort_to_indices::<u64>(arrow2_arr.as_ref(), &options, None)?);
 
-        Ok(UInt64Array::new(
-            Field::new(self.name(), DataType::UInt64).into(),
-            Box::new(result),
-        )
-        .unwrap())
+        UInt64Array::from_arrow(Field::new(self.name(), DataType::UInt64), result.into())
     }
 
     pub fn argsort_multikey(
@@ -520,14 +518,14 @@ impl BooleanArray {
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-        let options = daft_arrow::compute::sort::SortOptions {
+        let options = arrow::compute::SortOptions {
             descending,
             nulls_first,
         };
 
-        let result = daft_arrow::compute::sort::sort(self.data(), &options, None)?;
+        let result = arrow::compute::sort(self.to_arrow().as_ref(), Some(options))?;
 
-        Self::new(self.field.clone(), result)
+        Self::from_arrow(self.field.clone(), result)
     }
 }
 
@@ -539,14 +537,12 @@ macro_rules! impl_binary_like_sort {
                     descending,
                     nulls_first,
                 };
+                let arrow2_arr: Box<dyn daft_arrow::array::Array> = self.to_arrow().into();
 
-                let result = sort_to_indices::<u64>(self.data(), &options, None)?;
+                let result: Box<dyn daft_arrow::array::Array> =
+                    Box::new(sort_to_indices::<u64>(arrow2_arr.as_ref(), &options, None)?);
 
-                Ok(UInt64Array::new(
-                    Field::new(self.name(), DataType::UInt64).into(),
-                    Box::new(result),
-                )
-                .unwrap())
+                UInt64Array::from_arrow(Field::new(self.name(), DataType::UInt64), result.into())
             }
 
             pub fn argsort_multikey(
@@ -606,14 +602,14 @@ macro_rules! impl_binary_like_sort {
             }
 
             pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-                let options = daft_arrow::compute::sort::SortOptions {
+                let options = arrow::compute::SortOptions {
                     descending,
                     nulls_first,
                 };
 
-                let result = sort(self.data(), &options, None)?;
+                let result = arrow::compute::sort(self.to_arrow().as_ref(), Some(options))?;
 
-                $da::new(self.field.clone(), result)
+                $da::from_arrow(self.field.clone(), result)
             }
         }
     };

@@ -342,7 +342,7 @@ impl TimestampArray {
         }
 
         let mut builder = arrow::array::Int64Builder::with_capacity(physical.len());
-        for ts in &physical {
+        for ts in physical {
             match ts {
                 None => builder.append_null(),
                 Some(ts) => {

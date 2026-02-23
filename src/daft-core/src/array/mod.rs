@@ -10,8 +10,11 @@ mod serdes;
 mod struct_array;
 pub mod values;
 
-use arrow::{array::make_array, buffer::NullBuffer, compute::cast};
-use daft_arrow::{array::to_data, buffer::wrap_null_buffer, compute::cast::utf8_to_large_utf8};
+use arrow::{
+    array::{ArrayRef, make_array},
+    buffer::{NullBuffer, ScalarBuffer},
+    compute::cast,
+};
 pub use fixed_size_list_array::FixedSizeListArray;
 pub use list_array::ListArray;
 pub use struct_array::StructArray;
@@ -20,27 +23,56 @@ pub mod prelude;
 use std::{marker::PhantomData, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use daft_schema::field::{DaftField, FieldRef};
+use daft_schema::field::FieldRef;
 
-use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
+use crate::{
+    datatypes::{DaftArrayType, DaftPhysicalType, DaftPrimitiveType, DataType, Field},
+    prelude::AsArrow,
+};
 
 #[derive(Debug)]
 pub struct DataArray<T> {
     pub field: Arc<Field>,
-    data: Box<dyn daft_arrow::array::Array>,
+    data: ArrayRef,
     nulls: Option<NullBuffer>,
     marker_: PhantomData<T>,
 }
 
 impl<T: DaftPhysicalType> Clone for DataArray<T> {
     fn clone(&self) -> Self {
-        Self::new(self.field.clone(), self.data.clone()).unwrap()
+        Self {
+            field: self.field.clone(),
+            data: self.data.clone(),
+            nulls: self.nulls.clone(),
+            marker_: PhantomData,
+        }
     }
 }
 
 impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {
     fn data_type(&self) -> &DataType {
         &self.field.as_ref().dtype
+    }
+}
+impl<T: DaftPrimitiveType> DataArray<T> {
+    pub fn as_slice(&self) -> &[T::Native] {
+        let original_slice = self.as_arrow().unwrap().values().as_ref();
+        // SAFETY: T::Native and <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native
+        // are the same type in practice (identical memory layout), but the compiler can't prove this
+        // through the trait indirection. This cast is a no-op at runtime.
+        let slice: &[T::Native] = unsafe {
+            std::slice::from_raw_parts(
+                original_slice.as_ptr().cast::<T::Native>(),
+                original_slice.len(),
+            )
+        };
+        slice
+    }
+
+    pub fn values(&self) -> ScalarBuffer<T::Native> {
+        let arr = self.as_arrow().unwrap();
+        let buffer = arr.values().inner();
+        unsafe { ScalarBuffer::<T::Native>::new_unchecked(buffer.clone()) }
     }
 }
 
@@ -78,80 +110,18 @@ impl<T> DataArray<T> {
         let nulls = arrow_arr.nulls().cloned().map(Into::into);
         Ok(Self {
             field: physical_field,
-            data: arrow_arr.into(),
-            nulls,
-            marker_: PhantomData,
-        })
-    }
-
-    pub fn new(
-        physical_field: Arc<DaftField>,
-        arrow_array: Box<dyn daft_arrow::array::Array>,
-    ) -> DaftResult<Self> {
-        assert!(
-            physical_field.dtype.is_physical(),
-            "Can only construct DataArray for PhysicalTypes, got {}",
-            physical_field.dtype
-        );
-
-        if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow2() {
-            // since daft's Utf8 always maps to Arrow's LargeUtf8, we need to handle this special case
-            // If the expected physical type is LargeUtf8, but the actual Arrow type is Utf8, we need to convert it
-            if expected_arrow_physical_type == daft_arrow::datatypes::DataType::LargeUtf8
-                && arrow_array.data_type() == &daft_arrow::datatypes::DataType::Utf8
-            {
-                let utf8_arr = arrow_array
-                    .as_any()
-                    .downcast_ref::<daft_arrow::array::Utf8Array<i32>>()
-                    .unwrap();
-
-                let arr = Box::new(utf8_to_large_utf8(utf8_arr));
-                let nulls = arr.validity().cloned().map(Into::into);
-                return Ok(Self {
-                    field: physical_field,
-                    data: arr,
-                    nulls,
-                    marker_: PhantomData,
-                });
-            }
-            let arrow_data_type = arrow_array.data_type();
-            if !matches!(physical_field.dtype, DataType::Extension(..)) {
-                assert!(
-                    !(&expected_arrow_physical_type != arrow_data_type),
-                    "Mismatch between expected and actual Arrow types for DataArray.\n\
-                    Field name: '{}'\n\
-                    Logical type: {}\n\
-                    Physical type: {}\n\
-                    Expected Arrow physical type: {:?}\n\
-                    Actual Arrow Logical type: {:?}
-
-                    This error typically occurs when there's a discrepancy between the Daft DataType \
-                    and the underlying Arrow representation. Please ensure that the physical type \
-                    of the Daft DataType matches the Arrow type of the provided data.",
-                    physical_field.name,
-                    physical_field.dtype,
-                    physical_field.dtype.to_physical(),
-                    expected_arrow_physical_type,
-                    arrow_data_type
-                );
-            }
-        }
-
-        let nulls = arrow_array.validity().cloned().map(Into::into);
-        Ok(Self {
-            field: physical_field,
-            data: arrow_array,
+            data: arrow_arr,
             nulls,
             marker_: PhantomData,
         })
     }
 
     pub fn len(&self) -> usize {
-        self.data().len()
+        self.data.len()
     }
 
     pub fn null_count(&self) -> usize {
-        self.data.null_count()
+        self.data.logical_null_count()
     }
 
     pub fn data_type(&self) -> &DataType {
@@ -183,8 +153,15 @@ impl<T> DataArray<T> {
                 self.len()
             )));
         }
-        let with_bitmap = self.data.with_validity(wrap_null_buffer(nulls));
-        Self::new(self.field.clone(), with_bitmap)
+        let array_data = self.data.to_data();
+        let mut builder = array_data.into_builder();
+        builder = builder.nulls(nulls);
+
+        // SAFETY: we only are changing the null mask so this is safe
+        let data = unsafe { builder.build_unchecked() };
+        let arr = make_array(data);
+
+        Self::from_arrow(self.field.clone(), arr)
     }
 
     pub fn nulls(&self) -> Option<&NullBuffer> {
@@ -197,24 +174,21 @@ impl<T> DataArray<T> {
                 "Trying to slice array with negative length, start: {start} vs end: {end}"
             )));
         }
-        let sliced = self.data.sliced(start, end - start);
-        Self::new(self.field.clone(), sliced)
+
+        let sliced = self.data.slice(start, end - start);
+        Self::from_arrow(self.field.clone(), sliced)
     }
 
     pub fn head(&self, num: usize) -> DaftResult<Self> {
         self.slice(0, num)
     }
 
-    pub fn data(&self) -> &dyn daft_arrow::array::Array {
-        self.data.as_ref()
-    }
-
     pub fn to_data(&self) -> arrow::array::ArrayData {
-        to_data(self.data())
+        self.data.to_data()
     }
 
     pub fn to_arrow(&self) -> arrow::array::ArrayRef {
-        make_array(self.to_data())
+        self.data.clone()
     }
 
     pub fn name(&self) -> &str {
@@ -222,7 +196,12 @@ impl<T> DataArray<T> {
     }
 
     pub fn rename(&self, name: &str) -> Self {
-        Self::new(Arc::new(self.field.rename(name)), self.data.clone()).unwrap()
+        Self {
+            field: Arc::new(self.field.rename(name)),
+            data: self.data.clone(),
+            nulls: self.nulls.clone(),
+            marker_: self.marker_,
+        }
     }
 
     pub fn field(&self) -> &FieldRef {
