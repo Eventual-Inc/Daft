@@ -353,21 +353,13 @@ impl LocalPhysicalPlan {
                 null_equals_null,
                 join_type,
                 schema,
-                left,
-                right,
                 ..
             }) => {
-                let left_schema = left.schema();
-                let right_schema = right.schema();
                 for expr in left_on {
-                    if let Ok(name) = expr.inner().get_name(left_schema) {
-                        name.hash(hasher);
-                    }
+                    expr.hash(hasher);
                 }
                 for expr in right_on {
-                    if let Ok(name) = expr.inner().get_name(right_schema) {
-                        name.hash(hasher);
-                    }
+                    expr.hash(hasher);
                 }
                 build_on_left.hash(hasher);
                 null_equals_null.hash(hasher);
