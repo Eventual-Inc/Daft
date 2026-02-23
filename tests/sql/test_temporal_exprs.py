@@ -184,6 +184,14 @@ def test_date_trunc():
     actual = daft.sql("SELECT truncate('day', ts) AS truncated FROM df").collect()
     assert actual.to_pydict() == expected.to_pydict()
 
+    # Test 3-argument form with relative_to
+    ref_df = df.with_column("ref", daft.lit("2024-01-01T00:00:00").cast(daft.DataType.timestamp("s")))
+    expected = ref_df.select(
+        date_trunc("1 hour", daft.col("ts"), relative_to=daft.col("ref")).alias("truncated")
+    ).collect()
+    actual = daft.sql("SELECT DATE_TRUNC('hour', ts, ref) AS truncated FROM ref_df").collect()
+    assert actual.to_pydict() == expected.to_pydict()
+
 
 def test_date_comparison():
     date_df = daft.from_pydict({"date_str": ["2020-01-01", "2020-01-02", "2020-01-03"]})
