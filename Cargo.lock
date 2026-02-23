@@ -2585,6 +2585,7 @@ dependencies = [
  "arrow",
  "arrow-row",
  "bincode",
+ "bytemuck",
  "chrono",
  "chrono-tz",
  "comfy-table 7.2.1",

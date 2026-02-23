@@ -3,9 +3,9 @@ use std::{cmp::Ordering, sync::Arc};
 use arrow::{
     array::{Array, ArrayRef, ArrowPrimitiveType},
     compute::{SortOptions, sort_to_indices},
+    datatypes::ArrowNativeType,
 };
 use common_error::{DaftError, DaftResult};
-use daft_arrow::types::Index;
 
 use super::as_arrow::AsArrow;
 #[cfg(feature = "python")]
@@ -113,8 +113,8 @@ where
             multi_column_idx_sort(
                 arrow_array.nulls(),
                 |a: &u64, b: &u64| {
-                    let a = a.to_usize();
-                    let b = b.to_usize();
+                    let a = a.to_usize().unwrap();
+                    let b = b.to_usize().unwrap();
                     let l = unsafe { &arrow_array.value_unchecked(a) };
                     let r = unsafe { &arrow_array.value_unchecked(b) };
                     match r.cmp(l) {
@@ -130,8 +130,8 @@ where
             multi_column_idx_sort(
                 arrow_array.nulls(),
                 |a: &u64, b: &u64| {
-                    let a = a.to_usize();
-                    let b = b.to_usize();
+                    let a = a.to_usize().unwrap();
+                    let b = b.to_usize().unwrap();
                     let l = unsafe { &arrow_array.value_unchecked(a) };
                     let r = unsafe { &arrow_array.value_unchecked(b) };
                     match l.cmp(r) {
@@ -194,8 +194,8 @@ impl Float32Array {
             multi_column_idx_sort(
                 arrow_array.nulls(),
                 |a: &u64, b: &u64| {
-                    let a = a.to_usize();
-                    let b = b.to_usize();
+                    let a = a.to_usize().unwrap();
+                    let b = b.to_usize().unwrap();
                     let l = unsafe { &arrow_array.value_unchecked(a) };
                     let r = unsafe { &arrow_array.value_unchecked(b) };
                     match cmp_float::<f32>(r, l) {
@@ -211,8 +211,8 @@ impl Float32Array {
             multi_column_idx_sort(
                 arrow_array.nulls(),
                 |a: &u64, b: &u64| {
-                    let a = a.to_usize();
-                    let b = b.to_usize();
+                    let a = a.to_usize().unwrap();
+                    let b = b.to_usize().unwrap();
                     let l = unsafe { &arrow_array.value_unchecked(a) };
                     let r = unsafe { &arrow_array.value_unchecked(b) };
                     match cmp_float::<f32>(l, r) {
@@ -275,8 +275,8 @@ impl Float64Array {
             multi_column_idx_sort(
                 arrow_array.nulls(),
                 |a: &u64, b: &u64| {
-                    let a = a.to_usize();
-                    let b = b.to_usize();
+                    let a = a.to_usize().unwrap();
+                    let b = b.to_usize().unwrap();
                     let l = unsafe { &arrow_array.value_unchecked(a) };
                     let r = unsafe { &arrow_array.value_unchecked(b) };
                     match cmp_float::<f64>(r, l) {
@@ -292,8 +292,8 @@ impl Float64Array {
             multi_column_idx_sort(
                 arrow_array.nulls(),
                 |a: &u64, b: &u64| {
-                    let a = a.to_usize();
-                    let b = b.to_usize();
+                    let a = a.to_usize().unwrap();
+                    let b = b.to_usize().unwrap();
                     let l = unsafe { &arrow_array.value_unchecked(a) };
                     let r = unsafe { &arrow_array.value_unchecked(b) };
                     match cmp_float::<f64>(l, r) {
@@ -356,8 +356,8 @@ impl Decimal128Array {
             multi_column_idx_sort(
                 arrow_array.nulls(),
                 |a: &u64, b: &u64| {
-                    let a = a.to_usize();
-                    let b = b.to_usize();
+                    let a = a.to_usize().unwrap();
+                    let b = b.to_usize().unwrap();
                     let l = unsafe { &arrow_array.value_unchecked(a) };
                     let r = unsafe { &arrow_array.value_unchecked(b) };
                     match r.cmp(l) {
@@ -373,8 +373,8 @@ impl Decimal128Array {
             multi_column_idx_sort(
                 arrow_array.nulls(),
                 |a: &u64, b: &u64| {
-                    let a = a.to_usize();
-                    let b = b.to_usize();
+                    let a = a.to_usize().unwrap();
+                    let b = b.to_usize().unwrap();
                     let l = unsafe { &arrow_array.value_unchecked(a) };
                     let r = unsafe { &arrow_array.value_unchecked(b) };
                     match l.cmp(r) {
@@ -426,8 +426,8 @@ impl NullArray {
         let result = multi_column_idx_sort(
             self.nulls(),
             |a: &u64, b: &u64| {
-                let a = a.to_usize();
-                let b = b.to_usize();
+                let a = a.to_usize().unwrap();
+                let b = b.to_usize().unwrap();
                 others_cmp(a, b)
             },
             &others_cmp,
@@ -483,8 +483,8 @@ impl BooleanArray {
             multi_column_idx_sort(
                 arrow_array.nulls(),
                 |a: &u64, b: &u64| {
-                    let a = a.to_usize();
-                    let b = b.to_usize();
+                    let a = a.to_usize().unwrap();
+                    let b = b.to_usize().unwrap();
                     let l = unsafe { arrow_array.value_unchecked(a) };
                     let r = unsafe { arrow_array.value_unchecked(b) };
                     match r.cmp(&l) {
@@ -500,8 +500,8 @@ impl BooleanArray {
             multi_column_idx_sort(
                 arrow_array.nulls(),
                 |a: &u64, b: &u64| {
-                    let a = a.to_usize();
-                    let b = b.to_usize();
+                    let a = a.to_usize().unwrap();
+                    let b = b.to_usize().unwrap();
                     let l = unsafe { arrow_array.value_unchecked(a) };
                     let r = unsafe { arrow_array.value_unchecked(b) };
                     match l.cmp(&r) {
@@ -575,8 +575,8 @@ macro_rules! impl_binary_like_sort {
                     multi_column_idx_sort(
                         self.to_data().nulls(),
                         |a: &u64, b: &u64| {
-                            let a = a.to_usize();
-                            let b = b.to_usize();
+                            let a = a.to_usize().unwrap();
+                            let b = b.to_usize().unwrap();
                             let l = unsafe { &arrow_array.value_unchecked(a) };
                             let r = unsafe { &arrow_array.value_unchecked(b) };
                             match r.cmp(&l) {
@@ -592,8 +592,8 @@ macro_rules! impl_binary_like_sort {
                     multi_column_idx_sort(
                         self.to_data().nulls(),
                         |a: &u64, b: &u64| {
-                            let a = a.to_usize();
-                            let b = b.to_usize();
+                            let a = a.to_usize().unwrap();
+                            let b = b.to_usize().unwrap();
                             let l = unsafe { &arrow_array.value_unchecked(a) };
                             let r = unsafe { &arrow_array.value_unchecked(b) };
                             match l.cmp(&r) {

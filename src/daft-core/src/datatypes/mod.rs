@@ -3,17 +3,17 @@ mod infer_datatype;
 mod matching;
 
 use arrow::{array::ArrowNumericType, datatypes::ArrowNativeType};
+use bytemuck::Pod;
 pub use infer_datatype::InferDataType;
 pub mod prelude;
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::{
+    ops::{Add, Div, Mul, Rem, Sub},
+    panic::RefUnwindSafe,
+};
 
 pub use agg_ops::{
     try_mean_aggregation_supertype, try_product_supertype, try_skew_aggregation_supertype,
     try_stddev_aggregation_supertype, try_sum_supertype, try_variance_aggregation_supertype,
-};
-use daft_arrow::{
-    compute::comparison::Simd8,
-    types::{NativeType, simd::Simd},
 };
 // Import DataType enum
 pub use daft_schema::dtype::DataType;
@@ -291,12 +291,9 @@ impl DaftDataType for PythonType {
 pub trait NumericNative:
     ArrowNativeType
     + PartialOrd
-    + NativeType
     + Num
     + NumCast
     + Zero
-    + Simd
-    + Simd8
     + std::iter::Sum<Self>
     + Add<Output = Self>
     + Sub<Output = Self>
@@ -307,6 +304,15 @@ pub trait NumericNative:
     + FromPrimitive
     + ToPrimitive
     + Serialize
+    + Pod
+    + Send
+    + Sync
+    + Sized
+    + RefUnwindSafe
+    + std::fmt::Debug
+    + std::fmt::Display
+    + PartialEq
+    + Default
 {
     type DAFTTYPE: DaftNumericType;
     type ARROWTYPE: ArrowNumericType;
