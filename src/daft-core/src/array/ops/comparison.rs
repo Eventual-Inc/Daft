@@ -688,7 +688,7 @@ where
 impl Not for &BooleanArray {
     type Output = DaftResult<BooleanArray>;
     fn not(self) -> Self::Output {
-        let arrow_arr = arrow::compute::not(&self.as_arrow()?)?;
+        let arrow_arr = arrow::compute::not(self.as_arrow()?)?;
 
         BooleanArray::from_arrow(
             Field::new(self.name(), DataType::Boolean),

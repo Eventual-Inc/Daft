@@ -62,14 +62,14 @@ where
     fn min(&self) -> Self::Output {
         let primitive_arr = self.as_arrow()?;
 
-        let result = arrow::compute::min(&primitive_arr);
+        let result = arrow::compute::min(primitive_arr);
         Ok(Self::from_iter(self.field.clone(), std::iter::once(result)))
     }
 
     fn max(&self) -> Self::Output {
         let primitive_arr = self.as_arrow()?;
 
-        let result = arrow::compute::max(&primitive_arr);
+        let result = arrow::compute::max(primitive_arr);
         Ok(Self::from_iter(self.field.clone(), std::iter::once(result)))
     }
     fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
@@ -135,13 +135,13 @@ impl DaftCompareAggable for DataArray<Utf8Type> {
     fn min(&self) -> Self::Output {
         let arrow_array = self.as_arrow()?;
 
-        let result = arrow::compute::min_string(&arrow_array);
+        let result = arrow::compute::min_string(arrow_array);
         Ok(Self::from_iter(self.name(), std::iter::once(result)))
     }
     fn max(&self) -> Self::Output {
         let arrow_array = self.as_arrow()?;
 
-        let result = arrow::compute::max_string(&arrow_array);
+        let result = arrow::compute::max_string(arrow_array);
         Ok(Self::from_iter(self.name(), std::iter::once(result)))
     }
 
@@ -194,13 +194,13 @@ impl DaftCompareAggable for DataArray<BinaryType> {
     fn min(&self) -> Self::Output {
         let arrow_array = self.as_arrow()?;
 
-        let result = arrow::compute::min_binary(&arrow_array);
+        let result = arrow::compute::min_binary(arrow_array);
         Ok(Self::from_iter(self.name(), std::iter::once(result)))
     }
     fn max(&self) -> Self::Output {
         let arrow_array = self.as_arrow()?;
 
-        let result = arrow::compute::max_binary(&arrow_array);
+        let result = arrow::compute::max_binary(arrow_array);
         Ok(Self::from_iter(self.name(), std::iter::once(result)))
     }
 
@@ -264,7 +264,7 @@ impl DaftCompareAggable for DataArray<FixedSizeBinaryType> {
             unreachable!("FixedSizeBinaryArray must have DataType::FixedSizeBinary(..)");
         };
 
-        let result = arrow::compute::min_fixed_size_binary(&arrow_array);
+        let result = arrow::compute::min_fixed_size_binary(arrow_array);
         Ok(Self::from_iter(self.name(), std::iter::once(result), *size))
     }
     fn max(&self) -> Self::Output {
@@ -274,7 +274,7 @@ impl DaftCompareAggable for DataArray<FixedSizeBinaryType> {
             unreachable!("FixedSizeBinaryArray must have DataType::FixedSizeBinary(..)");
         };
 
-        let result = arrow::compute::max_fixed_size_binary(&arrow_array);
+        let result = arrow::compute::max_fixed_size_binary(arrow_array);
         Ok(Self::from_iter(self.name(), std::iter::once(result), *size))
     }
 
@@ -328,13 +328,13 @@ impl DaftCompareAggable for DataArray<BooleanType> {
     fn min(&self) -> Self::Output {
         let arrow_array = self.as_arrow()?;
 
-        let result = arrow::compute::min_boolean(&arrow_array);
+        let result = arrow::compute::min_boolean(arrow_array);
         Ok(Self::from_iter(self.name(), std::iter::once(result)))
     }
     fn max(&self) -> Self::Output {
         let arrow_array = self.as_arrow()?;
 
-        let result = arrow::compute::max_boolean(&arrow_array);
+        let result = arrow::compute::max_boolean(arrow_array);
         Ok(Self::from_iter(self.name(), std::iter::once(result)))
     }
 

@@ -1,3 +1,4 @@
+use arrow::array::Array;
 use common_error::{DaftError, DaftResult};
 
 use crate::prelude::{AsArrow, BinaryArray, BooleanArray, Utf8Array};
@@ -8,13 +9,14 @@ impl Utf8Array {
     /// NOTE: this will error if there are any null values.
     /// If you need to handle nulls, use the `.iter()` method instead.
     pub fn values(&self) -> DaftResult<impl Iterator<Item = &str>> {
-        let arrow2_arr = self.as_arrow2();
+        let arr = self.as_arrow()?;
         if self.null_count() > 0 {
             return Err(DaftError::ComputeError(
                 "Utf8Array::values with nulls".to_string(),
             ));
         }
-        Ok(arrow2_arr.values_iter())
+        let iter = (0..arr.len()).map(|i| arr.value(i));
+        Ok(iter)
     }
 }
 
@@ -24,13 +26,14 @@ impl BinaryArray {
     /// NOTE: this will error if there are any null values.
     /// If you need to handle nulls, use the `.iter()` method instead.
     pub fn values(&self) -> DaftResult<impl Iterator<Item = &[u8]>> {
-        let arrow2_arr = self.as_arrow2();
+        let arr = self.as_arrow()?;
         if self.null_count() > 0 {
             return Err(DaftError::ComputeError(
                 "BinaryArray::values with nulls".to_string(),
             ));
         }
-        Ok(arrow2_arr.values_iter())
+        let iter = (0..arr.len()).map(|i| arr.value(i));
+        Ok(iter)
     }
 }
 

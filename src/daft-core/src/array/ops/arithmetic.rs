@@ -151,7 +151,7 @@ impl Add for &FixedSizeBinaryArray {
 impl Add for &Utf8Array {
     type Output = DaftResult<Utf8Array>;
     fn add(self, rhs: Self) -> Self::Output {
-        let result = Arc::new(add_utf8_arrays(&self.as_arrow()?, &rhs.as_arrow()?)?);
+        let result = Arc::new(add_utf8_arrays(self.as_arrow()?, rhs.as_arrow()?)?);
 
         Utf8Array::from_arrow(Field::new(self.name(), DataType::Utf8), result)
     }

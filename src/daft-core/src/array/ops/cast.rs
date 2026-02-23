@@ -73,7 +73,7 @@ where
         match dtype {
             #[cfg(feature = "python")]
             DataType::Python => {
-                Series::try_from((self.name(), self.data.clone()))?.cast_to_python()
+                Series::from_arrow(self.field().clone(), self.data.clone())?.cast_to_python()
             }
             _ => {
                 // Cast from DataArray to the target DataType
