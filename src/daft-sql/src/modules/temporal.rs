@@ -91,7 +91,7 @@ impl SQLFunction for SQLDateTrunc {
     }
 
     fn docstrings(&self, _alias: &str) -> String {
-        "Truncates a timestamp to the specified time unit (e.g. 'minute', 'hour', 'day')."
+        "Truncates a timestamp to the specified interval (e.g. 'minute', 'hour', 'day')."
             .to_string()
     }
 
