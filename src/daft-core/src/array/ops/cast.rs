@@ -73,7 +73,9 @@ where
         match dtype {
             #[cfg(feature = "python")]
             DataType::Python => {
-                Series::try_from((self.name(), self.data.clone()))?.cast_to_python()
+                let arr = self.data.clone();
+                let field = Arc::new(Field::new(self.name(), DataType::from(arr.data_type())));
+                Series::from_arrow(field, arr.into())?.cast_to_python()
             }
             _ => {
                 // Cast from DataArray to the target DataType

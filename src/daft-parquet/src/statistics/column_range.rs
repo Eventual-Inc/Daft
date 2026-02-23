@@ -324,18 +324,12 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
             }
         }
         // fall back case
-        let lower = Series::try_from((
-            "lower",
-            Box::new(PrimitiveArray::<T>::from_vec(vec![lower]))
-                as Box<dyn daft_arrow::array::Array>,
-        ))
-        .unwrap();
-        let upper = Series::try_from((
-            "upper",
-            Box::new(PrimitiveArray::<T>::from_vec(vec![upper]))
-                as Box<dyn daft_arrow::array::Array>,
-        ))
-        .unwrap();
+        let lower_arr: Box<dyn daft_arrow::array::Array> = Box::new(PrimitiveArray::<T>::from_vec(vec![lower]));
+        let lower_field = Arc::new(Field::new("lower", DataType::from(lower_arr.data_type())));
+        let lower = Series::from_arrow(lower_field, lower_arr.into()).unwrap();
+        let upper_arr: Box<dyn daft_arrow::array::Array> = Box::new(PrimitiveArray::<T>::from_vec(vec![upper]));
+        let upper_field = Arc::new(Field::new("upper", DataType::from(upper_arr.data_type())));
+        let upper = Series::from_arrow(upper_field, upper_arr.into()).unwrap();
 
         Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into())
     }
