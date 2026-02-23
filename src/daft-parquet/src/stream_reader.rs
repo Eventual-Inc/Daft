@@ -496,7 +496,8 @@ pub async fn local_parquet_read_async(
                         let casted_arrays = v
                             .into_iter()
                             .map(move |a| {
-                                let field = Arc::new(Field::new(f_name, DataType::from(a.data_type())));
+                                let field =
+                                    Arc::new(Field::new(f_name, DataType::from(a.data_type())));
                                 Series::from_arrow(field, a.into())
                             })
                             .collect::<Result<Vec<_>, _>>()?;
