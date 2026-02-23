@@ -46,8 +46,6 @@ mod tests {
     };
     use daft_schema::dtype::DataType;
 
-    use crate::datatypes::Field;
-
     static ARROW_DATA_TYPE: LazyLock<ArrowDataType> = LazyLock::new(|| {
         ArrowDataType::Map(
             Box::new(ArrowField::new(
@@ -100,7 +98,10 @@ mod tests {
         );
 
         let arrow_array: Box<dyn daft_arrow::array::Array> = Box::new(arrow_array);
-        let field = Arc::new(Field::new("test_map", DataType::from(arrow_array.data_type())));
+        let field = Arc::new(Field::new(
+            "test_map",
+            DataType::from(arrow_array.data_type()),
+        ));
         let series = Series::from_arrow(field, arrow_array.into())?;
 
         assert_eq!(
