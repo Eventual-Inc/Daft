@@ -60,20 +60,26 @@ class NativeExecutor:
 
         event_loop = get_or_init_event_loop()
         async_exec = stream_results()
+        should_raise_errors_from_close = True
         try:
             while True:
                 part = event_loop.run(async_exec.__anext__())
                 if part is None:
                     break
                 yield LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
-        except KeyboardInterrupt as e:
-            raise e
-        except Exception as e:
-            raise e
-        else:
-            event_loop.run(async_exec.aclose())
-            assert result is not None
-            return RecordBatch._from_pyrecordbatch(result.to_recordbatch())
+        except BaseException:
+            # Preserve the original exception/GeneratorExit by not masking it with errors from async_exec.aclose().
+            should_raise_errors_from_close = False
+            raise
+        finally:
+            try:
+                event_loop.run(async_exec.aclose())
+            except Exception:
+                if should_raise_errors_from_close:
+                    raise
+
+        assert result is not None
+        return RecordBatch._from_pyrecordbatch(result.to_recordbatch())
 
     def pretty_print(
         self,

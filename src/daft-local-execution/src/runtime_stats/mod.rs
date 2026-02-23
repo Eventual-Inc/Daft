@@ -17,7 +17,6 @@ use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_local_plan::ExecutionEngineFinalResult;
 use futures::future;
-use itertools::Itertools;
 use progress_bar::{ProgressBar, make_progress_bar_manager};
 use tokio::{
     runtime::Handle,
@@ -28,13 +27,6 @@ use tracing::{Instrument, instrument::Instrumented};
 pub use values::{DefaultRuntimeStats, RuntimeStats};
 
 use crate::pipeline::PipelineNode;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum QueryEndState {
-    Finished,
-    Failed,
-    Cancelled,
-}
 
 fn should_enable_progress_bar() -> bool {
     if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
@@ -76,7 +68,7 @@ impl RuntimeStatsManagerHandle {
 /// This prevents the subscribers from being overwhelmed by too many events.
 pub struct RuntimeStatsManager {
     node_tx: Arc<mpsc::UnboundedSender<(usize, bool)>>,
-    finish_tx: oneshot::Sender<QueryEndState>,
+    finish_tx: oneshot::Sender<()>,
     stats_manager_task: RuntimeTask<ExecutionEngineFinalResult>,
 }
 
@@ -87,6 +79,38 @@ impl std::fmt::Debug for RuntimeStatsManager {
 }
 
 impl RuntimeStatsManager {
+    async fn flush_and_finalize_node(
+        query_id: &QueryID,
+        node_id: NodeID,
+        node_map: &HashMap<NodeID, (Arc<NodeInfo>, Arc<dyn RuntimeStats>)>,
+        progress_bar: Option<&dyn ProgressBar>,
+        subscribers: &[Arc<dyn Subscriber>],
+        err_context: &str,
+    ) {
+        let runtime_stats = &node_map[&node_id].1;
+        let snapshot = runtime_stats.flush();
+
+        if let Some(progress_bar) = progress_bar {
+            progress_bar.finalize_node(node_id, &snapshot);
+        }
+
+        let event = Arc::new(vec![(node_id, snapshot.to_stats())]);
+        for res in future::join_all(subscribers.iter().map(|subscriber| async {
+            subscriber
+                .on_exec_emit_stats(query_id.clone(), event.clone())
+                .await?;
+            subscriber
+                .on_exec_operator_end(query_id.clone(), node_id)
+                .await
+        }))
+        .await
+        {
+            if let Err(e) = res {
+                log::error!("Failed to {}: {}", err_context, e);
+            }
+        }
+    }
+
     #[allow(clippy::borrowed_box)]
     pub fn try_new(
         handle: &Handle,
@@ -140,7 +164,7 @@ impl RuntimeStatsManager {
     ) -> Self {
         let (node_tx, mut node_rx) = mpsc::unbounded_channel::<(usize, bool)>();
         let node_tx = Arc::new(node_tx);
-        let (finish_tx, mut finish_rx) = oneshot::channel::<QueryEndState>();
+        let (finish_tx, mut finish_rx) = oneshot::channel::<()>();
 
         let event_loop = async move {
             let mut interval = interval(throttle_interval);
@@ -163,31 +187,31 @@ impl RuntimeStatsManager {
                                 }
                             }
                         } else if !is_initialize && active_nodes.remove(&node_id) {
-                            let runtime_stats = &node_map[&node_id].1;
-                            let snapshot = runtime_stats.flush();
-
-                            if let Some(progress_bar) = &progress_bar {
-                                progress_bar.finalize_node(node_id, &snapshot);
-                            }
-
-                            let event = Arc::new(vec![(node_id, snapshot.to_stats())]);
-                            for res in future::join_all(subscribers.iter().map(|subscriber| async {
-                                subscriber.on_exec_emit_stats(query_id.clone(), event.clone()).await?;
-                                subscriber.on_exec_operator_end(query_id.clone(), node_id).await
-                            })).await {
-                                if let Err(e) = res {
-                                    log::error!("Failed to finalize node: {}", e);
-                                }
-                            }
+                            Self::flush_and_finalize_node(
+                                &query_id,
+                                node_id,
+                                &node_map,
+                                progress_bar.as_deref(),
+                                &subscribers,
+                                "finalize node",
+                            )
+                            .await;
                         }
                     }
 
-                    finish_status = &mut finish_rx => {
-                        if finish_status == Ok(QueryEndState::Finished) && !active_nodes.is_empty() {
-                            log::error!(
-                                "RuntimeStatsManager finished with active nodes {{{}}}",
-                                active_nodes.iter().map(|id: &usize| id.to_string()).join(", ")
-                            );
+                    _ = &mut finish_rx => {
+                        // Queries that terminate early (e.g. LIMIT) may still have active upstream nodes.
+                        // Flush and finalize those nodes so subscribers and progress bars end in a consistent state.
+                        for node_id in active_nodes.drain() {
+                            Self::flush_and_finalize_node(
+                                &query_id,
+                                node_id,
+                                &node_map,
+                                progress_bar.as_deref(),
+                                &subscribers,
+                                "finalize node during shutdown",
+                            )
+                            .await;
                         }
                         break;
                     }
@@ -251,9 +275,9 @@ impl RuntimeStatsManager {
         RuntimeStatsManagerHandle(self.node_tx.clone())
     }
 
-    pub async fn finish(self, status: QueryEndState) -> ExecutionEngineFinalResult {
+    pub async fn finish(self) -> ExecutionEngineFinalResult {
         self.finish_tx
-            .send(status)
+            .send(())
             .expect("The finish_tx channel was closed");
         self.stats_manager_task
             .await
