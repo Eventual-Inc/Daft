@@ -121,13 +121,18 @@ jobs:
         sudo rm -rf /opt/hostedtoolcache/node || true
 
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        prefix-key: ${{ runner.os }}-build
+        shared-key: ${{ runner.os }}-dev-build
         cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
     - name: Install cargo-llvm-cov
       if: matrix.coverage != false
       uses: taiki-e/install-action@cargo-llvm-cov
@@ -284,6 +289,7 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -301,8 +307,10 @@ jobs:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        prefix-key: ${{ runner.os }}-integration-build
+        shared-key: ${{ runner.os }}-integration-build
         cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
     - uses: actions/setup-node@v6
       with:
         node-version: "22"
@@ -1218,15 +1226,19 @@ jobs:
       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
     steps:
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        prefix-key: dev-bench
-        key: ${{ runner.os }}-benchmark-build
+        shared-key: ${{ runner.os }}-dev-bench-build
         cache-all-crates: "true"
+        cache-workspace-crates: "true"
         cache-provider: buildjet
+        save-if: ${{ github.ref == 'refs/heads/main' }}
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1302,6 +1314,10 @@ jobs:
           on-main: false
     steps:
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
+      if: ${{ matrix.os != 'Windows' }}
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1311,8 +1327,10 @@ jobs:
         # skip on windows because it misses the cache and is very slow (~15 minutes)
       if: ${{ matrix.os != 'Windows' }}
       with:
-        key: ${{ runner.os }}-rust-build
+        shared-key: ${{ runner.os }}-dev-build
         cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
     - name: Free Disk Space (Ubuntu)
       if: ${{ matrix.os == 'ubuntu' }}
       uses: jlumbroso/free-disk-space@main
@@ -1410,13 +1428,18 @@ jobs:
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        prefix-key: ${{ runner.os }}-build
+        shared-key: ${{ runner.os }}-dev-build
         cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1501,13 +1524,19 @@ jobs:
           on-main: false
     steps:
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
+      if: ${{ runner.os != 'Windows' }}
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        prefix-key: ${{ runner.os }}-build
+        shared-key: ${{ runner.os }}-dev-build
         cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
 
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
@@ -1595,6 +1624,9 @@ jobs:
       python-version: "3.10"
     steps:
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1610,8 +1642,10 @@ jobs:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        prefix-key: ${{ runner.os }}-build
+        shared-key: ${{ runner.os }}-dev-build
         cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
 
     - uses: actions/cache@v5
       id: pre-commit-cache

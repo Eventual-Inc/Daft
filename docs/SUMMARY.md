@@ -52,11 +52,13 @@
         * [Running on Ray](distributed/ray.md)
     * Architecture
         * [Architecture](architecture/index.md)
-    * Optimization and Debugging
+    * Optimization
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
-        * [Observability](optimization/observability.md)
-        * [Logging](optimization/logging.md)
+    * Observability
+        * [Progress Indicators](observability/progress-indicators.md)
+        * [Logging](observability/logging.md)
+        * [Telemetry](observability/telemetry.md)
     * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
     * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)

@@ -17,12 +17,12 @@ impl DaftBoolAggable for DataArray<BooleanType> {
     type Output = DaftResult<Self>;
 
     fn bool_and(&self) -> Self::Output {
-        let value = bool_and(&self.as_arrow()?);
+        let value = bool_and(self.as_arrow()?);
         Ok(Self::from_iter(self.name(), std::iter::once(value)))
     }
 
     fn bool_or(&self) -> Self::Output {
-        let value = bool_or(&self.as_arrow()?);
+        let value = bool_or(self.as_arrow()?);
         Ok(Self::from_iter(self.name(), std::iter::once(value)))
     }
 

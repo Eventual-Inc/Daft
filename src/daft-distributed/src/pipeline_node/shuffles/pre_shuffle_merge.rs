@@ -141,7 +141,7 @@ impl PreShuffleMergeNode {
                             self.node_id(),
                         );
                     let builder = SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())
-                        .with_psets(psets)
+                        .with_psets(self.node_id(), psets)
                         .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
                             worker_id,
                             soft: false,
@@ -164,7 +164,7 @@ impl PreShuffleMergeNode {
                     self.node_id(),
                 );
                 let builder = SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())
-                    .with_psets(psets)
+                    .with_psets(self.node_id(), psets)
                     .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
                         worker_id,
                         soft: false,

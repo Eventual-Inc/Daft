@@ -104,10 +104,7 @@ fn tokenize_encode_array(
 
     let flat_child: ArrayRef = Arc::new(flat_child.finish());
 
-    let child_series = Series::from_arrow2(
-        Field::new("flat_child", DataType::UInt32).into(),
-        flat_child.into(),
-    )?;
+    let child_series = Series::from_arrow(Field::new("flat_child", DataType::UInt32), flat_child)?;
 
     Ok(ListArray::new(
         Field::new(arr.name(), DataType::List(Box::new(DataType::UInt32))),

@@ -152,7 +152,7 @@ impl PythonArray {
             self.name(),
             self.data_type(),
             vec![self],
-            idx.data().null_count() > 0,
+            idx.null_count() > 0,
             idx.len(),
         );
 

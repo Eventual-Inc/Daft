@@ -32,9 +32,6 @@ macro_rules! impl_series_like_for_data_array {
             fn into_series(&self) -> Series {
                 self.0.clone().into_series()
             }
-            fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-                self.0.data().to_boxed()
-            }
 
             fn to_arrow(&self) -> DaftResult<ArrayRef> {
                 Ok(arrow::array::make_array(self.0.to_data()))

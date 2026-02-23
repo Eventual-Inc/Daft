@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use daft_arrow::array::PrimitiveArray;
 use daft_core::prelude::*;
 use daft_stats::ColumnRangeStatistics;
 use parquet2::{
@@ -242,8 +241,11 @@ impl TryFrom<&FixedLenStatistics> for Wrap<ColumnRangeStatistics> {
     }
 }
 
-impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
-    TryFrom<&PrimitiveStatistics<T>> for Wrap<ColumnRangeStatistics>
+impl<T> TryFrom<&PrimitiveStatistics<T>> for Wrap<ColumnRangeStatistics>
+where
+    T: Into<daft_core::lit::Literal>,
+    T: daft_core::datatypes::NumericNative,
+    T: parquet2::types::NativeType,
 {
     type Error = super::Error;
 
@@ -324,18 +326,12 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
             }
         }
         // fall back case
-        let lower = Series::try_from((
-            "lower",
-            Box::new(PrimitiveArray::<T>::from_vec(vec![lower]))
-                as Box<dyn daft_arrow::array::Array>,
-        ))
-        .unwrap();
-        let upper = Series::try_from((
-            "upper",
-            Box::new(PrimitiveArray::<T>::from_vec(vec![upper]))
-                as Box<dyn daft_arrow::array::Array>,
-        ))
-        .unwrap();
+        let lower = Series::from_literals(vec![lower.into()])
+            .unwrap()
+            .rename("lower");
+        let upper = Series::from_literals(vec![upper.into()])
+            .unwrap()
+            .rename("upper");
 
         Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into())
     }
