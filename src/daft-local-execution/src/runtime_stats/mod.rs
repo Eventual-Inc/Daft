@@ -85,7 +85,7 @@ impl RuntimeStatsManager {
         node_map: &HashMap<NodeID, (Arc<NodeInfo>, Arc<dyn RuntimeStats>)>,
         progress_bar: Option<&dyn ProgressBar>,
         subscribers: &[Arc<dyn Subscriber>],
-        err_context: &str,
+        err_context: &'static str,
     ) {
         let runtime_stats = &node_map[&node_id].1;
         let snapshot = runtime_stats.flush();
