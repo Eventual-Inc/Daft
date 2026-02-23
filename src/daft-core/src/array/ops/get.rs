@@ -36,6 +36,8 @@ where
         let arrow_array = self.as_arrow().unwrap();
         let is_valid = arrow_array.nulls().is_none_or(|nulls| nulls.is_valid(idx));
         if is_valid {
+            Self::native_layout_assert();
+
             Some(unsafe {
                 // SAFETY:
                 // T::Native is guaranteed to also be `ArrowPrimitiveType::Native`.

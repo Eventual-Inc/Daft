@@ -11,7 +11,7 @@ mod struct_array;
 pub mod values;
 
 use arrow::{
-    array::{ArrayRef, make_array},
+    array::{ArrayRef, ArrowPrimitiveType, make_array},
     buffer::{NullBuffer, ScalarBuffer},
     compute::cast,
 };
@@ -26,7 +26,9 @@ use common_error::{DaftError, DaftResult};
 use daft_schema::field::FieldRef;
 
 use crate::{
-    datatypes::{DaftArrayType, DaftPhysicalType, DaftPrimitiveType, DataType, Field},
+    datatypes::{
+        DaftArrayType, DaftPhysicalType, DaftPrimitiveType, DataType, Field, NumericNative,
+    },
     prelude::AsArrow,
 };
 
@@ -55,7 +57,28 @@ impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {
     }
 }
 impl<T: DaftPrimitiveType> DataArray<T> {
+    /// Compile-time proof that `T::Native` and the arrow-rs `ARROWTYPE::Native` are
+    /// the same size and alignment.
+    const fn native_layout_assert() {
+        assert!(
+            std::mem::size_of::<T::Native>()
+                == std::mem::size_of::<
+                    <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native,
+                >(),
+            "T::Native and ARROWTYPE::Native must have the same size"
+        );
+        assert!(
+            std::mem::align_of::<T::Native>()
+                == std::mem::align_of::<
+                    <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native,
+                >(),
+            "T::Native and ARROWTYPE::Native must have the same alignment"
+        );
+    }
+
     pub fn as_slice(&self) -> &[T::Native] {
+        Self::native_layout_assert();
+
         let original_slice = self.as_arrow().unwrap().values().as_ref();
         // SAFETY: T::Native and <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native
         // are the same type in practice (identical memory layout), but the compiler can't prove this
@@ -70,6 +93,8 @@ impl<T: DaftPrimitiveType> DataArray<T> {
     }
 
     pub fn values(&self) -> ScalarBuffer<T::Native> {
+        Self::native_layout_assert();
+
         let arr = self.as_arrow().unwrap();
         let buffer = arr.values().inner();
         unsafe { ScalarBuffer::<T::Native>::new_unchecked(buffer.clone()) }
