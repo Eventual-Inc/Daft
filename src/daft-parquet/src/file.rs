@@ -673,7 +673,13 @@ impl ParquetFileReader {
                                     }
                                     all_arrays
                                         .into_iter()
-                                        .map(|a| Series::try_from((field.name.as_str(), a)))
+                                        .map(|a| {
+                                            let series_field = Arc::new(Field::new(
+                                                field.name.as_str(),
+                                                DataType::from(a.data_type()),
+                                            ));
+                                            Series::from_arrow(series_field, a.into())
+                                        })
                                         .collect::<DaftResult<Vec<Series>>>()
                                 })();
 

@@ -1,12 +1,7 @@
-use std::sync::Arc;
-
-use common_error::{DaftError, DaftResult};
 use common_ndarray::NdArray;
-use daft_arrow::datatypes::ArrowDataType;
-use daft_schema::dtype::DaftDataType;
 
 use super::Series;
-use crate::{datatypes::Field, prelude::*, series::array_impl::IntoSeries};
+use crate::{prelude::*, series::array_impl::IntoSeries};
 
 impl Series {
     pub fn from_ndarray_flattened(arr: NdArray) -> Self {
@@ -40,21 +35,9 @@ impl Series {
     }
 }
 
-impl TryFrom<(&str, Box<dyn daft_arrow::array::Array>)> for Series {
-    type Error = DaftError;
-
-    fn try_from((name, array): (&str, Box<dyn daft_arrow::array::Array>)) -> DaftResult<Self> {
-        let source_arrow_type: &ArrowDataType = array.data_type();
-        let dtype = DaftDataType::from(source_arrow_type);
-
-        let field = Arc::new(Field::new(name, dtype));
-        Self::from_arrow(field, array.into())
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::sync::LazyLock;
+    use std::sync::{Arc, LazyLock};
 
     use common_error::DaftResult;
     use daft_arrow::{
@@ -114,10 +97,12 @@ mod tests {
             None,
         );
 
-        let series = Series::try_from((
+        let arrow_array: Box<dyn daft_arrow::array::Array> = Box::new(arrow_array);
+        let field = Arc::new(Field::new(
             "test_map",
-            Box::new(arrow_array) as Box<dyn daft_arrow::array::Array>,
-        ))?;
+            DataType::from(arrow_array.data_type()),
+        ));
+        let series = Series::from_arrow(field, arrow_array.into())?;
 
         assert_eq!(
             series.data_type(),
