@@ -13,7 +13,7 @@ where
     T: DaftArrowBackedType,
 {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = arrow::compute::filter(self.to_arrow().as_ref(), &mask.as_arrow()?)?;
+        let result = arrow::compute::filter(self.to_arrow().as_ref(), mask.as_arrow()?)?;
 
         Self::from_arrow(self.field().clone(), result)
     }
@@ -21,21 +21,21 @@ where
 
 impl ListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let filtered = arrow::compute::filter(self.to_arrow()?.as_ref(), &mask.as_arrow()?)?;
+        let filtered = arrow::compute::filter(self.to_arrow()?.as_ref(), mask.as_arrow()?)?;
         Self::from_arrow(self.field().clone(), filtered)
     }
 }
 
 impl FixedSizeListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let filtered = arrow::compute::filter(self.to_arrow()?.as_ref(), &mask.as_arrow()?)?;
+        let filtered = arrow::compute::filter(self.to_arrow()?.as_ref(), mask.as_arrow()?)?;
         Self::from_arrow(self.field().clone(), filtered)
     }
 }
 
 impl StructArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let filtered = arrow::compute::filter(self.to_arrow()?.as_ref(), &mask.as_arrow()?)?;
+        let filtered = arrow::compute::filter(self.to_arrow()?.as_ref(), mask.as_arrow()?)?;
         Self::from_arrow(self.field().clone(), filtered)
     }
 }

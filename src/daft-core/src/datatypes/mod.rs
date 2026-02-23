@@ -2,11 +2,7 @@ mod agg_ops;
 mod infer_datatype;
 mod matching;
 
-use arrow::{
-    array::ArrowNumericType,
-    buffer::{Buffer, ScalarBuffer},
-    datatypes::ArrowNativeType,
-};
+use arrow::{array::ArrowNumericType, datatypes::ArrowNativeType};
 pub use infer_datatype::InferDataType;
 pub mod prelude;
 use std::ops::{Add, Div, Mul, Rem, Sub};
@@ -35,7 +31,7 @@ pub use crate::array::{DataArray, FixedSizeListArray, file_array::FileArray};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{ListArray, StructArray, ops::as_arrow::AsArrow},
+    array::{ListArray, StructArray},
     file::{DaftMediaType, FileType},
 };
 
@@ -462,15 +458,3 @@ pub type Utf8Array = DataArray<Utf8Type>;
 pub type ExtensionArray = DataArray<ExtensionType>;
 pub type IntervalArray = DataArray<IntervalType>;
 pub type Decimal128Array = DataArray<Decimal128Type>;
-
-impl<T: DaftPrimitiveType> DataArray<T> {
-    pub fn as_slice(&self) -> &[T::Native] {
-        self.as_arrow2().values().as_slice()
-    }
-
-    pub fn values(&self) -> ScalarBuffer<T::Native> {
-        // this is fully zero copy to convert the values into an arrow-rs ScalarBuffer
-        let arrow_buffer = Buffer::from(self.as_arrow2().values().clone());
-        ScalarBuffer::from(arrow_buffer)
-    }
-}

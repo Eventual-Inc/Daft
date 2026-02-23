@@ -97,12 +97,11 @@ impl Series {
         assert!(n >= 0, "Expected n to be non negative, got {n}");
         let hashes = self.murmur3_32()?;
         let buckets = hashes.into_iter().map(|v| v.map(|v| (v & i32::MAX) % n));
-        let array = Box::new(daft_arrow::array::Int32Array::from_iter(buckets));
-        Ok(Int32Array::new(
-            Field::new(format!("{}_bucket", self.name()), DataType::Int32).into(),
-            array,
+
+        Ok(Int32Array::from_iter(
+            Field::new(format!("{}_bucket", self.name()), DataType::Int32),
+            buckets,
         )
-        .unwrap()
         .into_series())
     }
 
