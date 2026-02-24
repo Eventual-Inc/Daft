@@ -2756,6 +2756,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-ext-abi"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow",
+]
+
+[[package]]
 name = "daft-file"
 version = "0.3.0-dev0"
 dependencies = [
@@ -3338,6 +3345,7 @@ dependencies = [
 name = "daft-session"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-error",
  "daft-ai",
  "daft-catalog",
  "daft-core",

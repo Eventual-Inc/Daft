@@ -7,6 +7,9 @@ daft-logical-plan = {path = "../daft-logical-plan"}
 pyo3 = {workspace = true, optional = true}
 uuid.workspace = true
 
+[dev-dependencies]
+common-error = {workspace = true}
+
 [features]
 python = [
   "dep:pyo3",

@@ -152,9 +152,11 @@ impl PySession {
         let wrapped = WrappedUDFClass {
             inner: Arc::new(function),
         };
-
-        self.0.attach_function(wrapped, alias)?;
-
+        let name = match alias {
+            Some(name) => name,
+            None => wrapped.name()?,
+        };
+        self.0.attach_function(name, wrapped);
         Ok(())
     }
 

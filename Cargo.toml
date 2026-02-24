@@ -193,6 +193,7 @@ members = [
   "src/daft-csv",
   "src/daft-dashboard",
   "src/daft-dsl",
+  "src/daft-ext-abi",
   "src/daft-file",
   "src/daft-functions",
   "src/daft-functions-binary",

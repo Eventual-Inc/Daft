@@ -1,0 +1,12 @@
+[dependencies]
+arrow = {workspace = true, features = ["ffi"]}
+
+[lints]
+workspace = true
+
+[package]
+description = "Stable C ABI contract between Daft and extension cdylibs"
+edition = {workspace = true}
+license = "Apache-2.0"
+name = "daft-ext-abi"
+version = {workspace = true}
