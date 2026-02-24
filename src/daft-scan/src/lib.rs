@@ -13,11 +13,11 @@ use common_display::DisplayAs;
 use common_error::DaftError;
 use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLike, ScanTaskLikeRef};
+use daft_parquet::DaftParquetMetadata;
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use either::Either;
 use itertools::Itertools;
-use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 
 mod anonymous;
@@ -145,7 +145,7 @@ pub enum DataSource {
         metadata: Option<TableMetadata>,
         partition_spec: Option<PartitionSpec>,
         statistics: Option<TableStatistics>,
-        parquet_metadata: Option<Arc<FileMetaData>>,
+        parquet_metadata: Option<Arc<DaftParquetMetadata>>,
     },
     Database {
         path: String,
@@ -233,7 +233,7 @@ impl DataSource {
     }
 
     #[must_use]
-    pub fn get_parquet_metadata(&self) -> Option<&Arc<FileMetaData>> {
+    pub fn get_parquet_metadata(&self) -> Option<&Arc<DaftParquetMetadata>> {
         match self {
             Self::File {
                 parquet_metadata, ..

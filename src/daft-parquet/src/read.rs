@@ -26,7 +26,9 @@ use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
-use crate::{JoinSnafu, file::ParquetReaderBuilder, infer_arrow_schema_from_metadata};
+use crate::{
+    DaftParquetMetadata, JoinSnafu, file::ParquetReaderBuilder, infer_arrow_schema_from_metadata,
+};
 
 #[cfg(feature = "python")]
 #[derive(Clone)]
@@ -774,7 +776,7 @@ pub fn read_parquet_bulk<T: AsRef<str>>(
     multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-    metadata: Option<Vec<Arc<FileMetaData>>>,
+    metadata: Option<Vec<Arc<DaftParquetMetadata>>>,
     delete_map: Option<HashMap<String, Vec<i64>>>,
     chunk_size: Option<usize>,
 ) -> DaftResult<Vec<RecordBatch>> {
@@ -823,10 +825,15 @@ pub async fn read_parquet_bulk_async(
     num_parallel_tasks: usize,
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-    metadata: Option<Vec<Arc<FileMetaData>>>,
+    metadata: Option<Vec<Arc<DaftParquetMetadata>>>,
     delete_map: Option<HashMap<String, Vec<i64>>>,
     chunk_size: Option<usize>,
 ) -> DaftResult<Vec<DaftResult<RecordBatch>>> {
+    let metadata = metadata.map(|mds| {
+        mds.into_iter()
+            .map(|m| Arc::new(Arc::unwrap_or_clone(m).into_parquet2()))
+            .collect::<Vec<_>>()
+    });
     let task_stream = futures::stream::iter(uris.into_iter().enumerate().map(|(i, uri)| {
         let owned_columns = columns.clone();
         let owned_row_group = row_groups.as_ref().and_then(|rgs| rgs[i].clone());
@@ -886,11 +893,12 @@ pub async fn stream_parquet(
     io_stats: Option<IOStatsRef>,
     schema_infer_options: &ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-    metadata: Option<Arc<FileMetaData>>,
+    metadata: Option<Arc<DaftParquetMetadata>>,
     maintain_order: bool,
     delete_rows: Option<Vec<i64>>,
     chunk_size: Option<usize>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let metadata = metadata.map(|m| Arc::new(Arc::unwrap_or_clone(m).into_parquet2()));
     let stream = stream_parquet_single(
         uri.to_string(),
         columns,
@@ -979,7 +987,7 @@ pub async fn read_parquet_schema_and_metadata(
     io_stats: Option<IOStatsRef>,
     schema_inference_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-) -> DaftResult<(Schema, FileMetaData)> {
+) -> DaftResult<(Schema, DaftParquetMetadata)> {
     let builder =
         ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats, field_id_mapping).await?;
     let builder = builder.set_infer_schema_options(schema_inference_options);
@@ -988,7 +996,7 @@ pub async fn read_parquet_schema_and_metadata(
     let arrow_schema =
         infer_arrow_schema_from_metadata(&metadata, Some(schema_inference_options.into()))?;
     let schema = arrow_schema.into();
-    Ok((schema, metadata))
+    Ok((schema, metadata.into()))
 }
 
 pub async fn read_parquet_metadata(
@@ -996,17 +1004,17 @@ pub async fn read_parquet_metadata(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-) -> DaftResult<parquet2::metadata::FileMetaData> {
+) -> DaftResult<DaftParquetMetadata> {
     let builder =
         ParquetReaderBuilder::from_uri(uri, io_client, io_stats, field_id_mapping).await?;
-    Ok(builder.metadata)
+    Ok(builder.metadata.into())
 }
 pub async fn read_parquet_metadata_bulk(
     uris: &[&str],
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-) -> DaftResult<Vec<parquet2::metadata::FileMetaData>> {
+) -> DaftResult<Vec<DaftParquetMetadata>> {
     let handles_iter = uris.iter().map(|uri| {
         let owned_string = (*uri).to_string();
         let owned_client = io_client.clone();
@@ -1142,10 +1150,7 @@ mod tests {
     use daft_arrow::{datatypes::DataType, io::parquet::read::schema::StringEncoding};
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
-    use parquet2::{
-        metadata::FileMetaData,
-        schema::types::{ParquetType, PrimitiveConvertedType, PrimitiveLogicalType},
-    };
+    use parquet2::schema::types::{ParquetType, PrimitiveConvertedType, PrimitiveLogicalType};
 
     use super::*;
 
@@ -1234,9 +1239,10 @@ mod tests {
             let metadata = read_parquet_metadata(&file, io_client, None, None).await?;
             let config = bincode::config::legacy();
             let serialized = bincode::serde::encode_to_vec(&metadata, config).unwrap();
-            let deserialized: FileMetaData = bincode::serde::decode_from_slice(&serialized, config)
-                .unwrap()
-                .0;
+            let deserialized: DaftParquetMetadata =
+                bincode::serde::decode_from_slice(&serialized, config)
+                    .unwrap()
+                    .0;
             assert_eq!(metadata, deserialized);
             Ok(())
         })?
