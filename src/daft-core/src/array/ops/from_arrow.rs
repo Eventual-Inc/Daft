@@ -80,36 +80,41 @@ impl FromArrow for ListArray {
             )));
         };
 
-        // Auto-cast from List (i32 offsets) to LargeList (i64 offsets) if the inner
-        // element types match. We only widen the offset type, never coerce child dtypes.
-        let arrow_arr = if let arrow::datatypes::DataType::List(arrow_child_field) =
-            arrow_arr.data_type()
-        {
-            let expected_child = daft_child_dtype.to_arrow()?;
-            if *arrow_child_field.data_type() != expected_child {
+        // Extract offsets and child values, handling both List (i32) and LargeList (i64).
+        // For List we just widen offsets i32→i64; inner child coercions (e.g. Utf8→LargeUtf8)
+        // are handled recursively by Series::from_arrow on the child values.
+        let (child_values, offsets, nulls) = match arrow_arr.data_type() {
+            arrow::datatypes::DataType::List(_) => {
+                let list_arr = arrow_arr.as_list::<i32>();
+                let wide_offsets: ScalarBuffer<i64> =
+                    list_arr.offsets().iter().map(|&o| i64::from(o)).collect();
+                let offsets = unsafe { OffsetBuffer::new_unchecked(wide_offsets) };
+                (
+                    list_arr.values().clone(),
+                    offsets,
+                    list_arr.nulls().cloned(),
+                )
+            }
+            arrow::datatypes::DataType::LargeList(_) => {
+                let list_arr = arrow_arr.as_list::<i64>();
+                (
+                    list_arr.values().clone(),
+                    list_arr.offsets().clone(),
+                    list_arr.nulls().cloned(),
+                )
+            }
+            other => {
                 return Err(DaftError::TypeError(format!(
-                    "Cannot coerce List({:?}) to LargeList({:?}) for field '{}': inner types must match",
-                    arrow_child_field.data_type(),
-                    expected_child,
-                    field.name,
+                    "Expected List or LargeList arrow type for field '{}', got {:?}",
+                    field.name, other
                 )));
             }
-            let target = field.dtype.to_arrow()?;
-            arrow::compute::cast(arrow_arr.as_ref(), &target)?
-        } else {
-            arrow_arr
         };
 
-        let list_arr = arrow_arr.as_list::<i64>();
-        let arrow_child_array = list_arr.values();
         let child_series = Series::from_arrow(
             Arc::new(Field::new("list", daft_child_dtype.as_ref().clone())),
-            arrow_child_array.clone(),
+            child_values,
         )?;
-
-        let offsets: arrow::buffer::Buffer = list_arr.offsets().inner().clone().into_inner();
-        let offsets = unsafe { OffsetBuffer::new_unchecked(offsets.into()) };
-        let nulls = list_arr.nulls().cloned();
 
         Ok(Self::new(field, child_series, offsets, nulls))
     }

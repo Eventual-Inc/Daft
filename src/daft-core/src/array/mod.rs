@@ -396,11 +396,9 @@ mod tests {
         ));
 
         let result = Series::from_arrow(daft_fld, Arc::new(list));
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
         assert!(
-            err.contains("inner types must match"),
-            "Expected inner type mismatch error, got: {err}"
+            result.is_err(),
+            "Expected type mismatch error for List<u64> → List<u32>"
         );
     }
 
