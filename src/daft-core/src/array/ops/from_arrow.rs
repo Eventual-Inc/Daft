@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arrow::{
     array::{Array, ArrayRef, AsArray},
-    buffer::OffsetBuffer,
+    buffer::{OffsetBuffer, ScalarBuffer},
 };
 use common_error::{DaftError, DaftResult};
 
@@ -17,7 +17,7 @@ use crate::{
     series::Series,
 };
 
-/// Arrays that implement [`FromArrow`] can be instantiated from a Box<dyn daft_arrow::array::Array>
+/// Arrays that implement [`FromArrow`] can be instantiated from an ArrayRef
 pub trait FromArrow
 where
     Self: Sized,
@@ -177,12 +177,14 @@ impl FromArrow for MapArray {
 
         let child_series = Series::from_arrow(child_field, arrow_child_array.clone())?;
 
-        let offsets: arrow::buffer::Buffer = arrow_arr.offsets().inner().clone().into_inner();
-        let offsets =
-            unsafe { daft_arrow::offset::OffsetsBuffer::<i32>::new_unchecked(offsets.into()) };
-        let offsets: daft_arrow::offset::OffsetsBuffer<i64> = (&offsets).into();
-        let offsets =
-            OffsetBuffer::new(arrow::buffer::Buffer::from(offsets.buffer().clone()).into());
+        let offsets = arrow_arr
+            .offsets()
+            .inner()
+            .into_iter()
+            .map(|v| *v as i64)
+            .collect::<ScalarBuffer<_>>();
+        let offsets = OffsetBuffer::<i64>::new(offsets);
+
         let nulls = arrow_arr.nulls().cloned();
 
         let physical = ListArray::new(physical_field, child_series, offsets, nulls);

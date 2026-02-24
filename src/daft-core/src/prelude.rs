@@ -2,7 +2,6 @@
 //!
 //! This module re-exports commonly used items from the Daft core library.
 
-// Re-export arrow2 bitmap
 pub use daft_arrow::bitmap;
 pub use daft_schema::image_property::ImageProperty;
 // Re-export core series structures

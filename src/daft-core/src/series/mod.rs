@@ -11,7 +11,6 @@ pub use array_impl::{ArrayWrapper, IntoSeries};
 use arrow::array::ArrayRef;
 use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::DaftResult;
-use daft_arrow::trusted_len::TrustedLen;
 use derive_more::Display;
 use indexmap::{IndexMap, map::RawEntryApiV1};
 pub use ops::cast_series_to_supertype;
@@ -171,11 +170,11 @@ impl Series {
         )
     }
 
-    pub fn with_nulls(&self, nulls: Option<daft_arrow::buffer::NullBuffer>) -> DaftResult<Self> {
+    pub fn with_nulls(&self, nulls: Option<arrow::buffer::NullBuffer>) -> DaftResult<Self> {
         self.inner.with_nulls(nulls)
     }
 
-    pub fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+    pub fn nulls(&self) -> Option<&arrow::buffer::NullBuffer> {
         self.inner.nulls()
     }
 
@@ -236,7 +235,7 @@ impl Series {
         self.inner.get_lit(idx)
     }
 
-    pub fn to_literals(&self) -> impl ExactSizeIterator<Item = Literal> + use<'_> + TrustedLen {
+    pub fn to_literals(&self) -> impl ExactSizeIterator<Item = Literal> + use<'_> {
         (0..self.len()).map(|i| self.get_lit(i))
     }
 }
