@@ -296,4 +296,53 @@ mod tests {
         assert_eq!(s.data_type(), &DataType::List(Box::new(DataType::Int32)));
         assert_eq!(s.len(), 2);
     }
+
+    /// Helper: build a Daft Field from an arrow field with extension metadata.
+    /// This populates the EXTENSION_TYPE_REGISTRY so to_arrow() can reverse coercion.
+    fn ext_field(
+        name: &str,
+        ext_name: &str,
+        storage_type: arrow::datatypes::DataType,
+    ) -> Arc<Field> {
+        use std::collections::HashMap;
+
+        let mut metadata = HashMap::new();
+        metadata.insert("ARROW:extension:name".to_string(), ext_name.to_string());
+        let arrow_field =
+            arrow::datatypes::Field::new(name, storage_type, true).with_metadata(metadata);
+        Arc::new(Field::try_from(&arrow_field).unwrap())
+    }
+
+    #[test]
+    fn extension_binary_roundtrip() {
+        // Extension with Binary storage: Binary arrow array → from_arrow (casts to LargeBinary)
+        // → to_arrow (casts back to Binary)
+        let data: Vec<Option<&[u8]>> = vec![Some(b"foo"), None, Some(b"bar")];
+        let arr = Arc::new(arrow::array::BinaryArray::from_iter(data.into_iter()));
+        let field = ext_field("test", "test_ext_bin", arrow::datatypes::DataType::Binary);
+
+        let s = Series::from_arrow(field, arr).unwrap();
+        assert!(matches!(s.data_type(), DataType::Extension(..)));
+
+        // to_arrow should reverse the coercion back to Binary
+        let out = s.to_arrow().unwrap();
+        assert_eq!(out.data_type(), &arrow::datatypes::DataType::Binary);
+        assert_eq!(out.len(), 3);
+        assert!(out.is_null(1));
+    }
+
+    #[test]
+    fn extension_utf8_roundtrip() {
+        // Extension with Utf8 storage: Utf8 arrow array → from_arrow (casts to LargeUtf8)
+        // → to_arrow (casts back to Utf8)
+        let arr = Arc::new(StringArray::from(vec![Some("a"), Some("b")]));
+        let field = ext_field("test", "test_ext_str", arrow::datatypes::DataType::Utf8);
+
+        let s = Series::from_arrow(field, arr).unwrap();
+        assert!(matches!(s.data_type(), DataType::Extension(..)));
+
+        let out = s.to_arrow().unwrap();
+        assert_eq!(out.data_type(), &arrow::datatypes::DataType::Utf8);
+        assert_eq!(out.len(), 2);
+    }
 }

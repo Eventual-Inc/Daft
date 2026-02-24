@@ -1787,4 +1787,29 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    fn test_from_arrow_auto_casts_extension_type() -> DaftResult<()> {
+        use arrow::array::BinaryArray;
+
+        // Extension type with Binary inner storage — the arrow array comes in as
+        // small Binary but Daft internally stores Binary as LargeBinary.
+        let ext_dtype =
+            DataType::Extension("custom_ext".to_string(), Box::new(DataType::Binary), None);
+
+        let binary_arr: ArrayRef = Arc::new(BinaryArray::from(vec![
+            Some(b"foo" as &[u8]),
+            None,
+            Some(b"bar"),
+        ]));
+
+        let schema = Schema::new(vec![Field::new("ext_col", ext_dtype.clone())]);
+
+        let rb = RecordBatch::from_arrow(schema, vec![binary_arr])?;
+
+        assert_eq!(rb.num_rows(), 3);
+        assert_eq!(rb.get_column(0).data_type(), &ext_dtype);
+
+        Ok(())
+    }
 }

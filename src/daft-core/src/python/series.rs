@@ -536,11 +536,6 @@ impl ToPyArrow for Series {
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let array = self.to_arrow()?;
         let target_field = self.field().to_arrow()?;
-        let array = if array.data_type() != target_field.data_type() {
-            arrow::compute::cast(&array, target_field.data_type()).map_err(DaftError::from)?
-        } else {
-            array
-        };
 
         let schema = Box::new(arrow::ffi::FFI_ArrowSchema::try_from(target_field).map_err(
             |e| {
