@@ -8,7 +8,9 @@ use arrow_array::{
     },
 };
 use common_error::{DaftError, DaftResult};
-use common_metrics::{DURATION_KEY, QueryID, Stat, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl};
+use common_metrics::{
+    DURATION_KEY, QueryID, Stat, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl,
+};
 use daft_core::prelude::{DataType, Field, Schema, TimeUnit};
 use daft_recordbatch::RecordBatch;
 
@@ -62,7 +64,7 @@ impl ExecutionMetadata {
             Field::new("name", DataType::Utf8),
             Field::new("type", DataType::Utf8),
             Field::new("category", DataType::Utf8),
-            Field::new("duration us", DataType::Duration(TimeUnit::Microseconds)),
+            Field::new("duration", DataType::Duration(TimeUnit::Microseconds)),
             Field::new(
                 "stats",
                 DataType::Map {
@@ -79,7 +81,7 @@ impl ExecutionMetadata {
         let mut names = LargeStringBuilder::new();
         let mut types = LargeStringBuilder::new();
         let mut categories = LargeStringBuilder::new();
-        let mut duration_us_values = DurationMicrosecondBuilder::new();
+        let mut duration_values = DurationMicrosecondBuilder::new();
         let stats_values = StructBuilder::from_fields(
             vec![
                 arrow_schema::Field::new("value", arrow_schema::DataType::Float64, false),
@@ -98,10 +100,10 @@ impl ExecutionMetadata {
                 // Note: Always expect one stat for duration by the execution engine
                 // TODO: Add checks just in case
                 if name.as_ref() == DURATION_KEY {
-                    let Stat::Duration(duration_us) = value else {
-                        panic!("duration us is always a Duration in stats");
+                    let Stat::Duration(duration) = value else {
+                        panic!("`duration` metric is always a Stat::Duration in stats");
                     };
-                    duration_us_values.append_value(duration_us.as_micros() as i64);
+                    duration_values.append_value(duration.as_micros() as i64);
                     continue;
                 }
 
@@ -128,7 +130,7 @@ impl ExecutionMetadata {
                 Arc::new(names.finish()) as ArrayRef,
                 Arc::new(types.finish()) as ArrayRef,
                 Arc::new(categories.finish()) as ArrayRef,
-                Arc::new(duration_us_values.finish()) as ArrayRef,
+                Arc::new(duration_values.finish()) as ArrayRef,
                 Arc::new(stats.finish()) as ArrayRef,
             ],
         )
