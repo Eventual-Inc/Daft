@@ -6,23 +6,21 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
 use common_error::DaftResult;
-use common_metrics::QueryEndState;
+use common_metrics::{QueryEndState, QueryPlan};
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
-use daft_local_plan::{
-    ExecutionMetadata, Input, InputId, LocalPhysicalPlanRef, SourceId, translate,
-};
+use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
-use futures::{FutureExt, Stream, future::BoxFuture};
+use futures::{FutureExt, future::BoxFuture};
 use tokio::{runtime::Handle, sync::Mutex};
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
     daft_context::python::PyDaftContext,
-    daft_local_plan::python::PyExecutionMetadata,
+    daft_local_plan::python::PyExecutionStats,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
     pyo3::{Bound, PyAny, PyRef, PyResult, Python, pyclass, pymethods},
@@ -183,6 +181,7 @@ impl NativeExecutor {
         let ctx = BuilderContext::new_with_context(query_id.clone(), additional_context);
         let (mut pipeline, input_senders) =
             translate_physical_plan_to_pipeline(local_physical_plan.as_ref(), &exec_cfg, &ctx)?;
+        let plan_json = pipeline.repr_json();
 
         let (tx, rx) = create_channel(1);
 
@@ -253,6 +252,7 @@ impl NativeExecutor {
 
             let _ = enqueue_input_tx.send(enqueue_msg).await;
             ExecutionEngineResult {
+                query_plan: serde_json::to_string(&plan_json).unwrap().into(),
                 handle,
                 receiver: rx,
             }
@@ -306,7 +306,8 @@ impl Drop for NativeExecutor {
 }
 
 pub struct ExecutionEngineResult {
-    handle: RuntimeTask<DaftResult<ExecutionMetadata>>,
+    query_plan: QueryPlan,
+    handle: RuntimeTask<DaftResult<ExecutionStats>>,
     receiver: Receiver<Arc<MicroPartition>>,
 }
 
@@ -315,7 +316,7 @@ impl ExecutionEngineResult {
         self.receiver.recv().await
     }
 
-    async fn finish(self) -> DaftResult<ExecutionMetadata> {
+    async fn finish(self) -> DaftResult<ExecutionStats> {
         drop(self.receiver);
         let result = self.handle.await;
         match result {
@@ -323,37 +324,6 @@ impl ExecutionEngineResult {
             Ok(Err(e)) => Err(e),
             Err(e) => Err(e),
         }
-    }
-
-    // Should be used independently of next() and finish()
-    pub fn into_stream(self) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
-        struct StreamState {
-            receiver: Receiver<Arc<MicroPartition>>,
-            handle: Option<RuntimeTask<DaftResult<ExecutionMetadata>>>,
-        }
-
-        let state = StreamState {
-            receiver: self.receiver,
-            handle: Some(self.handle),
-        };
-
-        futures::stream::unfold(state, |mut state| async {
-            match state.receiver.recv().await {
-                Some(part) => Some((Ok(part), state)),
-                None => {
-                    if let Some(handle) = state.handle.take() {
-                        let result = handle.await;
-                        match result {
-                            Ok(Ok(_final_stats)) => None,
-                            Ok(Err(e)) => Some((Err(e), state)),
-                            Err(e) => Some((Err(e), state)),
-                        }
-                    } else {
-                        None
-                    }
-                }
-            }
-        })
     }
 }
 
@@ -368,6 +338,20 @@ pub struct PyExecutionEngineResult {
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyExecutionEngineResult {
+    fn query_plan<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let result = self.result.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let result = result.lock().await;
+            let query_plan = result
+                .as_ref()
+                .expect("ExecutionEngineResult.query_plan() should not be called after finish().")
+                .query_plan
+                .clone()
+                .to_string();
+            Ok(query_plan)
+        })
+    }
+
     fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
@@ -394,7 +378,7 @@ impl PyExecutionEngineResult {
                 .expect("ExecutionEngineResult.finish() should not be called more than once.")
                 .finish()
                 .await?;
-            Ok(PyExecutionMetadata::from(stats))
+            Ok(PyExecutionStats::from(stats))
         })
     }
 }

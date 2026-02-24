@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Input;
 #[cfg(feature = "python")]
-use crate::{ExecutionMetadata, LocalPhysicalPlanRef, translate};
+use crate::{ExecutionStats, LocalPhysicalPlanRef, translate};
 
 #[pyclass(module = "daft.daft", name = "LocalPhysicalPlan")]
 #[derive(Debug, Serialize, Deserialize)]
@@ -86,16 +86,16 @@ impl<'py> FromPyObject<'_, 'py> for Input {
     }
 }
 
-#[pyclass(module = "daft.daft", name = "PyExecutionMetadata", frozen)]
+#[pyclass(module = "daft.daft", name = "PyExecutionStats", frozen)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PyExecutionMetadata {
-    inner: Arc<ExecutionMetadata>,
+pub struct PyExecutionStats {
+    inner: Arc<ExecutionStats>,
 }
 
-impl_bincode_py_state_serialization!(PyExecutionMetadata);
+impl_bincode_py_state_serialization!(PyExecutionStats);
 
 #[pymethods]
-impl PyExecutionMetadata {
+impl PyExecutionStats {
     #[getter]
     pub fn query_id(&self) -> String {
         self.inner.query_id.to_string()
@@ -118,8 +118,8 @@ impl PyExecutionMetadata {
     }
 }
 
-impl From<ExecutionMetadata> for PyExecutionMetadata {
-    fn from(inner: ExecutionMetadata) -> Self {
+impl From<ExecutionStats> for PyExecutionStats {
+    fn from(inner: ExecutionStats) -> Self {
         Self {
             inner: Arc::new(inner),
         }
@@ -129,6 +129,6 @@ impl From<ExecutionMetadata> for PyExecutionMetadata {
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyLocalPhysicalPlan>()?;
     parent.add_class::<PyInput>()?;
-    parent.add_class::<PyExecutionMetadata>()?;
+    parent.add_class::<PyExecutionStats>()?;
     Ok(())
 }

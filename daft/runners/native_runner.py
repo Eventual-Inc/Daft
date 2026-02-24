@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import uuid
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,7 @@ from daft.daft import (
     set_compute_runtime_num_worker_threads,
 )
 from daft.errors import UDFException
+from daft.execution.metadata import ExecutionMetadata
 from daft.execution.native_executor import NativeExecutor
 from daft.filesystem import glob_path_with_stats
 from daft.recordbatch import MicroPartition
@@ -31,7 +33,6 @@ from daft.scarf_telemetry import track_runner_on_scarf
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterator
 
-    from daft.execution.metadata import ExecutionMetadata
     from daft.logical.builder import LogicalPlanBuilder
 
 logger = logging.getLogger(__name__)
@@ -75,22 +76,6 @@ class NativeRunner(Runner[MicroPartition]):
     def runner_io(self) -> NativeRunnerIO:
         return NativeRunnerIO()
 
-    def run(self, builder: LogicalPlanBuilder) -> tuple[PartitionCacheEntry, ExecutionMetadata]:
-        results_gen = self.run_iter(builder)
-        result_pset = LocalPartitionSet()
-
-        try:
-            i = 0
-            while True:
-                result = next(results_gen)
-                result_pset.set_partition(i, result)
-                i += 1
-        except StopIteration as e:
-            metadata = e.value
-
-        pset_entry = self.put_partition_set_into_cache(result_pset)
-        return pset_entry, metadata
-
     def run_iter(
         self,
         builder: LogicalPlanBuilder,
@@ -102,9 +87,6 @@ class NativeRunner(Runner[MicroPartition]):
         ctx = get_context()
         query_id = str(uuid.uuid4())
         output_schema = builder.schema()
-
-        # Optimize the logical plan.
-        import sys
 
         entrypoint = "python " + " ".join(sys.argv)
 
@@ -126,7 +108,10 @@ class NativeRunner(Runner[MicroPartition]):
         except Exception as e:
             logger.warning("Failed to send notifications: %s", e)
             pass
+
+        # Optimize the logical plan.
         builder = builder.optimize(ctx.daft_execution_config)
+
         try:
             ctx._notify_optimization_end(query_id, builder.repr_json())
         except Exception as e:
@@ -157,8 +142,8 @@ class NativeRunner(Runner[MicroPartition]):
         except StopIteration as e:
             query_result = PyQueryResult(QueryEndState.Finished, "Query finished")
             ctx._notify_query_end(query_id, query_result)
-            e.value.write_mermaid()
-            return e.value
+            physical_plan_json, execution_stats = e.value
+            return ExecutionMetadata._from_runner_output(execution_stats, query_id, physical_plan_json)
         except KeyboardInterrupt as e:
             query_result = PyQueryResult(QueryEndState.Canceled, "Query canceled by the user.")
             ctx._notify_query_end(query_id, query_result)
@@ -179,3 +164,19 @@ class NativeRunner(Runner[MicroPartition]):
     ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield result.partition()
+
+    def run(self, builder: LogicalPlanBuilder) -> tuple[PartitionCacheEntry, ExecutionMetadata]:
+        results_gen = self.run_iter(builder)
+        result_pset = LocalPartitionSet()
+
+        try:
+            i = 0
+            while True:
+                result = next(results_gen)
+                result_pset.set_partition(i, result)
+                i += 1
+        except StopIteration as e:
+            metadata = e.value
+
+        pset_entry = self.put_partition_set_into_cache(result_pset)
+        return pset_entry, metadata

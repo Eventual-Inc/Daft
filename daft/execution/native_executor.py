@@ -6,7 +6,7 @@ from daft.daft import (
     Input,
     LocalPhysicalPlan,
     PyDaftExecutionConfig,
-    PyExecutionMetadata,
+    PyExecutionStats,
     PyMicroPartition,
 )
 from daft.daft import (
@@ -14,17 +14,14 @@ from daft.daft import (
 )
 from daft.dataframe.display import MermaidOptions
 from daft.event_loop import get_or_init_event_loop
-from daft.execution.metadata import ExecutionMetadata
 from daft.recordbatch import MicroPartition
+from daft.runners.partitioning import LocalMaterializedResult
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Generator, Mapping
 
     from daft.context import DaftContext
     from daft.logical.builder import LogicalPlanBuilder
-    from daft.runners.partitioning import (
-        LocalMaterializedResult,
-    )
 
 
 class NativeExecutor:
@@ -37,12 +34,9 @@ class NativeExecutor:
         inputs: Mapping[int, Input | list[PyMicroPartition]],
         ctx: DaftContext,
         context: dict[str, str] | None,
-    ) -> Generator[LocalMaterializedResult, None, ExecutionMetadata]:
-        from daft.runners.partitioning import (
-            LocalMaterializedResult,
-        )
-
-        result: PyExecutionMetadata | None = None
+    ) -> Generator[LocalMaterializedResult, None, tuple[str, PyExecutionStats]]:
+        stats: PyExecutionStats | None = None
+        query_plan: str | None = None
 
         async def stream_results() -> AsyncGenerator[PyMicroPartition | None, None]:
             result_handle = await self._executor.run(
@@ -52,12 +46,14 @@ class NativeExecutor:
                 dict(inputs),
                 context,
             )
-            nonlocal result
+            nonlocal query_plan
+            query_plan = await result_handle.query_plan()
+            nonlocal stats
             try:
                 async for batch in result_handle:
                     yield batch
             finally:
-                result = await result_handle.finish()
+                stats = await result_handle.finish()
 
         event_loop = get_or_init_event_loop()
         async_exec = stream_results()
@@ -79,8 +75,8 @@ class NativeExecutor:
                 if should_raise_errors_from_close:
                     raise
 
-        assert result is not None
-        return ExecutionMetadata._from_py_execution_metadata(result)
+        assert query_plan is not None and stats is not None
+        return query_plan, stats
 
     def pretty_print(
         self,

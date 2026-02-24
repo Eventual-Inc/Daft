@@ -15,7 +15,7 @@ use common_metrics::{NodeID, QueryEndState, QueryID, ops::NodeInfo, snapshot::St
 use common_runtime::RuntimeTask;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
-use daft_local_plan::ExecutionMetadata;
+use daft_local_plan::ExecutionStats;
 use futures::future;
 use progress_bar::{ProgressBar, make_progress_bar_manager};
 use tokio::{
@@ -69,7 +69,7 @@ impl RuntimeStatsManagerHandle {
 pub struct RuntimeStatsManager {
     node_tx: Arc<mpsc::UnboundedSender<(usize, bool)>>,
     finish_tx: oneshot::Sender<QueryEndState>,
-    stats_manager_task: RuntimeTask<ExecutionMetadata>,
+    stats_manager_task: RuntimeTask<ExecutionStats>,
 }
 
 impl std::fmt::Debug for RuntimeStatsManager {
@@ -264,7 +264,7 @@ impl RuntimeStatsManager {
                 final_snapshot.push((node_info.clone(), event));
             }
 
-            ExecutionMetadata::new(query_id, final_snapshot).with_query_plan(query_plan)
+            ExecutionStats::new(query_id, final_snapshot).with_query_plan(query_plan)
         };
 
         let task_handle = RuntimeTask::new(handle, event_loop);
@@ -279,7 +279,7 @@ impl RuntimeStatsManager {
         RuntimeStatsManagerHandle(self.node_tx.clone())
     }
 
-    pub async fn finish(self, status: QueryEndState) -> ExecutionMetadata {
+    pub async fn finish(self, status: QueryEndState) -> ExecutionStats {
         self.finish_tx
             .send(status)
             .expect("The finish_tx channel was closed");

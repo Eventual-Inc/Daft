@@ -4436,6 +4436,7 @@ class DataFrame:
             result = self._result
             assert result is not None
             result.wait()
+            self._metadata.write_mermaid()
 
     @DataframePublicAPI
     def collect(self, num_preview_rows: int | None = 8) -> "DataFrame":

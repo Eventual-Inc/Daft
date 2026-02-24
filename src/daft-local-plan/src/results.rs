@@ -16,13 +16,13 @@ use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecutionMetadata {
+pub struct ExecutionStats {
     pub query_id: QueryID,
     pub query_plan: Option<serde_json::Value>,
     pub nodes: Vec<(Arc<NodeInfo>, StatSnapshot)>,
 }
 
-impl ExecutionMetadata {
+impl ExecutionStats {
     pub fn new(query_id: QueryID, mut nodes: Vec<(Arc<NodeInfo>, StatSnapshot)>) -> Self {
         nodes.sort_by_key(|(node_info, _)| node_info.id);
         Self {
@@ -37,18 +37,18 @@ impl ExecutionMetadata {
         self
     }
 
-    /// Encode the ExecutionMetadata into a binary format for transmission to scheduler
+    /// Encode the ExecutionStats into a binary format for transmission to scheduler
     pub fn encode(&self) -> Vec<u8> {
         bincode::encode_to_vec(&self.nodes, bincode::config::legacy())
-            .expect("Failed to encode ExecutionMetadata")
+            .expect("Failed to encode ExecutionStats")
     }
 
-    /// Decode the ExecutionMetadata from a binary format received from scheduler
+    /// Decode the ExecutionStats from a binary format received from scheduler
     pub fn decode(bytes: &[u8]) -> Self {
         let (nodes, _): (Vec<(Arc<NodeInfo>, StatSnapshot)>, usize) =
             bincode::decode_from_slice(bytes, bincode::config::legacy())
                 .map_err(|e| {
-                    DaftError::InternalError(format!("Failed to decode ExecutionMetadata: {e}"))
+                    DaftError::InternalError(format!("Failed to decode ExecutionStats: {e}"))
                 })
                 .unwrap();
         Self {
@@ -58,7 +58,7 @@ impl ExecutionMetadata {
         }
     }
 
-    /// Convert the ExecutionMetadata into a RecordBatch for visualization
+    /// Convert the ExecutionStats into a RecordBatch for visualization
     pub fn to_recordbatch(&self) -> DaftResult<RecordBatch> {
         let schema = Schema::new(vec![
             Field::new("id", DataType::UInt64),

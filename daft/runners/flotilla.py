@@ -15,6 +15,7 @@ from daft.daft import (
     LocalPhysicalPlan,
     NativeExecutor,
     PyDaftExecutionConfig,
+    PyExecutionStats,
     PyMicroPartition,
     RayPartitionRef,
     RaySwordfishTask,
@@ -24,7 +25,6 @@ from daft.daft import (
     start_flight_server,
 )
 from daft.event_loop import set_event_loop
-from daft.execution.metadata import ExecutionMetadata
 from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import (
@@ -326,9 +326,7 @@ def try_autoscale(bundles: list[dict[str, int]]) -> None:
     )
 
 
-@ray.remote(
-    num_cpus=0,
-)
+@ray.remote(num_cpus=0)
 class RemoteFlotillaRunner:
     def __init__(self, dashboard_url: str | None = None) -> None:
         if dashboard_url:
@@ -360,7 +358,7 @@ class RemoteFlotillaRunner:
         self.curr_plans[plan.idx()] = plan
         self.curr_result_gens[plan.idx()] = self.plan_runner.run_plan(plan, psets)
 
-    async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | ExecutionMetadata | None:
+    async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | PyExecutionStats | None:
         from daft.runners.ray_runner import (
             PartitionMetadataAccessor,
             RayMaterializedResult,
@@ -372,10 +370,10 @@ class RemoteFlotillaRunner:
             next_partition_ref = None
 
         if next_partition_ref is None:
-            metadata = self.curr_result_gens[plan_id].finish()  # type: ignore[attr-defined]
+            stats: PyExecutionStats = self.curr_result_gens[plan_id].finish()  # type: ignore[attr-defined]
             self.curr_plans.pop(plan_id, None)
             self.curr_result_gens.pop(plan_id, None)
-            return ExecutionMetadata._from_py_execution_metadata(metadata)
+            return stats
 
         metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
             [PartitionMetadata(next_partition_ref.num_rows, next_partition_ref.size_bytes)]
@@ -466,12 +464,12 @@ class FlotillaRunner:
         self,
         plan: DistributedPhysicalPlan,
         partition_sets: dict[str, PartitionSet[RayMaterializedResult]],
-    ) -> Generator[RayMaterializedResult, None, ExecutionMetadata]:
+    ) -> Generator[RayMaterializedResult, None, PyExecutionStats]:
         plan_id = plan.idx()
         ray.get(self.runner.run_plan.remote(plan, partition_sets))
 
         while True:
             result = ray.get(self.runner.get_next_partition.remote(plan_id))
-            if isinstance(result, ExecutionMetadata):
+            if isinstance(result, PyExecutionStats):
                 return result
             yield result
