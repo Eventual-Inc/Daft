@@ -159,9 +159,8 @@ def create_key_filter_udf(
     num_workers: int,
     actor_handles: list[ActorHandle],
     key_spec: KeySpec,
-    filter_batch_size: int | None = None,
 ) -> Callable[[Expression], Expression]:
-    @func.batch(return_dtype=DataType.bool(), batch_size=filter_batch_size)
+    @func.batch(return_dtype=DataType.bool())
     async def key_filter(input: Series) -> Series:
         import os
         import asyncio

@@ -62,10 +62,7 @@ impl OptimizerRule for EliminateCrossJoin {
                 return Ok(Transformed::no(Arc::new(LogicalPlan::Filter(filter))));
             }
             let Filter {
-                input,
-                predicate,
-                batch_size,
-                ..
+                input, predicate, ..
             } = filter;
             flatten_join_inputs(
                 Arc::unwrap_or_clone(input),
@@ -73,7 +70,7 @@ impl OptimizerRule for EliminateCrossJoin {
                 &mut all_inputs,
             )?;
             extract_possible_join_keys(&predicate, &mut possible_join_keys);
-            Some((predicate, batch_size))
+            Some(predicate)
         } else if is_rewriteable(&plan) {
             if !can_flatten_join_inputs(&plan) {
                 return Ok(Transformed::no(plan.arced()));
@@ -101,21 +98,20 @@ impl OptimizerRule for EliminateCrossJoin {
 
             left = Arc::new(LogicalPlan::Project(project));
         }
-        let Some((predicate, batch_size)) = parent_predicate else {
+        let Some(predicate) = parent_predicate else {
             return Ok(Transformed::yes(left));
         };
 
         // If there are no join keys then do nothing:
         if all_join_keys.is_empty() {
-            let f = Filter::try_new(left, predicate)?.with_batch_size(batch_size);
+            let f = Filter::try_new(left, predicate)?;
 
             Ok(Transformed::yes(Arc::new(LogicalPlan::Filter(f))))
         } else {
             // Remove join expressions from filter:
             match remove_join_expressions(predicate, &all_join_keys) {
                 Some(filter_expr) => {
-                    let f =
-                        Filter::try_new(left, Arc::new(filter_expr))?.with_batch_size(batch_size);
+                    let f = Filter::try_new(left, Arc::new(filter_expr))?;
 
                     Ok(Transformed::yes(Arc::new(LogicalPlan::Filter(f))))
                 }

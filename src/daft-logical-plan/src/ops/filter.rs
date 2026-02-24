@@ -22,7 +22,6 @@ pub struct Filter {
     // The Boolean expression to filter on.
     pub predicate: ExprRef,
     pub stats_state: StatsState,
-    pub batch_size: Option<usize>,
 }
 
 impl Filter {
@@ -45,7 +44,6 @@ impl Filter {
             input,
             predicate,
             stats_state: StatsState::NotMaterialized,
-            batch_size: None,
         })
     }
 
@@ -56,11 +54,6 @@ impl Filter {
 
     pub fn with_node_id(mut self, node_id: usize) -> Self {
         self.node_id = Some(node_id);
-        self
-    }
-
-    pub fn with_batch_size(mut self, batch_size: Option<usize>) -> Self {
-        self.batch_size = batch_size;
         self
     }
 
@@ -82,9 +75,6 @@ impl Filter {
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![format!("Filter: {}", self.predicate)];
-        if let Some(batch_size) = self.batch_size {
-            res.push(format!("Batch Size = {}", batch_size));
-        }
         if let StatsState::Materialized(stats) = &self.stats_state {
             res.push(format!("Stats = {}", stats));
         }

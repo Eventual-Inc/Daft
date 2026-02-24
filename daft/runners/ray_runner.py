@@ -536,7 +536,6 @@ def _maybe_apply_skip_existing(builder: LogicalPlanBuilder) -> tuple[LogicalPlan
             num_workers = spec.num_workers
             cpus_per_worker = spec.cpus_per_worker
             read_kwargs = spec.read_kwargs
-            filter_batch_size = spec.filter_batch_size
             keys_load_batch_size = spec.keys_load_batch_size
             max_concurrency_per_worker = spec.max_concurrency_per_worker
             strict_path_check = spec.strict_path_check
@@ -590,7 +589,6 @@ def _maybe_apply_skip_existing(builder: LogicalPlanBuilder) -> tuple[LogicalPlan
                 num_workers,
                 actor_handles,
                 key_spec,
-                filter_batch_size,
             )(key_expr)
             cleanup_items.append((actor_handles, placement_group))
             predicates.append(key_filter_expr)

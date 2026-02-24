@@ -15,7 +15,6 @@ pub(crate) struct FilterNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     predicate: BoundExpr,
-    batch_size: Option<usize>,
     child: DistributedPipelineNode,
 }
 
@@ -26,7 +25,6 @@ impl FilterNode {
         node_id: NodeID,
         plan_config: &PlanConfig,
         predicate: BoundExpr,
-        batch_size: Option<usize>,
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
@@ -45,7 +43,6 @@ impl FilterNode {
             config,
             context,
             predicate,
-            batch_size,
             child,
         }
     }
@@ -69,11 +66,7 @@ impl PipelineNodeImpl for FilterNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let mut res = vec![format!("Filter: {}", self.predicate)];
-        if let Some(batch_size) = self.batch_size {
-            res.push(format!("Batch Size = {}", batch_size));
-        }
-        res
+        vec![format!("Filter: {}", self.predicate)]
     }
 
     fn produce_tasks(
@@ -83,13 +76,11 @@ impl PipelineNodeImpl for FilterNode {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
         let predicate = self.predicate.clone();
-        let batch_size = self.batch_size;
         let node_id = self.node_id();
         input_node.pipeline_instruction(self, move |input| {
             LocalPhysicalPlan::filter(
                 input,
                 predicate.clone(),
-                batch_size,
                 StatsState::NotMaterialized,
                 LocalNodeContext {
                     origin_node_id: Some(node_id as usize),

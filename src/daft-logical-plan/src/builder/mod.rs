@@ -379,21 +379,18 @@ impl LogicalPlanBuilder {
                 Ok(Transformed::no(node))
             }
             fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-                if let LogicalPlan::SkipExisting(ops::SkipExisting { input, spec, .. }) =
-                    node.as_ref()
-                {
+                if let LogicalPlan::SkipExisting(skip_existing) = node.as_ref() {
+                    let input = skip_existing.input.clone();
                     let pred_opt = self.predicates[self.idx].clone();
                     self.idx += 1;
                     if let Some(predicate) = pred_opt {
                         let expr_resolver =
                             ExprResolver::builder().allow_actor_pool_udf(true).build();
                         let resolved = expr_resolver.resolve_single(predicate, input.clone())?;
-                        let new_lp: LogicalPlan = ops::Filter::try_new(input.clone(), resolved)?
-                            .with_batch_size(spec.filter_batch_size)
-                            .into();
+                        let new_lp: LogicalPlan = ops::Filter::try_new(input, resolved)?.into();
                         return Ok(Transformed::yes(Arc::new(new_lp)));
                     }
-                    return Ok(Transformed::yes(input.clone()));
+                    return Ok(Transformed::yes(input));
                 }
                 Ok(Transformed::no(node))
             }
@@ -1182,7 +1179,7 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.filter(predicate.expr)?.into())
     }
 
-    #[pyo3(signature = (existing_path, file_format, key_column, io_config=None, read_kwargs=None, num_workers=None, cpus_per_worker=None, filter_batch_size=None, keys_load_batch_size=None, max_concurrency_per_worker=None, strict_path_check=false))]
+    #[pyo3(signature = (existing_path, file_format, key_column, io_config=None, read_kwargs=None, num_workers=None, cpus_per_worker=None, keys_load_batch_size=None, max_concurrency_per_worker=None, strict_path_check=false))]
     #[allow(clippy::too_many_arguments)]
     pub fn skip_existing(
         &self,
@@ -1194,7 +1191,6 @@ impl PyLogicalPlanBuilder {
         read_kwargs: Option<pyo3::Py<pyo3::PyAny>>,
         num_workers: Option<usize>,
         cpus_per_worker: Option<f64>,
-        filter_batch_size: Option<usize>,
         keys_load_batch_size: Option<usize>,
         max_concurrency_per_worker: Option<usize>,
         strict_path_check: bool,
@@ -1219,7 +1215,6 @@ impl PyLogicalPlanBuilder {
             read_kwargs,
             num_workers,
             cpus_per_worker,
-            filter_batch_size,
             keys_load_batch_size,
             max_concurrency_per_worker,
             strict_path_check,
@@ -1248,8 +1243,8 @@ impl PyLogicalPlanBuilder {
                 Ok(Transformed::no(node))
             }
             fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-                if let LogicalPlan::SkipExisting(ops::SkipExisting { spec, .. }) = node.as_ref() {
-                    self.specs.push(spec.clone());
+                if let LogicalPlan::SkipExisting(skip_existing) = node.as_ref() {
+                    self.specs.push(skip_existing.spec.clone());
                 }
                 Ok(Transformed::no(node))
             }

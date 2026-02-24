@@ -471,10 +471,7 @@ impl JoinAdjList {
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub(super) enum ProjectionOrFilter {
     Projection(Vec<ExprRef>),
-    Filter {
-        predicate: ExprRef,
-        batch_size: Option<usize>,
-    },
+    Filter(ExprRef),
 }
 
 /// Representation of a logical plan as edges between relations, along with additional information needed to
@@ -523,13 +520,8 @@ impl JoinGraph {
 
                     plan = Project::try_new(plan, projections)?.into();
                 }
-                ProjectionOrFilter::Filter {
-                    predicate,
-                    batch_size,
-                } => {
-                    plan = Filter::try_new(plan, predicate)?
-                        .with_batch_size(batch_size)
-                        .into();
+                ProjectionOrFilter::Filter(predicate) => {
+                    plan = Filter::try_new(plan, predicate)?.into();
                 }
             }
         }
@@ -653,9 +645,7 @@ impl JoinGraph {
             .iter()
             .flat_map(|p| match p {
                 ProjectionOrFilter::Projection(projs) => projs.iter(),
-                ProjectionOrFilter::Filter { predicate, .. } => {
-                    std::slice::from_ref(predicate).iter()
-                }
+                ProjectionOrFilter::Filter(f) => std::slice::from_ref(f).iter(),
             })
             .collect();
         let mut check_idx = 0;
@@ -881,18 +871,12 @@ impl JoinGraphBuilder {
                     cur_node = input;
                 }
                 LogicalPlan::Filter(Filter {
-                    input,
-                    predicate,
-                    batch_size,
-                    ..
+                    input, predicate, ..
                 }) => {
                     let new_predicate =
                         replace_columns_with_expressions(predicate.clone(), &self.final_name_map);
                     self.final_projections_and_filters
-                        .push(ProjectionOrFilter::Filter {
-                            predicate: new_predicate,
-                            batch_size: *batch_size,
-                        });
+                        .push(ProjectionOrFilter::Filter(new_predicate));
                     // Continue to children.
                     cur_node = input;
                 }

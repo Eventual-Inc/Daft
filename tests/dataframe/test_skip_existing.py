@@ -8,14 +8,13 @@ Notes:
 
 from __future__ import annotations
 
-import io
 from pathlib import Path
 
 import pytest
 
 import daft
 from daft import col
-from daft.daft import FileFormat, WriteMode
+from daft.daft import FileFormat
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -405,56 +404,6 @@ def test_skip_existing_jsonl_and_ndjson_format_aliases(tmp_path: Path, fmt_alias
     df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
     out = df.skip_existing(existing_path=ckpt_dir, key_column="id", file_format=fmt_alias).collect()
     assert out.select("id").to_pydict()["id"] == [3]
-
-
-@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_skip_existing_batch_size_visible_in_explain(tmp_path: Path):
-    root_dir = tmp_path / "out"
-    seed_df = daft.from_pydict({"id": [1, 2], "val": ["a", "b"]})
-    seed_df.write_parquet(str(root_dir), write_mode="overwrite")
-
-    df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]}).skip_existing(
-        existing_path=root_dir,
-        key_column="id",
-        file_format="parquet",
-        filter_batch_size=10,
-        keys_load_batch_size=1,
-    )
-
-    buf = io.StringIO()
-    from daft.context import get_context
-
-    io_config = get_context().daft_planning_config.default_io_config
-    write_builder = df._builder.write_tabular(
-        root_dir=root_dir,
-        write_mode=WriteMode.from_str("append"),
-        file_format=FileFormat.Parquet,
-        io_config=io_config,
-    )
-    specs = write_builder._builder.get_skip_existing_specs()
-    assert len(specs) == 1
-    assert specs[0].filter_batch_size == 10
-    assert specs[0].keys_load_batch_size == 1
-
-    pred = (col("id") > 0)._expr
-    applied = write_builder._builder.apply_skip_existing_predicates([pred])
-    from daft.logical.builder import LogicalPlanBuilder
-
-    applied_builder = LogicalPlanBuilder(applied)
-    write_df = daft.DataFrame(applied_builder)
-    write_df.explain(show_all=True, file=buf)
-    text = buf.getvalue()
-    print(text)
-    assert "Batch Size = 10" in text, text
-    assert "== Optimized Logical Plan ==" in text
-    assert "== Physical Plan ==" in text
-
-    optimized_section = text.split("== Optimized Logical Plan ==")[1].split("== Physical Plan ==")[0]
-    physical_section = text.split("== Physical Plan ==")[1]
-    assert "SkipExisting:" not in optimized_section, text
-    assert "SkipExisting:" not in physical_section, text
-    assert "Batch Size = 10" in optimized_section, text
-    assert "Batch Size = 10" in physical_section, text
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")

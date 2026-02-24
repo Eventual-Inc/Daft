@@ -1837,7 +1837,6 @@ class SkipExistingSpec:
     read_kwargs: dict[str, Any] | None
     num_workers: int | None
     cpus_per_worker: float | None
-    filter_batch_size: int | None
     keys_load_batch_size: int | None
     max_concurrency_per_worker: int | None
     strict_path_check: bool
@@ -1968,7 +1967,6 @@ class LogicalPlanBuilder:
         read_kwargs: dict[str, Any] | None = None,
         num_workers: int | None = None,
         cpus_per_worker: float | None = None,
-        filter_batch_size: int | None = None,
         keys_load_batch_size: int | None = None,
         max_concurrency_per_worker: int | None = None,
         strict_path_check: bool = False,

@@ -618,13 +618,9 @@ mod tests {
                     LogicalPlan::Filter(filter) => filter.clone(),
                     _ => return Ok(Transformed::no(node)),
                 };
-                let batch_size = filter.batch_size;
                 let new_predicate = filter.predicate.or(lit(false));
                 Ok(Transformed::yes(
-                    LogicalPlan::from(
-                        Filter::try_new(filter.input, new_predicate)?.with_batch_size(batch_size),
-                    )
-                    .into(),
+                    LogicalPlan::from(Filter::try_new(filter.input, new_predicate)?).into(),
                 ))
             })
         }
@@ -649,13 +645,9 @@ mod tests {
                     LogicalPlan::Filter(filter) => filter.clone(),
                     _ => return Ok(Transformed::no(node)),
                 };
-                let batch_size = filter.batch_size;
                 let new_predicate = filter.predicate.and(lit(true));
                 Ok(Transformed::yes(
-                    LogicalPlan::from(
-                        Filter::try_new(filter.input, new_predicate)?.with_batch_size(batch_size),
-                    )
-                    .into(),
+                    LogicalPlan::from(Filter::try_new(filter.input, new_predicate)?).into(),
                 ))
             })
         }

@@ -22,7 +22,6 @@ pub use crate::ops::*;
 use crate::stats::{PlanStats, StatsState};
 
 /// Logical plan for a Daft query.
-#[allow(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub enum LogicalPlan {
@@ -31,7 +30,7 @@ pub enum LogicalPlan {
     Project(Project),
     UDFProject(UDFProject),
     Filter(Filter),
-    SkipExisting(SkipExisting),
+    SkipExisting(Box<SkipExisting>),
     IntoBatches(IntoBatches),
     Limit(Limit),
     Offset(Offset),
@@ -151,7 +150,7 @@ impl LogicalPlan {
                 projected_schema, ..
             }) => projected_schema.clone(),
             Self::Filter(Filter { input, .. }) => input.schema(),
-            Self::SkipExisting(SkipExisting { input, .. }) => input.schema(),
+            Self::SkipExisting(skip_existing) => skip_existing.input.schema(),
             Self::IntoBatches(IntoBatches { input, .. }) => input.schema(),
             Self::Limit(Limit { input, .. }) => input.schema(),
             Self::Offset(Offset { input, .. }) => input.schema(),
@@ -378,12 +377,12 @@ impl LogicalPlan {
 
     pub fn stats_state(&self) -> &StatsState {
         match self {
+            Self::SkipExisting(skip_existing) => &skip_existing.stats_state,
             Self::Source(Source { stats_state, .. })
             | Self::Shard(Shard { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::UDFProject(UDFProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
-            | Self::SkipExisting(SkipExisting { stats_state, .. })
             | Self::IntoBatches(IntoBatches { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
             | Self::Offset(Offset { stats_state, .. })
@@ -424,7 +423,9 @@ impl LogicalPlan {
             Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
             Self::UDFProject(plan) => Self::UDFProject(plan.with_materialized_stats()),
             Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
-            Self::SkipExisting(plan) => Self::SkipExisting(plan.with_materialized_stats()),
+            Self::SkipExisting(plan) => {
+                Self::SkipExisting(Box::new(plan.with_materialized_stats()))
+            }
             Self::IntoBatches(plan) => Self::IntoBatches(plan.with_materialized_stats()),
             Self::Limit(plan) => Self::Limit(plan.with_materialized_stats()),
             Self::Offset(plan) => Self::Offset(plan.with_materialized_stats()),
@@ -495,7 +496,7 @@ impl LogicalPlan {
             Self::Project(Project { input, .. }) => vec![input],
             Self::UDFProject(UDFProject { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
-            Self::SkipExisting(SkipExisting { input, .. }) => vec![input],
+            Self::SkipExisting(skip_existing) => vec![&skip_existing.input],
             Self::IntoBatches(IntoBatches { input, .. }) => vec![input],
             Self::Limit(Limit { input, .. }) => vec![input],
             Self::Offset(Offset { input, .. }) => vec![input],
@@ -542,18 +543,12 @@ impl LogicalPlan {
                     UDFProject::try_new(input.clone(), expr.clone(), passthrough_columns.clone())
                         .unwrap(),
                 ),
-                Self::Filter(Filter {
-                    predicate,
-                    batch_size,
-                    ..
-                }) => Self::Filter(
-                    Filter::try_new(input.clone(), predicate.clone())
-                        .unwrap()
-                        .with_batch_size(*batch_size),
-                ),
-                Self::SkipExisting(SkipExisting { spec, .. }) => {
-                    Self::SkipExisting(SkipExisting::try_new(input.clone(), spec.clone()).unwrap())
+                Self::Filter(Filter { predicate, .. }) => {
+                    Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap())
                 }
+                Self::SkipExisting(skip_existing) => Self::SkipExisting(Box::new(
+                    SkipExisting::try_new(input.clone(), skip_existing.spec.clone()).unwrap(),
+                )),
                 Self::IntoBatches(IntoBatches { batch_size, .. }) => {
                     Self::IntoBatches(IntoBatches::new(input.clone(), *batch_size))
                 }
@@ -854,12 +849,12 @@ impl LogicalPlan {
 
     pub fn plan_id(&self) -> &Option<usize> {
         match self {
+            Self::SkipExisting(skip_existing) => &skip_existing.plan_id,
             Self::Source(Source { plan_id, .. })
             | Self::Shard(Shard { plan_id, .. })
             | Self::Project(Project { plan_id, .. })
             | Self::UDFProject(UDFProject { plan_id, .. })
             | Self::Filter(Filter { plan_id, .. })
-            | Self::SkipExisting(SkipExisting { plan_id, .. })
             | Self::IntoBatches(IntoBatches { plan_id, .. })
             | Self::Limit(Limit { plan_id, .. })
             | Self::Offset(Offset { plan_id, .. })
@@ -886,12 +881,12 @@ impl LogicalPlan {
 
     pub fn node_id(&self) -> &Option<usize> {
         match self {
+            Self::SkipExisting(skip_existing) => &skip_existing.node_id,
             Self::Source(Source { node_id, .. })
             | Self::Shard(Shard { node_id, .. })
             | Self::Project(Project { node_id, .. })
             | Self::UDFProject(UDFProject { node_id, .. })
             | Self::Filter(Filter { node_id, .. })
-            | Self::SkipExisting(SkipExisting { node_id, .. })
             | Self::IntoBatches(IntoBatches { node_id, .. })
             | Self::Limit(Limit { node_id, .. })
             | Self::Offset(Offset { node_id, .. })
@@ -925,7 +920,7 @@ impl LogicalPlan {
             Self::UDFProject(project) => Self::UDFProject(project.with_plan_id(plan_id)),
             Self::Filter(filter) => Self::Filter(filter.with_plan_id(plan_id)),
             Self::SkipExisting(skip_existing) => {
-                Self::SkipExisting(skip_existing.with_plan_id(plan_id))
+                Self::SkipExisting(Box::new(skip_existing.with_plan_id(plan_id)))
             }
             Self::IntoBatches(into_batches) => {
                 Self::IntoBatches(into_batches.with_plan_id(plan_id))
@@ -966,7 +961,7 @@ impl LogicalPlan {
             Self::UDFProject(project) => Self::UDFProject(project.with_node_id(node_id)),
             Self::Filter(filter) => Self::Filter(filter.with_node_id(node_id)),
             Self::SkipExisting(skip_existing) => {
-                Self::SkipExisting(skip_existing.with_node_id(node_id))
+                Self::SkipExisting(Box::new(skip_existing.with_node_id(node_id)))
             }
             Self::IntoBatches(into_batches) => {
                 Self::IntoBatches(into_batches.with_node_id(node_id))
@@ -1078,6 +1073,19 @@ macro_rules! impl_from_data_struct_for_logical_plan {
             }
         }
     };
+    ($name:ident, $ctor:expr) => {
+        impl From<$name> for LogicalPlan {
+            fn from(data: $name) -> Self {
+                ($ctor)(data)
+            }
+        }
+
+        impl From<$name> for Arc<LogicalPlan> {
+            fn from(data: $name) -> Self {
+                Self::new(($ctor)(data))
+            }
+        }
+    };
 }
 
 impl_from_data_struct_for_logical_plan!(Source);
@@ -1101,6 +1109,8 @@ impl_from_data_struct_for_logical_plan!(Join);
 impl_from_data_struct_for_logical_plan!(Sink);
 impl_from_data_struct_for_logical_plan!(Sample);
 impl_from_data_struct_for_logical_plan!(MonotonicallyIncreasingId);
-impl_from_data_struct_for_logical_plan!(SkipExisting);
+impl_from_data_struct_for_logical_plan!(SkipExisting, |data| LogicalPlan::SkipExisting(Box::new(
+    data
+)));
 impl_from_data_struct_for_logical_plan!(Window);
 impl_from_data_struct_for_logical_plan!(TopN);

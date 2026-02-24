@@ -2344,7 +2344,6 @@ class DataFrame:
         io_config: IOConfig | None = None,
         num_workers: int = 4,
         cpus_per_worker: float = 1.0,
-        filter_batch_size: int | None = None,
         keys_load_batch_size: int = 100000,
         max_concurrency_per_worker: int = 1,
         strict_path_check: bool = False,
@@ -2366,7 +2365,6 @@ class DataFrame:
             num_workers: Number of workers used to shard the existing keys for filtering.
                 Higher values increase parallelism and typically reduce per-worker memory usage.
             cpus_per_worker: Number of CPUs to allocate per worker.
-            filter_batch_size: Batch size for filtering. If None, uses default batch size.
             keys_load_batch_size: Batch size when loading keys from existing data into workers.
             max_concurrency_per_worker: Maximum concurrency for per-worker operations.
             strict_path_check: If True, raise an error when the path doesn't exist.
@@ -2424,7 +2422,6 @@ class DataFrame:
             read_kwargs=(reader_args or None),
             num_workers=num_workers,
             cpus_per_worker=cpus_per_worker,
-            filter_batch_size=filter_batch_size,
             keys_load_batch_size=keys_load_batch_size,
             max_concurrency_per_worker=max_concurrency_per_worker,
             strict_path_check=strict_path_check,
