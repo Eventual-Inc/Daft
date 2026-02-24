@@ -433,14 +433,16 @@ impl SQLPlanner<'_> {
                 groupby_exprs = match expressions.as_slice() {
                     [sqlparser::ast::Expr::Rollup(exprs)] => {
                         rollup = true;
-                        let mut out = Vec::new();
+                        let mut items = Vec::new();
                         for expr_list in exprs {
                             if expr_list.len() > 1 {
                                 unsupported_sql_err!("nested ROLLUP's are not supported");
                             }
-                            out.push(self.plan_expr(&expr_list[0])?);
+                            let expr = &expr_list[0];
+                            let planned = self.plan_expr(expr)?;
+                            items.push((planned, derived_ast(expr)));
                         }
-                        out
+                        alias_conflicting_groupby_names(items)
                     }
                     exprs => self.plan_group_by_items(projections.as_slice(), exprs)?,
                 };
@@ -543,7 +545,7 @@ impl SQLPlanner<'_> {
         select_items: &[ExprRef],
         exprs: &[ast::Expr],
     ) -> SQLPlannerResult<Vec<ExprRef>> {
-        let mut group_by_items = vec![];
+        let mut items = vec![];
         for expr in exprs {
             if let ast::Expr::Value(ast::ValueWithSpan {
                 value: ast::Value::Number(number, _),
@@ -567,13 +569,13 @@ impl SQLPlanner<'_> {
                         select_items.len()
                     );
                 }
-                group_by_items.push(select_items[pos - 1].clone());
+                items.push((select_items[pos - 1].clone(), None));
             } else {
                 let group_by_item = self.plan_expr(expr)?;
-                group_by_items.push(group_by_item);
+                items.push((group_by_item, derived_ast(expr)));
             }
         }
-        Ok(group_by_items)
+        Ok(alias_conflicting_groupby_names(items))
     }
 
     fn plan_non_agg_query(
@@ -608,6 +610,17 @@ impl SQLPlanner<'_> {
 
         let schema = self.current_plan_ref().schema();
 
+        // Build a map from inner expression → output column name.
+        // GROUP BY expressions may be aliased (e.g. `(ClientIP - 1).alias("(ClientIP - 1)")`)
+        // so we unwrap aliases to match against unaliased projection expressions.
+        let groupby_name_map: HashMap<ExprRef, String> = groupby_exprs
+            .iter()
+            .map(|e| match e.as_ref() {
+                Expr::Alias(inner, name) => (inner.clone(), name.to_string()),
+                _ => (e.clone(), e.name().to_string()),
+            })
+            .collect();
+
         let projections = projections
             .into_iter()
             .map(|expr| {
@@ -616,12 +629,12 @@ impl SQLPlanner<'_> {
                     resolved_col(expr.name())
                 // if the projection is the same as one in a groupby, we don't need to reevaluate it again
                 //  just reuse the existing column
-                } else if groupby_exprs.contains(&expr) {
-                    resolved_col(expr.name())
+                } else if let Some(output_name) = groupby_name_map.get(&expr) {
+                    resolved_col(output_name.as_str())
                 // similarly, if its the same as above, but an alias, the same logic applies
                 } else if let Expr::Alias(inner, name) = expr.as_ref() {
-                    if groupby_exprs.contains(inner) {
-                        resolved_col(inner.name()).alias(name.as_ref())
+                    if let Some(output_name) = groupby_name_map.get(inner) {
+                        resolved_col(output_name.as_str()).alias(name.as_ref())
                     } else {
                         expr
                     }
@@ -1991,6 +2004,43 @@ impl SQLPlanner<'_> {
             }
         }
     }
+}
+
+/// Returns `Some(ast_expr)` for derived GROUP BY expressions (candidates for aliasing),
+/// `None` for plain column references that should keep their original name.
+fn derived_ast(expr: &ast::Expr) -> Option<&ast::Expr> {
+    if matches!(
+        expr,
+        ast::Expr::Identifier(_) | ast::Expr::CompoundIdentifier(_)
+    ) {
+        None
+    } else {
+        Some(expr)
+    }
+}
+
+/// When multiple GROUP BY expressions share the same `name()` (e.g. `ClientIP - 1` and
+/// `ClientIP - 2` both named "ClientIP"), alias the derived ones with DuckDB-style naming
+/// like `(ClientIP - 1)` to avoid ambiguous column references.
+fn alias_conflicting_groupby_names(items: Vec<(ExprRef, Option<&ast::Expr>)>) -> Vec<ExprRef> {
+    let mut name_counts: HashMap<String, usize> = HashMap::new();
+    for (item, _) in &items {
+        *name_counts.entry(item.name().to_string()).or_insert(0) += 1;
+    }
+    items
+        .into_iter()
+        .map(|(item, ast)| {
+            if let Some(ast_expr) = ast {
+                if name_counts.get(item.name()).copied().unwrap_or(0) > 1 {
+                    item.alias(format!("({ast_expr})"))
+                } else {
+                    item
+                }
+            } else {
+                item
+            }
+        })
+        .collect()
 }
 
 /// Checks if the SQL query is valid syntax and doesn't use unsupported features.
