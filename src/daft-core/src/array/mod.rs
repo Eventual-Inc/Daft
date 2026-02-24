@@ -114,8 +114,10 @@ impl<T> DataArray<T> {
             physical_field.dtype
         );
 
-        // Auto-cast if the arrow array type doesn't match the expected physical type
-        // (e.g. Binary → LargeBinary, Utf8 → LargeUtf8).
+        // Validate and optionally auto-cast the arrow array to match Daft's expected
+        // physical type. A coercion is valid when the actual arrow type round-trips
+        // through Daft's type system to the expected arrow type (e.g. arrow Utf8 →
+        // Daft Utf8 → arrow LargeUtf8). Any other mismatch is an error.
         // For Extension types, use the inner storage dtype since Extension itself
         // doesn't have a direct arrow mapping (the registry stores the original type for export).
         let expected = match &physical_field.dtype {
@@ -123,8 +125,30 @@ impl<T> DataArray<T> {
             dt => dt.to_arrow().ok(),
         };
         let arrow_arr = if let Some(expected) = expected {
-            if expected != *arrow_arr.data_type() {
-                cast(arrow_arr.as_ref(), &expected)?.into()
+            let actual = arrow_arr.data_type();
+            if expected != *actual {
+                // Check if the actual arrow type is a valid Daft coercion:
+                // convert actual → Daft DataType → arrow. If it matches expected,
+                // this is a known coercion (e.g. Utf8→LargeUtf8, Binary→LargeBinary).
+                let is_coercible = DataType::try_from(actual)
+                    .and_then(|dt| dt.to_arrow())
+                    .is_ok_and(|roundtripped| roundtripped == expected);
+
+                if is_coercible {
+                    cast(arrow_arr.as_ref(), &expected)
+                        .map_err(|e| {
+                            DaftError::TypeError(format!(
+                                "Failed to auto-cast arrow array from {:?} to {:?} for field '{}' ({}): {}",
+                                actual, expected, physical_field.name, physical_field.dtype, e,
+                            ))
+                        })?
+                        .into()
+                } else {
+                    return Err(DaftError::TypeError(format!(
+                        "Arrow array type mismatch for field '{}': expected {:?} but got {:?}",
+                        physical_field.name, expected, actual,
+                    )));
+                }
             } else {
                 arrow_arr
             }
