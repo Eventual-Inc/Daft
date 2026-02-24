@@ -2,161 +2,163 @@
 //!
 //! This crate defines the `repr(C)` types that Daft and extension shared
 //! libraries use to communicate. It has zero Daft-internal dependencies.
+//!
+//! Naming follows Postgres conventions:
+//! - "module" = the shared library at the ABI boundary
+//! - "extension" = the higher-level Python package wrapping a module
 
 use std::ffi::{c_char, c_int, c_void};
 
 pub use arrow::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
 
-/// Daft ABI version; extensions built against a different version are rejected at load time.
+/// Modules built against a different ABI version are rejected at load time.
 pub const DAFT_ABI_VERSION: u32 = 1;
 
-/// Symbol name that every Daft extension cdylib must export.
-pub const DAFT_EXTENSION_ENTRY_SYMBOL: &str = "daft_extension_entry";
+/// Symbol that every Daft module cdylib must export.
+///
+/// ```ignore
+/// #[no_mangle]
+/// pub extern "C" fn daft_module_magic() -> FFI_Module { ... }
+/// ```
+pub const DAFT_MODULE_MAGIC_SYMBOL: &str = "daft_module_magic";
 
-/// Virtual function table for a scalar function (maps to Daft's `ScalarUDF`).
+/// Module definition returned by the entry point symbol.
+///
+/// Analogous to Postgres's `Pg_magic_struct` + `_PG_init` combined into
+/// a single struct.
+#[repr(C)]
+pub struct FFI_Module {
+    /// Must equal [`DAFT_ABI_VERSION`] or the loader rejects the module.
+    pub daft_abi_version: u32,
+
+    /// Module name as a null-terminated UTF-8 string.
+    ///
+    /// Must remain valid for the lifetime of the process (typically a
+    /// `&'static CStr` cast to `*const c_char`).
+    pub name: *const c_char,
+
+    /// Called by the host to let the module register its functions.
+    ///
+    /// Returns 0 on success, non-zero on error.
+    pub init: unsafe extern "C" fn(session: *mut FFI_SessionContext) -> c_int,
+
+    /// Free a string previously allocated by this module
+    /// (e.g. from `FFI_ScalarFunction::get_return_field` or error messages).
+    pub free_string: unsafe extern "C" fn(s: *mut c_char),
+}
+
+// SAFETY: Function pointers plus a static string pointer.
+unsafe impl Send for FFI_Module {}
+unsafe impl Sync for FFI_Module {}
+
+/// Virtual function table for a scalar function.
 ///
 /// The host calls methods through these function pointers. `ctx` is an opaque
-/// pointer owned by the extension; the host never dereferences it directly.
-///
-/// New optional fields may be appended in future ABI versions.
+/// pointer owned by the module; the host never dereferences it directly.
 #[repr(C)]
-pub struct ExtensionFunction {
-    /// Opaque extension-side context pointer e.g. the extension's self reference.
+pub struct FFI_ScalarFunction {
+    /// Opaque module-side context pointer.
     pub ctx: *const c_void,
 
     /// Return the function name as a null-terminated UTF-8 string.
     ///
-    /// The returned pointer must remain valid until `drop_ctx` is called.
+    /// The returned pointer borrows from `ctx` and is valid until `fini`.
     pub name: unsafe extern "C" fn(ctx: *const c_void) -> *const c_char,
 
     /// Compute the output field given input fields.
     ///
-    /// `args_json` is a null-terminated JSON array of input fields.
-    /// On success, writes a null-terminated JSON string to `*out_json`;
-    /// the caller frees it with `free_string`.
+    /// `args_json` is a null-terminated JSON array of Arrow fields.
+    /// On success, writes a JSON string to `*ret_json`
+    /// (freed by `FFI_Module::free_string`).
+    /// On error, writes a null-terminated message to `*errmsg` (same).
     ///
     /// Returns 0 on success, non-zero on error.
     pub get_return_field: unsafe extern "C" fn(
         ctx: *const c_void,
         args_json: *const c_char,
-        out_json: *mut *mut c_char,
+        ret_json: *mut *mut c_char,
+        errmsg: *mut *mut c_char,
     ) -> c_int,
 
     /// Evaluate the function on Arrow arrays via the C Data Interface.
     ///
+    /// On error, writes a null-terminated message to `*errmsg`
+    /// (freed by `FFI_Module::free_string`).
+    ///
     /// Returns 0 on success, non-zero on error.
     pub call: unsafe extern "C" fn(
-        // Opaque context pointer owned by the extension.
         ctx: *const c_void,
-        // Pointer to exported `ArrowArray` structs.
         args: *const FFI_ArrowArray,
-        // Number of input array args.
-        args_count: usize,
-        // Pointer to exported `ArrowSchema` structs.
         args_schemas: *const FFI_ArrowSchema,
-        // Pointer to the output `ArrowArray` struct.
-        out_array: *mut FFI_ArrowArray,
-        // Pointer to the output `ArrowSchema` struct.
-        out_schema: *mut FFI_ArrowSchema,
+        args_count: usize,
+        ret_array: *mut FFI_ArrowArray,
+        ret_schema: *mut FFI_ArrowSchema,
+        errmsg: *mut *mut c_char,
     ) -> c_int,
 
-    /// Drop the extension-side context, freeing all owned resources.
-    pub drop_ctx: unsafe extern "C" fn(ctx: *mut c_void),
-
-    /// Free a string previously returned by this extension (e.g. from `get_return_field`).
-    pub free_string: unsafe extern "C" fn(s: *mut c_char),
+    /// Finalize the function, freeing all owned resources.
+    pub fini: unsafe extern "C" fn(ctx: *mut c_void),
 }
 
 // SAFETY: The vtable is function pointers plus an opaque ctx pointer.
-// The extension is responsible for thread-safety of ctx.
-unsafe impl Send for ExtensionFunction {}
-unsafe impl Sync for ExtensionFunction {}
+// The module is responsible for thread-safety of ctx.
+unsafe impl Send for FFI_ScalarFunction {}
+unsafe impl Sync for FFI_ScalarFunction {}
 
-/// Host-side context passed to an extension's `install` function.
+/// Host-side session context passed to a module's `init` function.
 ///
-/// The extension calls `create_function` to register scalar functions.
+/// The module calls `define_function` to register scalar functions.
 #[repr(C)]
-pub struct HostSession {
-    /// Opaque host-side context pointer e.g. the host's session reference.
+pub struct FFI_SessionContext {
+    /// Opaque host-side context pointer.
     pub ctx: *mut c_void,
 
     /// Register a scalar function with the host session.
     ///
     /// The host takes ownership of `function` on success.
     /// Returns 0 on success, non-zero on error.
-    pub create_function:
-        unsafe extern "C" fn(ctx: *mut c_void, function: ExtensionFunction) -> c_int,
+    pub define_function:
+        unsafe extern "C" fn(ctx: *mut c_void, function: FFI_ScalarFunction) -> c_int,
 }
 
 // SAFETY: Function pointer plus opaque host pointer.
-unsafe impl Send for HostSession {}
-unsafe impl Sync for HostSession {}
-
-/// Manifest returned by the extension entry point.
-///
-/// Every Daft extension cdylib must export:
-///
-/// ```ignore
-/// #[no_mangle]
-/// pub extern "C" fn daft_extension_entry() -> ExtManifest { .. }
-/// ```
-#[repr(C)]
-pub struct ExtensionManifest {
-    /// Must equal [`DAFT_ABI_VERSION`] or else the loader will reject the extension.
-    pub daft_abi_version: u32,
-
-    /// Extension name as a null-terminated UTF-8 string.
-    ///
-    /// Must remain valid for the lifetime of the process (typically a
-    /// `&'static CStr` cast to `*const c_char`).
-    pub name: *const c_char,
-
-    /// Called by the host to let the extension register its functions.
-    ///
-    /// Returns 0 on success, non-zero on error.
-    pub install: unsafe extern "C" fn(session: *mut HostSession) -> c_int,
-}
-
-// SAFETY: Function pointer plus a static string pointer.
-unsafe impl Send for ExtensionManifest {}
-unsafe impl Sync for ExtensionManifest {}
+unsafe impl Send for FFI_SessionContext {}
+unsafe impl Sync for FFI_SessionContext {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Verify that repr(C) structs have the expected sizes (pointer-width dependent).
     #[test]
     fn struct_sizes() {
         let ptr = std::mem::size_of::<usize>();
 
-        // FunctionVTable: 1 ctx pointer + 5 function pointers = 6 pointers
-        assert_eq!(std::mem::size_of::<ExtensionFunction>(), 6 * ptr);
+        // FFI_ScalarFunction: ctx + name + get_return_field + call + fini = 5 pointers
+        assert_eq!(std::mem::size_of::<FFI_ScalarFunction>(), 5 * ptr);
 
-        // SessionContext: 1 host_ctx pointer + 1 function pointer = 2 pointers
-        assert_eq!(std::mem::size_of::<HostSession>(), 2 * ptr);
+        // FFI_SessionContext: ctx + define_function = 2 pointers
+        assert_eq!(std::mem::size_of::<FFI_SessionContext>(), 2 * ptr);
 
-        // ExtensionManifest: 1 u32 (padded to pointer alignment) + 1 name pointer + 1 fn pointer
-        // On 64-bit: 4 bytes + 4 padding + 8 + 8 = 24
-        // On 32-bit: 4 bytes + 4 + 4 = 12
+        // FFI_Module: u32 (padded) + name + init + free_string
+        // 64-bit: 4 + 4 pad + 8 + 8 + 8 = 32
+        // 32-bit: 4 + 4 + 4 + 4 = 16
         assert_eq!(
-            std::mem::size_of::<ExtensionManifest>(),
-            if ptr == 8 { 24 } else { 12 }
+            std::mem::size_of::<FFI_Module>(),
+            if ptr == 8 { 32 } else { 16 }
         );
     }
 
-    /// Confirm Send + Sync are implemented (compile-time check).
     #[test]
     fn send_and_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
-        assert_send_sync::<ExtensionFunction>();
-        assert_send_sync::<HostSession>();
-        assert_send_sync::<ExtensionManifest>();
+        assert_send_sync::<FFI_ScalarFunction>();
+        assert_send_sync::<FFI_SessionContext>();
+        assert_send_sync::<FFI_Module>();
     }
 
     #[test]
     fn constants() {
         assert_eq!(DAFT_ABI_VERSION, 1);
-        assert_eq!(DAFT_EXTENSION_ENTRY_SYMBOL, "daft_extension_entry");
+        assert_eq!(DAFT_MODULE_MAGIC_SYMBOL, "daft_module_magic");
     }
 }

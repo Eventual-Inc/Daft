@@ -194,6 +194,7 @@ members = [
   "src/daft-dashboard",
   "src/daft-dsl",
   "src/daft-ext-abi",
+  "src/daft-ext-core",
   "src/daft-file",
   "src/daft-functions",
   "src/daft-functions-binary",
@@ -266,6 +267,8 @@ daft-arrow = {path = "src/daft-arrow"}
 daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
+daft-ext-abi = {path = "src/daft-ext-abi", default-features = false}
+daft-ext-core = {path = "src/daft-ext-core", default-features = false}
 daft-file = {path = "src/daft-file"}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-binary = {path = "src/daft-functions-binary"}

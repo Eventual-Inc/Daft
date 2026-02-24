@@ -5,7 +5,7 @@ arrow = {workspace = true, features = ["ffi"]}
 workspace = true
 
 [package]
-description = "Stable C ABI contract between Daft and extension cdylibs"
+description = "Daft extension C ABI contract"
 edition = {workspace = true}
 license = "Apache-2.0"
 name = "daft-ext-abi"

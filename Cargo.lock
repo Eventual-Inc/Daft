@@ -401,6 +401,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6bb63203e8e0e54b288d0d8043ca8fa1013820822a27692ef1b78a977d879f2c"
 dependencies = [
  "bitflags 2.10.0",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -2760,6 +2762,18 @@ name = "daft-ext-abi"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow",
+]
+
+[[package]]
+name = "daft-ext-core"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
+ "daft-ext-abi",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
