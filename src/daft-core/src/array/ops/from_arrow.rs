@@ -80,6 +80,14 @@ impl FromArrow for ListArray {
             )));
         };
 
+        // Auto-cast from List (i32 offsets) to LargeList (i64 offsets) if needed
+        let arrow_arr = if matches!(arrow_arr.data_type(), arrow::datatypes::DataType::List(_)) {
+            let target = field.dtype.to_arrow()?;
+            arrow::compute::cast(arrow_arr.as_ref(), &target)?
+        } else {
+            arrow_arr
+        };
+
         let list_arr = arrow_arr.as_list::<i64>();
         let arrow_child_array = list_arr.values();
         let child_series = Series::from_arrow(

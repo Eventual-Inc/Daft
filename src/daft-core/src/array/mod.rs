@@ -114,23 +114,23 @@ impl<T> DataArray<T> {
             physical_field.dtype
         );
 
-        if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow() {
-            // since daft's Utf8 always maps to Arrow's LargeUtf8, we need to handle this special case
-            // If the expected physical type is LargeUtf8, but the actual Arrow type is Utf8, we need to convert it
-            if expected_arrow_physical_type == arrow::datatypes::DataType::LargeUtf8
-                && arrow_arr.data_type() == &arrow::datatypes::DataType::Utf8
-            {
-                let arr = cast(arrow_arr.as_ref(), &arrow::datatypes::DataType::LargeUtf8)?;
-                let nulls = arr.nulls().cloned().map(Into::into);
-
-                return Ok(Self {
-                    field: physical_field,
-                    data: arr.into(),
-                    nulls,
-                    marker_: PhantomData,
-                });
+        // Auto-cast if the arrow array type doesn't match the expected physical type
+        // (e.g. Binary → LargeBinary, Utf8 → LargeUtf8).
+        // For Extension types, use the inner storage dtype since Extension itself
+        // doesn't have a direct arrow mapping (the registry stores the original type for export).
+        let expected = match &physical_field.dtype {
+            DataType::Extension(_, inner, _) => inner.to_arrow().ok(),
+            dt => dt.to_arrow().ok(),
+        };
+        let arrow_arr = if let Some(expected) = expected {
+            if expected != *arrow_arr.data_type() {
+                cast(arrow_arr.as_ref(), &expected)?.into()
+            } else {
+                arrow_arr
             }
-        }
+        } else {
+            arrow_arr
+        };
 
         let nulls = arrow_arr.nulls().cloned().map(Into::into);
         Ok(Self {
@@ -252,5 +252,48 @@ mod tests {
         let s = Series::from_arrow(daft_fld, data);
         assert!(s.is_ok());
         assert_eq!(s.unwrap().data_type(), &DataType::Utf8);
+    }
+
+    #[test]
+    fn from_small_binary_arrow() {
+        let data: Vec<Option<&[u8]>> = vec![Some(b"hello"), Some(b"world")];
+        let data = Arc::new(arrow::array::BinaryArray::from_iter(data.into_iter()));
+        let daft_fld = Arc::new(Field::new("test", DataType::Binary));
+
+        let s = Series::from_arrow(daft_fld, data);
+        assert!(s.is_ok());
+        assert_eq!(s.unwrap().data_type(), &DataType::Binary);
+    }
+
+    #[test]
+    fn from_small_list_arrow() {
+        use arrow::{
+            array::{Int32Array, ListArray as ArrowListArray},
+            buffer::OffsetBuffer,
+        };
+
+        // Create a List (i32 offsets) array: [[1, 2], [3]]
+        let values = Int32Array::from(vec![1, 2, 3]);
+        let offsets = OffsetBuffer::new(vec![0i32, 2, 3].into());
+        let list = ArrowListArray::new(
+            Arc::new(arrow::datatypes::Field::new(
+                "item",
+                arrow::datatypes::DataType::Int32,
+                true,
+            )),
+            offsets,
+            Arc::new(values),
+            None,
+        );
+        let daft_fld = Arc::new(Field::new(
+            "test",
+            DataType::List(Box::new(DataType::Int32)),
+        ));
+
+        let s = Series::from_arrow(daft_fld, Arc::new(list));
+        assert!(s.is_ok());
+        let s = s.unwrap();
+        assert_eq!(s.data_type(), &DataType::List(Box::new(DataType::Int32)));
+        assert_eq!(s.len(), 2);
     }
 }

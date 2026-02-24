@@ -83,24 +83,7 @@ impl PySeries {
     ) -> PyResult<Self> {
         let (data, field) = array_to_rust(&pyarrow_array)?;
         let daft_field = daft_schema::field::Field::try_from(&field)?.rename(name);
-
-        // For Extension types, get the coerced inner storage type directly
-        // (e.g. Binary → LargeBinary). We can't use Field::to_arrow() here because
-        // it uses the REGISTRY to return the *original* storage type for export,
-        // but internally we need the coerced type.
-        // For all other types, use Field::to_arrow() which handles logical types
-        // like Embedding, Tensor, Image correctly.
-        let target_arrow_dtype = match &daft_field.dtype {
-            DataType::Extension(_, inner_dtype, _) => inner_dtype.to_arrow()?,
-            _ => daft_field.to_arrow()?.data_type().clone(),
-        };
-
         let arr = make_array(data);
-        let arr = if &target_arrow_dtype != field.data_type() {
-            arrow::compute::cast(&arr, &target_arrow_dtype).map_err(DaftError::from)?
-        } else {
-            arr
-        };
 
         let series = if let Some(dtype) = dtype {
             let field = Field::new(name, dtype.into());
