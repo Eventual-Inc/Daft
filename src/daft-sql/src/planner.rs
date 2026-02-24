@@ -610,7 +610,7 @@ impl SQLPlanner<'_> {
 
         let schema = self.current_plan_ref().schema();
 
-        // Build a map from inner expression → output column name.
+        // Build a map from inner expression to output column name.
         // GROUP BY expressions may be aliased (e.g. `(ClientIP - 1).alias("(ClientIP - 1)")`)
         // so we unwrap aliases to match against unaliased projection expressions.
         let groupby_name_map: HashMap<ExprRef, String> = groupby_exprs
