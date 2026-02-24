@@ -4,7 +4,7 @@ use bincode::{Decode, Encode};
 use opentelemetry::KeyValue;
 use serde::{Deserialize, Serialize};
 
-use crate::{ATTR_NODE_ID, ATTR_NODE_TYPE, NodeID};
+use crate::{ATTR_NODE_ID, ATTR_NODE_PHASE, ATTR_NODE_TYPE, CTX_NODE_PHASE, NodeID};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Encode, Decode)]
 pub enum NodeType {
@@ -97,9 +97,15 @@ pub struct NodeInfo {
 
 impl NodeInfo {
     pub fn to_key_values(&self) -> Vec<KeyValue> {
-        vec![
+        let mut kvs = vec![
             KeyValue::new(ATTR_NODE_ID, self.id.to_string()),
             KeyValue::new(ATTR_NODE_TYPE, self.node_type.to_string()),
-        ]
+        ];
+        // Add node phase if found in the context. This happens
+        // in distributed nodes.
+        if let Some(phase) = self.context.get(CTX_NODE_PHASE) {
+            kvs.push(KeyValue::new(ATTR_NODE_PHASE, phase.clone()));
+        }
+        kvs
     }
 }

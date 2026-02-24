@@ -6,7 +6,8 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
+    CTX_NODE_PHASE, Counter, DURATION_KEY, NODE_PHASE_0, NODE_PHASE_1, ROWS_IN_KEY, ROWS_OUT_KEY,
+    StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::DefaultSnapshot,
 };
@@ -30,8 +31,8 @@ use crate::{
     utils::channel::{Sender, create_channel},
 };
 
-const FIRST_LIMIT_STAGE: &str = "0";
-const SECOND_LIMIT_STAGE: &str = "1";
+const FIRST_LIMIT_PHASE: &str = NODE_PHASE_0;
+const SECOND_LIMIT_PHASE: &str = NODE_PHASE_1;
 
 pub struct LimitStats {
     duration_us: Counter,
@@ -67,19 +68,19 @@ impl RuntimeStats for LimitStats {
         match snapshot {
             StatSnapshot::Default(snapshot) => {
                 self.add_cpu_us(snapshot.cpu_us);
-                if let Some(stage) = node_info.context.get("stage") {
+                if let Some(phase) = node_info.context.get(CTX_NODE_PHASE) {
                     // The first limit is used for pruning, the second limit is for the final output
-                    if stage == FIRST_LIMIT_STAGE {
+                    if phase == FIRST_LIMIT_PHASE {
                         self.add_rows_in(snapshot.rows_in);
-                    } else if stage == SECOND_LIMIT_STAGE {
+                    } else if phase == SECOND_LIMIT_PHASE {
                         self.add_rows_out(snapshot.rows_out);
                     }
                 }
             }
             StatSnapshot::Source(snapshot) => {
                 self.add_cpu_us(snapshot.cpu_us);
-                if let Some(stage) = node_info.context.get("stage")
-                    && stage == SECOND_LIMIT_STAGE
+                if let Some(phase) = node_info.context.get(CTX_NODE_PHASE)
+                    && phase == SECOND_LIMIT_PHASE
                 {
                     self.add_rows_out(snapshot.rows_out);
                 }
@@ -230,8 +231,8 @@ impl LimitNode {
                                 LocalNodeContext {
                                     origin_node_id: Some(self.node_id() as usize),
                                     additional: Some(HashMap::from([(
-                                        "stage".to_string(),
-                                        SECOND_LIMIT_STAGE.to_string(),
+                                        CTX_NODE_PHASE.to_string(),
+                                        SECOND_LIMIT_PHASE.to_string(),
                                     )])),
                                 },
                             ),
@@ -244,8 +245,8 @@ impl LimitNode {
                                 self.config.schema.clone(),
                                 self.node_id(),
                                 Some(HashMap::from([(
-                                    "stage".to_string(),
-                                    SECOND_LIMIT_STAGE.to_string(),
+                                    CTX_NODE_PHASE.to_string(),
+                                    SECOND_LIMIT_PHASE.to_string(),
                                 )])),
                             );
 
@@ -270,8 +271,8 @@ impl LimitNode {
                         LocalNodeContext {
                             origin_node_id: Some(self.node_id() as usize),
                             additional: Some(HashMap::from([(
-                                "stage".to_string(),
-                                SECOND_LIMIT_STAGE.to_string(),
+                                CTX_NODE_PHASE.to_string(),
+                                SECOND_LIMIT_PHASE.to_string(),
                             )])),
                         },
                     );
@@ -318,8 +319,8 @@ impl LimitNode {
                             LocalNodeContext {
                                 origin_node_id: Some(node_id as usize),
                                 additional: Some(HashMap::from([(
-                                    "stage".to_string(),
-                                    FIRST_LIMIT_STAGE.to_string(),
+                                    CTX_NODE_PHASE.to_string(),
+                                    FIRST_LIMIT_PHASE.to_string(),
                                 )])),
                             },
                         )

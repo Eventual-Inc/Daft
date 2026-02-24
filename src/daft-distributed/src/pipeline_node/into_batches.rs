@@ -1,7 +1,10 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    CTX_NODE_PHASE, NODE_PHASE_0, NODE_PHASE_1,
+    ops::{NodeCategory, NodeType},
+};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
@@ -20,6 +23,9 @@ use crate::{
     },
     utils::channel::{Sender, create_channel},
 };
+
+const INITIAL_BATCH_PHASE: &str = NODE_PHASE_0;
+const REBATCH_PHASE: &str = NODE_PHASE_1;
 
 pub(crate) struct IntoBatchesNode {
     config: PipelineNodeConfig,
@@ -115,7 +121,10 @@ impl IntoBatchesNode {
                         StatsState::NotMaterialized,
                         LocalNodeContext {
                             origin_node_id: Some(self.node_id() as usize),
-                            additional: None,
+                            additional: Some(HashMap::from([(
+                                CTX_NODE_PHASE.to_string(),
+                                REBATCH_PHASE.to_string(),
+                            )])),
                         },
                     );
                     let builder = SwordfishTaskBuilder::new(plan, self.as_ref())
@@ -140,7 +149,10 @@ impl IntoBatchesNode {
                 StatsState::NotMaterialized,
                 LocalNodeContext {
                     origin_node_id: Some(self.node_id() as usize),
-                    additional: None,
+                    additional: Some(HashMap::from([(
+                        CTX_NODE_PHASE.to_string(),
+                        REBATCH_PHASE.to_string(),
+                    )])),
                 },
             );
             let builder =
@@ -183,7 +195,10 @@ impl PipelineNodeImpl for IntoBatchesNode {
                 StatsState::NotMaterialized,
                 LocalNodeContext {
                     origin_node_id: Some(node_id as usize),
-                    additional: None,
+                    additional: Some(HashMap::from([(
+                        CTX_NODE_PHASE.to_string(),
+                        INITIAL_BATCH_PHASE.to_string(),
+                    )])),
                 },
             )
         });

@@ -138,12 +138,20 @@ pub const ATTR_QUERY_ID: &str = "query.id";
 // Node attributes
 pub const ATTR_NODE_ID: &str = "node.id";
 pub const ATTR_NODE_TYPE: &str = "node.type";
+pub const ATTR_NODE_PHASE: &str = "node.phase";
 
 // Units (UCUM)
 pub const UNIT_ROWS: &str = "{row}";
 pub const UNIT_BYTES: &str = "By";
 pub const UNIT_MICROSECONDS: &str = "us";
 pub const UNIT_TASKS: &str = "{task}";
+
+// Node context keys
+pub const CTX_NODE_PHASE: &str = "phase";
+
+// Node phase values
+pub const NODE_PHASE_0: &str = "0";
+pub const NODE_PHASE_1: &str = "1";
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
