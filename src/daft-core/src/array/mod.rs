@@ -338,6 +338,73 @@ mod tests {
     }
 
     #[test]
+    fn from_small_list_u64_to_large_list_u64() {
+        use arrow::{
+            array::{ListArray as ArrowListArray, UInt64Array},
+            buffer::OffsetBuffer,
+        };
+
+        let values = UInt64Array::from(vec![10u64, 20, 30]);
+        let offsets = OffsetBuffer::new(vec![0i32, 2, 3].into());
+        let list = ArrowListArray::new(
+            Arc::new(arrow::datatypes::Field::new(
+                "item",
+                arrow::datatypes::DataType::UInt64,
+                true,
+            )),
+            offsets,
+            Arc::new(values),
+            None,
+        );
+        let daft_fld = Arc::new(Field::new(
+            "test",
+            DataType::List(Box::new(DataType::UInt64)),
+        ));
+
+        let s = Series::from_arrow(daft_fld, Arc::new(list));
+        assert!(s.is_ok());
+        let s = s.unwrap();
+        assert_eq!(s.data_type(), &DataType::List(Box::new(DataType::UInt64)));
+        assert_eq!(s.len(), 2);
+    }
+
+    #[test]
+    fn from_small_list_u64_rejects_large_list_u32() {
+        use arrow::{
+            array::{ListArray as ArrowListArray, UInt64Array},
+            buffer::OffsetBuffer,
+        };
+
+        // Build a List<UInt64> arrow array
+        let values = UInt64Array::from(vec![10u64, 20, 30]);
+        let offsets = OffsetBuffer::new(vec![0i32, 2, 3].into());
+        let list = ArrowListArray::new(
+            Arc::new(arrow::datatypes::Field::new(
+                "item",
+                arrow::datatypes::DataType::UInt64,
+                true,
+            )),
+            offsets,
+            Arc::new(values),
+            None,
+        );
+
+        // Try to load it as List<UInt32> — inner types don't match, should fail
+        let daft_fld = Arc::new(Field::new(
+            "test",
+            DataType::List(Box::new(DataType::UInt32)),
+        ));
+
+        let result = Series::from_arrow(daft_fld, Arc::new(list));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("inner types must match"),
+            "Expected inner type mismatch error, got: {err}"
+        );
+    }
+
+    #[test]
     fn extension_binary_roundtrip() {
         // Extension with Binary storage: Binary arrow array → from_arrow (casts to LargeBinary)
         // → to_arrow (casts back to Binary)

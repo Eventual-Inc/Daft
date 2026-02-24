@@ -80,8 +80,20 @@ impl FromArrow for ListArray {
             )));
         };
 
-        // Auto-cast from List (i32 offsets) to LargeList (i64 offsets) if needed
-        let arrow_arr = if matches!(arrow_arr.data_type(), arrow::datatypes::DataType::List(_)) {
+        // Auto-cast from List (i32 offsets) to LargeList (i64 offsets) if the inner
+        // element types match. We only widen the offset type, never coerce child dtypes.
+        let arrow_arr = if let arrow::datatypes::DataType::List(arrow_child_field) =
+            arrow_arr.data_type()
+        {
+            let expected_child = daft_child_dtype.to_arrow()?;
+            if *arrow_child_field.data_type() != expected_child {
+                return Err(DaftError::TypeError(format!(
+                    "Cannot coerce List({:?}) to LargeList({:?}) for field '{}': inner types must match",
+                    arrow_child_field.data_type(),
+                    expected_child,
+                    field.name,
+                )));
+            }
             let target = field.dtype.to_arrow()?;
             arrow::compute::cast(arrow_arr.as_ref(), &target)?
         } else {
