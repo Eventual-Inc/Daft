@@ -1830,16 +1830,16 @@ class PyMicroPartitionSet:
     def items(self) -> list[tuple[int, PyMicroPartition]]: ...
 
 class SkipExistingSpec:
-    root_dir: list[str]
+    existing_path: list[str]
     file_format: FileFormat
     key_column: list[str]
     io_config: IOConfig | None
     read_kwargs: dict[str, Any] | None
-    num_key_filter_partitions: int | None
-    num_cpus: float | None
-    key_filter_batch_size: int | None
-    key_filter_loading_batch_size: int | None
-    key_filter_max_concurrency: int | None
+    num_workers: int | None
+    cpus_per_worker: float | None
+    filter_batch_size: int | None
+    keys_load_batch_size: int | None
+    max_concurrency_per_worker: int | None
     strict_path_check: bool
 
 class LogicalPlanBuilder:
@@ -1961,16 +1961,16 @@ class LogicalPlanBuilder:
     def datasink_write(self, name: str, sink: DataSink[WriteResultType]) -> LogicalPlanBuilder: ...
     def skip_existing(
         self,
-        root_dir: str | list[str],
+        existing_path: str | list[str],
         file_format: FileFormat,
         key_column: str | list[str],
         io_config: IOConfig | None = None,
         read_kwargs: dict[str, Any] | None = None,
-        num_key_filter_partitions: int | None = None,
-        num_cpus: float | None = None,
-        key_filter_batch_size: int | None = None,
-        key_filter_loading_batch_size: int | None = None,
-        key_filter_max_concurrency: int | None = None,
+        num_workers: int | None = None,
+        cpus_per_worker: float | None = None,
+        filter_batch_size: int | None = None,
+        keys_load_batch_size: int | None = None,
+        max_concurrency_per_worker: int | None = None,
         strict_path_check: bool = False,
     ) -> LogicalPlanBuilder: ...
     def apply_skip_existing_predicates(self, predicates: list[PyExpr | None]) -> LogicalPlanBuilder: ...

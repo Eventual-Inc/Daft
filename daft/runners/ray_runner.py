@@ -529,26 +529,26 @@ def _maybe_apply_skip_existing(builder: LogicalPlanBuilder) -> tuple[LogicalPlan
 
     try:
         for spec in specs:
-            root_dir = spec.root_dir
+            existing_path = spec.existing_path
             file_format = spec.file_format
             key_column = spec.key_column
             io_config = spec.io_config
-            num_buckets = spec.num_key_filter_partitions
-            num_cpus = spec.num_cpus
+            num_workers = spec.num_workers
+            cpus_per_worker = spec.cpus_per_worker
             read_kwargs = spec.read_kwargs
-            key_filter_batch_size = spec.key_filter_batch_size
-            key_filter_loading_batch_size = spec.key_filter_loading_batch_size
-            key_filter_max_concurrency = spec.key_filter_max_concurrency
+            filter_batch_size = spec.filter_batch_size
+            keys_load_batch_size = spec.keys_load_batch_size
+            max_concurrency_per_worker = spec.max_concurrency_per_worker
             strict_path_check = spec.strict_path_check
 
-            if num_buckets is None:
-                raise RuntimeError("[skip_existing] num_key_filter_partitions must be provided")
-            if num_cpus is None:
-                raise RuntimeError("[skip_existing] num_cpus must be provided")
-            if key_filter_loading_batch_size is None:
-                raise RuntimeError("[skip_existing] key_filter_loading_batch_size must be provided")
-            if key_filter_max_concurrency is None:
-                raise RuntimeError("[skip_existing] key_filter_max_concurrency must be provided")
+            if num_workers is None:
+                raise RuntimeError("[skip_existing] num_workers must be provided")
+            if cpus_per_worker is None:
+                raise RuntimeError("[skip_existing] cpus_per_worker must be provided")
+            if keys_load_batch_size is None:
+                raise RuntimeError("[skip_existing] keys_load_batch_size must be provided")
+            if max_concurrency_per_worker is None:
+                raise RuntimeError("[skip_existing] max_concurrency_per_worker must be provided")
 
             key_spec = KeySpec(key_column)
             key_expr = key_spec.to_expr()
@@ -570,15 +570,15 @@ def _maybe_apply_skip_existing(builder: LogicalPlanBuilder) -> tuple[LogicalPlan
                 raise ValueError(f"[skip_existing] Unsupported file format: {file_format}")
 
             actor_handles, placement_group = _prepare_key_filter(
-                root_dir=cast("Any", root_dir),
+                existing_path=cast("Any", existing_path),
                 io_config=io_config,
                 key_spec=key_spec,
-                num_buckets=num_buckets,
-                num_cpus=num_cpus,
+                num_workers=num_workers,
+                cpus_per_worker=cpus_per_worker,
                 read_fn=read_fn,
                 read_kwargs=read_kwargs,
-                key_filter_loading_batch_size=key_filter_loading_batch_size,
-                key_filter_max_concurrency=key_filter_max_concurrency,
+                keys_load_batch_size=keys_load_batch_size,
+                max_concurrency_per_worker=max_concurrency_per_worker,
                 strict_path_check=strict_path_check,
             )
 
@@ -587,10 +587,10 @@ def _maybe_apply_skip_existing(builder: LogicalPlanBuilder) -> tuple[LogicalPlan
                 continue
 
             key_filter_expr = create_key_filter_udf(
-                num_buckets,
+                num_workers,
                 actor_handles,
                 key_spec,
-                key_filter_batch_size,
+                filter_batch_size,
             )(key_expr)
             cleanup_items.append((actor_handles, placement_group))
             predicates.append(key_filter_expr)

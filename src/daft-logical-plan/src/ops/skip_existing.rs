@@ -18,15 +18,15 @@ use crate::{LogicalPlan, stats::StatsState};
 #[cfg_attr(debug_assertions, derive(Debug))]
 #[educe(PartialEq, Eq, Hash)]
 pub struct SkipExistingSpec {
-    pub root_dir: Vec<String>,
+    pub existing_path: Vec<String>,
     pub file_format: FileFormat,
     pub key_column: Vec<String>,
     pub io_config: Option<IOConfig>,
-    pub num_key_filter_partitions: Option<usize>,
-    pub num_cpus: Option<FloatWrapper<f64>>,
-    pub key_filter_batch_size: Option<usize>,
-    pub key_filter_loading_batch_size: Option<usize>,
-    pub key_filter_max_concurrency: Option<usize>,
+    pub num_workers: Option<usize>,
+    pub cpus_per_worker: Option<FloatWrapper<f64>>,
+    pub filter_batch_size: Option<usize>,
+    pub keys_load_batch_size: Option<usize>,
+    pub max_concurrency_per_worker: Option<usize>,
     pub strict_path_check: bool,
     #[cfg(feature = "python")]
     pub read_kwargs: PyObjectWrapper,
@@ -34,17 +34,18 @@ pub struct SkipExistingSpec {
 
 impl SkipExistingSpec {
     fn validate_inputs(
-        root_dir: &[String],
+        existing_path: &[String],
         key_column: &[String],
-        num_key_filter_partitions: Option<usize>,
-        num_cpus: Option<f64>,
-        key_filter_batch_size: Option<usize>,
-        key_filter_loading_batch_size: Option<usize>,
-        key_filter_max_concurrency: Option<usize>,
+        num_workers: Option<usize>,
+        cpus_per_worker: Option<f64>,
+        filter_batch_size: Option<usize>,
+        keys_load_batch_size: Option<usize>,
+        max_concurrency_per_worker: Option<usize>,
     ) -> DaftResult<()> {
-        if root_dir.is_empty() || root_dir.iter().any(|p| p.is_empty()) {
+        if existing_path.is_empty() || existing_path.iter().any(|p| p.is_empty()) {
             return Err(DaftError::ValueError(
-                "[skip_existing] root_dir must be a non-empty list of non-empty paths".to_string(),
+                "[skip_existing] existing_path must be a non-empty list of non-empty paths"
+                    .to_string(),
             ));
         }
         if key_column.is_empty() || key_column.iter().any(|c| c.is_empty()) {
@@ -53,29 +54,29 @@ impl SkipExistingSpec {
                     .to_string(),
             ));
         }
-        if matches!(num_key_filter_partitions, Some(0)) {
+        if matches!(num_workers, Some(0)) {
             return Err(DaftError::ValueError(
-                "[skip_existing] num_key_filter_partitions must be > 0".to_string(),
+                "[skip_existing] num_workers must be > 0".to_string(),
             ));
         }
-        if matches!(num_cpus, Some(v) if v <= 0.0) {
+        if matches!(cpus_per_worker, Some(v) if v <= 0.0) {
             return Err(DaftError::ValueError(
-                "[skip_existing] num_cpus must be > 0".to_string(),
+                "[skip_existing] cpus_per_worker must be > 0".to_string(),
             ));
         }
-        if matches!(key_filter_batch_size, Some(0)) {
+        if matches!(filter_batch_size, Some(0)) {
             return Err(DaftError::ValueError(
-                "[skip_existing] key_filter_batch_size must be > 0".to_string(),
+                "[skip_existing] filter_batch_size must be > 0".to_string(),
             ));
         }
-        if matches!(key_filter_loading_batch_size, Some(0)) {
+        if matches!(keys_load_batch_size, Some(0)) {
             return Err(DaftError::ValueError(
-                "[skip_existing] key_filter_loading_batch_size must be > 0".to_string(),
+                "[skip_existing] keys_load_batch_size must be > 0".to_string(),
             ));
         }
-        if matches!(key_filter_max_concurrency, Some(0)) {
+        if matches!(max_concurrency_per_worker, Some(0)) {
             return Err(DaftError::ValueError(
-                "[skip_existing] key_filter_max_concurrency must be > 0".to_string(),
+                "[skip_existing] max_concurrency_per_worker must be > 0".to_string(),
             ));
         }
         Ok(())
@@ -84,38 +85,38 @@ impl SkipExistingSpec {
     #[cfg(feature = "python")]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        root_dir: Vec<String>,
+        existing_path: Vec<String>,
         file_format: FileFormat,
         key_column: Vec<String>,
         io_config: Option<IOConfig>,
         read_kwargs: PyObjectWrapper,
-        num_key_filter_partitions: Option<usize>,
-        num_cpus: Option<f64>,
-        key_filter_batch_size: Option<usize>,
-        key_filter_loading_batch_size: Option<usize>,
-        key_filter_max_concurrency: Option<usize>,
+        num_workers: Option<usize>,
+        cpus_per_worker: Option<f64>,
+        filter_batch_size: Option<usize>,
+        keys_load_batch_size: Option<usize>,
+        max_concurrency_per_worker: Option<usize>,
         strict_path_check: bool,
     ) -> DaftResult<Self> {
         Self::validate_inputs(
-            &root_dir,
+            &existing_path,
             &key_column,
-            num_key_filter_partitions,
-            num_cpus,
-            key_filter_batch_size,
-            key_filter_loading_batch_size,
-            key_filter_max_concurrency,
+            num_workers,
+            cpus_per_worker,
+            filter_batch_size,
+            keys_load_batch_size,
+            max_concurrency_per_worker,
         )?;
         Ok(Self {
-            root_dir,
+            existing_path,
             file_format,
             key_column,
             io_config,
             read_kwargs,
-            num_key_filter_partitions,
-            num_cpus: num_cpus.map(FloatWrapper),
-            key_filter_batch_size,
-            key_filter_loading_batch_size,
-            key_filter_max_concurrency,
+            num_workers,
+            cpus_per_worker: cpus_per_worker.map(FloatWrapper),
+            filter_batch_size,
+            keys_load_batch_size,
+            max_concurrency_per_worker,
             strict_path_check,
         })
     }
@@ -123,36 +124,36 @@ impl SkipExistingSpec {
     #[cfg(not(feature = "python"))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        root_dir: Vec<String>,
+        existing_path: Vec<String>,
         file_format: FileFormat,
         key_column: Vec<String>,
         io_config: Option<IOConfig>,
-        num_key_filter_partitions: Option<usize>,
-        num_cpus: Option<f64>,
-        key_filter_batch_size: Option<usize>,
-        key_filter_loading_batch_size: Option<usize>,
-        key_filter_max_concurrency: Option<usize>,
+        num_workers: Option<usize>,
+        cpus_per_worker: Option<f64>,
+        filter_batch_size: Option<usize>,
+        keys_load_batch_size: Option<usize>,
+        max_concurrency_per_worker: Option<usize>,
         strict_path_check: bool,
     ) -> DaftResult<Self> {
         Self::validate_inputs(
-            &root_dir,
+            &existing_path,
             &key_column,
-            num_key_filter_partitions,
-            num_cpus,
-            key_filter_batch_size,
-            key_filter_loading_batch_size,
-            key_filter_max_concurrency,
+            num_workers,
+            cpus_per_worker,
+            filter_batch_size,
+            keys_load_batch_size,
+            max_concurrency_per_worker,
         )?;
         Ok(Self {
-            root_dir,
+            existing_path,
             file_format,
             key_column,
             io_config,
-            num_key_filter_partitions,
-            num_cpus: num_cpus.map(FloatWrapper),
-            key_filter_batch_size,
-            key_filter_loading_batch_size,
-            key_filter_max_concurrency,
+            num_workers,
+            cpus_per_worker: cpus_per_worker.map(FloatWrapper),
+            filter_batch_size,
+            keys_load_batch_size,
+            max_concurrency_per_worker,
             strict_path_check,
         })
     }
@@ -206,10 +207,10 @@ impl SkipExisting {
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
-        let path_display = if self.spec.root_dir.len() == 1 {
-            self.spec.root_dir[0].as_str().to_string()
+        let path_display = if self.spec.existing_path.len() == 1 {
+            self.spec.existing_path[0].as_str().to_string()
         } else {
-            format!("{:?}", self.spec.root_dir)
+            format!("{:?}", self.spec.existing_path)
         };
         let key_display = if self.spec.key_column.len() == 1 {
             self.spec.key_column[0].as_str().to_string()
@@ -223,7 +224,7 @@ impl SkipExisting {
         if let Some(io_config) = &self.spec.io_config {
             res.push(format!("IOConfig = {}", io_config));
         }
-        if let Some(batch_size) = self.spec.key_filter_batch_size {
+        if let Some(batch_size) = self.spec.filter_batch_size {
             res.push(format!("Key Filter Batch Size = {}", batch_size));
         }
         if let StatsState::Materialized(stats) = &self.stats_state {
@@ -489,8 +490,8 @@ pub struct PySkipExistingSpec {
 #[pymethods]
 impl PySkipExistingSpec {
     #[getter]
-    pub fn root_dir(&self) -> Vec<String> {
-        self.spec.root_dir.clone()
+    pub fn existing_path(&self) -> Vec<String> {
+        self.spec.existing_path.clone()
     }
 
     #[getter]
@@ -512,28 +513,28 @@ impl PySkipExistingSpec {
     }
 
     #[getter]
-    pub fn num_key_filter_partitions(&self) -> Option<usize> {
-        self.spec.num_key_filter_partitions
+    pub fn num_workers(&self) -> Option<usize> {
+        self.spec.num_workers
     }
 
     #[getter]
-    pub fn num_cpus(&self) -> Option<f64> {
-        self.spec.num_cpus.as_ref().map(|v| v.0)
+    pub fn cpus_per_worker(&self) -> Option<f64> {
+        self.spec.cpus_per_worker.as_ref().map(|v| v.0)
     }
 
     #[getter]
-    pub fn key_filter_batch_size(&self) -> Option<usize> {
-        self.spec.key_filter_batch_size
+    pub fn filter_batch_size(&self) -> Option<usize> {
+        self.spec.filter_batch_size
     }
 
     #[getter]
-    pub fn key_filter_loading_batch_size(&self) -> Option<usize> {
-        self.spec.key_filter_loading_batch_size
+    pub fn keys_load_batch_size(&self) -> Option<usize> {
+        self.spec.keys_load_batch_size
     }
 
     #[getter]
-    pub fn key_filter_max_concurrency(&self) -> Option<usize> {
-        self.spec.key_filter_max_concurrency
+    pub fn max_concurrency_per_worker(&self) -> Option<usize> {
+        self.spec.max_concurrency_per_worker
     }
 
     #[getter]

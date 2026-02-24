@@ -62,23 +62,23 @@ def _composite_keys_to_numpy(keys: list[Any], composite_key_fields: tuple[str, .
     return keys_np
 
 
-def _iter_bucket_row_groups(input: Series, num_buckets: int) -> list[tuple[int, "np.ndarray"]]:  # noqa: UP037
+def _group_row_indices_by_worker(input: Series, num_workers: int) -> list[tuple[int, "np.ndarray"]]:  # noqa: UP037
     from daft.dependencies import np
 
     hash_arr = input.hash().to_arrow()
     hash_np = hash_arr.to_numpy(zero_copy_only=False).astype(np.uint64, copy=False)
-    bucket_ids = (hash_np % np.uint64(num_buckets)).astype(np.int64, copy=False)
+    worker_ids = (hash_np % np.uint64(num_workers)).astype(np.int64, copy=False)
     del hash_arr
     del hash_np
 
-    row_order = np.argsort(bucket_ids, kind="stable")
-    bucket_sorted = bucket_ids[row_order]
-    run_starts = np.flatnonzero(np.r_[True, bucket_sorted[1:] != bucket_sorted[:-1]])
-    run_ends = np.r_[run_starts[1:], len(bucket_sorted)]
-    buckets_present = bucket_sorted[run_starts]
+    row_order = np.argsort(worker_ids, kind="stable")
+    worker_sorted = worker_ids[row_order]
+    run_starts = np.flatnonzero(np.r_[True, worker_sorted[1:] != worker_sorted[:-1]])
+    run_ends = np.r_[run_starts[1:], len(worker_sorted)]
+    workers_present = worker_sorted[run_starts]
     return [
-        (int(bucket), row_order[int(start) : int(end)])
-        for bucket, start, end in zip(buckets_present, run_starts, run_ends)
+        (int(worker_id), row_order[int(start) : int(end)])
+        for worker_id, start, end in zip(workers_present, run_starts, run_ends)
     ]
 
 
@@ -86,8 +86,8 @@ def _iter_bucket_row_groups(input: Series, num_buckets: int) -> list[tuple[int, 
 async def _ingest_keys_udf(
     input: Series,
     *,
-    actors_by_bucket: dict[int, Any],
-    num_buckets: int,
+    actors_by_worker: dict[int, Any],
+    num_workers: int,
     key_spec: KeySpec,
 ) -> Series:
     import asyncio
@@ -100,8 +100,8 @@ async def _ingest_keys_udf(
     keys_np = key_spec.to_numpy(input)
 
     futures = []
-    for bucket, row_indices in _iter_bucket_row_groups(input, num_buckets):
-        actor = actors_by_bucket[bucket]
+    for worker_id, row_indices in _group_row_indices_by_worker(input, num_workers):
+        actor = actors_by_worker[worker_id]
         subset = keys_np[row_indices].tolist()
         futures.append(actor.add_keys.remote(subset))
     del keys_np
@@ -116,26 +116,26 @@ def _ingest_keys_to_actors(
     df_keys: DataFrame,
     key_spec: KeySpec,
     *,
-    actors_by_bucket: dict[int, Any],
-    num_buckets: int,
-    key_filter_loading_batch_size: int,
+    actors_by_worker: dict[int, Any],
+    num_workers: int,
+    keys_load_batch_size: int,
 ) -> None:
     key_expr = key_spec.to_expr()
     expr = cast(
         "Expression",
         _ingest_keys_udf(
             key_expr,
-            actors_by_bucket=actors_by_bucket,
-            num_buckets=num_buckets,
+            actors_by_worker=actors_by_worker,
+            num_workers=num_workers,
             key_spec=key_spec,
         ),
     )
-    df_keys.into_batches(key_filter_loading_batch_size).select(expr).collect()
+    df_keys.into_batches(keys_load_batch_size).select(expr).collect()
 
 
 class KeyFilterActor:
-    def __init__(self, bucket_id: int):
-        self.bucket_id = bucket_id
+    def __init__(self, worker_id: int):
+        self.worker_id = worker_id
         self.key_set: set[Any] = set()
 
     def add_keys(self, input_keys: list[Any]) -> None:
@@ -156,19 +156,16 @@ class KeyFilterActor:
 
 # TODO: support native mode in future if needed
 def create_key_filter_udf(
-    num_buckets: int,
-    actor_handles: list[ActorHandle] | None,
+    num_workers: int,
+    actor_handles: list[ActorHandle],
     key_spec: KeySpec,
-    key_filter_batch_size: int | None = None,
+    filter_batch_size: int | None = None,
 ) -> Callable[[Expression], Expression]:
-    @func.batch(return_dtype=DataType.bool(), batch_size=key_filter_batch_size)
+    @func.batch(return_dtype=DataType.bool(), batch_size=filter_batch_size)
     async def key_filter(input: Series) -> Series:
         import os
         import asyncio
         from daft.dependencies import np
-
-        if actor_handles is None:
-            return Series.from_numpy(np.full(len(input), True, dtype=bool))
 
         num_rows = len(input)
         # Log batch size occasionally (approx 1% of calls) to avoid log spam
@@ -184,8 +181,8 @@ def create_key_filter_udf(
         row_indices_list: list[np.ndarray] = []
 
         # Dispatch to Actors
-        for bucket, row_indices in _iter_bucket_row_groups(input, num_buckets):
-            actor = actor_handles[bucket]
+        for worker_id, row_indices in _group_row_indices_by_worker(input, num_workers):
+            actor = actor_handles[worker_id]
             keys_subset = keys_np[row_indices]
 
             futures.append(actor.filter.remote(keys_subset))
@@ -219,14 +216,14 @@ def create_key_filter_udf(
 
 
 def _prepare_key_filter(
-    root_dir: str | pathlib.Path | list[str | pathlib.Path],
+    existing_path: str | pathlib.Path | list[str | pathlib.Path],
     io_config: IOConfig | None,
     key_spec: KeySpec,
-    num_buckets: int,  # TODO: rename
-    num_cpus: float,
+    num_workers: int,
+    cpus_per_worker: float,
     read_fn: Callable[..., DataFrame],
-    key_filter_loading_batch_size: int,
-    key_filter_max_concurrency: int,
+    keys_load_batch_size: int,
+    max_concurrency_per_worker: int,
     strict_path_check: bool = False,
     read_kwargs: dict[str, Any] | None = None,
 ) -> tuple[list[ActorHandle], PlacementGroup | None]:
@@ -238,7 +235,7 @@ def _prepare_key_filter(
             - placement_group: PG used to reserve/spread actor resources
 
     Notes:
-        - If no existing partitions are found at `root_dir`, returns ([], None).
+        - If no existing partitions are found at `existing_path`, returns ([], None).
         - Raises RuntimeError if runner is not Ray.
         - If strict_path_check is True and path doesn't exist, raises RuntimeError.
         - If strict_path_check is False and path doesn't exist, logs warning and returns ([], None).
@@ -246,44 +243,45 @@ def _prepare_key_filter(
     if get_or_create_runner().name != "ray":
         raise RuntimeError("skip_existing is only supported on Ray runner")
 
-    root_dirs = root_dir if isinstance(root_dir, list) else [root_dir]
-    root_dirs_str = [str(p) for p in root_dirs]
+    existing_path = existing_path if isinstance(existing_path, list) else [existing_path]
+    existing_path_str = [str(p) for p in existing_path]
     key_columns = key_spec.key_columns
 
     logger.info(
-        "Preparing key filter root_dirs=%s key_columns=%s num_buckets=%s num_cpus=%s",
-        root_dirs_str,
+        "Preparing key filter existing_path=%s key_columns=%s num_workers=%s cpus_per_worker=%s",
+        existing_path_str,
         key_columns,
-        num_buckets,
-        num_cpus,
+        num_workers,
+        cpus_per_worker,
     )
 
     # Build df_keys lazily; execution config for scan split/merge is applied at collect-time.
     df_keys = None
     try:
-        df_keys = read_fn(path=root_dirs_str, io_config=io_config, **(read_kwargs or {}))
+        df_keys = read_fn(path=existing_path_str, io_config=io_config, **(read_kwargs or {}))
         df_keys = df_keys.select(*key_columns)
     except FileNotFoundError as e:
         if strict_path_check:
-            raise RuntimeError(f"[skip_existing] keys not found at {root_dirs_str}: {e}") from e
+            raise RuntimeError(f"[skip_existing] keys not found at {existing_path_str}: {e}") from e
         logger.warning(
             "[skip_existing] No existing data found at %s, processing all rows. "
-            "Set strict_path_check=True to raise an error instead.",
-            root_dirs_str,
+            "Set strict_path_check=True to raise an error.",
+            existing_path_str,
         )
         return [], None
     except Exception as e:
-        raise RuntimeError(f"[skip_existing] Unable to read keys at {root_dirs_str}: {e}") from e
+        raise RuntimeError(f"[skip_existing] Unable to read keys at {existing_path_str}: {e}") from e
 
     if df_keys is None:
         return [], None
 
     # Create placement group and actors
     import ray
+
     from ray.exceptions import GetTimeoutError
     from ray.util.placement_group import placement_group
 
-    pg = placement_group([{"CPU": num_cpus} for _ in range(num_buckets)], strategy="SPREAD")
+    pg = placement_group([{"CPU": cpus_per_worker} for _ in range(num_workers)], strategy="SPREAD")
     try:
         # Wait for placement group to be ready with a timeout (seconds)
         ray.get(pg.ready(), timeout=PLACEMENT_GROUP_READY_TIMEOUT_SECONDS)
@@ -295,19 +293,19 @@ def _prepare_key_filter(
         except Exception as e:
             warnings.warn(f"Unable to remove placement group {pg}: {e}")
         raise RuntimeError(
-            "[skip_existing] Key filter resource reservation timed out. Try reducing 'num_buckets' and/or 'num_cpus', "
+            "[skip_existing] Key filter resource reservation timed out. Try reducing 'num_workers' and/or 'cpus_per_worker', "
             "or ensure your Ray cluster has sufficient resources. "
             f"Error message: {timeout_err}"
         ) from timeout_err
 
     actor_handles: list[ActorHandle] = []
-    actors_by_bucket: dict[int, ActorHandle] = {}
+    actors_by_worker: dict[int, ActorHandle] = {}
     try:
-        for i in range(num_buckets):
+        for i in range(num_workers):
             actor = (
-                ray.remote(max_concurrency=key_filter_max_concurrency)(KeyFilterActor)
+                ray.remote(max_concurrency=max_concurrency_per_worker)(KeyFilterActor)
                 .options(
-                    num_cpus=num_cpus,
+                    num_cpus=cpus_per_worker,
                     scheduling_strategy=ray.util.scheduling_strategies.PlacementGroupSchedulingStrategy(
                         placement_group=pg,
                         placement_group_bundle_index=i,
@@ -316,14 +314,14 @@ def _prepare_key_filter(
                 .remote(i)
             )
             actor_handles.append(actor)
-            actors_by_bucket[i] = actor
+            actors_by_worker[i] = actor
 
         _ingest_keys_to_actors(
             df_keys,
             key_spec,
-            actors_by_bucket=actors_by_bucket,
-            num_buckets=num_buckets,
-            key_filter_loading_batch_size=key_filter_loading_batch_size,
+            actors_by_worker=actors_by_worker,
+            num_workers=num_workers,
+            keys_load_batch_size=keys_load_batch_size,
         )
     except Exception as e:
         _cleanup_key_filter_resources(actor_handles, pg)

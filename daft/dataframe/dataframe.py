@@ -2338,15 +2338,15 @@ class DataFrame:
     @DataframePublicAPI
     def skip_existing(
         self,
-        path: str | pathlib.Path | list[str | pathlib.Path],
-        on: str | list[str],
+        existing_path: str | pathlib.Path | list[str | pathlib.Path],
+        key_column: str | list[str],
         file_format: str | FileFormat,
         io_config: IOConfig | None = None,
-        num_key_filter_partitions: int = 4,
-        num_cpus: float = 1.0,
-        key_filter_batch_size: int | None = None,
-        key_filter_loading_batch_size: int = 100000,
-        key_filter_max_concurrency: int = 1,
+        num_workers: int = 4,
+        cpus_per_worker: float = 1.0,
+        filter_batch_size: int | None = None,
+        keys_load_batch_size: int = 100000,
+        max_concurrency_per_worker: int = 1,
         strict_path_check: bool = False,
         **reader_args: Any,
     ) -> "DataFrame":
@@ -2358,18 +2358,17 @@ class DataFrame:
         you want to avoid re-processing data that has already been written.
 
         Args:
-            path: Path or list of paths to the existing data directory/file(s).
-            on: Column name(s) to use as the key for matching. Can be a single column name
+            existing_path: Path or list of paths to the existing data directory/file(s).
+            key_column: Column name(s) to use as the key for matching. Can be a single column name
                 or a list of column names for composite keys.
             file_format: Format of the existing data files. Supported formats: Parquet, CSV, JSON.
             io_config: IO configuration for reading the existing data.
-            num_key_filter_partitions: Number of partitions (buckets) for the distributed key filter.
-                More partitions allow for more parallelism but consume more resources.
-            num_cpus: Number of CPUs to allocate per key filter partition.
-            key_filter_batch_size: Batch size for filtering. If None, uses default batch size.
-            key_filter_loading_batch_size: Batch size when loading keys from existing data into
-                the key filter actors.
-            key_filter_max_concurrency: Maximum concurrency for key filter actor operations.
+            num_workers: Number of workers used to shard the existing keys for filtering.
+                Higher values increase parallelism and typically reduce per-worker memory usage.
+            cpus_per_worker: Number of CPUs to allocate per worker.
+            filter_batch_size: Batch size for filtering. If None, uses default batch size.
+            keys_load_batch_size: Batch size when loading keys from existing data into workers.
+            max_concurrency_per_worker: Maximum concurrency for per-worker operations.
             strict_path_check: If True, raise an error when the path doesn't exist.
                 If False (default), log a warning and process all rows (useful for first run).
             **reader_args: Additional arguments passed to the file reader (e.g., delimiter for CSV).
@@ -2387,13 +2386,11 @@ class DataFrame:
             >>> df = daft.from_pydict({"id": [1, 2, 3, 4], "value": ["a", "b", "c", "d"]})
             >>> # Filter out rows where 'id' already exists in existing Parquet data
             >>> filtered_df = df.skip_existing(
-            ...     path="s3://bucket/existing_data/",
-            ...     on="id",
+            ...     existing_path="s3://bucket/existing_data/",
+            ...     key_column="id",
             ...     file_format="parquet",
             ... )
         """
-        key_column: str | list[str] = on
-
         if isinstance(file_format, str):
             fmt = file_format.strip().lower()
             if fmt == "parquet":
@@ -2410,23 +2407,26 @@ class DataFrame:
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
-        root_dir: str | list[str]
-        if isinstance(path, list):
-            root_dir = [str(p) for p in path]
+        existing_path_strs: list[str]
+        if isinstance(existing_path, list):
+            existing_path_strs = [str(p) for p in existing_path]
         else:
-            root_dir = str(path)
+            existing_path_strs = [str(existing_path)]
+
+        if not isinstance(key_column, list):
+            key_column = [key_column]
 
         builder = self._builder.skip_existing(
-            root_dir=root_dir,
+            existing_path=existing_path_strs,
             file_format=file_format,
             key_column=key_column,
             io_config=io_config,
             read_kwargs=(reader_args or None),
-            num_key_filter_partitions=num_key_filter_partitions,
-            num_cpus=num_cpus,
-            key_filter_batch_size=key_filter_batch_size,
-            key_filter_loading_batch_size=key_filter_loading_batch_size,
-            key_filter_max_concurrency=key_filter_max_concurrency,
+            num_workers=num_workers,
+            cpus_per_worker=cpus_per_worker,
+            filter_batch_size=filter_batch_size,
+            keys_load_batch_size=keys_load_batch_size,
+            max_concurrency_per_worker=max_concurrency_per_worker,
             strict_path_check=strict_path_check,
         )
         return DataFrame(builder)

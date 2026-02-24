@@ -24,7 +24,7 @@ pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
             "predicate": vec![&filter.predicate.to_string()],
         }),
         LogicalPlan::SkipExisting(skip_existing) => json!({
-            "root_dir": skip_existing.spec.root_dir,
+            "existing_path": skip_existing.spec.existing_path,
             "file_format": skip_existing.spec.file_format,
             "key_column": skip_existing.spec.key_column,
         }),

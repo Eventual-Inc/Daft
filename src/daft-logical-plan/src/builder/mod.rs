@@ -389,7 +389,7 @@ impl LogicalPlanBuilder {
                             ExprResolver::builder().allow_actor_pool_udf(true).build();
                         let resolved = expr_resolver.resolve_single(predicate, input.clone())?;
                         let new_lp: LogicalPlan = ops::Filter::try_new(input.clone(), resolved)?
-                            .with_batch_size(spec.key_filter_batch_size)
+                            .with_batch_size(spec.filter_batch_size)
                             .into();
                         return Ok(Transformed::yes(Arc::new(new_lp)));
                     }
@@ -1182,27 +1182,27 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.filter(predicate.expr)?.into())
     }
 
-    #[pyo3(signature = (root_dir, file_format, key_column, io_config=None, read_kwargs=None, num_key_filter_partitions=None, num_cpus=None, key_filter_batch_size=None, key_filter_loading_batch_size=None, key_filter_max_concurrency=None, strict_path_check=false))]
+    #[pyo3(signature = (existing_path, file_format, key_column, io_config=None, read_kwargs=None, num_workers=None, cpus_per_worker=None, filter_batch_size=None, keys_load_batch_size=None, max_concurrency_per_worker=None, strict_path_check=false))]
     #[allow(clippy::too_many_arguments)]
     pub fn skip_existing(
         &self,
         py: Python,
-        root_dir: pyo3::Py<pyo3::PyAny>,
+        existing_path: pyo3::Py<pyo3::PyAny>,
         file_format: common_file_formats::FileFormat,
         key_column: pyo3::Py<pyo3::PyAny>,
         io_config: Option<common_io_config::python::IOConfig>,
         read_kwargs: Option<pyo3::Py<pyo3::PyAny>>,
-        num_key_filter_partitions: Option<usize>,
-        num_cpus: Option<f64>,
-        key_filter_batch_size: Option<usize>,
-        key_filter_loading_batch_size: Option<usize>,
-        key_filter_max_concurrency: Option<usize>,
+        num_workers: Option<usize>,
+        cpus_per_worker: Option<f64>,
+        filter_batch_size: Option<usize>,
+        keys_load_batch_size: Option<usize>,
+        max_concurrency_per_worker: Option<usize>,
         strict_path_check: bool,
     ) -> PyResult<Self> {
-        let root_dirs: Vec<String> = if let Ok(s) = root_dir.extract::<String>(py) {
+        let existing_path: Vec<String> = if let Ok(s) = existing_path.extract::<String>(py) {
             vec![s]
         } else {
-            root_dir.extract::<Vec<String>>(py)?
+            existing_path.extract::<Vec<String>>(py)?
         };
         let key_columns: Vec<String> = if let Ok(s) = key_column.extract::<String>(py) {
             vec![s]
@@ -1212,16 +1212,16 @@ impl PyLogicalPlanBuilder {
         let read_kwargs =
             common_py_serde::PyObjectWrapper(Arc::new(read_kwargs.unwrap_or_else(|| py.None())));
         let spec = ops::SkipExistingSpec::new(
-            root_dirs,
+            existing_path,
             file_format,
             key_columns,
             io_config.map(|cfg| cfg.config),
             read_kwargs,
-            num_key_filter_partitions,
-            num_cpus,
-            key_filter_batch_size,
-            key_filter_loading_batch_size,
-            key_filter_max_concurrency,
+            num_workers,
+            cpus_per_worker,
+            filter_batch_size,
+            keys_load_batch_size,
+            max_concurrency_per_worker,
             strict_path_check,
         )?;
         Ok(self.builder.skip_existing(spec)?.into())
