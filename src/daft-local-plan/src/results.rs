@@ -13,8 +13,9 @@ use common_metrics::{
 };
 use daft_core::prelude::{DataType, Field, Schema, TimeUnit};
 use daft_recordbatch::RecordBatch;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionMetadata {
     pub query_id: QueryID,
     pub query_plan: Option<serde_json::Value>,

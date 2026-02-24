@@ -87,9 +87,12 @@ impl<'py> FromPyObject<'_, 'py> for Input {
 }
 
 #[pyclass(module = "daft.daft", name = "PyExecutionMetadata", frozen)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyExecutionMetadata {
     inner: Arc<ExecutionMetadata>,
 }
+
+impl_bincode_py_state_serialization!(PyExecutionMetadata);
 
 #[pymethods]
 impl PyExecutionMetadata {
