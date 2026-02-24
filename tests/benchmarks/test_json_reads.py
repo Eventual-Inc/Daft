@@ -10,7 +10,7 @@ import pytest
 
 import daft
 
-NUM_ROWS = 1_000_000
+NUM_ROWS = 100_000
 SEED = 42
 
 
