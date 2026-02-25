@@ -254,7 +254,7 @@ function QueryPageInner() {
                 planJson={
                   "plan_info" in query.state
                     ? query.state.plan_info.optimized_plan
-                    : "{}"
+                    : ""
                 }
               />
             )}
