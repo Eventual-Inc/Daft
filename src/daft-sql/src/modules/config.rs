@@ -246,6 +246,7 @@ impl SQLFunction for AzureConfigFunction {
                 "anonymous",
                 "endpoint_url",
                 "use_ssl",
+                "max_connections_per_io_thread",
             ],
             0,
         )?;
@@ -261,6 +262,9 @@ impl SQLFunction for AzureConfigFunction {
         let anonymous = args.try_get_named::<bool>("anonymous")?;
         let endpoint_url = args.try_get_named::<String>("endpoint_url")?;
         let use_ssl = args.try_get_named::<bool>("use_ssl")?;
+        let max_connections_per_io_thread = args
+            .try_get_named::<i64>("max_connections_per_io_thread")?
+            .map(|t| t as u32);
 
         let entries = vec![
             ("variant".to_string(), "azure".into()),
@@ -275,6 +279,7 @@ impl SQLFunction for AzureConfigFunction {
             item!(anonymous),
             item!(endpoint_url),
             item!(use_ssl),
+            item!(max_connections_per_io_thread),
         ]
         .into_iter()
         .collect::<_>();
@@ -299,6 +304,7 @@ impl SQLFunction for AzureConfigFunction {
             "anonymous",
             "endpoint_url",
             "use_ssl",
+            "max_connections_per_io_thread",
         ]
     }
 }
@@ -560,6 +566,8 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
             let anonymous = get_value!("anonymous", Boolean)?;
             let endpoint_url = get_value!("endpoint_url", Utf8)?;
             let use_ssl = get_value!("use_ssl", Boolean)?;
+            let max_connections_per_io_thread =
+                get_value!("max_connections_per_io_thread", UInt32)?;
 
             let default = AzureConfig::default();
 
@@ -576,6 +584,8 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
                     anonymous: anonymous.unwrap_or(default.anonymous),
                     endpoint_url,
                     use_ssl: use_ssl.unwrap_or(default.use_ssl),
+                    max_connections_per_io_thread: max_connections_per_io_thread
+                        .unwrap_or(default.max_connections_per_io_thread),
                 },
                 ..Default::default()
             })

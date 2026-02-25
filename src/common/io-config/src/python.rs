@@ -924,7 +924,8 @@ impl AzureConfig {
         use_fabric_endpoint=None,
         anonymous=None,
         endpoint_url=None,
-        use_ssl=None
+        use_ssl=None,
+        max_connections=None
     ))]
     pub fn new(
         storage_account: Option<String>,
@@ -938,6 +939,7 @@ impl AzureConfig {
         anonymous: Option<bool>,
         endpoint_url: Option<String>,
         use_ssl: Option<bool>,
+        max_connections: Option<u32>,
     ) -> Self {
         let def = crate::AzureConfig::default();
         Self {
@@ -955,6 +957,8 @@ impl AzureConfig {
                 anonymous: anonymous.unwrap_or(def.anonymous),
                 endpoint_url: endpoint_url.or(def.endpoint_url),
                 use_ssl: use_ssl.unwrap_or(def.use_ssl),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(def.max_connections_per_io_thread),
             },
         }
     }
@@ -972,7 +976,8 @@ impl AzureConfig {
         use_fabric_endpoint=None,
         anonymous=None,
         endpoint_url=None,
-        use_ssl=None
+        use_ssl=None,
+        max_connections=None
     ))]
     pub fn replace(
         &self,
@@ -987,6 +992,7 @@ impl AzureConfig {
         anonymous: Option<bool>,
         endpoint_url: Option<String>,
         use_ssl: Option<bool>,
+        max_connections: Option<u32>,
     ) -> Self {
         Self {
             config: crate::AzureConfig {
@@ -1005,6 +1011,8 @@ impl AzureConfig {
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
                 endpoint_url: endpoint_url.or_else(|| self.config.endpoint_url.clone()),
                 use_ssl: use_ssl.unwrap_or(self.config.use_ssl),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(self.config.max_connections_per_io_thread),
             },
         }
     }
@@ -1084,6 +1092,12 @@ impl AzureConfig {
     #[getter]
     pub fn use_ssl(&self) -> PyResult<bool> {
         Ok(self.config.use_ssl)
+    }
+
+    /// Maximum number of connections per IO thread for Azure
+    #[getter]
+    pub fn max_connections(&self) -> PyResult<u32> {
+        Ok(self.config.max_connections_per_io_thread)
     }
 }
 

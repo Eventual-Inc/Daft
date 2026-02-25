@@ -12,6 +12,7 @@ use azure_storage_blobs::{
     prelude::*,
 };
 use common_io_config::AzureConfig;
+use common_runtime::get_io_pool_num_threads;
 use derive_builder::Builder;
 use futures::{StreamExt, TryStreamExt, stream::BoxStream};
 use snafu::{IntoError, ResultExt, Snafu};
@@ -70,6 +71,9 @@ enum Error {
 
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
+
+    #[snafu(display("Unable to grab semaphore. {}", source))]
+    UnableToGrabSemaphore { source: tokio::sync::AcquireError },
 }
 
 #[derive(Builder)]
@@ -164,6 +168,7 @@ impl From<Error> for super::Error {
 
 pub struct AzureBlobSource {
     blob_client: Arc<BlobServiceClient>,
+    connection_pool_sema: Arc<tokio::sync::Semaphore>,
 }
 
 impl AzureBlobSource {
@@ -262,8 +267,14 @@ impl AzureBlobSource {
             BlobServiceClient::new(storage_account, storage_credentials)
         };
 
+        let connection_pool_sema = Arc::new(tokio::sync::Semaphore::new(
+            (config.max_connections_per_io_thread as usize)
+                * get_io_pool_num_threads().expect("Should be running in tokio pool"),
+        ));
+
         Ok(Self {
             blob_client: blob_client.into(),
+            connection_pool_sema,
         }
         .into())
     }
@@ -519,6 +530,38 @@ impl AzureBlobSource {
             },
         }
     }
+
+    /// Internal get_size that does NOT acquire the semaphore.
+    /// Used by `get()` which already holds a permit (avoids deadlock for GetRange::Suffix).
+    async fn get_size_internal(
+        &self,
+        uri: &str,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<usize> {
+        let parsed_uri = parse_azure_uri(uri)?;
+        let (container, key) = parsed_uri
+            .container_and_key
+            .ok_or_else(|| Error::InvalidUrl {
+                path: uri.into(),
+                source: url::ParseError::EmptyHost,
+            })?;
+
+        if key.is_empty() {
+            return Err(Error::NotAFile { path: uri.into() }.into());
+        }
+
+        let container_client = self.blob_client.container_client(container);
+        let blob_client = container_client.blob_client(key);
+        let metadata = blob_client
+            .get_properties()
+            .await
+            .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_head_requests(1);
+        }
+
+        Ok(metadata.blob.properties.content_length as usize)
+    }
 }
 
 #[async_trait]
@@ -533,6 +576,13 @@ impl ObjectSource for AzureBlobSource {
         range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
+        let permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
         let parsed_uri = parse_azure_uri(uri)?;
         let (container, key) = parsed_uri
             .container_and_key
@@ -555,7 +605,8 @@ impl ObjectSource for AzureBlobSource {
                 // Note: if n is greater than file size, Azure will whole content.
                 GetRange::Offset(n) => request_builder.range(n..),
                 GetRange::Suffix(n) => {
-                    let size = self.get_size(uri, io_stats.clone()).await?;
+                    // Use get_size_internal to avoid deadlock (we already hold a permit)
+                    let size = self.get_size_internal(uri, io_stats.clone()).await?;
                     request_builder.range(size.saturating_sub(n)..)
                 }
             }
@@ -580,7 +631,7 @@ impl ObjectSource for AzureBlobSource {
         Ok(GetResult::Stream(
             io_stats_on_bytestream(Box::pin(stream), io_stats),
             None,
-            None,
+            Some(permit),
             None,
         ))
     }
@@ -595,29 +646,12 @@ impl ObjectSource for AzureBlobSource {
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
-        let parsed_uri = parse_azure_uri(uri)?;
-        let (container, key) = parsed_uri
-            .container_and_key
-            .ok_or_else(|| Error::InvalidUrl {
-                path: uri.into(),
-                source: url::ParseError::EmptyHost,
-            })?;
-
-        if key.is_empty() {
-            return Err(Error::NotAFile { path: uri.into() }.into());
-        }
-
-        let container_client = self.blob_client.container_client(container);
-        let blob_client = container_client.blob_client(key);
-        let metadata = blob_client
-            .get_properties()
+        let _permit = self
+            .connection_pool_sema
+            .acquire()
             .await
-            .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
-        if let Some(is) = io_stats.as_ref() {
-            is.mark_head_requests(1);
-        }
-
-        Ok(metadata.blob.properties.content_length as usize)
+            .context(UnableToGrabSemaphoreSnafu)?;
+        self.get_size_internal(uri, io_stats).await
     }
 
     async fn glob(
