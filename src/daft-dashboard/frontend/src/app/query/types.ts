@@ -39,6 +39,8 @@ export type OperatorInfo = {
   status: OperatorStatus;
   node_info: NodeInfo;
   stats: Record<string, Stat>;
+  start_sec?: number;
+  end_sec?: number;
 };
 
 export type PhysicalPlanNode = {

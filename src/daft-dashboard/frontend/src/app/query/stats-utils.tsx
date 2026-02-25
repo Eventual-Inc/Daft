@@ -79,6 +79,24 @@ export const formatStatValue = (stat: Stat) => {
   }
 };
 
+export const formatDuration = (seconds: number): string => {
+  if (seconds < 0.001) {
+    return `${(seconds * 1_000_000).toFixed(0)}µs`;
+  } else if (seconds < 1) {
+    return `${(seconds * 1000).toFixed(0)}ms`;
+  } else if (seconds < 60) {
+    return `${seconds.toFixed(1)}s`;
+  } else if (seconds < 3600) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs.toFixed(0)}s`;
+  } else {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    return `${hrs}h ${mins}m`;
+  }
+};
+
 export const getStatusBorderColor = (status: OperatorStatus) => {
   switch (status) {
     case "Finished":

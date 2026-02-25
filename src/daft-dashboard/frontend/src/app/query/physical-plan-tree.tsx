@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { main } from "@/lib/utils";
 import { ExecutingState, OperatorInfo, PhysicalPlanNode } from "./types";
 import {
   getStatusIcon,
   getStatusBorderColor,
   formatStatValue,
+  formatDuration,
   ROWS_IN_STAT_KEY,
   ROWS_OUT_STAT_KEY,
   DURATION_US_STAT_KEY,
@@ -20,6 +21,22 @@ function getCategoryColor(node: PhysicalPlanNode) {
   return categoryColors[node.type] ?? categoryColors[node.category] ?? defaultColor;
 }
 
+function useWallClockDuration(operator?: OperatorInfo): string | null {
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  const isExecuting = operator?.status === "Executing";
+
+  useEffect(() => {
+    if (!isExecuting) return;
+    const id = setInterval(() => setNow(Date.now() / 1000), 200);
+    return () => clearInterval(id);
+  }, [isExecuting]);
+
+  if (!operator?.start_sec) return null;
+  const end = operator.end_sec ?? (isExecuting ? now : null);
+  if (end == null) return null;
+  return formatDuration(Math.max(0, end - operator.start_sec));
+}
+
 function PhysicalNodeCard({
   node,
   operator,
@@ -31,16 +48,19 @@ function PhysicalNodeCard({
   const catColor = getCategoryColor(node);
   const status = operator?.status ?? "Pending";
   const statusBorder = getStatusBorderColor(status);
+  const wallClock = useWallClockDuration(operator);
 
   const rowsIn = operator?.stats[ROWS_IN_STAT_KEY]?.value ?? 0;
   const rowsOut = operator?.stats[ROWS_OUT_STAT_KEY]?.value ?? 0;
 
+  const cpuTimeStat = operator?.stats[DURATION_US_STAT_KEY];
   const extraStats = operator
     ? Object.entries(operator.stats).filter(
         ([key]) =>
           ![ROWS_IN_STAT_KEY, ROWS_OUT_STAT_KEY, DURATION_US_STAT_KEY].includes(key),
       )
     : [];
+  const hasExpandable = extraStats.length > 0 || cpuTimeStat;
 
   return (
     <div
@@ -56,14 +76,14 @@ function PhysicalNodeCard({
         >
           {node.name}
         </span>
-        {extraStats.length > 0 && (
+        {hasExpandable && (
           <span className="text-zinc-500 text-xs ml-auto">
             {expanded ? "▾" : "▸"}
           </span>
         )}
       </div>
 
-      {/* Rows in / out — always visible */}
+      {/* Rows in / out + wall-clock duration — always visible */}
       {operator && (
         <div className="mt-1.5 flex gap-3 text-xs font-mono text-zinc-400">
           {!node.name.includes("Scan") && (
@@ -76,12 +96,29 @@ function PhysicalNodeCard({
               <span className="text-zinc-500">out:</span> {rowsOut.toLocaleString()}
             </span>
           )}
+          {wallClock && (
+            <span className="text-zinc-400">
+              {wallClock}
+            </span>
+          )}
         </div>
       )}
 
-      {/* Extra stats — expandable */}
-      {expanded && extraStats.length > 0 && (
+      {/* Extra stats + CPU time — expandable */}
+      {expanded && hasExpandable && (
         <div className="mt-2 pt-2 border-t border-zinc-700/50 space-y-1">
+          {cpuTimeStat && (
+            <div className="flex justify-between gap-2">
+              <span
+                className={`${main.className} text-[10px] uppercase tracking-wider text-zinc-500`}
+              >
+                CPU time
+              </span>
+              <span className={`${main.className} text-xs text-zinc-300 font-mono`}>
+                {formatStatValue(cpuTimeStat)}
+              </span>
+            </div>
+          )}
           {extraStats.map(([key, stat]) => (
             <div key={key} className="flex justify-between gap-2">
               <span
