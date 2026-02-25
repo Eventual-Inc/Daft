@@ -18,6 +18,7 @@ build
 data/**
 benchmarking/tpcds/data
 *.so
+*.dylib
 *.whl
 log/
 *.egg-info

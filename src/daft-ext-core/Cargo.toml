@@ -9,9 +9,7 @@ version = {workspace = true}
 daft-ext-abi = {workspace = true}
 arrow = {workspace = true, features = ["ffi"]}
 arrow-array = {workspace = true}
-arrow-schema = {workspace = true, features = ["serde"]}
-serde = {workspace = true}
-serde_json = {workspace = true}
+arrow-schema = {workspace = true}
 
 [lints]
 workspace = true

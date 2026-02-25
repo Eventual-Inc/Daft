@@ -193,8 +193,12 @@ members = [
   "src/daft-csv",
   "src/daft-dashboard",
   "src/daft-dsl",
+  "src/daft-ext",
   "src/daft-ext-abi",
   "src/daft-ext-core",
+  "examples/example_extension",
+  "src/daft-ext-internal",
+  "src/daft-ext-macros",
   "src/daft-file",
   "src/daft-functions",
   "src/daft-functions-binary",
@@ -264,11 +268,13 @@ common-runtime = {path = "src/common/runtime", default-features = false}
 daft-ai = {path = "src/daft-ai"}
 daft-algebra = {path = "src/daft-algebra"}
 daft-arrow = {path = "src/daft-arrow"}
+daft-catalog = {path = "src/daft-catalog"}
 daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
 daft-ext-abi = {path = "src/daft-ext-abi", default-features = false}
 daft-ext-core = {path = "src/daft-ext-core", default-features = false}
+daft-ext-internal = {path = "src/daft-ext-internal", default-features = false}
 daft-file = {path = "src/daft-file"}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-binary = {path = "src/daft-functions-binary"}
@@ -303,6 +309,7 @@ itertools = "0.14"
 jaq-core = "2.2.1"
 jaq-json = {version = "1.1.3", features = ["serde_json"]}
 jaq-std = "2.1.2"
+libloading = "0.9"
 mur3 = "0.1.0"
 ndarray = "0.17"
 num-derive = "0.4.2"

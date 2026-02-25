@@ -1,0 +1,17 @@
+[build-system]
+requires = ["maturin>=1.5.0,<2.0.0"]
+build-backend = "maturin"
+
+[project]
+name = "daft-ext-example"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["cffi", "daft"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.maturin]
+bindings = "cffi"
+module-name = "daft_ext_example._native"
+python-packages = ["daft_ext_example"]

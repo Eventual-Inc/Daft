@@ -401,8 +401,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6bb63203e8e0e54b288d0d8043ca8fa1013820822a27692ef1b78a977d879f2c"
 dependencies = [
  "bitflags 2.10.0",
- "serde",
- "serde_core",
 ]
 
 [[package]]
@@ -2758,10 +2756,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-ext"
+version = "0.3.0-dev0"
+dependencies = [
+ "daft-ext-abi",
+ "daft-ext-core",
+ "daft-ext-macros",
+]
+
+[[package]]
 name = "daft-ext-abi"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow",
+ "arrow-array",
 ]
 
 [[package]]
@@ -2772,8 +2780,41 @@ dependencies = [
  "arrow-array",
  "arrow-schema",
  "daft-ext-abi",
+]
+
+[[package]]
+name = "daft-ext-example"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow-array",
+ "arrow-schema",
+ "daft-ext",
+]
+
+[[package]]
+name = "daft-ext-internal"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "daft-ext-abi",
+ "libloading 0.9.0",
  "serde",
  "serde_json",
+ "typetag",
+]
+
+[[package]]
+name = "daft-ext-macros"
+version = "0.3.0-dev0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
 ]
 
 [[package]]
@@ -3364,6 +3405,8 @@ dependencies = [
  "daft-catalog",
  "daft-core",
  "daft-dsl",
+ "daft-ext-abi",
+ "daft-ext-internal",
  "daft-logical-plan",
  "pyo3",
  "uuid 1.19.0",
@@ -5433,6 +5476,16 @@ name = "libloading"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
+dependencies = [
+ "cfg-if",
+ "windows-link 0.2.1",
+]
+
+[[package]]
+name = "libloading"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "754ca22de805bb5744484a5b151a9e1a8e837d5dc232c2d7d8c2e3492edc8b60"
 dependencies = [
  "cfg-if",
  "windows-link 0.2.1",
@@ -8163,7 +8216,7 @@ dependencies = [
  "colorz",
  "glob-match",
  "goblin",
- "libloading",
+ "libloading 0.8.9",
  "log",
  "num-traits",
  "rand 0.8.5",

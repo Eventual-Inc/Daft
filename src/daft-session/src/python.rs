@@ -6,7 +6,7 @@ use daft_catalog::{
     python::{PyIdentifier, PyTableSource, pyobj_to_catalog, pyobj_to_table},
 };
 use daft_dsl::functions::python::WrappedUDFClass;
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyTuple};
 
 use crate::Session;
 
@@ -163,6 +163,53 @@ impl PySession {
     pub fn detach_function(&self, alias: &str) -> PyResult<()> {
         self.0.detach_function(alias)?;
         Ok(())
+    }
+
+    pub fn load_extension(&self, path: &str) -> PyResult<()> {
+        Ok(self.0.load_and_init_extension(std::path::Path::new(path))?)
+    }
+
+    #[pyo3(signature = (name, *args))]
+    pub fn get_function(
+        &self,
+        name: &str,
+        args: &Bound<'_, PyTuple>,
+    ) -> PyResult<daft_dsl::python::PyExpr> {
+        use daft_dsl::functions::{
+            FunctionArg, FunctionArgs,
+            scalar::{BuiltinScalarFn, ScalarFn},
+        };
+
+        let func = self.0.get_function(name)?.ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "function '{name}' not found in session"
+            ))
+        })?;
+
+        let inputs: Vec<FunctionArg<daft_dsl::ExprRef>> = args
+            .iter()
+            .map(|py| -> PyResult<_> {
+                let expr = py.extract::<daft_dsl::python::PyExpr>()?;
+                Ok(FunctionArg::unnamed(expr.expr))
+            })
+            .collect::<PyResult<_>>()?;
+        let inputs = FunctionArgs::try_new(inputs)?;
+
+        match func {
+            crate::ScalarFunction::Native(factory) => {
+                let schema = daft_core::prelude::Schema::empty();
+                let variant = factory.get_function(inputs.clone(), &schema)?;
+                let expr: daft_dsl::ExprRef = ScalarFn::Builtin(BuiltinScalarFn {
+                    func: variant,
+                    inputs,
+                })
+                .into();
+                Ok(expr.into())
+            }
+            crate::ScalarFunction::Python(_) => Err(pyo3::exceptions::PyValueError::new_err(
+                "get_function only supports native extension functions",
+            )),
+        }
     }
 }
 

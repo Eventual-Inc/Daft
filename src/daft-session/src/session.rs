@@ -1,11 +1,18 @@
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::{
+    ffi::{CStr, c_int, c_void},
+    path::Path,
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
+};
 
+use common_error::{DaftError, DaftResult};
 use daft_ai::provider::ProviderRef;
 use daft_catalog::{Bindings, CatalogRef, Identifier, LookupMode, TableRef, TableSource, View};
+use daft_ext_abi::{FFI_ScalarFunction, FFI_SessionContext};
+use daft_ext_internal::module::ModuleHandle;
 use uuid::Uuid;
 
 use crate::{
-    Function, ambiguous_identifier_err,
+    ScalarFunction, ambiguous_identifier_err,
     error::CatalogResult,
     obj_already_exists_err, obj_not_found_err,
     options::{IdentifierMode, Options},
@@ -34,7 +41,7 @@ struct SessionState {
     /// Bindings for the attached tables.
     tables: Bindings<TableRef>,
     /// Session-scoped functions (Python UDFs and native extension functions).
-    functions: Bindings<Function>,
+    functions: Bindings<ScalarFunction>,
 }
 
 // TODO: Session should just use a Result not CatalogResult.
@@ -105,7 +112,7 @@ impl Session {
     ///
     /// Accepts any type convertible to [`Function`], including
     /// `WrappedUDFClass` (Python UDFs) and `Arc<dyn ScalarFunctionFactory>` (native).
-    pub fn attach_function(&self, name: impl Into<String>, function: impl Into<Function>) {
+    pub fn attach_function(&self, name: impl Into<String>, function: impl Into<ScalarFunction>) {
         self.state_mut()
             .functions
             .bind(name.into(), function.into());
@@ -239,7 +246,7 @@ impl Session {
     }
 
     /// Returns the function or none if it does not exist.
-    pub fn get_function(&self, name: &str) -> CatalogResult<Option<Function>> {
+    pub fn get_function(&self, name: &str) -> CatalogResult<Option<ScalarFunction>> {
         self.state().get_function(name)
     }
 
@@ -365,6 +372,58 @@ impl Session {
         Ok(())
     }
 
+    /// Load an extension module from a shared library and initialize it.
+    ///
+    /// This validates the ABI version, calls the module's `init` function
+    /// with a session context, and registers any functions the module defines.
+    pub fn load_and_init_extension(&self, path: &Path) -> DaftResult<()> {
+        let module = daft_ext_internal::module::load_module(path)?;
+
+        // Context passed through the FFI callback's opaque pointer.
+        struct InitCtx {
+            session: *const Session,
+            module: Arc<ModuleHandle>,
+        }
+
+        unsafe extern "C" fn define_function_cb(
+            ctx: *mut c_void,
+            ffi: FFI_ScalarFunction,
+        ) -> c_int {
+            let init_ctx = unsafe { &*(ctx as *const InitCtx) };
+            let name_ptr = unsafe { (ffi.name)(ffi.ctx) };
+            let name = unsafe { CStr::from_ptr(name_ptr) }
+                .to_str()
+                .unwrap_or("unknown")
+                .to_string();
+            let factory = daft_ext_internal::function::into_scalar_function_factory(
+                ffi,
+                init_ctx.module.clone(),
+            );
+            let session = unsafe { &*init_ctx.session };
+            session.attach_function(name, factory);
+            0
+        }
+
+        let init_ctx = InitCtx {
+            session: std::ptr::from_ref::<Self>(self),
+            module: module.clone(),
+        };
+
+        let mut ffi_ctx = FFI_SessionContext {
+            ctx: (&raw const init_ctx) as *mut c_void,
+            define_function: define_function_cb,
+        };
+
+        let rc = unsafe { (module.ffi_module().init)(&raw mut ffi_ctx) };
+        if rc != 0 {
+            return Err(DaftError::InternalError(format!(
+                "extension init failed with code {rc}"
+            )));
+        }
+
+        Ok(())
+    }
+
     /// Returns an identifier normalization function based upon the session options.
     pub fn normalizer(&self) -> impl Fn(&str) -> String {
         match self.state().options.identifier_mode {
@@ -403,7 +462,7 @@ impl SessionState {
         }
     }
 
-    pub fn get_function(&self, name: &str) -> CatalogResult<Option<Function>> {
+    pub fn get_function(&self, name: &str) -> CatalogResult<Option<ScalarFunction>> {
         // Functions always use case-insensitive lookup (SQL convention).
         match self.functions.lookup(name, LookupMode::Insensitive) {
             fns if fns.is_empty() => Ok(None),
@@ -510,7 +569,7 @@ mod tests {
         // Session A can see it; session B cannot.
         assert!(matches!(
             session_a.get_function("my_ext_fn").unwrap(),
-            Some(Function::Native(_))
+            Some(ScalarFunction::Native(_))
         ));
         assert!(session_b.get_function("my_ext_fn").unwrap().is_none());
     }

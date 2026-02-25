@@ -3,21 +3,21 @@ use std::sync::Arc;
 use daft_catalog::error::CatalogResult;
 
 /// A Python UDF class (daft.udf.py:UDF).
-type PythonFunction = daft_dsl::functions::python::WrappedUDFClass;
+type PythonScalarFunction = daft_dsl::functions::python::WrappedUDFClass;
 
 /// A native scalar function factory from an extension.
-type NativeFunction = Arc<dyn daft_dsl::functions::ScalarFunctionFactory>;
+type NativeScalarFunction = Arc<dyn daft_dsl::functions::ScalarFunctionFactory>;
 
 /// A function registered in a session, either a Python UDF or a native extension function.
 #[derive(Clone)]
-pub enum Function {
+pub enum ScalarFunction {
     /// A Python UDF class (daft.udf.py:UDF).
-    Python(PythonFunction),
+    Python(PythonScalarFunction),
     /// A native scalar function factory from an extension.
-    Native(NativeFunction),
+    Native(NativeScalarFunction),
 }
 
-impl Function {
+impl ScalarFunction {
     /// Returns the function name.
     pub fn name(&self) -> CatalogResult<String> {
         match self {
@@ -32,7 +32,7 @@ impl Function {
     }
 }
 
-impl std::fmt::Debug for Function {
+impl std::fmt::Debug for ScalarFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Python(udf) => f.debug_tuple("Python").field(udf).finish(),
@@ -41,14 +41,14 @@ impl std::fmt::Debug for Function {
     }
 }
 
-impl From<PythonFunction> for Function {
-    fn from(function: PythonFunction) -> Self {
+impl From<PythonScalarFunction> for ScalarFunction {
+    fn from(function: PythonScalarFunction) -> Self {
         Self::Python(function)
     }
 }
 
-impl From<NativeFunction> for Function {
-    fn from(function: NativeFunction) -> Self {
+impl From<NativeScalarFunction> for ScalarFunction {
+    fn from(function: NativeScalarFunction) -> Self {
         Self::Native(function)
     }
 }

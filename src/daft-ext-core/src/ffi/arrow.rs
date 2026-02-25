@@ -1,5 +1,4 @@
-use arrow::ffi as arrow_ffi;
-use arrow_array::{ArrayRef, make_array};
+use arrow_array::ArrayRef;
 use daft_ext_abi::{FFI_ArrowArray, FFI_ArrowSchema};
 
 use crate::error::{DaftError, DaftResult};
@@ -15,15 +14,8 @@ pub unsafe fn import_arrow_args(
     schemas: *const FFI_ArrowSchema,
     count: usize,
 ) -> DaftResult<Vec<ArrayRef>> {
-    let mut arrays = Vec::with_capacity(count);
-    for i in 0..count {
-        let ffi_array = unsafe { std::ptr::read(args.add(i)) };
-        let ffi_schema = unsafe { &*schemas.add(i) };
-        let data = unsafe { arrow_ffi::from_ffi(ffi_array, ffi_schema) }
-            .map_err(|e| DaftError::RuntimeError(format!("failed to import array {i}: {e}")))?;
-        arrays.push(make_array(data));
-    }
-    Ok(arrays)
+    unsafe { daft_ext_abi::ffi::arrow::import_arrow_args(args, schemas, count) }
+        .map_err(DaftError::RuntimeError)
 }
 
 /// Export an Arrow array through C Data Interface out-pointers.
@@ -36,11 +28,6 @@ pub unsafe fn export_arrow_result(
     ret_array: *mut FFI_ArrowArray,
     ret_schema: *mut FFI_ArrowSchema,
 ) -> DaftResult<()> {
-    let (out_array, out_schema) = arrow_ffi::to_ffi(&array.to_data())
-        .map_err(|e| DaftError::RuntimeError(format!("failed to export result: {e}")))?;
-    unsafe {
-        std::ptr::write(ret_array, out_array);
-        std::ptr::write(ret_schema, out_schema);
-    }
-    Ok(())
+    unsafe { daft_ext_abi::ffi::arrow::export_arrow_result(array, ret_array, ret_schema) }
+        .map_err(DaftError::RuntimeError)
 }

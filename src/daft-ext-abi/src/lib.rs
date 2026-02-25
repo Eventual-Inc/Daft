@@ -7,6 +7,8 @@
 //! - "module" = the shared library at the ABI boundary
 //! - "extension" = the higher-level Python package wrapping a module
 
+pub mod ffi;
+
 use std::ffi::{c_char, c_int, c_void};
 
 pub use arrow::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
@@ -26,6 +28,7 @@ pub const DAFT_MODULE_MAGIC_SYMBOL: &str = "daft_module_magic";
 ///
 /// Analogous to Postgres's `Pg_magic_struct` + `_PG_init` combined into
 /// a single struct.
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct FFI_Module {
     /// Must equal [`DAFT_ABI_VERSION`] or the loader rejects the module.
@@ -67,16 +70,17 @@ pub struct FFI_ScalarFunction {
 
     /// Compute the output field given input fields.
     ///
-    /// `args_json` is a null-terminated JSON array of Arrow fields.
-    /// On success, writes a JSON string to `*ret_json`
+    /// `args` points to `args_count` Arrow field schemas (C Data Interface).
+    /// On success, writes the result schema to `*ret`.
+    /// On error, writes a null-terminated message to `*errmsg`
     /// (freed by `FFI_Module::free_string`).
-    /// On error, writes a null-terminated message to `*errmsg` (same).
     ///
     /// Returns 0 on success, non-zero on error.
     pub get_return_field: unsafe extern "C" fn(
         ctx: *const c_void,
-        args_json: *const c_char,
-        ret_json: *mut *mut c_char,
+        args: *const FFI_ArrowSchema,
+        args_count: usize,
+        ret: *mut FFI_ArrowSchema,
         errmsg: *mut *mut c_char,
     ) -> c_int,
 

@@ -8,10 +8,9 @@ use arrow_schema::Field;
 use daft_ext_abi::{FFI_ArrowArray, FFI_ArrowSchema, FFI_ScalarFunction};
 
 use crate::{
-    error::DaftResult,
+    error::{DaftError, DaftResult},
     ffi::{
         arrow::{export_arrow_result, import_arrow_args},
-        strings::{from_json_cstr, to_json_cstr},
         trampoline::trampoline,
     },
 };
@@ -51,16 +50,25 @@ unsafe extern "C" fn ffi_name(ctx: *const c_void) -> *const c_char {
 /// Returns the output field given the input fields.
 #[rustfmt::skip]
 unsafe extern "C" fn ffi_get_return_field(
-    ctx:       *const c_void,
-    args_json: *const c_char,
-    ret_json:  *mut *mut c_char,
-    errmsg:    *mut *mut c_char,
+    ctx:        *const c_void,
+    args:       *const FFI_ArrowSchema,
+    args_count: usize,
+    ret:        *mut FFI_ArrowSchema,
+    errmsg:     *mut *mut c_char,
 ) -> c_int {
     unsafe { trampoline(errmsg, "panic in get_return_field", || {
         let ctx = &*ctx.cast::<DaftScalarFunctionRef>();
-        let fields: Vec<Field> = from_json_cstr(args_json)?;
+        let mut fields = Vec::with_capacity(args_count);
+        for i in 0..args_count {
+            let schema = &*args.add(i);
+            let field = Field::try_from(schema)
+                .map_err(|e| DaftError::TypeError(format!("arg {i}: {e}")))?;
+            fields.push(field);
+        }
         let result = ctx.return_field(&fields)?;
-        *ret_json = to_json_cstr(&result)?;
+        let out_schema = FFI_ArrowSchema::try_from(&result)
+            .map_err(|e| DaftError::RuntimeError(format!("schema export failed: {e}")))?;
+        std::ptr::write(ret, out_schema);
         Ok(())
     })}
 }
@@ -93,14 +101,12 @@ unsafe extern "C" fn ffi_fini(ctx: *mut c_void) {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::CString;
-
     use arrow::ffi as arrow_ffi;
     use arrow_array::{Array, Int32Array, make_array};
     use arrow_schema::{DataType, Field};
 
     use super::*;
-    use crate::{error::DaftError, ffi::strings::free_string};
+    use crate::ffi::strings::free_string;
 
     struct IncrementFn;
 
@@ -137,30 +143,28 @@ mod tests {
     fn vtable_get_return_field_roundtrip() {
         let vtable = into_ffi(Arc::new(IncrementFn));
 
-        let fields = vec![Field::new("x", DataType::Int32, false)];
-        let args_json = CString::new(serde_json::to_string(&fields).unwrap()).unwrap();
+        let field = Field::new("x", DataType::Int32, false);
+        let ffi_field = FFI_ArrowSchema::try_from(&field).unwrap();
 
-        let mut ret_json: *mut c_char = std::ptr::null_mut();
+        let mut ret_schema = FFI_ArrowSchema::empty();
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
         let rc = unsafe {
             (vtable.get_return_field)(
                 vtable.ctx,
-                args_json.as_ptr(),
-                &raw mut ret_json,
+                &raw const ffi_field,
+                1,
+                &raw mut ret_schema,
                 &raw mut errmsg,
             )
         };
 
         assert_eq!(rc, 0, "get_return_field should succeed");
-        assert!(!ret_json.is_null());
 
-        let result_str = unsafe { CStr::from_ptr(ret_json) }.to_str().unwrap();
-        let result_field: Field = serde_json::from_str(result_str).unwrap();
+        let result_field = Field::try_from(&ret_schema).unwrap();
         assert_eq!(result_field.name(), "result");
         assert_eq!(*result_field.data_type(), DataType::Int32);
 
-        unsafe { free_string(ret_json) };
         unsafe { (vtable.fini)(vtable.ctx.cast_mut()) };
     }
 
@@ -217,15 +221,15 @@ mod tests {
 
         let vtable = into_ffi(Arc::new(FailingFn));
 
-        let args_json = CString::new("[]").unwrap();
-        let mut ret_json: *mut c_char = std::ptr::null_mut();
+        let mut ret_schema = FFI_ArrowSchema::empty();
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
         let rc = unsafe {
             (vtable.get_return_field)(
                 vtable.ctx,
-                args_json.as_ptr(),
-                &raw mut ret_json,
+                std::ptr::null(),
+                0,
+                &raw mut ret_schema,
                 &raw mut errmsg,
             )
         };

@@ -13,7 +13,7 @@ use daft_dsl::{
     },
     unresolved_col,
 };
-use daft_session::{Function as SessionFunction, Session};
+use daft_session::{ScalarFunction as SessionFunction, Session};
 use sqlparser::ast::{
     DuplicateTreatment, Function, FunctionArg, FunctionArgExpr, FunctionArgOperator,
     FunctionArguments, WindowType,
