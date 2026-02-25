@@ -12,18 +12,8 @@ import {
   DURATION_US_STAT_KEY,
 } from "./stats-utils";
 import ProgressTable from "./progress-table";
-
-const categoryColors: Record<string, { bg: string; border: string; text: string }> = {
-  Source: { bg: "bg-emerald-950", border: "border-emerald-700", text: "text-emerald-300" },
-  Filter: { bg: "bg-amber-950", border: "border-amber-700", text: "text-amber-300" },
-  Project: { bg: "bg-sky-950", border: "border-sky-700", text: "text-sky-300" },
-  Sort: { bg: "bg-violet-950", border: "border-violet-700", text: "text-violet-300" },
-  Join: { bg: "bg-rose-950", border: "border-rose-700", text: "text-rose-300" },
-  Aggregate: { bg: "bg-fuchsia-950", border: "border-fuchsia-700", text: "text-fuchsia-300" },
-  Sink: { bg: "bg-indigo-950", border: "border-indigo-700", text: "text-indigo-300" },
-};
-
-const defaultColor = { bg: "bg-zinc-900", border: "border-zinc-600", text: "text-zinc-300" };
+import TreeLayout from "./tree-layout";
+import { categoryColors, defaultColor } from "./tree-colors";
 
 function getCategoryColor(node: PhysicalPlanNode) {
   // Try node.type first (e.g. "Source", "Join"), then node.category
@@ -110,57 +100,6 @@ function PhysicalNodeCard({
   );
 }
 
-function TreeNode({
-  node,
-  operators,
-}: {
-  node: PhysicalPlanNode;
-  operators: Record<number, OperatorInfo>;
-}) {
-  const hasChildren = node.children && node.children.length > 0;
-
-  return (
-    <div className="flex flex-col items-center min-w-0">
-      <PhysicalNodeCard node={node} operator={operators[node.id]} />
-
-      {hasChildren && (
-        <div className="flex flex-col items-center">
-          {/* Vertical line from parent */}
-          <div className="w-px h-6 bg-zinc-600" />
-
-          {node.children!.length > 1 ? (
-            <div className="flex items-start">
-              {node.children!.map((child, i) => {
-                const isFirst = i === 0;
-                const isLast = i === node.children!.length - 1;
-                return (
-                  <div key={i} className="flex flex-col items-center">
-                    {/* Horizontal + vertical connector */}
-                    <div className="flex w-full h-px">
-                      <div
-                        className={`flex-1 h-px ${isFirst ? "bg-transparent" : "bg-zinc-600"}`}
-                      />
-                      <div
-                        className={`flex-1 h-px ${isLast ? "bg-transparent" : "bg-zinc-600"}`}
-                      />
-                    </div>
-                    <div className="w-px h-6 bg-zinc-600" />
-                    <div className="px-3">
-                      <TreeNode node={child} operators={operators} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <TreeNode node={node.children![0]} operators={operators} />
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function PhysicalPlanTree({
   exec_state,
 }: {
@@ -177,6 +116,8 @@ export default function PhysicalPlanTree({
       // fall through — will show table
     }
   }
+
+  const operators = exec_state.exec_info.operators;
 
   return (
     <div className="bg-zinc-900 h-full flex flex-col">
@@ -222,7 +163,13 @@ export default function PhysicalPlanTree({
       <div className="flex-1 overflow-auto">
         {viewMode === "tree" && plan ? (
           <div className="relative flex justify-center py-6 px-4 overflow-auto">
-            <TreeNode node={plan} operators={exec_state.exec_info.operators} />
+            <TreeLayout
+              node={plan}
+              getChildren={(node) => node.children ?? []}
+              renderNode={(node) => (
+                <PhysicalNodeCard node={node} operator={operators[node.id]} />
+              )}
+            />
           </div>
         ) : viewMode === "json" && plan ? (
           <pre
