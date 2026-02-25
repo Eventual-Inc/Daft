@@ -1685,6 +1685,9 @@ impl AsRef<Self> for RecordBatch {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
+    use arrow_array::ArrayRef;
     use common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{expr::bound_expr::BoundExpr, resolved_col};
@@ -1727,6 +1730,86 @@ mod test {
         let ipc_stream = table.to_ipc_stream()?;
         let roundtrip_table = RecordBatch::from_ipc_stream(&ipc_stream)?;
         assert_eq!(table, roundtrip_table);
+        Ok(())
+    }
+
+    #[test]
+    fn test_from_arrow_auto_casts_small_types() -> DaftResult<()> {
+        use arrow::{
+            array::{
+                BinaryArray, Int32Array as ArrowInt32Array, ListArray as ArrowListArray,
+                StringArray,
+            },
+            buffer::OffsetBuffer,
+        };
+
+        // Small Utf8 (arrow StringArray)
+        let utf8_arr: ArrayRef =
+            Arc::new(StringArray::from(vec![Some("hello"), None, Some("world")]));
+
+        // Small Binary
+        let binary_arr: ArrayRef = Arc::new(BinaryArray::from(vec![
+            Some(b"abc" as &[u8]),
+            None,
+            Some(b"def"),
+        ]));
+
+        // Small List (i32 offsets) of Int32: [[1, 2], null, [3]]
+        let values = ArrowInt32Array::from(vec![1, 2, 3]);
+        let offsets = OffsetBuffer::new(vec![0i32, 2, 2, 3].into());
+        let list_field = Arc::new(arrow::datatypes::Field::new(
+            "item",
+            arrow::datatypes::DataType::Int32,
+            true,
+        ));
+        let list_arr: ArrayRef = Arc::new(ArrowListArray::new(
+            list_field,
+            offsets,
+            Arc::new(values),
+            Some(vec![true, false, true].into()),
+        ));
+
+        let schema = Schema::new(vec![
+            Field::new("utf8_col", DataType::Utf8),
+            Field::new("binary_col", DataType::Binary),
+            Field::new("list_col", DataType::List(Box::new(DataType::Int32))),
+        ]);
+
+        let rb = RecordBatch::from_arrow(schema, vec![utf8_arr, binary_arr, list_arr])?;
+
+        assert_eq!(rb.num_rows(), 3);
+        assert_eq!(rb.get_column(0).data_type(), &DataType::Utf8);
+        assert_eq!(rb.get_column(1).data_type(), &DataType::Binary);
+        assert_eq!(
+            rb.get_column(2).data_type(),
+            &DataType::List(Box::new(DataType::Int32))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_from_arrow_auto_casts_extension_type() -> DaftResult<()> {
+        use arrow::array::BinaryArray;
+
+        // Extension type with Binary inner storage — the arrow array comes in as
+        // small Binary but Daft internally stores Binary as LargeBinary.
+        let ext_dtype =
+            DataType::Extension("custom_ext".to_string(), Box::new(DataType::Binary), None);
+
+        let binary_arr: ArrayRef = Arc::new(BinaryArray::from(vec![
+            Some(b"foo" as &[u8]),
+            None,
+            Some(b"bar"),
+        ]));
+
+        let schema = Schema::new(vec![Field::new("ext_col", ext_dtype.clone())]);
+
+        let rb = RecordBatch::from_arrow(schema, vec![binary_arr])?;
+
+        assert_eq!(rb.num_rows(), 3);
+        assert_eq!(rb.get_column(0).data_type(), &ext_dtype);
+
         Ok(())
     }
 }

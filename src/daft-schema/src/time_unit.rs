@@ -118,20 +118,14 @@ pub fn format_string_has_offset(format: &str) -> bool {
 #[inline]
 pub fn timestamp_to_naive_datetime(timestamp: i64, time_unit: TimeUnit) -> chrono::NaiveDateTime {
     match time_unit {
-        TimeUnit::Seconds => daft_arrow::temporal_conversions::timestamp_s_to_datetime(timestamp)
+        TimeUnit::Seconds => arrow::temporal_conversions::timestamp_s_to_datetime(timestamp)
             .expect("timestamp_s_to_datetime should not return None"),
-        TimeUnit::Milliseconds => {
-            daft_arrow::temporal_conversions::timestamp_ms_to_datetime(timestamp)
-                .expect("timestamp_ms_to_datetime should not return None")
-        }
-        TimeUnit::Microseconds => {
-            daft_arrow::temporal_conversions::timestamp_us_to_datetime(timestamp)
-                .expect("timestamp_us_to_datetime should not return None")
-        }
-        TimeUnit::Nanoseconds => {
-            daft_arrow::temporal_conversions::timestamp_ns_to_datetime(timestamp)
-                .expect("timestamp_ns_to_datetime should not return None")
-        }
+        TimeUnit::Milliseconds => arrow::temporal_conversions::timestamp_ms_to_datetime(timestamp)
+            .expect("timestamp_ms_to_datetime should not return None"),
+        TimeUnit::Microseconds => arrow::temporal_conversions::timestamp_us_to_datetime(timestamp)
+            .expect("timestamp_us_to_datetime should not return None"),
+        TimeUnit::Nanoseconds => arrow::temporal_conversions::timestamp_ns_to_datetime(timestamp)
+            .expect("timestamp_ns_to_datetime should not return None"),
     }
 }
 

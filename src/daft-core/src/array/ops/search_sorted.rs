@@ -4,7 +4,7 @@ use common_error::DaftResult;
 
 use crate::{
     array::DataArray,
-    datatypes::{DaftArrowBackedType, UInt64Array},
+    datatypes::{DaftArrowBackedType, DataType, Field, UInt64Array},
     kernels::search_sorted,
 };
 
@@ -19,6 +19,9 @@ where
             descending,
         )?;
 
-        DataArray::from_arrow(self.field.clone(), Arc::new(array))
+        DataArray::from_arrow(
+            Field::new(self.field.name.as_str(), DataType::UInt64),
+            Arc::new(array),
+        )
     }
 }

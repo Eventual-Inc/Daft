@@ -114,23 +114,47 @@ impl<T> DataArray<T> {
             physical_field.dtype
         );
 
-        if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow() {
-            // since daft's Utf8 always maps to Arrow's LargeUtf8, we need to handle this special case
-            // If the expected physical type is LargeUtf8, but the actual Arrow type is Utf8, we need to convert it
-            if expected_arrow_physical_type == arrow::datatypes::DataType::LargeUtf8
-                && arrow_arr.data_type() == &arrow::datatypes::DataType::Utf8
-            {
-                let arr = cast(arrow_arr.as_ref(), &arrow::datatypes::DataType::LargeUtf8)?;
-                let nulls = arr.nulls().cloned().map(Into::into);
+        // Validate and optionally auto-cast the arrow array to match Daft's expected
+        // physical type. A coercion is valid when the actual arrow type round-trips
+        // through Daft's type system to the expected arrow type (e.g. arrow Utf8 →
+        // Daft Utf8 → arrow LargeUtf8). Any other mismatch is an error.
+        // For Extension types, use the inner storage dtype since Extension itself
+        // doesn't have a direct arrow mapping (the registry stores the original type for export).
+        let expected = match &physical_field.dtype {
+            DataType::Extension(_, inner, _) => inner.to_arrow().ok(),
+            dt => dt.to_arrow().ok(),
+        };
+        let arrow_arr = if let Some(expected) = expected {
+            let actual = arrow_arr.data_type();
+            if expected != *actual {
+                // Check if the actual arrow type is a valid Daft coercion:
+                // convert actual → Daft DataType → arrow. If it matches expected,
+                // this is a known coercion (e.g. Utf8→LargeUtf8, Binary→LargeBinary).
+                let is_coercible = DataType::try_from(actual)
+                    .and_then(|dt| dt.to_arrow())
+                    .is_ok_and(|roundtripped| roundtripped == expected);
 
-                return Ok(Self {
-                    field: physical_field,
-                    data: arr.into(),
-                    nulls,
-                    marker_: PhantomData,
-                });
+                if is_coercible {
+                    cast(arrow_arr.as_ref(), &expected)
+                        .map_err(|e| {
+                            DaftError::TypeError(format!(
+                                "Failed to auto-cast arrow array from {:?} to {:?} for field '{}' ({}): {}",
+                                actual, expected, physical_field.name, physical_field.dtype, e,
+                            ))
+                        })?
+                        .into()
+                } else {
+                    return Err(DaftError::TypeError(format!(
+                        "Arrow array type mismatch for field '{}': expected {:?} but got {:?}",
+                        physical_field.name, expected, actual,
+                    )));
+                }
+            } else {
+                arrow_arr
             }
-        }
+        } else {
+            arrow_arr
+        };
 
         let nulls = arrow_arr.nulls().cloned().map(Into::into);
         Ok(Self {
@@ -252,5 +276,162 @@ mod tests {
         let s = Series::from_arrow(daft_fld, data);
         assert!(s.is_ok());
         assert_eq!(s.unwrap().data_type(), &DataType::Utf8);
+    }
+
+    #[test]
+    fn from_small_binary_arrow() {
+        let data: Vec<Option<&[u8]>> = vec![Some(b"hello"), Some(b"world")];
+        let data = Arc::new(arrow::array::BinaryArray::from_iter(data.into_iter()));
+        let daft_fld = Arc::new(Field::new("test", DataType::Binary));
+
+        let s = Series::from_arrow(daft_fld, data);
+        assert!(s.is_ok());
+        assert_eq!(s.unwrap().data_type(), &DataType::Binary);
+    }
+
+    #[test]
+    fn from_small_list_arrow() {
+        use arrow::{
+            array::{Int32Array, ListArray as ArrowListArray},
+            buffer::OffsetBuffer,
+        };
+
+        // Create a List (i32 offsets) array: [[1, 2], [3]]
+        let values = Int32Array::from(vec![1, 2, 3]);
+        let offsets = OffsetBuffer::new(vec![0i32, 2, 3].into());
+        let list = ArrowListArray::new(
+            Arc::new(arrow::datatypes::Field::new(
+                "item",
+                arrow::datatypes::DataType::Int32,
+                true,
+            )),
+            offsets,
+            Arc::new(values),
+            None,
+        );
+        let daft_fld = Arc::new(Field::new(
+            "test",
+            DataType::List(Box::new(DataType::Int32)),
+        ));
+
+        let s = Series::from_arrow(daft_fld, Arc::new(list));
+        assert!(s.is_ok());
+        let s = s.unwrap();
+        assert_eq!(s.data_type(), &DataType::List(Box::new(DataType::Int32)));
+        assert_eq!(s.len(), 2);
+    }
+
+    /// Helper: build a Daft Field from an arrow field with extension metadata.
+    /// This populates the EXTENSION_TYPE_REGISTRY so to_arrow() can reverse coercion.
+    fn ext_field(
+        name: &str,
+        ext_name: &str,
+        storage_type: arrow::datatypes::DataType,
+    ) -> Arc<Field> {
+        use std::collections::HashMap;
+
+        let mut metadata = HashMap::new();
+        metadata.insert("ARROW:extension:name".to_string(), ext_name.to_string());
+        let arrow_field =
+            arrow::datatypes::Field::new(name, storage_type, true).with_metadata(metadata);
+        Arc::new(Field::try_from(&arrow_field).unwrap())
+    }
+
+    #[test]
+    fn from_small_list_u64_to_large_list_u64() {
+        use arrow::{
+            array::{ListArray as ArrowListArray, UInt64Array},
+            buffer::OffsetBuffer,
+        };
+
+        let values = UInt64Array::from(vec![10u64, 20, 30]);
+        let offsets = OffsetBuffer::new(vec![0i32, 2, 3].into());
+        let list = ArrowListArray::new(
+            Arc::new(arrow::datatypes::Field::new(
+                "item",
+                arrow::datatypes::DataType::UInt64,
+                true,
+            )),
+            offsets,
+            Arc::new(values),
+            None,
+        );
+        let daft_fld = Arc::new(Field::new(
+            "test",
+            DataType::List(Box::new(DataType::UInt64)),
+        ));
+
+        let s = Series::from_arrow(daft_fld, Arc::new(list));
+        assert!(s.is_ok());
+        let s = s.unwrap();
+        assert_eq!(s.data_type(), &DataType::List(Box::new(DataType::UInt64)));
+        assert_eq!(s.len(), 2);
+    }
+
+    #[test]
+    fn from_small_list_u64_rejects_large_list_u32() {
+        use arrow::{
+            array::{ListArray as ArrowListArray, UInt64Array},
+            buffer::OffsetBuffer,
+        };
+
+        // Build a List<UInt64> arrow array
+        let values = UInt64Array::from(vec![10u64, 20, 30]);
+        let offsets = OffsetBuffer::new(vec![0i32, 2, 3].into());
+        let list = ArrowListArray::new(
+            Arc::new(arrow::datatypes::Field::new(
+                "item",
+                arrow::datatypes::DataType::UInt64,
+                true,
+            )),
+            offsets,
+            Arc::new(values),
+            None,
+        );
+
+        // Try to load it as List<UInt32> — inner types don't match, should fail
+        let daft_fld = Arc::new(Field::new(
+            "test",
+            DataType::List(Box::new(DataType::UInt32)),
+        ));
+
+        let result = Series::from_arrow(daft_fld, Arc::new(list));
+        assert!(
+            result.is_err(),
+            "Expected type mismatch error for List<u64> → List<u32>"
+        );
+    }
+
+    #[test]
+    fn extension_binary_roundtrip() {
+        // Extension with Binary storage: Binary arrow array → from_arrow (casts to LargeBinary)
+        // → to_arrow (casts back to Binary)
+        let data: Vec<Option<&[u8]>> = vec![Some(b"foo"), None, Some(b"bar")];
+        let arr = Arc::new(arrow::array::BinaryArray::from_iter(data.into_iter()));
+        let field = ext_field("test", "test_ext_bin", arrow::datatypes::DataType::Binary);
+
+        let s = Series::from_arrow(field, arr).unwrap();
+        assert!(matches!(s.data_type(), DataType::Extension(..)));
+
+        // to_arrow should reverse the coercion back to Binary
+        let out = s.to_arrow().unwrap();
+        assert_eq!(out.data_type(), &arrow::datatypes::DataType::Binary);
+        assert_eq!(out.len(), 3);
+        assert!(out.is_null(1));
+    }
+
+    #[test]
+    fn extension_utf8_roundtrip() {
+        // Extension with Utf8 storage: Utf8 arrow array → from_arrow (casts to LargeUtf8)
+        // → to_arrow (casts back to Utf8)
+        let arr = Arc::new(StringArray::from(vec![Some("a"), Some("b")]));
+        let field = ext_field("test", "test_ext_str", arrow::datatypes::DataType::Utf8);
+
+        let s = Series::from_arrow(field, arr).unwrap();
+        assert!(matches!(s.data_type(), DataType::Extension(..)));
+
+        let out = s.to_arrow().unwrap();
+        assert_eq!(out.data_type(), &arrow::datatypes::DataType::Utf8);
+        assert_eq!(out.len(), 2);
     }
 }
