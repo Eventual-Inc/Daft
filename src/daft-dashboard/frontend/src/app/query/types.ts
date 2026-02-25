@@ -41,9 +41,18 @@ export type OperatorInfo = {
   stats: Record<string, Stat>;
 };
 
+export type PhysicalPlanNode = {
+  id: number;
+  name: string;
+  type: string;
+  category: string;
+  children?: PhysicalPlanNode[];
+};
+
 export type ExecInfo = {
   exec_start_sec: number;
   operators: Record<number, OperatorInfo>;
+  physical_plan: string;
   // TODO: Logs
 };
 

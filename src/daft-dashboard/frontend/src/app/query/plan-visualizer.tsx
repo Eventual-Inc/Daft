@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { main } from "@/lib/utils";
+import TreeLayout from "./tree-layout";
+import { categoryColors, defaultColor } from "./tree-colors";
 
 type PlanNode = {
   type: string;
@@ -19,17 +21,6 @@ function getNodeProps(node: PlanNode): [string, unknown][] {
     ([key]) => key !== "type" && key !== "children",
   );
 }
-
-const categoryColors: Record<string, { bg: string; border: string; text: string }> = {
-  Source: { bg: "bg-emerald-950", border: "border-emerald-700", text: "text-emerald-300" },
-  Filter: { bg: "bg-amber-950", border: "border-amber-700", text: "text-amber-300" },
-  Project: { bg: "bg-sky-950", border: "border-sky-700", text: "text-sky-300" },
-  Sort: { bg: "bg-violet-950", border: "border-violet-700", text: "text-violet-300" },
-  Join: { bg: "bg-rose-950", border: "border-rose-700", text: "text-rose-300" },
-  Aggregate: { bg: "bg-fuchsia-950", border: "border-fuchsia-700", text: "text-fuchsia-300" },
-};
-
-const defaultColor = { bg: "bg-zinc-900", border: "border-zinc-600", text: "text-zinc-300" };
 
 function getColor(nodeType: string) {
   return categoryColors[nodeType] ?? defaultColor;
@@ -100,61 +91,14 @@ function NodeCard({
   );
 }
 
-function PlanTree({ node }: { node: PlanNode }) {
-  return (
-    <div className="relative flex justify-center py-6 px-4 overflow-auto">
-      <TreeNode node={node} />
-    </div>
-  );
-}
-
-function TreeNode({ node, depth = 0 }: { node: PlanNode; depth?: number }) {
+function ExpandableNodeCard({ node }: { node: PlanNode }) {
   const [expanded, setExpanded] = useState(true);
-  const hasChildren = node.children && node.children.length > 0;
-
   return (
-    <div className="flex flex-col items-center min-w-0">
-      <NodeCard
-        node={node}
-        isExpanded={expanded}
-        onToggle={() => setExpanded(!expanded)}
-      />
-
-      {hasChildren && (
-        <div className="flex flex-col items-center">
-          {/* Vertical line from parent */}
-          <div className="w-px h-6 bg-zinc-600" />
-
-          {node.children.length > 1 ? (
-            <div className="flex items-start">
-              {node.children.map((child, i) => {
-                const isFirst = i === 0;
-                const isLast = i === node.children.length - 1;
-                return (
-                  <div key={i} className="flex flex-col items-center">
-                    {/* Horizontal + vertical connector */}
-                    <div className="flex w-full h-px">
-                      <div
-                        className={`flex-1 h-px ${isFirst ? "bg-transparent" : "bg-zinc-600"}`}
-                      />
-                      <div
-                        className={`flex-1 h-px ${isLast ? "bg-transparent" : "bg-zinc-600"}`}
-                      />
-                    </div>
-                    <div className="w-px h-6 bg-zinc-600" />
-                    <div className="px-3">
-                      <TreeNode node={child} depth={depth + 1} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <TreeNode node={node.children[0]} depth={depth + 1} />
-          )}
-        </div>
-      )}
-    </div>
+    <NodeCard
+      node={node}
+      isExpanded={expanded}
+      onToggle={() => setExpanded(!expanded)}
+    />
   );
 }
 
@@ -205,7 +149,13 @@ export default function PlanVisualizer({ planJson }: { planJson: string }) {
       {/* Content */}
       <div className="flex-1 overflow-auto">
         {viewMode === "tree" ? (
-          <PlanTree node={plan} />
+          <div className="relative flex justify-center py-6 px-4 overflow-auto">
+            <TreeLayout
+              node={plan}
+              getChildren={(node) => node.children ?? []}
+              renderNode={(node) => <ExpandableNodeCard node={node} />}
+            />
+          </div>
         ) : (
           <pre
             className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap p-4`}
