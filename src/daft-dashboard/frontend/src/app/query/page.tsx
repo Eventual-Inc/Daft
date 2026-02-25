@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import LoadingPage from "@/components/loading";
 import { Status } from "./status";
 import { ExecutingState, OperatorInfo, QueryInfo } from "./types";
-import ProgressTable from "./progress-table";
+import PhysicalPlanTree from "./physical-plan-tree";
 import PlanVisualizer from "./plan-visualizer";
 
 /**
@@ -210,7 +210,7 @@ function QueryPageInner() {
                 query.state.status === "Setup"
               }
             >
-              Progress Table
+              Execution
             </TabsTrigger>
             <TabsTrigger
               value="optimized-plan"
@@ -234,7 +234,7 @@ function QueryPageInner() {
                   </p>
                 </div>
               ) : (
-                <ProgressTable exec_state={query.state as ExecutingState} />
+                <PhysicalPlanTree exec_state={query.state as ExecutingState} />
               )}
             </div>
           </TabsContent>
