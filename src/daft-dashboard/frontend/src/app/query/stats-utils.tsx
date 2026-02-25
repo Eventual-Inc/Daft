@@ -22,7 +22,7 @@ export const getStatusIcon = (status: OperatorStatus) => {
     case "Pending":
     default:
       return (
-        <div className="w-5 h-5 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin"></div>
+        <div className="w-5 h-5 shrink-0 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin"></div>
       );
   }
 };
