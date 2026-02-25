@@ -61,6 +61,7 @@ if TYPE_CHECKING:
     import pyiceberg
     import ray
     import torch
+    from sqlalchemy.engine import Connection
 
     from daft.io import DataSink
     from daft.io.catalog import DataCatalogTable
@@ -782,6 +783,113 @@ class DataFrame:
     ###
     # Write methods
     ###
+
+    @DataframePublicAPI
+    def write_sql(
+        self,
+        table_name: str,
+        conn: str | Callable[[], "Connection"],
+        write_mode: Literal["append", "overwrite", "fail"] = "append",
+        column_types: dict[str, Any] | None = None,
+        non_primitive_handling: Literal["bytes", "str", "error"] | None = None,
+    ) -> "DataFrame":
+        """Write the DataFrame to a SQL database and return write metrics.
+
+        The write is executed via :meth:`daft.DataFrame.write_sink` using an internal
+        :class:`daft.io._sql.SQLDataSink`.
+
+        Primitive columns (ints, floats, bools, strings, binary, dates, timestamps) are written by converting to a pandas DataFrame and calling :meth:`pandas.DataFrame.to_sql`, letting SQLAlchemy or ``column_types`` choose concrete SQL types.
+
+        Non-primitive columns (lists, structs, maps, tensors, images, embeddings, python objects, etc.) are normalized according to ``non_primitive_handling`` (default ``None`` behaves like ``"str"``): ``"str"`` serializes values to text (JSON for arrays/maps and other containers, ``str(..)`` otherwise), ``"bytes"`` writes UTF-8 bytes of that text, and ``"error"`` fails if such columns are present.
+
+        Args:
+            table_name (str): Name of the table to write to.
+            conn (str | Callable[[], "Connection"]): Connection string or factory.
+            write_mode (str): Mode to write to the table. "append", "overwrite", or "fail". Defaults to "append".
+            column_types (Optional[Dict[str, Any]]): Optional mapping from column names to
+                SQLAlchemy types to use when creating the table or casting columns.
+                Passed through to the underlying SQL engine when creating or writing
+                the table.
+            non_primitive_handling (Literal["bytes", "str", "error"] | None):
+                Controls how non-primitive columns are normalized before reaching SQL; default ``None`` behaves like ``"str"``. Accepted values are ``"str"``, ``"bytes"``, and ``"error"``.
+
+        Returns:
+            DataFrame: A single-row DataFrame containing aggregate write metrics with
+                columns ``total_written_rows`` and ``total_written_bytes``.
+
+        Warning:
+            This features is early in development and will likely experience API changes.
+
+        Note:
+            Primitive columns still rely on pandas/SQLAlchemy (or ``column_types``) for concrete SQL types, while non-primitive columns are pre-normalized in Python according to ``non_primitive_handling`` before reaching the SQL driver.
+
+        Examples:
+            Write to a SQL table using a database URL and explicit SQLAlchemy dtypes:
+
+            >>> from sqlalchemy import DateTime, Integer, String
+            >>> import datetime
+            >>> import daft
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "id": [1, 2],
+            ...         "name": ["Alice", "Bob"],
+            ...         "created_at": [
+            ...             datetime.datetime(2024, 1, 1, 0, 0, 0),
+            ...             datetime.datetime(2024, 1, 2, 0, 0, 0),
+            ...         ],
+            ...     }
+            ... )
+            >>> column_types = {
+            ...     "id": Integer(),
+            ...     "name": String(length=255),
+            ...     "created_at": DateTime(timezone=True),
+            ... }
+            >>> metrics_df = df.write_sql("users", "sqlite:///my_database.db", column_types=column_types)
+
+            Write to a SQL table using a SQLAlchemy connection factory and dtypes:
+
+            >>> import sqlalchemy
+            >>> def create_conn():
+            ...     return sqlalchemy.create_engine("sqlite:///my_database.db").connect()
+            >>> metrics_df = df.write_sql("users", create_conn, column_types=column_types)
+
+            Write to a SQL table using a database URL with column_types=None to rely on inferred types:
+
+            >>> df = daft.from_pydict({"id": [1], "name": ["Alice"]})
+            >>> metrics_df = df.write_sql("users", "sqlite:///my_database.db", column_types=None)
+        """
+        from daft.io._sql import SQLDataSink
+
+        sink = SQLDataSink(
+            table_name=table_name,
+            conn=conn,
+            write_mode=write_mode,
+            column_types=column_types,
+            df_schema=self.schema(),
+            non_primitive_handling=non_primitive_handling,
+        )
+
+        if non_primitive_handling is None:
+            # Check for non-primitive types in the schema and warn if found
+            non_primitive_cols = [
+                field.name
+                for field in self.schema()
+                if field.dtype.is_python()
+                or field.dtype.is_list()
+                or field.dtype.is_struct()
+                or field.dtype.is_map()
+                or field.dtype.is_tensor()
+                or field.dtype.is_image()
+                or field.dtype.is_embedding()
+            ]
+            if non_primitive_cols:
+                warnings.warn(
+                    f"Detected non-primitive columns: {non_primitive_cols}. Writing as text (default). Set `non_primitive_handling` to control or suppress.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+        return self.write_sink(sink)
 
     @DataframePublicAPI
     def write_parquet(
