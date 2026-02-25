@@ -73,7 +73,7 @@ class ExecutionMetadata:
     _query_plan: str
 
     def __init__(self) -> None:
-        raise NotImplementedError("We do not support creating an ExecutionStats via __init__")
+        raise NotImplementedError("We do not support creating ExecutionMetadata via __init__")
 
     @staticmethod
     def _from_runner_output(
