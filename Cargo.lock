@@ -3176,7 +3176,6 @@ dependencies = [
  "daft-warc",
  "dashmap",
  "futures",
- "parquet2",
  "pyo3",
  "snafu",
  "tokio",
