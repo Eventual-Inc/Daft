@@ -17,7 +17,7 @@ pub fn infer_records_schema(record: &BorrowedValue) -> Result<Schema, ArrowError
         BorrowedValue::Array(array) => {
             let dtype = infer_array(array.as_slice())?;
 
-            if let DataType::List(f) = dtype {
+            if let DataType::LargeList(f) = dtype {
                 if let DataType::Struct(fields) = f.data_type() {
                     Ok(fields.iter().cloned().collect::<Vec<_>>())
                 } else {
@@ -102,7 +102,7 @@ fn infer_array(values: &[BorrowedValue]) -> Result<DataType, ArrowError> {
     Ok(if dt == DataType::Null {
         dt
     } else {
-        DataType::List(Arc::new(Field::new(ITEM_NAME, dt, true)))
+        DataType::LargeList(Arc::new(Field::new(ITEM_NAME, dt, true)))
     })
 }
 
@@ -180,15 +180,15 @@ pub fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
         .reduce(|lhs, rhs| {
             match (lhs, rhs) {
                 (lhs, rhs) if lhs == rhs => lhs,
-                (DataType::Utf8, _) | (_, DataType::Utf8) => DataType::Utf8,
-                (DataType::List(lhs), DataType::List(rhs)) => {
+                (DataType::LargeUtf8, _) | (_, DataType::LargeUtf8) => DataType::LargeUtf8,
+                (DataType::LargeList(lhs), DataType::LargeList(rhs)) => {
                     let inner =
                         coerce_data_type([lhs.data_type().clone(), rhs.data_type().clone()].into());
-                    DataType::List(Arc::new(Field::new(ITEM_NAME, inner, true)))
+                    DataType::LargeList(Arc::new(Field::new(ITEM_NAME, inner, true)))
                 }
-                (scalar, DataType::List(list)) | (DataType::List(list), scalar) => {
+                (scalar, DataType::LargeList(list)) | (DataType::LargeList(list), scalar) => {
                     let inner = coerce_data_type([scalar, list.data_type().clone()].into());
-                    DataType::List(Arc::new(Field::new(ITEM_NAME, inner, true)))
+                    DataType::LargeList(Arc::new(Field::new(ITEM_NAME, inner, true)))
                 }
                 (DataType::Float64, DataType::Int64) | (DataType::Int64, DataType::Float64) => {
                     DataType::Float64
@@ -222,7 +222,7 @@ pub fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
                     // Set unified time zone to UTC.
                     let unified_tz = match (&left_tz, &right_tz) {
                         (None, None) => None,
-                        (None, _) | (_, None) => return DataType::Utf8,
+                        (None, _) | (_, None) => return DataType::LargeUtf8,
                         (Some(l), Some(r)) if l == r => left_tz,
                         (Some(_), Some(_)) => Some("Z".into()),
                     };
@@ -232,7 +232,7 @@ pub fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
                 | (DataType::Date32, DataType::Timestamp(_, None)) => {
                     DataType::Timestamp(TimeUnit::Second, None)
                 }
-                (_, _) => DataType::Utf8,
+                (_, _) => DataType::LargeUtf8,
             }
         })
         .unwrap()
