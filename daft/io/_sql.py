@@ -154,10 +154,9 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
     table_name: str
     conn: str | Callable[[], "Connection"]
     write_mode: Literal["append", "overwrite", "fail"]
-    chunk_size: int | None
     column_types: Any | None
     df_schema: Schema
-    non_primitive_handling: Literal["bytes", "str", "error", "none"] | None = None
+    non_primitive_handling: Literal["bytes", "str", "error"] | None = None
 
     def __post_init__(self) -> None:
         # Schema of the final result returned by ``finalize``.
@@ -240,7 +239,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
                 "Drop or cast these columns, or choose 'str' or 'bytes' handling instead."
             )
 
-        if handling is None or handling in ("none", "str"):
+        if handling is None or handling == "str":
             mode = "str"
         elif handling == "bytes":
             mode = "bytes"
@@ -360,7 +359,6 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
                     con=connection,
                     if_exists="append",
                     index=False,
-                    chunksize=self.chunk_size,
                     dtype=self.column_types,
                 )
                 connection.commit()

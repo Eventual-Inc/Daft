@@ -92,14 +92,12 @@ def test_write_sql_invalid_mode(test_db):
 
 
 @pytest.mark.integration()
-@pytest.mark.parametrize("chunk_size", [None, 10, 500])
-def test_write_sql_chunk_sizes(test_db, chunk_size):
+def test_write_sql_chunk_sizes(test_db):
     table_name = f"write_test_chunk_size_{uuid.uuid4().hex}"
     num_rows = 2000
     df = daft.from_pydict({"id": list(range(num_rows)), "val": [f"val_{i}" for i in range(num_rows)]})
 
-    write_kwargs = {} if chunk_size is None else {"chunk_size": chunk_size}
-    df.write_sql(table_name, test_db, **write_kwargs)
+    df.write_sql(table_name, test_db)
 
     read_df = daft.read_sql(f"SELECT * FROM {table_name}", test_db).collect()
     assert len(read_df) == num_rows
@@ -317,8 +315,7 @@ def test_write_sql_dtype_with_connection_factory(test_db):
 
 
 @pytest.mark.integration()
-@pytest.mark.parametrize("chunk_size", [None, 50])
-def test_write_sql_dtype_with_chunking(test_db, chunk_size):
+def test_write_sql_dtype_with_chunking(test_db):
     table_name = f"write_test_dtype_chunk_{uuid.uuid4().hex}"
 
     num_rows = 100
@@ -331,8 +328,7 @@ def test_write_sql_dtype_with_chunking(test_db, chunk_size):
 
     column_types = {"id": Integer(), "name": String(length=64), "created_at": DateTime()}
 
-    write_kwargs = {} if chunk_size is None else {"chunk_size": chunk_size}
-    df.write_sql(table_name, test_db, column_types=column_types, **write_kwargs)
+    df.write_sql(table_name, test_db, column_types=column_types)
 
     read_df = daft.read_sql(f"SELECT * FROM {table_name}", test_db).sort("id").collect()
     expected_df = daft.from_pydict(data).sort("id").collect()
@@ -388,7 +384,7 @@ def test_write_sql_non_primitive_types_no_warning_explicit(test_db):
     # Verify NO warning is issued when non_primitive_handling is set
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")  # Cause all warnings to always be triggered.
-        df.write_sql(table_name, test_db, non_primitive_handling="none")
+        df.write_sql(table_name, test_db, non_primitive_handling="str")
         # Filter for our specific warning
         relevant_warnings = [
             x for x in w if issubclass(x.category, UserWarning) and "Detected non-primitive columns" in str(x.message)

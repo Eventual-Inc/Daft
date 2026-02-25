@@ -772,9 +772,8 @@ class DataFrame:
         table_name: str,
         conn: str | Callable[[], "Connection"],
         write_mode: Literal["append", "overwrite", "fail"] = "append",
-        chunk_size: int | None = None,
         column_types: dict[str, Any] | None = None,
-        non_primitive_handling: Literal["bytes", "str", "error", "none"] | None = None,
+        non_primitive_handling: Literal["bytes", "str", "error"] | None = None,
     ) -> "DataFrame":
         """Write the DataFrame to a SQL database and return write metrics.
 
@@ -789,17 +788,19 @@ class DataFrame:
             table_name (str): Name of the table to write to.
             conn (str | Callable[[], "Connection"]): Connection string or factory.
             write_mode (str): Mode to write to the table. "append", "overwrite", or "fail". Defaults to "append".
-            chunk_size (int): Number of rows to write at a time. Defaults to None.
             column_types (Optional[Dict[str, Any]]): Optional mapping from column names to
                 SQLAlchemy types to use when creating the table or casting columns.
                 Passed through to the underlying SQL engine when creating or writing
                 the table.
-            non_primitive_handling (Literal["bytes", "str", "error", "none"] | None):
-                Controls how non-primitive columns are normalized before reaching SQL; see paragraph above for the default text behavior (``None``/``"none"``/``"str"``), the ``"bytes"`` option, and the ``"error"`` fail-fast mode.
+            non_primitive_handling (Literal["bytes", "str", "error"] | None):
+                Controls how non-primitive columns are normalized before reaching SQL; default ``None`` behaves like ``"str"``. Accepted values are ``"str"``, ``"bytes"``, and ``"error"``.
 
         Returns:
             DataFrame: A single-row DataFrame containing aggregate write metrics with
                 columns ``total_written_rows`` and ``total_written_bytes``.
+
+        Warning:
+            This features is early in development and will likely experience API changes.
 
         Note:
             Primitive columns still rely on pandas/SQLAlchemy (or ``column_types``) for concrete SQL types, while non-primitive columns are pre-normalized in Python according to ``non_primitive_handling`` before reaching the SQL driver.
@@ -845,7 +846,6 @@ class DataFrame:
             table_name=table_name,
             conn=conn,
             write_mode=write_mode,
-            chunk_size=chunk_size,
             column_types=column_types,
             df_schema=self.schema(),
             non_primitive_handling=non_primitive_handling,
