@@ -71,7 +71,8 @@ fn arrow_chunk_to_table(
                 let offset = row_range_start.saturating_sub(*index_so_far);
                 arr = arr.sliced(offset, arr.len() - offset);
             }
-            let series_result = Series::try_from((f_name, arr));
+            let field = Arc::new(Field::new(f_name, DataType::from(arr.data_type())));
+            let series_result = Series::from_arrow(field, arr.into());
             Some(series_result)
         })
         .collect::<DaftResult<Vec<_>>>()?;
@@ -494,7 +495,11 @@ pub async fn local_parquet_read_async(
                     } else {
                         let casted_arrays = v
                             .into_iter()
-                            .map(move |a| Series::try_from((f_name, a)))
+                            .map(move |a| {
+                                let field =
+                                    Arc::new(Field::new(f_name, DataType::from(a.data_type())));
+                                Series::from_arrow(field, a.into())
+                            })
                             .collect::<Result<Vec<_>, _>>()?;
                         Series::concat(casted_arrays.iter().collect::<Vec<_>>().as_slice())
                     }

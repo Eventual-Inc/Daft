@@ -73,7 +73,7 @@ where
         match dtype {
             #[cfg(feature = "python")]
             DataType::Python => {
-                Series::try_from((self.name(), self.data.clone()))?.cast_to_python()
+                Series::from_arrow(self.field().clone(), self.data.clone())?.cast_to_python()
             }
             _ => {
                 // Cast from DataArray to the target DataType
@@ -191,7 +191,19 @@ where
                             &target_arrow_physical_type,
                         )
                     {
-                        arrow::compute::cast(data_to_cast.as_ref(), &target_arrow_physical_type)?
+                        // Cast to the physical type first (e.g. UInt16 -> Int32), then
+                        // reinterpret as the logical type (e.g. Int32 -> Date32) so that
+                        // downstream from_arrow receives the expected arrow type.
+                        let physical = arrow::compute::cast(
+                            data_to_cast.as_ref(),
+                            &target_arrow_physical_type,
+                        )?;
+                        let data = physical
+                            .into_data()
+                            .into_builder()
+                            .data_type(target_arrow_type)
+                            .build()?;
+                        arrow::array::make_array(data)
                     } else {
                         return Err(DaftError::TypeError(format!(
                             "can not cast {:?} to type: {:?}: Arrow types not castable, {:?}, {:?}",

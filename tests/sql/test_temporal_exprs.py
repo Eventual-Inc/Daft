@@ -155,6 +155,44 @@ def test_extract():
     assert actual.to_pydict() == expected.to_pydict()
 
 
+def test_date_trunc():
+    from daft.functions import date_trunc
+
+    df = daft.from_pydict({"ts": ["2024-01-15T10:30:45", "2024-06-20T14:15:30", "2024-12-31T23:59:59"]})
+    df = df.with_column("ts", daft.col("ts").cast(daft.DataType.timestamp("s")))
+
+    # Test bare unit name (standard SQL style)
+    expected = df.select(date_trunc("1 minute", daft.col("ts")).alias("truncated")).collect()
+    actual = daft.sql("SELECT DATE_TRUNC('minute', ts) AS truncated FROM df").collect()
+    assert actual.to_pydict() == expected.to_pydict()
+
+    # Test with explicit count (Daft style)
+    expected = df.select(date_trunc("1 hour", daft.col("ts")).alias("truncated")).collect()
+    actual = daft.sql("SELECT DATE_TRUNC('1 hour', ts) AS truncated FROM df").collect()
+    assert actual.to_pydict() == expected.to_pydict()
+
+    # Test day truncation
+    expected = df.select(date_trunc("1 day", daft.col("ts")).alias("truncated")).collect()
+    actual = daft.sql("SELECT DATE_TRUNC('day', ts) AS truncated FROM df").collect()
+    assert actual.to_pydict() == expected.to_pydict()
+
+    # Test case insensitivity of function name
+    actual = daft.sql("SELECT date_trunc('day', ts) AS truncated FROM df").collect()
+    assert actual.to_pydict() == expected.to_pydict()
+
+    # Test 'truncate' alias
+    actual = daft.sql("SELECT truncate('day', ts) AS truncated FROM df").collect()
+    assert actual.to_pydict() == expected.to_pydict()
+
+    # Test 3-argument form with relative_to
+    ref_df = df.with_column("ref", daft.lit("2024-01-01T00:00:00").cast(daft.DataType.timestamp("s")))
+    expected = ref_df.select(
+        date_trunc("1 hour", daft.col("ts"), relative_to=daft.col("ref")).alias("truncated")
+    ).collect()
+    actual = daft.sql("SELECT DATE_TRUNC('hour', ts, ref) AS truncated FROM ref_df").collect()
+    assert actual.to_pydict() == expected.to_pydict()
+
+
 def test_date_comparison():
     date_df = daft.from_pydict({"date_str": ["2020-01-01", "2020-01-02", "2020-01-03"]})
     date_df = date_df.with_column("date", daft.col("date_str").to_date("%Y-%m-%d"))

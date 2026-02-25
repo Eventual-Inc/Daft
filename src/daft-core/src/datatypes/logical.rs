@@ -93,7 +93,7 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
 
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
         let arrow_field = self.field().to_arrow()?;
-        let physical = arrow::array::make_array(self.physical.to_data());
+        let physical = self.physical.to_arrow();
 
         Ok(arrow::compute::cast(
             physical.as_ref(),

@@ -15,7 +15,7 @@ pub struct StructArray {
 
     /// Column representations
     pub children: Vec<Series>,
-    nulls: Option<daft_arrow::buffer::NullBuffer>,
+    nulls: Option<arrow::buffer::NullBuffer>,
     len: usize,
 }
 
@@ -29,7 +29,7 @@ impl StructArray {
     pub fn new<F: Into<Arc<Field>>>(
         field: F,
         children: Vec<Series>,
-        nulls: Option<daft_arrow::buffer::NullBuffer>,
+        nulls: Option<arrow::buffer::NullBuffer>,
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
@@ -94,7 +94,7 @@ impl StructArray {
         }
     }
 
-    pub fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+    pub fn nulls(&self) -> Option<&arrow::buffer::NullBuffer> {
         self.nulls.as_ref()
     }
 
@@ -202,7 +202,7 @@ impl StructArray {
         )) as _)
     }
 
-    pub fn with_nulls(&self, nulls: Option<daft_arrow::buffer::NullBuffer>) -> DaftResult<Self> {
+    pub fn with_nulls(&self, nulls: Option<arrow::buffer::NullBuffer>) -> DaftResult<Self> {
         if let Some(v) = &nulls
             && v.len() != self.len()
         {

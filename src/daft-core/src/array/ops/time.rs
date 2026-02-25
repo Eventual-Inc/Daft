@@ -6,7 +6,7 @@ use arrow::{
     datatypes::IntervalMonthDayNano,
     error::ArrowError,
 };
-use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{DateTime, Duration, NaiveDate, NaiveTime};
 use common_error::{DaftError, DaftResult};
 
 use super::as_arrow::AsArrow;
@@ -342,7 +342,7 @@ impl TimestampArray {
         }
 
         let mut builder = arrow::array::Int64Builder::with_capacity(physical.len());
-        for ts in &physical {
+        for ts in physical {
             match ts {
                 None => builder.append_null(),
                 Some(ts) => {
@@ -418,7 +418,7 @@ impl TimestampArray {
     }
 
     pub fn unix_date(&self) -> DaftResult<UInt64Array> {
-        const UNIX_EPOCH_DATE: NaiveDate = NaiveDateTime::UNIX_EPOCH.date();
+        const UNIX_EPOCH_DATE: NaiveDate = DateTime::UNIX_EPOCH.naive_utc().date();
         let DataType::Timestamp(tu, _tz) = self.data_type() else {
             unreachable!("TimestampArray must have Timestamp datatype")
         };

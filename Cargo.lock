@@ -2585,6 +2585,7 @@ dependencies = [
  "arrow",
  "arrow-row",
  "bincode",
+ "bytemuck",
  "chrono",
  "chrono-tz",
  "comfy-table 7.2.1",
@@ -3029,6 +3030,7 @@ name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
  "arc-swap",
+ "arrow-buffer",
  "async-trait",
  "capitalize",
  "common-daft-config",
@@ -3213,16 +3215,19 @@ dependencies = [
  "daft-io",
  "daft-recordbatch",
  "daft-stats",
+ "fastrand 2.3.0",
  "futures",
  "indexmap 2.13.0",
  "itertools 0.14.0",
  "log",
+ "parquet",
  "parquet2",
  "path_macro",
  "pyo3",
  "rayon",
  "serde",
  "snafu",
+ "tango-bench",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -3313,6 +3318,7 @@ dependencies = [
 name = "daft-schema"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "arrow-schema",
  "chrono",
  "chrono-tz",
