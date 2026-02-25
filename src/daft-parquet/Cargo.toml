@@ -19,6 +19,7 @@ futures = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}
 log = {workspace = true}
+parquet = {workspace = true, features = ["async"]}
 parquet2 = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 rayon = {workspace = true}

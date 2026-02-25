@@ -1,6 +1,6 @@
 use std::{fmt::Display, ops::Range, sync::Arc};
 
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use common_error::DaftResult;
 use daft_io::{IOClient, IOStatsRef, range::GetRange};
 use futures::{StreamExt, TryStreamExt};
@@ -281,6 +281,89 @@ impl RangesContainer {
         let convert = async_compat::Compat::new(stream_reader);
 
         Ok(convert)
+    }
+
+    /// Retrieve the bytes for a given range as a single contiguous `Bytes` buffer.
+    ///
+    /// This resolves all underlying cache entries that overlap the requested range
+    /// and concatenates the slices into a single `Bytes` value.
+    pub async fn get_range_bytes(self: &Arc<Self>, range: Range<usize>) -> DaftResult<Bytes> {
+        let mut current_pos = range.start;
+        let mut curr_index;
+        let start_point = self.ranges.binary_search_by_key(&current_pos, |e| e.start);
+
+        let mut needed_entries = vec![];
+        let mut ranges_to_slice = vec![];
+        match start_point {
+            Ok(index) => {
+                let entry = self.ranges[index].clone();
+                let len = entry.end - entry.start;
+                assert_eq!(entry.start, current_pos);
+                let start_offset = 0;
+                let end_offset = len.min(range.end - current_pos);
+
+                needed_entries.push(entry);
+                ranges_to_slice.push(start_offset..end_offset);
+
+                current_pos += end_offset - start_offset;
+                curr_index = index + 1;
+            }
+            Err(index) => {
+                assert!(
+                    index > 0,
+                    "range: {range:?}, start: {}, end: {}",
+                    &self.ranges[index].start,
+                    &self.ranges[index].end
+                );
+                let index = index - 1;
+                let entry = self.ranges[index].clone();
+                let start = entry.start;
+                let end = entry.end;
+                let len = end - start;
+                assert!(
+                    current_pos >= start && current_pos < end,
+                    "range: {range:?}, current_pos: {current_pos}, bytes_start: {start}, end: {end}"
+                );
+                let start_offset = current_pos - start;
+                let end_offset = len.min(range.end - start);
+                needed_entries.push(entry);
+                ranges_to_slice.push(start_offset..end_offset);
+                current_pos += end_offset - start_offset;
+                curr_index = index + 1;
+            }
+        }
+        while current_pos < range.end && curr_index < self.ranges.len() {
+            let entry = self.ranges[curr_index].clone();
+            let start = entry.start;
+            let end = entry.end;
+            let len = end - start;
+            assert_eq!(start, current_pos);
+            let start_offset = 0;
+            let end_offset = len.min(range.end - start);
+            needed_entries.push(entry);
+            ranges_to_slice.push(start_offset..end_offset);
+            current_pos += end_offset - start_offset;
+            curr_index += 1;
+        }
+
+        assert_eq!(current_pos, range.end);
+
+        // Fast path: single entry maps directly to a Bytes slice.
+        if needed_entries.len() == 1 {
+            let bytes = needed_entries[0]
+                .get_or_wait(ranges_to_slice[0].clone())
+                .await?;
+            return Ok(bytes);
+        }
+
+        // Multiple entries: collect and concatenate.
+        let total_len = range.end - range.start;
+        let mut buf = BytesMut::with_capacity(total_len);
+        for (entry, slice_range) in needed_entries.into_iter().zip(ranges_to_slice) {
+            let bytes = entry.get_or_wait(slice_range).await?;
+            buf.extend_from_slice(&bytes);
+        }
+        Ok(buf.freeze())
     }
 }
 
