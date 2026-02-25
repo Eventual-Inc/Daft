@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+use daft_core::prelude::*;
 use daft_dsl::{Expr, ExprRef, expr::bound_expr::BoundExpr};
 use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
@@ -145,7 +145,7 @@ pub fn read_json_array_impl(
         .zip(daft_fields)
         .map(|(mut ma, fld)| {
             let arr = ma.as_box();
-            Series::from_arrow(fld, cast_array_for_daft_if_needed(arr).into())
+            Series::from_arrow(fld, arr.into())
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
@@ -331,7 +331,7 @@ impl<'a> JsonReader<'a> {
             .zip(daft_fields)
             .map(|(mut ma, fld)| {
                 let arr = ma.as_box();
-                Series::from_arrow(fld, cast_array_for_daft_if_needed(arr).into())
+                Series::from_arrow(fld, arr.into())
             })
             .collect::<DaftResult<Vec<_>>>()?;
 

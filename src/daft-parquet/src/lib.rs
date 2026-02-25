@@ -3,7 +3,7 @@ use std::{cmp::max, num::NonZeroUsize};
 
 use common_error::DaftError;
 use daft_arrow::io::parquet::read::schema::{SchemaInferenceOptions, infer_schema_with_options};
-use daft_core::{prelude::SchemaRef, utils::arrow::coerce_to_daft_compatible_schema};
+use daft_core::prelude::SchemaRef;
 use snafu::Snafu;
 
 mod file;
@@ -40,8 +40,7 @@ pub fn infer_arrow_schema_from_metadata(
     options: Option<SchemaInferenceOptions>,
 ) -> daft_arrow::error::Result<daft_arrow::datatypes::Schema> {
     let arrow_schema = infer_schema_with_options(metadata, options)?;
-    let coerced_arrow_schema = coerce_to_daft_compatible_schema(arrow_schema);
-    Ok(coerced_arrow_schema)
+    Ok(arrow_schema)
 }
 
 #[derive(Debug, Snafu)]

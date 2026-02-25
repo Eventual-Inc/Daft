@@ -9,10 +9,7 @@ use daft_arrow::{
         read_async::local_read_rows,
     },
 };
-use daft_core::{
-    prelude::{Schema, Series},
-    utils::arrow::cast_array_for_daft_if_needed,
-};
+use daft_core::prelude::{Schema, Series};
 use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{Expr, expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_io::{IOClient, IOStatsRef};
@@ -909,10 +906,7 @@ where
                     fields[*proj_idx].data_type().clone(),
                     0,
                 );
-                Series::from_arrow(
-                    read_daft_fields[i].clone(),
-                    cast_array_for_daft_if_needed(deserialized_col?).into(),
-                )
+                Series::from_arrow(read_daft_fields[i].clone(), deserialized_col?.into())
             })
             .collect::<DaftResult<Vec<Series>>>()?;
         let num_rows = chunk.first().map(|s| s.len()).unwrap_or(0);

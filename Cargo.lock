@@ -2597,7 +2597,6 @@ dependencies = [
  "common-io-config",
  "common-ndarray",
  "common-py-serde",
- "daft-arrow",
  "daft-hash",
  "daft-minhash",
  "daft-schema",

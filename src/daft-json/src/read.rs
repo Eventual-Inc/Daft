@@ -3,7 +3,7 @@ use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
-use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+use daft_core::prelude::*;
 use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_io::{GetRange, GetResult, IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
@@ -618,12 +618,7 @@ fn parse_into_column_array_chunk_stream(
                     let all_series = chunk
                         .into_iter()
                         .zip(daft_fields.iter())
-                        .map(|(array, field)| {
-                            Series::from_arrow(
-                                field.clone(),
-                                cast_array_for_daft_if_needed(array).into(),
-                            )
-                        })
+                        .map(|(array, field)| Series::from_arrow(field.clone(), array.into()))
                         .collect::<DaftResult<Vec<_>>>()?;
                     RecordBatch::new_with_size(daft_schema.clone(), all_series, num_rows)
                 })();
@@ -640,10 +635,7 @@ mod tests {
     use std::{collections::HashSet, io::BufRead, sync::Arc};
 
     use common_error::DaftResult;
-    use daft_core::{
-        prelude::*,
-        utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
-    };
+    use daft_core::prelude::*;
     use daft_io::{IOClient, IOConfig};
     use daft_recordbatch::RecordBatch;
     use indexmap::IndexMap;
@@ -705,11 +697,6 @@ mod tests {
         };
         // Deserialize JSON records into Arrow2 column arrays.
         let columns = deserialize_records(&parsed, &schema).unwrap();
-        // Roundtrip columns with Daft for casting.
-        let columns = columns
-            .into_iter()
-            .map(|c| cast_array_from_daft_if_needed(cast_array_for_daft_if_needed(c)))
-            .collect::<Vec<_>>();
         // Roundtrip schema with Daft for casting.
         let schema = Schema::try_from(&schema).unwrap();
         assert_eq!(out.schema.as_ref(), &schema);
