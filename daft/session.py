@@ -894,6 +894,16 @@ def list_tables(pattern: str | None = None) -> list[Identifier]:
 
 
 ###
+# load_*
+###
+
+
+def load_extension(extension: str | types.ModuleType | Path) -> None:
+    """Load a native extension by module symbol or an explicit file path."""
+    _session().load_extension(extension)
+
+
+###
 # read_*
 ###
 

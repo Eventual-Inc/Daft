@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 import daft
-from daft import DataType, col
+from daft import col
 from daft.session import Session
 
 
@@ -15,7 +15,7 @@ def test_load_and_call_via_sql():
     sess = Session()
     sess.load_extension(daft_ext_example)
 
-    sess.create_temp_table("T", daft.from_pydict({"x": [1, 2, 3]}).with_column("x", col("x").cast(DataType.int32())))
+    sess.create_temp_table("T", daft.from_pydict({"x": [1, 2, 3]}))
     df = sess.sql("SELECT increment(x) FROM T")
     assert df is not None
 
@@ -31,7 +31,7 @@ def test_extension_function_isolation():
     sess_b = Session()
 
     sess_a.load_extension(daft_ext_example)
-    sess_a.create_temp_table("T", daft.from_pydict({"x": [1, 2, 3]}).with_column("x", col("x").cast(DataType.int32())))
+    sess_a.create_temp_table("T", daft.from_pydict({"x": [1, 2, 3]}))
 
     # Session A can call increment
     df = sess_a.sql("SELECT increment(x) FROM T")
@@ -39,7 +39,7 @@ def test_extension_function_isolation():
     assert df.to_pydict()["result"] == [2, 3, 4]
 
     # Session B cannot — increment is not registered
-    sess_b.create_temp_table("T", daft.from_pydict({"x": [1, 2, 3]}).with_column("x", col("x").cast(DataType.int32())))
+    sess_b.create_temp_table("T", daft.from_pydict({"x": [1, 2, 3]}))
     with pytest.raises(Exception):
         sess_b.sql("SELECT increment(x) FROM T")
 
@@ -57,7 +57,7 @@ def test_call_via_dataframe_api():
 
     sess = Session()
     sess.load_extension(daft_ext_example)
-    df = daft.from_pydict({"x": [1, 2, 3]}).with_column("x", col("x").cast(DataType.int32()))
+    df = daft.from_pydict({"x": [1, 2, 3]})
     result_expr = sess.get_function("increment", col("x"))
     result = df.select(result_expr).collect().to_pydict()
     assert next(iter(result.values())) == [2, 3, 4]
@@ -69,7 +69,7 @@ def test_load_by_module_object():
 
     sess = Session()
     sess.load_extension(daft_ext_example)  # module object
-    sess.create_temp_table("T", daft.from_pydict({"x": [1, 2, 3]}).with_column("x", col("x").cast(DataType.int32())))
+    sess.create_temp_table("T", daft.from_pydict({"x": [1, 2, 3]}))
     assert sess.sql("SELECT increment(x) FROM T").to_pydict()["result"] == [2, 3, 4]
 
 
@@ -79,7 +79,7 @@ def test_load_by_package_name():
 
     sess = Session()
     sess.load_extension(daft_ext_example)
-    sess.create_temp_table("T", daft.from_pydict({"x": [1, 2, 3]}).with_column("x", col("x").cast(DataType.int32())))
+    sess.create_temp_table("T", daft.from_pydict({"x": [1, 2, 3]}))
     assert sess.sql("SELECT increment(x) FROM T").to_pydict()["result"] == [2, 3, 4]
 
 
@@ -91,7 +91,7 @@ def test_python_wrapper_function():
     sess = Session()
     sess.load_extension(daft_ext_example)
     with sess:  # set as current session so increment() resolves
-        df = daft.from_pydict({"x": [1, 2, 3]}).with_column("x", col("x").cast(DataType.int32()))
+        df = daft.from_pydict({"x": [1, 2, 3]})
         result = df.select(increment(col("x"))).collect().to_pydict()
         assert next(iter(result.values())) == [2, 3, 4]
 
@@ -102,6 +102,6 @@ def test_error_without_load():
 
     sess = Session()
     with sess:
-        df = daft.from_pydict({"x": [1, 2, 3]}).with_column("x", col("x").cast(DataType.int32()))
+        df = daft.from_pydict({"x": [1, 2, 3]})
         with pytest.raises(Exception, match="not found"):
             df.select(increment(col("x"))).collect()
