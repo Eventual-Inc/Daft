@@ -13,6 +13,11 @@ export type NodeInfo = {
   context: Record<string, string>;
 };
 
+export type DurationValue = {
+  secs: number;
+  nanos: number;
+};
+
 export type Stat =
   | {
       type: "Count";
@@ -32,7 +37,7 @@ export type Stat =
     }
   | {
       type: "Duration";
-      value: number;
+      value: DurationValue;
     };
 
 export type OperatorInfo = {

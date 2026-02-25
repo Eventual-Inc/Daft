@@ -71,7 +71,8 @@ export const formatStatValue = (stat: Stat) => {
     case "Percent":
       return `${stat.value.toFixed(1)}%`;
     case "Duration":
-      return `${stat.value.toFixed(1)}s`;
+      const totalSec = stat.value.secs + stat.value.nanos / 1e9;
+      return formatDuration(totalSec);
     case "Float":
       return stat.value.toFixed(2);
     default:
