@@ -218,7 +218,7 @@ DaftScalarFunction                     ScalarFunctionHandle
   ├─ call(&[ArrayRef])                   ├─ impl ScalarUDF
   └─ return_field(&[Field])              │    ├─ call(): Series → FFI → fn → FFI → Series
                                          │    └─ get_return_field(): Field → FFI_ArrowSchema → fn → FFI_ArrowSchema → Field
-       ↕ (into_ffi)                     │         ↕ (wraps vtable)
+                                         |
   FFI_ScalarFunction (#[repr(C)])  ───── Arc<Inner { ffi, module }>
 ```
 

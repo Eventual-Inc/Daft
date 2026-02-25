@@ -1,18 +1,16 @@
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
 
 [project]
 name = "daft-ext-example"
 version = "0.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 dependencies = ["daft"]
 
 [project.optional-dependencies]
 test = ["pytest"]
 
-[tool.setuptools.packages]
-find = {where = ["."], include = ["daft_ext_example*"]}
-
-[tool.setuptools.package-data]
-daft_ext_example = ["*.so", "*.dylib", "*.dll"]
+[tool.maturin]
+manifest-path = "Cargo.toml"
+python-packages = ["daft_ext_example"]

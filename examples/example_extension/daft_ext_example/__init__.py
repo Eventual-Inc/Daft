@@ -1,17 +1,18 @@
-"""Example Daft extension: increment(expr) adds 1 to an int32 column."""
+"""Example Daft extension: increment(expr) adds 1 to an int64 column."""
 
 from __future__ import annotations
 
-import platform
-from pathlib import Path
 from typing import TYPE_CHECKING
-
-from daft.session import get_function
 
 if TYPE_CHECKING:
     from daft.expressions import Expression
 
+# Import triggers _native loader, but doesn't require a session
+from daft_ext_example import _native
+
 
 def increment(expr: Expression) -> Expression:
-    """Adds 1 to each value in an int32 column."""
+    """Adds 1 to each value in an int64 column."""
+    from daft.session import get_function
+
     return get_function("increment", expr)
