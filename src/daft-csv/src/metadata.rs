@@ -1,9 +1,9 @@
 use std::{collections::HashSet, sync::Arc};
 
+use arrow_schema::{DataType, Field, Schema as ArrowSchema};
 use async_compat::CompatExt;
 use common_error::DaftResult;
-use csv_async::ByteRecord;
-use daft_arrow::io::csv::read_async::{AsyncReader, AsyncReaderBuilder};
+use csv_async::{AsyncReaderBuilder, ByteRecord};
 use daft_compression::CompressionCodec;
 use daft_core::prelude::Schema;
 use daft_decoding::inference::infer;
@@ -171,9 +171,10 @@ async fn read_csv_schema_from_uncompressed_reader<R>(
 where
     R: AsyncRead + Unpin + Send,
 {
-    let (schema, read_stats) =
+    let (arrow_schema, read_stats) =
         read_csv_arrow_schema_from_uncompressed_reader(reader, parse_options, max_bytes).await?;
-    Ok((schema.into(), read_stats))
+    let schema = Schema::try_from(&arrow_schema)?;
+    Ok((schema, read_stats))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -181,7 +182,7 @@ async fn read_csv_arrow_schema_from_uncompressed_reader<R>(
     reader: R,
     parse_options: CsvParseOptions,
     max_bytes: Option<usize>,
-) -> DaftResult<(daft_arrow::datatypes::Schema, CsvReadStats)>
+) -> DaftResult<(ArrowSchema, CsvReadStats)>
 where
     R: AsyncRead + Unpin + Send,
 {
@@ -197,15 +198,15 @@ where
         .create_reader(reader.compat());
     let (fields, read_stats) =
         infer_schema(&mut reader, None, max_bytes, parse_options.has_header).await?;
-    Ok((fields.into(), read_stats))
+    Ok((ArrowSchema::new(fields), read_stats))
 }
 
 async fn infer_schema<R>(
-    reader: &mut AsyncReader<R>,
+    reader: &mut csv_async::AsyncReader<R>,
     max_rows: Option<usize>,
     max_bytes: Option<usize>,
     has_header: bool,
-) -> daft_arrow::error::Result<(Vec<daft_arrow::datatypes::Field>, CsvReadStats)>
+) -> DaftResult<(Vec<Field>, CsvReadStats)>
 where
     R: futures::AsyncRead + Unpin + Send,
 {
@@ -216,7 +217,8 @@ where
         (
             reader
                 .headers()
-                .await?
+                .await
+                .map_err(|e| common_error::DaftError::External(e.into()))?
                 .iter()
                 .map(std::string::ToString::to_string)
                 .collect(),
@@ -224,7 +226,11 @@ where
         )
     } else {
         // Save the csv reader position before reading headers
-        if !reader.read_byte_record(&mut record).await? {
+        if !reader
+            .read_byte_record(&mut record)
+            .await
+            .map_err(|e| common_error::DaftError::External(e.into()))?
+        {
             return Ok((vec![], Default::default()));
         }
         let first_record_count = record.len();
@@ -236,8 +242,7 @@ where
         )
     };
     // keep track of inferred field types
-    let mut column_types: Vec<HashSet<daft_arrow::datatypes::DataType>> =
-        vec![HashSet::new(); headers.len()];
+    let mut column_types: Vec<HashSet<DataType>> = vec![HashSet::new(); headers.len()];
     let mut records_count = 0;
     let mut total_bytes = 0;
     let mut mean = 0f64;
@@ -252,14 +257,18 @@ where
         m2 += delta * delta2;
         for (i, column) in column_types.iter_mut().enumerate() {
             if let Some(string) = record.get(i) {
-                column.insert(infer(string).into());
+                column.insert(infer(string));
             }
         }
     }
     let max_records = max_rows.unwrap_or(usize::MAX);
     let max_bytes = max_bytes.unwrap_or(usize::MAX);
     while records_count < max_records && total_bytes < max_bytes {
-        if !reader.read_byte_record(&mut record).await? {
+        if !reader
+            .read_byte_record(&mut record)
+            .await
+            .map_err(|e| common_error::DaftError::External(e.into()))?
+        {
             break;
         }
         records_count += 1;
@@ -271,7 +280,7 @@ where
         m2 += delta * delta2;
         for (i, column) in column_types.iter_mut().enumerate() {
             if let Some(string) = record.get(i) {
-                column.insert(infer(string).into());
+                column.insert(infer(string));
             }
         }
     }
@@ -567,7 +576,7 @@ mod tests {
         let err = read_csv_schema(file.as_ref(), None, None, io_client, None).await;
         assert!(err.is_err());
         let err = err.unwrap_err();
-        assert!(matches!(err, DaftError::ArrowError(_)), "{}", err);
+        assert!(matches!(err, DaftError::External(_)), "{}", err);
         assert!(
             err.to_string()
                 .contains("found record with 4 fields, but the previous record has 5 fields"),
@@ -599,7 +608,7 @@ mod tests {
         .await;
         assert!(err.is_err());
         let err = err.unwrap_err();
-        assert!(matches!(err, DaftError::ArrowError(_)), "{}", err);
+        assert!(matches!(err, DaftError::External(_)), "{}", err);
         assert!(
             err.to_string()
                 .contains("found record with 5 fields, but the previous record has 4 fields"),

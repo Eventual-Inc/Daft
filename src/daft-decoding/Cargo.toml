@@ -1,7 +1,9 @@
 [dependencies]
+arrow-array = {workspace = true}
+arrow-buffer = {workspace = true}
 arrow-schema = {workspace = true}
 atoi_simd = "0.16.1"
-daft-arrow = {path = "../daft-arrow"}
+csv = {workspace = true}
 daft-schema = {path = "../daft-schema"}
 chrono = {workspace = true}
 csv-async = "1.2.6"

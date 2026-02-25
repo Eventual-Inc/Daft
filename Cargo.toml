@@ -250,6 +250,7 @@ bytes = "1.11.0"
 chrono = "0.4.38"
 chrono-tz = "0.10.4"
 comfy-table = "7.1.1"
+csv = "1.3"
 common-daft-config = {path = "src/common/daft-config"}
 common-display = {path = "src/common/display", default-features = false}
 common-error = {path = "src/common/error", default-features = false}

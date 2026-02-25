@@ -3,26 +3,25 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use daft_arrow::io::csv::read;
 use parking_lot::{Mutex, RwLock};
 
 // The default size of a slab used for reading CSV files in chunks. Currently set to 4 MiB. This can be tuned.
 pub const SLABSIZE: usize = 4 * 1024 * 1024;
 
 #[derive(Clone, Debug, Default)]
-pub struct CsvSlab(Vec<read::ByteRecord>);
+pub struct CsvSlab(Vec<csv::ByteRecord>);
 
 impl CsvSlab {
     fn new(record_size: usize, num_fields: usize, num_rows: usize) -> Self {
         Self(vec![
-            read::ByteRecord::with_capacity(record_size, num_fields);
+            csv::ByteRecord::with_capacity(record_size, num_fields);
             num_rows
         ])
     }
 }
 
 impl Deref for CsvSlab {
-    type Target = Vec<read::ByteRecord>;
+    type Target = Vec<csv::ByteRecord>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

@@ -1,14 +1,8 @@
 use core::str;
 use std::{io::Read, num::NonZeroUsize, sync::Arc};
 
+use arrow_schema::Field as ArrowField;
 use common_error::DaftResult;
-use daft_arrow::{
-    datatypes::Field,
-    io::csv::{
-        read::{Reader, ReaderBuilder},
-        read_async::local_read_rows,
-    },
-};
 use daft_core::prelude::{Schema, Series};
 use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{Expr, expr::bound_expr::BoundExpr, optimization::get_required_columns};
@@ -23,7 +17,7 @@ use smallvec::SmallVec;
 use snafu::ResultExt;
 
 use crate::{
-    ArrowSnafu, CsvConvertOptions, CsvParseOptions, CsvReadOptions, JoinSnafu,
+    CsvConvertOptions, CsvParseOptions, CsvReadOptions, JoinSnafu, SyncCSVSnafu,
     metadata::read_csv_schema_single,
     read::{fields_to_projection_indices, tables_concat},
 };
@@ -173,7 +167,9 @@ pub async fn read_csv_local(
             io_stats,
         )
         .await?;
-        return Ok(RecordBatch::empty(Some(Arc::new(schema.into()))));
+        return Ok(RecordBatch::empty(Some(Arc::new(Schema::try_from(
+            &schema,
+        )?))));
     }
     let concated_table = tables_concat(collected_tables)?;
 
@@ -232,12 +228,19 @@ pub async fn stream_csv_local(
     let (schema, estimated_mean_row_size, estimated_std_row_size) =
         get_schema_and_estimators(uri, &convert_options, &parse_options, io_client, io_stats)
             .await?;
-    let num_fields = schema.fields.len();
+    let fields: Vec<ArrowField> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
+    let num_fields = fields.len();
     let projection_indices =
-        fields_to_projection_indices(&schema.fields, &convert_options.clone().include_columns);
+        fields_to_projection_indices(&fields, &convert_options.clone().include_columns);
     let fields_subset = projection_indices
         .iter()
-        .map(|i| schema.fields.get(*i).unwrap().into())
+        .map(|i| {
+            let f = fields.get(*i).unwrap();
+            daft_core::datatypes::Field::new(
+                f.name(),
+                daft_schema::dtype::DataType::try_from(f.data_type()).unwrap(),
+            )
+        })
         .collect::<Vec<daft_core::datatypes::Field>>();
     let read_schema = Arc::new(Schema::new(fields_subset));
     let read_daft_fields = Arc::new(
@@ -279,7 +282,7 @@ pub async fn stream_csv_local(
         projection_indices,
         read_daft_fields,
         read_schema,
-        schema.fields,
+        fields,
         include_columns,
         predicate,
         limit,
@@ -294,7 +297,7 @@ async fn get_schema_and_estimators(
     parse_options: &CsvParseOptions,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<(daft_arrow::datatypes::Schema, f64, f64)> {
+) -> DaftResult<(arrow_schema::Schema, f64, f64)> {
     let (inferred_schema, read_stats) = read_csv_schema_single(
         uri,
         parse_options.clone(),
@@ -306,21 +309,23 @@ async fn get_schema_and_estimators(
     .await?;
 
     let mut schema = if let Some(schema) = convert_options.schema.clone() {
-        schema.to_arrow2()?
+        schema.to_arrow()?
     } else {
-        inferred_schema.to_arrow2()?
+        inferred_schema.to_arrow()?
     };
     // Rename fields, if necessary.
     if let Some(column_names) = convert_options.column_names.clone() {
-        schema = schema
-            .fields
-            .into_iter()
-            .zip(column_names.iter())
-            .map(|(field, name)| {
-                Field::new(name, field.data_type, field.is_nullable).with_metadata(field.metadata)
-            })
-            .collect::<Vec<_>>()
-            .into();
+        schema = arrow_schema::Schema::new(
+            schema
+                .fields()
+                .iter()
+                .zip(column_names.iter())
+                .map(|(field, name)| {
+                    ArrowField::new(name, field.data_type().clone(), field.is_nullable())
+                        .with_metadata(field.metadata().clone())
+                })
+                .collect::<Vec<_>>(),
+        );
     }
     Ok((
         schema,
@@ -543,7 +548,7 @@ fn stream_csv_as_tables(
     projection_indices: Arc<Vec<usize>>,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
     read_schema: Arc<Schema>,
-    fields: Vec<Field>,
+    fields: Vec<ArrowField>,
     include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
     limit: Option<usize>,
@@ -839,7 +844,7 @@ fn collect_tables<R>(
     parse_options: &CsvParseOptions,
     byte_reader: R,
     projection_indices: Arc<Vec<usize>>,
-    fields: Vec<Field>,
+    fields: Vec<ArrowField>,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
     read_schema: Arc<Schema>,
     csv_buffer: &mut CsvBuffer,
@@ -850,7 +855,7 @@ fn collect_tables<R>(
 where
     R: std::io::Read,
 {
-    let rdr = ReaderBuilder::new()
+    let rdr = csv::ReaderBuilder::new()
         .has_headers(has_header)
         .delimiter(parse_options.delimiter)
         .double_quote(parse_options.double_quote)
@@ -874,12 +879,35 @@ where
     )
 }
 
+/// Reads CSV rows from a sync reader into the provided byte records buffer.
+/// Returns (rows_read, has_more).
+fn local_read_rows<R: std::io::Read>(
+    reader: &mut csv::Reader<R>,
+    rows: &mut [csv::ByteRecord],
+    limit: Option<usize>,
+) -> Result<(usize, bool), csv::Error> {
+    let max_rows = limit.unwrap_or(rows.len());
+    let mut row_count = 0;
+    for row in rows.iter_mut() {
+        if row_count >= max_rows {
+            break;
+        }
+        if !reader.read_byte_record(row)? {
+            return Ok((row_count, false));
+        }
+        row_count += 1;
+    }
+    // Check if there's more data available.
+    let has_more = row_count == rows.len();
+    Ok((row_count, has_more))
+}
+
 /// Helper function that consumes a CSV reader and turns it into a vector of Daft tables.
 #[allow(clippy::too_many_arguments)]
 fn parse_csv_chunk<R>(
-    mut reader: Reader<R>,
+    mut reader: csv::Reader<R>,
     projection_indices: Arc<Vec<usize>>,
-    fields: Vec<daft_arrow::datatypes::Field>,
+    fields: Vec<ArrowField>,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
     read_schema: Arc<Schema>,
     csv_buffer: &mut CsvBuffer,
@@ -895,7 +923,7 @@ where
     loop {
         let (rows_read, has_more) =
             local_read_rows(&mut reader, csv_buffer.buffer.as_mut_slice(), local_limit)
-                .context(ArrowSnafu {})?;
+                .context(SyncCSVSnafu {})?;
         let chunk = projection_indices
             .par_iter()
             .enumerate()
@@ -906,7 +934,7 @@ where
                     fields[*proj_idx].data_type().clone(),
                     0,
                 );
-                Series::from_arrow(read_daft_fields[i].clone(), deserialized_col?.into())
+                Series::from_arrow(read_daft_fields[i].clone(), deserialized_col?)
             })
             .collect::<DaftResult<Vec<Series>>>()?;
         let num_rows = chunk.first().map(|s| s.len()).unwrap_or(0);
