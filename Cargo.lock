@@ -2996,11 +2996,11 @@ dependencies = [
 name = "daft-json"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "chrono",
  "common-error",
  "common-py-serde",
  "common-runtime",
- "daft-arrow",
  "daft-compression",
  "daft-core",
  "daft-decoding",

@@ -1,5 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
+use arrow::datatypes::DataType as ArrowDataType;
 use common_error::DaftResult;
 use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
@@ -136,7 +137,7 @@ pub(crate) async fn read_json_schema_single(
     // Defer skip-empty handling to infer_schema to avoid duplicate fill_buf.
     let arrow_schema =
         infer_schema(reader, None, max_bytes, parse_options.skip_empty_files).await?;
-    let schema = arrow_schema.into();
+    let schema: Schema = arrow_schema.try_into()?;
     Ok(schema)
 }
 
@@ -145,7 +146,7 @@ async fn infer_schema<R>(
     max_rows: Option<usize>,
     max_bytes: Option<usize>,
     skip_empty_files: bool,
-) -> DaftResult<daft_arrow::datatypes::Schema>
+) -> DaftResult<arrow::datatypes::Schema>
 where
     R: tokio::io::AsyncBufRead + Unpin + Send,
 {
@@ -157,7 +158,7 @@ where
     if buf.is_empty() {
         if skip_empty_files {
             // return empty schema
-            return Ok(daft_arrow::datatypes::Schema::from(vec![]));
+            return Ok(arrow::datatypes::Schema::empty());
         } else {
             return Err(super::Error::JsonDeserializationError {
                 string: "Empty JSON file".to_string(),
@@ -207,18 +208,17 @@ where
                     infer_records_schema(&parsed_record).context(ArrowSnafu)
                 });
             // Collect all inferred dtypes for each column.
-            let mut column_types: IndexMap<String, HashSet<daft_arrow::datatypes::DataType>> =
-                IndexMap::new();
+            let mut column_types: IndexMap<String, HashSet<ArrowDataType>> = IndexMap::new();
             while let Some(schema) = schema_stream.next().await.transpose()? {
-                for field in schema.fields {
+                for field in schema.fields() {
                     // Get-and-mutate-or-insert.
-                    match column_types.entry(field.name) {
+                    match column_types.entry(field.name().clone()) {
                         indexmap::map::Entry::Occupied(mut v) => {
-                            v.get_mut().insert(field.data_type);
+                            v.get_mut().insert(field.data_type().clone());
                         }
                         indexmap::map::Entry::Vacant(v) => {
                             let mut a = HashSet::new();
-                            a.insert(field.data_type);
+                            a.insert(field.data_type().clone());
                             v.insert(a);
                         }
                     }
@@ -226,7 +226,7 @@ where
             }
             // Convert column types map to dtype-consolidated column fields.
             let fields = column_types_map_to_fields(column_types);
-            Ok(fields.into())
+            Ok(arrow::datatypes::Schema::new(fields))
         }
         _ => Err(super::Error::JsonDeserializationError {
             string: "Invalid JSON format - file must start with '[' or '{'".to_string(),
