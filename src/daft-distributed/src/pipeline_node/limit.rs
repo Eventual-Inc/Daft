@@ -1,13 +1,8 @@
-use std::{
-    cmp::Ordering,
-    collections::{HashMap, VecDeque},
-    sync::Arc,
-};
+use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::{
-    CTX_NODE_PHASE, Counter, DURATION_KEY, NODE_PHASE_0, NODE_PHASE_1, ROWS_IN_KEY, ROWS_OUT_KEY,
-    StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
+    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::DefaultSnapshot,
 };
@@ -31,8 +26,8 @@ use crate::{
     utils::channel::{Sender, create_channel},
 };
 
-const FIRST_LIMIT_PHASE: &str = NODE_PHASE_0;
-const SECOND_LIMIT_PHASE: &str = NODE_PHASE_1;
+const FIRST_LIMIT_PHASE: &str = "local-limit";
+const SECOND_LIMIT_PHASE: &str = "post-limit";
 
 pub struct LimitStats {
     duration_us: Counter,
@@ -68,7 +63,7 @@ impl RuntimeStats for LimitStats {
         match snapshot {
             StatSnapshot::Default(snapshot) => {
                 self.add_cpu_us(snapshot.cpu_us);
-                if let Some(phase) = node_info.context.get(CTX_NODE_PHASE) {
+                if let Some(phase) = &node_info.node_phase {
                     // The first limit is used for pruning, the second limit is for the final output
                     if phase == FIRST_LIMIT_PHASE {
                         self.add_rows_in(snapshot.rows_in);
@@ -79,7 +74,7 @@ impl RuntimeStats for LimitStats {
             }
             StatSnapshot::Source(snapshot) => {
                 self.add_cpu_us(snapshot.cpu_us);
-                if let Some(phase) = node_info.context.get(CTX_NODE_PHASE)
+                if let Some(phase) = &node_info.node_phase
                     && phase == SECOND_LIMIT_PHASE
                 {
                     self.add_rows_out(snapshot.rows_out);
@@ -228,26 +223,18 @@ impl LimitNode {
                                 num_rows as u64,
                                 Some(skip_num_rows as u64),
                                 StatsState::NotMaterialized,
-                                LocalNodeContext {
-                                    origin_node_id: Some(self.node_id() as usize),
-                                    additional: Some(HashMap::from([(
-                                        CTX_NODE_PHASE.to_string(),
-                                        SECOND_LIMIT_PHASE.to_string(),
-                                    )])),
-                                },
+                                LocalNodeContext::new(Some(self.node_id() as usize))
+                                    .with_phase(SECOND_LIMIT_PHASE),
                             ),
                             psets,
                         )
                     } else {
                         let (in_memory_scan, psets) =
-                            MaterializedOutput::into_in_memory_scan_with_psets_and_context(
+                            MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
                                 materialized_outputs,
                                 self.config.schema.clone(),
                                 self.node_id(),
-                                Some(HashMap::from([(
-                                    CTX_NODE_PHASE.to_string(),
-                                    SECOND_LIMIT_PHASE.to_string(),
-                                )])),
+                                SECOND_LIMIT_PHASE,
                             );
 
                         (in_memory_scan, psets)
@@ -268,13 +255,8 @@ impl LimitNode {
                         remaining as u64,
                         Some(skip_num_rows as u64),
                         StatsState::NotMaterialized,
-                        LocalNodeContext {
-                            origin_node_id: Some(self.node_id() as usize),
-                            additional: Some(HashMap::from([(
-                                CTX_NODE_PHASE.to_string(),
-                                SECOND_LIMIT_PHASE.to_string(),
-                            )])),
-                        },
+                        LocalNodeContext::new(Some(self.node_id() as usize))
+                            .with_phase(SECOND_LIMIT_PHASE),
                     );
                     let task = SwordfishTaskBuilder::new(plan, self.as_ref())
                         .with_psets(self.node_id(), psets);
@@ -316,13 +298,8 @@ impl LimitNode {
                             local_limit_per_task as u64,
                             Some(0),
                             StatsState::NotMaterialized,
-                            LocalNodeContext {
-                                origin_node_id: Some(node_id as usize),
-                                additional: Some(HashMap::from([(
-                                    CTX_NODE_PHASE.to_string(),
-                                    FIRST_LIMIT_PHASE.to_string(),
-                                )])),
-                            },
+                            LocalNodeContext::new(Some(node_id as usize))
+                                .with_phase(FIRST_LIMIT_PHASE),
                         )
                     });
                     let submittable =
@@ -348,10 +325,7 @@ impl LimitNode {
                         // continue running, such as aggregate tasks
                         let empty_plan = LocalPhysicalPlan::empty_scan(
                             self.config.schema.clone(),
-                            LocalNodeContext {
-                                origin_node_id: Some(self.node_id() as usize),
-                                additional: None,
-                            },
+                            LocalNodeContext::new(Some(self.node_id() as usize)),
                         );
                         let empty_scan_builder =
                             SwordfishTaskBuilder::new(empty_plan, self.as_ref());

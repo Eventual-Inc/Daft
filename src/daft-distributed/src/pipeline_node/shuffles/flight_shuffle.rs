@@ -121,10 +121,7 @@ impl FlightShuffleNode {
                 server_cache_mapping.clone(),
                 self.config.schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.context.node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self.context.node_id as usize)),
             );
 
             // For flight shuffle, we create a task directly with the flight shuffle read plan
@@ -187,10 +184,7 @@ impl PipelineNodeImpl for FlightShuffleNode {
                     self.shuffle_dirs.clone(),
                     self.compression.clone(),
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(self.context.node_id as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(self.context.node_id as usize)),
                 )
             });
 
