@@ -11,7 +11,7 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{NodeID, QueryID, ops::NodeInfo, snapshot::StatSnapshotImpl};
+use common_metrics::{NodeID, QueryEndState, QueryID, ops::NodeInfo, snapshot::StatSnapshotImpl};
 use common_runtime::RuntimeTask;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
@@ -68,7 +68,7 @@ impl RuntimeStatsManagerHandle {
 /// This prevents the subscribers from being overwhelmed by too many events.
 pub struct RuntimeStatsManager {
     node_tx: Arc<mpsc::UnboundedSender<(usize, bool)>>,
-    finish_tx: oneshot::Sender<()>,
+    finish_tx: oneshot::Sender<QueryEndState>,
     stats_manager_task: RuntimeTask<ExecutionEngineFinalResult>,
 }
 
@@ -164,7 +164,7 @@ impl RuntimeStatsManager {
     ) -> Self {
         let (node_tx, mut node_rx) = mpsc::unbounded_channel::<(usize, bool)>();
         let node_tx = Arc::new(node_tx);
-        let (finish_tx, mut finish_rx) = oneshot::channel::<()>();
+        let (finish_tx, mut finish_rx) = oneshot::channel::<QueryEndState>();
 
         let event_loop = async move {
             let mut interval = interval(throttle_interval);
@@ -275,9 +275,9 @@ impl RuntimeStatsManager {
         RuntimeStatsManagerHandle(self.node_tx.clone())
     }
 
-    pub async fn finish(self) -> ExecutionEngineFinalResult {
+    pub async fn finish(self, status: QueryEndState) -> ExecutionEngineFinalResult {
         self.finish_tx
-            .send(())
+            .send(status)
             .expect("The finish_tx channel was closed");
         self.stats_manager_task
             .await

@@ -9,6 +9,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
 use common_error::DaftResult;
+use common_metrics::QueryEndState;
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
@@ -233,21 +234,28 @@ impl NativeExecutor {
                 runtime_handle.shutdown().await
             };
 
-            let result = tokio::select! {
+            let (result, finish_status) = tokio::select! {
                 biased;
                 () = cancel.cancelled() => {
                     log::info!("Execution engine cancelled");
-                    Ok(())
+                    (Ok(()), QueryEndState::Canceled)
                 }
                 _ = tokio::signal::ctrl_c() => {
                     log::info!("Received Ctrl-C, shutting down execution engine");
-                    Ok(())
+                    (Ok(()), QueryEndState::Canceled)
                 }
-                result = execution_task => result,
+                result = execution_task => {
+                    let status = if result.is_err() {
+                        QueryEndState::Failed
+                    } else {
+                        QueryEndState::Finished
+                    };
+                    (result, status)
+                },
             };
 
             // Finish the stats manager
-            let final_stats = stats_manager.finish().await;
+            let final_stats = stats_manager.finish(finish_status).await;
 
             // TODO: Move into a runtime stats subscriber
             if enable_explain_analyze {
