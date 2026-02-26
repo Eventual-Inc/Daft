@@ -583,10 +583,7 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            if udf_properties.is_async
-                && udf_properties.concurrency.is_none()
-                && !udf_properties.use_process.unwrap_or(false)
-            {
+            if udf_properties.is_async && !udf_properties.use_process.unwrap_or(false) {
                 let async_sink = AsyncUdfSink::new(
                     expr.clone(),
                     udf_properties.clone(),

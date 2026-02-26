@@ -367,6 +367,20 @@ def test_async_batch_udf():
     assert actual == expected
 
 
+@pytest.mark.parametrize("max_concurrency", [1, 2])
+def test_async_batch_udf_max_concurrency(max_concurrency):
+    import asyncio
+
+    @daft.func.batch(return_dtype=DataType.int64(), max_concurrency=max_concurrency)
+    async def async_batch_func(a: Series) -> Series:
+        await asyncio.sleep(0.01)
+        return a
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    actual = df.select(async_batch_func(col("x"))).to_pydict()
+    assert actual == {"x": [1, 2, 3]}
+
+
 def test_async_batch_on_error_ignore():
     @daft.func.batch(on_error="ignore", return_dtype=int)
     async def raise_err(x):

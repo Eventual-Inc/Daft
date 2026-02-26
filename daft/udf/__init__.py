@@ -26,6 +26,7 @@ class _FuncDecorator:
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
         use_process: bool | None = None,
+        max_concurrency: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]]: ...
@@ -37,6 +38,7 @@ class _FuncDecorator:
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
         use_process: bool | None = None,
+        max_concurrency: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Func[P, T, None]: ...
@@ -48,6 +50,7 @@ class _FuncDecorator:
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
         use_process: bool | None = None,
+        max_concurrency: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]] | Func[P, T, None]:
@@ -221,7 +224,15 @@ class _FuncDecorator:
 
         def partial_func(fn: Callable[P, T]) -> Func[P, T, None]:
             return Func._from_func(
-                fn, return_dtype, unnest, use_process, False, None, max_retries=max_retries, on_error=on_error
+                fn,
+                return_dtype,
+                unnest,
+                use_process,
+                False,
+                None,
+                max_concurrency=max_concurrency,
+                max_retries=max_retries,
+                on_error=on_error,
             )
 
         return partial_func if fn is None else partial_func(fn)
@@ -232,6 +243,7 @@ class _FuncDecorator:
         return_dtype: DataTypeLike,
         unnest: bool = False,
         use_process: bool | None = None,
+        max_concurrency: int | None = None,
         batch_size: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
@@ -307,7 +319,17 @@ class _FuncDecorator:
         """
 
         def partial_func(fn: Callable[P, T]) -> Func[P, T, None]:
-            return Func._from_func(fn, return_dtype, unnest, use_process, True, batch_size, max_retries, on_error)
+            return Func._from_func(
+                fn,
+                return_dtype,
+                unnest,
+                use_process,
+                True,
+                batch_size,
+                max_concurrency=max_concurrency,
+                max_retries=max_retries,
+                on_error=on_error,
+            )
 
         return partial_func
 
@@ -353,7 +375,7 @@ def cls(
               Fractional values between 0 and 1.0, such as 0.5, are supported. This can be useful when running multiple small models on the same GPU.
               However, fractional values greater than 1.0, such as 1.5 or 2.5, are not supported.
         use_process: Whether to run each instance of the class in a separate process. If unset, Daft will automatically choose based on runtime performance.
-        max_concurrency: The maximum number of concurrent instances of the class.
+        max_concurrency: The maximum number of concurrent invocations. For sync methods, this controls the number of actor pool processes. For async methods, this controls the number of concurrent coroutines.
         name_override: The name to display for the UDF class in the plan and progress bars.
 
     Daft classes allow you to initialize a class instance once, and then reuse it for multiple rows of data.
