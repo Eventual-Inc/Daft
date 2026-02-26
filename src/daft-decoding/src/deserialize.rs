@@ -338,7 +338,7 @@ where
                 .map(|x| x.and_utc().timestamp_millis())
         }),
         Time32(time_unit) => {
-            deserialize_primitive::<Time32MillisecondType, _, _>(bytes_iter, |bytes| {
+            let parse_time = |bytes: &[u8]| {
                 let factor = get_factor_from_timeunit(time_unit);
                 to_utf8(bytes)
                     .and_then(|x| x.parse::<chrono::NaiveTime>().ok())
@@ -349,10 +349,23 @@ where
                             + x.nanosecond() / (1_000_000_000 / factor))
                             as i32
                     })
-            })
+            };
+            match time_unit {
+                TimeUnit::Second => {
+                    deserialize_primitive::<Time32SecondType, _, _>(bytes_iter, parse_time)
+                }
+                TimeUnit::Millisecond => {
+                    deserialize_primitive::<Time32MillisecondType, _, _>(bytes_iter, parse_time)
+                }
+                _ => {
+                    return Err(ArrowError::InvalidArgumentError(format!(
+                        "Time32 does not support {time_unit:?}"
+                    )));
+                }
+            }
         }
         Time64(time_unit) => {
-            deserialize_primitive::<Time64MicrosecondType, _, _>(bytes_iter, |bytes| {
+            let parse_time = |bytes: &[u8]| {
                 let factor: u64 = get_factor_from_timeunit(time_unit).into();
                 to_utf8(bytes)
                     .and_then(|x| x.parse::<chrono::NaiveTime>().ok())
@@ -363,36 +376,89 @@ where
                             + u64::from(x.nanosecond()) / (1_000_000_000 / factor))
                             as i64
                     })
-            })
+            };
+            match time_unit {
+                TimeUnit::Microsecond => {
+                    deserialize_primitive::<Time64MicrosecondType, _, _>(bytes_iter, parse_time)
+                }
+                TimeUnit::Nanosecond => {
+                    deserialize_primitive::<Time64NanosecondType, _, _>(bytes_iter, parse_time)
+                }
+                _ => {
+                    return Err(ArrowError::InvalidArgumentError(format!(
+                        "Time64 does not support {time_unit:?}"
+                    )));
+                }
+            }
         }
         Timestamp(time_unit, None) => {
             let mut last_fmt_idx = 0;
-            deserialize_primitive::<TimestampMillisecondType, _, _>(bytes_iter, |bytes| {
-                to_utf8(bytes)
-                    .and_then(|s| deserialize_naive_datetime(s, &mut last_fmt_idx))
-                    .and_then(|dt| match time_unit {
-                        TimeUnit::Second => Some(dt.and_utc().timestamp()),
-                        TimeUnit::Millisecond => Some(dt.and_utc().timestamp_millis()),
-                        TimeUnit::Microsecond => Some(dt.and_utc().timestamp_micros()),
-                        TimeUnit::Nanosecond => dt.and_utc().timestamp_nanos_opt(),
+            match time_unit {
+                TimeUnit::Second => {
+                    deserialize_primitive::<TimestampSecondType, _, _>(bytes_iter, |bytes| {
+                        to_utf8(bytes)
+                            .and_then(|s| deserialize_naive_datetime(s, &mut last_fmt_idx))
+                            .map(|dt| dt.and_utc().timestamp())
                     })
-            })
+                }
+                TimeUnit::Millisecond => {
+                    deserialize_primitive::<TimestampMillisecondType, _, _>(bytes_iter, |bytes| {
+                        to_utf8(bytes)
+                            .and_then(|s| deserialize_naive_datetime(s, &mut last_fmt_idx))
+                            .map(|dt| dt.and_utc().timestamp_millis())
+                    })
+                }
+                TimeUnit::Microsecond => {
+                    deserialize_primitive::<TimestampMicrosecondType, _, _>(bytes_iter, |bytes| {
+                        to_utf8(bytes)
+                            .and_then(|s| deserialize_naive_datetime(s, &mut last_fmt_idx))
+                            .map(|dt| dt.and_utc().timestamp_micros())
+                    })
+                }
+                TimeUnit::Nanosecond => {
+                    deserialize_primitive::<TimestampNanosecondType, _, _>(bytes_iter, |bytes| {
+                        to_utf8(bytes)
+                            .and_then(|s| deserialize_naive_datetime(s, &mut last_fmt_idx))
+                            .and_then(|dt| dt.and_utc().timestamp_nanos_opt())
+                    })
+                }
+            }
         }
         Timestamp(time_unit, Some(ref tz)) => {
             let tz = daft_schema::time_unit::parse_offset(tz).map_err(|e| {
                 ArrowError::InvalidArgumentError(format!("Failed to parse timezone: {e}"))
             })?;
             let mut last_fmt_idx = 0;
-            deserialize_primitive::<TimestampMillisecondType, _, _>(bytes_iter, |bytes| {
-                to_utf8(bytes)
-                    .and_then(|x| deserialize_datetime(x, &tz, &mut last_fmt_idx))
-                    .and_then(|dt| match time_unit {
-                        TimeUnit::Second => Some(dt.timestamp()),
-                        TimeUnit::Millisecond => Some(dt.timestamp_millis()),
-                        TimeUnit::Microsecond => Some(dt.timestamp_micros()),
-                        TimeUnit::Nanosecond => dt.timestamp_nanos_opt(),
+            match time_unit {
+                TimeUnit::Second => {
+                    deserialize_primitive::<TimestampSecondType, _, _>(bytes_iter, |bytes| {
+                        to_utf8(bytes)
+                            .and_then(|x| deserialize_datetime(x, &tz, &mut last_fmt_idx))
+                            .map(|dt| dt.timestamp())
                     })
-            })
+                }
+                TimeUnit::Millisecond => {
+                    deserialize_primitive::<TimestampMillisecondType, _, _>(bytes_iter, |bytes| {
+                        to_utf8(bytes)
+                            .and_then(|x| deserialize_datetime(x, &tz, &mut last_fmt_idx))
+                            .map(|dt| dt.timestamp_millis())
+                    })
+                }
+                TimeUnit::Microsecond => {
+                    deserialize_primitive::<TimestampMicrosecondType, _, _>(bytes_iter, |bytes| {
+                        to_utf8(bytes)
+                            .and_then(|x| deserialize_datetime(x, &tz, &mut last_fmt_idx))
+                            .map(|dt| dt.timestamp_micros())
+                    })
+                }
+                TimeUnit::Nanosecond => {
+                    deserialize_primitive::<TimestampNanosecondType, _, _>(bytes_iter, |bytes| {
+                        to_utf8(bytes)
+                            .and_then(|x| deserialize_datetime(x, &tz, &mut last_fmt_idx))
+                            .and_then(|dt| dt.timestamp_nanos_opt())
+                    })
+                }
+            }
         }
         Decimal128(precision, scale) => {
             deserialize_primitive::<Decimal128Type, _, _>(bytes_iter, |x| {
