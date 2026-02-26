@@ -1,6 +1,5 @@
 [dependencies]
 arrow-array = {workspace = true}
-arrow-buffer = {workspace = true}
 arrow-schema = {workspace = true}
 atoi_simd = "0.16.1"
 csv = {workspace = true}

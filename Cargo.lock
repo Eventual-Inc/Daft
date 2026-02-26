@@ -2680,7 +2680,6 @@ name = "daft-decoding"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
- "arrow-buffer",
  "arrow-schema",
  "atoi_simd",
  "chrono",

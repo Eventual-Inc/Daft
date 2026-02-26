@@ -12,6 +12,7 @@ pub mod metadata;
 pub mod python;
 pub mod read;
 mod statistics;
+mod utils;
 pub use statistics::row_group_metadata_to_table_stats;
 mod read_planner;
 mod stream_reader;
@@ -40,7 +41,8 @@ pub fn infer_arrow_schema_from_metadata(
     options: Option<SchemaInferenceOptions>,
 ) -> daft_arrow::error::Result<daft_arrow::datatypes::Schema> {
     let arrow_schema = infer_schema_with_options(metadata, options)?;
-    Ok(arrow_schema)
+    let coerced_arrow_schema = utils::coerce_to_daft_compatible_schema(arrow_schema);
+    Ok(coerced_arrow_schema)
 }
 
 #[derive(Debug, Snafu)]

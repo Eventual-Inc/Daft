@@ -698,13 +698,25 @@ mod tests {
         // Deserialize JSON records into Arrow2 column arrays.
         let columns = deserialize_records(&parsed, &schema).unwrap();
         // Roundtrip schema with Daft for casting.
-        let schema = Schema::try_from(&schema).unwrap();
-        assert_eq!(out.schema.as_ref(), &schema);
-        let out_columns: Vec<Box<dyn daft_arrow::array::Array>> = (0..out.num_columns())
-            .map(|i| Ok(out.get_column(i).to_arrow()?.into()))
-            .collect::<DaftResult<Vec<_>>>()
-            .unwrap();
-        assert_eq!(out_columns, columns);
+        let daft_schema = Schema::try_from(&schema).unwrap();
+        assert_eq!(out.schema.as_ref(), &daft_schema);
+        // Compare columns by roundtripping both sides through Daft Series
+        // (this applies type coercion like List→LargeList consistently).
+        let daft_fields = daft_schema.fields();
+        for (i, ref_col) in columns.into_iter().enumerate() {
+            let daft_field = &daft_fields[i];
+            let ref_series = Series::from_arrow(daft_field.clone(), ref_col.into()).unwrap();
+            let out_series = out.get_column(i);
+            let ref_arrow = ref_series.to_arrow().unwrap();
+            let out_arrow = out_series.to_arrow().unwrap();
+            assert_eq!(
+                out_arrow.as_ref(),
+                ref_arrow.as_ref(),
+                "Column {} ({}) mismatch",
+                i,
+                daft_field.name,
+            );
+        }
     }
 
     #[rstest]
