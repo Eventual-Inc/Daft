@@ -94,7 +94,7 @@ def test_row_wise_udf_override_return_dtype():
 
 
 def test_row_wise_udf_with_ray_options():
-    @daft.func(ray_options={"num_cpus": 1, "num_gpus": 0.5})
+    @daft.func(num_cpus=1, num_gpus=0.5)
     def my_udf(x: int) -> int:
         return x
 

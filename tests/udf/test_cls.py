@@ -91,7 +91,7 @@ def test_cls_multiple_instances():
 
 
 def test_cls_with_ray_options():
-    @daft.cls(ray_options={"num_cpus": 1, "scheduling_strategy": "SPREAD"})
+    @daft.cls(num_cpus=1, ray_options={"scheduling_strategy": "SPREAD"})
     class MyModel:
         def __init__(self):
             pass
