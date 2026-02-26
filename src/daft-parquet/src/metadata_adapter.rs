@@ -51,7 +51,10 @@ impl DaftParquetMetadata {
     }
 
     /// Iterate over (index, row_group_metadata) pairs without cloning.
-    pub fn row_groups_ref(&self) -> impl Iterator<Item = (usize, &Pq2RowGroupMetaData)> + '_ {
+    #[allow(dead_code)]
+    pub(crate) fn row_groups_ref(
+        &self,
+    ) -> impl Iterator<Item = (usize, &Pq2RowGroupMetaData)> + '_ {
         self.inner.row_groups.iter().map(|(&idx, rg)| (idx, rg))
     }
 
@@ -64,7 +67,7 @@ impl DaftParquetMetadata {
     }
 
     /// Get a specific row group by its original index without cloning.
-    pub fn get_row_group_ref(&self, index: usize) -> Option<&Pq2RowGroupMetaData> {
+    pub(crate) fn get_row_group_ref(&self, index: usize) -> Option<&Pq2RowGroupMetaData> {
         self.inner.row_groups.get(&index)
     }
 
@@ -94,11 +97,6 @@ impl DaftParquetMetadata {
     /// This is a transitional API. Consuming code should prefer the adapter methods
     /// above. This will be removed once the arrow-rs migration is complete.
     pub fn as_parquet2(&self) -> &Pq2FileMetaData {
-        &self.inner
-    }
-
-    /// Borrow the underlying parquet2 metadata without cloning.
-    pub fn parquet2_ref(&self) -> &Pq2FileMetaData {
         &self.inner
     }
 
@@ -147,7 +145,8 @@ impl DaftRowGroupMetaData {
     }
 
     /// Column chunk metadata for this row group.
-    pub fn columns(&self) -> &[Pq2ColumnChunkMetaData] {
+    #[allow(dead_code)]
+    pub(crate) fn columns(&self) -> &[Pq2ColumnChunkMetaData] {
         self.inner.columns()
     }
 
