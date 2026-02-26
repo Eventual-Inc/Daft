@@ -92,6 +92,7 @@ pub struct S3Credentials {
 ///     anonymous (bool, optional): Whether or not to use "anonymous mode", which will access Azure without any credentials
 ///     endpoint_url (str, optional): Custom URL to the Azure endpoint, e.g. ``https://my-account-name.blob.core.windows.net``. Overrides `use_fabric_endpoint` if set
 ///     use_ssl (bool, optional): Whether or not to use SSL, which require accessing Azure over HTTPS rather than HTTP, defaults to True
+///     max_connections (int, optional): Maximum number of connections to Azure at any time per io thread, defaults to 8
 ///
 /// Examples:
 ///     >>> io_config = IOConfig(azure=AzureConfig(storage_account="dafttestdata", access_key="xxx"))

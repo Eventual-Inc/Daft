@@ -27,6 +27,11 @@ class TestAzureConfig:
         config = AzureConfig(max_connections=16)
         assert config.max_connections == 16
 
+    def test_azure_config_with_max_connections_zero(self):
+        """Test AzureConfig accepts max_connections=0 (clamped to 1 at runtime)."""
+        config = AzureConfig(max_connections=0)
+        assert config.max_connections == 0
+
     def test_azure_config_with_all_params(self):
         """Test AzureConfig with all parameters set."""
         config = AzureConfig(

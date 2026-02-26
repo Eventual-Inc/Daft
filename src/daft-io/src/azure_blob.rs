@@ -268,7 +268,7 @@ impl AzureBlobSource {
         };
 
         let connection_pool_sema = Arc::new(tokio::sync::Semaphore::new(
-            (config.max_connections_per_io_thread as usize)
+            (config.max_connections_per_io_thread.max(1) as usize)
                 * get_io_pool_num_threads().expect("Should be running in tokio pool"),
         ));
 
