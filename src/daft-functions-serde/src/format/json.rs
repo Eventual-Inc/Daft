@@ -62,8 +62,10 @@ pub fn try_deserialize(input: &Utf8Array, dtype: &DataType) -> DaftResult<Series
     let values: Vec<serde_json::Value> = input
         .into_iter()
         .map(|item| {
-            item.and_then(|text| serde_json::from_str(text).ok())
-                .unwrap_or(serde_json::Value::Null)
+            let v = item
+                .and_then(|text| serde_json::from_str(text).ok())
+                .unwrap_or(serde_json::Value::Null);
+            coerce_json_value(v, dtype)
         })
         .collect();
 
@@ -81,6 +83,53 @@ pub fn try_deserialize(input: &Utf8Array, dtype: &DataType) -> DaftResult<Series
 
     let col = rb.column(0);
     Series::from_arrow(field, col.clone())
+}
+
+/// Coerces a parsed JSON value to be compatible with the target dtype.
+///
+/// arrow-rs's JSON decoder is strict about type matching (e.g. Bool cannot become Int64),
+/// so we pre-coerce values before feeding them to the decoder. Incompatible values become Null.
+fn coerce_json_value(value: serde_json::Value, dtype: &DataType) -> serde_json::Value {
+    use serde_json::Value;
+
+    match (&value, dtype) {
+        (Value::Null, _) => Value::Null,
+
+        // Boolean target: only booleans pass through
+        (Value::Bool(_), DataType::Boolean) => value,
+        (_, DataType::Boolean) => Value::Null,
+
+        // Integer targets: coerce bools and truncate floats
+        (Value::Number(n), dt) if dt.is_integer() => {
+            if n.is_i64() || n.is_u64() {
+                value
+            } else if let Some(f) = n.as_f64() {
+                serde_json::Value::Number(serde_json::Number::from(f as i64))
+            } else {
+                Value::Null
+            }
+        }
+        (Value::Bool(b), dt) if dt.is_integer() => {
+            Value::Number(serde_json::Number::from(i64::from(*b)))
+        }
+        (_, dt) if dt.is_integer() => Value::Null,
+
+        // Float targets: coerce bools
+        (Value::Number(_), dt) if dt.is_floating() => value,
+        (Value::Bool(b), dt) if dt.is_floating() => serde_json::Value::Number(
+            serde_json::Number::from_f64(if *b { 1.0 } else { 0.0 }).unwrap(),
+        ),
+        (_, dt) if dt.is_floating() => Value::Null,
+
+        // String targets: stringify numbers and bools
+        (Value::String(_), DataType::Utf8) => value,
+        (Value::Number(n), DataType::Utf8) => Value::String(n.to_string()),
+        (Value::Bool(b), DataType::Utf8) => Value::String(b.to_string()),
+        (_, DataType::Utf8) => Value::Null,
+
+        // Complex types (struct, list, etc.): pass through, let arrow-rs handle it
+        _ => value,
+    }
 }
 
 /// Serializes each input value as a JSON string.
@@ -397,6 +446,36 @@ mod tests {
         let round2 = deserialize(&output, &DataType::Boolean).unwrap();
         let vals: Vec<_> = round2.bool().unwrap().into_iter().collect();
         assert_eq!(vals, vec![Some(true), None, Some(false)]);
+    }
+
+    #[test]
+    fn test_try_deserialize_mixed_to_int64() {
+        let input = Utf8Array::from_slice("col", &["1", "true", "null", r#""abc""#, "3.14"]);
+        let result = try_deserialize(&input, &DataType::Int64).unwrap();
+        let arr = result.i64().unwrap();
+        let vals: Vec<_> = arr.into_iter().collect();
+        assert_eq!(vals, vec![Some(1), Some(1), None, None, Some(3)]);
+    }
+
+    #[test]
+    fn test_try_deserialize_mixed_to_bool() {
+        let input = Utf8Array::from_slice("col", &["1", "true", "null", r#""abc""#, "3.14"]);
+        let result = try_deserialize(&input, &DataType::Boolean).unwrap();
+        let arr = result.bool().unwrap();
+        let vals: Vec<_> = arr.into_iter().collect();
+        assert_eq!(vals, vec![None, Some(true), None, None, None]);
+    }
+
+    #[test]
+    fn test_try_deserialize_mixed_to_string() {
+        let input = Utf8Array::from_slice("col", &["1", "true", "null", r#""abc""#, "3.14"]);
+        let result = try_deserialize(&input, &DataType::Utf8).unwrap();
+        let arr = result.utf8().unwrap();
+        let vals: Vec<_> = arr.into_iter().collect();
+        assert_eq!(
+            vals,
+            vec![Some("1"), Some("true"), None, Some("abc"), Some("3.14")]
+        );
     }
 
     #[test]
