@@ -222,7 +222,7 @@ impl GlobScanOperator {
                     let first_metadata = Some((
                         first_filepath.clone(),
                         TableMetadata {
-                            length: metadata.num_rows,
+                            length: metadata.num_rows(),
                         },
                     ));
                     (schema, first_metadata, first_filepath)
