@@ -25,6 +25,7 @@ class _FuncDecorator:
         *,
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
+        cpus: float | None = None,
         gpus: float = 0,
         use_process: bool | None = None,
         max_concurrency: int | None = None,
@@ -52,6 +53,7 @@ class _FuncDecorator:
         *,
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
+        cpus: float | None = None,
         gpus: float = 0,
         use_process: bool | None = None,
         max_concurrency: int | None = None,
@@ -233,6 +235,7 @@ class _FuncDecorator:
                 fn,
                 return_dtype,
                 unnest,
+                cpus,
                 gpus,
                 use_process,
                 False,
@@ -250,6 +253,7 @@ class _FuncDecorator:
         *,
         return_dtype: DataTypeLike,
         unnest: bool = False,
+        cpus: float | None = None,
         gpus: float = 0,
         use_process: bool | None = None,
         max_concurrency: int | None = None,
@@ -334,6 +338,7 @@ class _FuncDecorator:
                 fn,
                 return_dtype,
                 unnest,
+                cpus,
                 gpus,
                 use_process,
                 True,
@@ -353,6 +358,7 @@ func = _FuncDecorator()
 @overload
 def cls(
     *,
+    cpus: float | None = None,
     gpus: float = 0,
     use_process: bool | None = None,
     max_concurrency: int | None = None,
@@ -365,6 +371,7 @@ def cls(
 def cls(
     class_: type,
     *,
+    cpus: float | None = None,
     gpus: float = 0,
     use_process: bool | None = None,
     max_concurrency: int | None = None,
@@ -376,6 +383,7 @@ def cls(
 def cls(
     class_: type | None = None,
     *,
+    cpus: float | None = None,
     gpus: float = 0,
     use_process: bool | None = None,
     max_concurrency: int | None = None,
@@ -387,6 +395,7 @@ def cls(
     """Decorator to convert a Python class into a Daft user-defined class.
 
     Args:
+        cpus: The number of CPUs each instance of the class requires. Defaults to None (let Ray decide).
         gpus: The number of GPUs each instance of the class requires. Defaults to 0.
               Fractional values between 0 and 1.0, such as 0.5, are supported. This can be useful when running multiple small models on the same GPU.
               However, fractional values greater than 1.0, such as 1.5 or 2.5, are not supported.
@@ -459,6 +468,9 @@ def cls(
         ...     }
         ... )
     """
+    if cpus is not None and cpus < 0:
+        raise ValueError(f"num_cpus must be non-negative, got {cpus}")
+
     # Validate GPU resource request early: allow fractional values up to 1.0; values > 1.0 must be integers.
     if gpus < 0:
         raise ValueError(f"num_gpus must be non-negative, got {gpus}")
@@ -467,7 +479,7 @@ def cls(
 
     def partial_cls(c: type) -> type:
         return wrap_cls(
-            c, gpus, use_process, max_concurrency, max_retries, on_error, name_override, ray_options=ray_options
+            c, cpus, gpus, use_process, max_concurrency, max_retries, on_error, name_override, ray_options=ray_options
         )
 
     return partial_cls if class_ is None else partial_cls(class_)

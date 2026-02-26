@@ -59,6 +59,7 @@ class Func(Generic[P, T, C]):
     is_batch: bool
     batch_size: int | None
     unnest: bool
+    cpus: float | None
     gpus: float
     use_process: bool | None
     max_concurrency: int | None
@@ -76,6 +77,7 @@ class Func(Generic[P, T, C]):
         fn: Callable[P, T],
         return_dtype: DataTypeLike | None,
         unnest: bool,
+        cpus: float | None = None,
         gpus: float = 0,
         use_process: bool | None = None,
         is_batch: bool = False,
@@ -116,6 +118,7 @@ class Func(Generic[P, T, C]):
             is_batch,
             batch_size,
             unnest,
+            cpus,
             gpus,
             use_process,
             max_concurrency,
@@ -131,6 +134,7 @@ class Func(Generic[P, T, C]):
         cls,
         cls_: ClsBase[C],
         method: Callable[Concatenate[C, P], T],
+        cpus: float | None,
         gpus: float,
         use_process: bool | None,
         max_concurrency: int | None,
@@ -155,6 +159,7 @@ class Func(Generic[P, T, C]):
             is_batch,
             batch_size,
             unnest,
+            cpus,
             gpus,
             use_process,
             max_concurrency,
@@ -183,6 +188,9 @@ class Func(Generic[P, T, C]):
 
         if self.max_concurrency is not None and self.max_concurrency == 0:
             raise ValueError("max_concurrency for udf must be non-zero")
+
+        if self.cpus is not None and self.cpus < 0:
+            raise ValueError(f"num_cpus must be non-negative, got {self.cpus}")
 
         # Validate GPU resource request: allow fractional values up to 1.0; values > 1.0 must be integers.
         if self.gpus < 0:
@@ -294,6 +302,21 @@ class Func(Generic[P, T, C]):
 
         # Extract resource requests from ray_options if present
         ray_options = self.ray_options.copy() if self.ray_options is not None else {}
+        if "num_cpus" in ray_options:
+            raise ValueError(
+                "Cannot set 'num_cpus' in `ray_options`. Please use the 'cpus' argument in @daft.func or @daft.cls instead."
+            )
+        if "num_gpus" in ray_options:
+            raise ValueError(
+                "Cannot set 'num_gpus' in `ray_options`. Please use the 'gpus' argument in @daft.func or @daft.cls instead."
+            )
+        if "memory" in ray_options:
+            raise ValueError(
+                "Cannot set 'memory' in `ray_options`. Please use the 'memory_bytes' argument in @daft.func or @daft.cls instead."
+            )
+
+        if self.cpus is not None:
+            ray_options["num_cpus"] = self.cpus
 
         max_concurrency = self.max_concurrency or (1 if is_complex_ray_options(ray_options) else None)
 
@@ -416,6 +439,7 @@ class ClsBase(ABC, Generic[C]):
 
 def wrap_cls(
     cls: type,
+    cpus: float | None,
     gpus: float,
     use_process: bool | None,
     max_concurrency: int | None,
@@ -449,6 +473,7 @@ def wrap_cls(
             return Func._from_method(
                 self,
                 attr,
+                cpus,
                 gpus,
                 use_process,
                 max_concurrency,
