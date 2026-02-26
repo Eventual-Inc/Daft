@@ -100,6 +100,35 @@ def test_cls_multiple_instances(concurrency):
     }
 
 
+def test_cls_with_ray_options():
+    @daft.cls(num_cpus=1, ray_options={"scheduling_strategy": "SPREAD"})
+    class MyModel:
+        def __init__(self):
+            pass
+
+        @daft.method(return_dtype=DataType.int64())
+        def predict(self, x):
+            return x
+
+    model = MyModel()
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+
+    import io
+
+    f = io.StringIO()
+    df.select(model.predict(df["x"])).explain(file=f, show_all=True)
+    explanation = f.getvalue()
+
+    # Check ray_options
+    assert "'num_cpus': 1" in explanation
+    assert "'scheduling_strategy': 'SPREAD'" in explanation
+
+    # Verify execution
+    result = df.select(model.predict(df["x"])).to_pydict()
+    assert result == {"x": [1, 2, 3]}
+
+
 @pytest.mark.parametrize("concurrency", [None, 1, 2])
 def test_cls_async_method(concurrency):
     df = daft.from_pydict({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})

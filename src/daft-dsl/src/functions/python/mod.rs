@@ -59,11 +59,7 @@ impl FromStr for OnError {
 use super::FunctionExpr;
 #[cfg(feature = "python")]
 use crate::python::PyExpr;
-use crate::{
-    Expr, ExprRef,
-    functions::scalar::ScalarFn,
-    python_udf::{BatchPyFn, PyScalarFn},
-};
+use crate::{Expr, ExprRef, functions::scalar::ScalarFn, python_udf::PyScalarFn};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum MaybeInitializedUDF {
@@ -192,13 +188,51 @@ pub fn get_resource_request<'a, E: Into<&'a ExprRef>>(
                     Expr::Function {
                         func:
                             FunctionExpr::Python(LegacyPythonUDF {
-                                resource_request, ..
+                                resource_request,
+                                ray_options,
+                                ..
                             }),
                         ..
                     } => {
-                        if let Some(rr) = resource_request {
-                            resource_requests.push(rr.clone());
-                        }
+                        let rr = resource_request.clone().unwrap_or_default();
+                        #[cfg(feature = "python")]
+                        let rr = Python::attach(|py| {
+                            let mut rr = rr;
+                            if let Some(options) = ray_options
+                                .as_ref()
+                                .and_then(|o| o.as_ref().bind(py).cast::<PyDict>().ok())
+                            {
+                                if let Some(cpus) = options
+                                    .get_item("num_cpus")
+                                    .ok()
+                                    .flatten()
+                                    .and_then(|v| v.extract::<f64>().ok())
+                                {
+                                    rr = ResourceRequest::try_new_internal(
+                                        Some(cpus),
+                                        rr.num_gpus(),
+                                        rr.memory_bytes(),
+                                    )
+                                    .unwrap_or(rr);
+                                }
+
+                                if let Some(memory) = options
+                                    .get_item("memory")
+                                    .ok()
+                                    .flatten()
+                                    .and_then(|v| v.extract::<usize>().ok())
+                                {
+                                    rr = ResourceRequest::try_new_internal(
+                                        rr.num_cpus(),
+                                        rr.num_gpus(),
+                                        Some(memory),
+                                    )
+                                    .unwrap_or(rr);
+                                }
+                            }
+                            rr
+                        });
+                        resource_requests.push(rr);
                         Ok(TreeNodeRecursion::Continue)
                     }
                     _ => Ok(TreeNodeRecursion::Continue),
@@ -320,14 +354,52 @@ impl UDFProperties {
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(row_wise_fn))) => {
                     num_udfs += 1;
+                    let rr =
+                        ResourceRequest::try_new_internal(None, Some(row_wise_fn.gpus.0), None)?;
+
+                    #[cfg(feature = "python")]
+                    let rr = Python::attach(|py| {
+                        let mut rr = rr;
+                        if let Some(options) = row_wise_fn
+                            .ray_options
+                            .as_ref()
+                            .and_then(|o| o.as_ref().bind(py).cast::<PyDict>().ok())
+                        {
+                            if let Some(cpus) = options
+                                .get_item("num_cpus")
+                                .ok()
+                                .flatten()
+                                .and_then(|v| v.extract::<f64>().ok())
+                            {
+                                rr = ResourceRequest::try_new_internal(
+                                    Some(cpus),
+                                    rr.num_gpus(),
+                                    rr.memory_bytes(),
+                                )
+                                .unwrap_or(rr);
+                            }
+
+                            if let Some(memory) = options
+                                .get_item("memory")
+                                .ok()
+                                .flatten()
+                                .and_then(|v| v.extract::<usize>().ok())
+                            {
+                                rr = ResourceRequest::try_new_internal(
+                                    rr.num_cpus(),
+                                    rr.num_gpus(),
+                                    Some(memory),
+                                )
+                                .unwrap_or(rr);
+                            }
+                        }
+                        rr
+                    });
+
                     udf_properties = Some(Self {
                         name: row_wise_fn.function_name.to_string(),
-                        resource_request: Some(ResourceRequest::try_new_internal(
-                            None,
-                            Some(row_wise_fn.gpus.0),
-                            None,
-                        )?),
-                        batch_size: None, // Row-wise functions don't have batch_size
+                        resource_request: Some(rr),
+                        batch_size: None,
                         concurrency: row_wise_fn.max_concurrency,
                         use_process: row_wise_fn.use_process,
                         max_retries: row_wise_fn.max_retries,
@@ -335,38 +407,64 @@ impl UDFProperties {
                         is_async: row_wise_fn.is_async,
                         on_error: Some(row_wise_fn.on_error),
                         is_scalar: false,
-                        ray_options: None,
+                        ray_options: row_wise_fn.ray_options.clone(),
                     });
                 }
-                Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
-                    function_name,
-                    gpus,
-                    max_concurrency,
-                    use_process,
-                    batch_size,
-                    max_retries,
-                    on_error,
-                    builtin_name,
-                    is_async,
-                    ..
-                }))) => {
+                Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(batch_fn))) => {
                     num_udfs += 1;
+                    let rr = ResourceRequest::try_new_internal(None, Some(batch_fn.gpus.0), None)?;
+
+                    #[cfg(feature = "python")]
+                    let rr = Python::attach(|py| {
+                        let mut rr = rr;
+                        if let Some(options) = batch_fn
+                            .ray_options
+                            .as_ref()
+                            .and_then(|o| o.as_ref().bind(py).cast::<PyDict>().ok())
+                        {
+                            if let Some(cpus) = options
+                                .get_item("num_cpus")
+                                .ok()
+                                .flatten()
+                                .and_then(|v| v.extract::<f64>().ok())
+                            {
+                                rr = ResourceRequest::try_new_internal(
+                                    Some(cpus),
+                                    rr.num_gpus(),
+                                    rr.memory_bytes(),
+                                )
+                                .unwrap_or(rr);
+                            }
+
+                            if let Some(memory) = options
+                                .get_item("memory")
+                                .ok()
+                                .flatten()
+                                .and_then(|v| v.extract::<usize>().ok())
+                            {
+                                rr = ResourceRequest::try_new_internal(
+                                    rr.num_cpus(),
+                                    rr.num_gpus(),
+                                    Some(memory),
+                                )
+                                .unwrap_or(rr);
+                            }
+                        }
+                        rr
+                    });
+
                     udf_properties = Some(Self {
-                        name: function_name.to_string(),
-                        resource_request: Some(ResourceRequest::try_new_internal(
-                            None,
-                            Some(gpus.0),
-                            None,
-                        )?),
-                        batch_size: *batch_size,
-                        concurrency: *max_concurrency,
-                        use_process: *use_process,
-                        max_retries: *max_retries,
-                        builtin_name: *builtin_name,
-                        is_async: *is_async,
-                        on_error: Some(*on_error),
+                        name: batch_fn.function_name.to_string(),
+                        resource_request: Some(rr),
+                        batch_size: batch_fn.batch_size,
+                        concurrency: batch_fn.max_concurrency,
+                        use_process: batch_fn.use_process,
+                        max_retries: batch_fn.max_retries,
+                        is_async: batch_fn.is_async,
+                        on_error: Some(batch_fn.on_error),
+                        builtin_name: batch_fn.builtin_name,
                         is_scalar: false,
-                        ray_options: None,
+                        ray_options: batch_fn.ray_options.clone(),
                     });
                 }
                 _ => {}
@@ -426,14 +524,18 @@ impl UDFProperties {
                 // FIXME(zhenchao) Perhaps the layout should be optimized to improve readability
                 let ray_options = Python::attach(|py| -> PyResult<Option<String>> {
                     let bound = ray_options.as_ref().bind(py);
-                    if bound.is_instance_of::<PyDict>() {
-                        let repr = bound.repr()?;
+                    if let Ok(dict) = bound.cast::<PyDict>() {
+                        if dict.is_empty() {
+                            return Ok(None);
+                        }
+                        let repr = dict.repr()?;
                         Ok(Some(format!("ray_options = {}", repr)))
                     } else {
                         Ok(None)
                     }
                 })
-                .unwrap_or(None);
+                .ok()
+                .flatten();
 
                 if let Some(prop) = ray_options {
                     properties.push(prop);

@@ -274,6 +274,9 @@ class UDF:
         else:
             self.wrapped_inner = UninitializedUdf(lambda: self.inner, self.name)
 
+        if self.concurrency is not None and self.concurrency == 0:
+            raise ValueError("concurrency for udf must be non-zero")
+
     def __call__(self, *args: Any, **kwargs: Any) -> Expression:
         self._validate_init_args()
 
@@ -284,6 +287,20 @@ class UDF:
 
         bound_args = self._bind_args(*args, **kwargs)
         expressions = list(bound_args.expressions().values())
+
+        ray_options = self.ray_options.copy() if self.ray_options is not None else {}
+        if "num_cpus" in ray_options:
+            raise ValueError(
+                "Cannot set 'num_cpus' in `ray_options`. Please use the 'num_cpus' argument in @udf instead."
+            )
+        if "num_gpus" in ray_options:
+            raise ValueError(
+                "Cannot set 'num_gpus' in `ray_options`. Please use the 'num_gpus' argument in @udf instead."
+            )
+        if "memory" in ray_options:
+            raise ValueError(
+                "Cannot set 'memory' in `ray_options`. Please use the 'memory_bytes' argument in @udf instead."
+            )
 
         return Expression.udf(
             name=self.name,
@@ -296,7 +313,7 @@ class UDF:
             batch_size=self.batch_size,
             concurrency=self.concurrency,
             use_process=self.use_process,
-            ray_options=self.ray_options,
+            ray_options=ray_options,
         )
 
     def override_options(
