@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { main } from "@/lib/utils";
 import { ExecutingState, OperatorInfo, PhysicalPlanNode } from "./types";
 import {
@@ -21,18 +21,9 @@ function getCategoryColor(node: PhysicalPlanNode) {
   return categoryColors[node.type] ?? categoryColors[node.category] ?? defaultColor;
 }
 
-function useWallClockDuration(operator?: OperatorInfo): string | null {
-  const [now, setNow] = useState(() => Date.now() / 1000);
-  const isExecuting = operator?.status === "Executing";
-
-  useEffect(() => {
-    if (!isExecuting) return;
-    const id = setInterval(() => setNow(Date.now() / 1000), 200);
-    return () => clearInterval(id);
-  }, [isExecuting]);
-
+function getWallClockDuration(operator?: OperatorInfo): string | null {
   if (!operator?.start_sec) return null;
-  const end = operator.end_sec ?? (isExecuting ? now : null);
+  const end = operator.end_sec ?? (operator.status === "Executing" ? Date.now() / 1000 : null);
   if (end == null) return null;
   return formatDuration(Math.max(0, end - operator.start_sec));
 }
@@ -48,7 +39,7 @@ function PhysicalNodeCard({
   const catColor = getCategoryColor(node);
   const status = operator?.status ?? "Pending";
   const statusBorder = getStatusBorderColor(status);
-  const wallClock = useWallClockDuration(operator);
+  const wallClock = getWallClockDuration(operator);
 
   const rowsIn = operator?.stats[ROWS_IN_STAT_KEY]?.value ?? 0;
   const rowsOut = operator?.stats[ROWS_OUT_STAT_KEY]?.value ?? 0;
