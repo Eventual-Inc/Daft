@@ -1,13 +1,31 @@
-import { ExecutingState } from "./types";
+import { useState, useEffect } from "react";
+import { ExecutingState, OperatorInfo } from "./types";
 import {
   getStatusIcon,
   getStatusText,
   getStatusColor,
   formatStatValue,
+  formatDuration,
   ROWS_IN_STAT_KEY,
   ROWS_OUT_STAT_KEY,
   DURATION_US_STAT_KEY,
 } from "./stats-utils";
+
+function OperatorDuration({ operator }: { operator: OperatorInfo }) {
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  const isExecuting = operator.status === "Executing";
+
+  useEffect(() => {
+    if (!isExecuting) return;
+    const id = setInterval(() => setNow(Date.now() / 1000), 1000);
+    return () => clearInterval(id);
+  }, [isExecuting]);
+
+  if (!operator.start_sec) return <>-</>;
+  const end = operator.end_sec ?? (isExecuting ? now : null);
+  if (end == null) return <>-</>;
+  return <>{formatDuration(Math.max(0, end - operator.start_sec))}</>;
+}
 
 export default function ProgressTable({
   exec_state,
@@ -16,9 +34,9 @@ export default function ProgressTable({
 }) {
   return (
     <div className="overflow-auto h-full">
-      <div className="min-w-[770px]">
+      <div className="min-w-[870px]">
         {/* Table Headers */}
-        <div className="bg-zinc-800 grid grid-cols-[50px_60px_100px_200px_120px_120px_1fr] gap-0 items-center min-h-[55px] border-b border-zinc-700">
+        <div className="bg-zinc-800 grid grid-cols-[50px_60px_100px_200px_120px_120px_100px_1fr] gap-0 items-center min-h-[55px] border-b border-zinc-700">
           <div className="px-3 py-4 border-r border-zinc-700 h-full flex items-center"></div>
           <div className="px-3 py-4 text-sm font-bold text-white font-mono border-r border-zinc-700 h-full flex items-center justify-center">
             ID
@@ -35,6 +53,9 @@ export default function ProgressTable({
           <div className="px-3 py-4 text-right text-sm font-bold text-white font-mono border-r border-zinc-700 h-full flex items-center justify-end">
             Rows Out
           </div>
+          <div className="px-3 py-4 text-right text-sm font-bold text-white font-mono border-r border-zinc-700 h-full flex items-center justify-end">
+            Duration
+          </div>
           <div className="px-3 py-4 text-sm font-bold text-white font-mono h-full flex items-center">
             Extra Stats
           </div>
@@ -46,7 +67,6 @@ export default function ProgressTable({
             .sort(([a], [b]) => parseInt(a) - parseInt(b))
             .map(([operatorId, operator]) => {
               const name = operator.node_info.name;
-              // Extract important stats from operator.stats
               const rowsIn = operator.stats[ROWS_IN_STAT_KEY]?.value || 0;
               const rowsOut = operator.stats[ROWS_OUT_STAT_KEY]?.value || 0;
 
@@ -68,7 +88,7 @@ export default function ProgressTable({
               return (
                 <div
                   key={operatorId}
-                  className="grid grid-cols-[50px_60px_100px_200px_120px_120px_1fr] gap-0 items-center min-h-[55px] transition-colors hover:bg-zinc-800/50"
+                  className="grid grid-cols-[50px_60px_100px_200px_120px_120px_100px_1fr] gap-0 items-center min-h-[55px] transition-colors hover:bg-zinc-800/50"
                 >
                   <div className="px-3 py-4 flex items-center justify-end border-r border-zinc-700 h-full">
                     {getStatusIcon(operator.status)}
@@ -91,6 +111,9 @@ export default function ProgressTable({
                   </div>
                   <div className="px-3 py-4 text-right text-sm text-zinc-300 font-mono border-r border-zinc-700 h-full flex items-center justify-end">
                     {name.includes("Sink") ? "-" : rowsOut.toLocaleString()}
+                  </div>
+                  <div className="px-3 py-4 text-right text-sm text-zinc-300 font-mono border-r border-zinc-700 h-full flex items-center justify-end">
+                    <OperatorDuration operator={operator} />
                   </div>
                   <div className="px-3 py-4 text-sm text-zinc-400 font-mono h-full flex items-center">
                     {extraStats || "-"}

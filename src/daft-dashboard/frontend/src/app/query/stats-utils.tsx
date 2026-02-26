@@ -71,11 +71,30 @@ export const formatStatValue = (stat: Stat) => {
     case "Percent":
       return `${stat.value.toFixed(1)}%`;
     case "Duration":
-      return `${stat.value.toFixed(1)}s`;
+      const totalSec = stat.value.secs + stat.value.nanos / 1e9;
+      return formatDuration(totalSec);
     case "Float":
       return stat.value.toFixed(2);
     default:
       return String((stat as any).value);
+  }
+};
+
+export const formatDuration = (seconds: number): string => {
+  if (seconds < 0.001) {
+    return `${(seconds * 1_000_000).toFixed(0)}µs`;
+  } else if (seconds < 1) {
+    return `${(seconds * 1000).toFixed(0)}ms`;
+  } else if (seconds < 60) {
+    return `${seconds.toFixed(1)}s`;
+  } else if (seconds < 3600) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs.toFixed(0)}s`;
+  } else {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    return `${hrs}h ${mins}m`;
   }
 };
 
