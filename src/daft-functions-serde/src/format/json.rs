@@ -43,7 +43,7 @@ pub(crate) fn deserialize(input: &Utf8Array, dtype: &DataType) -> DaftResult<Ser
 
     let col = rb.column(0);
 
-    // convert the arrow2 Array into a Daft Series.
+    // convert the arrow Array into a Daft Series.
     Series::from_arrow(field, col.clone())
 }
 
