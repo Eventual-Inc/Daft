@@ -1,8 +1,0 @@
-# Compiled native extension (placed by maturin develop)
-daft_ext_example/*.so
-daft_ext_example/*.dylib
-daft_ext_example/*.dll
-
-# maturin build artifacts
-target/
-dist/

@@ -2783,15 +2783,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "daft-ext-example"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow-array",
- "arrow-schema",
- "daft-ext",
-]
-
-[[package]]
 name = "daft-ext-internal"
 version = "0.3.0-dev0"
 dependencies = [

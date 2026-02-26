@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import platform
 import types
 from contextvars import ContextVar, Token
@@ -264,6 +265,11 @@ class Session:
             path = _get_shared_lib(extension)
         else:
             raise TypeError(f"Expected string, Path, or module, got {type(extension)}")
+
+        # Load the shared library globally so that symbols are visible to other libraries.
+        ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)
+
+        # Load the extension into the session on the Rust side.
         self._session.load_extension(path)
 
     def detach_provider(self, alias: str) -> None:
@@ -966,11 +972,8 @@ def set_session(session: Session) -> None:
 
 
 def _get_shared_lib_extension() -> str:
-    return {
-        "Linux": ".so",
-        "Darwin": ".dylib",
-        "Windows": ".dll",
-    }.get(platform.system(), ".so")
+    """Determine the platform-specific shared library extension."""
+    return ".dll" if platform.system() == "Windows" else ".so"
 
 
 def _get_shared_lib(mod: types.ModuleType) -> str:

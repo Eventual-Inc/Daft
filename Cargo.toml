@@ -115,6 +115,7 @@ publish = false
 version = "0.3.0-dev0"
 # Exclude unnecessary files from sdist
 exclude = [
+  "examples/dvector",
   "tests/",
   "benchmarking/",
   "tutorials/",
@@ -196,7 +197,6 @@ members = [
   "src/daft-ext",
   "src/daft-ext-abi",
   "src/daft-ext-core",
-  "examples/example_extension",
   "src/daft-ext-internal",
   "src/daft-ext-macros",
   "src/daft-file",
