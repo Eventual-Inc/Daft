@@ -9,12 +9,12 @@ impl Utf8Array {
     /// NOTE: this will error if there are any null values.
     /// If you need to handle nulls, use the `.iter()` method instead.
     pub fn values(&self) -> DaftResult<impl Iterator<Item = &str>> {
-        let arr = self.as_arrow()?;
         if self.null_count() > 0 {
             return Err(DaftError::ComputeError(
                 "Utf8Array::values with nulls".to_string(),
             ));
         }
+        let arr = self.as_arrow()?;
         let iter = (0..arr.len()).map(|i| arr.value(i));
         Ok(iter)
     }
