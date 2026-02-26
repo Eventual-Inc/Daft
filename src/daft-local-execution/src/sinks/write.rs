@@ -2,7 +2,10 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, Counter, ROWS_IN_KEY, StatSnapshot, ops::NodeType, snapshot::WriteSnapshot,
+    BYTES_WRITTEN_KEY, Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_WRITTEN_KEY, StatSnapshot,
+    UNIT_BYTES, UNIT_MICROSECONDS, UNIT_ROWS,
+    ops::{NodeInfo, NodeType},
+    snapshot::WriteSnapshot,
 };
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -18,7 +21,7 @@ use super::blocking_sink::{
 use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 struct WriteStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_written: Counter,
     bytes_written: Counter,
@@ -27,14 +30,14 @@ struct WriteStats {
 }
 
 impl WriteStats {
-    pub fn new(meter: &Meter, id: usize) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = node_info.to_key_values();
 
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
-            rows_written: Counter::new(meter, "rows written", None),
-            bytes_written: Counter::new(meter, "bytes written", None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            rows_written: Counter::new(meter, ROWS_WRITTEN_KEY, None, Some(UNIT_ROWS.into())),
+            bytes_written: Counter::new(meter, BYTES_WRITTEN_KEY, None, Some(UNIT_BYTES.into())),
 
             node_kv,
         }
@@ -56,7 +59,7 @@ impl RuntimeStats for WriteStats {
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        let cpu_us = self.cpu_us.load(ordering);
+        let cpu_us = self.duration_us.load(ordering);
         let rows_in = self.rows_in.load(ordering);
         let rows_written = self.rows_written.load(ordering);
         let bytes_written = self.bytes_written.load(ordering);
@@ -77,7 +80,7 @@ impl RuntimeStats for WriteStats {
     fn add_rows_out(&self, _rows: u64) {}
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
@@ -216,8 +219,8 @@ impl BlockingSink for WriteSink {
         Ok(WriteState::new(writer))
     }
 
-    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(WriteStats::new(meter, id))
+    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
+        Arc::new(WriteStats::new(meter, node_info))
     }
 
     fn multiline_display(&self) -> Vec<String> {

@@ -2,22 +2,18 @@ mod agg_ops;
 mod infer_datatype;
 mod matching;
 
-use arrow::{
-    array::ArrowNumericType,
-    buffer::{Buffer, ScalarBuffer},
-    datatypes::ArrowNativeType,
-};
+use arrow::{array::ArrowNumericType, datatypes::ArrowNativeType};
+use bytemuck::Pod;
 pub use infer_datatype::InferDataType;
 pub mod prelude;
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::{
+    ops::{Add, Div, Mul, Rem, Sub},
+    panic::RefUnwindSafe,
+};
 
 pub use agg_ops::{
     try_mean_aggregation_supertype, try_product_supertype, try_skew_aggregation_supertype,
     try_stddev_aggregation_supertype, try_sum_supertype, try_variance_aggregation_supertype,
-};
-use daft_arrow::{
-    compute::comparison::Simd8,
-    types::{NativeType, simd::Simd},
 };
 // Import DataType enum
 pub use daft_schema::dtype::DataType;
@@ -35,7 +31,7 @@ pub use crate::array::{DataArray, FixedSizeListArray, file_array::FileArray};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{ListArray, StructArray, ops::as_arrow::AsArrow},
+    array::{ListArray, StructArray},
     file::{DaftMediaType, FileType},
 };
 
@@ -295,12 +291,9 @@ impl DaftDataType for PythonType {
 pub trait NumericNative:
     ArrowNativeType
     + PartialOrd
-    + NativeType
     + Num
     + NumCast
     + Zero
-    + Simd
-    + Simd8
     + std::iter::Sum<Self>
     + Add<Output = Self>
     + Sub<Output = Self>
@@ -311,6 +304,15 @@ pub trait NumericNative:
     + FromPrimitive
     + ToPrimitive
     + Serialize
+    + Pod
+    + Send
+    + Sync
+    + Sized
+    + RefUnwindSafe
+    + std::fmt::Debug
+    + std::fmt::Display
+    + PartialEq
+    + Default
 {
     type DAFTTYPE: DaftNumericType;
     type ARROWTYPE: ArrowNumericType;
@@ -462,15 +464,3 @@ pub type Utf8Array = DataArray<Utf8Type>;
 pub type ExtensionArray = DataArray<ExtensionType>;
 pub type IntervalArray = DataArray<IntervalType>;
 pub type Decimal128Array = DataArray<Decimal128Type>;
-
-impl<T: DaftPrimitiveType> DataArray<T> {
-    pub fn as_slice(&self) -> &[T::Native] {
-        self.as_arrow2().values().as_slice()
-    }
-
-    pub fn values(&self) -> ScalarBuffer<T::Native> {
-        // this is fully zero copy to convert the values into an arrow-rs ScalarBuffer
-        let arrow_buffer = Buffer::from(self.as_arrow2().values().clone());
-        ScalarBuffer::from(arrow_buffer)
-    }
-}

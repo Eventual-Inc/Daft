@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    hash::{Hash, Hasher},
     sync::{Arc, LockResult},
 };
 
@@ -25,6 +26,8 @@ use daft_logical_plan::{
     stats::{PlanStats, StatsState},
 };
 use serde::{Deserialize, Serialize};
+
+use crate::SourceId;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct LocalNodeContext {
@@ -210,28 +213,15 @@ impl LocalPhysicalPlan {
         }
     }
 
-    pub fn in_memory_scan(
-        in_memory_info: InMemoryInfo,
-        stats_state: StatsState,
-        context: LocalNodeContext,
-    ) -> LocalPhysicalPlanRef {
-        Self::InMemoryScan(InMemoryScan {
-            info: in_memory_info,
-            stats_state,
-            context,
-        })
-        .arced()
-    }
-
     pub fn physical_scan(
-        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+        source_id: SourceId,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::PhysicalScan(PhysicalScan {
-            scan_tasks,
+            source_id,
             pushdowns,
             schema,
             stats_state,
@@ -240,8 +230,25 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub fn in_memory_scan(
+        source_id: SourceId,
+        schema: SchemaRef,
+        size_bytes: usize,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::InMemoryScan(InMemoryScan {
+            source_id,
+            schema,
+            size_bytes,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
     pub fn glob_scan(
-        glob_paths: Arc<Vec<String>>,
+        source_id: SourceId,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         stats_state: StatsState,
@@ -249,7 +256,7 @@ impl LocalPhysicalPlan {
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::GlobScan(GlobScan {
-            glob_paths,
+            source_id,
             pushdowns,
             schema,
             stats_state,
@@ -339,6 +346,7 @@ impl LocalPhysicalPlan {
     pub fn explode(
         input: LocalPhysicalPlanRef,
         to_explode: Vec<BoundExpr>,
+        ignore_empty_and_null: bool,
         index_column: Option<String>,
         schema: SchemaRef,
         stats_state: StatsState,
@@ -347,6 +355,7 @@ impl LocalPhysicalPlan {
         Self::Explode(Explode {
             input,
             to_explode,
+            ignore_empty_and_null,
             index_column,
             schema,
             stats_state,
@@ -1057,7 +1066,7 @@ impl LocalPhysicalPlan {
             | Self::WindowOrderByOnly(WindowOrderByOnly { schema, .. }) => schema,
             Self::PhysicalWrite(PhysicalWrite { file_schema, .. }) => file_schema,
             Self::CommitWrite(CommitWrite { file_schema, .. }) => file_schema,
-            Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
+            Self::InMemoryScan(InMemoryScan { schema, .. }) => schema,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
@@ -1324,6 +1333,7 @@ impl LocalPhysicalPlan {
                 ),
                 Self::Explode(Explode {
                     to_explode,
+                    ignore_empty_and_null,
                     index_column,
                     schema,
                     context,
@@ -1331,6 +1341,7 @@ impl LocalPhysicalPlan {
                 }) => Self::explode(
                     new_child.clone(),
                     to_explode.clone(),
+                    *ignore_empty_and_null,
                     index_column.clone(),
                     schema.clone(),
                     StatsState::NotMaterialized,
@@ -1768,18 +1779,20 @@ impl DynTreeNode for LocalPhysicalPlan {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
-pub struct InMemoryScan {
-    pub info: InMemoryInfo,
+pub struct PhysicalScan {
+    pub source_id: SourceId,
+    pub pushdowns: Pushdowns,
+    pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
-pub struct PhysicalScan {
-    pub scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
-    pub pushdowns: Pushdowns,
+pub struct InMemoryScan {
+    pub source_id: SourceId,
     pub schema: SchemaRef,
+    pub size_bytes: usize,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
@@ -1787,11 +1800,11 @@ pub struct PhysicalScan {
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct GlobScan {
-    pub glob_paths: Arc<Vec<String>>,
+    pub source_id: SourceId,
     pub pushdowns: Pushdowns,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub io_config: Option<common_io_config::IOConfig>,
+    pub io_config: Option<IOConfig>,
     pub context: LocalNodeContext,
 }
 
@@ -1885,6 +1898,7 @@ pub struct Limit {
 pub struct Explode {
     pub input: LocalPhysicalPlanRef,
     pub to_explode: Vec<BoundExpr>,
+    pub ignore_empty_and_null: bool,
     pub index_column: Option<String>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,

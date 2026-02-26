@@ -36,7 +36,7 @@ where
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow()?;
         let seed_arr = seed.map(|v| v.as_arrow()).transpose()?;
-        let result = kernels::hashing::hash(&as_arrowed, seed_arr.as_ref(), hash_function)?;
+        let result = kernels::hashing::hash(&as_arrowed, seed_arr, hash_function)?;
         let field = Arc::new(Field::new(self.name(), DataType::UInt64));
         UInt64Array::from_arrow(field, Arc::new(result))
     }
@@ -54,7 +54,7 @@ impl Utf8Array {
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow()?;
         let seed_arr = seed.map(|v| v.as_arrow()).transpose()?;
-        let result = kernels::hashing::hash(&as_arrowed, seed_arr.as_ref(), hash_function)?;
+        let result = kernels::hashing::hash(&as_arrowed, seed_arr, hash_function)?;
         let field = Arc::new(Field::new(self.name(), DataType::UInt64));
         UInt64Array::from_arrow(field, Arc::new(result))
     }
@@ -88,7 +88,7 @@ impl BinaryArray {
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow()?;
         let seed_arr = seed.map(|v| v.as_arrow()).transpose()?;
-        let result = kernels::hashing::hash(&as_arrowed, seed_arr.as_ref(), hash_function)?;
+        let result = kernels::hashing::hash(&as_arrowed, seed_arr, hash_function)?;
         let field = Arc::new(Field::new(self.name(), DataType::UInt64));
         UInt64Array::from_arrow(field, Arc::new(result))
     }
@@ -116,7 +116,7 @@ impl FixedSizeBinaryArray {
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow()?;
         let seed_arr = seed.map(|v| v.as_arrow()).transpose()?;
-        let result = kernels::hashing::hash(&as_arrowed, seed_arr.as_ref(), hash_function)?;
+        let result = kernels::hashing::hash(&as_arrowed, seed_arr, hash_function)?;
         let field = Arc::new(Field::new(self.name(), DataType::UInt64));
         UInt64Array::from_arrow(field, Arc::new(result))
     }
@@ -144,7 +144,7 @@ impl BooleanArray {
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow()?;
         let seed_arr = seed.map(|v| v.as_arrow()).transpose()?;
-        let result = kernels::hashing::hash(&as_arrowed, seed_arr.as_ref(), hash_function)?;
+        let result = kernels::hashing::hash(&as_arrowed, seed_arr, hash_function)?;
         let field = Arc::new(Field::new(self.name(), DataType::UInt64));
         UInt64Array::from_arrow(field, Arc::new(result))
     }
@@ -161,7 +161,7 @@ impl NullArray {
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow()?;
         let seed_arr = seed.map(|v| v.as_arrow()).transpose()?;
-        let result = kernels::hashing::hash(&as_arrowed, seed_arr.as_ref(), hash_function)?;
+        let result = kernels::hashing::hash(&as_arrowed, seed_arr, hash_function)?;
         let field = Arc::new(Field::new(self.name(), DataType::UInt64));
         UInt64Array::from_arrow(field, Arc::new(result))
     }

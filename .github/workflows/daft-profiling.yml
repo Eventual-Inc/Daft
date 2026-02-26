@@ -19,16 +19,21 @@ env:
 jobs:
   profile-daft:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        key: ${{ runner.os }}-profile
+        shared-key: ${{ runner.os }}-integration-build
         cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
 
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7

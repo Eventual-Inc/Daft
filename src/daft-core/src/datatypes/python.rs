@@ -1,13 +1,8 @@
-use std::sync::Arc;
+use std::{fmt, ops::Deref, sync::Arc};
 
-use arrow::array::ArrayRef;
+use arrow::{array::ArrayRef, buffer::NullBuffer};
 use common_error::{DaftError, DaftResult};
 use common_py_serde::pickle_dumps;
-use daft_arrow::{
-    array::Array,
-    bitmap::utils::ZipValidity,
-    buffer::{Buffer, NullBuffer},
-};
 use daft_schema::{dtype::DataType, field::Field};
 use pyo3::{Py, PyAny, PyResult, Python};
 
@@ -16,10 +11,79 @@ use crate::{
     series::{ArrayWrapper, IntoSeries, Series},
 };
 
+/// A lightweight buffer for holding `Arc<Py<PyAny>>` values, replacing
+/// `arrow2::buffer::Buffer<Arc<Py<PyAny>>>` which cannot be represented
+/// by arrow-rs's byte-oriented `Buffer`.
+#[derive(Clone)]
+pub struct PythonBuffer {
+    data: Arc<Vec<Arc<Py<PyAny>>>>,
+    offset: usize,
+    length: usize,
+}
+
+impl PythonBuffer {
+    /// Returns an O(1) sliced view of this buffer.
+    pub fn sliced(self, offset: usize, length: usize) -> Self {
+        assert!(
+            offset + length <= self.length,
+            "slice {}..{} out of bounds for buffer of length {}",
+            offset,
+            offset + length,
+            self.length
+        );
+        Self {
+            data: self.data,
+            offset: self.offset + offset,
+            length,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.length
+    }
+    pub fn is_empty(&self) -> bool {
+        self.length == 0
+    }
+}
+
+impl From<Vec<Arc<Py<PyAny>>>> for PythonBuffer {
+    fn from(vec: Vec<Arc<Py<PyAny>>>) -> Self {
+        let length = vec.len();
+        Self {
+            data: Arc::new(vec),
+            offset: 0,
+            length,
+        }
+    }
+}
+
+impl FromIterator<Arc<Py<PyAny>>> for PythonBuffer {
+    fn from_iter<I: IntoIterator<Item = Arc<Py<PyAny>>>>(iter: I) -> Self {
+        Vec::from_iter(iter).into()
+    }
+}
+
+impl Deref for PythonBuffer {
+    type Target = [Arc<Py<PyAny>>];
+
+    fn deref(&self) -> &[Arc<Py<PyAny>>] {
+        &self.data[self.offset..self.offset + self.length]
+    }
+}
+
+impl fmt::Debug for PythonBuffer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PythonBuffer")
+            .field("len", &self.length)
+            .field("offset", &self.offset)
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PythonArray {
     field: Arc<Field>,
-    values: Buffer<Arc<Py<PyAny>>>,
+    values: PythonBuffer,
     nulls: Option<NullBuffer>,
 }
 
@@ -35,11 +99,7 @@ impl PythonArray {
     /// Create a new PythonArray.
     ///
     /// Elements in `values` that are None must have validity set to false.
-    pub fn new(
-        field: Arc<Field>,
-        values: Buffer<Arc<Py<PyAny>>>,
-        nulls: Option<NullBuffer>,
-    ) -> Self {
+    pub fn new(field: Arc<Field>, values: PythonBuffer, nulls: Option<NullBuffer>) -> Self {
         assert_eq!(
             field.dtype,
             DataType::Python,
@@ -71,17 +131,6 @@ impl PythonArray {
         }
     }
 
-    #[deprecated(note = "arrow2 migration")]
-    pub fn to_pickled_arrow2(&self) -> DaftResult<daft_arrow::array::BinaryArray<i64>> {
-        let pickled = Python::attach(|py| {
-            self.iter()
-                .map(|v| v.map(|obj| pickle_dumps(py, obj)).transpose())
-                .collect::<PyResult<Vec<_>>>()
-        })?;
-
-        Ok(daft_arrow::array::BinaryArray::from(pickled))
-    }
-
     pub fn to_pickled_arrow(&self) -> DaftResult<arrow::array::LargeBinaryArray> {
         Python::attach(|py| {
             self.iter()
@@ -89,14 +138,6 @@ impl PythonArray {
                 .collect::<PyResult<arrow::array::LargeBinaryArray>>()
         })
         .map_err(DaftError::from)
-    }
-
-    #[deprecated(note = "arrow2 migration")]
-    pub fn to_arrow2(&self) -> DaftResult<Box<dyn daft_arrow::array::Array>> {
-        let arrow_logical_type = self.data_type().to_arrow2().unwrap();
-        let physical_arrow_array = self.to_pickled_arrow2()?;
-        let logical_arrow_array = physical_arrow_array.convert_logical_type(arrow_logical_type);
-        Ok(logical_arrow_array)
     }
 
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
@@ -143,7 +184,7 @@ impl PythonArray {
         Ok(Self::new(self.field.clone(), new_values, new_nulls))
     }
 
-    pub fn values(&self) -> &Buffer<Arc<Py<PyAny>>> {
+    pub fn values(&self) -> &PythonBuffer {
         &self.values
     }
 
@@ -183,8 +224,15 @@ impl PythonArray {
         self.slice(0, num)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = Option<&Arc<Py<PyAny>>>> {
-        ZipValidity::new(self.values.iter(), self.nulls().map(|v| v.iter()))
+    pub fn iter(&self) -> impl Iterator<Item = Option<&Arc<Py<PyAny>>>> + '_ {
+        let nulls = self.nulls.as_ref();
+        self.values.iter().enumerate().map(move |(i, v)| {
+            if nulls.is_none_or(|n| n.is_valid(i)) {
+                Some(v)
+            } else {
+                None
+            }
+        })
     }
 }
 

@@ -1,16 +1,15 @@
+use arrow::array::NullBufferBuilder;
+
 pub struct ArrowBitmapGrowable<'a> {
-    bitmap_refs: Vec<Option<&'a daft_arrow::buffer::NullBuffer>>,
-    mutable_bitmap: daft_arrow::buffer::NullBufferBuilder,
+    bitmap_refs: Vec<Option<&'a arrow::buffer::NullBuffer>>,
+    mutable_bitmap: NullBufferBuilder,
 }
 
 impl<'a> ArrowBitmapGrowable<'a> {
-    pub fn new(
-        bitmap_refs: Vec<Option<&'a daft_arrow::buffer::NullBuffer>>,
-        capacity: usize,
-    ) -> Self {
+    pub fn new(bitmap_refs: Vec<Option<&'a arrow::buffer::NullBuffer>>, capacity: usize) -> Self {
         Self {
             bitmap_refs,
-            mutable_bitmap: daft_arrow::buffer::NullBufferBuilder::new(capacity),
+            mutable_bitmap: arrow::array::NullBufferBuilder::new(capacity),
         }
     }
 
@@ -30,7 +29,7 @@ impl<'a> ArrowBitmapGrowable<'a> {
         self.mutable_bitmap.append_n_nulls(additional);
     }
 
-    pub fn build(mut self) -> Option<daft_arrow::buffer::NullBuffer> {
+    pub fn build(mut self) -> Option<arrow::buffer::NullBuffer> {
         self.mutable_bitmap.finish()
     }
 }

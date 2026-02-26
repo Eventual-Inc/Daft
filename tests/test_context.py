@@ -332,4 +332,4 @@ def test_set_scantask_max_parallelism_greater_than_partition_num():
         str_io = io.StringIO()
         df = daft.range(start=0, end=1024, partitions=10)
         df.explain(show_all=True, file=str_io)
-        assert "Num Parallel Scan Tasks = 10" in str_io.getvalue().strip()
+        assert "Num Parallel Scan Tasks = 17" in str_io.getvalue().strip()

@@ -167,8 +167,9 @@ def test_is_in_edge_cases():
                 ],
                 "date_sub_month": [
                     datetime.date(2021, 12, 1),
-                    datetime.date(2020, 1, 31),
-                    datetime.date(2029, 4, 14),
+                    # 2020-02-29 - 1 month = Jan 29 (SQL-standard clamping)
+                    datetime.date(2020, 1, 29),
+                    datetime.date(2029, 4, 15),
                 ],
                 "ts_sub_year": [
                     datetime.datetime(2021, 1, 1, 10),
@@ -212,7 +213,8 @@ def test_is_in_edge_cases():
                 ],
                 "ts_add_year_mul_2": [
                     datetime.datetime(2024, 1, 1, 10, 0, 0),
-                    datetime.datetime(2022, 3, 1, 23, 59, 59),
+                    # 2020-02-29 + 2 years = 2022-02-28 (SQL-standard clamping)
+                    datetime.datetime(2022, 2, 28, 23, 59, 59),
                     datetime.datetime(2031, 5, 15, 12, 34, 56),
                 ],
             },

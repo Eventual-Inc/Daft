@@ -2259,6 +2259,12 @@ impl Expr {
         }
     }
 
+    /// Explode a list expression.
+    ///
+    /// Note: This method always uses `ignore_empty_and_null=false` (default behavior).
+    /// The `ignore_empty_and_null` parameter is handled at higher levels (DataFrame.explode,
+    /// LogicalPlanBuilder.explode) where it's passed through the expression tree.
+    /// This method is primarily used internally for schema inference (e.g., in list_map).
     pub fn explode(self: Arc<Self>) -> DaftResult<ExprRef> {
         let explode_fn = FUNCTION_REGISTRY.read().unwrap().get("explode").unwrap();
         let f = explode_fn.get_function(FunctionArgs::empty(), &Schema::empty())?;

@@ -2,6 +2,7 @@
 arrow = {workspace = true}
 arrow-row = {workspace = true}
 bincode = {workspace = true}
+bytemuck = {version = "1", features = ["derive"]}
 daft-arrow = {path = "../daft-arrow"}
 chrono = {workspace = true}
 chrono-tz = {workspace = true}

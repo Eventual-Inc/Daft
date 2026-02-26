@@ -74,6 +74,7 @@ class _VideoFramesSource(DataSource):
     image_width: int
     is_key_frame: bool | None = None
     io_config: IOConfig | None = None
+    sample_interval_seconds: float | None = None
 
     @property
     def name(self) -> str:
@@ -110,6 +111,7 @@ class _VideoFramesSource(DataSource):
                 image_width=self.image_width,
                 is_key_frame=self.is_key_frame,
                 io_config=self.io_config,
+                sample_interval_seconds=self.sample_interval_seconds,
             )
 
 
@@ -122,6 +124,7 @@ class _VideoFramesSourceTask(DataSourceTask):
     image_width: int
     is_key_frame: bool | None
     io_config: IOConfig | None
+    sample_interval_seconds: float | None = None
 
     _max_partition_size = 10 * 1024 * 1024  # 10 MB
 
@@ -147,6 +150,14 @@ class _VideoFramesSourceTask(DataSourceTask):
                 # https://pyav.org/docs/develop/cookbook/basics.html#saving-keyframes
                 stream.codec_context.skip_frame = "NONKEY"
 
+            sample_interval = self.sample_interval_seconds
+            if sample_interval is not None and sample_interval <= 0:
+                raise ValueError("sample_interval_seconds must be positive if provided")
+
+            next_sample_time: float | None = 0.0 if sample_interval is not None else None
+            # Small tolerance for floating point comparisons
+            epsilon: float = 1e-9 if sample_interval is None else max(1e-9, sample_interval * 1e-6)
+
             frame_index: int = 0
             frame: VideoFrame
             while True:
@@ -157,22 +168,41 @@ class _VideoFramesSourceTask(DataSourceTask):
                 except StopIteration:
                     break
 
-                frame = frame.reformat(
-                    width=self.image_width,
-                    height=self.image_height,
-                )
+                frame_time = frame.time
+                should_emit = True
 
-                yield _VideoFrame(
-                    path=path,
-                    frame_index=frame_index,
-                    frame_time=frame.time,
-                    frame_time_base=frame.time_base,
-                    frame_pts=frame.pts,
-                    frame_dts=frame.dts,
-                    frame_duration=frame.duration,
-                    is_key_frame=frame.key_frame,
-                    data=frame.to_ndarray(format="rgb24"),
-                )
+                if sample_interval is not None:
+                    if frame_time is None:
+                        # Skip frames without timestamps when sampling is enabled.
+                        should_emit = False
+                    else:
+                        assert next_sample_time is not None
+                        if frame_time + epsilon < next_sample_time:
+                            should_emit = False
+                        else:
+                            # Emit this frame and advance to the next target timestamp(s).
+                            should_emit = True
+                            while next_sample_time is not None and frame_time + epsilon >= next_sample_time:
+                                next_sample_time += sample_interval
+
+                if should_emit:
+                    reformatted = frame.reformat(
+                        width=self.image_width,
+                        height=self.image_height,
+                    )
+
+                    yield _VideoFrame(
+                        path=path,
+                        frame_index=frame_index,
+                        frame_time=frame_time,
+                        frame_time_base=frame.time_base,
+                        frame_pts=frame.pts,
+                        frame_dts=frame.dts,
+                        frame_duration=frame.duration,
+                        is_key_frame=frame.key_frame,
+                        data=reformatted.to_ndarray(format="rgb24"),
+                    )
+
                 frame_index += 1
         finally:
             if container:

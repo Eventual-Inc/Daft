@@ -1,5 +1,4 @@
 use common_arrow_ffi::{FromPyArrow, ToPyArrow};
-use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use pyo3::prelude::*;
 
@@ -23,33 +22,13 @@ pub fn record_batch_from_arrow(
         arrow_batches.push(arrow_batch);
     }
 
-    // Now do the heavy lifting (casting and concats) without the GIL.
+    // Now do the heavy lifting (concats) without the GIL.
+    // Auto-casting (e.g. Binary → LargeBinary) is handled by the array-level from_arrow.
     py.detach(|| {
         let mut tables: Vec<RecordBatch> = Vec::with_capacity(num_batches);
         for rb in arrow_batches {
-            let arrow_schema = rb.schema();
-            let daft_schema = daft_core::prelude::Schema::try_from(arrow_schema.as_ref())?;
-            let target_arrow_schema = daft_schema.to_arrow()?;
-
-            // Cast columns if the coerced schema differs from the input schema
-            let arrays: Vec<_> = if target_arrow_schema != *arrow_schema.as_ref() {
-                rb.columns()
-                    .iter()
-                    .zip(target_arrow_schema.fields())
-                    .map(|(array, target_field)| {
-                        if array.data_type() != target_field.data_type() {
-                            arrow::compute::cast(array, target_field.data_type())
-                                .map_err(common_error::DaftError::from)
-                        } else {
-                            Ok(array.clone())
-                        }
-                    })
-                    .collect::<DaftResult<_>>()?
-            } else {
-                rb.columns().to_vec()
-            };
-
-            tables.push(RecordBatch::from_arrow(daft_schema, arrays)?);
+            let daft_schema = daft_core::prelude::Schema::try_from(rb.schema().as_ref())?;
+            tables.push(RecordBatch::from_arrow(daft_schema, rb.columns().to_vec())?);
         }
         Ok(RecordBatch::concat(tables.as_slice())?)
     })

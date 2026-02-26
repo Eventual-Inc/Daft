@@ -66,10 +66,10 @@ impl PartialEq for PythonTablesFactoryArgs {
 }
 
 pub mod pylib {
-    use std::{default, sync::Arc};
+    use std::{convert::TryFrom, default, sync::Arc};
 
     use common_daft_config::PyDaftExecutionConfig;
-    use common_error::DaftResult;
+    use common_error::{DaftError, DaftResult};
     use common_file_formats::{FileFormatConfig, python::PyFileFormatConfig};
     use common_py_serde::impl_bincode_py_state_serialization;
     use common_scan_info::{
@@ -426,7 +426,7 @@ pub mod pylib {
 
     #[pyclass(module = "daft.daft", name = "ScanTask", frozen)]
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PyScanTask(pub Arc<ScanTask>);
+    pub struct PyScanTask(pub ScanTaskLikeRef);
 
     #[pymethods]
     impl PyScanTask {
@@ -580,7 +580,7 @@ pub mod pylib {
             size_bytes=None,
             pushdowns=None,
             stats=None,
-            source_type=None
+            source_name=None
         ))]
         pub fn python_factory_func_scan_task(
             module: String,
@@ -591,7 +591,7 @@ pub mod pylib {
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
             stats: Option<PyRecordBatch>,
-            source_type: Option<String>,
+            source_name: Option<String>,
         ) -> PyResult<Self> {
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.record_batch))
@@ -612,7 +612,7 @@ pub mod pylib {
 
             // Create enhanced FileFormatConfig with context information
             let file_format_config = Arc::new(FileFormatConfig::PythonFunction {
-                source_type,
+                source_name,
                 module_name: Some(module),
                 function_name: Some(func_name),
             });
@@ -641,9 +641,13 @@ pub mod pylib {
         }
     }
 
-    impl From<PyScanTask> for Arc<ScanTask> {
-        fn from(value: PyScanTask) -> Self {
-            value.0
+    impl TryFrom<PyScanTask> for Arc<ScanTask> {
+        type Error = DaftError;
+
+        fn try_from(value: PyScanTask) -> DaftResult<Self> {
+            value.0.as_any_arc().downcast().map_err(|_| {
+                DaftError::ValueError("Failed to downcast PyScanTask to Arc<ScanTask>".to_string())
+            })
         }
     }
 

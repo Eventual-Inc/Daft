@@ -2,7 +2,7 @@ use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_partitioning::{Partition, PartitionRef};
-use daft_local_plan::{ExecutionMetadata, PyLocalPhysicalPlan};
+use daft_local_plan::{ExecutionStats, PyLocalPhysicalPlan, SourceId, python::PyInput};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
@@ -93,7 +93,7 @@ impl TaskResultHandle for RayTaskResultHandle {
 
             match ray_task_result {
                 Ok(RayTaskResult::Success(ray_part_refs, stats_serialized)) => {
-                    let stats: ExecutionMetadata = ExecutionMetadata::decode(&stats_serialized);
+                    let stats: ExecutionStats = ExecutionStats::decode(&stats_serialized);
                     let materialized_output = MaterializedOutput::new(
                         ray_part_refs
                             .into_iter()
@@ -202,14 +202,23 @@ impl RaySwordfishTask {
         Ok(PyLocalPhysicalPlan { plan })
     }
 
-    fn psets(&self) -> PyResult<HashMap<String, Vec<RayPartitionRef>>> {
+    fn inputs(&self) -> PyResult<HashMap<SourceId, PyInput>> {
+        Ok(self
+            .task
+            .inputs()
+            .iter()
+            .map(|(k, v)| (*k, PyInput { inner: v.clone() }))
+            .collect())
+    }
+
+    fn psets(&self) -> PyResult<HashMap<SourceId, Vec<RayPartitionRef>>> {
         let psets = self
             .task
             .psets()
             .iter()
             .map(|(k, v)| {
                 (
-                    k.clone(),
+                    *k,
                     v.iter()
                         .map(|v| {
                             let v = v

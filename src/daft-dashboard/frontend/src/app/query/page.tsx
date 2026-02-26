@@ -16,13 +16,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import LoadingPage from "@/components/loading";
 import { Status } from "./status";
 import { ExecutingState, OperatorInfo, QueryInfo } from "./types";
-import ProgressTable from "./progress-table";
-
-
-function formatPlanJSON(plan: string) {
-  const parsedPlan = JSON.parse(plan);
-  return JSON.stringify(parsedPlan, null, 2);
-}
+import PhysicalPlanTree from "./physical-plan-tree";
+import PlanVisualizer from "./plan-visualizer";
 
 /**
  * Query detail page component
@@ -179,7 +174,7 @@ function QueryPageInner() {
                   </p>
                 </div>
                 {query.ray_dashboard_url && (
-                 <div>
+                  <div>
                     <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
                       Ray Dashboard
                     </h3>
@@ -191,8 +186,8 @@ function QueryPageInner() {
                     >
                       Open in Ray
                     </a>
-                 </div>
-               )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -215,7 +210,7 @@ function QueryPageInner() {
                 query.state.status === "Setup"
               }
             >
-              Progress Table
+              Execution
             </TabsTrigger>
             <TabsTrigger
               value="optimized-plan"
@@ -239,7 +234,7 @@ function QueryPageInner() {
                   </p>
                 </div>
               ) : (
-                <ProgressTable exec_state={query.state as ExecutingState} />
+                <PhysicalPlanTree exec_state={query.state as ExecutingState} />
               )}
             </div>
           </TabsContent>
@@ -248,34 +243,28 @@ function QueryPageInner() {
             value="optimized-plan"
             className="mt-4 flex-1 overflow-auto"
           >
-            <div className="bg-zinc-900 p-4">
-              {query.state.status === "Pending" ? (
+            {query.state.status === "Pending" ? (
+              <div className="bg-zinc-900 p-4">
                 <p className={`${main.className} text-zinc-400`}>
                   Plan not yet optimized
                 </p>
-              ) : (
-                <pre
-                  className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}
-                >
-                  {"plan_info" in query.state
-                    ? formatPlanJSON(query.state.plan_info.optimized_plan)
-                    : "No optimized plan available"}
-                </pre>
-              )}
-            </div>
+              </div>
+            ) : (
+              <PlanVisualizer
+                planJson={
+                  "plan_info" in query.state
+                    ? query.state.plan_info.optimized_plan
+                    : ""
+                }
+              />
+            )}
           </TabsContent>
 
           <TabsContent
             value="unoptimized-plan"
             className="mt-4 flex-1 overflow-auto"
           >
-            <div className="bg-zinc-900 p-4">
-              <pre
-                className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}
-              >
-                {formatPlanJSON(query.unoptimized_plan)}
-              </pre>
-            </div>
+            <PlanVisualizer planJson={query.unoptimized_plan} />
           </TabsContent>
         </Tabs>
       </div>

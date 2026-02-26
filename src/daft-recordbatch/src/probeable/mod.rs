@@ -10,7 +10,7 @@ use probe_table::{ProbeTable, ProbeTableBuilder};
 
 use crate::RecordBatch;
 
-struct ArrowTableEntry(Vec<Box<dyn daft_arrow::array::Array>>);
+struct ArrowTableEntry(Vec<arrow::array::ArrayRef>);
 
 pub fn make_probeable_builder(
     schema: SchemaRef,

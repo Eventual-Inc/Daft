@@ -270,6 +270,11 @@ impl PyDaftExecutionConfig {
         }
 
         if let Some(flight_shuffle_dirs) = flight_shuffle_dirs {
+            if flight_shuffle_dirs.is_empty() {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "flight_shuffle_dirs must not be empty",
+                ));
+            }
             config.flight_shuffle_dirs = flight_shuffle_dirs;
         }
 

@@ -11,10 +11,18 @@ use daft_functions_list::SeriesListExtension;
 
 use crate::RecordBatch;
 
-fn lengths_to_indices(lengths: &UInt64Array, capacity: usize) -> DaftResult<UInt64Array> {
+fn lengths_to_indices(
+    lengths: &UInt64Array,
+    capacity: usize,
+    ignore_empty_and_null: bool,
+) -> DaftResult<UInt64Array> {
     let mut indices = Vec::with_capacity(capacity);
     for (i, l) in lengths.into_iter().enumerate() {
-        let l = std::cmp::max(l.unwrap_or(1), 1u64);
+        let l = if ignore_empty_and_null {
+            l.unwrap_or(0)
+        } else {
+            std::cmp::max(l.unwrap_or(1), 1u64)
+        };
         (0..l).for_each(|_| indices.push(i as u64));
     }
     Ok(UInt64Array::from_vec("indices", indices))
@@ -53,17 +61,35 @@ impl RecordBatch {
         }
 
         let mut evaluated_columns = Vec::with_capacity(exprs.len());
-        for expr in exprs {
+        let mut ignore_empty_and_null = false;
+
+        for (i, expr) in exprs.iter().enumerate() {
             match expr.as_ref() {
                 Expr::ScalarFn(ScalarFn::Builtin(func)) => {
                     if func.name() == "explode" {
                         let inputs = &func.inputs.clone().into_inner();
-                        if inputs.len() != 1 {
+                        if inputs.is_empty() || inputs.len() > 2 {
                             return Err(DaftError::ValueError(format!(
-                                "ListExpr::Explode function expression must have one input only, received: {}",
+                                "ListExpr::Explode function expression must have 1 or 2 inputs, received: {}",
                                 inputs.len()
                             )));
                         }
+                        if inputs.len() == 2 {
+                            let ignore_empty_and_null_expr =
+                                BoundExpr::new_unchecked(inputs.get(1).unwrap().clone());
+                            let val = self.eval_expression(&ignore_empty_and_null_expr)?;
+                            let current_ignore_empty_and_null = val.bool()?.get(0).unwrap_or(false);
+                            if i == 0 {
+                                ignore_empty_and_null = current_ignore_empty_and_null;
+                            } else {
+                                // All explode expressions must have the same ignore_empty_and_null value
+                                debug_assert_eq!(
+                                    ignore_empty_and_null, current_ignore_empty_and_null,
+                                    "All explode expressions must have consistent ignore_empty_and_null values"
+                                );
+                            }
+                        }
+
                         let expr = BoundExpr::new_unchecked(inputs.first().unwrap().clone());
                         let exploded_name = expr.inner().get_name(&self.schema)?;
                         let evaluated = self.eval_expression(&expr)?;
@@ -101,11 +127,11 @@ impl RecordBatch {
         }
         let mut exploded_columns = evaluated_columns
             .iter()
-            .map(daft_core::series::Series::explode)
+            .map(|s| s.explode(ignore_empty_and_null))
             .collect::<DaftResult<Vec<_>>>()?;
 
         let capacity_expected = exploded_columns.first().unwrap().len();
-        let take_idx = lengths_to_indices(&first_len, capacity_expected)?;
+        let take_idx = lengths_to_indices(&first_len, capacity_expected, ignore_empty_and_null)?;
 
         let mut new_series = Arc::unwrap_or_clone(self.columns.clone());
 

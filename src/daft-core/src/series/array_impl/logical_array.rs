@@ -29,9 +29,7 @@ macro_rules! impl_series_like_for_logical_array {
             fn into_series(&self) -> Series {
                 self.0.clone().into_series()
             }
-            fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-                self.0.to_arrow2()
-            }
+
             fn to_arrow(&self) -> DaftResult<ArrayRef> {
                 self.0.to_arrow()
             }
@@ -40,15 +38,12 @@ macro_rules! impl_series_like_for_logical_array {
                 self
             }
 
-            fn with_nulls(
-                &self,
-                nulls: Option<daft_arrow::buffer::NullBuffer>,
-            ) -> DaftResult<Series> {
+            fn with_nulls(&self, nulls: Option<arrow::buffer::NullBuffer>) -> DaftResult<Series> {
                 let new_array = self.0.physical.with_nulls(nulls)?;
                 Ok($da::new(self.0.field.clone(), new_array).into_series())
             }
 
-            fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+            fn nulls(&self) -> Option<&arrow::buffer::NullBuffer> {
                 self.0.physical.nulls()
             }
 
@@ -211,20 +206,18 @@ where
     fn into_series(&self) -> Series {
         self.0.clone().into_series()
     }
-    fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-        self.0.to_arrow2()
-    }
+
     fn to_arrow(&self) -> DaftResult<ArrayRef> {
         self.0.to_arrow()
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn with_nulls(&self, nulls: Option<daft_arrow::buffer::NullBuffer>) -> DaftResult<Series> {
+    fn with_nulls(&self, nulls: Option<arrow::buffer::NullBuffer>) -> DaftResult<Series> {
         let new_array = self.0.physical.with_nulls(nulls)?;
         Ok(FileArray::<T>::new(self.0.field.clone(), new_array).into_series())
     }
-    fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+    fn nulls(&self) -> Option<&arrow::buffer::NullBuffer> {
         self.0.physical.nulls()
     }
     fn broadcast(&self, num: usize) -> DaftResult<Series> {

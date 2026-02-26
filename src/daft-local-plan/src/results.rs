@@ -9,19 +9,20 @@ use arrow_array::{
 };
 use common_error::{DaftError, DaftResult};
 use common_metrics::{
-    CPU_US_KEY, QueryID, Stat, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl,
+    DURATION_KEY, QueryID, Stat, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl,
 };
 use daft_core::prelude::{DataType, Field, Schema, TimeUnit};
 use daft_recordbatch::RecordBatch;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
-pub struct ExecutionMetadata {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionStats {
     pub query_id: QueryID,
     pub query_plan: Option<serde_json::Value>,
     pub nodes: Vec<(Arc<NodeInfo>, StatSnapshot)>,
 }
 
-impl ExecutionMetadata {
+impl ExecutionStats {
     pub fn new(query_id: QueryID, mut nodes: Vec<(Arc<NodeInfo>, StatSnapshot)>) -> Self {
         nodes.sort_by_key(|(node_info, _)| node_info.id);
         Self {
@@ -36,18 +37,18 @@ impl ExecutionMetadata {
         self
     }
 
-    /// Encode the ExecutionMetadata into a binary format for transmission to scheduler
+    /// Encode the ExecutionStats into a binary format for transmission to scheduler
     pub fn encode(&self) -> Vec<u8> {
         bincode::encode_to_vec(&self.nodes, bincode::config::legacy())
-            .expect("Failed to encode ExecutionMetadata")
+            .expect("Failed to encode ExecutionStats")
     }
 
-    /// Decode the ExecutionMetadata from a binary format received from scheduler
+    /// Decode the ExecutionStats from a binary format received from scheduler
     pub fn decode(bytes: &[u8]) -> Self {
         let (nodes, _): (Vec<(Arc<NodeInfo>, StatSnapshot)>, usize) =
             bincode::decode_from_slice(bytes, bincode::config::legacy())
                 .map_err(|e| {
-                    DaftError::InternalError(format!("Failed to decode ExecutionMetadata: {e}"))
+                    DaftError::InternalError(format!("Failed to decode ExecutionStats: {e}"))
                 })
                 .unwrap();
         Self {
@@ -57,14 +58,14 @@ impl ExecutionMetadata {
         }
     }
 
-    /// Convert the ExecutionMetadata into a RecordBatch for visualization
+    /// Convert the ExecutionStats into a RecordBatch for visualization
     pub fn to_recordbatch(&self) -> DaftResult<RecordBatch> {
         let schema = Schema::new(vec![
             Field::new("id", DataType::UInt64),
             Field::new("name", DataType::Utf8),
             Field::new("type", DataType::Utf8),
             Field::new("category", DataType::Utf8),
-            Field::new("cpu us", DataType::Duration(TimeUnit::Microseconds)),
+            Field::new("duration", DataType::Duration(TimeUnit::Microseconds)),
             Field::new(
                 "stats",
                 DataType::Map {
@@ -81,7 +82,7 @@ impl ExecutionMetadata {
         let mut names = LargeStringBuilder::new();
         let mut types = LargeStringBuilder::new();
         let mut categories = LargeStringBuilder::new();
-        let mut cpu_us_values = DurationMicrosecondBuilder::new();
+        let mut duration_values = DurationMicrosecondBuilder::new();
         let stats_values = StructBuilder::from_fields(
             vec![
                 arrow_schema::Field::new("value", arrow_schema::DataType::Float64, false),
@@ -99,11 +100,11 @@ impl ExecutionMetadata {
             for (name, value) in stat_snapshot.to_stats() {
                 // Note: Always expect one stat for duration by the execution engine
                 // TODO: Add checks just in case
-                if name.as_ref() == CPU_US_KEY {
-                    let Stat::Duration(cpu_us) = value else {
-                        panic!("cpu us is always a Duration in stats");
+                if name.as_ref() == DURATION_KEY {
+                    let Stat::Duration(duration) = value else {
+                        panic!("`duration` metric is always a Stat::Duration in stats");
                     };
-                    cpu_us_values.append_value(cpu_us.as_micros() as i64);
+                    duration_values.append_value(duration.as_micros() as i64);
                     continue;
                 }
 
@@ -130,7 +131,7 @@ impl ExecutionMetadata {
                 Arc::new(names.finish()) as ArrayRef,
                 Arc::new(types.finish()) as ArrayRef,
                 Arc::new(categories.finish()) as ArrayRef,
-                Arc::new(cpu_us_values.finish()) as ArrayRef,
+                Arc::new(duration_values.finish()) as ArrayRef,
                 Arc::new(stats.finish()) as ArrayRef,
             ],
         )

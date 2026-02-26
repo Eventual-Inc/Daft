@@ -675,9 +675,9 @@ fn parse_into_column_array_chunk_stream(
                                 fields[*proj_idx].data_type().clone(),
                                 0,
                             );
-                            Series::try_from_field_and_arrow_array(
+                            Series::from_arrow(
                                 read_daft_fields[i].clone(),
-                                cast_array_for_daft_if_needed(deserialized_col?),
+                                cast_array_for_daft_if_needed(deserialized_col?).into(),
                             )
                         })
                         .collect::<DaftResult<Vec<Series>>>()?;
@@ -786,11 +786,12 @@ mod tests {
             .collect::<Vec<_>>();
         let schema: daft_arrow::datatypes::Schema = fields.into();
         // Roundtrip with Daft for casting.
-        let schema = Schema::try_from(&schema).unwrap().to_arrow2().unwrap();
-        assert_eq!(out.schema.to_arrow2().unwrap(), schema);
-        let out_columns = (0..out.num_columns())
-            .map(|i| out.get_column(i).to_arrow2())
-            .collect::<Vec<_>>();
+        let schema = Schema::try_from(&schema).unwrap().to_arrow().unwrap();
+        assert_eq!(out.schema.to_arrow().unwrap(), schema);
+        let out_columns: Vec<Box<dyn daft_arrow::array::Array>> = (0..out.num_columns())
+            .map(|i| Ok(out.get_column(i).to_arrow()?.into()))
+            .collect::<DaftResult<Vec<_>>>()
+            .unwrap();
         assert_eq!(out_columns, columns);
     }
 
@@ -1541,11 +1542,8 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.to_arrow2(),
-            Box::new(daft_arrow::array::NullArray::new(
-                daft_arrow::datatypes::DataType::Null,
-                6
-            )) as Box<dyn daft_arrow::array::Array>
+            null_column.null().unwrap(),
+            &NullArray::full_null("petal.length", &DataType::Null, 6)
         );
 
         Ok(())
@@ -1597,13 +1595,9 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.to_arrow2(),
-            Box::new(daft_arrow::array::NullArray::new(
-                daft_arrow::datatypes::DataType::Null,
-                6
-            )) as Box<dyn daft_arrow::array::Array>
+            null_column.null().unwrap(),
+            &NullArray::full_null("petal.length", &DataType::Null, 6)
         );
-
         Ok(())
     }
 
@@ -1681,7 +1675,7 @@ mod tests {
         // Check that all columns are all null.
         for idx in 0..table.num_columns() {
             let column = table.get_column(idx);
-            assert_eq!(column.to_arrow2().null_count(), num_rows);
+            assert_eq!(column.null_count(), num_rows);
         }
 
         Ok(())
@@ -1751,13 +1745,13 @@ mod tests {
         );
 
         // First 4 cols should have no nulls
-        assert_eq!(table.get_column(0).to_arrow2().null_count(), 0);
-        assert_eq!(table.get_column(1).to_arrow2().null_count(), 0);
-        assert_eq!(table.get_column(2).to_arrow2().null_count(), 0);
-        assert_eq!(table.get_column(3).to_arrow2().null_count(), 0);
+        assert_eq!(table.get_column(0).null_count(), 0);
+        assert_eq!(table.get_column(1).null_count(), 0);
+        assert_eq!(table.get_column(2).null_count(), 0);
+        assert_eq!(table.get_column(3).null_count(), 0);
 
         // Last col should have 3 nulls because of the missing data
-        assert_eq!(table.get_column(4).to_arrow2().null_count(), 3);
+        assert_eq!(table.get_column(4).null_count(), 3);
 
         Ok(())
     }
@@ -1878,12 +1872,8 @@ mod tests {
         assert_eq!(table.len(), 3);
 
         assert_eq!(
-            table.get_column(4).to_arrow2(),
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
-                None,
-                Some("Seratosa"),
-                None,
-            ])) as Box<dyn daft_arrow::array::Array>
+            table.get_column(4).utf8().unwrap(),
+            &Utf8Array::from_iter("variety", vec![None, Some("Seratosa"), None,])
         );
 
         Ok(())

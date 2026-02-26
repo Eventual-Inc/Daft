@@ -619,9 +619,9 @@ fn parse_into_column_array_chunk_stream(
                         .into_iter()
                         .zip(daft_fields.iter())
                         .map(|(array, field)| {
-                            Series::try_from_field_and_arrow_array(
+                            Series::from_arrow(
                                 field.clone(),
-                                cast_array_for_daft_if_needed(array),
+                                cast_array_for_daft_if_needed(array).into(),
                             )
                         })
                         .collect::<DaftResult<Vec<_>>>()?;
@@ -711,11 +711,12 @@ mod tests {
             .map(|c| cast_array_from_daft_if_needed(cast_array_for_daft_if_needed(c)))
             .collect::<Vec<_>>();
         // Roundtrip schema with Daft for casting.
-        let schema = Schema::try_from(&schema).unwrap().to_arrow2().unwrap();
-        assert_eq!(out.schema.to_arrow2().unwrap(), schema);
-        let out_columns = (0..out.num_columns())
-            .map(|i| out.get_column(i).to_arrow2())
-            .collect::<Vec<_>>();
+        let schema = Schema::try_from(&schema).unwrap();
+        assert_eq!(out.schema.as_ref(), &schema);
+        let out_columns: Vec<Box<dyn daft_arrow::array::Array>> = (0..out.num_columns())
+            .map(|i| Ok(out.get_column(i).to_arrow()?.into()))
+            .collect::<DaftResult<Vec<_>>>()
+            .unwrap();
         assert_eq!(out_columns, columns);
     }
 
@@ -1084,11 +1085,8 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.to_arrow2(),
-            Box::new(daft_arrow::array::NullArray::new(
-                daft_arrow::datatypes::DataType::Null,
-                6
-            )) as Box<dyn daft_arrow::array::Array>
+            null_column.null().unwrap(),
+            &NullArray::full_null("petalLength", &DataType::Null, 6)
         );
 
         Ok(())
@@ -1141,11 +1139,8 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.to_arrow2(),
-            Box::new(daft_arrow::array::NullArray::new(
-                daft_arrow::datatypes::DataType::Null,
-                6
-            )) as Box<dyn daft_arrow::array::Array>
+            null_column.null().unwrap(),
+            &NullArray::full_null("petalLength", &DataType::Null, 6)
         );
 
         Ok(())
@@ -1197,7 +1192,7 @@ mod tests {
         let null_column = table.get_column(2);
         assert_eq!(null_column.data_type(), &DataType::Float64);
         assert_eq!(null_column.len(), 6);
-        assert_eq!(null_column.to_arrow2().null_count(), 6);
+        assert_eq!(null_column.null_count(), 6);
 
         Ok(())
     }
@@ -1234,7 +1229,7 @@ mod tests {
         // Check that all columns are all null.
         for idx in 0..table.num_columns() {
             let column = table.get_column(idx);
-            assert_eq!(column.to_arrow2().null_count(), num_rows);
+            assert_eq!(column.null_count(), num_rows);
         }
 
         Ok(())

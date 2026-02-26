@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import os
 import time
+import warnings
 from datetime import timedelta
 from typing import Any, TypeAlias, TypedDict
 
-from daft.daft import PyExecutionMetadata as _PyExecutionMetadata
+from daft.daft import PyExecutionStats as _PyExecutionStats
 from daft.recordbatch.recordbatch import RecordBatch
 
 
@@ -67,27 +68,33 @@ def _traverse_plan(plan: PlanNode, metrics: dict[int, Metrics]) -> tuple[list[st
 
 
 class ExecutionMetadata:
-    _py: _PyExecutionMetadata
+    _py: _PyExecutionStats
+    _query_id: str
+    _query_plan: str
 
     def __init__(self) -> None:
-        raise NotImplementedError("We do not support creating an ExecutionMetadata via __init__")
+        raise NotImplementedError("We do not support creating ExecutionMetadata via __init__")
 
     @staticmethod
-    def _from_py_execution_metadata(py_meta: _PyExecutionMetadata) -> ExecutionMetadata:
-        assert isinstance(py_meta, _PyExecutionMetadata)
+    def _from_runner_output(
+        py_stats: _PyExecutionStats,
+        query_id: str,
+        query_plan: str,
+    ) -> ExecutionMetadata:
+        assert isinstance(py_stats, _PyExecutionStats)
         meta = ExecutionMetadata.__new__(ExecutionMetadata)
-        meta._py = py_meta
+        meta._py = py_stats
+        meta._query_id = query_id
+        meta._query_plan = query_plan
         return meta
 
     @property
     def query_id(self) -> str:
-        return self._py.query_id
+        return self._query_id
 
     @property
     def query_plan(self) -> PlanNode:
-        plan_str = self._py.query_plan
-        assert plan_str is not None
-        return json.loads(plan_str)
+        return json.loads(self._query_plan)
 
     def encode(self) -> bytes:
         return self._py.encode()
@@ -119,6 +126,9 @@ flowchart TB
         raw = os.environ.get("DAFT_DEV_ENABLE_EXPLAIN_ANALYZE", "")
         if not raw or raw.strip().lower() not in ("1", "true"):
             return
+        warnings.warn(
+            "DAFT_DEV_ENABLE_EXPLAIN_ANALYZE is an experimental feature and may change in the future", RuntimeWarning
+        )
 
         mermaid = self._plan_to_mermaid_string()
         timestamp_ms = int(time.time() * 1000)

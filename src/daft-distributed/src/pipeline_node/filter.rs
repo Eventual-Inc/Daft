@@ -1,7 +1,8 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_metrics::{
-    CPU_US_KEY, Counter, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
+    Counter, DURATION_KEY, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS,
+    UNIT_ROWS,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::FilterSnapshot,
 };
@@ -13,13 +14,15 @@ use opentelemetry::{KeyValue, metrics::Meter};
 
 use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{
+        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, metrics::key_values_from_context,
+    },
     plan::{PlanConfig, PlanExecutionContext},
     statistics::{RuntimeStats, stats::RuntimeStatsRef},
 };
 
 pub struct FilterStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
     selectivity: Gauge,
@@ -27,12 +30,12 @@ pub struct FilterStats {
 }
 
 impl FilterStats {
-    pub fn new(meter: &Meter, node_id: NodeID) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
+    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        let node_kv = key_values_from_context(context);
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
             selectivity: Gauge::new(meter, "selectivity", None),
             node_kv,
         }
@@ -52,7 +55,8 @@ impl RuntimeStats for FilterStats {
         let StatSnapshot::Filter(snapshot) = snapshot else {
             return;
         };
-        self.cpu_us.add(snapshot.cpu_us, self.node_kv.as_slice());
+        self.duration_us
+            .add(snapshot.cpu_us, self.node_kv.as_slice());
         self.rows_in.add(snapshot.rows_in, self.node_kv.as_slice());
         self.rows_out
             .add(snapshot.rows_out, self.node_kv.as_slice());
@@ -67,7 +71,7 @@ impl RuntimeStats for FilterStats {
         let rows_out = self.rows_out.load(Ordering::SeqCst);
         let selectivity = Self::selectivity(rows_in, rows_out);
         StatSnapshot::Filter(FilterSnapshot {
-            cpu_us: self.cpu_us.load(Ordering::SeqCst),
+            cpu_us: self.duration_us.load(Ordering::SeqCst),
             rows_in,
             rows_out,
             selectivity,
@@ -136,7 +140,7 @@ impl PipelineNodeImpl for FilterNode {
     }
 
     fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(FilterStats::new(meter, self.node_id()))
+        Arc::new(FilterStats::new(meter, self.context()))
     }
 
     fn produce_tasks(

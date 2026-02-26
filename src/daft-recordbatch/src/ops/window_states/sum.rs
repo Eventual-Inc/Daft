@@ -1,8 +1,7 @@
 use std::ops::{AddAssign, SubAssign};
 
-use arrow::array::ArrowPrimitiveType;
+use arrow::array::{ArrowPrimitiveType, NullBufferBuilder};
 use common_error::{DaftError, DaftResult};
-use daft_arrow::buffer::NullBufferBuilder;
 use daft_core::{
     array::ops::DaftIsNan,
     datatypes::{DaftPrimitiveType, NumericNative, try_sum_supertype},

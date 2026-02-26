@@ -177,15 +177,21 @@ class RecordBatch:
         tab = pa.Table.from_pydict({column.name(): column.to_arrow() for column in self.columns()})
         return tab
 
-    def to_pydict(self) -> dict[str, list[Any]]:
-        return {column.name(): column.to_pylist() for column in self.columns()}
+    def _to_pydict_impl(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> dict[str, list[Any]]:
+        return {column.name(): column._series.to_pylist(maps_as_pydicts) for column in self.columns()}
 
-    def to_pylist(self) -> list[dict[str, Any]]:
+    def _to_pylist_impl(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> list[dict[str, Any]]:
         # TODO(Clark): Avoid a double-materialization of the table once the Rust-side table supports
         # by-row selection or iteration.
-        table = self.to_pydict()
+        table = self._to_pydict_impl(maps_as_pydicts=maps_as_pydicts)
         column_names = table.keys()
         return [{colname: table[colname][i] for colname in column_names} for i in range(len(self))]
+
+    def to_pydict(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> dict[str, list[Any]]:
+        return self._to_pydict_impl(maps_as_pydicts=maps_as_pydicts)
+
+    def to_pylist(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> list[dict[str, Any]]:
+        return self._to_pylist_impl(maps_as_pydicts=maps_as_pydicts)
 
     def to_pandas(
         self,

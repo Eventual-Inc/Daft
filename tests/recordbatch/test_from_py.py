@@ -303,7 +303,7 @@ def test_from_pydict_arrow_map_array() -> None:
     # Perform expected Daft cast, where the inner string and int arrays are cast to large string and int arrays.
     expected = arrow_arr.cast(pa.map_(pa.int64(), pa.float64()))
     assert daft_recordbatch.to_arrow()["a"].combine_chunks() == expected
-    assert daft_recordbatch.to_pydict()["a"] == data
+    assert daft_recordbatch.to_pydict(maps_as_pydicts="lossy")["a"] == [{1: 2.0, 3: 4.0}, None, {5: 6.0, 7: 8.0}]
 
 
 def test_from_pydict_arrow_struct_array() -> None:
@@ -524,7 +524,7 @@ def test_from_arrow_map_array() -> None:
     # Perform expected Daft cast, where the inner string and int arrays are cast to large string and int arrays.
     expected = arrow_arr.cast(pa.map_(pa.float32(), pa.int32()))
     assert daft_recordbatch.to_arrow()["a"].combine_chunks() == expected
-    assert daft_recordbatch.to_pydict()["a"] == data
+    assert daft_recordbatch.to_pydict(maps_as_pydicts="lossy")["a"] == [{1.0: 1, 2.0: 2}, {3.0: 3, 4.0: 4}]
 
 
 @pytest.mark.skipif(

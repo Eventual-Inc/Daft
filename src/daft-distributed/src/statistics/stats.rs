@@ -1,15 +1,19 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_metrics::{
-    CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, ops::NodeInfo,
-    snapshot::DefaultSnapshot,
+    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, TASK_ACTIVE_KEY,
+    TASK_CANCELLED_KEY, TASK_COMPLETED_KEY, TASK_FAILED_KEY, UNIT_MICROSECONDS, UNIT_ROWS,
+    UNIT_TASKS, normalize_name, ops::NodeInfo, snapshot::DefaultSnapshot,
 };
 use opentelemetry::{
     KeyValue,
     metrics::{Meter, UpDownCounter},
 };
 
-use crate::{pipeline_node::NodeID, statistics::TaskEvent};
+use crate::{
+    pipeline_node::{PipelineNodeContext, metrics::key_values_from_context},
+    statistics::TaskEvent,
+};
 
 pub trait RuntimeStats: Send + Sync + 'static {
     fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot);
@@ -31,16 +35,17 @@ pub struct RuntimeNodeManager {
 
 impl RuntimeNodeManager {
     pub fn new(meter: &Meter, runtime_stats: RuntimeStatsRef, node_info: Arc<NodeInfo>) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", node_info.id.to_string())];
-
+        let node_kv = node_info.to_key_values();
         Self {
             node_info,
             node_kv,
             runtime_stats,
-            active_tasks: meter.i64_up_down_counter("active_tasks").build(),
-            completed_tasks: Counter::new(meter, "completed_tasks", None),
-            failed_tasks: Counter::new(meter, "failed_tasks", None),
-            cancelled_tasks: Counter::new(meter, "cancelled_tasks", None),
+            active_tasks: meter
+                .i64_up_down_counter(normalize_name(TASK_ACTIVE_KEY))
+                .build(),
+            completed_tasks: Counter::new(meter, TASK_COMPLETED_KEY, None, Some(UNIT_TASKS.into())),
+            failed_tasks: Counter::new(meter, TASK_FAILED_KEY, None, Some(UNIT_TASKS.into())),
+            cancelled_tasks: Counter::new(meter, TASK_CANCELLED_KEY, None, Some(UNIT_TASKS.into())),
         }
     }
 
@@ -90,14 +95,19 @@ pub struct DefaultRuntimeStats {
 }
 
 impl DefaultRuntimeStats {
-    pub fn new(meter: &Meter, node_id: NodeID) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
+    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        let node_kv = key_values_from_context(context);
 
         Self {
             node_kv,
-            completed_rows_in: Counter::new(meter, ROWS_IN_KEY, None),
-            completed_rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
-            completed_cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            completed_rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            completed_rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
+            completed_cpu_us: Counter::new(
+                meter,
+                DURATION_KEY,
+                None,
+                Some(UNIT_MICROSECONDS.into()),
+            ),
         }
     }
 }

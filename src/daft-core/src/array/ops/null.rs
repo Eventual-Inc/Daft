@@ -74,9 +74,9 @@ impl PythonArray {
                 nulls.clone().into_inner()
             }
         } else if is_null {
-            daft_arrow::buffer::NullBuffer::new_null(self.len()).into_inner()
+            arrow::buffer::NullBuffer::new_null(self.len()).into_inner()
         } else {
-            daft_arrow::buffer::NullBuffer::new_valid(self.len()).into_inner()
+            arrow::buffer::NullBuffer::new_valid(self.len()).into_inner()
         };
 
         BooleanArray::from_arrow(

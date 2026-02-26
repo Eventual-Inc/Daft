@@ -24,7 +24,7 @@ use indexmap::{
 pub trait ListArrayExtension: Sized {
     fn value_counts(&self) -> DaftResult<MapArray>;
     fn count(&self, mode: CountMode) -> DaftResult<UInt64Array>;
-    fn explode(&self) -> DaftResult<Series>;
+    fn explode(&self, ignore_empty_and_null: bool) -> DaftResult<Series>;
     fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array>;
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series>;
     fn get_chunks(&self, size: usize) -> DaftResult<Series>;
@@ -213,7 +213,7 @@ impl ListArrayExtension for ListArray {
     }
 
     // TODO(desmond): Migrate this to arrow-rs after migrating growable internals.
-    fn explode(&self) -> DaftResult<Series> {
+    fn explode(&self, ignore_empty_and_null: bool) -> DaftResult<Series> {
         let offsets = self.offsets();
 
         let total_capacity: usize = (0..self.len())
@@ -221,8 +221,8 @@ impl ListArrayExtension for ListArray {
                 let is_valid = self.is_valid(i);
                 let len: usize = (offsets.get(i + 1).unwrap() - offsets.get(i).unwrap()) as usize;
                 match (is_valid, len) {
-                    (false, _) => 1,
-                    (true, 0) => 1,
+                    (false, _) => usize::from(!ignore_empty_and_null),
+                    (true, 0) => usize::from(!ignore_empty_and_null),
                     (true, l) => l,
                 }
             })
@@ -240,8 +240,16 @@ impl ListArrayExtension for ListArray {
             let start = offsets.get(i).unwrap();
             let len = offsets.get(i + 1).unwrap() - start;
             match (is_valid, len) {
-                (false, _) => growable.add_nulls(1),
-                (true, 0) => growable.add_nulls(1),
+                (false, _) => {
+                    if !ignore_empty_and_null {
+                        growable.add_nulls(1);
+                    }
+                }
+                (true, 0) => {
+                    if !ignore_empty_and_null {
+                        growable.add_nulls(1);
+                    }
+                }
                 (true, l) => growable.extend(0, *start as usize, l as usize),
             }
         }
@@ -587,13 +595,17 @@ impl ListArrayExtension for FixedSizeListArray {
     }
 
     // TODO(desmond): Migrate this to arrow-rs after migrating growable internals.
-    fn explode(&self) -> DaftResult<Series> {
+    fn explode(&self, ignore_empty_and_null: bool) -> DaftResult<Series> {
         let list_size = self.fixed_element_len();
         let total_capacity = if list_size == 0 {
-            self.len()
+            if ignore_empty_and_null { 0 } else { self.len() }
         } else {
             let null_count = self.nulls().map(|v| v.null_count()).unwrap_or(0);
-            list_size * (self.len() - null_count)
+            if ignore_empty_and_null {
+                list_size * (self.len() - null_count)
+            } else {
+                list_size * (self.len() - null_count) + (null_count)
+            }
         };
 
         let mut child_growable: Box<dyn Growable> = make_growable(
@@ -607,7 +619,11 @@ impl ListArrayExtension for FixedSizeListArray {
         for i in 0..self.len() {
             let is_valid = self.is_valid(i) && (list_size > 0);
             match is_valid {
-                false => child_growable.add_nulls(1),
+                false => {
+                    if !ignore_empty_and_null {
+                        child_growable.add_nulls(1);
+                    }
+                }
                 true => child_growable.extend(0, i * list_size, list_size),
             }
         }
@@ -1145,7 +1161,7 @@ mod tests {
             "a",
             vec![Some(vec![1, 2]), Some(vec![3]), Some(vec![]), None],
         );
-        let result = arr.explode().unwrap();
+        let result = arr.explode(false).unwrap();
         // [1,2] + [3] + null(empty list) + null(null row) = 5
         assert_eq!(result.len(), 5);
         assert_eq!(result.i64().unwrap().get(0), Some(1));
@@ -1158,7 +1174,7 @@ mod tests {
     #[test]
     fn test_fsl_explode() {
         let arr = make_fsl_i64("a", &[10, 20, 30, 40], 2);
-        let result = arr.explode().unwrap();
+        let result = arr.explode(false).unwrap();
         assert_eq!(result.len(), 4);
         assert_eq!(result.i64().unwrap().get(0), Some(10));
         assert_eq!(result.i64().unwrap().get(3), Some(40));
@@ -1648,7 +1664,7 @@ mod tests {
         let field = Field::new("a", DataType::FixedSizeList(Box::new(DataType::Int64), 2));
         let nulls = NullBuffer::from(&[true, false]);
         let arr = FixedSizeListArray::new(field, child, Some(nulls));
-        let result = arr.explode().unwrap();
+        let result = arr.explode(false).unwrap();
         // valid row: 2 elements, null row: 1 null sentinel
         assert_eq!(result.len(), 3);
         assert_eq!(result.i64().unwrap().get(0), Some(1));

@@ -17,9 +17,10 @@ import ray.experimental  # noqa: TID253
 
 from daft.arrow_utils import ensure_array
 from daft.context import get_context
-from daft.daft import DistributedPhysicalPlan
+from daft.daft import DistributedPhysicalPlan, PyExecutionStats
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
+from daft.execution.metadata import ExecutionMetadata
 from daft.recordbatch import RecordBatch
 from daft.runners.flotilla import FlotillaRunner
 from daft.scarf_telemetry import track_runner_on_scarf
@@ -32,7 +33,6 @@ if TYPE_CHECKING:
     import dask.dataframe
 
     import daft
-    from daft.execution.metadata import ExecutionMetadata
 
 
 logger = logging.getLogger(__name__)
@@ -593,6 +593,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
                 builder._builder, query_id, daft_execution_config
             )
+            physical_plan_json = distributed_plan.repr_json()
 
             # Only send notifications after we've successfully created the distributed plan
             if should_notify:
@@ -605,7 +606,6 @@ class RayRunner(Runner[ray.ObjectRef]):
                     )
                     ctx._notify_optimization_start(query_id)
                     ctx._notify_optimization_end(query_id, builder.repr_json())
-                    physical_plan_json = distributed_plan.repr_json()
                     ctx._notify_exec_start(query_id, physical_plan_json)
                 except Exception:
                     pass
@@ -624,7 +624,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                         total_rows += result.metadata().num_rows
                     yield result
             except StopIteration as e:
-                metadata: ExecutionMetadata = e.value
+                stats: PyExecutionStats = e.value
 
             # Mark all operators as finished to clean up the Dashboard UI before notify_exec_end
             if should_notify:
@@ -660,7 +660,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, str(e)))
             raise
 
-        return metadata
+        return ExecutionMetadata._from_runner_output(stats, query_id, physical_plan_json)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

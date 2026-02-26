@@ -6,9 +6,9 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{QueryID, ops::NodeInfo};
+use common_metrics::{ATTR_QUERY_ID, QueryID, ops::NodeInfo};
 use common_treenode::{TreeNode, TreeNodeRecursion};
-use daft_local_plan::ExecutionMetadata;
+use daft_local_plan::ExecutionStats;
 use opentelemetry::{InstrumentationScope, KeyValue, global};
 pub use stats::RuntimeStats;
 
@@ -33,7 +33,7 @@ pub(crate) enum TaskEvent {
     },
     Completed {
         context: TaskContext,
-        stats: ExecutionMetadata,
+        stats: ExecutionStats,
     },
     Failed {
         context: TaskContext,
@@ -104,8 +104,8 @@ impl StatisticsManager {
         pipeline_node: &DistributedPipelineNode,
         subscribers: Vec<Box<dyn StatisticsSubscriber>>,
     ) -> DaftResult<StatisticsManagerRef> {
-        let scope = InstrumentationScope::builder("daft.distributed.node_stats")
-            .with_attributes(vec![KeyValue::new("query_id", query_id.to_string())])
+        let scope = InstrumentationScope::builder("daft.execution.distributed")
+            .with_attributes(vec![KeyValue::new(ATTR_QUERY_ID, query_id)])
             .build();
         let meter = global::meter_with_scope(scope);
 
@@ -150,12 +150,12 @@ impl StatisticsManager {
 
     /// Collects accumulated stats from each node manager and returns them as an
     /// ExecutionEngineFinalResult for export to the driver (e.g. after the partition stream is done).
-    pub fn export_metrics(&self) -> ExecutionMetadata {
+    pub fn export_metrics(&self) -> ExecutionStats {
         let nodes: Vec<(Arc<NodeInfo>, _)> = self
             .runtime_node_managers
             .values()
             .map(RuntimeNodeManager::export_snapshot)
             .collect();
-        ExecutionMetadata::new("".into(), nodes)
+        ExecutionStats::new("".into(), nodes)
     }
 }

@@ -20,7 +20,7 @@ use crate::{
     array::ops::DaftLogical,
     count_mode::CountMode,
     datatypes::{DataType, Field},
-    lit::Literal,
+    lit::{Literal, python::PyMapConversionMode},
     prelude::PythonArray,
     series::{
         self, IntoSeries, Series,
@@ -52,6 +52,24 @@ impl PySeries {
 
         Ok(series.into())
     }
+
+    pub(crate) fn to_pylist_impl<'a>(
+        &self,
+        py: Python<'a>,
+        maps_as_pydicts: PyMapConversionMode,
+    ) -> PyResult<Bound<'a, PyList>> {
+        let literals = self.series.to_literals();
+
+        if maps_as_pydicts != PyMapConversionMode::AssociationList {
+            let converted = literals
+                .into_iter()
+                .map(|lit| lit.into_pyobject_with_map_conversion(py, maps_as_pydicts))
+                .collect::<PyResult<Vec<_>>>()?;
+            PyList::new(py, converted)
+        } else {
+            PyList::new(py, literals)
+        }
+    }
 }
 
 #[pymethods]
@@ -65,24 +83,7 @@ impl PySeries {
     ) -> PyResult<Self> {
         let (data, field) = array_to_rust(&pyarrow_array)?;
         let daft_field = daft_schema::field::Field::try_from(&field)?.rename(name);
-
-        // For Extension types, get the coerced inner storage type directly
-        // (e.g. Binary → LargeBinary). We can't use Field::to_arrow() here because
-        // it uses the REGISTRY to return the *original* storage type for export,
-        // but internally we need the coerced type.
-        // For all other types, use Field::to_arrow() which handles logical types
-        // like Embedding, Tensor, Image correctly.
-        let target_arrow_dtype = match &daft_field.dtype {
-            DataType::Extension(_, inner_dtype, _) => inner_dtype.to_arrow()?,
-            _ => daft_field.to_arrow()?.data_type().clone(),
-        };
-
         let arr = make_array(data);
-        let arr = if &target_arrow_dtype != field.data_type() {
-            arrow::compute::cast(&arr, &target_arrow_dtype).map_err(DaftError::from)?
-        } else {
-            arr
-        };
 
         let series = if let Some(dtype) = dtype {
             let field = Field::new(name, dtype.into());
@@ -140,8 +141,24 @@ impl PySeries {
         Ok(series.into())
     }
 
-    pub fn to_pylist<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyList>> {
-        PyList::new(py, self.series.to_literals())
+    #[pyo3(signature = (maps_as_pydicts = None))]
+    pub fn to_pylist<'a>(
+        &self,
+        py: Python<'a>,
+        maps_as_pydicts: Option<&str>,
+    ) -> PyResult<Bound<'a, PyList>> {
+        let maps_as_pydicts = match maps_as_pydicts {
+            None => PyMapConversionMode::AssociationList,
+            Some("lossy") => PyMapConversionMode::DictLossy,
+            Some("strict") => PyMapConversionMode::DictStrict,
+            Some(other) => {
+                return Err(PyValueError::new_err(format!(
+                    "Invalid maps_as_pydicts value: {other}. Expected one of: None, 'lossy', 'strict'"
+                )));
+            }
+        };
+
+        self.to_pylist_impl(py, maps_as_pydicts)
     }
 
     pub fn to_arrow<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
@@ -519,11 +536,6 @@ impl ToPyArrow for Series {
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let array = self.to_arrow()?;
         let target_field = self.field().to_arrow()?;
-        let array = if array.data_type() != target_field.data_type() {
-            arrow::compute::cast(&array, target_field.data_type()).map_err(DaftError::from)?
-        } else {
-            array
-        };
 
         let schema = Box::new(arrow::ffi::FFI_ArrowSchema::try_from(target_field).map_err(
             |e| {
