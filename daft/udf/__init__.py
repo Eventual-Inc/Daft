@@ -60,6 +60,7 @@ class _FuncDecorator:
             return_dtype: The data type that this function should return or yield. If not specified, it is derived from the function's return type hint.
             unnest: Whether to unnest/flatten out return type fields into columns. Return dtype must be `DataType.struct(..)` when this is set to true.
             use_process: Whether to run each instance of the function in a separate process. If unset, Daft will automatically choose based on runtime performance.
+            max_concurrency: The maximum number of concurrent coroutines for async functions. Only valid for async functions; raises an error if used with synchronous functions.
 
         Daft function variants:
         - **Row-wise** (1 row in, 1 row out) - the default variant
@@ -254,6 +255,7 @@ class _FuncDecorator:
             return_dtype: The data type that this function should return.
             unnest: Whether to unnest/flatten out return type fields into columns. Return dtype must be `DataType.struct(..)` when this is set to true.
             use_process: Whether to run each instance of the function in a separate process. If unset, Daft will automatically choose based on runtime performance.
+            max_concurrency: The maximum number of concurrent coroutines for async functions. Only valid for async functions; raises an error if used with synchronous functions.
             batch_size: The max number of rows in each input batch.
 
         Batch functions receive `daft.Series` arguments, and return a `daft.Series`, `list`, `numpy.ndarray`, or `pyarrow.Array`.
