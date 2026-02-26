@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { ExecutingState, OperatorInfo } from "./types";
 import {
   getStatusIcon,
@@ -11,8 +12,17 @@ import {
 } from "./stats-utils";
 
 function OperatorDuration({ operator }: { operator: OperatorInfo }) {
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  const isExecuting = operator.status === "Executing";
+
+  useEffect(() => {
+    if (!isExecuting) return;
+    const id = setInterval(() => setNow(Date.now() / 1000), 1000);
+    return () => clearInterval(id);
+  }, [isExecuting]);
+
   if (!operator.start_sec) return <>-</>;
-  const end = operator.end_sec ?? (operator.status === "Executing" ? Date.now() / 1000 : null);
+  const end = operator.end_sec ?? (isExecuting ? now : null);
   if (end == null) return <>-</>;
   return <>{formatDuration(Math.max(0, end - operator.start_sec))}</>;
 }
