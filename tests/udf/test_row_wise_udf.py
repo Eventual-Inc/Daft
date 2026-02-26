@@ -143,6 +143,14 @@ def test_row_wise_async_udf_max_concurrency(max_concurrency):
     assert sorted(result["x"]) == [5, 7, 9]
 
 
+def test_sync_func_max_concurrency_raises():
+    with pytest.raises(ValueError, match="max_concurrency.*synchronous"):
+
+        @daft.func(max_concurrency=2)
+        def my_sync_add(a: int, b: int) -> int:
+            return a + b
+
+
 def test_row_wise_udf_unnest():
     @daft.func(
         return_dtype=daft.DataType.struct(

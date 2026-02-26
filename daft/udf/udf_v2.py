@@ -164,6 +164,12 @@ class Func(Generic[P, T, C]):
         if not self.is_batch and self.batch_size is not None:
             raise ValueError("Non-batch Daft functions cannot have a batch size.")
 
+        if self.max_concurrency is not None and not self.is_async and self.gpus == 0:
+            raise ValueError(
+                "`max_concurrency` on a synchronous `@daft.func` has no effect. "
+                "Use `@daft.cls` for actor pool concurrency or an async function for coroutine concurrency."
+            )
+
         if self.is_async and self.is_generator:
             raise ValueError("Daft functions do not yet support both async and generator functions.")
 
