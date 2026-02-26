@@ -242,7 +242,7 @@ async fn read_json_single_into_table(
         // Limit the number of chunks we have in flight at any given time.
         .try_buffered(max_chunks_in_flight);
 
-    let daft_schema: SchemaRef = Arc::new(schema.into());
+    let daft_schema: SchemaRef = Arc::new(Schema::try_from(schema)?);
 
     let include_column_indices = include_columns
         .map(|include_columns| {
@@ -430,10 +430,10 @@ async fn read_json_single_into_stream(
     range: Option<GetRange>,
 ) -> DaftResult<(
     BoxStream<'static, TableChunkResult>,
-    daft_arrow::datatypes::Schema,
+    arrow::datatypes::Schema,
 )> {
     let schema = match convert_options.schema {
-        Some(schema) => schema.to_arrow2()?,
+        Some(schema) => schema.to_arrow()?,
         None => read_json_schema_single(
             &uri,
             parse_options.clone(),
@@ -444,7 +444,7 @@ async fn read_json_single_into_stream(
             range.clone(),
         )
         .await?
-        .to_arrow2()?,
+        .to_arrow()?,
     };
 
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
@@ -524,13 +524,14 @@ async fn read_json_single_into_stream(
                     let (send, recv) = tokio::sync::oneshot::channel();
                     let mut buf = Vec::new();
                     reader.read_to_end(&mut buf).await?;
-                    let chunk = read_json_array_impl(&buf, schema_clone.into(), None);
+                    let daft_schema = Schema::try_from(schema_clone)?;
+                    let chunk = read_json_array_impl(&buf, daft_schema, None);
                     let _ = send.send(chunk);
 
                     recv.await.context(super::OneShotRecvSnafu {})?
                 })
                 .context(super::JoinSnafu {});
-            Ok((Box::pin(once(async move { Ok(inner) })), schema.into()))
+            Ok((Box::pin(once(async move { Ok(inner) })), schema))
         }
         b'{' => {
             let read_stream =
@@ -538,13 +539,13 @@ async fn read_json_single_into_stream(
             let projected_schema = match convert_options.include_columns {
                 Some(projection) => {
                     let mut field_map = schema
-                        .fields
-                        .into_iter()
-                        .map(|f| (f.name.clone(), f))
+                        .fields()
+                        .iter()
+                        .map(|f| (f.name().clone(), f.as_ref().clone()))
                         .collect::<HashMap<_, _>>();
                     let projected_fields = projection.into_iter().map(|col| field_map.remove(col.as_str()).ok_or(DaftError::ValueError(format!("Column {} in the projection doesn't exist in the JSON file; existing columns = {:?}", col, field_map.keys())))).collect::<DaftResult<Vec<_>>>()?;
-                    daft_arrow::datatypes::Schema::from(projected_fields)
-                        .with_metadata(schema.metadata)
+                    arrow::datatypes::Schema::new(projected_fields)
+                        .with_metadata(schema.metadata.clone())
                 }
                 None => schema,
             };
@@ -552,7 +553,7 @@ async fn read_json_single_into_stream(
             Ok((
                 Box::pin(parse_into_column_array_chunk_stream(
                     read_stream,
-                    projected_schema.clone().into(),
+                    Arc::new(projected_schema.clone()),
                 )?),
                 projected_schema,
             ))
@@ -582,9 +583,9 @@ where
 
 fn parse_into_column_array_chunk_stream(
     stream: impl LineChunkStream + Send,
-    schema: Arc<daft_arrow::datatypes::Schema>,
+    schema: Arc<arrow::datatypes::Schema>,
 ) -> DaftResult<impl TableChunkStream + Send> {
-    let daft_schema: SchemaRef = Arc::new(schema.as_ref().into());
+    let daft_schema: SchemaRef = Arc::new(Schema::try_from(schema.as_ref())?);
     let daft_fields = Arc::new(
         daft_schema
             .into_iter()
@@ -618,7 +619,7 @@ fn parse_into_column_array_chunk_stream(
                     let all_series = chunk
                         .into_iter()
                         .zip(daft_fields.iter())
-                        .map(|(array, field)| Series::from_arrow(field.clone(), array.into()))
+                        .map(|(array, field)| Series::from_arrow(field.clone(), array))
                         .collect::<DaftResult<Vec<_>>>()?;
                     RecordBatch::new_with_size(daft_schema.clone(), all_series, num_rows)
                 })();
@@ -634,6 +635,7 @@ fn parse_into_column_array_chunk_stream(
 mod tests {
     use std::{collections::HashSet, io::BufRead, sync::Arc};
 
+    use arrow::array::ArrayRef;
     use common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_io::{IOClient, IOConfig};
@@ -648,7 +650,7 @@ mod tests {
         inference::{column_types_map_to_fields, infer_records_schema},
     };
 
-    fn check_equal_local_arrow2(
+    fn check_equal_local_arrow(
         path: &str,
         out: &RecordBatch,
         limit: Option<usize>,
@@ -662,61 +664,51 @@ mod tests {
             .map(|record| crate::deserializer::to_value(unsafe { record.as_bytes_mut() }).unwrap())
             .collect::<Vec<_>>();
         // Get consolidated schema from parsed JSON.
-        let mut column_types: IndexMap<String, HashSet<daft_arrow::datatypes::DataType>> =
+        let mut column_types: IndexMap<String, HashSet<arrow::datatypes::DataType>> =
             IndexMap::new();
         for record in &parsed {
             let schema = infer_records_schema(record).unwrap();
-            for field in schema.fields {
-                match column_types.entry(field.name) {
+            for field in schema.fields() {
+                match column_types.entry(field.name().clone()) {
                     indexmap::map::Entry::Occupied(mut v) => {
-                        v.get_mut().insert(field.data_type);
+                        v.get_mut().insert(field.data_type().clone());
                     }
                     indexmap::map::Entry::Vacant(v) => {
                         let mut a = HashSet::new();
-                        a.insert(field.data_type);
+                        a.insert(field.data_type().clone());
                         v.insert(a);
                     }
                 }
             }
         }
         let fields = column_types_map_to_fields(column_types);
-        let schema: daft_arrow::datatypes::Schema = fields.into();
+        let schema = arrow::datatypes::Schema::new(fields);
         // Apply projection to schema.
         let mut field_map = schema
-            .fields
+            .fields()
             .iter()
-            .map(|f| (f.name.clone(), f.clone()))
+            .map(|f| (f.name().clone(), f.as_ref().clone()))
             .collect::<IndexMap<_, _>>();
         let schema = match &projection {
-            Some(projection) => projection
-                .iter()
-                .map(|c| field_map.swap_remove(c.as_str()).unwrap())
-                .collect::<Vec<_>>()
-                .into(),
-            None => field_map.into_values().collect::<Vec<_>>().into(),
+            Some(projection) => {
+                let projected_fields = projection
+                    .iter()
+                    .map(|c| field_map.swap_remove(c.as_str()).unwrap())
+                    .collect::<Vec<_>>();
+                arrow::datatypes::Schema::new(projected_fields)
+            }
+            None => arrow::datatypes::Schema::new(field_map.into_values().collect::<Vec<_>>()),
         };
-        // Deserialize JSON records into Arrow2 column arrays.
-        let columns = deserialize_records(&parsed, &schema).unwrap();
-        // Roundtrip schema with Daft for casting.
+        // Deserialize JSON records into arrow-rs column arrays.
+        let columns: Vec<ArrayRef> = deserialize_records(&parsed, &schema).unwrap();
+        // Convert schema to Daft schema for comparison.
         let daft_schema = Schema::try_from(&schema).unwrap();
         assert_eq!(out.schema.as_ref(), &daft_schema);
-        // Compare columns by roundtripping both sides through Daft Series
-        // (this applies type coercion like List→LargeList consistently).
-        let daft_fields = daft_schema.fields();
-        for (i, ref_col) in columns.into_iter().enumerate() {
-            let daft_field = &daft_fields[i];
-            let ref_series = Series::from_arrow(daft_field.clone(), ref_col.into()).unwrap();
-            let out_series = out.get_column(i);
-            let ref_arrow = ref_series.to_arrow().unwrap();
-            let out_arrow = out_series.to_arrow().unwrap();
-            assert_eq!(
-                out_arrow.as_ref(),
-                ref_arrow.as_ref(),
-                "Column {} ({}) mismatch",
-                i,
-                daft_field.name,
-            );
-        }
+        let out_columns: Vec<ArrayRef> = (0..out.num_columns())
+            .map(|i| out.get_column(i).to_arrow())
+            .collect::<DaftResult<Vec<_>>>()
+            .unwrap();
+        assert_eq!(out_columns, columns);
     }
 
     #[rstest]
@@ -769,7 +761,7 @@ mod tests {
             .into(),
         );
         if compression.is_none() {
-            check_equal_local_arrow2(file.as_ref(), &table, None, None);
+            check_equal_local_arrow(file.as_ref(), &table, None, None);
         }
 
         Ok(())
@@ -835,7 +827,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, None, None);
+        check_equal_local_arrow(file.as_ref(), &table, None, None);
 
         Ok(())
     }
@@ -871,7 +863,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, Some(5), None);
+        check_equal_local_arrow(file.as_ref(), &table, Some(5), None);
 
         Ok(())
     }
@@ -909,7 +901,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(
+        check_equal_local_arrow(
             file.as_ref(),
             &table,
             None,
@@ -950,7 +942,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, None, None);
+        check_equal_local_arrow(file.as_ref(), &table, None, None);
 
         Ok(())
     }
@@ -986,7 +978,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, None, None);
+        check_equal_local_arrow(file.as_ref(), &table, None, None);
 
         Ok(())
     }
@@ -1022,7 +1014,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, None, None);
+        check_equal_local_arrow(file.as_ref(), &table, None, None);
 
         Ok(())
     }
@@ -1049,7 +1041,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(file.as_ref(), &table, None, None);
+        check_equal_local_arrow(file.as_ref(), &table, None, None);
 
         Ok(())
     }

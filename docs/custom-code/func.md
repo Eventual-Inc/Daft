@@ -189,6 +189,16 @@ df = daft.from_pydict({
 df = df.select(fetch_url(df["urls"]))
 ```
 
+Use `max_concurrency` to limit the number of concurrent coroutines, for example to rate-limit API calls:
+
+```python
+@daft.func(max_concurrency=10)
+async def fetch_url(url: str) -> str:
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            return await response.text()
+```
+
 ### Generator Functions
 
 Generator functions use `yield` to produce multiple output rows per input row. Other columns in the DataFrame are automatically broadcast to match the number of generated values. You may only use one generator function per DataFrame operation.

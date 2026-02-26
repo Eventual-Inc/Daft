@@ -1,84 +1,31 @@
-import { AnimatedFish, Naruto } from "@/components/icons";
-import { ExecutingState, OperatorStatus, Stat } from "./types";
+import { useState, useEffect } from "react";
+import { ExecutingState, OperatorInfo } from "./types";
+import {
+  getStatusIcon,
+  getStatusText,
+  getStatusColor,
+  formatStatValue,
+  formatDuration,
+  ROWS_IN_STAT_KEY,
+  ROWS_OUT_STAT_KEY,
+  DURATION_US_STAT_KEY,
+} from "./stats-utils";
 
-const ROWS_IN_STAT_KEY = "rows.in";
-const ROWS_OUT_STAT_KEY = "rows.out";
-const DURATION_US_STAT_KEY = "duration";
+function OperatorDuration({ operator }: { operator: OperatorInfo }) {
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  const isExecuting = operator.status === "Executing";
 
-const getStatusIcon = (status: OperatorStatus) => {
-  switch (status) {
-    case "Finished":
-      return <Naruto />;
-    case "Executing":
-      return <AnimatedFish />;
-    case "Failed":
-      return (
-        <div className="w-5 h-5 flex items-center justify-center">
-          <div className="w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
-            <span className="text-white text-[10px] font-bold">!</span>
-          </div>
-        </div>
-      );
-    case "Pending":
-    default:
-      return (
-        <div className="w-5 h-5 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin"></div>
-      );
-  }
-};
+  useEffect(() => {
+    if (!isExecuting) return;
+    const id = setInterval(() => setNow(Date.now() / 1000), 1000);
+    return () => clearInterval(id);
+  }, [isExecuting]);
 
-const getStatusText = (status: OperatorStatus) => {
-  if (status === "Finished") {
-    return "Finished";
-  } else if (status === "Executing") {
-    return "Running";
-  } else if (status === "Failed") {
-    return "Failed";
-  } else {
-    return "Pending";
-  }
-};
-
-const getStatusColor = (status: OperatorStatus) => {
-  switch (status) {
-    case "Finished":
-      return "text-green-500";
-    case "Executing":
-      return "text-(--daft-accent)";
-    case "Failed":
-      return "text-red-500";
-    case "Pending":
-    default:
-      return "text-zinc-400";
-  }
-};
-
-// Get extra stats (all stats except the ones we're already displaying)
-const formatStatValue = (stat: Stat) => {
-  switch (stat.type) {
-    case "Count":
-      return stat.value.toLocaleString();
-    case "Bytes":
-      const bytes = stat.value;
-      if (bytes >= 1024 * 1024 * 1024) {
-        return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
-      } else if (bytes >= 1024 * 1024) {
-        return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
-      } else if (bytes >= 1024) {
-        return `${(bytes / 1024).toFixed(1)} KiB`;
-      } else {
-        return `${bytes} B`;
-      }
-    case "Percent":
-      return `${stat.value.toFixed(1)}%`;
-    case "Duration":
-      return `${stat.value.toFixed(1)}s`;
-    case "Float":
-      return stat.value.toFixed(2);
-    default:
-      return String((stat as any).value);
-  }
-};
+  if (!operator.start_sec) return <>-</>;
+  const end = operator.end_sec ?? (isExecuting ? now : null);
+  if (end == null) return <>-</>;
+  return <>{formatDuration(Math.max(0, end - operator.start_sec))}</>;
+}
 
 export default function ProgressTable({
   exec_state,
@@ -87,9 +34,9 @@ export default function ProgressTable({
 }) {
   return (
     <div className="overflow-auto h-full">
-      <div className="min-w-[770px]">
+      <div className="min-w-[870px]">
         {/* Table Headers */}
-        <div className="bg-zinc-800 grid grid-cols-[50px_60px_100px_200px_120px_120px_1fr] gap-0 items-center min-h-[55px] border-b border-zinc-700">
+        <div className="bg-zinc-800 grid grid-cols-[50px_60px_100px_200px_120px_120px_100px_1fr] gap-0 items-center min-h-[55px] border-b border-zinc-700">
           <div className="px-3 py-4 border-r border-zinc-700 h-full flex items-center"></div>
           <div className="px-3 py-4 text-sm font-bold text-white font-mono border-r border-zinc-700 h-full flex items-center justify-center">
             ID
@@ -106,6 +53,9 @@ export default function ProgressTable({
           <div className="px-3 py-4 text-right text-sm font-bold text-white font-mono border-r border-zinc-700 h-full flex items-center justify-end">
             Rows Out
           </div>
+          <div className="px-3 py-4 text-right text-sm font-bold text-white font-mono border-r border-zinc-700 h-full flex items-center justify-end">
+            Duration
+          </div>
           <div className="px-3 py-4 text-sm font-bold text-white font-mono h-full flex items-center">
             Extra Stats
           </div>
@@ -117,7 +67,6 @@ export default function ProgressTable({
             .sort(([a], [b]) => parseInt(a) - parseInt(b))
             .map(([operatorId, operator]) => {
               const name = operator.node_info.name;
-              // Extract important stats from operator.stats
               const rowsIn = operator.stats[ROWS_IN_STAT_KEY]?.value || 0;
               const rowsOut = operator.stats[ROWS_OUT_STAT_KEY]?.value || 0;
 
@@ -139,7 +88,7 @@ export default function ProgressTable({
               return (
                 <div
                   key={operatorId}
-                  className="grid grid-cols-[50px_60px_100px_200px_120px_120px_1fr] gap-0 items-center min-h-[55px] transition-colors hover:bg-zinc-800/50"
+                  className="grid grid-cols-[50px_60px_100px_200px_120px_120px_100px_1fr] gap-0 items-center min-h-[55px] transition-colors hover:bg-zinc-800/50"
                 >
                   <div className="px-3 py-4 flex items-center justify-end border-r border-zinc-700 h-full">
                     {getStatusIcon(operator.status)}
@@ -162,6 +111,9 @@ export default function ProgressTable({
                   </div>
                   <div className="px-3 py-4 text-right text-sm text-zinc-300 font-mono border-r border-zinc-700 h-full flex items-center justify-end">
                     {name.includes("Sink") ? "-" : rowsOut.toLocaleString()}
+                  </div>
+                  <div className="px-3 py-4 text-right text-sm text-zinc-300 font-mono border-r border-zinc-700 h-full flex items-center justify-end">
+                    <OperatorDuration operator={operator} />
                   </div>
                   <div className="px-3 py-4 text-sm text-zinc-400 font-mono h-full flex items-center">
                     {extraStats || "-"}

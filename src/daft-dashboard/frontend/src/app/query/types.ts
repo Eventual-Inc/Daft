@@ -13,6 +13,11 @@ export type NodeInfo = {
   context: Record<string, string>;
 };
 
+export type DurationValue = {
+  secs: number;
+  nanos: number;
+};
+
 export type Stat =
   | {
       type: "Count";
@@ -32,18 +37,29 @@ export type Stat =
     }
   | {
       type: "Duration";
-      value: number;
+      value: DurationValue;
     };
 
 export type OperatorInfo = {
   status: OperatorStatus;
   node_info: NodeInfo;
   stats: Record<string, Stat>;
+  start_sec?: number;
+  end_sec?: number;
+};
+
+export type PhysicalPlanNode = {
+  id: number;
+  name: string;
+  type: string;
+  category: string;
+  children?: PhysicalPlanNode[];
 };
 
 export type ExecInfo = {
   exec_start_sec: number;
   operators: Record<number, OperatorInfo>;
+  physical_plan: string;
   // TODO: Logs
 };
 

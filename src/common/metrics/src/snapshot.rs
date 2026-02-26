@@ -4,6 +4,7 @@ use bincode::{Decode, Encode};
 use enum_dispatch::enum_dispatch;
 use indicatif::{HumanBytes, HumanCount};
 use itertools::Itertools as _;
+use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
 use crate::{
@@ -20,12 +21,12 @@ macro_rules! stats {
 }
 
 #[enum_dispatch]
-pub trait StatSnapshotImpl: Send + Sync {
+pub trait StatSnapshotImpl: Send + Sync + Serialize + Deserialize<'static> {
     fn to_stats(&self) -> Stats;
     fn to_message(&self) -> String;
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct DefaultSnapshot {
     pub cpu_us: u64,
     pub rows_in: u64,
@@ -50,7 +51,7 @@ impl StatSnapshotImpl for DefaultSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct SourceSnapshot {
     pub cpu_us: u64,
     pub rows_out: u64,
@@ -75,7 +76,7 @@ impl StatSnapshotImpl for SourceSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct FilterSnapshot {
     pub cpu_us: u64,
     pub rows_in: u64,
@@ -103,7 +104,7 @@ impl StatSnapshotImpl for FilterSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct ExplodeSnapshot {
     pub cpu_us: u64,
     pub rows_in: u64,
@@ -131,7 +132,7 @@ impl StatSnapshotImpl for ExplodeSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct UdfSnapshot {
     pub cpu_us: u64,
     pub rows_in: u64,
@@ -178,7 +179,7 @@ impl StatSnapshotImpl for UdfSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct HashJoinBuildSnapshot {
     pub cpu_us: u64,
     pub rows_inserted: u64,
@@ -197,7 +198,7 @@ impl StatSnapshotImpl for HashJoinBuildSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct WriteSnapshot {
     pub cpu_us: u64,
     pub rows_in: u64,
@@ -226,7 +227,7 @@ impl StatSnapshotImpl for WriteSnapshot {
 }
 
 #[enum_dispatch(StatSnapshotImpl)]
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub enum StatSnapshot {
     Default(DefaultSnapshot),
     Source(SourceSnapshot),

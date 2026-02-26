@@ -242,7 +242,11 @@ impl StreamingSink for AsyncUdfSink {
 
                             // Force drain tasks until the number of inflight tasks is less than the concurrency limit
                             let mut num_inflight_tasks = state.task_set.len();
-                            let max_inflight_tasks = get_max_inflight_tasks();
+                            let max_inflight_tasks = params
+                                .udf_properties
+                                .concurrency
+                                .map(|c| c.get())
+                                .unwrap_or_else(get_max_inflight_tasks);
                             while num_inflight_tasks > max_inflight_tasks {
                                 if let Some(join_res) = state.task_set.join_next().await {
                                     let batch = join_res??;

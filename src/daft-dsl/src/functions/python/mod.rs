@@ -386,7 +386,7 @@ impl UDFProperties {
     }
 
     pub fn is_actor_pool_udf(&self) -> bool {
-        self.concurrency.is_some()
+        self.concurrency.is_some() && !self.is_async
     }
 
     #[must_use]
