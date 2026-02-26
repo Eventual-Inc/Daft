@@ -55,10 +55,12 @@ function PhysicalNodeCard({
 
   const cpuTimeStat = operator?.stats[DURATION_US_STAT_KEY];
   const extraStats = operator
-    ? Object.entries(operator.stats).filter(
-        ([key]) =>
-          ![ROWS_IN_STAT_KEY, ROWS_OUT_STAT_KEY, DURATION_US_STAT_KEY].includes(key),
-      )
+    ? Object.entries(operator.stats)
+        .filter(
+          ([key]) =>
+            ![ROWS_IN_STAT_KEY, ROWS_OUT_STAT_KEY, DURATION_US_STAT_KEY].includes(key),
+        )
+        .sort(([a], [b]) => a.localeCompare(b))
     : [];
   const hasExpandable = extraStats.length > 0 || cpuTimeStat;
 
