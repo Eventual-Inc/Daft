@@ -4,7 +4,7 @@ use arrow::array::{LargeStringArray, OffsetBufferBuilder};
 use arrow_json::{EncoderOptions, ReaderBuilder, writer::make_encoder};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    prelude::{DataType, Field, Utf8Array},
+    prelude::{DataType, Field, FullNull, Utf8Array},
     series::Series,
 };
 
@@ -86,6 +86,9 @@ pub fn try_deserialize(input: &Utf8Array, dtype: &DataType) -> DaftResult<Series
 /// Serializes each input value as a JSON string.
 pub fn serialize(input: Series) -> DaftResult<Utf8Array> {
     let name = input.name();
+    if input.is_empty() {
+        return Ok(Utf8Array::empty(name, &DataType::Utf8));
+    }
     let field = Field::new(name, input.data_type().clone());
     let nulls = input.nulls().cloned();
     let arrow_array = input.to_arrow()?;
