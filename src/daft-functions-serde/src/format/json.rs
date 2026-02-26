@@ -218,7 +218,7 @@ mod tests {
     fn test_deserialize_invalid_json_errors() {
         let input = Utf8Array::from_slice("col", &["not valid json"]);
         let result = deserialize(&input, &DataType::Int64);
-        dbg!(&result);
+        assert!(result.is_err());
         assert!(result.is_err());
     }
 
