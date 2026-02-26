@@ -143,6 +143,20 @@ fn limit_with_delete_rows(
     }
 }
 
+fn pq2_to_adapter_arc(metadata: Arc<FileMetaData>) -> Arc<DaftParquetMetadata> {
+    match Arc::try_unwrap(metadata) {
+        Ok(metadata) => Arc::new(metadata.into()),
+        Err(metadata) => Arc::new(metadata.as_ref().clone().into()),
+    }
+}
+
+fn adapter_to_pq2_arc(metadata: Arc<DaftParquetMetadata>) -> Arc<FileMetaData> {
+    match Arc::try_unwrap(metadata) {
+        Ok(metadata) => Arc::new(metadata.into_parquet2()),
+        Err(metadata) => Arc::new(metadata.as_parquet2().clone()),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn read_parquet_single(
     uri: &str,
@@ -155,7 +169,7 @@ async fn read_parquet_single(
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-    metadata: Option<Arc<FileMetaData>>,
+    metadata: Option<Arc<DaftParquetMetadata>>,
     delete_rows: Option<Vec<i64>>,
     chunk_size: Option<usize>,
 ) -> DaftResult<RecordBatch> {
@@ -187,6 +201,7 @@ async fn read_parquet_single(
     let (source_type, fixed_uri) = parse_url(uri)?;
 
     let (metadata, mut table) = if matches!(source_type, SourceType::File) {
+        let metadata = metadata.map(adapter_to_pq2_arc);
         crate::stream_reader::local_parquet_read_async(
             fixed_uri.as_ref(),
             columns_to_read,
@@ -199,6 +214,7 @@ async fn read_parquet_single(
             chunk_size,
         )
         .await
+        .map(|(metadata, table)| (pq2_to_adapter_arc(metadata), table))
     } else {
         let builder = ParquetReaderBuilder::from_uri(
             uri,
@@ -238,13 +254,13 @@ async fn read_parquet_single(
         let parquet_reader = builder.build()?;
         let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
         Ok((
-            Arc::new(metadata),
+            Arc::new(metadata.into()),
             parquet_reader.read_from_ranges_into_table(ranges).await?,
         ))
     }?;
 
-    let metadata_num_rows = metadata.num_rows;
-    let metadata_num_columns = metadata.schema().fields().len();
+    let metadata_num_rows = metadata.num_rows();
+    let metadata_num_columns = metadata.as_parquet2().schema().fields().len();
 
     let num_deleted_rows = if let Some(delete_rows) = delete_rows
         && !delete_rows.is_empty()
@@ -308,7 +324,7 @@ async fn read_parquet_single(
     } else if let Some(row_groups) = row_groups {
         let expected_rows = row_groups
             .iter()
-            .map(|i| metadata.row_groups.get(&(*i as usize)).unwrap().num_rows())
+            .map(|i| metadata.get_row_group_ref(*i as usize).unwrap().num_rows())
             .sum::<usize>()
             - num_deleted_rows;
         if expected_rows != table.len() {
@@ -379,7 +395,7 @@ async fn stream_parquet_single(
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-    metadata: Option<Arc<FileMetaData>>,
+    metadata: Option<Arc<DaftParquetMetadata>>,
     delete_rows: Option<Vec<i64>>,
     maintain_order: bool,
     chunk_size: Option<usize>,
@@ -414,6 +430,7 @@ async fn stream_parquet_single(
     let (source_type, fixed_uri) = parse_url(uri.as_str())?;
 
     let (metadata, table_stream) = if matches!(source_type, SourceType::File) {
+        let metadata = metadata.map(adapter_to_pq2_arc);
         crate::stream_reader::local_parquet_stream(
             fixed_uri.to_string(),
             columns_to_return,
@@ -430,6 +447,7 @@ async fn stream_parquet_single(
             chunk_size,
         )
         .await
+        .map(|(metadata, table_stream)| (pq2_to_adapter_arc(metadata), table_stream))
     } else {
         let builder = ParquetReaderBuilder::from_uri(
             uri.as_str(),
@@ -470,7 +488,7 @@ async fn stream_parquet_single(
         let parquet_reader = builder.build()?;
         let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
         Ok((
-            Arc::new(metadata),
+            Arc::new(metadata.into()),
             parquet_reader
                 .read_from_ranges_into_table_stream(
                     ranges,
@@ -484,7 +502,7 @@ async fn stream_parquet_single(
         ))
     }?;
 
-    let metadata_num_columns = metadata.schema().fields().len();
+    let metadata_num_columns = metadata.as_parquet2().schema().fields().len();
     let mut remaining_rows = num_rows_to_return.map(|limit| limit as i64);
     let finalized_table_stream = table_stream
         .map(move |table| {
@@ -691,6 +709,7 @@ pub fn read_parquet(
     metadata: Option<Arc<FileMetaData>>,
 ) -> DaftResult<RecordBatch> {
     let runtime_handle = get_io_runtime(multithreaded_io);
+    let metadata = metadata.map(pq2_to_adapter_arc);
 
     runtime_handle.block_on_current_thread(async {
         read_parquet_single(
@@ -829,11 +848,6 @@ pub async fn read_parquet_bulk_async(
     delete_map: Option<HashMap<String, Vec<i64>>>,
     chunk_size: Option<usize>,
 ) -> DaftResult<Vec<DaftResult<RecordBatch>>> {
-    let metadata = metadata.map(|mds| {
-        mds.into_iter()
-            .map(|m| Arc::new(Arc::unwrap_or_clone(m).into_parquet2()))
-            .collect::<Vec<_>>()
-    });
     let task_stream = futures::stream::iter(uris.into_iter().enumerate().map(|(i, uri)| {
         let owned_columns = columns.clone();
         let owned_row_group = row_groups.as_ref().and_then(|rgs| rgs[i].clone());
@@ -898,7 +912,6 @@ pub async fn stream_parquet(
     delete_rows: Option<Vec<i64>>,
     chunk_size: Option<usize>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let metadata = metadata.map(|m| Arc::new(Arc::unwrap_or_clone(m).into_parquet2()));
     let stream = stream_parquet_single(
         uri.to_string(),
         columns,
@@ -1048,7 +1061,7 @@ pub async fn stream_parquet_count_pushdown(
         read_parquet_metadata(url, io_client, io_stats, field_id_mapping.clone()).await?;
 
     // Currently only CountMode::All is supported for count pushdown.
-    let count = parquet_metadata.num_rows;
+    let count = parquet_metadata.num_rows();
     let count_field = daft_core::datatypes::Field::new(
         aggregation.name(),
         daft_core::datatypes::DataType::UInt64,
@@ -1097,9 +1110,9 @@ pub fn read_parquet_statistics(
                     owned_field_id_mapping,
                 )
                 .await?;
-                let num_rows = metadata.num_rows;
-                let num_row_groups = metadata.row_groups.len();
-                let version_num = metadata.version;
+                let num_rows = metadata.num_rows();
+                let num_row_groups = metadata.num_row_groups();
+                let version_num = metadata.version();
 
                 Ok((Some(num_rows), Some(num_row_groups), Some(version_num)))
             } else {
@@ -1273,7 +1286,7 @@ mod tests {
             })
             .flatten()
             .unwrap();
-        let primitive_type = match file_metadata.schema_descr.fields() {
+        let primitive_type = match file_metadata.as_parquet2().schema_descr.fields() {
             [parquet_type] => match parquet_type {
                 ParquetType::PrimitiveType(primitive_type) => primitive_type,
                 ParquetType::GroupType { .. } => {

@@ -703,7 +703,7 @@ pub mod pylib {
             iceberg_delete_files: None,
             metadata: if has_metadata.unwrap_or(false) {
                 Some(TableMetadata {
-                    length: metadata.num_rows,
+                    length: metadata.num_rows(),
                 })
             } else {
                 None

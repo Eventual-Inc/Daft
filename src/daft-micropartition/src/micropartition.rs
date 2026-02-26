@@ -641,8 +641,10 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema =
-                    infer_arrow_schema_from_metadata(m, Some((*schema_infer_options).into()))?;
+                let schema = infer_arrow_schema_from_metadata(
+                    m.as_parquet2(),
+                    Some((*schema_infer_options).into()),
+                )?;
                 let daft_schema = Schema::from(schema);
                 DaftResult::Ok(Arc::new(daft_schema))
             })
@@ -666,8 +668,10 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema =
-                    infer_arrow_schema_from_metadata(m, Some((*schema_infer_options).into()))?;
+                let schema = infer_arrow_schema_from_metadata(
+                    m.as_parquet2(),
+                    Some((*schema_infer_options).into()),
+                )?;
                 let daft_schema = schema.into();
                 DaftResult::Ok(Arc::new(daft_schema))
             })
@@ -677,7 +681,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
 
     // Handle count pushdown aggregation optimization.
     if let Some(Expr::Agg(AggExpr::Count(_, _))) = aggregation_pushdown {
-        let count: usize = metadata.iter().map(|m| m.num_rows).sum();
+        let count: usize = metadata.iter().map(|m| m.num_rows()).sum();
         let count_field = daft_core::datatypes::Field::new(
             aggregation_pushdown.unwrap().name(),
             daft_core::datatypes::DataType::UInt64,

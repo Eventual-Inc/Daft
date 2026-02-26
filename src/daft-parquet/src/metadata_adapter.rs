@@ -50,12 +50,22 @@ impl DaftParquetMetadata {
             .map(|(&idx, rg)| (idx, DaftRowGroupMetaData::from_parquet2(rg.clone())))
     }
 
+    /// Iterate over (index, row_group_metadata) pairs without cloning.
+    pub fn row_groups_ref(&self) -> impl Iterator<Item = (usize, &Pq2RowGroupMetaData)> + '_ {
+        self.inner.row_groups.iter().map(|(&idx, rg)| (idx, rg))
+    }
+
     /// Get a specific row group by its original index.
     pub fn get_row_group(&self, index: usize) -> Option<DaftRowGroupMetaData> {
         self.inner
             .row_groups
             .get(&index)
             .map(|rg| DaftRowGroupMetaData::from_parquet2(rg.clone()))
+    }
+
+    /// Get a specific row group by its original index without cloning.
+    pub fn get_row_group_ref(&self, index: usize) -> Option<&Pq2RowGroupMetaData> {
+        self.inner.row_groups.get(&index)
     }
 
     /// Check if a row group index exists.
@@ -87,6 +97,11 @@ impl DaftParquetMetadata {
         &self.inner
     }
 
+    /// Borrow the underlying parquet2 metadata without cloning.
+    pub fn parquet2_ref(&self) -> &Pq2FileMetaData {
+        &self.inner
+    }
+
     /// Consume and return the underlying parquet2 FileMetaData.
     pub fn into_parquet2(self) -> Pq2FileMetaData {
         self.inner
@@ -102,15 +117,6 @@ impl From<Pq2FileMetaData> for DaftParquetMetadata {
 impl From<DaftParquetMetadata> for Pq2FileMetaData {
     fn from(adapter: DaftParquetMetadata) -> Self {
         adapter.inner
-    }
-}
-
-/// Allow transparent Arc<DaftParquetMetadata> → &FileMetaData access for gradual migration.
-impl std::ops::Deref for DaftParquetMetadata {
-    type Target = Pq2FileMetaData;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
     }
 }
 
@@ -163,14 +169,6 @@ impl From<DaftRowGroupMetaData> for Pq2RowGroupMetaData {
     }
 }
 
-impl std::ops::Deref for DaftRowGroupMetaData {
-    type Target = Pq2RowGroupMetaData;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use parquet2::metadata::SchemaDescriptor;
@@ -209,7 +207,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deref_to_file_metadata() {
+    fn test_as_parquet2_file_metadata() {
         let file_meta = Pq2FileMetaData {
             version: 2,
             num_rows: 500,
@@ -221,8 +219,8 @@ mod tests {
         };
 
         let adapter = DaftParquetMetadata::from(file_meta);
-        // Through Deref, we can access FileMetaData fields directly
-        assert_eq!(adapter.num_rows, 500);
-        assert_eq!(adapter.schema().name(), "test");
+        let pq2 = adapter.as_parquet2();
+        assert_eq!(pq2.num_rows, 500);
+        assert_eq!(pq2.schema().name(), "test");
     }
 }
