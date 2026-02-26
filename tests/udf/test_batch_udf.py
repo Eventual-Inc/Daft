@@ -381,6 +381,14 @@ def test_async_batch_udf_max_concurrency(max_concurrency):
     assert actual == {"x": [1, 2, 3]}
 
 
+def test_sync_batch_func_max_concurrency_raises():
+    with pytest.raises(ValueError, match="max_concurrency.*synchronous"):
+
+        @daft.func.batch(return_dtype=DataType.int64(), max_concurrency=2)
+        def my_sync_batch(a: Series) -> Series:
+            return a
+
+
 def test_async_batch_on_error_ignore():
     @daft.func.batch(on_error="ignore", return_dtype=int)
     async def raise_err(x):
