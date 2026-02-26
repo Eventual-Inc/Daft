@@ -94,7 +94,18 @@ def test_row_wise_udf_override_return_dtype():
 
 
 def test_row_wise_udf_with_ray_options():
-    @daft.func(ray_options={"num_cpus": 1, "num_gpus": 0.5})
+    try:
+        import ray
+
+        if not ray.is_initialized():
+            ray.init(num_cpus=2)
+        has_gpu = ray.cluster_resources().get("GPU", 0) > 0
+    except Exception:
+        has_gpu = False
+
+    gpus_req = 0.5 if has_gpu else 0
+
+    @daft.func(cpus=0.1, gpus=gpus_req)
     def my_udf(x: int) -> int:
         return x
 
@@ -107,8 +118,9 @@ def test_row_wise_udf_with_ray_options():
     df.select(my_udf(col("x"))).explain(file=f, show_all=True)
     explanation = f.getvalue()
 
-    assert "'num_cpus': 1" in explanation
-    assert "'num_gpus': 0.5" in explanation
+    assert "num_cpus = 0.1" in explanation
+    if has_gpu:
+        assert f"num_gpus = {gpus_req}" in explanation
 
     # Also verify execution
     actual = df.select(my_udf(col("x"))).to_pydict()
@@ -118,7 +130,7 @@ def test_row_wise_udf_with_ray_options():
 
 def test_row_wise_udf_override_concurrency():
     @daft.func(return_dtype=DataType.int64(), max_concurrency=10)
-    def my_udf(x):
+    async def my_udf(x):
         return x
 
     df = daft.from_pydict({"x": [1, 2, 3]})
