@@ -15,7 +15,7 @@ use common_metrics::{NodeID, QueryEndState, QueryID, ops::NodeInfo, snapshot::St
 use common_runtime::RuntimeTask;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
-use daft_local_plan::ExecutionEngineFinalResult;
+use daft_local_plan::ExecutionStats;
 use futures::future;
 use progress_bar::{ProgressBar, make_progress_bar_manager};
 use tokio::{
@@ -69,7 +69,7 @@ impl RuntimeStatsManagerHandle {
 pub struct RuntimeStatsManager {
     node_tx: Arc<mpsc::UnboundedSender<(usize, bool)>>,
     finish_tx: oneshot::Sender<QueryEndState>,
-    stats_manager_task: RuntimeTask<ExecutionEngineFinalResult>,
+    stats_manager_task: RuntimeTask<ExecutionStats>,
 }
 
 impl std::fmt::Debug for RuntimeStatsManager {
@@ -129,7 +129,8 @@ impl RuntimeStatsManager {
             Ok(TreeNodeRecursion::Continue)
         });
 
-        let serialized_plan: Arc<str> = serde_json::to_string(&pipeline.repr_json())
+        let query_plan = pipeline.repr_json();
+        let serialized_plan: Arc<str> = serde_json::to_string(&query_plan)
             .expect("Failed to serialize physical plan")
             .into();
         for subscriber in &subscribers {
@@ -146,6 +147,7 @@ impl RuntimeStatsManager {
         Ok(Self::new_impl(
             handle,
             query_id,
+            query_plan,
             subscribers,
             progress_bar,
             node_map,
@@ -157,6 +159,7 @@ impl RuntimeStatsManager {
     fn new_impl(
         handle: &Handle,
         query_id: QueryID,
+        query_plan: serde_json::Value,
         subscribers: Vec<Arc<dyn Subscriber>>,
         progress_bar: Option<Box<dyn ProgressBar>>,
         node_map: HashMap<NodeID, (Arc<NodeInfo>, Arc<dyn RuntimeStats>)>,
@@ -260,7 +263,8 @@ impl RuntimeStatsManager {
                 let event = runtime_stats.flush();
                 final_snapshot.push((node_info.clone(), event));
             }
-            ExecutionEngineFinalResult::new(final_snapshot)
+
+            ExecutionStats::new(query_id, final_snapshot).with_query_plan(query_plan)
         };
 
         let task_handle = RuntimeTask::new(handle, event_loop);
@@ -275,7 +279,7 @@ impl RuntimeStatsManager {
         RuntimeStatsManagerHandle(self.node_tx.clone())
     }
 
-    pub async fn finish(self, status: QueryEndState) -> ExecutionEngineFinalResult {
+    pub async fn finish(self, status: QueryEndState) -> ExecutionStats {
         self.finish_tx
             .send(status)
             .expect("The finish_tx channel was closed");
@@ -435,6 +439,7 @@ mod tests {
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             "test_query_id".into(),
+            serde_json::Value::Null,
             vec![mock_subscriber],
             None,
             HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat.clone()))]),
@@ -499,6 +504,7 @@ mod tests {
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             "test_query_id".into(),
+            serde_json::Value::Null,
             vec![subscriber1, subscriber2],
             None,
             HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat.clone()))]),
@@ -575,6 +581,7 @@ mod tests {
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             "test_query_id".into(),
+            serde_json::Value::Null,
             vec![failing_subscriber, mock_subscriber],
             None,
             HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat.clone()))]),
@@ -634,6 +641,7 @@ mod tests {
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             "test_query_id".into(),
+            serde_json::Value::Null,
             vec![mock_subscriber],
             None,
             HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat.clone()))]),
@@ -670,6 +678,7 @@ mod tests {
         let stats_manager = RuntimeStatsManager::new_impl(
             &tokio::runtime::Handle::current(),
             "test_query_id".into(),
+            serde_json::Value::Null,
             vec![mock_subscriber],
             None,
             HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat.clone()))]),

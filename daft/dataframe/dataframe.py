@@ -63,6 +63,7 @@ if TYPE_CHECKING:
     import torch
     from sqlalchemy.engine import Connection
 
+    from daft.execution.metadata import ExecutionMetadata
     from daft.io import DataSink
     from daft.io.catalog import DataCatalogTable
     from daft.io.lance.rest_config import LanceRestConfig
@@ -136,7 +137,7 @@ class DataFrame:
         self.__builder = builder
         self._result_cache: PartitionCacheEntry | None = None
         self._preview = Preview(partition=None, total_rows=None)
-        self._metrics: RecordBatch | None = None
+        self._metadata: ExecutionMetadata | None = None
         self._num_preview_rows = get_context().daft_execution_config.num_preview_rows
 
     @property
@@ -177,8 +178,7 @@ class DataFrame:
         if self._result_cache is None:
             raise ValueError("Metrics are not available until the DataFrame has been materialized")
         else:
-            # TODO: Always None from Ray runner
-            return self._metrics
+            return self._metadata.to_recordbatch() if self._metadata else None
 
     def pipe(
         self,
@@ -956,7 +956,7 @@ class DataFrame:
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
-        result_df._metrics = write_df._metrics
+        result_df._metadata = write_df._metadata
         return result_df
 
     @DataframePublicAPI
@@ -1069,7 +1069,7 @@ class DataFrame:
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
-        result_df._metrics = write_df._metrics
+        result_df._metadata = write_df._metadata
         return result_df
 
     @DataframePublicAPI
@@ -1170,7 +1170,7 @@ class DataFrame:
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
-        result_df._metrics = write_df._metrics
+        result_df._metadata = write_df._metadata
         return result_df
 
     @DataframePublicAPI
@@ -1343,7 +1343,7 @@ class DataFrame:
         # NOTE: We are losing the history of the plan here.
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
         df = from_pydict(with_operations)
-        df._metrics = write_df._metrics
+        df._metadata = write_df._metadata
         return df
 
     @DataframePublicAPI
@@ -1596,7 +1596,7 @@ class DataFrame:
                 "file_name": pa.array([os.path.basename(fp) for fp in paths], type=pa.string()),
             }
         )
-        with_operations._metrics = write_df._metrics
+        with_operations._metadata = write_df._metadata
         return with_operations
 
     @DataframePublicAPI
@@ -1629,7 +1629,7 @@ class DataFrame:
         # plan from the source all the way to the sink to the sink's results. In theory we can do this
         # for all other sinks too.
         df = DataFrame._from_micropartitions(micropartition)
-        df._metrics = write_df._metrics
+        df._metadata = write_df._metadata
         return df
 
     @DataframePublicAPI
@@ -4432,10 +4432,11 @@ class DataFrame:
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
         if self._result is None:
-            self._result_cache, self._metrics = get_or_create_runner().run(self._builder)
+            self._result_cache, self._metadata = get_or_create_runner().run(self._builder)
             result = self._result
             assert result is not None
             result.wait()
+            self._metadata.write_mermaid()
 
     @DataframePublicAPI
     def collect(self, num_preview_rows: int | None = 8) -> "DataFrame":
