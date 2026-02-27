@@ -574,9 +574,6 @@ fn stream_csv_as_tables(
     // Stream tables from each chunk window.
     let has_header = parse_options.has_header;
     let parse_options = Arc::new(parse_options);
-    // When a predicate is present, don't pass the limit to collect_tables.
-    // The limit should only apply after filtering, which is handled by the
-    // stream-level try_take_while below.
     let stream = futures::stream::iter(chunk_window_iterator.enumerate())
         .map(move |(i, w)| {
             let has_header = has_header && (i == 0);
