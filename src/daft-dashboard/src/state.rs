@@ -212,6 +212,8 @@ pub(crate) struct DashboardState {
     pub clients: broadcast::Sender<(usize, QuerySummary)>,
     pub query_clients: DashMap<QueryID, (watch::Sender<QueryInfo>, watch::Sender<OperatorInfos>)>,
     pub event_counter: AtomicUsize,
+    /// Chrome Trace Event Format JSON per query, posted by the engine after execution.
+    pub traces: DashMap<QueryID, String>,
 }
 
 impl DashboardState {
@@ -223,6 +225,7 @@ impl DashboardState {
             clients: broadcast::Sender::new(256),
             query_clients: Default::default(),
             event_counter: AtomicUsize::new(0),
+            traces: Default::default(),
         }
     }
 

@@ -6,6 +6,7 @@ oneshot = "0.1.8"
 pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {workspace = true, optional = true}
 tokio = {workspace = true}
+tracing = {workspace = true}
 
 [dev-dependencies]
 rand = {workspace = true}

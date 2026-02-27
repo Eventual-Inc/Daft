@@ -3,7 +3,7 @@ use std::{collections::HashMap, convert::Infallible, sync::Arc};
 use axum::{
     Json, Router,
     extract::{Path, State},
-    http::StatusCode,
+    http::{StatusCode, header},
     response::{Sse, sse::Event},
     routing::get,
 };
@@ -157,10 +157,27 @@ async fn subscribe_query_updates(
     ))
 }
 
+/// Get Chrome Trace Event Format JSON for a completed query.
+async fn get_query_trace(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+) -> Result<([(header::HeaderName, &'static str); 1], String), StatusCode> {
+    // Check dashboard state first (populated via engine endpoint from cross-process POST)
+    if let Some(json) = state.traces.get(&query_id) {
+        return Ok(([(header::CONTENT_TYPE, "application/json")], json.clone()));
+    }
+    // Fall back to in-process trace state (when dashboard runs in same process)
+    match common_tracing::get_trace_json(&query_id) {
+        Some(json) => Ok(([(header::CONTENT_TYPE, "application/json")], json)),
+        None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
 pub(crate) fn routes() -> Router<Arc<DashboardState>> {
     Router::new()
         .route("/queries", get(get_query_summaries))
         .route("/queries/subscribe", get(subscribe_queries_updates))
         .route("/query/{query_id}", get(get_query))
         .route("/query/{query_id}/subscribe", get(subscribe_query_updates))
+        .route("/query/{query_id}/trace.json", get(get_query_trace))
 }

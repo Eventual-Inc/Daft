@@ -5,6 +5,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+use tracing::Instrument;
 
 pub type JoinSetId = tokio::task::Id;
 
@@ -28,7 +29,11 @@ impl<T: Send + 'static> JoinSet<T> {
         // Bounds from impl:
         T: 'static,
     {
-        let handle = self.inner.spawn(task);
+        // Propagate the current tracing span into the spawned task so that
+        // span parent chains are preserved across task boundaries.  When no
+        // subscriber is active Span::current() returns a disabled span and
+        // .instrument() is essentially a no-op.
+        let handle = self.inner.spawn(task.instrument(tracing::Span::current()));
         handle.id()
     }
 

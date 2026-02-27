@@ -18,6 +18,7 @@ import { Status } from "./status";
 import { ExecutingState, OperatorInfo, QueryInfo } from "./types";
 import PhysicalPlanTree from "./physical-plan-tree";
 import PlanVisualizer from "./plan-visualizer";
+import TraceViewer from "./trace-viewer";
 
 /**
  * Query detail page component
@@ -219,6 +220,16 @@ function QueryPageInner() {
               Optimized Plan
             </TabsTrigger>
             <TabsTrigger value="unoptimized-plan">Unoptimized Plan</TabsTrigger>
+            <TabsTrigger
+              value="trace"
+              disabled={
+                query.state.status === "Pending" ||
+                query.state.status === "Optimizing" ||
+                query.state.status === "Setup"
+              }
+            >
+              Trace
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent
@@ -265,6 +276,21 @@ function QueryPageInner() {
             className="mt-4 flex-1 overflow-auto"
           >
             <PlanVisualizer planJson={query.unoptimized_plan} />
+          </TabsContent>
+
+          <TabsContent
+            value="trace"
+            className="mt-4 flex-1 overflow-auto"
+          >
+            {queryId ? (
+              <TraceViewer queryId={queryId} />
+            ) : (
+              <div className="p-8 text-center">
+                <p className={`${main.className} text-zinc-400`}>
+                  No query selected
+                </p>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>
