@@ -240,13 +240,19 @@ impl<Op: BlockingSink + 'static> TreeDisplay for BlockingSinkNode<Op> {
             .map(|child| child.repr_json())
             .collect();
 
-        serde_json::json!({
+        let mut json = serde_json::json!({
             "id": self.node_id(),
             "category": "BlockingSink",
             "type": self.op.op_type().to_string(),
             "name": self.name(),
             "children": children,
-        })
+        });
+
+        if let StatsState::Materialized(stats) = &self.plan_stats {
+            json["approx_stats"] = serde_json::json!(stats);
+        }
+
+        json
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
@@ -277,10 +283,13 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
     }
 
     fn start(
-        &mut self,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+        let node_id = self.node_id();
+        let name = self.name();
+
         let child_results_receiver = self.child.start(false, runtime_handle)?;
 
         let (destination_sender, destination_receiver) = create_channel(1);
@@ -304,7 +313,6 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
 
         // Spawn process_input task
         let stats_manager = runtime_handle.stats_manager();
-        let node_id = self.node_id();
         let runtime_stats = self.runtime_stats.clone();
 
         // Create task set
@@ -367,7 +375,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            &self.name(),
+            &name,
         );
 
         Ok(destination_receiver)
@@ -377,9 +385,6 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
     }
     fn node_id(&self) -> usize {
         self.node_info.id
-    }
-    fn plan_id(&self) -> Arc<str> {
-        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()

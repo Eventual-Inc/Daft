@@ -28,14 +28,19 @@ where
 
 macro_rules! impl_series_like_for_data_array {
     ($da:ident) => {
+        impl_series_like_for_data_array!($da, {
+            fn to_arrow(&self) -> DaftResult<ArrayRef> {
+                Ok(self.0.to_arrow())
+            }
+        });
+    };
+    ($da:ident, { $($to_arrow:tt)* }) => {
         impl SeriesLike for ArrayWrapper<$da> {
             fn into_series(&self) -> Series {
                 self.0.clone().into_series()
             }
 
-            fn to_arrow(&self) -> DaftResult<ArrayRef> {
-                Ok(arrow::array::make_array(self.0.to_data()))
-            }
+            $($to_arrow)*
 
             fn as_any(&self) -> &dyn std::any::Any {
                 self
@@ -177,6 +182,18 @@ impl_series_like_for_data_array!(UInt64Array);
 impl_series_like_for_data_array!(Float32Array);
 impl_series_like_for_data_array!(Float64Array);
 impl_series_like_for_data_array!(Utf8Array);
-impl_series_like_for_data_array!(ExtensionArray);
 impl_series_like_for_data_array!(IntervalArray);
 impl_series_like_for_data_array!(Decimal128Array);
+impl_series_like_for_data_array!(ExtensionArray, {
+    fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let arr: ArrayRef = self.0.to_arrow();
+        // Reverse the coercion applied during from_arrow (e.g. LargeBinary → Binary)
+        // so callers see the original storage type.
+        let target_field = self.0.field.to_arrow()?;
+        if arr.data_type() != target_field.data_type() {
+            Ok(arrow::compute::cast(&arr, target_field.data_type())?)
+        } else {
+            Ok(arr)
+        }
+    }
+});

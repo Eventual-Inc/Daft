@@ -76,7 +76,8 @@ class Func(Generic[P, T, C]):
         use_process: bool | None,
         is_batch: bool,
         batch_size: int | None,
-        max_retries: int | None,
+        max_concurrency: int | None = None,
+        max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
         name_override: str | None = None,
     ) -> Func[P, T, None]:
@@ -94,6 +95,12 @@ class Func(Generic[P, T, C]):
         is_generator = inspect.isgeneratorfunction(fn)
         is_async = inspect.iscoroutinefunction(fn)
 
+        if max_concurrency is not None and not is_async:
+            raise ValueError(
+                "`max_concurrency` on a synchronous `@daft.func` has no effect. "
+                "Use `@daft.cls` for actor pool concurrency or an async function for coroutine concurrency."
+            )
+
         return_dtype = cls._get_return_dtype(fn, return_dtype, is_generator, is_batch)
 
         return Func(
@@ -106,7 +113,7 @@ class Func(Generic[P, T, C]):
             unnest,
             0,
             use_process,
-            None,
+            max_concurrency,
             max_retries,
             on_error,
             return_dtype,

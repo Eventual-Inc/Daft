@@ -75,11 +75,7 @@ impl PyFileFormatConfig {
                 .clone()
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),
-            FileFormatConfig::PythonFunction {
-                source_type: _,
-                module_name: _,
-                function_name: _,
-            } => Ok(py.None()),
+            FileFormatConfig::PythonFunction { .. } => Ok(py.None()),
         }
     }
 

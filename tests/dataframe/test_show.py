@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
+import gc
+
 import daft
 from daft.dataframe import DataFrame
 from daft.dataframe.preview import PreviewFormat, PreviewFormatter
+from daft.runners import get_or_create_runner
 
 
 def test_show_default(make_df, valid_data):
@@ -228,3 +231,22 @@ def test_show_empty_dataframe_no_error_thrown():
     preview = df._construct_show_preview(8)
     assert len(preview.partition) == 0
     assert preview.total_rows == 0
+
+
+def test_show_limit_does_not_log_active_nodes_warning(capsys):
+    daft.range(0, 1_000_000, partitions=200).show(8)
+    captured = capsys.readouterr()
+    warning = "RuntimeStatsManager finished with active nodes"
+    assert warning not in captured.out
+    assert warning not in captured.err
+
+
+def test_native_runner_close_does_not_log_missing_event_loop(capsys):
+    results_gen = get_or_create_runner().run_iter(daft.range(0, 1_000_000, partitions=200)._builder)
+    next(results_gen)
+    results_gen.close()
+    gc.collect()
+
+    captured = capsys.readouterr()
+    assert "RuntimeError: no running event loop" not in captured.err
+    assert "Exception ignored in: <async_generator object NativeExecutor.run.<locals>.stream_results" not in captured.err

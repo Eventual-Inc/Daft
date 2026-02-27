@@ -89,10 +89,7 @@ impl PipelineNodeImpl for GlobScanSourceNode {
             self.config.schema.clone(),
             StatsState::NotMaterialized,
             self.io_config.clone(),
-            LocalNodeContext {
-                origin_node_id: Some(self.node_id() as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.node_id() as usize)),
         );
         let glob_paths = self.glob_paths.clone().to_vec();
         let builder = SwordfishTaskBuilder::new(glob_scan_plan, self.as_ref())

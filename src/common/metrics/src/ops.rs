@@ -4,7 +4,7 @@ use bincode::{Decode, Encode};
 use opentelemetry::KeyValue;
 use serde::{Deserialize, Serialize};
 
-use crate::{ATTR_NODE_ID, ATTR_NODE_TYPE, NodeID};
+use crate::{ATTR_NODE_ID, ATTR_NODE_PHASE, ATTR_NODE_TYPE, NodeID};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Encode, Decode)]
 pub enum NodeType {
@@ -92,14 +92,21 @@ pub struct NodeInfo {
     #[allow(dead_code)]
     pub node_type: NodeType,
     pub node_category: NodeCategory,
+    pub node_phase: Option<String>,
     pub context: HashMap<String, String>,
 }
 
 impl NodeInfo {
     pub fn to_key_values(&self) -> Vec<KeyValue> {
-        vec![
+        let mut kvs = vec![
             KeyValue::new(ATTR_NODE_ID, self.id.to_string()),
             KeyValue::new(ATTR_NODE_TYPE, self.node_type.to_string()),
-        ]
+        ];
+        // Add node phase if present. This is used by distributed
+        // pipeline nodes that have multiple execution phases.
+        if let Some(phase) = self.node_phase.as_ref() {
+            kvs.push(KeyValue::new(ATTR_NODE_PHASE, phase.clone()));
+        }
+        kvs
     }
 }

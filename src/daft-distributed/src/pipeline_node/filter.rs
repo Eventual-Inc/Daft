@@ -156,10 +156,7 @@ impl PipelineNodeImpl for FilterNode {
                 input,
                 predicate.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             )
         })
     }
