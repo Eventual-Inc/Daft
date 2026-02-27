@@ -6,8 +6,8 @@ use std::{
 use arrow_array::RecordBatch;
 use arrow_schema::Field;
 use daft_ext_abi::{
-    FFI_ArrowArray, FFI_ArrowSchema, FFI_Pushdowns, FFI_ScanSource, FFI_SCAN_DONE, FFI_SCAN_ERROR,
-    FFI_SCAN_OK,
+    FFI_ArrowArray, FFI_ArrowSchema, FFI_Pushdowns, FFI_SCAN_DONE, FFI_SCAN_ERROR, FFI_SCAN_OK,
+    FFI_ScanSource,
 };
 
 use crate::{
@@ -266,7 +266,11 @@ mod tests {
             self.start = self.end;
             Ok(Some(
                 RecordBatch::try_new(
-                    Arc::new(Schema::new(vec![Field::new("value", DataType::Int64, false)])),
+                    Arc::new(Schema::new(vec![Field::new(
+                        "value",
+                        DataType::Int64,
+                        false,
+                    )])),
                     vec![Arc::new(values)],
                 )
                 .map_err(|e| DaftError::RuntimeError(e.to_string()))?,
@@ -288,6 +292,131 @@ mod tests {
         let mut errmsg: *mut c_char = std::ptr::null_mut();
         let n = unsafe { (vtable.num_tasks)(vtable.ctx, c"{}".as_ptr(), 2, &raw mut errmsg) };
         assert_eq!(n, 2);
+        unsafe { (vtable.fini)(vtable.ctx.cast_mut()) };
+    }
+
+    #[test]
+    fn vtable_schema_roundtrip() {
+        let vtable = into_ffi_source(Arc::new(MockSource));
+        let mut ret_schema = FFI_ArrowSchema::empty();
+        let mut errmsg: *mut c_char = std::ptr::null_mut();
+        let opts = "{}";
+        let rc = unsafe {
+            (vtable.schema)(
+                vtable.ctx,
+                opts.as_ptr().cast(),
+                opts.len(),
+                &raw mut ret_schema,
+                &raw mut errmsg,
+            )
+        };
+        assert_eq!(rc, 0);
+        assert!(errmsg.is_null());
+        let schema = arrow_schema::Schema::try_from(&ret_schema).unwrap();
+        assert_eq!(schema.fields().len(), 1);
+        assert_eq!(schema.field(0).name(), "value");
+        assert_eq!(*schema.field(0).data_type(), DataType::Int64);
+        unsafe { (vtable.fini)(vtable.ctx.cast_mut()) };
+    }
+
+    #[test]
+    fn vtable_create_task_and_read_batches() {
+        let vtable = into_ffi_source(Arc::new(MockSource));
+        let opts = "{}";
+        let pushdowns = FFI_Pushdowns {
+            columns: std::ptr::null(),
+            columns_count: 0,
+            limit: u64::MAX,
+        };
+        let mut ret_task: *mut c_void = std::ptr::null_mut();
+        let mut errmsg: *mut c_char = std::ptr::null_mut();
+
+        let rc = unsafe {
+            (vtable.create_task)(
+                vtable.ctx,
+                opts.as_ptr().cast(),
+                opts.len(),
+                0,
+                &raw const pushdowns,
+                &raw mut ret_task,
+                &raw mut errmsg,
+            )
+        };
+        assert_eq!(rc, 0);
+        assert!(!ret_task.is_null());
+
+        // Read the first (and only) batch.
+        let mut ret_array = FFI_ArrowArray::empty();
+        let mut ret_schema = FFI_ArrowSchema::empty();
+        errmsg = std::ptr::null_mut();
+        let rc = unsafe {
+            (vtable.next)(
+                ret_task,
+                &raw mut ret_array,
+                &raw mut ret_schema,
+                &raw mut errmsg,
+            )
+        };
+        assert_eq!(rc, FFI_SCAN_OK);
+
+        let data = unsafe { arrow::ffi::from_ffi(ret_array, &ret_schema) }.unwrap();
+        let array = arrow_array::make_array(data);
+        let struct_array = array
+            .as_any()
+            .downcast_ref::<arrow_array::StructArray>()
+            .unwrap();
+        let batch = RecordBatch::from(struct_array);
+        assert_eq!(batch.num_rows(), 10);
+        assert_eq!(batch.num_columns(), 1);
+
+        // Next call should signal exhaustion.
+        let mut ret_array2 = FFI_ArrowArray::empty();
+        let mut ret_schema2 = FFI_ArrowSchema::empty();
+        errmsg = std::ptr::null_mut();
+        let rc = unsafe {
+            (vtable.next)(
+                ret_task,
+                &raw mut ret_array2,
+                &raw mut ret_schema2,
+                &raw mut errmsg,
+            )
+        };
+        assert_eq!(rc, FFI_SCAN_DONE);
+
+        unsafe { (vtable.close_task)(ret_task) };
+        unsafe { (vtable.fini)(vtable.ctx.cast_mut()) };
+    }
+
+    #[test]
+    fn vtable_create_task_with_pushdowns() {
+        let vtable = into_ffi_source(Arc::new(MockSource));
+        let opts = "{}";
+
+        let col_name = std::ffi::CString::new("value").unwrap();
+        let col_ptrs = [col_name.as_ptr()];
+        let pushdowns = FFI_Pushdowns {
+            columns: col_ptrs.as_ptr(),
+            columns_count: 1,
+            limit: 5,
+        };
+        let mut ret_task: *mut c_void = std::ptr::null_mut();
+        let mut errmsg: *mut c_char = std::ptr::null_mut();
+
+        let rc = unsafe {
+            (vtable.create_task)(
+                vtable.ctx,
+                opts.as_ptr().cast(),
+                opts.len(),
+                1,
+                &raw const pushdowns,
+                &raw mut ret_task,
+                &raw mut errmsg,
+            )
+        };
+        assert_eq!(rc, 0);
+        assert!(!ret_task.is_null());
+
+        unsafe { (vtable.close_task)(ret_task) };
         unsafe { (vtable.fini)(vtable.ctx.cast_mut()) };
     }
 }

@@ -233,8 +233,7 @@ pub struct FFI_SessionContext {
     ///
     /// The host takes ownership of `source` on success.
     /// Returns 0 on success, non-zero on error.
-    pub define_source:
-        unsafe extern "C" fn(ctx: *mut c_void, source: FFI_ScanSource) -> c_int,
+    pub define_source: unsafe extern "C" fn(ctx: *mut c_void, source: FFI_ScanSource) -> c_int,
 }
 
 // SAFETY: Function pointer plus opaque host pointer.

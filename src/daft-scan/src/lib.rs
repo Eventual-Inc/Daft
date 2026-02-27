@@ -1568,4 +1568,187 @@ mod test {
             assert!(estimate_val > 0);
         }
     }
+
+    // ---- DataSource::Extension tests ----
+
+    fn make_extension_source() -> DataSource {
+        DataSource::Extension {
+            source_name: "my_ext".to_string(),
+            options: r#"{"key":"val"}"#.to_string(),
+            task_index: 0,
+            size_bytes: Some(1024),
+            metadata: Some(TableMetadata { length: 100 }),
+            statistics: None,
+        }
+    }
+
+    #[test]
+    fn extension_get_path_returns_source_name() {
+        let ds = make_extension_source();
+        assert_eq!(ds.get_path(), "my_ext");
+    }
+
+    #[test]
+    fn extension_get_chunk_spec_is_none() {
+        let ds = make_extension_source();
+        assert!(ds.get_chunk_spec().is_none());
+    }
+
+    #[test]
+    fn extension_get_size_bytes() {
+        let ds = make_extension_source();
+        assert_eq!(ds.get_size_bytes(), Some(1024));
+    }
+
+    #[test]
+    fn extension_get_metadata() {
+        let ds = make_extension_source();
+        assert_eq!(ds.get_metadata().unwrap().length, 100);
+    }
+
+    #[test]
+    fn extension_get_statistics_is_none() {
+        let ds = make_extension_source();
+        assert!(ds.get_statistics().is_none());
+    }
+
+    #[test]
+    fn extension_get_partition_spec_is_none() {
+        let ds = make_extension_source();
+        assert!(ds.get_partition_spec().is_none());
+    }
+
+    #[test]
+    fn extension_display_compact() {
+        let ds = DataSource::Extension {
+            source_name: "range".to_string(),
+            options: "{}".to_string(),
+            task_index: 3,
+            size_bytes: None,
+            metadata: None,
+            statistics: None,
+        };
+        let compact = ds.display_as(DisplayLevel::Compact);
+        assert_eq!(compact, "Extension {range[3]}");
+    }
+
+    #[test]
+    fn extension_multiline_display_all_fields() {
+        let ds = make_extension_source();
+        let lines = ds.multiline_display();
+        assert!(lines.iter().any(|l| l == "Extension = my_ext"));
+        assert!(lines.iter().any(|l| l == "Task index = 0"));
+        assert!(lines.iter().any(|l| l.starts_with("Options = ")));
+        assert!(lines.iter().any(|l| l == "Size bytes = 1024"));
+        assert!(lines.iter().any(|l| l.starts_with("Metadata = ")));
+    }
+
+    #[test]
+    fn extension_multiline_display_omits_empty_options() {
+        let ds = DataSource::Extension {
+            source_name: "range".to_string(),
+            options: String::new(),
+            task_index: 0,
+            size_bytes: None,
+            metadata: None,
+            statistics: None,
+        };
+        let lines = ds.multiline_display();
+        assert!(!lines.iter().any(|l| l.starts_with("Options = ")));
+    }
+
+    #[test]
+    fn extension_hash_consistency() {
+        use std::hash::{DefaultHasher, Hash, Hasher};
+
+        let ds1 = make_extension_source();
+        let ds2 = make_extension_source();
+
+        let hash = |ds: &DataSource| {
+            let mut h = DefaultHasher::new();
+            ds.hash(&mut h);
+            h.finish()
+        };
+        assert_eq!(hash(&ds1), hash(&ds2));
+    }
+
+    #[test]
+    fn extension_hash_differs_by_task_index() {
+        use std::hash::{DefaultHasher, Hash, Hasher};
+
+        let ds1 = DataSource::Extension {
+            source_name: "x".into(),
+            options: "{}".into(),
+            task_index: 0,
+            size_bytes: None,
+            metadata: None,
+            statistics: None,
+        };
+        let ds2 = DataSource::Extension {
+            source_name: "x".into(),
+            options: "{}".into(),
+            task_index: 1,
+            size_bytes: None,
+            metadata: None,
+            statistics: None,
+        };
+
+        let hash = |ds: &DataSource| {
+            let mut h = DefaultHasher::new();
+            ds.hash(&mut h);
+            h.finish()
+        };
+        assert_ne!(hash(&ds1), hash(&ds2));
+    }
+
+    // ---- FileFormatConfig::Extension tests ----
+
+    #[test]
+    fn file_format_config_extension_var_name() {
+        let cfg = FileFormatConfig::Extension {
+            source_name: "my_ext".to_string(),
+        };
+        assert_eq!(cfg.var_name(), "Extension(my_ext)");
+    }
+
+    #[test]
+    fn file_format_config_extension_multiline_display() {
+        let cfg = FileFormatConfig::Extension {
+            source_name: "range".to_string(),
+        };
+        let lines = cfg.multiline_display();
+        assert_eq!(lines, vec!["Source = range"]);
+    }
+
+    #[test]
+    fn file_format_config_extension_clone_eq() {
+        let cfg = FileFormatConfig::Extension {
+            source_name: "test".to_string(),
+        };
+        let cfg2 = cfg.clone();
+        assert_eq!(cfg, cfg2);
+    }
+
+    #[test]
+    fn file_format_config_extension_hash() {
+        use std::hash::{DefaultHasher, Hash, Hasher};
+
+        let hash = |cfg: &FileFormatConfig| {
+            let mut h = DefaultHasher::new();
+            cfg.hash(&mut h);
+            h.finish()
+        };
+
+        let cfg1 = FileFormatConfig::Extension {
+            source_name: "a".to_string(),
+        };
+        let cfg2 = FileFormatConfig::Extension {
+            source_name: "a".to_string(),
+        };
+        let cfg3 = FileFormatConfig::Extension {
+            source_name: "b".to_string(),
+        };
+        assert_eq!(hash(&cfg1), hash(&cfg2));
+        assert_ne!(hash(&cfg1), hash(&cfg3));
+    }
 }

@@ -13,8 +13,8 @@ use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 use common_error::{DaftError, DaftResult};
 use daft_ext_abi::{
-    FFI_ArrowArray, FFI_ArrowSchema, FFI_Pushdowns, FFI_ScanSource, FFI_SCAN_DONE, FFI_SCAN_ERROR,
-    FFI_SCAN_OK,
+    FFI_ArrowArray, FFI_ArrowSchema, FFI_Pushdowns, FFI_SCAN_DONE, FFI_SCAN_ERROR, FFI_SCAN_OK,
+    FFI_ScanSource,
 };
 
 use crate::module::ModuleHandle;
@@ -265,14 +265,9 @@ pub fn register_source(handle: Arc<ScanSourceHandle>) {
 
 /// Look up a scan source by name.
 pub fn get_source(name: &str) -> DaftResult<Arc<ScanSourceHandle>> {
-    sources()
-        .lock()
-        .unwrap()
-        .get(name)
-        .cloned()
-        .ok_or_else(|| {
-            DaftError::InternalError(format!("extension source '{name}' not found in registry"))
-        })
+    sources().lock().unwrap().get(name).cloned().ok_or_else(|| {
+        DaftError::InternalError(format!("extension source '{name}' not found in registry"))
+    })
 }
 
 /// Create a `ScanSourceHandle` from an FFI vtable and module handle,

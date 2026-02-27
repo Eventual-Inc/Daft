@@ -99,7 +99,11 @@ impl DaftSourceTask for RangeTask {
 
         Ok(Some(
             RecordBatch::try_new(
-                Arc::new(Schema::new(vec![Field::new("value", DataType::Int64, false)])),
+                Arc::new(Schema::new(vec![Field::new(
+                    "value",
+                    DataType::Int64,
+                    false,
+                )])),
                 vec![Arc::new(values)],
             )
             .map_err(|e| DaftError::RuntimeError(e.to_string()))?,

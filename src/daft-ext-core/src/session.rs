@@ -1,7 +1,9 @@
 use daft_ext_abi::FFI_SessionContext;
 
-use crate::function::{DaftScalarFunctionRef, into_ffi};
-use crate::source::{DaftSourceRef, into_ffi_source};
+use crate::{
+    function::{DaftScalarFunctionRef, into_ffi},
+    source::{DaftSourceRef, into_ffi_source},
+};
 
 /// Trait for installing an extension within a session.
 pub trait DaftSession {
@@ -56,10 +58,7 @@ mod tests {
     use super::*;
     use crate::{error::DaftResult, function::DaftScalarFunction};
 
-    unsafe extern "C" fn mock_define_source(
-        _ctx: *mut c_void,
-        source: FFI_ScanSource,
-    ) -> c_int {
+    unsafe extern "C" fn mock_define_source(_ctx: *mut c_void, source: FFI_ScanSource) -> c_int {
         unsafe { (source.fini)(source.ctx.cast_mut()) };
         0
     }

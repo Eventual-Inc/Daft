@@ -404,10 +404,7 @@ impl Session {
             0
         }
 
-        unsafe extern "C" fn define_source_cb(
-            ctx: *mut c_void,
-            ffi: FFI_ScanSource,
-        ) -> c_int {
+        unsafe extern "C" fn define_source_cb(ctx: *mut c_void, ffi: FFI_ScanSource) -> c_int {
             let init_ctx = unsafe { &*(ctx as *const InitCtx) };
             let handle =
                 daft_ext_internal::source::into_scan_source_handle(ffi, init_ctx.module.clone());

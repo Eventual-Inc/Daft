@@ -672,9 +672,8 @@ async fn stream_scan_task(
             Box::pin(futures::stream::poll_fn(move |_cx| {
                 match task_handle.next_batch() {
                     Ok(Some(arrow_batch)) => {
-                        let daft_schema = daft_schema::schema::Schema::try_from(
-                            arrow_batch.schema().as_ref(),
-                        );
+                        let daft_schema =
+                            daft_schema::schema::Schema::try_from(arrow_batch.schema().as_ref());
                         let result = daft_schema.and_then(|schema| {
                             daft_recordbatch::RecordBatch::from_arrow(
                                 Arc::new(schema),
