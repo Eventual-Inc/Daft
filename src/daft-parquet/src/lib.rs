@@ -6,11 +6,8 @@ use daft_arrow::io::parquet::read::schema::{SchemaInferenceOptions, infer_schema
 use daft_core::prelude::SchemaRef;
 use snafu::Snafu;
 
-// Building blocks for the arrow-rs parquet reader migration.
-// These modules will be used when the arrow-rs reader is wired in.
-#[allow(dead_code)]
 mod arrow_bridge;
-#[allow(dead_code)]
+mod arrowrs_reader;
 mod async_reader;
 mod file;
 pub mod metadata;
@@ -20,14 +17,13 @@ pub use metadata_adapter::{DaftParquetMetadata, DaftRowGroupMetaData};
 pub mod python;
 pub mod read;
 mod read_planner;
-#[allow(dead_code)]
 mod schema_inference;
 mod statistics;
 pub use statistics::{
     arrowrs_row_group_metadata_to_table_stats, row_group_metadata_to_table_stats,
 };
-mod utils;
 mod stream_reader;
+mod utils;
 
 #[cfg(feature = "python")]
 pub use python::register_modules;

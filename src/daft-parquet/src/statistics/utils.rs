@@ -1,4 +1,4 @@
-use parquet2::{schema::types::TimeUnit, types::int96_to_i64_ns};
+use daft_core::datatypes::TimeUnit;
 
 pub fn convert_i128(value: &[u8], n: usize) -> i128 {
     // Copy the fixed-size byte value to the start of a 16 byte stack
@@ -9,6 +9,24 @@ pub fn convert_i128(value: &[u8], n: usize) -> i128 {
     bytes[..n].copy_from_slice(value);
     i128::from_be_bytes(bytes) >> (8 * (16 - n))
 }
+
+/// INT96 to nanosecond timestamp conversion.
+///
+/// INT96 encodes a Julian day number in the upper 32 bits and nanoseconds
+/// within the day in the lower 64 bits (as two little-endian u32s).
+#[inline]
+fn int96_to_i64_ns(value: [u32; 3]) -> i64 {
+    const JULIAN_DAY_OF_EPOCH: i64 = 2_440_588;
+    const SECONDS_PER_DAY: i64 = 86_400;
+    const NANOS_PER_SECOND: i64 = 1_000_000_000;
+
+    let day = i64::from(value[2]);
+    let nanoseconds = (i64::from(value[1]) << 32) + i64::from(value[0]);
+    let seconds = (day - JULIAN_DAY_OF_EPOCH) * SECONDS_PER_DAY;
+
+    seconds * NANOS_PER_SECOND + nanoseconds
+}
+
 #[inline]
 fn int96_to_i64_us(value: [u32; 3]) -> i64 {
     const JULIAN_DAY_OF_EPOCH: i64 = 2_440_588;
@@ -35,50 +53,31 @@ fn int96_to_i64_ms(value: [u32; 3]) -> i64 {
     seconds * MILLIS_PER_SECOND + milliseconds
 }
 
+/// Convert INT96 value to i64 timestamp in the given Daft TimeUnit.
 #[inline]
 pub fn convert_i96_to_i64_timestamp(value: [u32; 3], tu: TimeUnit) -> i64 {
     match tu {
         TimeUnit::Nanoseconds => int96_to_i64_ns(value),
         TimeUnit::Microseconds => int96_to_i64_us(value),
         TimeUnit::Milliseconds => int96_to_i64_ms(value),
+        TimeUnit::Seconds => int96_to_i64_ns(value) / 1_000_000_000,
     }
 }
 
-/// Standalone INT96 to nanosecond timestamp conversion (no parquet2 dependency).
-#[inline]
-fn int96_to_i64_ns_standalone(value: [u32; 3]) -> i64 {
-    const JULIAN_DAY_OF_EPOCH: i64 = 2_440_588;
-    const SECONDS_PER_DAY: i64 = 86_400;
-    const NANOS_PER_SECOND: i64 = 1_000_000_000;
-
-    let day = i64::from(value[2]);
-    let nanoseconds = (i64::from(value[1]) << 32) + i64::from(value[0]);
-    let seconds = (day - JULIAN_DAY_OF_EPOCH) * SECONDS_PER_DAY;
-
-    seconds * NANOS_PER_SECOND + nanoseconds
-}
-
-/// Convert INT96 value to i64 timestamp using Daft's TimeUnit (parquet2-agnostic).
-#[inline]
-pub fn convert_i96_to_i64_timestamp_daft(
-    value: [u32; 3],
-    tu: daft_core::datatypes::TimeUnit,
-) -> i64 {
-    match tu {
-        daft_core::datatypes::TimeUnit::Nanoseconds => int96_to_i64_ns_standalone(value),
-        daft_core::datatypes::TimeUnit::Microseconds => int96_to_i64_us(value),
-        daft_core::datatypes::TimeUnit::Milliseconds => int96_to_i64_ms(value),
-        daft_core::datatypes::TimeUnit::Seconds => {
-            int96_to_i64_ns_standalone(value) / 1_000_000_000
-        }
+/// Convert parquet2 TimeUnit to Daft TimeUnit.
+pub fn pq2_timeunit_to_daft(unit: parquet2::schema::types::TimeUnit) -> TimeUnit {
+    match unit {
+        parquet2::schema::types::TimeUnit::Nanoseconds => TimeUnit::Nanoseconds,
+        parquet2::schema::types::TimeUnit::Microseconds => TimeUnit::Microseconds,
+        parquet2::schema::types::TimeUnit::Milliseconds => TimeUnit::Milliseconds,
     }
 }
 
 /// Convert arrow-rs parquet TimeUnit to Daft TimeUnit.
-pub fn arrowrs_timeunit_to_daft(unit: parquet::basic::TimeUnit) -> daft_core::datatypes::TimeUnit {
+pub fn arrowrs_timeunit_to_daft(unit: parquet::basic::TimeUnit) -> TimeUnit {
     match unit {
-        parquet::basic::TimeUnit::MILLIS => daft_core::datatypes::TimeUnit::Milliseconds,
-        parquet::basic::TimeUnit::MICROS => daft_core::datatypes::TimeUnit::Microseconds,
-        parquet::basic::TimeUnit::NANOS => daft_core::datatypes::TimeUnit::Nanoseconds,
+        parquet::basic::TimeUnit::MILLIS => TimeUnit::Milliseconds,
+        parquet::basic::TimeUnit::MICROS => TimeUnit::Microseconds,
+        parquet::basic::TimeUnit::NANOS => TimeUnit::Nanoseconds,
     }
 }

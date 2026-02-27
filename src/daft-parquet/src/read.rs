@@ -17,7 +17,7 @@ use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, optimization::get_required_
 use daft_io::{IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
 use futures::{
-    Stream, StreamExt, TryStreamExt,
+    StreamExt, TryStreamExt,
     future::{join_all, try_join_all},
     stream::BoxStream,
 };
@@ -29,6 +29,15 @@ use snafu::ResultExt;
 use crate::{
     DaftParquetMetadata, JoinSnafu, file::ParquetReaderBuilder, infer_arrow_schema_from_metadata,
 };
+
+/// Check if the arrow-rs parquet reader should be used.
+///
+/// Set `DAFT_PARQUET_READER=arrowrs` to enable.
+fn use_arrowrs_reader() -> bool {
+    std::env::var("DAFT_PARQUET_READER")
+        .map(|v| v.eq_ignore_ascii_case("arrowrs"))
+        .unwrap_or(false)
+}
 
 #[cfg(feature = "python")]
 #[derive(Clone)]
@@ -196,6 +205,79 @@ async fn read_parquet_single(
     // in order to have the correct number of rows in the end
     if let Some(delete_rows) = &delete_rows {
         num_rows_to_read = limit_with_delete_rows(delete_rows, start_offset, num_rows_to_read);
+    }
+
+    // Arrow-rs reader path: enabled via DAFT_PARQUET_READER=arrowrs.
+    // Does not yet support field_id_mapping or delete_rows.
+    if use_arrowrs_reader() && field_id_mapping.is_none() && delete_rows.is_none() {
+        let columns_ref: Option<Vec<&str>> = columns_to_read
+            .as_ref()
+            .map(|v| v.iter().map(|s| s.as_str()).collect());
+
+        // Use sync local reader for local files, async reader for remote.
+        let (source_type_check, fixed_uri_check) = parse_url(uri)?;
+        let mut table = if matches!(source_type_check, SourceType::File) {
+            tokio::task::spawn_blocking({
+                let path = fixed_uri_check
+                    .strip_prefix("file://")
+                    .unwrap_or(&fixed_uri_check)
+                    .to_string();
+                let columns_ref_owned: Option<Vec<String>> = columns_ref
+                    .as_deref()
+                    .map(|c| c.iter().map(|s| (*s).to_string()).collect());
+                let row_groups_owned = row_groups.as_deref().map(|r| r.to_vec());
+                let predicate = predicate.clone();
+                move || {
+                    let col_refs: Option<Vec<&str>> = columns_ref_owned
+                        .as_ref()
+                        .map(|v| v.iter().map(|s| s.as_str()).collect());
+                    crate::arrowrs_reader::local_parquet_read_arrowrs(
+                        &path,
+                        col_refs.as_deref(),
+                        start_offset,
+                        num_rows_to_read,
+                        row_groups_owned.as_deref(),
+                        predicate,
+                        schema_infer_options,
+                        chunk_size,
+                    )
+                }
+            })
+            .await
+            .map_err(|e| common_error::DaftError::External(e.into()))??
+        } else {
+            crate::arrowrs_reader::read_parquet_single_arrowrs(
+                uri,
+                columns_ref.as_deref(),
+                start_offset,
+                num_rows_to_read,
+                row_groups.as_deref(),
+                predicate.clone(),
+                io_client,
+                io_stats,
+                schema_infer_options,
+                None,
+                chunk_size,
+            )
+            .await?
+        };
+
+        // Post-read predicate filtering (same as parquet2 path).
+        if let Some(predicate) = predicate {
+            let predicate = BoundExpr::try_new(predicate, &table.schema)?;
+            table = table.filter(&[predicate])?;
+            if let Some(oc) = columns_to_return {
+                let oc_indices = oc
+                    .iter()
+                    .map(|name| table.schema.get_index(name))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                table = table.get_columns(&oc_indices);
+            }
+            if let Some(nr) = num_rows_to_return {
+                table = table.head(nr)?;
+            }
+        }
+        return Ok(table);
     }
 
     let (source_type, fixed_uri) = parse_url(uri)?;
@@ -399,7 +481,7 @@ async fn stream_parquet_single(
     delete_rows: Option<Vec<i64>>,
     maintain_order: bool,
     chunk_size: Option<usize>,
-) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>> + Send> {
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let field_id_mapping_provided = field_id_mapping.is_some();
     let columns_to_return = columns
         .as_ref()
@@ -425,6 +507,93 @@ async fn stream_parquet_single(
     // in order to have the correct number of rows in the end
     if let Some(delete_rows) = &delete_rows {
         num_rows_to_read = limit_with_delete_rows(delete_rows, None, num_rows_to_read);
+    }
+
+    // Arrow-rs reader path: enabled via DAFT_PARQUET_READER=arrowrs.
+    if use_arrowrs_reader() && field_id_mapping.is_none() && delete_rows.is_none() {
+        let columns_ref: Option<Vec<&str>> = columns_to_read
+            .as_ref()
+            .map(|v| v.iter().map(|s| s.as_str()).collect());
+
+        // For local files, use the sync reader and emit a single-batch stream.
+        let (source_type_check, fixed_uri_check) = parse_url(uri.as_str())?;
+        let table_stream: BoxStream<'static, DaftResult<RecordBatch>> =
+            if matches!(source_type_check, SourceType::File) {
+                let batch = tokio::task::spawn_blocking({
+                    let path = fixed_uri_check
+                        .strip_prefix("file://")
+                        .unwrap_or(&fixed_uri_check)
+                        .to_string();
+                    let columns_ref_owned: Option<Vec<String>> = columns_ref
+                        .as_deref()
+                        .map(|c| c.iter().map(|s| (*s).to_string()).collect());
+                    let row_groups_owned = row_groups.as_deref().map(|r| r.to_vec());
+                    let predicate = predicate.clone();
+                    move || {
+                        let col_refs: Option<Vec<&str>> = columns_ref_owned
+                            .as_ref()
+                            .map(|v| v.iter().map(|s| s.as_str()).collect());
+                        crate::arrowrs_reader::local_parquet_read_arrowrs(
+                            &path,
+                            col_refs.as_deref(),
+                            None, // start_offset not supported in stream path
+                            num_rows_to_read,
+                            row_groups_owned.as_deref(),
+                            predicate,
+                            schema_infer_options,
+                            chunk_size,
+                        )
+                    }
+                })
+                .await
+                .map_err(|e| common_error::DaftError::External(e.into()))??;
+                futures::stream::once(async move { Ok(batch) }).boxed()
+            } else {
+                crate::arrowrs_reader::stream_parquet_single_arrowrs(
+                    uri.as_str(),
+                    columns_ref.as_deref(),
+                    None, // start_offset not supported in stream path
+                    num_rows_to_read,
+                    row_groups.as_deref(),
+                    predicate.clone(),
+                    io_client,
+                    io_stats,
+                    schema_infer_options,
+                    None,
+                    chunk_size,
+                )
+                .await?
+            };
+
+        // Apply post-read predicate filtering per batch.
+        let mut remaining_rows = num_rows_to_return.map(|limit| limit as i64);
+        let stream = table_stream
+            .map(move |result| {
+                let mut table = result?;
+                if let Some(ref pred) = predicate {
+                    let bound = BoundExpr::try_new(pred.clone(), &table.schema)?;
+                    table = table.filter(&[bound])?;
+                    if let Some(ref oc) = columns_to_return {
+                        let oc_indices = oc
+                            .iter()
+                            .map(|name| table.schema.get_index(name))
+                            .collect::<DaftResult<Vec<_>>>()?;
+                        table = table.get_columns(&oc_indices);
+                    }
+                }
+                Ok(table)
+            })
+            .try_take_while(move |table| {
+                let should_continue = match remaining_rows {
+                    Some(ref mut remaining) => {
+                        *remaining -= table.len() as i64;
+                        *remaining > 0
+                    }
+                    None => true,
+                };
+                futures::future::ready(Ok(should_continue))
+            });
+        return Ok(stream.boxed());
     }
 
     let (source_type, fixed_uri) = parse_url(uri.as_str())?;
@@ -543,7 +712,7 @@ async fn stream_parquet_single(
             }
         });
 
-    Ok(finalized_table_stream)
+    Ok(finalized_table_stream.boxed())
 }
 
 #[allow(clippy::too_many_arguments)]

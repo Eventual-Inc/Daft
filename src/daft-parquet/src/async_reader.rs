@@ -11,25 +11,35 @@ use parquet::{
 
 use crate::read_planner::{CoalescePass, ReadPlanner, SplitLargeRequestPass};
 
+// IO coalescing/splitting constants — these match the parquet2 reader in file.rs:384-391
+// so both paths have identical IO behavior.
+
 /// Maximum hole size for the coalesce pass (1 MB).
+/// Two byte ranges within this distance are merged into a single request,
+/// trading a small amount of extra bandwidth for fewer round-trips.
 const COALESCE_MAX_HOLE_SIZE: usize = 1024 * 1024;
 
 /// Maximum request size for the coalesce pass (16 MB).
+/// Caps how large a coalesced request can grow.
 const COALESCE_MAX_REQUEST_SIZE: usize = 16 * 1024 * 1024;
 
-/// Maximum request size for the split-large-request pass (24 MB).
-const SPLIT_MAX_REQUEST_SIZE: usize = 24 * 1024 * 1024;
+/// Maximum chunk size when splitting oversized requests (16 MB).
+const SPLIT_MAX_REQUEST_SIZE: usize = 16 * 1024 * 1024;
 
-/// Split threshold for the split-large-request pass (24 MB).
+/// Requests larger than this threshold are split into SPLIT_MAX_REQUEST_SIZE chunks (24 MB).
 const SPLIT_THRESHOLD: usize = 24 * 1024 * 1024;
+
+// Footer constants — defined by the Parquet spec.
 
 /// Parquet footer magic bytes: PAR1
 const PARQUET_MAGIC: [u8; 4] = [b'P', b'A', b'R', b'1'];
 
-/// Footer size: 4 bytes metadata length + 4 bytes magic
+/// Footer size: 4 bytes metadata length + 4 bytes magic.
 const FOOTER_SIZE: usize = 8;
 
-/// Default initial read size from the end of the file to try to capture the footer in one read.
+/// Speculative read size from end-of-file to capture the footer in one round-trip.
+/// Matches the arrow-rs default. Most parquet footers are well under 64 KB;
+/// if the footer is larger, a second fetch retrieves the remainder.
 const DEFAULT_FOOTER_READ_SIZE: usize = 64 * 1024;
 
 /// An implementation of the arrow-rs [`AsyncFileReader`] trait that uses Daft's

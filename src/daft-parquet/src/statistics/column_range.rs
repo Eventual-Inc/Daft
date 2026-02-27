@@ -3,7 +3,7 @@ use std::sync::Arc;
 use daft_core::prelude::*;
 use daft_stats::ColumnRangeStatistics;
 use parquet2::{
-    schema::types::{PhysicalType, PrimitiveConvertedType, TimeUnit},
+    schema::types::{PhysicalType, PrimitiveConvertedType},
     statistics::{
         BinaryStatistics, BooleanStatistics, FixedLenStatistics, PrimitiveStatistics, Statistics,
     },
@@ -13,8 +13,7 @@ use snafu::{OptionExt, ResultExt};
 use super::{
     DaftStatsSnafu, MissingParquetColumnStatisticsSnafu, UnableToParseUtf8FromBinarySnafu, Wrap,
     utils::{
-        arrowrs_timeunit_to_daft, convert_i96_to_i64_timestamp, convert_i96_to_i64_timestamp_daft,
-        convert_i128,
+        arrowrs_timeunit_to_daft, convert_i96_to_i64_timestamp, convert_i128, pq2_timeunit_to_daft,
     },
 };
 
@@ -162,39 +161,26 @@ fn make_date_column_range_statistics(
 }
 
 fn make_timestamp_column_range_statistics(
-    unit: parquet2::schema::types::TimeUnit,
+    tu: daft_core::datatypes::TimeUnit,
     is_adjusted_to_utc: bool,
     lower: i64,
     upper: i64,
 ) -> super::Result<ColumnRangeStatistics> {
-    let lower = Int64Array::from_slice("lower", &[lower]);
-    let upper = Int64Array::from_slice("upper", &[upper]);
-    let tu = match unit {
-        parquet2::schema::types::TimeUnit::Nanoseconds => {
-            daft_core::datatypes::TimeUnit::Nanoseconds
-        }
-        parquet2::schema::types::TimeUnit::Microseconds => {
-            daft_core::datatypes::TimeUnit::Microseconds
-        }
-        parquet2::schema::types::TimeUnit::Milliseconds => {
-            daft_core::datatypes::TimeUnit::Milliseconds
-        }
-    };
+    let lower_arr = Int64Array::from_slice("lower", &[lower]);
+    let upper_arr = Int64Array::from_slice("upper", &[upper]);
     let tz = if is_adjusted_to_utc {
         Some("+00:00".to_string())
     } else {
         None
     };
-
     let dtype = daft_core::datatypes::DataType::Timestamp(tu, tz);
-
     let lower = TimestampArray::new(
         daft_core::datatypes::Field::new("lower", dtype.clone()),
-        lower,
+        lower_arr,
     )
     .into_series();
-    let upper =
-        TimestampArray::new(daft_core::datatypes::Field::new("upper", dtype), upper).into_series();
+    let upper = TimestampArray::new(daft_core::datatypes::Field::new("upper", dtype), upper_arr)
+        .into_series();
     Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?)
 }
 
@@ -287,7 +273,7 @@ where
                     },
                 ) => {
                     return Ok(make_timestamp_column_range_statistics(
-                        unit,
+                        pq2_timeunit_to_daft(unit),
                         is_adjusted_to_utc,
                         lower.to_i64().unwrap(),
                         upper.to_i64().unwrap(),
@@ -306,9 +292,8 @@ where
                     .into());
                 }
                 (PhysicalType::Int64, PrimitiveConvertedType::TimestampMicros) => {
-                    let unit = TimeUnit::Microseconds;
                     return Ok(make_timestamp_column_range_statistics(
-                        unit,
+                        daft_core::datatypes::TimeUnit::Microseconds,
                         false,
                         lower.to_i64().unwrap(),
                         upper.to_i64().unwrap(),
@@ -316,9 +301,8 @@ where
                     .into());
                 }
                 (PhysicalType::Int64, PrimitiveConvertedType::TimestampMillis) => {
-                    let unit = TimeUnit::Milliseconds;
                     return Ok(make_timestamp_column_range_statistics(
-                        unit,
+                        daft_core::datatypes::TimeUnit::Milliseconds,
                         false,
                         lower.to_i64().unwrap(),
                         upper.to_i64().unwrap(),
@@ -363,23 +347,24 @@ fn convert_int96_column_range_statistics(
             is_adjusted_to_utc,
         } = ltype
         {
-            let lower = convert_i96_to_i64_timestamp(lower, unit);
-            let upper = convert_i96_to_i64_timestamp(upper, unit);
-            return make_timestamp_column_range_statistics(unit, is_adjusted_to_utc, lower, upper);
+            let tu = pq2_timeunit_to_daft(unit);
+            let lower = convert_i96_to_i64_timestamp(lower, tu);
+            let upper = convert_i96_to_i64_timestamp(upper, tu);
+            return make_timestamp_column_range_statistics(tu, is_adjusted_to_utc, lower, upper);
         }
     } else if let Some(ctype) = prim_type.converted_type {
         match ctype {
             PrimitiveConvertedType::TimestampMicros => {
-                let unit = TimeUnit::Microseconds;
-                let lower = convert_i96_to_i64_timestamp(lower, unit);
-                let upper = convert_i96_to_i64_timestamp(upper, unit);
-                return make_timestamp_column_range_statistics(unit, false, lower, upper);
+                let tu = daft_core::datatypes::TimeUnit::Microseconds;
+                let lower = convert_i96_to_i64_timestamp(lower, tu);
+                let upper = convert_i96_to_i64_timestamp(upper, tu);
+                return make_timestamp_column_range_statistics(tu, false, lower, upper);
             }
             PrimitiveConvertedType::TimestampMillis => {
-                let unit = TimeUnit::Milliseconds;
-                let lower = convert_i96_to_i64_timestamp(lower, unit);
-                let upper = convert_i96_to_i64_timestamp(upper, unit);
-                return make_timestamp_column_range_statistics(unit, false, lower, upper);
+                let tu = daft_core::datatypes::TimeUnit::Milliseconds;
+                let lower = convert_i96_to_i64_timestamp(lower, tu);
+                let upper = convert_i96_to_i64_timestamp(upper, tu);
+                return make_timestamp_column_range_statistics(tu, false, lower, upper);
             }
             _ => {}
         }
@@ -523,30 +508,6 @@ pub fn arrowrs_statistics_to_column_range_statistics(
     daft_stats.cast(daft_dtype).context(DaftStatsSnafu)
 }
 
-fn make_timestamp_column_range_statistics_daft(
-    tu: daft_core::datatypes::TimeUnit,
-    is_adjusted_to_utc: bool,
-    lower: i64,
-    upper: i64,
-) -> super::Result<ColumnRangeStatistics> {
-    let lower_arr = Int64Array::from_slice("lower", &[lower]);
-    let upper_arr = Int64Array::from_slice("upper", &[upper]);
-    let tz = if is_adjusted_to_utc {
-        Some("+00:00".to_string())
-    } else {
-        None
-    };
-    let dtype = daft_core::datatypes::DataType::Timestamp(tu, tz);
-    let lower = TimestampArray::new(
-        daft_core::datatypes::Field::new("lower", dtype.clone()),
-        lower_arr,
-    )
-    .into_series();
-    let upper = TimestampArray::new(daft_core::datatypes::Field::new("upper", dtype), upper_arr)
-        .into_series();
-    Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?)
-}
-
 fn convert_int32_arrowrs(
     lower: i32,
     upper: i32,
@@ -579,17 +540,12 @@ fn convert_int64_arrowrs(
     }) = col_descr.logical_type()
     {
         let daft_tu = arrowrs_timeunit_to_daft(unit);
-        return make_timestamp_column_range_statistics_daft(
-            daft_tu,
-            is_adjusted_to_u_t_c,
-            lower,
-            upper,
-        );
+        return make_timestamp_column_range_statistics(daft_tu, is_adjusted_to_u_t_c, lower, upper);
     }
 
     match col_descr.converted_type() {
         ArrowConvertedType::TIMESTAMP_MICROS => {
-            return make_timestamp_column_range_statistics_daft(
+            return make_timestamp_column_range_statistics(
                 daft_core::datatypes::TimeUnit::Microseconds,
                 false,
                 lower,
@@ -597,7 +553,7 @@ fn convert_int64_arrowrs(
             );
         }
         ArrowConvertedType::TIMESTAMP_MILLIS => {
-            return make_timestamp_column_range_statistics_daft(
+            return make_timestamp_column_range_statistics(
                 daft_core::datatypes::TimeUnit::Milliseconds,
                 false,
                 lower,
@@ -629,9 +585,9 @@ fn convert_int96_arrowrs(
     }) = col_descr.logical_type()
     {
         let daft_tu = arrowrs_timeunit_to_daft(unit);
-        let lower_ts = convert_i96_to_i64_timestamp_daft(lower_raw, daft_tu);
-        let upper_ts = convert_i96_to_i64_timestamp_daft(upper_raw, daft_tu);
-        return make_timestamp_column_range_statistics_daft(
+        let lower_ts = convert_i96_to_i64_timestamp(lower_raw, daft_tu);
+        let upper_ts = convert_i96_to_i64_timestamp(upper_raw, daft_tu);
+        return make_timestamp_column_range_statistics(
             daft_tu,
             is_adjusted_to_u_t_c,
             lower_ts,
@@ -642,15 +598,15 @@ fn convert_int96_arrowrs(
     match col_descr.converted_type() {
         ArrowConvertedType::TIMESTAMP_MICROS => {
             let tu = daft_core::datatypes::TimeUnit::Microseconds;
-            let lower_ts = convert_i96_to_i64_timestamp_daft(lower_raw, tu);
-            let upper_ts = convert_i96_to_i64_timestamp_daft(upper_raw, tu);
-            return make_timestamp_column_range_statistics_daft(tu, false, lower_ts, upper_ts);
+            let lower_ts = convert_i96_to_i64_timestamp(lower_raw, tu);
+            let upper_ts = convert_i96_to_i64_timestamp(upper_raw, tu);
+            return make_timestamp_column_range_statistics(tu, false, lower_ts, upper_ts);
         }
         ArrowConvertedType::TIMESTAMP_MILLIS => {
             let tu = daft_core::datatypes::TimeUnit::Milliseconds;
-            let lower_ts = convert_i96_to_i64_timestamp_daft(lower_raw, tu);
-            let upper_ts = convert_i96_to_i64_timestamp_daft(upper_raw, tu);
-            return make_timestamp_column_range_statistics_daft(tu, false, lower_ts, upper_ts);
+            let lower_ts = convert_i96_to_i64_timestamp(lower_raw, tu);
+            let upper_ts = convert_i96_to_i64_timestamp(upper_raw, tu);
+            return make_timestamp_column_range_statistics(tu, false, lower_ts, upper_ts);
         }
         _ => {}
     }
