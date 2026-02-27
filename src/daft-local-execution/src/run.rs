@@ -179,7 +179,7 @@ impl NativeExecutor {
             .into();
 
         let ctx = BuilderContext::new_with_context(query_id.clone(), additional_context);
-        let (mut pipeline, input_senders) =
+        let (pipeline, input_senders) =
             translate_physical_plan_to_pipeline(local_physical_plan.as_ref(), &exec_cfg, &ctx)?;
         let plan_json = pipeline.repr_json();
 

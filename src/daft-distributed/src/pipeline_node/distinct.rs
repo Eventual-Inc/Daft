@@ -99,10 +99,7 @@ impl PipelineNodeImpl for DistinctNode {
                 self_clone.columns.clone(),
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self_clone.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self_clone.node_id() as usize)),
             )
         })
     }
