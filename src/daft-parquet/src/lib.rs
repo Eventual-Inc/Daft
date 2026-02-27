@@ -8,6 +8,8 @@ use snafu::Snafu;
 
 mod file;
 pub mod metadata;
+mod metadata_adapter;
+pub use metadata_adapter::{DaftParquetMetadata, DaftRowGroupMetaData};
 #[cfg(feature = "python")]
 pub mod python;
 pub mod read;

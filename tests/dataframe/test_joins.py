@@ -1273,6 +1273,41 @@ def test_sort_merge_join_small_partitions(make_df, with_default_morsel_size):
     assert pd["rv"] == [200, 300]
 
 
+@pytest.mark.parametrize("left_partitions,right_partitions", [(2, 2), (4, 3), (8, 4)])
+def test_sort_merge_join_different_left_right_keys(
+    left_partitions, right_partitions, make_df, with_default_morsel_size
+):
+    if get_tests_daft_runner_name() == "native":
+        pytest.skip("Sort-merge joins are not supported on native runner")
+
+    left = make_df(
+        {"left_k": [1, 2, 3], "lv": [10, 20, 30]},
+        repartition=left_partitions,
+        repartition_columns=["left_k"],
+    )
+    right = make_df(
+        {"right_k": [2, 3, 4], "rv": [200, 300, 400]},
+        repartition=right_partitions,
+        repartition_columns=["right_k"],
+    )
+
+    out = left.join(
+        right,
+        left_on="left_k",
+        right_on="right_k",
+        how="inner",
+        strategy="sort_merge",
+    ).sort("left_k")
+
+    pd = out.to_pydict()
+    assert pd == {
+        "left_k": [2, 3],
+        "lv": [20, 30],
+        "right_k": [2, 3],
+        "rv": [200, 300],
+    }
+
+
 @pytest.mark.parametrize(
     "suffix,prefix,expected",
     [

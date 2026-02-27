@@ -32,7 +32,7 @@ impl DaftConcatAggable for ListArray {
         // The concat will successfully return a single non-null element.
         let new_nulls = match self.nulls() {
             Some(nulls) if nulls.null_count() == self.len() => {
-                Some(daft_arrow::buffer::NullBuffer::new_null(1))
+                Some(arrow::buffer::NullBuffer::new_null(1))
             }
             _ => None,
         };
@@ -103,7 +103,7 @@ impl DaftConcatAggable for ListArray {
         let new_validities = if all_valid {
             None
         } else {
-            Some(daft_arrow::buffer::NullBuffer::from(group_valids))
+            Some(arrow::buffer::NullBuffer::from(group_valids))
         };
 
         Ok(Self::new(
@@ -121,7 +121,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
     fn concat(&self) -> Self::Output {
         let new_nulls = match self.nulls() {
             Some(nulls) if nulls.null_count() == self.len() => {
-                Some(daft_arrow::buffer::NullBuffer::new_null(1))
+                Some(arrow::buffer::NullBuffer::new_null(1))
             }
             _ => None,
         };
@@ -185,9 +185,7 @@ mod test {
             )
             .into_series(),
             OffsetBuffer::new_zeroed(3),
-            Some(daft_arrow::buffer::NullBuffer::from_iter(repeat_n(
-                false, 3,
-            ))),
+            Some(arrow::buffer::NullBuffer::from_iter(repeat_n(false, 3))),
         );
 
         // Expected: [None]
@@ -195,9 +193,7 @@ mod test {
         assert_eq!(concatted.len(), 1);
         assert_eq!(
             concatted.nulls(),
-            Some(&daft_arrow::buffer::NullBuffer::from_iter(repeat_n(
-                false, 1
-            )))
+            Some(&arrow::buffer::NullBuffer::from_iter(repeat_n(false, 1)))
         );
         Ok(())
     }
@@ -221,7 +217,7 @@ mod test {
             )
             .into_series(),
             OffsetBuffer::new(vec![0, 1, 3, 5, 6, 6, 6, 7].into()),
-            Some(daft_arrow::buffer::NullBuffer::from(vec![
+            Some(arrow::buffer::NullBuffer::from(vec![
                 true, true, true, true, true, false, false,
             ])),
         );
@@ -264,7 +260,7 @@ mod test {
             )
             .into_series(),
             OffsetBuffer::new(vec![0, 1, 3, 5, 6, 8, 8, 8, 9].into()),
-            Some(daft_arrow::buffer::NullBuffer::from(vec![
+            Some(arrow::buffer::NullBuffer::from(vec![
                 true, true, true, true, true, false, false, false,
             ])),
         );
@@ -276,7 +272,7 @@ mod test {
         assert_eq!(concatted.len(), 4);
         assert_eq!(
             concatted.nulls(),
-            Some(&daft_arrow::buffer::NullBuffer::from(vec![
+            Some(&arrow::buffer::NullBuffer::from(vec![
                 true, true, true, false
             ]))
         );
