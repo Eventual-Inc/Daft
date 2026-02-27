@@ -578,22 +578,24 @@ async fn async_read_rows<R: futures::AsyncRead + Unpin + Send>(
     skip: usize,
     rows: &mut [csv_async::ByteRecord],
 ) -> Result<usize, csv_async::Error> {
-    // Skip the requested number of rows.
-    let mut record = csv_async::ByteRecord::new();
+    // skip first `start` rows.
+    let mut row = csv_async::ByteRecord::new();
     for _ in 0..skip {
-        if !reader.read_byte_record(&mut record).await? {
-            return Ok(0);
-        }
-    }
-    // Read rows into the buffer.
-    let mut row_count = 0;
-    for row in rows.iter_mut() {
-        if !reader.read_byte_record(row).await? {
+        let res = reader.read_byte_record(&mut row).await;
+        if !res.unwrap_or(false) {
             break;
         }
-        row_count += 1;
     }
-    Ok(row_count)
+
+    let mut row_number = 0;
+    for row in rows.iter_mut() {
+        let has_more = reader.read_byte_record(row).await?;
+        if !has_more {
+            break;
+        }
+        row_number += 1;
+    }
+    Ok(row_number)
 }
 
 fn read_into_byterecord_chunk_stream<R>(
