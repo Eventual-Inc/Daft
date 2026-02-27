@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import json
 import platform
 import types
 from contextvars import ContextVar, Token
@@ -55,6 +56,7 @@ __all__ = [
     "list_catalogs",
     "list_namespaces",
     "list_tables",
+    "read_source",
     "read_table",
     "set_catalog",
     "set_model",
@@ -593,6 +595,16 @@ class Session:
     # read_*
     ###
 
+    def read_source(self, name: str, **options: Any) -> DataFrame:
+        """Read from a native extension source.
+
+        Args:
+            name: Source name (registered via load_extension).
+            **options: Source-specific options passed as JSON to the extension.
+        """
+        builder = self._session.read_source(name, json.dumps(options))
+        return DataFrame(LogicalPlanBuilder(builder))
+
     def read_table(self, identifier: Identifier | str, **options: Any) -> DataFrame:
         """Returns the table as a DataFrame or raises an exception if it does not exist.
 
@@ -912,6 +924,11 @@ def load_extension(extension: str | types.ModuleType | Path) -> None:
 ###
 # read_*
 ###
+
+
+def read_source(name: str, **options: Any) -> DataFrame:
+    """Read from a native extension source."""
+    return _session().read_source(name, **options)
 
 
 def read_table(identifier: Identifier | str, **options: Any) -> DataFrame:

@@ -7,7 +7,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_ai::provider::ProviderRef;
 use daft_catalog::{Bindings, CatalogRef, Identifier, LookupMode, TableRef, TableSource, View};
-use daft_ext_abi::{FFI_ScalarFunction, FFI_SessionContext};
+use daft_ext_abi::{FFI_ScalarFunction, FFI_ScanSource, FFI_SessionContext};
 use daft_ext_internal::module::ModuleHandle;
 use uuid::Uuid;
 
@@ -404,6 +404,17 @@ impl Session {
             0
         }
 
+        unsafe extern "C" fn define_source_cb(
+            ctx: *mut c_void,
+            ffi: FFI_ScanSource,
+        ) -> c_int {
+            let init_ctx = unsafe { &*(ctx as *const InitCtx) };
+            let handle =
+                daft_ext_internal::source::into_scan_source_handle(ffi, init_ctx.module.clone());
+            daft_ext_internal::source::register_source(handle);
+            0
+        }
+
         let init_ctx = InitCtx {
             session: std::ptr::from_ref::<Self>(self),
             module: module.clone(),
@@ -412,6 +423,7 @@ impl Session {
         let mut ffi_ctx = FFI_SessionContext {
             ctx: (&raw const init_ctx) as *mut c_void,
             define_function: define_function_cb,
+            define_source: define_source_cb,
         };
 
         let rc = unsafe { (module.ffi_module().init)(&raw mut ffi_ctx) };

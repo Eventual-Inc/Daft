@@ -2,6 +2,7 @@ pub mod error;
 pub mod function;
 pub mod prelude;
 pub mod session;
+pub mod source;
 
 mod ffi;
 

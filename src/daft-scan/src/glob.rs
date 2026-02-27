@@ -338,6 +338,11 @@ impl GlobScanOperator {
                         "Cannot glob a PythonFunction source".to_string(),
                     ));
                 }
+                FileFormatConfig::Extension { .. } => {
+                    return Err(DaftError::ValueError(
+                        "Cannot glob an Extension source".to_string(),
+                    ));
+                }
             };
 
             let schema = match user_provided_schema {

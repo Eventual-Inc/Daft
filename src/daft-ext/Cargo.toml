@@ -4,6 +4,7 @@ edition = {workspace = true}
 version = {workspace = true}
 
 [dependencies]
+arrow-schema = {workspace = true}
 daft-ext-abi = {path = "../daft-ext-abi"}
 daft-ext-core = {path = "../daft-ext-core"}
 daft-ext-macros = {path = "../daft-ext-macros"}

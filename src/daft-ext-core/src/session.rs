@@ -1,10 +1,12 @@
 use daft_ext_abi::FFI_SessionContext;
 
 use crate::function::{DaftScalarFunctionRef, into_ffi};
+use crate::source::{DaftSourceRef, into_ffi_source};
 
 /// Trait for installing an extension within a session.
 pub trait DaftSession {
     fn define_function(&mut self, function: DaftScalarFunctionRef);
+    fn define_source(&mut self, source: DaftSourceRef);
 }
 
 /// Trait implemented by extension crates to install themselves.
@@ -32,6 +34,12 @@ impl DaftSession for SessionContext<'_> {
         let rc = unsafe { (self.session.define_function)(self.session.ctx, vtable) };
         assert_eq!(rc, 0, "host define_function returned non-zero: {rc}");
     }
+
+    fn define_source(&mut self, source: DaftSourceRef) {
+        let vtable = into_ffi_source(source);
+        let rc = unsafe { (self.session.define_source)(self.session.ctx, vtable) };
+        assert_eq!(rc, 0, "host define_source returned non-zero: {rc}");
+    }
 }
 
 #[cfg(test)]
@@ -43,10 +51,18 @@ mod tests {
 
     use arrow_array::{ArrayRef, Int32Array};
     use arrow_schema::{DataType, Field};
-    use daft_ext_abi::FFI_ScalarFunction;
+    use daft_ext_abi::{FFI_ScalarFunction, FFI_ScanSource};
 
     use super::*;
     use crate::{error::DaftResult, function::DaftScalarFunction};
+
+    unsafe extern "C" fn mock_define_source(
+        _ctx: *mut c_void,
+        source: FFI_ScanSource,
+    ) -> c_int {
+        unsafe { (source.fini)(source.ctx.cast_mut()) };
+        0
+    }
 
     #[test]
     fn session_context_integration() {
@@ -65,6 +81,7 @@ mod tests {
         let mut raw_session = FFI_SessionContext {
             ctx: std::ptr::null_mut(),
             define_function: mock_define,
+            define_source: mock_define_source,
         };
 
         let mut session = SessionContext::new(&mut raw_session);

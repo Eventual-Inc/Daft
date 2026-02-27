@@ -26,6 +26,7 @@ impl From<&FileFormatConfig> for FileFormat {
                 module_name: _,
                 function_name: _,
             } => Self::Python,
+            FileFormatConfig::Extension { .. } => Self::Extension,
         }
     }
 }

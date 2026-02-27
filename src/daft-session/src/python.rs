@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
+use common_scan_info::ScanOperatorRef;
 use daft_ai::{provider::ProviderRef, python::PyProviderWrapper};
 use daft_catalog::{
     Identifier,
     python::{PyIdentifier, PyTableSource, pyobj_to_catalog, pyobj_to_table},
 };
 use daft_dsl::functions::python::WrappedUDFClass;
+use daft_logical_plan::{LogicalPlanBuilder, python::PyLogicalPlanBuilder};
 use pyo3::{prelude::*, types::PyTuple};
 
 use crate::Session;
@@ -167,6 +169,20 @@ impl PySession {
 
     pub fn load_extension(&self, path: &str) -> PyResult<()> {
         Ok(self.0.load_and_init_extension(std::path::Path::new(path))?)
+    }
+
+    #[pyo3(signature = (name, options))]
+    pub fn read_source(&self, name: &str, options: &str) -> PyResult<PyLogicalPlanBuilder> {
+        let handle = daft_ext_internal::source::get_source(name)?;
+        let arrow_schema = handle.schema(options)?;
+        let daft_schema = daft_schema::schema::Schema::try_from(arrow_schema.as_ref())?;
+        let schema = Arc::new(daft_schema);
+        let num_tasks = handle.num_tasks(options)?;
+        let scan_op = daft_scan::ExtensionScanOperator::new(name, options, schema, num_tasks);
+        let builder = LogicalPlanBuilder::from_tabular_scan(
+            ScanOperatorRef(Arc::new(scan_op)),
+        )?;
+        Ok(builder.into())
     }
 
     #[pyo3(signature = (name, *args))]

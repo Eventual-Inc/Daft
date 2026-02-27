@@ -651,6 +651,43 @@ async fn stream_scan_task(
             let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
             Box::pin(stream)
         }
+        FileFormatConfig::Extension { source_name } => {
+            let daft_scan::DataSource::Extension {
+                task_index,
+                options,
+                ..
+            } = source
+            else {
+                return Err(common_error::DaftError::TypeError(
+                    "Extension FileFormatConfig requires Extension DataSource".to_string(),
+                ));
+            };
+            let handle = daft_ext_internal::source::get_source(source_name)?;
+            let mut task_handle = handle.open_task(
+                options,
+                *task_index,
+                file_column_names.as_deref(),
+                scan_task.pushdowns.limit,
+            )?;
+            Box::pin(futures::stream::poll_fn(move |_cx| {
+                match task_handle.next_batch() {
+                    Ok(Some(arrow_batch)) => {
+                        let daft_schema = daft_schema::schema::Schema::try_from(
+                            arrow_batch.schema().as_ref(),
+                        );
+                        let result = daft_schema.and_then(|schema| {
+                            daft_recordbatch::RecordBatch::from_arrow(
+                                Arc::new(schema),
+                                arrow_batch.columns().to_vec(),
+                            )
+                        });
+                        std::task::Poll::Ready(Some(result))
+                    }
+                    Ok(None) => std::task::Poll::Ready(None),
+                    Err(e) => std::task::Poll::Ready(Some(Err(e.into()))),
+                }
+            }))
+        }
     };
 
     Ok(table_stream.map(move |table| {

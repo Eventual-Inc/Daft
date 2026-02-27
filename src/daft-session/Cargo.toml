@@ -1,5 +1,6 @@
 [dependencies]
 common-error = {workspace = true}
+common-scan-info = {path = "../common/scan-info", default-features = false}
 daft-ai = {workspace = true}
 daft-catalog = {workspace = true}
 daft-core = {workspace = true}
@@ -7,6 +8,8 @@ daft-dsl = {workspace = true}
 daft-ext-abi = {workspace = true}
 daft-ext-internal = {workspace = true}
 daft-logical-plan = {workspace = true}
+daft-scan = {workspace = true}
+daft-schema = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 uuid = {workspace = true}
 
@@ -15,7 +18,10 @@ python = [
   "dep:pyo3",
   "daft-catalog/python",
   "daft-core/python",
-  "daft-logical-plan/python"
+  "daft-logical-plan/python",
+  "daft-scan/python",
+  "daft-schema/python",
+  "common-scan-info/python",
 ]
 
 [lints]
