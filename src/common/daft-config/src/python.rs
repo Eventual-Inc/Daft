@@ -226,10 +226,14 @@ impl PyDaftExecutionConfig {
         if let Some(shuffle_algorithm) = shuffle_algorithm {
             if !matches!(
                 shuffle_algorithm,
-                "map_reduce" | "pre_shuffle_merge" | "flight_shuffle" | "auto"
+                "map_reduce"
+                    | "pre_shuffle_merge"
+                    | "flight_shuffle"
+                    | "flight_shuffle_pre_shuffle_merge"
+                    | "auto"
             ) {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "shuffle_algorithm must be 'auto', 'map_reduce', 'pre_shuffle_merge', or 'flight_shuffle'",
+                    "shuffle_algorithm must be 'auto', 'map_reduce', 'pre_shuffle_merge', 'flight_shuffle', or 'flight_shuffle_pre_shuffle_merge'",
                 ));
             }
             config.shuffle_algorithm = shuffle_algorithm.to_string();
