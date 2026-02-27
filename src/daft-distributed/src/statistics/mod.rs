@@ -116,6 +116,7 @@ impl StatisticsManager {
                 id: node.node_id() as usize,
                 node_type: node.context().node_type.clone(),
                 node_category: node.context().node_category.clone(),
+                node_phase: None,
                 context: HashMap::new(),
             });
             runtime_node_managers.insert(

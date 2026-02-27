@@ -25,7 +25,7 @@ def try_deserialize():
     def _try_deserialize(items: list[str], format: str, dtype: DataTypeLike) -> list[Any]:
         field_name = "field_to_deserialize"
         df = daft.from_pydict({field_name: items})
-        df = df.select(col(field_name).deserialize(format, dtype))  # type: ignore
+        df = df.select(col(field_name).try_deserialize(format, dtype))  # type: ignore
         return df.to_pydict()[field_name]
 
     yield _try_deserialize

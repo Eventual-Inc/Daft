@@ -161,7 +161,7 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
         default_requirement: MorselSizeRequirement,
     );
     fn start(
-        &mut self,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>>;
@@ -240,6 +240,8 @@ impl BuilderContext {
             self.context.clone()
         };
 
+        let node_phase = node_context.phase.clone();
+
         NodeInfo {
             name,
             id: node_context
@@ -247,6 +249,7 @@ impl BuilderContext {
                 .unwrap_or_else(|| self.next_id()),
             node_type,
             node_category,
+            node_phase,
             context,
         }
     }

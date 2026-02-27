@@ -58,10 +58,7 @@ impl WindowNodePartitionOnly {
             StatsState::NotMaterialized,
             self.agg_exprs.clone(),
             self.base.aliases.clone(),
-            LocalNodeContext {
-                origin_node_id: Some(self.base.context.node_id as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.base.context.node_id as usize)),
         )
     }
 
@@ -100,10 +97,7 @@ impl WindowNodePartitionAndOrderBy {
             StatsState::NotMaterialized,
             self.window_exprs.clone(),
             self.base.aliases.clone(),
-            LocalNodeContext {
-                origin_node_id: Some(self.base.context.node_id as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.base.context.node_id as usize)),
         )
     }
 
@@ -154,10 +148,7 @@ impl WindowNodePartitionAndDynamicFrame {
             StatsState::NotMaterialized,
             self.agg_exprs.clone(),
             self.base.aliases.clone(),
-            LocalNodeContext {
-                origin_node_id: Some(self.base.context.node_id as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.base.context.node_id as usize)),
         )
     }
 
@@ -208,10 +199,7 @@ impl WindowNodeOrderByOnly {
             StatsState::NotMaterialized,
             self.window_exprs.clone(),
             self.base.aliases.clone(),
-            LocalNodeContext {
-                origin_node_id: Some(self.base.context.node_id as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.base.context.node_id as usize)),
         )
     }
 

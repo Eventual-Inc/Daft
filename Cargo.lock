@@ -2840,11 +2840,13 @@ dependencies = [
 name = "daft-functions-serde"
 version = "0.0.0"
 dependencies = [
+ "arrow",
+ "arrow-json",
  "common-error",
- "daft-arrow",
  "daft-core",
  "daft-dsl",
  "serde",
+ "serde_json",
  "typetag",
 ]
 

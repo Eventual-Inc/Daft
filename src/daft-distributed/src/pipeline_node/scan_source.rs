@@ -117,10 +117,7 @@ impl ScanSourceNode {
             self.pushdowns.clone(),
             self.config.schema.clone(),
             StatsState::NotMaterialized,
-            LocalNodeContext {
-                origin_node_id: Some(self.node_id() as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.node_id() as usize)),
         );
 
         SwordfishTaskBuilder::new(physical_scan, self.as_ref())
@@ -226,10 +223,7 @@ impl PipelineNodeImpl for ScanSourceNode {
         if self.scan_tasks.is_empty() {
             let transformed_plan = LocalPhysicalPlan::empty_scan(
                 self.config.schema.clone(),
-                LocalNodeContext {
-                    origin_node_id: Some(self.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self.node_id() as usize)),
             );
             let empty_scan_task = SwordfishTaskBuilder::new(transformed_plan, self.as_ref());
             TaskBuilderStream::new(stream::iter(std::iter::once(empty_scan_task)).boxed())
