@@ -245,6 +245,97 @@ mod tests {
     }
 
     #[test]
+    fn vtable_call_error_propagation() {
+        struct CallFailFn;
+        impl DaftScalarFunction for CallFailFn {
+            fn name(&self) -> &CStr {
+                c"call_fail"
+            }
+            fn return_field(&self, _: &[Field]) -> DaftResult<Field> {
+                Ok(Field::new("x", DataType::Int32, false))
+            }
+            fn call(&self, _: &[ArrayRef]) -> DaftResult<ArrayRef> {
+                Err(DaftError::RuntimeError("compute failed".into()))
+            }
+        }
+
+        use std::mem::ManuallyDrop;
+
+        let vtable = into_ffi(Arc::new(CallFailFn));
+
+        let input = Int32Array::from(vec![1]);
+        let (ffi_array, ffi_schema) = arrow_ffi::to_ffi(&input.to_data()).unwrap();
+        let ffi_array = ManuallyDrop::new(ffi_array);
+
+        let mut ret_array = FFI_ArrowArray::empty();
+        let mut ret_schema = FFI_ArrowSchema::empty();
+        let mut errmsg: *mut c_char = std::ptr::null_mut();
+
+        let rc = unsafe {
+            (vtable.call)(
+                vtable.ctx,
+                &raw const *ffi_array,
+                &raw const ffi_schema,
+                1,
+                &raw mut ret_array,
+                &raw mut ret_schema,
+                &raw mut errmsg,
+            )
+        };
+
+        assert_ne!(rc, 0, "call should return non-zero on error");
+        assert!(!errmsg.is_null());
+
+        let err_str = unsafe { CStr::from_ptr(errmsg) }.to_str().unwrap();
+        assert!(
+            err_str.contains("compute failed"),
+            "error message: {err_str}"
+        );
+
+        unsafe { free_string(errmsg) };
+        unsafe { (vtable.fini)(vtable.ctx.cast_mut()) };
+    }
+
+    #[test]
+    fn vtable_zero_args() {
+        struct NoArgFn;
+        impl DaftScalarFunction for NoArgFn {
+            fn name(&self) -> &CStr {
+                c"no_args"
+            }
+            fn return_field(&self, args: &[Field]) -> DaftResult<Field> {
+                assert!(args.is_empty());
+                Ok(Field::new("result", DataType::Int32, false))
+            }
+            fn call(&self, _: &[ArrayRef]) -> DaftResult<ArrayRef> {
+                Ok(Arc::new(Int32Array::from(vec![42])))
+            }
+        }
+
+        let vtable = into_ffi(Arc::new(NoArgFn));
+
+        // Test return_field with zero args
+        let mut ret_schema = FFI_ArrowSchema::empty();
+        let mut errmsg: *mut c_char = std::ptr::null_mut();
+
+        let rc = unsafe {
+            (vtable.get_return_field)(
+                vtable.ctx,
+                std::ptr::null(),
+                0,
+                &raw mut ret_schema,
+                &raw mut errmsg,
+            )
+        };
+        assert_eq!(rc, 0, "get_return_field with zero args should succeed");
+
+        let result_field = Field::try_from(&ret_schema).unwrap();
+        assert_eq!(result_field.name(), "result");
+
+        unsafe { (vtable.fini)(vtable.ctx.cast_mut()) };
+    }
+
+    #[test]
     fn fini_is_callable() {
         struct DisposableFn;
         impl DaftScalarFunction for DisposableFn {

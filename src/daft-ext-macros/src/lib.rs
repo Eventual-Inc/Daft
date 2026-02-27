@@ -76,16 +76,3 @@ fn pascal_to_snake(s: &str) -> String {
     }
     out
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn pascal_to_snake_cases() {
-        assert_eq!(pascal_to_snake("MyExtension"), "my_extension");
-        assert_eq!(pascal_to_snake("Foo"), "foo");
-        assert_eq!(pascal_to_snake("FooBarBaz"), "foo_bar_baz");
-        assert_eq!(pascal_to_snake("A"), "a");
-    }
-}

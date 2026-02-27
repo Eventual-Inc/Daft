@@ -90,4 +90,59 @@ mod tests {
             "expected 'my_add' in recorded functions"
         );
     }
+
+    #[test]
+    fn session_context_multiple_functions() {
+        static NAMES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+        unsafe extern "C" fn mock_define(_ctx: *mut c_void, func: FFI_ScalarFunction) -> c_int {
+            let name = unsafe { CStr::from_ptr((func.name)(func.ctx)) }
+                .to_str()
+                .unwrap()
+                .to_string();
+            NAMES.lock().unwrap().push(name);
+            unsafe { (func.fini)(func.ctx.cast_mut()) };
+            0
+        }
+
+        let mut raw_session = FFI_SessionContext {
+            ctx: std::ptr::null_mut(),
+            define_function: mock_define,
+        };
+
+        let mut session = SessionContext::new(&mut raw_session);
+
+        struct FnA;
+        impl DaftScalarFunction for FnA {
+            fn name(&self) -> &CStr {
+                c"fn_a"
+            }
+            fn return_field(&self, _: &[Field]) -> DaftResult<Field> {
+                Ok(Field::new("a", DataType::Int32, false))
+            }
+            fn call(&self, _: &[ArrayRef]) -> DaftResult<ArrayRef> {
+                Ok(Arc::new(Int32Array::from(vec![0])))
+            }
+        }
+
+        struct FnB;
+        impl DaftScalarFunction for FnB {
+            fn name(&self) -> &CStr {
+                c"fn_b"
+            }
+            fn return_field(&self, _: &[Field]) -> DaftResult<Field> {
+                Ok(Field::new("b", DataType::Utf8, true))
+            }
+            fn call(&self, _: &[ArrayRef]) -> DaftResult<ArrayRef> {
+                Ok(Arc::new(Int32Array::from(vec![0])))
+            }
+        }
+
+        session.define_function(Arc::new(FnA));
+        session.define_function(Arc::new(FnB));
+
+        let names = NAMES.lock().unwrap();
+        assert!(names.contains(&"fn_a".to_string()));
+        assert!(names.contains(&"fn_b".to_string()));
+    }
 }

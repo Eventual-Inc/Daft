@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import platform
 import types
+import warnings
 from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -254,9 +255,16 @@ class Session:
     def load_extension(self, extension: str | types.ModuleType | Path) -> None:
         """Load a native extension by module symbol or an explicit file path.
 
+        .. warning::
+            This API is experimental and may change in future releases.
+
         Args:
             extension: A module with a native library or a direct file path to the shared library.
         """
+        warnings.warn(
+            "Native extensions are experimental and may change in future releases.",
+            stacklevel=2,
+        )
         if isinstance(extension, str):
             path = extension
         elif isinstance(extension, Path):

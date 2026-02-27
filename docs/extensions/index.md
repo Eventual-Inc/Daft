@@ -1,5 +1,9 @@
 # Daft Extensions
 
+!!! warning "Experimental"
+
+    Native extensions are experimental and may change in future releases.
+
 > Please see the [prompt](#prompt) if you want help generating an extension.
 
 This document is a guide for authoring Daft native extensions in Rust.
@@ -25,7 +29,15 @@ df = df.select(hello.greet(df["name"]))
 df.show()
 
 """
-
+╭──────────────╮
+│ greet        │
+│ ---          │
+│ String       │
+╞══════════════╡
+│ Hello, John! │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Hello, Paul! │
+╰──────────────╯
 """
 ```
 

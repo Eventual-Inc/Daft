@@ -5,6 +5,9 @@ A minimal Daft native extension example. See the [extension guide](../../docs/ex
 ## Quick start
 
 ```bash
+# Install the extension in the project .venv
 uv pip install -e .
-pytest -v tests/
+
+# Run the tests!
+pytest -v
 ```

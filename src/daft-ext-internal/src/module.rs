@@ -127,3 +127,64 @@ fn resolve_module(library: &Library, path: &Path) -> DaftResult<FFI_Module> {
 
     Ok(module)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::c_int;
+
+    use daft_ext_abi::{DAFT_ABI_VERSION, FFI_Module, FFI_SessionContext};
+
+    use super::*;
+
+    unsafe extern "C" fn noop_init(_: *mut FFI_SessionContext) -> c_int {
+        0
+    }
+
+    unsafe extern "C" fn noop_free(_: *mut c_char) {}
+
+    fn make_test_module(name: &'static CStr) -> FFI_Module {
+        FFI_Module {
+            daft_abi_version: DAFT_ABI_VERSION,
+            name: name.as_ptr(),
+            init: noop_init,
+            free_string: noop_free,
+        }
+    }
+
+    #[test]
+    fn module_handle_name() {
+        let module = make_test_module(c"test_module");
+        let handle = ModuleHandle::new(module);
+        assert_eq!(handle.name().to_str().unwrap(), "test_module");
+    }
+
+    #[test]
+    fn module_handle_ffi_module() {
+        let module = make_test_module(c"test_module");
+        let handle = ModuleHandle::new(module);
+        assert_eq!(handle.ffi_module().daft_abi_version, DAFT_ABI_VERSION);
+    }
+
+    #[test]
+    fn module_handle_free_string_null() {
+        let module = make_test_module(c"test_module");
+        let handle = ModuleHandle::new(module);
+        // Should not panic on null
+        unsafe { handle.free_string(std::ptr::null_mut()) };
+    }
+
+    #[test]
+    fn load_module_nonexistent_path() {
+        let result = load_module(Path::new("/nonexistent/path/libfake.so"));
+        match result {
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("failed to canonicalize"),
+                    "unexpected error: {msg}"
+                );
+            }
+            Ok(_) => panic!("expected error for nonexistent path"),
+        }
+    }
+}

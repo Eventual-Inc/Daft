@@ -35,3 +35,22 @@ def test_greet_null():
     assert values[0] == "Hello, George!"
     assert values[1] == "Hello, Ringo!"
     assert values[2] is None
+
+
+def test_greet_show(capsys):
+    """Verify .show() output for use in docs/extensions/index.md."""
+    sess = Session()
+    sess.load_extension(hello)
+
+    df = daft.from_pydict({"name": ["John", "Paul"]})
+
+    with sess:
+        df = df.select(hello.greet(df["name"]))
+        df.show()
+
+    captured = capsys.readouterr().out
+    # The output should contain our greeted values
+    assert "Hello, John!" in captured
+    assert "Hello, Paul!" in captured
+    # Print it so the test runner shows the formatted table
+    print(captured)
