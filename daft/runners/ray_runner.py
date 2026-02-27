@@ -5,7 +5,6 @@ import logging
 import os
 import sys
 import time
-import uuid
 from collections.abc import Generator, Iterable, Iterator
 from typing import TYPE_CHECKING, Any, cast
 
@@ -21,6 +20,7 @@ from daft.daft import DistributedPhysicalPlan, PyExecutionStats
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.execution.metadata import ExecutionMetadata
+from daft.naming import generate_query_name
 from daft.recordbatch import RecordBatch
 from daft.runners.flotilla import FlotillaRunner
 from daft.scarf_telemetry import track_runner_on_scarf
@@ -554,7 +554,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         # Grab and freeze the current context
         ctx = get_context()
-        query_id = str(uuid.uuid4())
+        query_id = generate_query_name()
         daft_execution_config = ctx.daft_execution_config
         output_schema = builder.schema()
 
