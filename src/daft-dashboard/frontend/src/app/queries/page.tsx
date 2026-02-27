@@ -69,7 +69,7 @@ const columns = [
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="max-w-[150px] truncate">{id}</div>
+              <div>{id}</div>
             </TooltipTrigger>
             <TooltipContent>
               <p>{id}</p>
