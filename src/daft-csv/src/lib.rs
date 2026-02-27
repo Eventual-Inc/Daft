@@ -1,5 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
-
 use common_error::DaftError;
 use snafu::Snafu;
 
@@ -23,13 +21,15 @@ pub enum Error {
     IOError { source: daft_io::Error },
     #[snafu(display("{source}"))]
     CSVError { source: csv_async::Error },
+    #[snafu(display("{source}"))]
+    SyncCSVError { source: csv::Error },
     #[snafu(display("Invalid char: {}", val))]
     WrongChar {
         source: std::char::TryFromCharError,
         val: char,
     },
     #[snafu(display("{source}"))]
-    ArrowError { source: daft_arrow::error::Error },
+    ArrowError { source: arrow_schema::ArrowError },
     #[snafu(display("Error joining spawned task: {}", source))]
     JoinError { source: tokio::task::JoinError },
     #[snafu(display(
