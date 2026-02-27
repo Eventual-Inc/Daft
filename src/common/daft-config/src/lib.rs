@@ -130,6 +130,8 @@ pub struct DaftExecutionConfig {
     pub default_morsel_size: NonZeroUsize,
     pub shuffle_algorithm: String,
     pub pre_shuffle_merge_threshold: usize,
+    pub enable_post_shuffle_merge: bool,
+    pub post_shuffle_merge_target_size_bytes: usize,
     pub scantask_max_parallel: usize,
     pub native_parquet_writer: bool,
     pub min_cpu_per_task: f64,
@@ -173,6 +175,8 @@ impl Default for DaftExecutionConfig {
             default_morsel_size: NonZeroUsize::new(128 * 1024).unwrap(),
             shuffle_algorithm: "auto".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
+            enable_post_shuffle_merge: false,
+            post_shuffle_merge_target_size_bytes: 128 * 1024 * 1024, // 128MB
             scantask_max_parallel: 8,
             native_parquet_writer: true,
             min_cpu_per_task: 0.5,

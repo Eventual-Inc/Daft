@@ -111,6 +111,8 @@ impl PyDaftExecutionConfig {
         default_morsel_size=None,
         shuffle_algorithm=None,
         pre_shuffle_merge_threshold=None,
+        enable_post_shuffle_merge=None,
+        post_shuffle_merge_target_size_bytes=None,
         scantask_max_parallel=None,
         native_parquet_writer=None,
         min_cpu_per_task=None,
@@ -144,6 +146,8 @@ impl PyDaftExecutionConfig {
         default_morsel_size: Option<usize>,
         shuffle_algorithm: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
+        enable_post_shuffle_merge: Option<bool>,
+        post_shuffle_merge_target_size_bytes: Option<usize>,
         scantask_max_parallel: Option<usize>,
         native_parquet_writer: Option<bool>,
         min_cpu_per_task: Option<f64>,
@@ -236,6 +240,12 @@ impl PyDaftExecutionConfig {
         }
         if let Some(pre_shuffle_merge_threshold) = pre_shuffle_merge_threshold {
             config.pre_shuffle_merge_threshold = pre_shuffle_merge_threshold;
+        }
+        if let Some(enable_post_shuffle_merge) = enable_post_shuffle_merge {
+            config.enable_post_shuffle_merge = enable_post_shuffle_merge;
+        }
+        if let Some(post_shuffle_merge_target_size_bytes) = post_shuffle_merge_target_size_bytes {
+            config.post_shuffle_merge_target_size_bytes = post_shuffle_merge_target_size_bytes;
         }
 
         if let Some(scantask_max_parallel) = scantask_max_parallel {
@@ -382,6 +392,14 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn pre_shuffle_merge_threshold(&self) -> PyResult<usize> {
         Ok(self.config.pre_shuffle_merge_threshold)
+    }
+    #[getter]
+    fn enable_post_shuffle_merge(&self) -> PyResult<bool> {
+        Ok(self.config.enable_post_shuffle_merge)
+    }
+    #[getter]
+    fn post_shuffle_merge_target_size_bytes(&self) -> PyResult<usize> {
+        Ok(self.config.post_shuffle_merge_target_size_bytes)
     }
 
     #[getter]

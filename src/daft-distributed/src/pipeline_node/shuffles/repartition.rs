@@ -5,6 +5,7 @@ use common_metrics::ops::{NodeCategory, NodeType};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
+use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
@@ -16,10 +17,7 @@ use crate::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
-    utils::{
-        channel::{Sender, create_channel},
-        transpose::transpose_materialized_outputs_from_stream,
-    },
+    utils::channel::{Sender, create_channel},
 };
 
 pub(crate) struct RepartitionNode {
@@ -70,7 +68,8 @@ impl RepartitionNode {
         DistributedPipelineNode::new(Arc::new(self))
     }
 
-    // Async execution to get all partitions out
+    // Async execution: consume the materialized stream incrementally, transposing into
+    // per-partition buckets as we go, then merge (if enabled) and emit.
     async fn execution_loop(
         self: Arc<Self>,
         local_repartition_node: TaskBuilderStream,
@@ -78,28 +77,87 @@ impl RepartitionNode {
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
-        // Trigger materialization of the partitions
-        // This will produce a stream of materialized outputs, each containing a vector of num_partitions partitions
         let materialized_stream = local_repartition_node.materialize(
             scheduler_handle,
             self.context.query_idx,
             task_id_counter,
         );
-        let transposed_outputs =
-            transpose_materialized_outputs_from_stream(materialized_stream, self.num_partitions)
-                .await?;
 
-        // Make each partition group (partitions equal by (hash % num_partitions)) input to a in-memory scan
-        for partition_group in transposed_outputs {
-            let (in_memory_source_plan, psets) = MaterializedOutput::into_in_memory_scan_with_psets(
-                partition_group,
-                self.config.schema.clone(),
-                self.node_id(),
-            );
-            let builder =
-                SwordfishTaskBuilder::new(in_memory_source_plan, self.as_ref()).with_psets(psets);
+        // Build transpose incrementally: one bucket per output partition index.
+        // As each materialized output arrives, split it and push each part into the
+        // corresponding bucket (no need to wait for the full stream before transposing).
+        let num_partitions = self.num_partitions;
+        let mut buckets: Vec<Vec<MaterializedOutput>> =
+            (0..num_partitions).map(|_| Vec::new()).collect();
 
-            let _ = result_tx.send(builder).await;
+        let mut materialized_stream = std::pin::pin!(materialized_stream);
+        while let Some(materialized_output) = materialized_stream.try_next().await? {
+            let split = materialized_output.split_into_materialized_outputs();
+            for (j, part) in split.into_iter().enumerate() {
+                if part.num_rows() > 0 {
+                    buckets[j].push(part);
+                }
+            }
+        }
+
+        let enable_post_shuffle_merge = self.config.execution_config.enable_post_shuffle_merge;
+        let target_size_bytes = self.config.execution_config.post_shuffle_merge_target_size_bytes;
+
+        if !enable_post_shuffle_merge {
+            for partition_group in buckets {
+                let (in_memory_source_plan, psets) =
+                    MaterializedOutput::into_in_memory_scan_with_psets(
+                        partition_group,
+                        self.config.schema.clone(),
+                        self.node_id(),
+                    );
+                let builder = SwordfishTaskBuilder::new(in_memory_source_plan, self.as_ref())
+                    .with_psets(psets);
+                let _ = result_tx.send(builder).await;
+            }
+        } else {
+            let sizes: Vec<usize> = buckets
+                .iter()
+                .map(|g| g.iter().map(|o| o.size_bytes()).sum())
+                .collect();
+
+            let mut ranges = Vec::new();
+            let mut i = 0;
+            while i < buckets.len() {
+                let start = i;
+                let mut acc_size = 0usize;
+                while i < buckets.len() {
+                    let s = sizes[i];
+                    if acc_size > 0 && acc_size + s > target_size_bytes {
+                        break;
+                    }
+                    acc_size += s;
+                    i += 1;
+                    if acc_size >= target_size_bytes {
+                        break;
+                    }
+                }
+                ranges.push((start, i));
+            }
+
+            for (start, end) in ranges {
+                let mut merged_group = Vec::new();
+                for j in start..end {
+                    merged_group.extend(buckets[j].drain(..));
+                }
+                if merged_group.is_empty() {
+                    continue;
+                }
+                let (in_memory_source_plan, psets) =
+                    MaterializedOutput::into_in_memory_scan_with_psets(
+                        merged_group,
+                        self.config.schema.clone(),
+                        self.node_id(),
+                    );
+                let builder = SwordfishTaskBuilder::new(in_memory_source_plan, self.as_ref())
+                    .with_psets(psets);
+                let _ = result_tx.send(builder).await;
+            }
         }
 
         Ok(())
@@ -122,6 +180,11 @@ impl PipelineNodeImpl for RepartitionNode {
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         let mut res = vec![format!("Repartition: {}", self.repartition_spec.var_name())];
         res.extend(self.repartition_spec.multiline_display());
+        if self.config.execution_config.enable_post_shuffle_merge {
+            let target_mb = self.config.execution_config.post_shuffle_merge_target_size_bytes
+                / (1024 * 1024);
+            res.push(format!("Post-merge: enabled, target {}MB", target_mb));
+        }
         res
     }
 
