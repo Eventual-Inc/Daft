@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import threading
+import typing
 import warnings
-from types import GenericAlias
+from types import GenericAlias, UnionType
 from typing import TYPE_CHECKING, Any
 
 from packaging.version import parse
@@ -144,16 +145,19 @@ class DataType:
         )
 
     @classmethod
-    def infer_from_type(cls, t: type | GenericAlias) -> DataType:
+    def infer_from_type(cls, t: type | GenericAlias | UnionType) -> DataType:
         """Infer Daft DataType from a Python type."""
         # NOTE: Make sure this matches the logic in `Literal::from_pyobj` in Rust
+        # NOTE: The base type for Union is hidden, so it requires special handling
+        # TODO: TypeForm would cover everything: https://peps.python.org/pep-0747/
 
-        assert isinstance(t, (type, GenericAlias)), f"Input to DataType.infer_from_type must be a type, found: {t}"
+        assert isinstance(t, (type, GenericAlias, UnionType)) or typing.get_origin(t) is typing.Union, (
+            f"Input to DataType.infer_from_type must be a type, found {t} (type {type(t)})"
+        )
 
         import datetime
         import decimal
         import importlib
-        import typing
         from typing import is_typeddict
 
         import daft.file
@@ -182,7 +186,16 @@ class DataType:
 
             return issubclass(origin, type_obj)
 
-        if check_type(type(None)):
+        # NOTE: This has to be first to handle the special case of typing.Union
+        if origin is typing.Union or check_type(UnionType):  # type: ignore[comparison-overlap]
+            inner_types = set(DataType.infer_from_type(arg) for arg in args)
+            if len(inner_types) == 1:
+                return inner_types.pop()
+            elif len(inner_types) == 2 and cls.null() in inner_types:
+                return inner_types.difference([cls.null()]).pop()
+            else:
+                return cls.python()
+        elif check_type(type(None)):
             return cls.null()
         elif check_type(bool):
             return cls.bool()
@@ -457,7 +470,7 @@ class DataType:
             return user_provided_type
         elif isinstance(user_provided_type, str):
             return cls.from_sql(user_provided_type)
-        elif isinstance(user_provided_type, (type, GenericAlias)):
+        elif isinstance(user_provided_type, (type, GenericAlias, UnionType)):
             return cls.infer_from_type(user_provided_type)
         else:
             raise TypeError("DataType._infer expects a DataType, string, or type")
