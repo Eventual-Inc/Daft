@@ -76,11 +76,11 @@ pub fn infer(bytes: &[u8]) -> DataType {
         } else if let Some(offset) = is_datetime(string) {
             DataType::Timestamp(TimeUnit::Millisecond, Some(offset))
         } else {
-            DataType::LargeUtf8
+            DataType::Utf8
         }
     } else {
         // invalid utf8
-        DataType::LargeBinary
+        DataType::Binary
     }
 }
 
