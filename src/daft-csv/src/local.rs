@@ -574,6 +574,9 @@ fn stream_csv_as_tables(
     // Stream tables from each chunk window.
     let has_header = parse_options.has_header;
     let parse_options = Arc::new(parse_options);
+    // When a predicate is present, don't pass the limit to collect_tables.
+    // The limit should only apply after filtering, which is handled by the
+    // stream-level try_take_while below.
     let stream = futures::stream::iter(chunk_window_iterator.enumerate())
         .map(move |(i, w)| {
             let has_header = has_header && (i == 0);
@@ -886,20 +889,19 @@ fn local_read_rows<R: std::io::Read>(
     rows: &mut [csv::ByteRecord],
     limit: Option<usize>,
 ) -> Result<(usize, bool), csv::Error> {
-    let max_rows = limit.unwrap_or(rows.len());
-    let mut row_count = 0;
+    let mut row_number = 0;
+    let mut has_more = true;
     for row in rows.iter_mut() {
-        if row_count >= max_rows {
+        if matches!(limit, Some(limit) if row_number >= limit) {
             break;
         }
-        if !reader.read_byte_record(row)? {
-            return Ok((row_count, false));
+        has_more = reader.read_byte_record(row)?;
+        if !has_more {
+            break;
         }
-        row_count += 1;
+        row_number += 1;
     }
-    // Check if there's more data available.
-    let has_more = row_count == rows.len();
-    Ok((row_count, has_more))
+    Ok((row_number, has_more))
 }
 
 /// Helper function that consumes a CSV reader and turns it into a vector of Daft tables.
