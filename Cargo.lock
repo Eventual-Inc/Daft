@@ -2008,6 +2008,7 @@ dependencies = [
  "pyo3-async-runtimes",
  "rand 0.8.5",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

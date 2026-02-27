@@ -12,6 +12,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use futures::FutureExt;
 use tokio::runtime::{Handle, RuntimeFlavor};
+use tracing::Instrument;
 
 pub mod joinset;
 
@@ -65,7 +66,9 @@ impl<T> RuntimeTask<T> {
         T: Send + 'static,
     {
         let mut joinset = tokio::task::JoinSet::new();
-        joinset.spawn_on(future, handle);
+        // Propagate the current tracing span so that span parent chains
+        // are preserved when spawning onto a different runtime.
+        joinset.spawn_on(future.instrument(tracing::Span::current()), handle);
         Self { joinset }
     }
 }
