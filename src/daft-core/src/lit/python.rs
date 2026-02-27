@@ -1,7 +1,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, TimeZone};
-use common_arrow_ffi as ffi;
+use common_arrow_ffi::ToPyArrow;
 use common_error::DaftError;
 use common_ndarray::NumpyArray;
 use daft_schema::{
@@ -24,11 +24,15 @@ use pyo3::{
 
 use super::Literal;
 use crate::{
-    file::FileReference,
-    python::PySeries,
-    series::Series,
-    utils::{arrow::cast_array_from_daft_if_needed, display::display_decimal128},
+    file::FileReference, python::PySeries, series::Series, utils::display::display_decimal128,
 };
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PyMapConversionMode {
+    AssociationList,
+    DictLossy,
+    DictStrict,
+}
 
 /// All Daft to Python type conversion logic should go through this implementation.
 ///
@@ -169,7 +173,9 @@ impl<'py> IntoPyObject<'py> for Literal {
                 .import(intern!(py, "decimal"))?
                 .getattr(intern!(py, "Decimal"))?
                 .call1((display_decimal128(val, p, s),)),
-            Self::List(series) => Ok(PySeries { series }.to_pylist(py)?.into_any()),
+            Self::List(series) => Ok(PySeries { series }
+                .to_pylist_impl(py, PyMapConversionMode::AssociationList)?
+                .into_any()),
             Self::Python(val) => val.0.as_ref().into_bound_py_any(py),
             Self::Struct(entries) => entries
                 .into_iter()
@@ -198,24 +204,29 @@ impl<'py> IntoPyObject<'py> for Literal {
                     "Key and value counts should be equal in map literal"
                 );
 
-                Ok(PyList::new(py, keys.to_literals().zip(values.to_literals()))?.into_any())
+                let entries = keys
+                    .to_literals()
+                    .into_iter()
+                    .zip(values.to_literals())
+                    .collect::<Vec<(Self, Self)>>();
+                Ok(PyList::new(py, entries)?.into_any())
             }
-            Self::Tensor { data, shape } => {
-                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-                ffi::to_py_array(py, data.to_arrow2(), &pyarrow)?
-                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
-                    .call_method1(pyo3::intern!(py, "reshape"), (shape,))
-            }
+            Self::Tensor { data, shape } => data
+                .to_pyarrow(py)?
+                .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
+                .call_method1(pyo3::intern!(py, "reshape"), (shape,)),
             Self::SparseTensor {
                 values,
                 indices,
                 shape,
                 ..
             } => {
-                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-                let values_arr = ffi::to_py_array(py, values.to_arrow2(), &pyarrow)?
+                let values_arr = values
+                    .to_pyarrow(py)?
                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
-                let indices_arr = ffi::to_py_array(py, indices.to_arrow2(), &pyarrow)?
+
+                let indices_arr = indices
+                    .to_pyarrow(py)?
                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
 
                 let seq = (
@@ -227,11 +238,9 @@ impl<'py> IntoPyObject<'py> for Literal {
 
                 Ok(PyDict::from_sequence(&seq)?.into_any())
             }
-            Self::Embedding(series) => {
-                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-                ffi::to_py_array(py, series.to_arrow2(), &pyarrow)?
-                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))
-            }
+            Self::Embedding(series) => series
+                .to_pyarrow(py)?
+                .call_method1(pyo3::intern!(py, "to_numpy"), (false,)),
             Self::Image(image) => {
                 let img_arr = image.into_ndarray();
                 NumpyArray::from_ndarray(&img_arr, py).into_pyobject(py)
@@ -243,12 +252,8 @@ impl<'py> IntoPyObject<'py> for Literal {
                     "Expected extension literal to have length 1"
                 );
 
-                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-
-                let arrow_array = series.to_arrow2();
-                let arrow_array = cast_array_from_daft_if_needed(arrow_array);
-
-                ffi::to_py_array(py, arrow_array, &pyarrow)?
+                series
+                    .to_pyarrow(py)?
                     .call_method0(pyo3::intern!(py, "to_pylist"))?
                     .get_item(0)
             }
@@ -257,6 +262,72 @@ impl<'py> IntoPyObject<'py> for Literal {
 }
 
 impl Literal {
+    pub(crate) fn into_pyobject_with_map_conversion(
+        self,
+        py: Python<'_>,
+        maps_as_pydicts: PyMapConversionMode,
+    ) -> PyResult<Bound<'_, PyAny>> {
+        if maps_as_pydicts == PyMapConversionMode::AssociationList {
+            return self.into_pyobject(py);
+        }
+
+        match self {
+            Self::List(series) => Ok(PySeries { series }
+                .to_pylist_impl(py, maps_as_pydicts)?
+                .into_any()),
+            Self::Struct(entries) => {
+                let dict = PyDict::new(py);
+                for (key, value) in entries
+                    .into_iter()
+                    .filter(|(k, v)| !(k.is_empty() && *v == Self::Null))
+                {
+                    dict.set_item(
+                        key,
+                        value.into_pyobject_with_map_conversion(py, maps_as_pydicts)?,
+                    )?;
+                }
+                Ok(dict.into_any())
+            }
+            Self::Map { keys, values } => {
+                assert_eq!(
+                    keys.len(),
+                    values.len(),
+                    "Key and value counts should be equal in map literal"
+                );
+
+                let map = PyDict::new(py);
+                let mut warned_on_duplicate = false;
+                for (key, value) in keys.to_literals().into_iter().zip(values.to_literals()) {
+                    let key_py = key.into_pyobject_with_map_conversion(py, maps_as_pydicts)?;
+                    let value_py = value.into_pyobject_with_map_conversion(py, maps_as_pydicts)?;
+
+                    let duplicate_key = map.contains(&key_py)?;
+                    if duplicate_key {
+                        if maps_as_pydicts == PyMapConversionMode::DictStrict {
+                            return Err(PyValueError::new_err(
+                                "Duplicate key encountered while converting Map to Python dict with maps_as_pydicts='strict'",
+                            ));
+                        }
+
+                        if !warned_on_duplicate {
+                            py.import(intern!(py, "warnings"))?.call_method1(
+                                intern!(py, "warn"),
+                                (
+                                    "Duplicate key encountered while converting Map to Python dict with maps_as_pydicts='lossy'; keeping the last value",
+                                ),
+                            )?;
+                            warned_on_duplicate = true;
+                        }
+                    }
+
+                    map.set_item(key_py, value_py)?;
+                }
+                Ok(map.into_any())
+            }
+            lit => lit.into_pyobject(py),
+        }
+    }
+
     /// Convert a Python object into a Daft Literal.
     ///
     /// NOTE: Make sure this matches the logic in `DataType.infer_from_type` in Python

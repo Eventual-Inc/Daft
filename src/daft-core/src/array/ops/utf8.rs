@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::{Array, ArrayRef, LargeBinaryArray, OffsetBufferBuilder};
+use arrow::array::{Array, ArrayRef, BufferBuilder, LargeBinaryArray, OffsetBufferBuilder};
 use common_error::DaftResult;
 
 use crate::{
@@ -18,7 +18,8 @@ impl Utf8Array {
         let buffer = input.values();
         let nulls = input.nulls().cloned();
 
-        let mut values = Vec::<u8>::new();
+        let mut values = BufferBuilder::new(buffer.capacity());
+
         let mut offsets = OffsetBufferBuilder::new(input.len());
         for span in input.offsets().windows(2) {
             let s = span[0] as usize;

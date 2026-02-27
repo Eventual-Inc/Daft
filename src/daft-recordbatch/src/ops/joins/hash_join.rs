@@ -1,8 +1,8 @@
 use std::{cmp, iter::repeat_n, ops::Not, sync::Arc};
 
+use arrow::array::NullBufferBuilder;
 use arrow_array::builder::BooleanBufferBuilder;
 use common_error::DaftResult;
-use daft_arrow::buffer::NullBufferBuilder;
 use daft_core::{
     array::ops::{DaftIsNull, arrow::comparison::build_multi_array_is_equal},
     prelude::*,
@@ -74,8 +74,8 @@ pub(super) fn hash_inner_join(
             }
         }
 
-        let larr = UInt64Array::from(("left_indices", left_idx));
-        let rarr = UInt64Array::from(("right_indices", right_idx));
+        let larr = UInt64Array::from_vec("left_indices", left_idx);
+        let rarr = UInt64Array::from_vec("right_indices", right_idx);
 
         if probe_left {
             (larr, rarr)
@@ -127,10 +127,10 @@ pub(super) fn hash_left_right_join(
     {
         (
             UInt64Array::full_null("left_indices", &DataType::UInt64, rkeys.len()),
-            UInt64Array::from((
+            UInt64Array::from_vec(
                 "right_indices",
                 (0..(rkeys.len() as u64)).collect::<Vec<_>>(),
-            )),
+            ),
         )
     } else {
         let probe_table = lkeys.to_probe_hash_table()?;
@@ -172,8 +172,8 @@ pub(super) fn hash_left_right_join(
         }
 
         (
-            UInt64Array::from(("left_indices", left_idx)).with_nulls(l_valid.finish())?,
-            UInt64Array::from(("right_indices", right_idx)),
+            UInt64Array::from_vec("left_indices", left_idx).with_nulls(l_valid.finish())?,
+            UInt64Array::from_vec("right_indices", right_idx),
         )
     };
 
@@ -262,7 +262,7 @@ pub(super) fn hash_semi_anti_join(
             }
         }
 
-        UInt64Array::from(("left_indices", left_idx))
+        UInt64Array::from_vec("left_indices", left_idx)
     };
 
     left.take(&lidx)
@@ -360,8 +360,9 @@ pub(super) fn hash_outer_join(
             }
         }
 
-        let larr = UInt64Array::from(("left_indices", left_idx)).with_nulls(l_valid.finish())?;
-        let rarr = UInt64Array::from(("right_indices", right_idx)).with_nulls(r_valid.finish())?;
+        let larr = UInt64Array::from_vec("left_indices", left_idx).with_nulls(l_valid.finish())?;
+        let rarr =
+            UInt64Array::from_vec("right_indices", right_idx).with_nulls(r_valid.finish())?;
 
         if probe_left {
             (larr, rarr)

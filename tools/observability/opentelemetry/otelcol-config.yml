@@ -5,18 +5,24 @@ receivers:
         endpoint: 0.0.0.0:4317
 exporters:
   debug:
+    verbosity: normal
   otlp:
     endpoint: "jaeger:4317"
     tls:
       insecure: true
-  otlphttp/prometheus:
-    endpoint: "http://prometheus:9090/api/v1/otlp"
-    tls:
-      insecure: true
+  prometheus:
+    endpoint: 0.0.0.0:9464
 processors:
   batch:
     timeout: 200ms
     send_batch_size: 1024
+  transform:
+    metric_statements:
+    - context: datapoint
+      statements:
+      - set(attributes["service.instance.id"], resource.attributes["service.instance.id"])
+      - set(attributes["service.name"], resource.attributes["service.name"])
+      - set(attributes["service.namespace"], resource.attributes["service.namespace"])
 service:
   pipelines:
     traces:
@@ -25,5 +31,5 @@ service:
       exporters: [otlp, debug]
     metrics:
       receivers: [otlp]
-      processors: [batch]
-      exporters: [otlphttp/prometheus, debug]
+      processors: [batch, transform]
+      exporters: [prometheus, debug]

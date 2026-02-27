@@ -25,7 +25,11 @@ impl ScalarUDF for MergeMeanFunction {
         "merge_mean"
     }
 
-    fn call(&self, inputs: super::function_args::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: super::function_args::FunctionArgs<Series>,
+        _ctx: &crate::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let Args { input: sum, counts } = inputs.try_into()?;
 
         if !matches!(counts.data_type(), DataType::UInt64) {

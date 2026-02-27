@@ -23,7 +23,6 @@ impl CountDistinctWindowState {
     pub fn new(source: &Series, total_length: usize) -> Self {
         let hashed = source.hash_with_nulls(None).unwrap();
 
-        #[allow(deprecated, reason = "arrow2 migration")]
         let array = source.to_arrow().unwrap();
 
         let comparator =
@@ -108,6 +107,6 @@ impl WindowAggStateOps for CountDistinctWindowState {
     }
 
     fn build(&self) -> DaftResult<Series> {
-        Ok(DataArray::<UInt64Type>::from(("", self.count_vec.clone())).into_series())
+        Ok(DataArray::<UInt64Type>::from_vec("", self.count_vec.clone()).into_series())
     }
 }

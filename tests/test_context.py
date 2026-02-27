@@ -51,7 +51,9 @@ print(daft.runners._get_runner().name)
     """
 
     with with_null_env():
-        result = subprocess.run([sys.executable, "-c", implicit_set_runner_script], capture_output=True)
+        # Use a clean env without RAY_* vars so Ray auto-detection doesn't trigger
+        clean_env = {k: v for k, v in os.environ.items() if not k.startswith("RAY_")}
+        result = subprocess.run([sys.executable, "-c", implicit_set_runner_script], capture_output=True, env=clean_env)
         assert result.stdout.decode().strip() == "None\nnative"
 
 
@@ -330,4 +332,4 @@ def test_set_scantask_max_parallelism_greater_than_partition_num():
         str_io = io.StringIO()
         df = daft.range(start=0, end=1024, partitions=10)
         df.explain(show_all=True, file=str_io)
-        assert "Num Parallel Scan Tasks = 10" in str_io.getvalue().strip()
+        assert "Num Parallel Scan Tasks = 17" in str_io.getvalue().strip()

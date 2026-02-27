@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::stats::StatsState;
@@ -42,6 +43,8 @@ impl UnpivotNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::Unpivot,
+            NodeCategory::Intermediate,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -109,10 +112,7 @@ impl PipelineNodeImpl for UnpivotNode {
                 self_clone.value_name.clone(),
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self_clone.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self_clone.node_id() as usize)),
             )
         };
 

@@ -1,14 +1,15 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 
+use arrow::array::builder::ArrayBuilder;
 use common_error::DaftResult;
-use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+use daft_core::prelude::*;
 use daft_dsl::{Expr, ExprRef, expr::bound_expr::BoundExpr};
 use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
 use num_traits::Pow;
 use rayon::{ThreadPoolBuilder, prelude::*};
 use serde_json::value::RawValue;
+use simd_json::StaticNode;
 use snafu::ResultExt;
 
 use crate::{
@@ -19,6 +20,8 @@ use crate::{
     inference::{column_types_map_to_fields, infer_records_schema},
     read::tables_concat,
 };
+
+const JSON_NULL_VALUE: Value<'static> = Value::Static(StaticNode::Null);
 
 const NEWLINE: u8 = b'\n';
 const CLOSING_BRACKET: u8 = b'}';
@@ -52,12 +55,12 @@ pub fn read_json_local(
         .into());
     }
     if bytes[0] == b'[' {
-        let schema = infer_schema(bytes, None, None)?;
+        let schema: Schema = infer_schema(bytes, None, None)?.try_into()?;
 
         let predicate = convert_options
             .as_ref()
             .and_then(|options| options.predicate.clone());
-        read_json_array_impl(bytes, schema.into(), predicate)
+        read_json_array_impl(bytes, schema, predicate)
     } else {
         let reader = JsonReader::try_new(
             bytes,
@@ -70,7 +73,6 @@ pub fn read_json_local(
     }
 }
 
-#[allow(deprecated, reason = "arrow2 migration")]
 pub fn read_json_array_impl(
     bytes: &[u8],
     schema: Schema,
@@ -81,16 +83,16 @@ pub fn read_json_array_impl(
 
     let daft_fields = schema.into_iter().cloned().map(Arc::new);
 
-    let arrow_schema = schema.to_arrow2()?;
+    let arrow_schema = schema.to_arrow()?;
+    let arrow_fields: Vec<_> = arrow_schema.fields().iter().collect();
 
     let iter =
         serde_json::Deserializer::from_slice(bytes).into_iter::<&serde_json::value::RawValue>();
 
-    let mut columns = arrow_schema
-        .fields
+    let mut columns: IndexMap<Cow<str>, Box<dyn ArrayBuilder>> = arrow_fields
         .iter()
-        .map(|f| (Cow::Owned(f.name.clone()), allocate_array(f, bytes.len())))
-        .collect::<IndexMap<_, _>>();
+        .map(|f| (Cow::Owned(f.name().clone()), allocate_array(f, bytes.len())))
+        .collect();
 
     let mut num_rows = 0;
     for record in iter {
@@ -103,13 +105,14 @@ pub fn read_json_array_impl(
             Value::Array(arr) => {
                 for value in arr {
                     if let Value::Object(record) = value {
-                        for (s, inner) in &mut columns {
+                        for (i, (s, inner)) in columns.iter_mut().enumerate() {
+                            let dtype = arrow_fields[i].data_type();
                             match record.get(s) {
                                 Some(value) => {
-                                    deserialize_into(inner, &[value]);
+                                    deserialize_into(inner, dtype, &[value]);
                                 }
                                 None => {
-                                    inner.push_null();
+                                    deserialize_into(inner, dtype, &[&JSON_NULL_VALUE]);
                                 }
                             }
                         }
@@ -122,13 +125,14 @@ pub fn read_json_array_impl(
                 }
             }
             Value::Object(record) => {
-                for (s, inner) in &mut columns {
+                for (i, (s, inner)) in columns.iter_mut().enumerate() {
+                    let dtype = arrow_fields[i].data_type();
                     match record.get(s) {
                         Some(value) => {
-                            deserialize_into(inner, &[value]);
+                            deserialize_into(inner, dtype, &[value]);
                         }
                         None => {
-                            inner.push_null();
+                            deserialize_into(inner, dtype, &[&JSON_NULL_VALUE]);
                         }
                     }
                 }
@@ -145,10 +149,7 @@ pub fn read_json_array_impl(
     let columns = columns
         .into_values()
         .zip(daft_fields)
-        .map(|(mut ma, fld)| {
-            let arr = ma.as_box();
-            Series::try_from_field_and_arrow_array(fld, cast_array_for_daft_if_needed(arr))
-        })
+        .map(|(mut builder, fld)| Series::from_arrow(fld, builder.finish()))
         .collect::<DaftResult<Vec<_>>>()?;
 
     let tbl = RecordBatch::new_unchecked(schema.clone(), columns, num_rows);
@@ -199,7 +200,7 @@ impl<'a> JsonReader<'a> {
             .and_then(|options| options.schema.as_ref())
         {
             Some(schema) => schema.clone(),
-            None => Arc::new(infer_schema(bytes, None, None)?.into()),
+            None => Arc::new(infer_schema(bytes, None, None)?.try_into()?),
         };
 
         let pool = if let Some(max_in_flight) = max_chunks_in_flight {
@@ -277,14 +278,14 @@ impl<'a> JsonReader<'a> {
         Ok(tbl)
     }
 
-    #[allow(deprecated, reason = "arrow2 migration")]
     fn parse_json_chunk(&self, bytes: &[u8], chunk_size: usize) -> DaftResult<RecordBatch> {
         let mut scratch = vec![];
         let scratch = &mut scratch;
 
         let daft_fields = self.schema.into_iter().cloned().map(Arc::new);
 
-        let arrow_schema = self.schema.to_arrow2()?;
+        let arrow_schema = self.schema.to_arrow()?;
+        let arrow_fields: Vec<_> = arrow_schema.fields().iter().collect();
 
         // The `RawValue` is a pointer to the original JSON string and does not perform any deserialization.
         // This is a trick to use the line-based deserializer from serde_json to iterate over the lines
@@ -293,11 +294,10 @@ impl<'a> JsonReader<'a> {
         let iter =
             serde_json::Deserializer::from_slice(bytes).into_iter::<&serde_json::value::RawValue>();
 
-        let mut columns = arrow_schema
-            .fields
+        let mut columns: IndexMap<Cow<str>, Box<dyn ArrayBuilder>> = arrow_fields
             .iter()
-            .map(|f| (Cow::Owned(f.name.clone()), allocate_array(f, chunk_size)))
-            .collect::<IndexMap<_, _>>();
+            .map(|f| (Cow::Owned(f.name().clone()), allocate_array(f, chunk_size)))
+            .collect();
 
         let mut num_rows = 0;
         for record in iter {
@@ -308,13 +308,14 @@ impl<'a> JsonReader<'a> {
 
             match v {
                 Value::Object(record) => {
-                    for (s, inner) in &mut columns {
+                    for (i, (s, inner)) in columns.iter_mut().enumerate() {
+                        let dtype = arrow_fields[i].data_type();
                         match record.get(s) {
                             Some(value) => {
-                                deserialize_into(inner, &[value]);
+                                deserialize_into(inner, dtype, &[value]);
                             }
                             None => {
-                                inner.push_null();
+                                deserialize_into(inner, dtype, &[&JSON_NULL_VALUE]);
                             }
                         }
                     }
@@ -332,10 +333,7 @@ impl<'a> JsonReader<'a> {
         let columns = columns
             .into_values()
             .zip(daft_fields)
-            .map(|(mut ma, fld)| {
-                let arr = ma.as_box();
-                Series::try_from_field_and_arrow_array(fld, cast_array_for_daft_if_needed(arr))
-            })
+            .map(|(mut builder, fld)| Series::from_arrow(fld, builder.finish()))
             .collect::<DaftResult<Vec<_>>>()?;
 
         let tbl = RecordBatch::new_with_size(self.schema.clone(), columns, num_rows)?;
@@ -391,14 +389,13 @@ fn infer_schema(
     bytes: &[u8],
     max_rows: Option<usize>,
     max_bytes: Option<usize>,
-) -> DaftResult<daft_arrow::datatypes::Schema> {
+) -> DaftResult<arrow::datatypes::Schema> {
     let max_bytes = max_bytes.unwrap_or(1024 * 1024); // todo: make this configurable
     let max_records = max_rows.unwrap_or(1024); // todo: make this configurable
 
     let mut total_bytes = 0;
 
-    let mut column_types: IndexMap<String, HashSet<daft_arrow::datatypes::DataType>> =
-        IndexMap::new();
+    let mut column_types: IndexMap<String, HashSet<arrow::datatypes::DataType>> = IndexMap::new();
     let mut scratch = Vec::new();
     let scratch = &mut scratch;
 
@@ -413,15 +410,15 @@ fn infer_schema(
         let v = parse_raw_value(value, scratch)?;
 
         let inferred_schema = infer_records_schema(&v).context(ArrowSnafu)?;
-        for field in inferred_schema.fields {
+        for field in inferred_schema.fields() {
             // Get-and-mutate-or-insert.
-            match column_types.entry(field.name) {
+            match column_types.entry(field.name().clone()) {
                 indexmap::map::Entry::Occupied(mut v) => {
-                    v.get_mut().insert(field.data_type);
+                    v.get_mut().insert(field.data_type().clone());
                 }
                 indexmap::map::Entry::Vacant(v) => {
                     let mut a = HashSet::new();
-                    a.insert(field.data_type);
+                    a.insert(field.data_type().clone());
                     v.insert(a);
                 }
             }
@@ -434,7 +431,7 @@ fn infer_schema(
     }
 
     let fields = column_types_map_to_fields(column_types);
-    Ok(fields.into())
+    Ok(arrow::datatypes::Schema::new(fields))
 }
 
 /// Get the mean and standard deviation of length of lines in bytes
@@ -546,9 +543,7 @@ fn next_line_position(input: &[u8]) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use daft_arrow::datatypes::{
-        DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema,
-    };
+    use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
 
     use super::*;
 
@@ -561,7 +556,7 @@ mod tests {
 "#;
 
         let result = infer_schema(json.as_bytes(), None, None);
-        let expected_schema = ArrowSchema::from(vec![
+        let expected_schema = ArrowSchema::new(vec![
             ArrowField::new("floats", ArrowDataType::Float64, true),
             ArrowField::new("utf8", ArrowDataType::LargeUtf8, true),
             ArrowField::new("bools", ArrowDataType::Boolean, true),
@@ -574,7 +569,7 @@ mod tests {
         let json = r"";
 
         let result = infer_schema(json.as_bytes(), None, None);
-        let expected_schema = ArrowSchema::from(vec![]);
+        let expected_schema = ArrowSchema::empty();
         assert_eq!(result.unwrap(), expected_schema);
     }
 

@@ -1,7 +1,5 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{
-    collections::{HashMap, HashSet},
-    future::Future,
+    collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
 };
 
@@ -12,12 +10,13 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
-use common_scan_info::{Pushdowns, ScanTaskLike};
+use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
+use daft_local_plan::InputId;
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
 use daft_scan::{ChunkSpec, ScanTask};
@@ -27,131 +26,165 @@ use snafu::ResultExt;
 use tracing::instrument;
 
 use crate::{
-    channel::{Sender, create_channel},
+    channel::{Receiver, Sender, UnboundedReceiver, create_channel, create_unbounded_channel},
     pipeline::NodeName,
     sources::source::{Source, SourceStream},
 };
 
 pub struct ScanTaskSource {
-    scan_tasks: Vec<Arc<ScanTask>>,
-    num_parallel_tasks: usize,
+    receiver: Option<UnboundedReceiver<(InputId, Vec<ScanTaskLikeRef>)>>,
+    pushdowns: Pushdowns,
     schema: SchemaRef,
-    execution_config: Arc<DaftExecutionConfig>,
+    num_parallel_tasks: usize,
 }
 
 impl ScanTaskSource {
     pub fn new(
-        scan_tasks: Vec<Arc<ScanTask>>,
+        receiver: UnboundedReceiver<(InputId, Vec<ScanTaskLikeRef>)>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
     ) -> Self {
-        // Split all scan tasks for parallelism
-        let scan_tasks = scan_tasks
-            .into_iter()
-            .flat_map(|scan_task| scan_task.split())
-            .collect::<Vec<_>>();
-
-        // Determine the number of parallel tasks to run based on available CPU cores and row limits
         let num_cpus = get_compute_pool_num_threads();
-        let mut num_parallel_tasks = match pushdowns.limit {
-            // If we have a row limit, we need to calculate how many parallel tasks we can run
-            // without exceeding the limit
-            Some(limit) => {
-                let mut count = 0;
-                let mut remaining_rows = limit as f64;
-
-                // Only examine tasks up to the number of available CPU cores
-                for scan_task in scan_tasks.iter().take(num_cpus) {
-                    match scan_task.approx_num_rows(Some(cfg)) {
-                        // If we can estimate the number of rows for this task
-                        Some(estimated_rows) => {
-                            remaining_rows -= estimated_rows;
-                            count += 1;
-
-                            // Stop adding tasks if we would exceed the row limit
-                            if remaining_rows <= 0.0 {
-                                break;
-                            }
-                        }
-                        // If we can't estimate rows, conservatively include the task
-                        // This ensures we don't underutilize available resources
-                        None => count += 1,
-                    }
-                }
-                count
-            }
-            // If there's no row limit, use the configured parallelism, or all available CPU cores
-            // if configured value is 0
-            None => {
-                if cfg.scantask_max_parallel == 0 {
-                    log::info!(
-                        "The max parallelism of the scan tasks is configured to {}, using all available CPUs instead.",
-                        cfg.scantask_max_parallel
-                    );
-                    num_cpus
-                } else {
-                    cfg.scantask_max_parallel
-                }
-            }
+        let num_parallel_tasks = if cfg.scantask_max_parallel > 0 {
+            cfg.scantask_max_parallel
+        } else {
+            num_cpus
         };
-        num_parallel_tasks = num_parallel_tasks.min(scan_tasks.len());
         Self {
-            scan_tasks,
-            num_parallel_tasks,
+            receiver: Some(receiver),
+            pushdowns,
             schema,
-            execution_config: Arc::new(cfg.clone()),
+            num_parallel_tasks,
         }
     }
 
-    pub fn arced(self) -> Arc<dyn Source> {
-        Arc::new(self) as Arc<dyn Source>
-    }
-
-    /// Spawns the background task that processes scan tasks with limited parallelism
     fn spawn_scan_task_processor(
         &self,
-        senders: Vec<Sender<Arc<MicroPartition>>>,
+        mut receiver: UnboundedReceiver<(InputId, Vec<ScanTaskLikeRef>)>,
+        output_sender: Sender<Arc<MicroPartition>>,
         io_stats: IOStatsRef,
-        delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
-        maintain_order: bool,
         chunk_size: usize,
+        schema: SchemaRef,
+        maintain_order: bool,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
-        let scan_tasks = self.scan_tasks.clone();
         let num_parallel_tasks = self.num_parallel_tasks;
+
+        // When maintain_order is true, spawn flattener outside so it drains stream outputs in order.
+        let mut flattener_state = if maintain_order {
+            let (agg_tx, agg_rx) = create_unbounded_channel::<Receiver<Arc<MicroPartition>>>();
+            let flattener_handle = io_runtime.spawn(run_order_preserving_flattener(
+                agg_rx,
+                output_sender.clone(),
+            ));
+            Some((agg_tx, flattener_handle))
+        } else {
+            None
+        };
 
         io_runtime.spawn(async move {
             let mut task_set = JoinSet::new();
-            let mut scan_task_and_sender_iter = scan_tasks.into_iter().zip(senders.into_iter());
+            let mut pending_tasks = VecDeque::new();
+            let mut receiver_exhausted = false;
 
-            // Start initial batch of parallel tasks
-            for _ in 0..num_parallel_tasks {
-                if let Some((scan_task, sender)) = scan_task_and_sender_iter.next() {
+            while !receiver_exhausted || !pending_tasks.is_empty() || !task_set.is_empty() {
+                while task_set.len() < num_parallel_tasks && !pending_tasks.is_empty() {
+                    let (scan_task, delete_map, input_id) =
+                        pending_tasks.pop_front().expect("Pending tasks should not be empty");
+                    let sender = match &flattener_state {
+                        Some((agg_tx, _)) => {
+                            let (stream_tx, stream_rx) = create_channel(1);
+                            let _ = agg_tx.send(stream_rx);
+                            stream_tx
+                        }
+                        None => output_sender.clone(),
+                    };
                     task_set.spawn(forward_scan_task_stream(
                         scan_task,
                         io_stats.clone(),
-                        delete_map.clone(),
+                        delete_map,
                         maintain_order,
                         chunk_size,
                         sender,
+                        input_id,
                     ));
+                }
+
+                tokio::select! {
+                    recv_result = receiver.recv(), if !receiver_exhausted => {
+                        match recv_result {
+                            Some((_input_id, scan_tasks_batch)) if scan_tasks_batch.is_empty() => {
+                                let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
+                                match &flattener_state {
+                                    Some((agg_tx, _)) => {
+                                        let (tx, rx) = create_channel(1);
+                                        let _ = tx.send(empty).await;
+                                        drop(tx);
+                                        let _ = agg_tx.send(rx);
+                                    }
+                                    None => {
+                                        if output_sender.send(empty).await.is_err() {
+                                            return Ok(());
+                                        }
+                                    }
+                                }
+                            }
+                            Some((input_id, scan_tasks_batch)) => {
+                                let scan_tasks_batch: Vec<Arc<ScanTask>> = scan_tasks_batch
+                                    .into_iter()
+                                    .map(|task| {
+                                        task.as_any_arc()
+                                            .downcast::<ScanTask>()
+                                            .map_err(|_| {
+                                                DaftError::ValueError(
+                                                    "Failed to downcast ScanTaskLikeRef to ScanTask"
+                                                        .to_string(),
+                                            )
+                                    })
+                                    })
+                                    .collect::<DaftResult<Vec<_>>>()?;
+                                let delete_map =
+                                    get_delete_map(&scan_tasks_batch).await?.map(Arc::new);
+
+                                let split_tasks: Vec<Arc<ScanTask>> = scan_tasks_batch
+                                    .into_iter()
+                                    .flat_map(|scan_task| scan_task.split())
+                                    .collect();
+
+                                for scan_task in split_tasks {
+                                    pending_tasks.push_back((scan_task, delete_map.clone(), input_id));
+                                }
+                            }
+                            None => {
+                                receiver_exhausted = true;
+                            }
+                        }
+                    }
+                    Some(join_result) = task_set.join_next(), if !task_set.is_empty() => {
+                        match join_result {
+                            Ok(Ok(_)) => {}
+                            Ok(Err(e)) => {
+                                let _ = flattener_state.take();
+                                return Err(e.into());
+                            }
+                            Err(e) => {
+                                let _ = flattener_state.take();
+                                return Err(e.into());
+                            }
+                        }
+                    }
                 }
             }
+            debug_assert!(pending_tasks.is_empty(), "Pending tasks should be empty");
+            debug_assert!(task_set.is_empty(), "Task set should be empty");
+            debug_assert!(receiver_exhausted, "Receiver should be exhausted");
 
-            // Process remaining tasks as previous ones complete
-            while let Some(result) = task_set.join_next().await {
-                result??;
-                if let Some((scan_task, sender)) = scan_task_and_sender_iter.next() {
-                    task_set.spawn(forward_scan_task_stream(
-                        scan_task,
-                        io_stats.clone(),
-                        delete_map.clone(),
-                        maintain_order,
-                        chunk_size,
-                        sender,
-                    ));
-                }
+            if let Some((agg_tx, flattener_handle)) = flattener_state {
+                drop(agg_tx);
+                flattener_handle
+                    .await
+                    .map_err::<DaftError, _>(|e| e.into())?;
             }
 
             Ok(())
@@ -162,46 +195,33 @@ impl ScanTaskSource {
 #[async_trait]
 impl Source for ScanTaskSource {
     #[instrument(name = "ScanTaskSource::get_data", level = "info", skip_all)]
-    async fn get_data(
-        &self,
+    fn get_data(
+        &mut self,
         maintain_order: bool,
         io_stats: IOStatsRef,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        // Get the delete map for the scan tasks, if any
-        let delete_map = get_delete_map(&self.scan_tasks).await?.map(Arc::new);
+        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
+        let input_receiver = self.receiver.take().expect("Receiver not found");
 
-        // Create channels for the scan tasks
-        let (senders, receivers) = match maintain_order {
-            // If we need to maintain order, we need to create a channel for each scan task
-            true => (0..self.scan_tasks.len())
-                .map(|_| create_channel::<Arc<MicroPartition>>(1))
-                .unzip(),
-            // If we don't need to maintain order, we can use a single channel for all scan tasks
-            false => {
-                let (tx, rx) = create_channel(1);
-                (vec![tx; self.scan_tasks.len()], vec![rx])
-            }
-        };
-
-        // Spawn the scan task processor
-        let task = self.spawn_scan_task_processor(
-            senders,
+        let processor_task = self.spawn_scan_task_processor(
+            input_receiver,
+            output_sender,
             io_stats,
-            delete_map,
-            maintain_order,
             chunk_size,
+            self.schema.clone(),
+            maintain_order,
         );
+        let result_stream = output_receiver.into_stream().map(Ok);
+        let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
 
-        // Flatten the receivers into a stream
-        let result_stream = flatten_receivers_into_stream(receivers, task.map(|x| x?));
-
-        Ok(Box::pin(result_stream))
+        Ok(Box::pin(combined_stream))
     }
 
     fn name(&self) -> NodeName {
-        let format_name = self.scan_tasks[0].file_format_config.var_name();
-        format!("{} Scan", format_name).into()
+        // We can't access scan_tasks here anymore, so use a generic name
+        // The actual format will be determined when we receive the tasks
+        "ScanTaskSource".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -224,78 +244,40 @@ impl TreeDisplay for ScanTaskSource {
     fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         fn base_display(scan: &ScanTaskSource) -> String {
-            let num_scan_tasks = scan.scan_tasks.len();
-            let total_bytes: usize = scan
-                .scan_tasks
-                .iter()
-                .map(|st| {
-                    st.estimate_in_memory_size_bytes(Some(scan.execution_config.as_ref()))
-                        .or_else(|| st.size_bytes_on_disk())
-                        .unwrap_or(0)
-                })
-                .sum();
-
-            let num_parallel_tasks = scan.num_parallel_tasks;
-            #[allow(unused_mut)]
-            let mut s = format!(
+            format!(
                 "ScanTaskSource:
-Num Scan Tasks = {num_scan_tasks}
-Estimated Scan Bytes = {total_bytes}
-Num Parallel Scan Tasks = {num_parallel_tasks}
-"
-            );
-            #[cfg(feature = "python")]
-            if let FileFormatConfig::Database(config) =
-                scan.scan_tasks[0].file_format_config().as_ref()
-            {
-                if num_scan_tasks == 1 {
-                    writeln!(s, "SQL Query = {}", &config.sql).unwrap();
-                } else {
-                    writeln!(s, "SQL Queries = [{},..]", &config.sql).unwrap();
-                }
-            }
-            s
+Num Parallel Scan Tasks = {}
+",
+                scan.num_parallel_tasks
+            )
         }
         match level {
             DisplayLevel::Compact => self.get_name(),
             DisplayLevel::Default => {
                 let mut s = base_display(self);
-                // We're only going to display the pushdowns and schema for the first scan task.
-                let pushdown = self.scan_tasks[0].pushdowns();
+                let pushdown = &self.pushdowns;
                 if !pushdown.is_empty() {
                     s.push_str(&pushdown.display_as(DisplayLevel::Compact));
                     s.push('\n');
                 }
 
-                let schema = self.scan_tasks[0].schema();
                 writeln!(
                     s,
                     "Schema: {{{}}}",
-                    schema.display_as(DisplayLevel::Compact)
+                    self.schema.display_as(DisplayLevel::Compact)
                 )
                 .unwrap();
-
-                let tasks = self.scan_tasks.iter();
-
-                writeln!(s, "Scan Tasks: [").unwrap();
-                for (i, st) in tasks.enumerate() {
-                    if i < 3 || i >= self.scan_tasks.len() - 3 {
-                        writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Compact)).unwrap();
-                    } else if i == 3 {
-                        writeln!(s, "...").unwrap();
-                    }
-                }
-                writeln!(s, "]").unwrap();
 
                 s
             }
             DisplayLevel::Verbose => {
                 let mut s = base_display(self);
-                writeln!(s, "Scan Tasks: [").unwrap();
-
-                for st in &self.scan_tasks {
-                    writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Verbose)).unwrap();
-                }
+                writeln!(
+                    s,
+                    "Pushdowns: {}",
+                    self.pushdowns.display_as(DisplayLevel::Verbose)
+                )
+                .unwrap();
                 s
             }
         }
@@ -393,7 +375,7 @@ async fn get_delete_map(
                     .map(|(file, pos)| {
                         (
                             file.expect("file should not be null in iceberg delete files"),
-                            *pos.expect("pos should not be null in iceberg delete files"),
+                            pos.expect("pos should not be null in iceberg delete files"),
                         )
                     })
                 {
@@ -407,18 +389,19 @@ async fn get_delete_map(
         .await?
 }
 
-/// Creates the final result stream by flattening receivers and handling task completion
-fn flatten_receivers_into_stream(
-    receivers: Vec<crate::channel::Receiver<Arc<MicroPartition>>>,
-    background_task: impl Future<Output = DaftResult<()>>,
-) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
-    let flattened_receivers =
-        futures::stream::iter(receivers.into_iter().map(|rx| rx.into_stream()))
-            .flatten()
-            .map(Ok);
-
-    // Handle the background task completion and forward any errors
-    combine_stream(flattened_receivers, background_task)
+/// Drains a "receiver of receivers" in order, forwarding each inner stream's
+/// micropartitions to `output_sender`. Used when `maintain_order` is true.
+async fn run_order_preserving_flattener(
+    mut agg_rx: UnboundedReceiver<Receiver<Arc<MicroPartition>>>,
+    output_sender: Sender<Arc<MicroPartition>>,
+) {
+    while let Some(mut inner_rx) = agg_rx.recv().await {
+        while let Some(mp) = inner_rx.recv().await {
+            if output_sender.send(mp).await.is_err() {
+                return;
+            }
+        }
+    }
 }
 
 async fn forward_scan_task_stream(
@@ -428,15 +411,27 @@ async fn forward_scan_task_stream(
     maintain_order: bool,
     chunk_size: usize,
     sender: Sender<Arc<MicroPartition>>,
-) -> DaftResult<()> {
+    input_id: InputId,
+) -> DaftResult<InputId> {
+    let schema = scan_task.materialized_schema();
     let mut stream =
         stream_scan_task(scan_task, io_stats, delete_map, maintain_order, chunk_size).await?;
+    let mut has_data = false;
     while let Some(result) = stream.next().await {
-        if sender.send(result?).await.is_err() {
+        has_data = true;
+        let partition = result?;
+        if sender.send(partition).await.is_err() {
             break;
         }
     }
-    Ok(())
+
+    // If no data was emitted, send empty micropartition
+    if !has_data {
+        let empty = Arc::new(MicroPartition::empty(Some(schema)));
+        let _ = sender.send(empty).await;
+    }
+
+    Ok(input_id)
 }
 
 async fn stream_scan_task(
@@ -578,7 +573,6 @@ async fn stream_scan_task(
                 io_client,
                 Some(io_stats.clone()),
                 None,
-                // maintain_order, TODO: Implement maintain_order for CSV
             )
             .await?
         }

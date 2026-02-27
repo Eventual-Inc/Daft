@@ -130,6 +130,11 @@ pub fn can_cast_types(from_type: &DataType, to_type: &DataType) -> bool {
         }
         (Dictionary(_, value_type, _), _) => can_cast_types(value_type, to_type),
         (_, Dictionary(_, value_type, _)) => can_cast_types(from_type, value_type),
+        (Extension(_, from_inner, _), Extension(_, to_inner, _)) => {
+            can_cast_types(from_inner, to_inner)
+        }
+        (Extension(_, from_inner, _), _) => can_cast_types(from_inner, to_type),
+        (_, Extension(_, to_inner, _)) => can_cast_types(from_type, to_inner),
 
         (_, Boolean) => is_numeric(from_type),
         (Boolean, _) => {

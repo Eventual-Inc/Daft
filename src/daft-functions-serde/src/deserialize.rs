@@ -30,7 +30,11 @@ impl ScalarUDF for Deserialize {
         get_field(inputs, schema)
     }
 
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let DeserializeArgs {
             input,
             format,
@@ -61,7 +65,11 @@ impl ScalarUDF for TryDeserialize {
         get_field(inputs, schema)
     }
 
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let DeserializeArgs {
             input,
             format,

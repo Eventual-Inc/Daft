@@ -1,9 +1,10 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_metrics::{
-    CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, snapshot::DefaultSnapshot,
+    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
+    ops::NodeInfo, snapshot::DefaultSnapshot,
 };
-use opentelemetry::{KeyValue, global};
+use opentelemetry::{KeyValue, metrics::Meter};
 
 // ----------------------- General Traits for Runtime Stat Collection ----------------------- //
 
@@ -27,21 +28,19 @@ pub trait RuntimeStats: Send + Sync + std::any::Any {
 }
 
 pub struct DefaultRuntimeStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
     node_kv: Vec<KeyValue>,
 }
 
 impl DefaultRuntimeStats {
-    pub fn new(id: usize) -> Self {
-        let meter = global::meter("daft.local.node_stats");
-        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
-
+    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = node_info.to_key_values();
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY, None),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
             node_kv,
         }
     }
@@ -54,7 +53,7 @@ impl RuntimeStats for DefaultRuntimeStats {
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         StatSnapshot::Default(DefaultSnapshot {
-            cpu_us: self.cpu_us.load(ordering),
+            cpu_us: self.duration_us.load(ordering),
             rows_in: self.rows_in.load(ordering),
             rows_out: self.rows_out.load(ordering),
         })
@@ -69,6 +68,6 @@ impl RuntimeStats for DefaultRuntimeStats {
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }

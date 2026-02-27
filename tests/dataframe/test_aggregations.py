@@ -720,6 +720,66 @@ def test_agg_with_non_agg_expr_groupby(make_df, repartition_nparts, with_morsel_
     }
 
 
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4, 8])
+def test_agg_with_literal_child(make_df, repartition_nparts, with_morsel_size):
+    """Test aggregating literal values (e.g., count(lit(1)), sum(lit(1))).
+
+    Regression test for https://github.com/Eventual-Inc/Daft/issues/5685.
+    """
+    daft_df = make_df(
+        {"a": [1, 1, 2], "i": [0, 1, 2]},
+        repartition=repartition_nparts,
+    )
+
+    result = daft_df.agg(
+        daft.functions.count(daft.lit(1)).alias("count_lit"),
+        daft.functions.sum(daft.lit(1)).alias("sum_lit"),
+    )
+
+    res = result.to_pydict()
+    assert res == {"count_lit": [3], "sum_lit": [3]}
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4, 8])
+def test_groupby_agg_with_literal_child(make_df, repartition_nparts, with_morsel_size):
+    """Test grouped aggregation of literal values.
+
+    Regression test for https://github.com/Eventual-Inc/Daft/issues/5685.
+    """
+    daft_df = make_df(
+        {"a": [1, 1, 2], "i": [0, 1, 2]},
+        repartition=repartition_nparts,
+    )
+
+    result = (
+        daft_df.groupby("a")
+        .agg(
+            daft.functions.count(daft.lit(1)).alias("count_lit"),
+            daft.functions.sum(daft.lit(1)).alias("sum_lit"),
+        )
+        .sort("a")
+    )
+
+    res = result.to_pydict()
+    assert res == {"a": [1, 2], "count_lit": [2, 1], "sum_lit": [2, 1]}
+
+
+def test_agg_with_literal_child_empty_df(make_df, with_morsel_size):
+    """Test aggregating literal values on a completely empty DataFrame.
+
+    Regression test for https://github.com/Eventual-Inc/Daft/issues/5685.
+    """
+    daft_df = daft.from_pydict({"a": []}).with_column("a", col("a").cast(DataType.int64()))
+
+    result = daft_df.agg(
+        daft.functions.count(daft.lit(1)).alias("count_lit"),
+        daft.functions.sum(daft.lit(1)).alias("sum_lit"),
+    )
+
+    res = result.to_pydict()
+    assert res == {"count_lit": [0], "sum_lit": [None]}
+
+
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
 def test_agg_with_literal_global(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(
@@ -1040,3 +1100,55 @@ def test_join_on_hash_partitioned_df_does_not_shuffle():
     assert captured.count("Repartition") == 3, (
         f"Expected 'Repartition' to appear 3 times, got {captured.count('Repartition')}\n{captured}"
     )
+
+
+def test_agg_concat_with_delimiter(make_df):
+    df = make_df({"a": ["foo", "bar", "baz"]})
+    result = df.agg_concat("a", delimiter=",").to_pydict()
+    assert result["a"] == ["foo,bar,baz"]
+
+
+def test_agg_concat_with_delimiter_with_nulls(make_df):
+    df = make_df({"a": ["foo", None, "bar", "baz"]})
+    result = df.agg_concat("a", delimiter="|").to_pydict()
+    assert result["a"] == ["foo|bar|baz"]
+
+
+def test_agg_concat_with_delimiter_all_nulls(make_df):
+    df = make_df({"a": [None, None, None]})
+    df = df.with_column("a", col("a").cast(DataType.string()))
+    result = df.agg_concat("a", delimiter=",").to_pydict()
+    assert result["a"] == [None]
+
+
+def test_groupby_string_agg_with_delimiter(make_df):
+    df = make_df({"a": ["foo", "bar", "baz", "qux"], "b": [1, 1, 2, 2]})
+    result = df.groupby("b").string_agg("a", delimiter="-").sort("b").to_pydict()
+    assert result["a"] == ["foo-bar", "baz-qux"]
+
+
+def test_groupby_string_agg_with_delimiter_with_nulls(make_df):
+    df = make_df({"a": ["foo", None, "bar", "baz"], "b": [1, 1, 2, 2]})
+    result = df.groupby("b").string_agg("a", delimiter=",").sort("b").to_pydict()
+    assert result["a"] == ["foo", "bar,baz"]
+
+
+def test_groupby_string_agg_with_delimiter_all_nulls(make_df):
+    df = make_df({"a": [None, None, None, None], "b": [1, 1, 2, 2]})
+    df = df.with_column("a", col("a").cast(DataType.string()))
+    result = df.groupby("b").string_agg("a", delimiter=",").sort("b").to_pydict()
+    assert result["a"] == [None, None]
+
+
+def test_agg_concat_list_with_delimiter_raises(make_df):
+    df = make_df({"a": [[1, 2], [3, 4]]})
+    with pytest.raises(Exception) as exc_info:
+        df.agg_concat("a", delimiter=",").collect()
+    assert "Concat Agg delimiter is only supported for Utf8 types" in str(exc_info.value)
+
+
+def test_groupby_agg_concat_list_with_delimiter_raises(make_df):
+    df = make_df({"a": [[1, 2], [3, 4]], "b": [1, 2]})
+    with pytest.raises(Exception) as exc_info:
+        df.groupby("b").string_agg("a", delimiter=",").collect()
+    assert "Concat Agg delimiter is only supported for Utf8 types" in str(exc_info.value)

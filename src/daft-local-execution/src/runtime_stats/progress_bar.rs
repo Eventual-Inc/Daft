@@ -116,9 +116,10 @@ impl IndicatifProgressBarManager {
         };
 
         // Determine max name for alignment and minimizing whitespace
+        // Use char count (not byte count) since this controls terminal column width
         let max_name_len = (node_info_map
             .values()
-            .map(|v| v.name.len())
+            .map(|v| v.name.chars().count())
             .max()
             .unwrap_or(0))
         .min(MAX_PIPELINE_NAME_LEN);
@@ -151,8 +152,13 @@ impl IndicatifProgressBarManager {
             total_len = self.total.to_string().len(),
         );
 
-        let formatted_prefix = if node_info.name.len() > MAX_PIPELINE_NAME_LEN {
-            format!("{}...", &node_info.name[..MAX_PIPELINE_NAME_LEN - 3])
+        let formatted_prefix = if node_info.name.chars().count() > MAX_PIPELINE_NAME_LEN {
+            let truncated: String = node_info
+                .name
+                .chars()
+                .take(MAX_PIPELINE_NAME_LEN - 3)
+                .collect();
+            format!("{truncated}...")
         } else {
             format!("{:>1$}", node_info.name, max_name_len)
         };
@@ -320,5 +326,27 @@ mod python {
                 DaftResult::Ok(())
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_progress_bar_truncation_on_multibyte_utf8() {
+        // Regression test: IndicatifProgressBarManager::new() panics when a node name
+        // contains multi-byte UTF-8 characters and exceeds MAX_PIPELINE_NAME_LEN (18 bytes).
+        // See: https://github.com/Eventual-Inc/Daft/actions/runs/21921434809
+        let node_info = Arc::new(NodeInfo {
+            name: "ññññññññññ".into(), // 10 × ñ = 20 bytes > 18
+            id: 0,
+            ..Default::default()
+        });
+        let mut node_info_map = HashMap::new();
+        node_info_map.insert(0, node_info);
+
+        // This panics in make_new_bar due to byte-level string slicing on multi-byte UTF-8
+        let _manager = IndicatifProgressBarManager::new(&node_info_map);
     }
 }

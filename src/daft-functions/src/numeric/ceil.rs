@@ -16,7 +16,11 @@ pub struct Ceil;
 
 #[typetag::serde]
 impl ScalarUDF for Ceil {
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
         match input.data_type() {
             DataType::Int8

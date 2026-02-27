@@ -158,3 +158,29 @@ def test_distinct_some_columns_derived(make_df, repartition_nparts, with_morsel_
     # Test drop_duplicates alias.
     result_df = daft_df.drop_duplicates("values").collect()
     assert len(result_df) == 2
+
+
+def test_distinct_after_into_batches(make_df, with_morsel_size):
+    """Regression test for https://github.com/Eventual-Inc/Daft/issues/6161.
+
+    into_batches + distinct should deduplicate globally, not per-batch.
+    """
+    vals = [
+        "jjtzwafmzk",
+        "fjinpogsnd",
+        "advcnkwdgr",
+        "lkloaeeuvg",
+        "qdmljqvqxv",
+        "bknitbecis",
+        "fgqrpbilay",
+        "advcnkwdgr",
+        "shsjofbzml",
+        "zyjbwskjyk",
+        "utbqewwxoc",
+        "qdmljqvqxv",
+        "ezocoaxmsd",
+        "qdmljqvqxv",
+    ]
+    daft_df = make_df({"val": vals})
+    result = daft_df.into_batches(4).distinct("val").count_rows()
+    assert result == len(set(vals))  # expect 11

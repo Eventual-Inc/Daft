@@ -1,3 +1,5 @@
+#![allow(deprecated, reason = "arrow2 migration")]
+
 use common_error::DaftError;
 use futures::stream::TryChunksError;
 use snafu::Snafu;
@@ -26,7 +28,7 @@ pub enum Error {
     #[snafu(display("{source}"))]
     StdIOError { source: std::io::Error },
     #[snafu(display("{source}"))]
-    ArrowError { source: daft_arrow::error::Error },
+    ArrowError { source: arrow::error::ArrowError },
     #[snafu(display("JSON deserialization error: {}", string))]
     JsonDeserializationError { string: String },
     #[snafu(display("Error chunking: {}", source))]

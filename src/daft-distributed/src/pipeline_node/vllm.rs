@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundVLLMExpr;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
@@ -39,6 +40,8 @@ impl VLLMNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::VLLMProject,
+            NodeCategory::Intermediate,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -99,10 +102,7 @@ impl VLLMNode {
                     self.output_column_name.clone(),
                     self.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(self.node_id() as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(self.node_id() as usize)),
                 )
             });
 

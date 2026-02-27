@@ -1,5 +1,7 @@
+use std::iter::repeat_n;
+
+use arrow::buffer::{OffsetBuffer, ScalarBuffer};
 use common_error::DaftResult;
-use daft_arrow::types::Index;
 
 use super::{Growable, bitmap_growable::ArrowBitmapGrowable};
 use crate::{
@@ -12,9 +14,9 @@ pub struct ListGrowable<'a> {
     name: String,
     dtype: DataType,
     child_growable: Box<dyn Growable + 'a>,
-    child_arrays_offsets: Vec<&'a daft_arrow::offset::OffsetsBuffer<i64>>,
+    child_arrays_offsets: Vec<&'a OffsetBuffer<i64>>,
     growable_validity: Option<ArrowBitmapGrowable<'a>>,
-    growable_offsets: daft_arrow::offset::Offsets<i64>,
+    growable_offsets: Vec<i64>,
 }
 
 impl<'a> ListGrowable<'a> {
@@ -52,7 +54,7 @@ impl<'a> ListGrowable<'a> {
                     child_growable,
                     child_arrays_offsets,
                     growable_validity,
-                    growable_offsets: daft_arrow::offset::Offsets::<i64>::default(),
+                    growable_offsets: vec![0i64],
                 }
             }
             _ => panic!("Cannot create ListGrowable from dtype: {}", dtype),
@@ -63,41 +65,42 @@ impl<'a> ListGrowable<'a> {
 impl Growable for ListGrowable<'_> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         let offsets = self.child_arrays_offsets.get(index).unwrap();
-        let start_offset = &offsets.buffer()[start];
-        let end_offset = &offsets.buffer()[start + len];
-        self.child_growable.extend(
-            index,
-            start_offset.to_usize(),
-            (end_offset - start_offset).to_usize(),
-        );
+        let offsets = offsets.inner();
+        let base = offsets[start];
+        self.child_growable
+            .extend(index, base as usize, (offsets[start + len] - base) as usize);
 
         if let Some(growable_validity) = &mut self.growable_validity {
             growable_validity.extend(index, start, len);
         }
 
-        self.growable_offsets
-            .try_extend_from_slice(offsets, start, len)
-            .unwrap();
+        let last = *self.growable_offsets.last().unwrap();
+        self.growable_offsets.extend(
+            offsets[start + 1..=start + len]
+                .iter()
+                .map(|&o| last + (o - base)),
+        );
     }
 
     fn add_nulls(&mut self, additional: usize) {
         if let Some(growable_validity) = &mut self.growable_validity {
             growable_validity.add_nulls(additional);
         }
-        self.growable_offsets.extend_constant(additional);
+        let last = *self.growable_offsets.last().unwrap();
+        self.growable_offsets.extend(repeat_n(last, additional));
     }
 
     fn build(&mut self) -> DaftResult<Series> {
-        let grown_offsets = std::mem::take(&mut self.growable_offsets);
+        let grown_offsets = std::mem::replace(&mut self.growable_offsets, vec![0i64]);
         let grown_validity = std::mem::take(&mut self.growable_validity);
 
         let built_child = self.child_growable.build()?;
         let built_validity = grown_validity.and_then(|v| v.build());
-        let built_offsets = grown_offsets.into();
+        let offsets = OffsetBuffer::new(ScalarBuffer::from(grown_offsets));
         Ok(ListArray::new(
             Field::new(self.name.clone(), self.dtype.clone()),
             built_child,
-            built_offsets,
+            offsets,
             built_validity,
         )
         .into_series())

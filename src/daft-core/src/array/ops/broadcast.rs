@@ -1,14 +1,21 @@
+use std::{iter::repeat_n, sync::Arc};
+
+use arrow::array::{
+    Array as _, BooleanBuilder, FixedSizeBinaryBuilder, IntervalMonthDayNanoBuilder,
+    LargeBinaryBuilder, LargeStringBuilder, PrimitiveBuilder,
+};
 use common_error::{DaftError, DaftResult};
 
 use super::full::FullNull;
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{
-        DataArray, FixedSizeListArray, ListArray, StructArray,
-        growable::{Growable, GrowableArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    datatypes::{DaftPrimitiveType, Field, NumericNative},
+    prelude::{
+        AsArrow, BinaryType, BooleanArray, ExtensionArray, FixedSizeBinaryType, IntervalType,
+        NullArray, Utf8Type,
     },
-    datatypes::{DaftArrayType, DaftPhysicalType, DataType},
 };
 
 pub trait Broadcastable {
@@ -17,27 +24,40 @@ pub trait Broadcastable {
         Self: Sized;
 }
 
-fn generic_growable_broadcast<'a, Arr>(
-    arr: &'a Arr,
-    num: usize,
-    name: &'a str,
-    dtype: &'a DataType,
-) -> DaftResult<Arr>
-where
-    Arr: DaftArrayType + GrowableArray + 'static,
-{
-    let mut growable = Arr::make_growable(name, dtype, vec![arr], false, num);
-    for _ in 0..num {
-        growable.extend(0, 0, 1);
+impl Broadcastable for NullArray {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
+        if self.len() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "Attempting to broadcast non-unit length Array named: {}",
+                self.name()
+            )));
+        }
+        Ok(Self::full_null(self.name(), self.data_type(), num))
     }
-    let series = growable.build()?;
-    Ok(series.downcast::<Arr>()?.clone())
+}
+
+impl Broadcastable for BooleanArray {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
+        if self.len() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "Attempting to broadcast non-unit length Array named: {}",
+                self.name()
+            )));
+        }
+
+        if self.is_valid(0) {
+            let mut builder = BooleanBuilder::with_capacity(num);
+            builder.append_n(num, self.get(0).unwrap());
+            Self::from_arrow(self.field.clone(), Arc::new(builder.finish()))
+        } else {
+            Ok(Self::full_null(self.name(), self.data_type(), num))
+        }
+    }
 }
 
 impl<T> Broadcastable for DataArray<T>
 where
-    T: DaftPhysicalType + 'static,
-    Self: GrowableArray,
+    T: DaftPrimitiveType,
 {
     fn broadcast(&self, num: usize) -> DaftResult<Self> {
         if self.len() != 1 {
@@ -48,14 +68,24 @@ where
         }
 
         if self.is_valid(0) {
-            generic_growable_broadcast(self, num, self.name(), self.data_type())
+            let arrow_array = self.as_arrow()?;
+            let value = arrow_array.value(0);
+            let mut builder =
+                PrimitiveBuilder::<<T::Native as NumericNative>::ARROWTYPE>::with_capacity(num);
+            builder.append_value_n(value, num);
+
+            // Preserve the original arrow data type (important for Decimal128 precision/scale).
+            let result = builder
+                .finish()
+                .with_data_type(arrow_array.data_type().clone());
+            Self::from_arrow(self.field.clone(), Arc::new(result))
         } else {
             Ok(Self::full_null(self.name(), self.data_type(), num))
         }
     }
 }
 
-impl Broadcastable for FixedSizeListArray {
+impl Broadcastable for DataArray<IntervalType> {
     fn broadcast(&self, num: usize) -> DaftResult<Self> {
         if self.len() != 1 {
             return Err(DaftError::ValueError(format!(
@@ -65,14 +95,18 @@ impl Broadcastable for FixedSizeListArray {
         }
 
         if self.is_valid(0) {
-            generic_growable_broadcast(self, num, self.name(), self.data_type())
+            let arrow_array = self.as_arrow()?;
+            let value = arrow_array.value(0);
+            let mut builder = IntervalMonthDayNanoBuilder::with_capacity(num);
+            builder.append_value_n(value, num);
+            Self::from_arrow(self.field.clone(), Arc::new(builder.finish()))
         } else {
             Ok(Self::full_null(self.name(), self.data_type(), num))
         }
     }
 }
 
-impl Broadcastable for ListArray {
+impl Broadcastable for DataArray<BinaryType> {
     fn broadcast(&self, num: usize) -> DaftResult<Self> {
         if self.len() != 1 {
             return Err(DaftError::ValueError(format!(
@@ -82,12 +116,93 @@ impl Broadcastable for ListArray {
         }
 
         if self.is_valid(0) {
-            generic_growable_broadcast(self, num, self.name(), self.data_type())
+            let arrow_array = self.as_arrow()?;
+            let value = arrow_array.value(0);
+            let mut builder = LargeBinaryBuilder::with_capacity(num, num * value.len());
+            for _ in 0..num {
+                builder.append_value(value);
+            }
+            Self::from_arrow(self.field.clone(), Arc::new(builder.finish()))
         } else {
             Ok(Self::full_null(self.name(), self.data_type(), num))
         }
     }
 }
+
+impl Broadcastable for DataArray<FixedSizeBinaryType> {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
+        if self.len() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "Attempting to broadcast non-unit length Array named: {}",
+                self.name()
+            )));
+        }
+
+        if self.is_valid(0) {
+            let arrow_array = self.as_arrow()?;
+            let value = arrow_array.value(0);
+            let mut builder = FixedSizeBinaryBuilder::with_capacity(num, value.len() as i32);
+            for _ in 0..num {
+                builder.append_value(value)?;
+            }
+            Self::from_arrow(self.field.clone(), Arc::new(builder.finish()))
+        } else {
+            Ok(Self::full_null(self.name(), self.data_type(), num))
+        }
+    }
+}
+
+impl Broadcastable for DataArray<Utf8Type> {
+    fn broadcast(&self, num: usize) -> DaftResult<Self> {
+        if self.len() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "Attempting to broadcast non-unit length Array named: {}",
+                self.name()
+            )));
+        }
+
+        if self.is_valid(0) {
+            let arrow_array = self.as_arrow()?;
+            let value = arrow_array.value(0);
+            let mut builder = LargeStringBuilder::with_capacity(num, num * value.len());
+            for _ in 0..num {
+                builder.append_value(value);
+            }
+            Self::from_arrow(self.field.clone(), Arc::new(builder.finish()))
+        } else {
+            Ok(Self::full_null(self.name(), self.data_type(), num))
+        }
+    }
+}
+
+macro_rules! impl_broadcast_via_concat {
+    ($ArrayT:ty) => {
+        impl Broadcastable for $ArrayT {
+            fn broadcast(&self, num: usize) -> DaftResult<Self> {
+                if self.len() != 1 {
+                    return Err(DaftError::ValueError(format!(
+                        "Attempting to broadcast non-unit length Array named: {}",
+                        self.name()
+                    )));
+                }
+
+                if self.is_valid(0) {
+                    let single_element = self.slice(0, 1)?;
+                    let repeated: Vec<&Self> = repeat_n(&single_element, num).collect();
+                    Self::concat(&repeated)
+                } else {
+                    Ok(Self::full_null(self.name(), self.data_type(), num))
+                }
+            }
+        }
+    };
+}
+
+impl_broadcast_via_concat!(FixedSizeListArray);
+impl_broadcast_via_concat!(ListArray);
+impl_broadcast_via_concat!(ExtensionArray);
+#[cfg(feature = "python")]
+impl_broadcast_via_concat!(PythonArray);
 
 impl Broadcastable for StructArray {
     fn broadcast(&self, num: usize) -> DaftResult<Self> {
@@ -99,25 +214,16 @@ impl Broadcastable for StructArray {
         }
 
         if self.is_valid(0) {
-            generic_growable_broadcast(self, num, self.name(), self.data_type())
-        } else {
-            Ok(Self::full_null(self.name(), self.data_type(), num))
-        }
-    }
-}
-
-#[cfg(feature = "python")]
-impl Broadcastable for PythonArray {
-    fn broadcast(&self, num: usize) -> DaftResult<Self> {
-        if self.len() != 1 {
-            return Err(DaftError::ValueError(format!(
-                "Attempting to broadcast non-unit length Array named: {}",
-                self.name()
-            )));
-        }
-
-        if self.is_valid(0) {
-            generic_growable_broadcast(self, num, self.name(), self.data_type())
+            let broadcasted_children = self
+                .children
+                .iter()
+                .map(|child| child.broadcast(num))
+                .collect::<DaftResult<Vec<_>>>()?;
+            Ok(Self::new(
+                Arc::new(Field::new(self.name(), self.data_type().clone())),
+                broadcasted_children,
+                None,
+            ))
         } else {
             Ok(Self::full_null(self.name(), self.data_type(), num))
         }

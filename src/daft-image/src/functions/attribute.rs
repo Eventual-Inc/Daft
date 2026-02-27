@@ -18,7 +18,11 @@ struct ImageAttributeArgs<T> {
 
 #[typetag::serde]
 impl ScalarUDF for ImageAttribute {
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let ImageAttributeArgs { input, attr } = inputs.try_into()?;
         crate::series::attribute(&input, attr)
     }

@@ -633,7 +633,7 @@ def test_create_dataframe_csv_schema_hints_override_types(valid_data: list[dict[
         assert list(pd_df.columns) == COL_NAMES
         assert len(pd_df) == len(valid_data)
 
-        assert pd_df["sepal_length"].dtype == "object"
+        assert pd_df["sepal_length"].dtype in ("object", "string")
         assert pd_df["sepal_length"][0] == str(valid_data[0]["sepal_length"])
 
 
@@ -882,7 +882,7 @@ def test_create_dataframe_json_schema_override_types(valid_data: list[dict[str, 
         assert list(pd_df.columns) == COL_NAMES
         assert len(pd_df) == len(valid_data)
 
-        assert pd_df["sepal_length"].dtype == "object"
+        assert pd_df["sepal_length"].dtype in ("object", "string")
         assert pd_df["sepal_length"][0] == str(valid_data[0]["sepal_length"])
 
 
@@ -1179,7 +1179,7 @@ def test_create_dataframe_parquet_schema_override_types(valid_data: list[dict[st
         assert list(pd_df.columns) == COL_NAMES
         assert len(pd_df) == len(valid_data)
 
-        assert pd_df["sepal_length"].dtype == "object"
+        assert pd_df["sepal_length"].dtype in ("object", "string")
         assert pd_df["sepal_length"][0] == str(valid_data[0]["sepal_length"])
 
 

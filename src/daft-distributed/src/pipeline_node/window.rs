@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::{
     WindowFrame,
     expr::bound_expr::{BoundAggExpr, BoundExpr, BoundWindowExpr},
@@ -57,10 +58,7 @@ impl WindowNodePartitionOnly {
             StatsState::NotMaterialized,
             self.agg_exprs.clone(),
             self.base.aliases.clone(),
-            LocalNodeContext {
-                origin_node_id: Some(self.base.context.node_id as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.base.context.node_id as usize)),
         )
     }
 
@@ -99,10 +97,7 @@ impl WindowNodePartitionAndOrderBy {
             StatsState::NotMaterialized,
             self.window_exprs.clone(),
             self.base.aliases.clone(),
-            LocalNodeContext {
-                origin_node_id: Some(self.base.context.node_id as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.base.context.node_id as usize)),
         )
     }
 
@@ -153,10 +148,7 @@ impl WindowNodePartitionAndDynamicFrame {
             StatsState::NotMaterialized,
             self.agg_exprs.clone(),
             self.base.aliases.clone(),
-            LocalNodeContext {
-                origin_node_id: Some(self.base.context.node_id as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.base.context.node_id as usize)),
         )
     }
 
@@ -207,10 +199,7 @@ impl WindowNodeOrderByOnly {
             StatsState::NotMaterialized,
             self.window_exprs.clone(),
             self.base.aliases.clone(),
-            LocalNodeContext {
-                origin_node_id: Some(self.base.context.node_id as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.base.context.node_id as usize)),
         )
     }
 
@@ -266,6 +255,8 @@ impl WindowNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::Window,
+            NodeCategory::Intermediate,
         );
         let config = PipelineNodeConfig::new(
             schema,

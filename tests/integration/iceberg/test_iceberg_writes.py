@@ -7,7 +7,7 @@ pyiceberg = pytest.importorskip("pyiceberg")
 import contextlib
 
 import pyarrow as pa
-from pyiceberg.avro.file import AvroFile
+from pyiceberg.table.inspect import InspectTable
 
 import daft
 from tests.conftest import assert_df_equals
@@ -74,23 +74,7 @@ def get_data_files(table):
     """Get the locations of data files for a given table."""
     table.refresh()
 
-    current_snapshot = table.current_snapshot()
-    if not current_snapshot:
-        raise ValueError("Table has no current snapshot")
-
-    data_files = []
-
-    manifest_list_file = table.io.new_input(current_snapshot.manifest_list)
-    with AvroFile(manifest_list_file) as reader:
-        for record in reader:
-            manifest_path = record.manifest_path
-            manifest_input = table.io.new_input(manifest_path)
-            with AvroFile(manifest_input) as manifest_reader:
-                for manifest_record in manifest_reader:
-                    if manifest_record.status == 1:
-                        data_files.append(manifest_record.data_file.file_path)
-
-    return data_files
+    return InspectTable(table).data_files().to_pydict()["file_path"]
 
 
 @pytest.mark.integration()

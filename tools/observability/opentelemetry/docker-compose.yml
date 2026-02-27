@@ -1,23 +1,22 @@
 services:
   otel-collector:
     image: otel/opentelemetry-collector-contrib
+    container_name: collector
     volumes:
     - ./otelcol-config.yml:/etc/otelcol-contrib/config.yaml
     ports:
     - 4317:4317   # OTLP gRPC receiver
-
+    - 9464:9464   # Prometheus scrape endpoint
   jaeger:
     image: jaegertracing/jaeger:2.5.0
     ports:
-    - "16686:16686" # Jaeger UI
+    - "16686:16686"   # Jaeger UI
     environment:
     - COLLECTOR_OTLP_ENABLED=true
   prometheus:
-    image: prom/prometheus:v3.3.1
+    image: prom/prometheus:v3.5.1
     container_name: prometheus
-    command:
-    - --web.enable-otlp-receiver
     volumes:
-    - ./prometheus.yml:/prometheus/prometheus.yml
+    - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
     - "9090:9090"

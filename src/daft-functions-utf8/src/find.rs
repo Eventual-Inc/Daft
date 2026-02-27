@@ -24,7 +24,11 @@ impl ScalarUDF for Find {
         "find"
     }
 
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "substr", |s, substr| {
             s.with_utf8_array(|arr| {
                 substr.with_utf8_array(|substr_arr| {
@@ -82,8 +86,7 @@ fn find_impl(arr: &Utf8Array, substr: &Utf8Array) -> DaftResult<Int64Array> {
             _ => None,
         });
 
-    let result =
-        Int64Array::from_regular_iter(Arc::new(Field::new(arr.name(), DataType::Int64)), iter)?;
+    let result = Int64Array::from_iter(Arc::new(Field::new(arr.name(), DataType::Int64)), iter);
     assert_eq!(result.len(), expected_size);
     Ok(result)
 }

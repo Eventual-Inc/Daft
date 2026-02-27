@@ -53,7 +53,11 @@ impl ScalarUDF for BinaryDecode {
         Ok(Field::new(input.name, codec.returns()))
     }
 
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let Args { input, codec } = inputs.try_into()?;
         if codec == Codec::Utf8 {
             // special-case for decode('utf-8')
@@ -108,7 +112,11 @@ impl ScalarUDF for BinaryTryDecode {
         Ok(Field::new(input.name, codec.returns()))
     }
 
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let Args { input, codec } = inputs.try_into()?;
 
         match input.data_type() {

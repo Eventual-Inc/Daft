@@ -26,7 +26,11 @@ impl ScalarUDF for Coalesce {
     ///  > the <result> of the first (leftmost) <searched when clause> whose <search
     ///  > condition> evaluates to True, cast as the declared type of the <case
     ///  > specification>.
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let inputs = inputs.into_inner();
         let inputs = inputs.as_slice();
         match inputs.len() {
@@ -47,8 +51,8 @@ impl ScalarUDF for Coalesce {
 
                 // coalesce output uses the computed type
                 let mut current_value = Series::full_null(name, &dtype, len);
-                let remainder = BooleanArray::from_values(name, vec![true; len].into_iter());
-                let all_false = BooleanArray::from_values(name, vec![false; len].into_iter());
+                let remainder = BooleanArray::from_vec(name, vec![true; len]);
+                let all_false = BooleanArray::from_vec(name, vec![false; len]);
                 let mut remainder = remainder.into_series();
 
                 for input in inputs {
@@ -113,7 +117,7 @@ mod tests {
         series::{IntoSeries, Series},
     };
     use daft_dsl::{
-        functions::{FunctionArgs, ScalarUDF},
+        functions::{FunctionArgs, ScalarUDF, scalar::EvalContext},
         lit, null_lit, resolved_col,
     };
 
@@ -136,9 +140,12 @@ mod tests {
         .into_series();
 
         let coalesce = super::Coalesce {};
+        let ctx = EvalContext {
+            row_count: s0.len(),
+        };
         let args = FunctionArgs::new_unnamed(vec![s0, s1, s2]);
 
-        let output = coalesce.call(args).unwrap();
+        let output = coalesce.call(args, &ctx).unwrap();
         let actual = output.i8().unwrap();
         let expected = Int8Array::from_iter(
             Field::new("s0", DataType::Int8),
@@ -163,8 +170,11 @@ mod tests {
         .into_series();
 
         let coalesce = super::Coalesce {};
+        let ctx = EvalContext {
+            row_count: s0.len(),
+        };
         let args = FunctionArgs::new_unnamed(vec![s0, s1]);
-        let output = coalesce.call(args).unwrap();
+        let output = coalesce.call(args, &ctx).unwrap();
         let actual = output.i8().unwrap();
         let expected = Int8Array::from_iter(
             Field::new("s0", DataType::Int8),
@@ -178,7 +188,7 @@ mod tests {
     fn test_coalesce_no_args() {
         let coalesce = super::Coalesce {};
         let args = FunctionArgs::new_unnamed(vec![]);
-        let output = coalesce.call(args);
+        let output = coalesce.call(args, &EvalContext { row_count: 0 });
 
         assert!(output.is_err());
     }
@@ -192,8 +202,11 @@ mod tests {
         .into_series();
 
         let coalesce = super::Coalesce {};
+        let ctx = EvalContext {
+            row_count: s0.len(),
+        };
         let args = FunctionArgs::new_unnamed(vec![s0.clone()]);
-        let output = coalesce.call(args).unwrap();
+        let output = coalesce.call(args, &ctx).unwrap();
         // can't directly compare as null != null
         let output = output.i8().unwrap();
         let s0 = s0.i8().unwrap();
@@ -207,8 +220,11 @@ mod tests {
         let s2 = Series::full_null("s2", &DataType::Utf8, 100);
 
         let coalesce = super::Coalesce {};
+        let ctx = EvalContext {
+            row_count: s0.len(),
+        };
         let args = FunctionArgs::new_unnamed(vec![s0.clone(), s1.clone(), s2.clone()]);
-        let output = coalesce.call(args).unwrap();
+        let output = coalesce.call(args, &ctx).unwrap();
         let actual = output.utf8().unwrap();
         let expected = Utf8Array::full_null("s0", &DataType::Utf8, 100);
 
@@ -241,8 +257,11 @@ mod tests {
         .into_series();
 
         let coalesce = super::Coalesce {};
+        let ctx = EvalContext {
+            row_count: s0.len(),
+        };
         let args = FunctionArgs::new_unnamed(vec![s0.clone(), s1.clone(), s2.clone()]);
-        let output = coalesce.call(args).unwrap();
+        let output = coalesce.call(args, &ctx).unwrap();
 
         let expected = Utf8Array::from_iter(
             "s2",

@@ -3,12 +3,14 @@ use std::{
     sync::Arc,
 };
 
-use common_arrow_ffi as ffi;
+use arrow::array::make_array;
+use common_arrow_ffi::{ToPyArrow, array_to_rust};
 use common_error::DaftError;
 use daft_hash::HashFunctionKind;
 use daft_schema::python::PyDataType;
 use pyo3::{
     exceptions::{PyIndexError, PyStopIteration, PyValueError},
+    ffi::Py_uintptr_t,
     prelude::*,
     pyclass::CompareOp,
     types::{PyBytes, PyList},
@@ -18,16 +20,13 @@ use crate::{
     array::ops::DaftLogical,
     count_mode::CountMode,
     datatypes::{DataType, Field},
-    lit::Literal,
+    lit::{Literal, python::PyMapConversionMode},
     prelude::PythonArray,
     series::{
         self, IntoSeries, Series,
         from_lit::{combine_lit_types, series_from_literals_iter},
     },
-    utils::{
-        arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
-        supertype::try_get_collection_supertype,
-    },
+    utils::supertype::try_get_collection_supertype,
 };
 
 #[pyclass]
@@ -53,6 +52,24 @@ impl PySeries {
 
         Ok(series.into())
     }
+
+    pub(crate) fn to_pylist_impl<'a>(
+        &self,
+        py: Python<'a>,
+        maps_as_pydicts: PyMapConversionMode,
+    ) -> PyResult<Bound<'a, PyList>> {
+        let literals = self.series.to_literals();
+
+        if maps_as_pydicts != PyMapConversionMode::AssociationList {
+            let converted = literals
+                .into_iter()
+                .map(|lit| lit.into_pyobject_with_map_conversion(py, maps_as_pydicts))
+                .collect::<PyResult<Vec<_>>>()?;
+            PyList::new(py, converted)
+        } else {
+            PyList::new(py, literals)
+        }
+    }
 }
 
 #[pymethods]
@@ -60,19 +77,19 @@ impl PySeries {
     #[staticmethod]
     #[pyo3(signature = (name, pyarrow_array, dtype=None))]
     pub fn from_arrow(
-        py: Python,
         name: &str,
         pyarrow_array: Bound<PyAny>,
         dtype: Option<PyDataType>,
     ) -> PyResult<Self> {
-        let arrow_array = ffi::array_to_rust(py, pyarrow_array)?;
-        let arrow_array = cast_array_for_daft_if_needed(arrow_array.to_boxed());
+        let (data, field) = array_to_rust(&pyarrow_array)?;
+        let daft_field = daft_schema::field::Field::try_from(&field)?.rename(name);
+        let arr = make_array(data);
 
         let series = if let Some(dtype) = dtype {
             let field = Field::new(name, dtype.into());
-            series::Series::try_from_field_and_arrow_array(field, arrow_array)?
+            series::Series::from_arrow(Arc::new(field), arr)?
         } else {
-            series::Series::try_from((name, arrow_array))?
+            series::Series::from_arrow(Arc::new(daft_field), arr)?
         };
 
         Ok(series.into())
@@ -124,15 +141,28 @@ impl PySeries {
         Ok(series.into())
     }
 
-    pub fn to_pylist<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyList>> {
-        PyList::new(py, self.series.to_literals())
+    #[pyo3(signature = (maps_as_pydicts = None))]
+    pub fn to_pylist<'a>(
+        &self,
+        py: Python<'a>,
+        maps_as_pydicts: Option<&str>,
+    ) -> PyResult<Bound<'a, PyList>> {
+        let maps_as_pydicts = match maps_as_pydicts {
+            None => PyMapConversionMode::AssociationList,
+            Some("lossy") => PyMapConversionMode::DictLossy,
+            Some("strict") => PyMapConversionMode::DictStrict,
+            Some(other) => {
+                return Err(PyValueError::new_err(format!(
+                    "Invalid maps_as_pydicts value: {other}. Expected one of: None, 'lossy', 'strict'"
+                )));
+            }
+        };
+
+        self.to_pylist_impl(py, maps_as_pydicts)
     }
 
     pub fn to_arrow<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
-        let arrow_array = self.series.to_arrow2();
-        let arrow_array = cast_array_from_daft_if_needed(arrow_array);
-        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-        ffi::to_py_array(py, arrow_array, &pyarrow)
+        self.series.to_pyarrow(py)
     }
 
     pub fn __iter__(&self) -> PySeriesIterator {
@@ -496,5 +526,43 @@ impl PySeriesIterator {
 
     fn __iter__(&self) -> Self {
         self.clone()
+    }
+}
+
+impl ToPyArrow for Series {
+    fn to_pyarrow<'py>(
+        &self,
+        py: pyo3::Python<'py>,
+    ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        let array = self.to_arrow()?;
+        let target_field = self.field().to_arrow()?;
+
+        let schema = Box::new(arrow::ffi::FFI_ArrowSchema::try_from(target_field).map_err(
+            |e| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                    "Failed to convert Arrow field to FFI schema: {}",
+                    e
+                ))
+            },
+        )?);
+
+        let mut data = array.to_data();
+        data.align_buffers();
+        let arrow_arr = Box::new(arrow::ffi::FFI_ArrowArray::new(&data));
+
+        let schema_ptr: *const arrow::ffi::FFI_ArrowSchema = &raw const *schema;
+        let array_ptr: *const arrow::ffi::FFI_ArrowArray = &raw const *arrow_arr;
+
+        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+        let array = pyarrow.getattr(pyo3::intern!(py, "Array"))?.call_method1(
+            pyo3::intern!(py, "_import_from_c"),
+            (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
+        )?;
+
+        let array = pyo3::types::PyModule::import(py, pyo3::intern!(py, "daft.arrow_utils"))?
+            .getattr(pyo3::intern!(py, "remove_empty_struct_placeholders"))?
+            .call1((array,))?;
+
+        Ok(array)
     }
 }

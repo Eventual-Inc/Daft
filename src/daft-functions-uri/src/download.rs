@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::array::LargeBinaryBuilder;
 use common_error::{DaftError, DaftResult, ensure};
 use daft_core::prelude::*;
 use daft_dsl::{
@@ -51,7 +52,11 @@ impl AsyncScalarUDF for UrlDownload {
     fn name(&self) -> &'static str {
         "url_download"
     }
-    async fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    async fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let UrlDownloadArgs {
             input,
             multi_thread,
@@ -154,27 +159,19 @@ async fn url_download(
     let mut results = stream.try_collect::<Vec<_>>().await?;
 
     results.sort_by_key(|k| k.0);
-    let mut offsets: Vec<i64> = Vec::with_capacity(results.len() + 1);
-    offsets.push(0);
-    let mut valid = Vec::with_capacity(results.len());
-    valid.reserve(results.len());
-
     let cap_needed: usize = results
         .iter()
         .filter_map(|f| f.1.as_ref().map(bytes::Bytes::len))
         .sum();
-    let mut data = Vec::with_capacity(cap_needed);
+    let mut builder = LargeBinaryBuilder::with_capacity(results.len(), cap_needed);
     for (_, b) in results {
-        if let Some(b) = b {
-            data.extend(b.as_ref());
-            offsets.push(b.len() as i64 + offsets.last().unwrap());
-            valid.push(true);
-        } else {
-            offsets.push(*offsets.last().unwrap());
-            valid.push(false);
+        match b {
+            Some(b) => builder.append_value(b),
+            None => builder.append_null(),
         }
     }
-    Ok(BinaryArray::try_from((name, data, offsets))?
-        .with_nulls_slice(valid.as_slice())
-        .unwrap())
+    BinaryArray::from_arrow(
+        Field::new(name, DataType::Binary),
+        Arc::new(builder.finish()),
+    )
 }

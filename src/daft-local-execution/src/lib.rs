@@ -1,6 +1,8 @@
 mod buffer;
 mod channel;
+mod concat;
 mod dynamic_batching;
+mod input_sender;
 mod intermediate_ops;
 mod join;
 mod pipeline;
@@ -22,7 +24,7 @@ use common_error::{DaftError, DaftResult};
 use common_runtime::{JoinSet, RuntimeRef, RuntimeTask};
 use console::style;
 use resource_manager::MemoryManager;
-pub use run::{ExecutionEngineResult, NativeExecutor};
+pub use run::ExecutionEngineResult;
 use runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle, TimedFuture};
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};
 use tracing::Instrument;

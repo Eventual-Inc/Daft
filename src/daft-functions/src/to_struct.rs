@@ -11,7 +11,11 @@ impl ScalarUDF for ToStructFunction {
     fn name(&self) -> &'static str {
         "struct"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let inputs = inputs.into_inner();
         if inputs.is_empty() {
             return Err(DaftError::ValueError(

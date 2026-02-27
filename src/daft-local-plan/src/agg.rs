@@ -122,7 +122,7 @@ pub fn populate_aggregation_stages_bound_with_schema(
             }
             AggExpr::CountDistinct(expr) => {
                 let set_agg_col = first_stage!(AggExpr::Set(expr.clone()));
-                let concat_col = second_stage!(AggExpr::Concat(set_agg_col));
+                let concat_col = second_stage!(AggExpr::Concat(set_agg_col, None));
                 final_stage(count_distinct(concat_col));
             }
             AggExpr::Sum(expr) => {
@@ -251,17 +251,18 @@ pub fn populate_aggregation_stages_bound_with_schema(
             }
             AggExpr::List(expr) => {
                 let list_col = first_stage!(AggExpr::List(expr.clone()));
-                let concat_col = second_stage!(AggExpr::Concat(list_col));
+                let concat_col = second_stage!(AggExpr::Concat(list_col, None));
                 final_stage(concat_col);
             }
             AggExpr::Set(expr) => {
                 let set_col = first_stage!(AggExpr::Set(expr.clone()));
-                let concat_col = second_stage!(AggExpr::Concat(set_col));
+                let concat_col = second_stage!(AggExpr::Concat(set_col, None));
                 final_stage(distinct(concat_col));
             }
-            AggExpr::Concat(expr) => {
-                let concat_col = first_stage!(AggExpr::Concat(expr.clone()));
-                let global_concat_col = second_stage!(AggExpr::Concat(concat_col));
+            AggExpr::Concat(expr, delimiter) => {
+                let concat_col = first_stage!(AggExpr::Concat(expr.clone(), delimiter.clone()));
+                let global_concat_col =
+                    second_stage!(AggExpr::Concat(concat_col, delimiter.clone()));
                 final_stage(global_concat_col);
             }
             AggExpr::Skew(expr) => {

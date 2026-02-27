@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::SystemTime};
 
 use axum::{
     Json, Router,
@@ -6,9 +6,16 @@ use axum::{
     http::StatusCode,
     routing::post,
 };
-use common_metrics::{QueryEndState, QueryID, QueryPlan, Stat};
+use common_metrics::{QueryEndState, QueryID, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KEY, Stat};
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
+
+fn secs_from_epoch() -> f64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64()
+}
 
 use crate::state::{
     DashboardState, ExecInfo, NodeInfo, OperatorInfo, OperatorInfos, OperatorStatus, PlanInfo,
@@ -158,6 +165,8 @@ fn parse_physical_plan(physical_plan: &QueryPlan) -> OperatorInfos {
                 node_info,
                 stats: HashMap::new(),
                 source_stats: HashMap::new(),
+                start_sec: None,
+                end_sec: None,
             },
         );
 
@@ -242,6 +251,7 @@ async fn exec_op_start(
 
     if let Some(op) = exec_info.operators.get_mut(&op_id) {
         op.status = OperatorStatus::Executing;
+        op.start_sec = Some(secs_from_epoch());
     } else {
         tracing::warn!("Operator {} not found for query {}", op_id, query_id);
     }
@@ -266,6 +276,7 @@ async fn exec_op_end(
 
     if let Some(op) = exec_info.operators.get_mut(&op_id) {
         op.status = OperatorStatus::Finished;
+        op.end_sec = Some(secs_from_epoch());
     } else {
         tracing::warn!("Operator {} not found for query {}", op_id, query_id);
     }
@@ -332,11 +343,11 @@ fn apply_exec_emit_stats(
             }
 
             if op.node_info.node_type.contains("Repartition") {
-                let rows_in = aggregated_stats.get("rows in").and_then(|s| match s {
+                let rows_in = aggregated_stats.get(ROWS_IN_KEY).and_then(|s| match s {
                     Stat::Count(v) => Some(*v),
                     _ => None,
                 });
-                let rows_out = aggregated_stats.get("rows out").and_then(|s| match s {
+                let rows_out = aggregated_stats.get(ROWS_OUT_KEY).and_then(|s| match s {
                     Stat::Count(v) => Some(*v),
                     _ => None,
                 });
@@ -344,7 +355,7 @@ fn apply_exec_emit_stats(
                     && rows_out > rows_in
                 {
                     aggregated_stats
-                        .insert("rows out".to_string(), Stat::Count(rows_out - rows_in));
+                        .insert(ROWS_OUT_KEY.to_string(), Stat::Count(rows_out - rows_in));
                 }
             }
 
@@ -460,9 +471,13 @@ async fn exec_end(
     };
 
     // Mark all operators as finished
+    let now = secs_from_epoch();
     for op in exec_info.operators.values_mut() {
         if op.status == OperatorStatus::Pending || op.status == OperatorStatus::Executing {
             op.status = OperatorStatus::Finished;
+            if op.end_sec.is_none() {
+                op.end_sec = Some(now);
+            }
         }
     }
 
@@ -519,9 +534,13 @@ async fn query_end(
     };
 
     if let Some(ref mut exec_info) = exec_info {
+        let now = secs_from_epoch();
         for op in exec_info.operators.values_mut() {
             if op.status == OperatorStatus::Pending || op.status == OperatorStatus::Executing {
                 op.status = OperatorStatus::Finished;
+                if op.end_sec.is_none() {
+                    op.end_sec = Some(now);
+                }
             }
         }
     }
@@ -579,9 +598,13 @@ async fn query_end(
         QueryEndState::Canceled => {
             let mut exec_info = exec_info;
             if let Some(ref mut info) = exec_info {
+                let now = secs_from_epoch();
                 for op in info.operators.values_mut() {
                     if !matches!(op.status, OperatorStatus::Finished) {
                         op.status = OperatorStatus::Failed;
+                        if op.end_sec.is_none() {
+                            op.end_sec = Some(now);
+                        }
                     }
                 }
             }
@@ -595,9 +618,13 @@ async fn query_end(
         QueryEndState::Failed => {
             let mut exec_info = exec_info;
             if let Some(ref mut info) = exec_info {
+                let now = secs_from_epoch();
                 for op in info.operators.values_mut() {
                     if !matches!(op.status, OperatorStatus::Finished) {
                         op.status = OperatorStatus::Failed;
+                        if op.end_sec.is_none() {
+                            op.end_sec = Some(now);
+                        }
                     }
                 }
             }

@@ -13,7 +13,6 @@ import boto3
 import pyarrow as pa
 import pytest
 from azure.storage.blob import BlobServiceClient
-from pytest_lazyfixture import lazy_fixture
 
 import daft
 from daft import DataCatalogTable, DataCatalogType
@@ -224,16 +223,8 @@ def s3_uri(tmp_path: pathlib.Path, data_dir: str) -> str:
     return "s3://" + path
 
 
-@pytest.fixture(
-    scope="function",
-    params=[
-        None,
-        pytest.param(lazy_fixture("glue_table"), marks=pytest.mark.glue),
-        pytest.param(lazy_fixture("unity_table_s3"), marks=pytest.mark.unity),
-    ],
-)
+@pytest.fixture(scope="function")
 def s3_path(
-    request,
     s3_uri: str,
     aws_server: str,
     aws_credentials: dict[str, str],
@@ -263,7 +254,25 @@ def s3_path(
     bucket.create(CreateBucketConfiguration={"LocationConstraint": "us-west-2"})
     # Bucket will get cleared by reset_s3 fixture, so we don't need to delete it at the end of the test via the
     # typical try-yield-finally block.
-    return s3_uri, io_config, request.param
+    return s3_uri, io_config, None
+
+
+@pytest.fixture(scope="function")
+def s3_path_with_glue(
+    s3_path: tuple[str, daft.io.IOConfig, DataCatalogTable | None],
+    glue_table: DataCatalogTable,
+) -> tuple[str, daft.io.IOConfig, DataCatalogTable]:
+    uri, io_config, _ = s3_path
+    return uri, io_config, glue_table
+
+
+@pytest.fixture(scope="function")
+def s3_path_with_unity(
+    s3_path: tuple[str, daft.io.IOConfig, DataCatalogTable | None],
+    unity_table_s3: DataCatalogTable,
+) -> tuple[str, daft.io.IOConfig, DataCatalogTable]:
+    uri, io_config, _ = s3_path
+    return uri, io_config, unity_table_s3
 
 
 ###############################
@@ -323,13 +332,7 @@ def az_server(az_server_ip: str, az_server_port: int) -> Iterator[str]:
         azurite.stop()
 
 
-@pytest.fixture(
-    scope="function",
-    params=[
-        None,
-        pytest.param(lazy_fixture("unity_table_az"), marks=pytest.mark.unity),
-    ],
-)
+@pytest.fixture(scope="function")
 def az_path(
     az_uri: str, az_server: str, az_credentials: dict[str, str]
 ) -> Iterator[tuple[str, daft.io.IOConfig, None]]:
@@ -356,6 +359,15 @@ def az_path(
 
 
 @pytest.fixture(scope="function")
+def az_path_with_unity(
+    az_path: tuple[str, daft.io.IOConfig, None],
+    unity_table_az: DataCatalogTable,
+) -> Iterator[tuple[str, daft.io.IOConfig, DataCatalogTable]]:
+    uri, io_config, _ = az_path
+    yield uri, io_config, unity_table_az
+
+
+@pytest.fixture(scope="function")
 def local_path(tmp_path: pathlib.Path, data_dir: str) -> tuple[str, None, None]:
     path = os.path.join(tmp_path, data_dir)
     os.mkdir(path)
@@ -365,17 +377,20 @@ def local_path(tmp_path: pathlib.Path, data_dir: str) -> tuple[str, None, None]:
 @pytest.fixture(
     scope="function",
     params=[
-        pytest.param(lazy_fixture("local_path"), marks=pytest.mark.local),
-        pytest.param(lazy_fixture("s3_path"), marks=pytest.mark.s3),
+        pytest.param("local_path", marks=pytest.mark.local),
+        pytest.param("s3_path", marks=pytest.mark.s3),
+        pytest.param("s3_path_with_glue", marks=(pytest.mark.s3, pytest.mark.glue)),
+        pytest.param("s3_path_with_unity", marks=(pytest.mark.s3, pytest.mark.unity)),
         # Azure tests require starting a Docker container + mock server that (1) requires a dev Docker dependency, and
         # (2) takes 15+ seconds to start on every run, so we current mark it as an integration test.
-        pytest.param(lazy_fixture("az_path"), marks=(pytest.mark.az, pytest.mark.integration)),
+        pytest.param("az_path", marks=(pytest.mark.az, pytest.mark.integration)),
+        pytest.param("az_path_with_unity", marks=(pytest.mark.az, pytest.mark.integration, pytest.mark.unity)),
     ],
 )
 def cloud_paths(
     request,
 ) -> tuple[str, daft.io.IOConfig | None, DataCatalogTable | None]:
-    return request.param
+    return request.getfixturevalue(request.param)
 
 
 @pytest.fixture(scope="function")

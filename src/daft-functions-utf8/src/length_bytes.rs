@@ -21,7 +21,11 @@ impl ScalarUDF for LengthBytes {
     fn name(&self) -> &'static str {
         "length_bytes"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         unary_utf8_evaluate(inputs, |s| {
             s.with_utf8_array(|arr| Ok(length_bytes_impl(arr)?.into_series()))
         })

@@ -68,14 +68,10 @@ impl AsyncFileWriter for DummyWriter {
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
-        let path_series = Utf8Array::from_values(
-            RETURN_PATHS_COLUMN_NAME,
-            std::iter::once(self.file_idx.clone()),
-        )
-        .into_series();
+        let path_series =
+            Utf8Array::from_slice(RETURN_PATHS_COLUMN_NAME, &[self.file_idx.clone()]).into_series();
         let write_count_series =
-            UInt64Array::from_values("write_count", std::iter::once(self.write_count as u64))
-                .into_series();
+            UInt64Array::from_slice("write_count", &[self.write_count as u64]).into_series();
         let path_table = RecordBatch::new_unchecked(
             Schema::new(vec![
                 path_series.field().clone(),
@@ -186,14 +182,10 @@ impl AsyncFileWriter for FailingWriter {
         }
 
         // Same behavior as DummyWriter when not failing
-        let path_series = Utf8Array::from_values(
-            RETURN_PATHS_COLUMN_NAME,
-            std::iter::once(self.file_idx.clone()),
-        )
-        .into_series();
+        let path_series =
+            Utf8Array::from_slice(RETURN_PATHS_COLUMN_NAME, &[self.file_idx.clone()]).into_series();
         let write_count_series =
-            UInt64Array::from_values("write_count", std::iter::once(self.write_count as u64))
-                .into_series();
+            UInt64Array::from_slice("write_count", &[self.write_count as u64]).into_series();
         let path_table = RecordBatch::new_unchecked(
             Schema::new(vec![
                 path_series.field().clone(),
@@ -226,10 +218,9 @@ pub fn make_dummy_target_file_size_writer_factory(
 }
 
 pub fn make_dummy_mp(size_bytes: usize) -> Arc<MicroPartition> {
-    let range = (0..size_bytes).map(|i| Some(i as u8));
-    let series = UInt8Array::from_regular_iter(Field::new("ints", DataType::UInt8), range)
-        .unwrap()
-        .into_series();
+    let range = (0..size_bytes).map(|i| i as u8);
+    let series =
+        UInt8Array::from_field_and_values(Field::new("ints", DataType::UInt8), range).into_series();
     let schema = Arc::new(Schema::new(vec![series.field().clone()]));
     let table = RecordBatch::new_unchecked(schema.clone(), vec![series.into()], size_bytes);
     Arc::new(MicroPartition::new_loaded(

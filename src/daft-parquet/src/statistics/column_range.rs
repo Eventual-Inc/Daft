@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use daft_arrow::array::PrimitiveArray;
 use daft_core::prelude::*;
 use daft_stats::ColumnRangeStatistics;
 use parquet2::{
@@ -23,8 +22,8 @@ impl TryFrom<&BooleanStatistics> for Wrap<ColumnRangeStatistics> {
             && let Some(upper) = value.max_value
         {
             Ok(ColumnRangeStatistics::new(
-                Some(BooleanArray::from(("lower", [lower].as_slice())).into_series()),
-                Some(BooleanArray::from(("upper", [upper].as_slice())).into_series()),
+                Some(BooleanArray::from_slice("lower", &[lower]).into_series()),
+                Some(BooleanArray::from_slice("upper", &[upper]).into_series()),
             )?
             .into())
         } else {
@@ -64,9 +63,9 @@ impl TryFrom<&BinaryStatistics> for Wrap<ColumnRangeStatistics> {
                         .context(UnableToParseUtf8FromBinarySnafu)?;
 
                     let lower =
-                        Utf8Array::from(("lower", [lower.as_str()].as_slice())).into_series();
+                        Utf8Array::from_slice("lower", [lower.as_str()].as_slice()).into_series();
                     let upper =
-                        Utf8Array::from(("upper", [upper.as_str()].as_slice())).into_series();
+                        Utf8Array::from_slice("upper", [upper.as_str()].as_slice()).into_series();
 
                     return Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into());
                 }
@@ -92,9 +91,9 @@ impl TryFrom<&BinaryStatistics> for Wrap<ColumnRangeStatistics> {
                         .context(UnableToParseUtf8FromBinarySnafu)?;
 
                     let lower =
-                        Utf8Array::from(("lower", [lower.as_str()].as_slice())).into_series();
+                        Utf8Array::from_slice("lower", [lower.as_str()].as_slice()).into_series();
                     let upper =
-                        Utf8Array::from(("upper", [upper.as_str()].as_slice())).into_series();
+                        Utf8Array::from_slice("upper", [upper.as_str()].as_slice()).into_series();
 
                     return Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into());
                 }
@@ -144,8 +143,8 @@ fn make_date_column_range_statistics(
     lower: i32,
     upper: i32,
 ) -> super::Result<ColumnRangeStatistics> {
-    let lower = Int32Array::from(("lower", [lower].as_slice()));
-    let upper = Int32Array::from(("upper", [upper].as_slice()));
+    let lower = Int32Array::from_slice("lower", &[lower]);
+    let upper = Int32Array::from_slice("upper", &[upper]);
 
     let dtype = daft_core::datatypes::DataType::Date;
 
@@ -165,8 +164,8 @@ fn make_timestamp_column_range_statistics(
     lower: i64,
     upper: i64,
 ) -> super::Result<ColumnRangeStatistics> {
-    let lower = Int64Array::from(("lower", [lower].as_slice()));
-    let upper = Int64Array::from(("upper", [upper].as_slice()));
+    let lower = Int64Array::from_slice("lower", &[lower]);
+    let upper = Int64Array::from_slice("upper", &[upper]);
     let tu = match unit {
         parquet2::schema::types::TimeUnit::Nanoseconds => {
             daft_core::datatypes::TimeUnit::Nanoseconds
@@ -242,8 +241,11 @@ impl TryFrom<&FixedLenStatistics> for Wrap<ColumnRangeStatistics> {
     }
 }
 
-impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
-    TryFrom<&PrimitiveStatistics<T>> for Wrap<ColumnRangeStatistics>
+impl<T> TryFrom<&PrimitiveStatistics<T>> for Wrap<ColumnRangeStatistics>
+where
+    T: Into<daft_core::lit::Literal>,
+    T: daft_core::datatypes::NumericNative,
+    T: parquet2::types::NativeType,
 {
     type Error = super::Error;
 
@@ -324,18 +326,12 @@ impl<T: parquet2::types::NativeType + daft_core::datatypes::NumericNative>
             }
         }
         // fall back case
-        let lower = Series::try_from((
-            "lower",
-            Box::new(PrimitiveArray::<T>::from_vec(vec![lower]))
-                as Box<dyn daft_arrow::array::Array>,
-        ))
-        .unwrap();
-        let upper = Series::try_from((
-            "upper",
-            Box::new(PrimitiveArray::<T>::from_vec(vec![upper]))
-                as Box<dyn daft_arrow::array::Array>,
-        ))
-        .unwrap();
+        let lower = Series::from_literals(vec![lower.into()])
+            .unwrap()
+            .rename("lower");
+        let upper = Series::from_literals(vec![upper.into()])
+            .unwrap()
+            .rename("upper");
 
         Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into())
     }

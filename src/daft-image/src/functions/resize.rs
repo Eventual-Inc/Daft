@@ -11,7 +11,11 @@ pub struct ImageResize;
 
 #[typetag::serde]
 impl ScalarUDF for ImageResize {
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let height = inputs.required(("h", "height")).and_then(|s| {
             ensure!(s.len() == 1, "height must be a scalar");

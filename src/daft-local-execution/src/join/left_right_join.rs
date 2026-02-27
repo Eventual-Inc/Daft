@@ -50,7 +50,7 @@ pub(crate) fn probe_left_right_with_bitmap(
 
             let build_side_table = build_side_growable.build()?;
             let probe_side_table = {
-                let indices_arr = UInt64Array::from(("", probe_side_idxs));
+                let indices_arr = UInt64Array::from_vec("", probe_side_idxs);
                 input_table.take(&indices_arr)?
             };
 
@@ -130,7 +130,7 @@ pub(crate) fn probe_left_right(
             let build_side_table = build_side_growable.build()?;
 
             let probe_side_table = {
-                let indices_arr = UInt64Array::from(("", probe_side_idxs));
+                let indices_arr = UInt64Array::from_vec("", probe_side_idxs);
                 input_table.take(&indices_arr)?
             };
 

@@ -7,12 +7,13 @@ use common_daft_config::PyDaftExecutionConfig;
 use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
+use daft_local_plan::python::PyExecutionStats;
 use daft_logical_plan::PyLogicalPlanBuilder;
 use dashboard::DashboardStatisticsSubscriber;
 use futures::StreamExt;
 use progress_bar::FlotillaProgressBar;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
-use ray::{RayPartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
+use ray::{RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
@@ -22,13 +23,14 @@ use crate::{
         viz_distributed_pipeline_mermaid,
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
-    python::ray::RayTaskResult,
-    statistics::StatisticsSubscriber,
+    python::ray::{RayPartitionRef, RayTaskResult},
+    statistics::{StatisticsManagerRef, StatisticsSubscriber},
 };
 
 #[pyclass(frozen)]
 struct PythonPartitionRefStream {
     inner: Arc<Mutex<PlanResultStream>>,
+    statistics_manager: StatisticsManagerRef,
 }
 
 #[pymethods]
@@ -59,6 +61,11 @@ impl PythonPartitionRefStream {
             };
             Ok(next)
         })
+    }
+
+    fn finish(&self) -> PyResult<PyExecutionStats> {
+        let result = self.statistics_manager.export_metrics();
+        Ok(PyExecutionStats::from(result))
     }
 }
 
@@ -211,8 +218,10 @@ impl PyDistributedPhysicalPlanRunner {
         }
 
         let plan_result = self.runner.run_plan(&plan.plan, psets, subscribers)?;
+        let statistics_manager = plan_result.statistics_manager.clone();
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(plan_result.into_stream())),
+            statistics_manager,
         };
         Ok(part_stream)
     }

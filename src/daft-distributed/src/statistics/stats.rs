@@ -1,20 +1,29 @@
-use std::sync::Arc;
+use std::sync::{Arc, atomic::Ordering};
 
-use common_metrics::{Counter, StatSnapshot};
+use common_metrics::{
+    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, TASK_ACTIVE_KEY,
+    TASK_CANCELLED_KEY, TASK_COMPLETED_KEY, TASK_FAILED_KEY, UNIT_MICROSECONDS, UNIT_ROWS,
+    UNIT_TASKS, normalize_name, ops::NodeInfo, snapshot::DefaultSnapshot,
+};
 use opentelemetry::{
     KeyValue,
     metrics::{Meter, UpDownCounter},
 };
 
-use crate::{pipeline_node::NodeID, statistics::TaskEvent};
+use crate::{
+    pipeline_node::{PipelineNodeContext, metrics::key_values_from_context},
+    statistics::TaskEvent,
+};
 
 pub trait RuntimeStats: Send + Sync + 'static {
-    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot);
+    fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot);
+    /// Returns the accumulated stats.
+    fn export_snapshot(&self) -> StatSnapshot;
 }
 pub type RuntimeStatsRef = Arc<dyn RuntimeStats>;
 
 pub struct RuntimeNodeManager {
-    node_id: NodeID,
+    node_info: Arc<NodeInfo>,
     pub node_kv: Vec<KeyValue>,
     runtime_stats: RuntimeStatsRef,
 
@@ -25,28 +34,24 @@ pub struct RuntimeNodeManager {
 }
 
 impl RuntimeNodeManager {
-    pub fn new(meter: &Meter, runtime_stats: RuntimeStatsRef, node_id: NodeID) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
-
+    pub fn new(meter: &Meter, runtime_stats: RuntimeStatsRef, node_info: Arc<NodeInfo>) -> Self {
+        let node_kv = node_info.to_key_values();
         Self {
-            node_id,
+            node_info,
             node_kv,
             runtime_stats,
             active_tasks: meter
-                .i64_up_down_counter("daft.distributed.node_stats.active_tasks")
+                .i64_up_down_counter(normalize_name(TASK_ACTIVE_KEY))
                 .build(),
-            completed_tasks: Counter::new(
-                meter,
-                "daft.distributed.node_stats.completed_tasks",
-                None,
-            ),
-            failed_tasks: Counter::new(meter, "daft.distributed.node_stats.failed_tasks", None),
-            cancelled_tasks: Counter::new(
-                meter,
-                "daft.distributed.node_stats.cancelled_tasks",
-                None,
-            ),
+            completed_tasks: Counter::new(meter, TASK_COMPLETED_KEY, None, Some(UNIT_TASKS.into())),
+            failed_tasks: Counter::new(meter, TASK_FAILED_KEY, None, Some(UNIT_TASKS.into())),
+            cancelled_tasks: Counter::new(meter, TASK_CANCELLED_KEY, None, Some(UNIT_TASKS.into())),
         }
+    }
+
+    /// Returns the accumulated stats for this node as (NodeInfo, StatSnapshot) for export to the driver.
+    pub fn export_snapshot(&self) -> (Arc<NodeInfo>, StatSnapshot) {
+        (self.node_info.clone(), self.runtime_stats.export_snapshot())
     }
 
     fn dec_active_tasks(&self) {
@@ -63,9 +68,9 @@ impl RuntimeNodeManager {
                 self.completed_tasks.add(1, self.node_kv.as_slice());
 
                 for (node_info, snapshot) in &stats.nodes {
-                    let node_id = node_info.id;
-                    if node_id == (self.node_id as usize) {
-                        self.runtime_stats.handle_worker_node_stats(snapshot);
+                    if node_info.id == self.node_info.id {
+                        self.runtime_stats
+                            .handle_worker_node_stats(node_info, snapshot);
                     }
                 }
             }
@@ -90,32 +95,25 @@ pub struct DefaultRuntimeStats {
 }
 
 impl DefaultRuntimeStats {
-    pub fn new(meter: &Meter, node_id: NodeID) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
+    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        let node_kv = key_values_from_context(context);
 
         Self {
             node_kv,
-            completed_rows_in: Counter::new(
-                meter,
-                "daft.distributed.node_stats.completed_rows_in",
-                None,
-            ),
-            completed_rows_out: Counter::new(
-                meter,
-                "daft.distributed.node_stats.completed_rows_out",
-                None,
-            ),
+            completed_rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            completed_rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
             completed_cpu_us: Counter::new(
                 meter,
-                "daft.distributed.node_stats.completed_cpu_us",
+                DURATION_KEY,
                 None,
+                Some(UNIT_MICROSECONDS.into()),
             ),
         }
     }
 }
 
 impl RuntimeStats for DefaultRuntimeStats {
-    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+    fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
         let StatSnapshot::Default(snapshot) = snapshot else {
             // TODO: Return immediately for now, but ideally should error
             return;
@@ -127,5 +125,13 @@ impl RuntimeStats for DefaultRuntimeStats {
             .add(snapshot.rows_in, self.node_kv.as_slice());
         self.completed_rows_out
             .add(snapshot.rows_out, self.node_kv.as_slice());
+    }
+
+    fn export_snapshot(&self) -> StatSnapshot {
+        StatSnapshot::Default(DefaultSnapshot {
+            cpu_us: self.completed_cpu_us.load(Ordering::Relaxed),
+            rows_in: self.completed_rows_in.load(Ordering::Relaxed),
+            rows_out: self.completed_rows_out.load(Ordering::Relaxed),
+        })
     }
 }

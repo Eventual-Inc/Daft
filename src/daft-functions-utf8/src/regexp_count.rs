@@ -23,7 +23,11 @@ impl ScalarUDF for RegexpCount {
     fn name(&self) -> &'static str {
         "regexp_count"
     }
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let Args { input, patterns } = inputs.try_into()?;
 
         let input = input
@@ -95,6 +99,6 @@ fn regexp_count_impl(arr: &Utf8Array, patterns: &Utf8Array) -> DaftResult<UInt64
         let field = Arc::new(Field::new(arr.name(), DataType::UInt64));
         let arr: ArrayRef = Arc::new(arr_builder.finish());
 
-        UInt64Array::from_arrow2(field, arr.into())
+        UInt64Array::from_arrow(field, arr)
     }
 }

@@ -1,9 +1,11 @@
 use std::{future, sync::Arc};
 
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{JoinType, stats::StatsState};
+use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
 use futures::{TryStreamExt, future::try_join_all};
 
@@ -63,6 +65,8 @@ impl SortMergeJoinNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::SortMergeJoin,
+            NodeCategory::StreamingSink,
         );
         let config = PipelineNodeConfig::new(
             output_schema,
@@ -122,10 +126,6 @@ impl SortMergeJoinNode {
                 self.right.node_id(),
             );
 
-        // Merge left and right psets
-        let mut psets = left_psets;
-        psets.extend(right_psets);
-
         // Build the join plan
         let plan = LocalPhysicalPlan::sort_merge_join(
             left_in_memory_source_plan,
@@ -135,14 +135,13 @@ impl SortMergeJoinNode {
             self.join_type,
             self.config.schema.clone(),
             StatsState::NotMaterialized,
-            LocalNodeContext {
-                origin_node_id: Some(self.node_id() as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.node_id() as usize)),
         );
 
         // Create the task
-        let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+        let builder = SwordfishTaskBuilder::new(plan, self.as_ref())
+            .with_psets(self.left.node_id(), left_psets)
+            .with_psets(self.right.node_id(), right_psets);
 
         result_tx.send(builder).await.ok();
         Ok(())
@@ -173,18 +172,35 @@ impl SortMergeJoinNode {
             scheduler_handle,
         )?;
 
+        let left_boundary_key_names = self
+            .left_on
+            .iter()
+            .map(|expr| {
+                expr.inner()
+                    .to_field(&self.left.config().schema)
+                    .map(|f| f.name)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        let right_sample_by_aliased = self
+            .right_on
+            .iter()
+            .zip(left_boundary_key_names.into_iter())
+            .map(|(expr, key_name)| BoundExpr::new_unchecked(expr.inner().alias(key_name)))
+            .collect::<Vec<_>>();
+
         // Sample right side
         let right_sample_tasks = create_sample_tasks(
             right_materialized.clone(),
             self.right.config().schema.clone(),
-            self.right_on.clone(),
+            right_sample_by_aliased,
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
         )?;
 
         // Collect all samples
-        let sampled_outputs = try_join_all(
+        let combined_sampled_outputs = try_join_all(
             left_sample_tasks
                 .into_iter()
                 .chain(right_sample_tasks.into_iter()),
@@ -195,8 +211,8 @@ impl SortMergeJoinNode {
         .collect::<Vec<_>>();
 
         // Compute partition boundaries from combined samples
-        let boundaries = get_partition_boundaries_from_samples(
-            sampled_outputs,
+        let left_partition_boundaries = get_partition_boundaries_from_samples(
+            combined_sampled_outputs,
             &self.left_on,
             descending.clone(),
             nulls_first,
@@ -211,11 +227,30 @@ impl SortMergeJoinNode {
             left_schema,
             self.left_on.clone(),
             descending.clone(),
-            boundaries.clone(),
+            left_partition_boundaries.clone(),
             num_partitions,
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
+        )?;
+
+        let right_boundary_names = self
+            .right_on
+            .iter()
+            .map(|expr| {
+                expr.inner()
+                    .to_field(&self.right.config().schema)
+                    .map(|f| f.name)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        let right_partition_boundaries = RecordBatch::from_nonempty_columns(
+            left_partition_boundaries
+                .columns()
+                .iter()
+                .zip(right_boundary_names)
+                .map(|(series, name)| series.clone().rename(name))
+                .collect::<Vec<_>>(),
         )?;
 
         // Range repartition right side
@@ -225,7 +260,7 @@ impl SortMergeJoinNode {
             right_schema,
             self.right_on.clone(),
             descending,
-            boundaries,
+            right_partition_boundaries,
             num_partitions,
             self.as_ref(),
             task_id_counter,

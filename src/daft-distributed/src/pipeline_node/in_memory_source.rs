@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use common_metrics::ops::{NodeCategory, NodeType};
 use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
@@ -37,6 +38,8 @@ impl InMemorySourceNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::InMemoryScan,
+            NodeCategory::Source,
         );
 
         let num_partitions = input_psets.values().map(|pset| pset.len()).sum::<usize>();
@@ -62,27 +65,16 @@ impl InMemorySourceNode {
         self: &Arc<Self>,
         partition_ref: PartitionRef,
     ) -> SwordfishTaskBuilder {
-        let info = InMemoryInfo::new(
-            self.info.source_schema.clone(),
-            self.info.cache_key.clone(),
-            None,
-            1,
-            partition_ref.size_bytes(),
-            partition_ref.num_rows(),
-            None,
-            None,
-        );
         let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
-            info,
+            self.node_id(),
+            self.info.source_schema.clone(),
+            partition_ref.size_bytes(),
             StatsState::NotMaterialized,
-            LocalNodeContext {
-                origin_node_id: Some(self.node_id() as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.node_id() as usize)),
         );
 
-        let psets = HashMap::from([(self.info.cache_key.clone(), vec![partition_ref])]);
-        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref()).with_psets(psets)
+        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())
+            .with_psets(self.node_id(), vec![partition_ref])
     }
 }
 
@@ -129,6 +121,6 @@ impl PipelineNodeImpl for InMemorySourceNode {
     }
 
     fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(SourceStats::new(meter, self.node_id()))
+        Arc::new(SourceStats::new(meter, self.context()))
     }
 }

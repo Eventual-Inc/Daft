@@ -247,7 +247,7 @@ mod test {
     #[test]
     fn test_equal() -> crate::Result<()> {
         let table = RecordBatch::from_nonempty_columns(vec![
-            Int64Array::from(("a", vec![1, 2, 3, 4])).into_series(),
+            Int64Array::from_slice("a", &[1, 2, 3, 4]).into_series(),
         ])
         .unwrap();
         let table_stats = TableStatistics::from_table(&table);
@@ -266,7 +266,7 @@ mod test {
 
         // True case
         let table = RecordBatch::from_nonempty_columns(vec![
-            Int64Array::from(("a", vec![0, 0, 0])).into_series(),
+            Int64Array::from_slice("a", &[0, 0, 0]).into_series(),
         ])
         .unwrap();
         let table_stats = TableStatistics::from_table(&table);

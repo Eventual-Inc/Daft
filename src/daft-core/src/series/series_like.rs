@@ -13,11 +13,10 @@ use crate::{
 pub trait SeriesLike: Send + Sync + Any + std::fmt::Debug {
     #[allow(clippy::wrong_self_convention)]
     fn into_series(&self) -> Series;
-    fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array>;
     fn to_arrow(&self) -> DaftResult<ArrayRef>;
     fn as_any(&self) -> &dyn std::any::Any;
-    fn with_nulls(&self, nulls: Option<daft_arrow::buffer::NullBuffer>) -> DaftResult<Series>;
-    fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer>;
+    fn with_nulls(&self, nulls: Option<arrow::buffer::NullBuffer>) -> DaftResult<Series>;
+    fn nulls(&self) -> Option<&arrow::buffer::NullBuffer>;
     fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     fn max(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;

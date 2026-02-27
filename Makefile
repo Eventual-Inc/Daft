@@ -79,11 +79,6 @@ dsdgen: .venv ## Generate TPC-DS data
 
 .PHONY: install-docs-deps
 install-docs-deps:
-	@if ! command -v bun >/dev/null 2>&1; then \
-		echo "Installing Bun..."; \
-		curl -fsSL https://bun.sh/install | bash; \
-		export PATH="$$HOME/.bun/bin:$$PATH"; \
-	fi
 	source $(VENV_BIN)/activate && uv sync --all-extras --all-groups
 	source $(VENV_BIN)/activate && uv pip install -e docs/plugins/nav_hide_children
 

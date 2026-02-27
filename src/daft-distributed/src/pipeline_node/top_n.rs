@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
@@ -45,6 +46,8 @@ impl TopNNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::TopN,
+            NodeCategory::BlockingSink,
         );
         let config = PipelineNodeConfig::new(
             output_schema,
@@ -123,10 +126,7 @@ impl PipelineNodeImpl for TopNNode {
                 self_clone.limit,
                 self_clone.offset,
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self_clone.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self_clone.node_id() as usize)),
             )
         })
     }

@@ -308,7 +308,6 @@ async fn get_schema_and_estimators(
     )
     .await?;
 
-    #[allow(deprecated, reason = "arrow2 migration")]
     let mut schema = if let Some(schema) = convert_options.schema.clone() {
         schema.to_arrow2()?
     } else {
@@ -910,9 +909,9 @@ where
                     fields[*proj_idx].data_type().clone(),
                     0,
                 );
-                Series::try_from_field_and_arrow_array(
+                Series::from_arrow(
                     read_daft_fields[i].clone(),
-                    cast_array_for_daft_if_needed(deserialized_col?),
+                    cast_array_for_daft_if_needed(deserialized_col?).into(),
                 )
             })
             .collect::<DaftResult<Vec<Series>>>()?;

@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use daft_arrow::types::months_days_ns;
+use arrow::{
+    array::{Array, ArrayRef, Scalar},
+    datatypes::IntervalMonthDayNano,
+};
 
 use super::as_arrow::AsArrow;
 #[cfg(feature = "python")]
@@ -30,19 +33,26 @@ where
             idx,
             self.len()
         );
-        let arrow_array = self.as_arrow2();
-        let is_valid = arrow_array
-            .validity()
-            .is_none_or(|nulls| nulls.get_bit(idx));
+        let arrow_array = self.as_arrow().unwrap();
+        let is_valid = arrow_array.nulls().is_none_or(|nulls| nulls.is_valid(idx));
         if is_valid {
-            Some(unsafe { arrow_array.value_unchecked(idx) })
+            Self::native_layout_assert();
+
+            Some(unsafe {
+                // SAFETY:
+                // T::Native is guaranteed to also be `ArrowPrimitiveType::Native`.
+                // so the transmute_copy is safe.
+                //
+                // Additionally the `value_unchecked` is safe as we already did bounds checks
+                std::mem::transmute_copy::<_, T::Native>(&arrow_array.value_unchecked(idx))
+            })
         } else {
             None
         }
     }
 }
 
-// Default implementations of get ops for DataArray and LogicalArray.
+// Default implementations of get ops for DataArray
 macro_rules! impl_array_arrow_get {
     ($ArrayT:ty, $output:ty) => {
         impl $ArrayT {
@@ -55,12 +65,36 @@ macro_rules! impl_array_arrow_get {
                     self.len()
                 );
 
-                let arrow_array = self.as_arrow2();
-                let is_valid = arrow_array
-                    .validity()
-                    .is_none_or(|nulls| nulls.get_bit(idx));
+                let arrow_array = self.as_arrow().unwrap();
+
+                let is_valid = arrow_array.nulls().is_none_or(|nulls| nulls.is_valid(idx));
                 if is_valid {
                     Some(unsafe { arrow_array.value_unchecked(idx) })
+                } else {
+                    None
+                }
+            }
+        }
+    };
+}
+// Get implementation for LogicalArray-backed primitive types (nulls live on the physical array).
+macro_rules! impl_logicalarray_get {
+    ($ArrayT:ty, $output:ty) => {
+        impl $ArrayT {
+            #[inline]
+            pub fn get(&self, idx: usize) -> Option<$output> {
+                assert!(
+                    idx < self.len(),
+                    "Out of bounds: {} vs len: {}",
+                    idx,
+                    self.len()
+                );
+                if self
+                    .physical
+                    .nulls()
+                    .is_none_or(|nulls| nulls.is_valid(idx))
+                {
+                    Some(self.physical.as_slice()[idx])
                 } else {
                     None
                 }
@@ -76,15 +110,67 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
     }
 }
 
-impl_array_arrow_get!(Utf8Array, &str);
+impl Utf8Array {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<&str> {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+        let arrow_array = self.as_arrow().unwrap();
+        let is_valid = self.is_valid(idx);
+        if is_valid {
+            Some(unsafe { arrow_array.value_unchecked(idx) })
+        } else {
+            None
+        }
+    }
+}
+impl BinaryArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<&[u8]> {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+        let arrow_array = self.as_arrow().unwrap();
+        let is_valid = self.is_valid(idx);
+        if is_valid {
+            Some(unsafe { arrow_array.value_unchecked(idx) })
+        } else {
+            None
+        }
+    }
+}
+
+impl FixedSizeBinaryArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<&[u8]> {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+        let arrow_array = self.as_arrow().unwrap();
+        let is_valid = self.is_valid(idx);
+        if is_valid {
+            Some(unsafe { arrow_array.value_unchecked(idx) })
+        } else {
+            None
+        }
+    }
+}
+impl_array_arrow_get!(IntervalArray, IntervalMonthDayNano);
 impl_array_arrow_get!(BooleanArray, bool);
-impl_array_arrow_get!(BinaryArray, &[u8]);
-impl_array_arrow_get!(FixedSizeBinaryArray, &[u8]);
-impl_array_arrow_get!(DateArray, i32);
-impl_array_arrow_get!(TimeArray, i64);
-impl_array_arrow_get!(DurationArray, i64);
-impl_array_arrow_get!(IntervalArray, months_days_ns);
-impl_array_arrow_get!(TimestampArray, i64);
+impl_logicalarray_get!(DateArray, i32);
+impl_logicalarray_get!(TimeArray, i64);
+impl_logicalarray_get!(DurationArray, i64);
+impl_logicalarray_get!(TimestampArray, i64);
 
 impl NullArray {
     #[inline]
@@ -101,16 +187,18 @@ impl NullArray {
 
 impl ExtensionArray {
     #[inline]
-    pub fn get(&self, idx: usize) -> Option<Box<dyn daft_arrow::scalar::Scalar>> {
+    pub fn get(&self, idx: usize) -> Option<Scalar<ArrayRef>> {
         assert!(
             idx < self.len(),
             "Out of bounds: {} vs len: {}",
             idx,
             self.len()
         );
-        let is_valid = self.data.validity().is_none_or(|nulls| nulls.get_bit(idx));
+        let is_valid = self.is_valid(idx);
         if is_valid {
-            Some(daft_arrow::scalar::new_scalar(self.data(), idx))
+            let scalar = self.slice(idx, idx + 1).unwrap();
+            let scalar = Scalar::new(scalar.to_arrow());
+            Some(scalar)
         } else {
             None
         }
@@ -127,7 +215,8 @@ impl PythonArray {
             idx,
             self.len()
         );
-        if self.nulls().is_none_or(|v| v.is_valid(idx)) {
+        let is_valid = self.is_valid(idx);
+        if is_valid {
             self.values().get(idx).cloned()
         } else {
             None
@@ -169,7 +258,8 @@ impl ListArray {
         );
         let valid = self.is_valid(idx);
         if valid {
-            let (start, end) = self.offsets().start_end(idx);
+            let start = self.offsets()[idx] as usize;
+            let end = self.offsets()[idx + 1] as usize;
             Some(self.flat_child.slice(start, end).unwrap())
         } else {
             None
@@ -232,7 +322,7 @@ mod tests {
     #[test]
     fn test_fixed_size_list_get_all_valid() -> DaftResult<()> {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
-        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
+        let flat_child = Int32Array::from_vec("foo", (0..9).collect::<Vec<i32>>());
         let nulls = None;
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), nulls);
         assert_eq!(arr.len(), 3);
@@ -246,10 +336,7 @@ mod tests {
             assert_eq!(element.data_type(), &DataType::Int32);
 
             let element = element.i32()?;
-            let data = element
-                .into_iter()
-                .map(|x| x.copied())
-                .collect::<Vec<Option<i32>>>();
+            let data = element.into_iter().collect::<Vec<Option<i32>>>();
             let expected = ((i * 3) as i32..((i + 1) * 3) as i32)
                 .map(Some)
                 .collect::<Vec<Option<i32>>>();
@@ -262,9 +349,9 @@ mod tests {
     #[test]
     fn test_fixed_size_list_get_some_valid() -> DaftResult<()> {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
-        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
+        let flat_child = Int32Array::from_vec("foo", (0..9).collect::<Vec<i32>>());
         let raw_nulls = vec![true, false, true];
-        let nulls = Some(daft_arrow::buffer::NullBuffer::from(raw_nulls.as_slice()));
+        let nulls = Some(arrow::buffer::NullBuffer::from(raw_nulls.as_slice()));
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), nulls);
         assert_eq!(arr.len(), 3);
 
@@ -274,10 +361,7 @@ mod tests {
         assert_eq!(element.len(), 3);
         assert_eq!(element.data_type(), &DataType::Int32);
         let element = element.i32()?;
-        let data = element
-            .into_iter()
-            .map(|x| x.copied())
-            .collect::<Vec<Option<i32>>>();
+        let data = element.into_iter().collect::<Vec<Option<i32>>>();
         let expected = vec![Some(0), Some(1), Some(2)];
         assert_eq!(data, expected);
 
@@ -290,10 +374,7 @@ mod tests {
         assert_eq!(element.len(), 3);
         assert_eq!(element.data_type(), &DataType::Int32);
         let element = element.i32()?;
-        let data = element
-            .into_iter()
-            .map(|x| x.copied())
-            .collect::<Vec<Option<i32>>>();
+        let data = element.into_iter().collect::<Vec<Option<i32>>>();
         let expected = vec![Some(6), Some(7), Some(8)];
         assert_eq!(data, expected);
 
@@ -303,27 +384,21 @@ mod tests {
     #[test]
     fn test_list_get_some_valid() -> DaftResult<()> {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
-        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
+        let flat_child = Int32Array::from_vec("foo", (0..9).collect::<Vec<i32>>());
         let raw_nulls = vec![true, false, true];
-        let nulls = Some(daft_arrow::buffer::NullBuffer::from(raw_nulls.as_slice()));
+        let nulls = Some(arrow::buffer::NullBuffer::from(raw_nulls.as_slice()));
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), nulls);
         let list_dtype = DataType::List(Box::new(DataType::Int32));
         let list_arr = arr.cast(&list_dtype)?;
         let l = list_arr.list()?;
         let element = l.get(0).unwrap();
         let element = element.i32()?;
-        let data = element
-            .into_iter()
-            .map(|x| x.copied())
-            .collect::<Vec<Option<i32>>>();
+        let data = element.into_iter().collect::<Vec<Option<i32>>>();
         let expected = vec![Some(0), Some(1), Some(2)];
         assert_eq!(data, expected);
         let element = l.get(2).unwrap();
         let element = element.i32()?;
-        let data = element
-            .into_iter()
-            .map(|x| x.copied())
-            .collect::<Vec<Option<i32>>>();
+        let data = element.into_iter().collect::<Vec<Option<i32>>>();
         let expected = vec![Some(6), Some(7), Some(8)];
         assert_eq!(data, expected);
 

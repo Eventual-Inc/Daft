@@ -702,9 +702,9 @@ def strftime(expr: Expression, format: str | None = None) -> Expression:
         │ ---        ┆ ---         ┆ ---                        ┆ ---                 ┆ ---                 │
         │ String     ┆ String      ┆ String                     ┆ String              ┆ String              │
         ╞════════════╪═════════════╪════════════════════════════╪═════════════════════╪═════════════════════╡
-        │ 2023-01-01 ┆ 01/01/2023  ┆ 2023-01-01T12:01:00.000000 ┆ 2023-01-01T12:01:00 ┆ 2023/01/01 12:01:00 │
+        │ 2023-01-01 ┆ 01/01/2023  ┆ 2023-01-01T12:01:00        ┆ 2023-01-01T12:01:00 ┆ 2023/01/01 12:01:00 │
         ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2023-01-02 ┆ 01/02/2023  ┆ 2023-01-02T12:00:00.000000 ┆ 2023-01-02T12:00:00 ┆ 2023/01/02 12:00:00 │
+        │ 2023-01-02 ┆ 01/02/2023  ┆ 2023-01-02T12:00:00        ┆ 2023-01-02T12:00:00 ┆ 2023/01/02 12:00:00 │
         ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
         │ 2023-01-03 ┆ 01/03/2023  ┆ 2023-01-03T12:00:00.999999 ┆ 2023-01-03T12:00:00 ┆ 2023/01/03 12:00:00 │
         ╰────────────┴─────────────┴────────────────────────────┴─────────────────────┴─────────────────────╯
@@ -1168,7 +1168,7 @@ def date_trunc(interval: str, expr: Expression, relative_to: Expression | None =
 def to_unix_epoch(expr: Expression, time_unit: str | TimeUnit | None = None) -> Expression:
     """Converts a datetime column to a Unix timestamp with the specified time unit. (default: seconds).
 
-    See [daft.datatype.TimeUnit](https://docs.daft.ai/en/stable/api/datatypes/#daft.datatype.DataType.timeunit) for more information on time units and valid values.
+    See [daft.datatype.TimeUnit](https://docs.daft.ai/en/stable/api/datatypes/all_datatypes/#daft.datatype.DataType.timeunit) for more information on time units and valid values.
 
     Examples:
         >>> import daft

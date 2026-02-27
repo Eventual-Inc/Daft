@@ -20,7 +20,11 @@ struct PowArgs<T> {
 
 #[typetag::serde]
 impl ScalarUDF for Pow {
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let PowArgs { input, exp } = inputs.try_into()?;
 
         input.pow(exp)

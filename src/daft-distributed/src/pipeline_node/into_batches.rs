@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
@@ -19,6 +20,9 @@ use crate::{
     },
     utils::channel::{Sender, create_channel},
 };
+
+const INITIAL_BATCH_PHASE: &str = "local";
+const REBATCH_PHASE: &str = "rebatch";
 
 pub(crate) struct IntoBatchesNode {
     config: PipelineNodeConfig,
@@ -50,11 +54,18 @@ impl IntoBatchesNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::IntoBatches,
+            NodeCategory::StreamingSink,
         );
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            child.config().clustering_spec.clone(),
+            Arc::new(
+                UnknownClusteringConfig::new(
+                    child.config().clustering_spec.num_partitions().max(2),
+                )
+                .into(),
+            ),
         );
         Self {
             config,
@@ -105,12 +116,11 @@ impl IntoBatchesNode {
                         group_size,
                         true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
                         StatsState::NotMaterialized,
-                        LocalNodeContext {
-                            origin_node_id: Some(self.node_id() as usize),
-                            additional: None,
-                        },
+                        LocalNodeContext::new(Some(self.node_id() as usize))
+                            .with_phase(REBATCH_PHASE),
                     );
-                    let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+                    let builder = SwordfishTaskBuilder::new(plan, self.as_ref())
+                        .with_psets(self.node_id(), psets);
                     if result_tx.send(builder).await.is_err() {
                         break;
                     }
@@ -129,12 +139,10 @@ impl IntoBatchesNode {
                 current_group_size,
                 true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self.node_id() as usize)).with_phase(REBATCH_PHASE),
             );
-            let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+            let builder =
+                SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
             let _ = result_tx.send(builder).await;
         }
         Ok(())
@@ -171,10 +179,7 @@ impl PipelineNodeImpl for IntoBatchesNode {
                 batch_size,
                 false, // No need strict batch sizes for the child tasks, as we coalesce them later on.
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)).with_phase(INITIAL_BATCH_PHASE),
             )
         });
 

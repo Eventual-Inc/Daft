@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     pipeline_node::MaterializedOutput,
+    statistics::StatisticsManagerRef,
     utils::{
         channel::{Receiver, ReceiverStream},
         stream::JoinableForwardingStream,
@@ -76,11 +77,20 @@ pub(crate) type PlanResultStream =
 pub(crate) struct PlanResult {
     joinset: JoinSet<DaftResult<()>>,
     rx: Receiver<MaterializedOutput>,
+    pub statistics_manager: StatisticsManagerRef,
 }
 
 impl PlanResult {
-    fn new(joinset: JoinSet<DaftResult<()>>, rx: Receiver<MaterializedOutput>) -> Self {
-        Self { joinset, rx }
+    fn new(
+        joinset: JoinSet<DaftResult<()>>,
+        rx: Receiver<MaterializedOutput>,
+        statistics_manager: StatisticsManagerRef,
+    ) -> Self {
+        Self {
+            joinset,
+            rx,
+            statistics_manager,
+        }
     }
 
     pub fn into_stream(self) -> PlanResultStream {

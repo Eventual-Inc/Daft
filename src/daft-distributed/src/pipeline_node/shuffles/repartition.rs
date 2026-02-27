@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
@@ -45,6 +46,8 @@ impl RepartitionNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::Repartition,
+            NodeCategory::BlockingSink,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -93,8 +96,8 @@ impl RepartitionNode {
                 self.config.schema.clone(),
                 self.node_id(),
             );
-            let builder =
-                SwordfishTaskBuilder::new(in_memory_source_plan, self.as_ref()).with_psets(psets);
+            let builder = SwordfishTaskBuilder::new(in_memory_source_plan, self.as_ref())
+                .with_psets(self.node_id(), psets);
 
             let _ = result_tx.send(builder).await;
         }
@@ -137,10 +140,7 @@ impl PipelineNodeImpl for RepartitionNode {
                 self_clone.num_partitions,
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self_clone.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self_clone.node_id() as usize)),
             )
         });
 

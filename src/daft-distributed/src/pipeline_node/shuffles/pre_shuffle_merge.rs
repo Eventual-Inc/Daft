@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
 
@@ -40,6 +41,8 @@ impl PreShuffleMergeNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::Repartition,
+            NodeCategory::BlockingSink,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -138,7 +141,7 @@ impl PreShuffleMergeNode {
                             self.node_id(),
                         );
                     let builder = SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())
-                        .with_psets(psets)
+                        .with_psets(self.node_id(), psets)
                         .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
                             worker_id,
                             soft: false,
@@ -161,7 +164,7 @@ impl PreShuffleMergeNode {
                     self.node_id(),
                 );
                 let builder = SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())
-                    .with_psets(psets)
+                    .with_psets(self.node_id(), psets)
                     .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
                         worker_id,
                         soft: false,

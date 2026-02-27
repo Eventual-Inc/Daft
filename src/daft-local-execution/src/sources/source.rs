@@ -5,7 +5,7 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, Counter, ROWS_OUT_KEY, StatSnapshot,
+    Counter, DURATION_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::{SourceSnapshot, StatSnapshotImpl},
 };
@@ -15,18 +15,19 @@ use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{StreamExt, stream::BoxStream};
-use opentelemetry::{KeyValue, global};
+use opentelemetry::{KeyValue, metrics::Meter};
+use snafu::ResultExt;
 
 use crate::{
-    ExecutionRuntimeContext,
-    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
+    ExecutionRuntimeContext, PipelineExecutionSnafu,
+    pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
     runtime_stats::RuntimeStats,
 };
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 
 pub(crate) struct SourceStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_out: Counter,
     io_stats: IOStatsRef,
 
@@ -34,13 +35,12 @@ pub(crate) struct SourceStats {
 }
 
 impl SourceStats {
-    pub fn new(id: usize) -> Self {
-        let meter = global::meter("daft.local.node_stats");
-        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = node_info.to_key_values();
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
             io_stats: IOStatsRef::default(),
 
             node_kv,
@@ -54,7 +54,7 @@ impl RuntimeStats for SourceStats {
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        let cpu_us = self.cpu_us.load(ordering);
+        let cpu_us = self.duration_us.load(ordering);
         let rows_out = self.rows_out.load(ordering);
         let bytes_read = self.io_stats.load_bytes_read() as u64;
         StatSnapshot::Source(SourceSnapshot {
@@ -73,7 +73,7 @@ impl RuntimeStats for SourceStats {
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
@@ -81,12 +81,12 @@ impl RuntimeStats for SourceStats {
 pub trait Source: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
-    fn make_runtime_stats(&self, id: usize) -> Arc<SourceStats> {
-        Arc::new(SourceStats::new(id))
+    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<SourceStats> {
+        Arc::new(SourceStats::new(meter, node_info))
     }
     fn multiline_display(&self) -> Vec<String>;
-    async fn get_data(
-        &self,
+    fn get_data(
+        &mut self,
         maintain_order: bool,
         io_stats: IOStatsRef,
         chunk_size: usize,
@@ -95,7 +95,7 @@ pub trait Source: Send + Sync {
 }
 
 pub(crate) struct SourceNode {
-    source: Arc<dyn Source>,
+    source: Box<dyn Source>,
     runtime_stats: Arc<SourceStats>,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
@@ -104,9 +104,9 @@ pub(crate) struct SourceNode {
 
 impl SourceNode {
     pub fn new(
-        source: Arc<dyn Source>,
+        source: Box<dyn Source>,
         plan_stats: StatsState,
-        ctx: &RuntimeContext,
+        ctx: &BuilderContext,
         context: &LocalNodeContext,
     ) -> Self {
         let info = ctx.next_node_info(
@@ -115,7 +115,7 @@ impl SourceNode {
             NodeCategory::Source,
             context,
         );
-        let runtime_stats = source.make_runtime_stats(info.id);
+        let runtime_stats = source.make_runtime_stats(&ctx.meter, &info);
         Self {
             source,
             runtime_stats,
@@ -166,12 +166,18 @@ impl TreeDisplay for SourceNode {
     }
 
     fn repr_json(&self) -> serde_json::Value {
-        serde_json::json!({
+        let mut json = serde_json::json!({
             "id": self.node_id(),
             "category": "Source",
             "type": self.source.op_type().to_string(),
             "name": self.name(),
-        })
+        });
+
+        if let StatsState::Materialized(stats) = &self.plan_stats {
+            json["approx_stats"] = serde_json::json!(stats);
+        }
+
+        json
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
@@ -200,11 +206,10 @@ impl PipelineNode for SourceNode {
         self.morsel_size_requirement = downstream_requirement;
     }
     fn start(
-        &self,
+        mut self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>> {
-        let source = self.source.clone();
         let io_stats = self.runtime_stats.io_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
@@ -215,13 +220,17 @@ impl PipelineNode for SourceNode {
             MorselSizeRequirement::Flexible(_, upper) => upper,
         };
 
+        let mut source_stream = self
+            .source
+            .get_data(maintain_order, io_stats, chunk_size.into())
+            .with_context(|_| PipelineExecutionSnafu {
+                node_name: self.name().to_string(),
+            })?;
         let runtime_stats = self.runtime_stats.clone();
+        let schema = self.source.schema().clone();
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;
-                let mut source_stream = source
-                    .get_data(maintain_order, io_stats, chunk_size.get())
-                    .await?;
                 stats_manager.activate_node(node_id);
 
                 while let Some(part) = source_stream.next().await {
@@ -229,13 +238,11 @@ impl PipelineNode for SourceNode {
                     let part = part?;
                     runtime_stats.add_rows_out(part.len() as u64);
                     if destination_sender.send(part).await.is_err() {
-                        stats_manager.finalize_node(node_id);
-                        return Ok(());
+                        break;
                     }
                 }
                 if !has_data {
-                    stats_manager.activate_node(node_id);
-                    let empty = Arc::new(MicroPartition::empty(Some(source.schema().clone())));
+                    let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
                     let _ = destination_sender.send(empty).await;
                     runtime_stats.add_rows_out(0);
                 }
@@ -253,10 +260,6 @@ impl PipelineNode for SourceNode {
 
     fn node_id(&self) -> usize {
         self.node_info.id
-    }
-
-    fn plan_id(&self) -> Arc<str> {
-        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
 
     fn node_info(&self) -> Arc<NodeInfo> {

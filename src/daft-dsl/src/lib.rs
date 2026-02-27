@@ -12,6 +12,8 @@ pub use common_metrics::operator_metrics;
 mod visitor;
 
 mod treenode;
+pub mod utils;
+
 pub use common_treenode;
 pub use expr::{
     AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, PlanRef, ResolvedColumn, SketchType,

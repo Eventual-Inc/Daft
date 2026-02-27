@@ -201,7 +201,7 @@ fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
         }
         AggExpr::AnyValue(_, _) => unsupported_sql_err!("any_value"),
         AggExpr::List(_) => unsupported_sql_err!("list"),
-        AggExpr::Concat(_) => unsupported_sql_err!("concat"),
+        AggExpr::Concat(_, _) => unsupported_sql_err!("concat"),
         AggExpr::MapGroups { .. } => unsupported_sql_err!("map_groups"),
         AggExpr::Set(_) => unsupported_sql_err!("set"),
         AggExpr::Skew(_) => unsupported_sql_err!("skew"),

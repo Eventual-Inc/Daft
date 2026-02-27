@@ -37,7 +37,11 @@ impl ScalarUDF for UnixTimestamp {
         "to_unix_epoch"
     }
 
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let Args { input, time_unit } = inputs.try_into()?;
         let tu = time_unit.map(|tu| tu.0).unwrap_or(TimeUnit::Seconds);
         input

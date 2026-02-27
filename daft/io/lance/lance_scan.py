@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 from daft.context import get_context
 from daft.daft import CountMode, PyExpr, PyPartitionField, PyPushdowns, PyRecordBatch, ScanTask
+from daft.datatype import _ensure_registered_super_ext_type
 from daft.dependencies import pa
 from daft.expressions import Expression
 from daft.io.scan import ScanOperator
@@ -139,6 +140,8 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         self._fragment_group_size = fragment_group_size
         self._include_fragment_id = include_fragment_id
         self._enable_strict_filter_pushdown = get_context().daft_planning_config.enable_strict_filter_pushdown
+        # Ensure Daft extension type is registered so PyArrow can deserialize it from Lance
+        _ensure_registered_super_ext_type()
         base = self._ds.schema
         if self._include_fragment_id:
             new_schema = pa.schema([*base, pa.field("fragment_id", pa.int64())], metadata=base.metadata)
@@ -262,7 +265,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             size_bytes=None,
             pushdowns=pushdowns,
             stats=None,
-            source_type=self.name(),
+            source_name=self.display_name(),
         )
 
     def _create_scan_tasks_with_limit_and_no_filters(
@@ -315,7 +318,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     size_bytes=self._estimate_size_bytes(fragment),
                     pushdowns=pushdowns,
                     stats=None,
-                    source_type=self.name(),
+                    source_name=self.display_name(),
                 )
 
     def _create_regular_scan_tasks(
@@ -350,7 +353,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 size_bytes=size_bytes,
                 pushdowns=pushdowns,
                 stats=None,
-                source_type=self.name(),
+                source_name=self.display_name(),
             )
 
         # Use index-driven scan for point lookups with BTREE indices or nearest search.

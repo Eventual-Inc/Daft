@@ -46,7 +46,9 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 }
                 AggExpr::List(e) => AggExpr::List(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Set(e) => AggExpr::Set(Expr::Alias(e, name.clone()).into()),
-                AggExpr::Concat(e) => AggExpr::Concat(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Concat(e, delimiter) => {
+                    AggExpr::Concat(Expr::Alias(e, name.clone()).into(), delimiter)
+                }
                 AggExpr::Skew(e) => AggExpr::Skew(Expr::Alias(e, name.clone()).into()),
                 AggExpr::MapGroups { func, inputs } => AggExpr::MapGroups {
                     func,

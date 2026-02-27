@@ -11,7 +11,6 @@ pub use array_impl::{ArrayWrapper, IntoSeries};
 use arrow::array::ArrayRef;
 use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::DaftResult;
-use daft_arrow::trusted_len::TrustedLen;
 use derive_more::Display;
 use indexmap::{IndexMap, map::RawEntryApiV1};
 pub use ops::cast_series_to_supertype;
@@ -85,7 +84,7 @@ impl Series {
 
         for (idx, hash) in hashed_series.into_iter().enumerate() {
             let hash = match hash {
-                Some(&hash) => hash,
+                Some(hash) => hash,
                 None => continue,
             };
             let entry = probe_table.raw_entry_v1().from_hash(hash, |other| {
@@ -105,36 +104,12 @@ impl Series {
         Ok(probe_table)
     }
 
-    /// Exports this Series into an Arrow arrow that is corrected for the Arrow type system.
-    /// For example, Daft's TimestampArray is a logical type that is backed by an Int64Array Physical array.
-    /// If we were to call `.as_arrow2()` or `.physical`on the TimestampArray, we would get an Int64Array that represented the time units.
-    /// However if we want to export our Timestamp array to another arrow system like arrow2 kernels or python, duckdb or more.
-    /// We should convert it back to the canonical arrow dtype of Timestamp rather than Int64.
-    /// To get the internal physical type without conversion, see `as_arrow2()`.
-    #[deprecated(note = "arrow2 migration")]
-    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-        self.inner.to_arrow2()
-    }
-
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
         self.inner.to_arrow()
     }
 
-    /// Creates a Series given an Arrow [`daft_arrow::array::Array`]
-    ///
-    /// TODO chore: consider accepting Into<FieldRef>
-    ///
-    /// This function will check the provided [`Field`] (and all its associated potentially nested fields/dtypes) against
-    /// the provided [`daft_arrow::array::Array`] for compatibility, and returns an error if they do not match.
-    pub fn from_arrow2(
-        field: FieldRef,
-        arrow_arr: Box<dyn daft_arrow::array::Array>,
-    ) -> DaftResult<Self> {
-        with_match_daft_types!(field.dtype, |$T| {
-            Ok(<<$T as DaftDataType>::ArrayType as FromArrow>::from_arrow2(field, arrow_arr)?.into_series())
-        })
-    }
-    pub fn from_arrow(field: FieldRef, arrow_arr: ArrayRef) -> DaftResult<Self> {
+    pub fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        let field = field.into();
         with_match_daft_types!(field.dtype, |$T| {
             Ok(<<$T as DaftDataType>::ArrayType as FromArrow>::from_arrow(field, arrow_arr)?.into_series())
         })
@@ -195,12 +170,16 @@ impl Series {
         )
     }
 
-    pub fn with_nulls(&self, nulls: Option<daft_arrow::buffer::NullBuffer>) -> DaftResult<Self> {
+    pub fn with_nulls(&self, nulls: Option<arrow::buffer::NullBuffer>) -> DaftResult<Self> {
         self.inner.with_nulls(nulls)
     }
 
-    pub fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+    pub fn nulls(&self) -> Option<&arrow::buffer::NullBuffer> {
         self.inner.nulls()
+    }
+
+    pub fn null_count(&self) -> usize {
+        self.nulls().map(|n| n.null_count()).unwrap_or(0)
     }
 
     pub fn is_valid(&self, idx: usize) -> bool {
@@ -213,7 +192,7 @@ impl Series {
     /// Attempts to downcast the Series to a primitive slice
     /// This will return an error if the Series is not of the physical type `T`
     /// # Example
-    /// ```rust,no_run
+    /// ```ignore
     /// let i32_arr: &[i32] = series.try_as_slice::<i32>()?;
     ///
     /// let f64_arr: &[f64] = series.try_as_slice::<f64>()?;
@@ -256,7 +235,7 @@ impl Series {
         self.inner.get_lit(idx)
     }
 
-    pub fn to_literals(&self) -> impl ExactSizeIterator<Item = Literal> + use<'_> + TrustedLen {
+    pub fn to_literals(&self) -> impl ExactSizeIterator<Item = Literal> + use<'_> {
         (0..self.len()).map(|i| self.get_lit(i))
     }
 }
@@ -281,7 +260,7 @@ mod tests {
 
     #[test]
     fn test_build_probe_table_without_nulls_basic() -> DaftResult<()> {
-        let series = Int64Array::from_iter_values(vec![1i64, 2, 3, 4, 5]).into_series();
+        let series = Int64Array::from_vec("", vec![1i64, 2, 3, 4, 5]).into_series();
         let probe_table = series.build_probe_table_without_nulls()?;
         assert_eq!(probe_table.len(), 5);
         Ok(())
@@ -289,7 +268,7 @@ mod tests {
 
     #[test]
     fn test_build_probe_table_without_nulls_with_duplicates() -> DaftResult<()> {
-        let series = Int64Array::from_iter_values(vec![1i64, 2, 2, 3, 3, 3]).into_series();
+        let series = Int64Array::from_vec("", vec![1i64, 2, 2, 3, 3, 3]).into_series();
         let probe_table = series.build_probe_table_without_nulls()?;
         assert_eq!(probe_table.len(), 3);
         Ok(())
@@ -338,7 +317,7 @@ mod tests {
 
     #[test]
     fn test_build_probe_table_without_nulls_all_same() -> DaftResult<()> {
-        let series = Int64Array::from_iter_values(vec![42i64; 100]).into_series();
+        let series = Int64Array::from_vec("", vec![42i64; 100]).into_series();
         let probe_table = series.build_probe_table_without_nulls()?;
         assert_eq!(probe_table.len(), 1);
         Ok(())

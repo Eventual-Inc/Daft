@@ -1,6 +1,7 @@
 use std::{cmp::min, sync::Arc};
 
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::{
     AggExpr,
     expr::{
@@ -45,6 +46,13 @@ impl AggregateNode {
             Self::GROUPED_NAME
         }
     }
+    fn node_type(group_by: &[BoundExpr]) -> NodeType {
+        if group_by.is_empty() {
+            NodeType::Aggregate
+        } else {
+            NodeType::GroupByAgg
+        }
+    }
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -60,6 +68,8 @@ impl AggregateNode {
             plan_config.query_id.clone(),
             node_id,
             Self::node_name(&group_by),
+            Self::node_type(&group_by),
+            NodeCategory::BlockingSink,
         );
         let config = PipelineNodeConfig::new(
             output_schema,
@@ -131,10 +141,7 @@ impl PipelineNodeImpl for AggregateNode {
                     self_clone.aggs.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(self_clone.node_id() as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(self_clone.node_id() as usize)),
                 )
             } else {
                 LocalPhysicalPlan::hash_aggregate(
@@ -143,10 +150,7 @@ impl PipelineNodeImpl for AggregateNode {
                     self_clone.group_by.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(self_clone.node_id() as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(self_clone.node_id() as usize)),
                 )
             }
         })
