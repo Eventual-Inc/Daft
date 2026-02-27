@@ -602,7 +602,7 @@ impl ObjectSource for AzureBlobSource {
             range.validate().context(InvalidRangeRequestSnafu)?;
             match range {
                 GetRange::Bounded(u) => request_builder.range(u),
-                // Note: if n is greater than file size, Azure will whole content.
+                // Note: if n is greater than file size, Azure will return the whole content.
                 GetRange::Offset(n) => request_builder.range(n..),
                 GetRange::Suffix(n) => {
                     // Use get_size_internal to avoid deadlock (we already hold a permit)
