@@ -1,13 +1,9 @@
 from __future__ import annotations
 
 import ftfy
-import ray
 from bs4 import BeautifulSoup
 
 import daft
-
-ray.init()
-daft.set_runner_ray()
 
 
 def process_html(html_bytes: bytes | None):

@@ -313,6 +313,7 @@ fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan {
             source_id,
+            file_format_config,
             pushdowns,
             schema,
             stats_state,
@@ -321,7 +322,13 @@ fn physical_plan_to_pipeline(
             let (tx, rx) = create_unbounded_channel::<(InputId, Vec<ScanTaskLikeRef>)>();
             input_senders.insert(*source_id, InputSender::ScanTasks(tx));
 
-            let scan_task_source = ScanTaskSource::new(rx, pushdowns.clone(), schema.clone(), cfg);
+            let scan_task_source = ScanTaskSource::new(
+                rx,
+                file_format_config.clone(),
+                pushdowns.clone(),
+                schema.clone(),
+                cfg,
+            );
             SourceNode::new(
                 Box::new(scan_task_source),
                 stats_state.clone(),

@@ -114,6 +114,7 @@ impl ScanSourceNode {
     fn make_source_task(self: &Arc<Self>, scan_task: ScanTaskLikeRef) -> SwordfishTaskBuilder {
         let physical_scan = LocalPhysicalPlan::physical_scan(
             self.node_id(),
+            Some(scan_task.file_format_config()),
             self.pushdowns.clone(),
             self.config.schema.clone(),
             StatsState::NotMaterialized,
