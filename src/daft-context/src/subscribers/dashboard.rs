@@ -306,7 +306,12 @@ impl Subscriber for DashboardSubscriber {
         self.on_exec_start_with_id(query_id.clone(), &query_id, physical_plan)
     }
 
-    async fn on_exec_operator_start(&self, _query_id: QueryID, _node_id: NodeID) -> DaftResult<()> {
+    async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
+        let _ = Self::handle_request(self.client.post(format!(
+            "{}/engine/query/{}/exec/{}/start",
+            self.url, query_id, node_id
+        )))
+        .await;
         Ok(())
     }
 
@@ -364,7 +369,12 @@ impl Subscriber for DashboardSubscriber {
             .await
     }
 
-    async fn on_exec_operator_end(&self, _query_id: QueryID, _node_id: NodeID) -> DaftResult<()> {
+    async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
+        let _ = Self::handle_request(self.client.post(format!(
+            "{}/engine/query/{}/exec/{}/end",
+            self.url, query_id, node_id
+        )))
+        .await;
         Ok(())
     }
 

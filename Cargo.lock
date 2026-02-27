@@ -2838,11 +2838,13 @@ dependencies = [
 name = "daft-functions-serde"
 version = "0.0.0"
 dependencies = [
+ "arrow",
+ "arrow-json",
  "common-error",
- "daft-arrow",
  "daft-core",
  "daft-dsl",
  "serde",
+ "serde_json",
  "typetag",
 ]
 
@@ -2996,11 +2998,11 @@ dependencies = [
 name = "daft-json"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "chrono",
  "common-error",
  "common-py-serde",
  "common-runtime",
- "daft-arrow",
  "daft-compression",
  "daft-core",
  "daft-decoding",
@@ -3108,6 +3110,7 @@ dependencies = [
  "log",
  "pyo3",
  "serde",
+ "serde_json",
  "strum 0.27.2",
 ]
 
@@ -3176,7 +3179,6 @@ dependencies = [
  "daft-warc",
  "dashmap",
  "futures",
- "parquet2",
  "pyo3",
  "snafu",
  "tokio",

@@ -142,10 +142,7 @@ impl PipelineNodeImpl for HashJoinNode {
                                 self.join_type,
                                 self.config.schema.clone(),
                                 StatsState::NotMaterialized,
-                                LocalNodeContext {
-                                    origin_node_id: Some(self.node_id() as usize),
-                                    additional: None,
-                                },
+                                LocalNodeContext::new(Some(self.node_id() as usize)),
                             )
                         },
                     )

@@ -131,6 +131,26 @@ def test_row_wise_async_udf():
     assert sorted(async_df.to_pydict()["x"]) == ["5", "7", "9"]
 
 
+@pytest.mark.parametrize("max_concurrency", [1, 2])
+def test_row_wise_async_udf_max_concurrency(max_concurrency):
+    @daft.func(max_concurrency=max_concurrency)
+    async def my_async_add(a: int, b: int) -> int:
+        await asyncio.sleep(0.01)
+        return a + b
+
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    result = df.select(my_async_add(col("x"), col("y"))).to_pydict()
+    assert sorted(result["x"]) == [5, 7, 9]
+
+
+def test_sync_func_max_concurrency_raises():
+    with pytest.raises(ValueError, match="max_concurrency.*synchronous"):
+
+        @daft.func(max_concurrency=2)
+        def my_sync_add(a: int, b: int) -> int:
+            return a + b
+
+
 def test_row_wise_udf_unnest():
     @daft.func(
         return_dtype=daft.DataType.struct(
