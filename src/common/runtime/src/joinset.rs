@@ -5,6 +5,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+use tokio::runtime::Handle;
 
 pub type JoinSetId = tokio::task::Id;
 
@@ -30,6 +31,26 @@ impl<T: Send + 'static> JoinSet<T> {
     {
         let handle = self.inner.spawn(task);
         handle.id()
+    }
+
+    pub fn spawn_on<F>(&mut self, task: F, handle: &Handle) -> JoinSetId
+    where
+        F: Future<Output = T>,
+        F: Send + 'static,
+        T: Send,
+        T: 'static,
+    {
+        let abort_handle = self.inner.spawn_on(task, handle);
+        abort_handle.id()
+    }
+
+    pub fn spawn_blocking_on<F>(&mut self, f: F, handle: &Handle) -> JoinSetId
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static,
+    {
+        let abort_handle = self.inner.spawn_blocking_on(f, handle);
+        abort_handle.id()
     }
 
     pub async fn join_next(&mut self) -> Option<DaftResult<T>> {

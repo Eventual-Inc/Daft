@@ -52,20 +52,29 @@ pub enum PoolType {
     Custom(String),
 }
 
-// A spawned task on a Runtime that can be awaited
-// This is a wrapper around a JoinSet that allows us to cancel the task by dropping it
+// A spawned task on a Runtime that can be awaited.
+// This is a single-task wrapper around JoinSet that implements Future,
+// allowing the task to be cancelled by dropping it.
 pub struct RuntimeTask<T> {
-    joinset: tokio::task::JoinSet<T>,
+    joinset: JoinSet<T>,
 }
 
-impl<T> RuntimeTask<T> {
+impl<T: Send + 'static> RuntimeTask<T> {
     pub fn new<F>(handle: &Handle, future: F) -> Self
     where
         F: Future<Output = T> + Send + 'static,
-        T: Send + 'static,
     {
-        let mut joinset = tokio::task::JoinSet::new();
+        let mut joinset = JoinSet::new();
         joinset.spawn_on(future, handle);
+        Self { joinset }
+    }
+
+    pub fn new_blocking<F>(handle: &Handle, f: F) -> Self
+    where
+        F: FnOnce() -> T + Send + 'static,
+    {
+        let mut joinset = JoinSet::new();
+        joinset.spawn_blocking_on(f, handle);
         Self { joinset }
     }
 }
@@ -75,16 +84,14 @@ impl<T: Send + 'static> Future for RuntimeTask<T> {
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.joinset.poll_join_next(cx) {
-            Poll::Ready(Some(result)) => {
-                Poll::Ready(result.map_err(|e| DaftError::External(e.into())))
-            }
+            Poll::Ready(Some(result)) => Poll::Ready(result),
             Poll::Ready(None) => panic!("JoinSet unexpectedly empty"),
             Poll::Pending => Poll::Pending,
         }
     }
 }
 
-impl<T> std::fmt::Debug for RuntimeTask<T> {
+impl<T: Send + 'static> std::fmt::Debug for RuntimeTask<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "RuntimeTask(num_inflight_tasks={})", self.joinset.len())
     }
@@ -179,9 +186,7 @@ impl Runtime {
                 panic!("Cannot spawn blocking task on compute runtime from a non-compute thread");
             }
             PoolType::IO | PoolType::Custom(_) => {
-                let mut join_set = tokio::task::JoinSet::new();
-                join_set.spawn_blocking_on(f, self.runtime.handle());
-                RuntimeTask { joinset: join_set }
+                RuntimeTask::new_blocking(self.runtime.handle(), f)
             }
         }
     }
