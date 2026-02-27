@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Input;
 #[cfg(feature = "python")]
-use crate::{ExecutionEngineFinalResult, LocalPhysicalPlanRef, translate};
+use crate::{ExecutionStats, LocalPhysicalPlanRef, translate};
 
 #[pyclass(module = "daft.daft", name = "LocalPhysicalPlan")]
 #[derive(Debug, Serialize, Deserialize)]
@@ -86,13 +86,29 @@ impl<'py> FromPyObject<'_, 'py> for Input {
     }
 }
 
-#[pyclass(module = "daft.daft", name = "PyExecutionEngineFinalResult", frozen)]
-pub struct PyExecutionEngineFinalResult {
-    inner: Arc<ExecutionEngineFinalResult>,
+#[pyclass(module = "daft.daft", name = "PyExecutionStats", frozen)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PyExecutionStats {
+    inner: Arc<ExecutionStats>,
 }
 
+impl_bincode_py_state_serialization!(PyExecutionStats);
+
 #[pymethods]
-impl PyExecutionEngineFinalResult {
+impl PyExecutionStats {
+    #[getter]
+    pub fn query_id(&self) -> String {
+        self.inner.query_id.to_string()
+    }
+
+    #[getter]
+    pub fn query_plan(&self) -> Option<String> {
+        self.inner
+            .query_plan
+            .clone()
+            .map(|plan| serde_json::to_string(&plan).expect("Failed to serialize query plan"))
+    }
+
     fn encode(&self) -> Vec<u8> {
         self.inner.encode()
     }
@@ -102,8 +118,8 @@ impl PyExecutionEngineFinalResult {
     }
 }
 
-impl From<ExecutionEngineFinalResult> for PyExecutionEngineFinalResult {
-    fn from(inner: ExecutionEngineFinalResult) -> Self {
+impl From<ExecutionStats> for PyExecutionStats {
+    fn from(inner: ExecutionStats) -> Self {
         Self {
             inner: Arc::new(inner),
         }
@@ -113,6 +129,6 @@ impl From<ExecutionEngineFinalResult> for PyExecutionEngineFinalResult {
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyLocalPhysicalPlan>()?;
     parent.add_class::<PyInput>()?;
-    parent.add_class::<PyExecutionEngineFinalResult>()?;
+    parent.add_class::<PyExecutionStats>()?;
     Ok(())
 }

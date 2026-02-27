@@ -141,10 +141,7 @@ impl PipelineNodeImpl for AggregateNode {
                     self_clone.aggs.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(self_clone.node_id() as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(self_clone.node_id() as usize)),
                 )
             } else {
                 LocalPhysicalPlan::hash_aggregate(
@@ -153,10 +150,7 @@ impl PipelineNodeImpl for AggregateNode {
                     self_clone.group_by.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(self_clone.node_id() as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(self_clone.node_id() as usize)),
                 )
             }
         })

@@ -1271,7 +1271,7 @@ jobs:
     - name: Run benchmarks
       uses: CodSpeedHQ/action@v4
       with:
-        run: source .venv/bin/activate; pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py -m benchmark --codspeed
+        run: source .venv/bin/activate; pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py tests/benchmarks/test_json_reads.py -m benchmark --codspeed
         mode: "simulation"
       env:
         DAFT_RUNNER: native

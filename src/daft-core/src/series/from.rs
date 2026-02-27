@@ -39,21 +39,27 @@ impl Series {
 mod tests {
     use std::sync::{Arc, LazyLock};
 
-    use common_error::DaftResult;
-    use daft_arrow::{
-        array::Array,
-        datatypes::{ArrowDataType, ArrowField},
+    use arrow::{
+        array::{ArrayRef, Date32Array, LargeStringArray, MapArray},
+        buffer::OffsetBuffer,
+        datatypes::{DataType as ArrowDataType, Field as ArrowField},
     };
-    use daft_schema::dtype::DataType;
+    use common_error::DaftResult;
+    use daft_schema::{dtype::DataType, field::Field};
+
+    use crate::series::Series;
 
     static ARROW_DATA_TYPE: LazyLock<ArrowDataType> = LazyLock::new(|| {
         ArrowDataType::Map(
-            Box::new(ArrowField::new(
+            Arc::new(ArrowField::new(
                 "entries",
-                ArrowDataType::Struct(vec![
-                    ArrowField::new("key", ArrowDataType::LargeUtf8, false),
-                    ArrowField::new("value", ArrowDataType::Date32, true),
-                ]),
+                ArrowDataType::Struct(
+                    vec![
+                        Arc::new(ArrowField::new("key", ArrowDataType::LargeUtf8, false)),
+                        Arc::new(ArrowField::new("value", ArrowDataType::Date32, true)),
+                    ]
+                    .into(),
+                ),
                 false,
             )),
             false,
@@ -63,7 +69,7 @@ mod tests {
     #[test]
     fn test_map_type_conversion() {
         let arrow_data_type = ARROW_DATA_TYPE.clone();
-        let dtype = DataType::from(&arrow_data_type);
+        let dtype = DataType::try_from(&arrow_data_type).unwrap();
         assert_eq!(
             dtype,
             DataType::Map {
@@ -75,33 +81,33 @@ mod tests {
 
     #[test]
     fn test_map_array_conversion() -> DaftResult<()> {
-        use daft_arrow::array::MapArray;
-
-        use super::*;
-
-        let arrow_array = MapArray::new(
-            ARROW_DATA_TYPE.clone(),
-            vec![0, 1].try_into().unwrap(),
-            Box::new(daft_arrow::array::StructArray::new(
-                ArrowDataType::Struct(vec![
-                    ArrowField::new("key", ArrowDataType::LargeUtf8, false),
-                    ArrowField::new("value", ArrowDataType::Date32, true),
-                ]),
-                vec![
-                    Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(["key1"])),
-                    daft_arrow::array::Int32Array::from_slice([1])
-                        .convert_logical_type(ArrowDataType::Date32),
-                ],
-                None,
-            )),
+        let inner = arrow::array::StructArray::new(
+            vec![
+                Arc::new(ArrowField::new("key", ArrowDataType::LargeUtf8, false)),
+                Arc::new(ArrowField::new("value", ArrowDataType::Date32, true)),
+            ]
+            .into(),
+            vec![
+                Arc::new(LargeStringArray::from_iter_values(["key1"])),
+                Arc::new(Date32Array::from_iter_values([1])),
+            ],
             None,
         );
+        let ArrowDataType::Map(field, _) = &*ARROW_DATA_TYPE else {
+            unreachable!()
+        };
+        let arrow_field = Arc::new(ArrowField::new("test_map", ARROW_DATA_TYPE.clone(), false));
 
-        let arrow_array: Box<dyn daft_arrow::array::Array> = Box::new(arrow_array);
-        let field = Arc::new(Field::new(
-            "test_map",
-            DataType::from(arrow_array.data_type()),
-        ));
+        let arrow_array = MapArray::new(
+            field.clone(),
+            OffsetBuffer::from_lengths(vec![0, 1]),
+            inner,
+            None,
+            false,
+        );
+
+        let arrow_array: ArrayRef = Arc::new(arrow_array);
+        let field = Arc::new(Field::try_from(arrow_field.as_ref()).unwrap());
         let series = Series::from_arrow(field, arrow_array.into())?;
 
         assert_eq!(

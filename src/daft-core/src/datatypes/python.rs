@@ -131,17 +131,6 @@ impl PythonArray {
         }
     }
 
-    #[deprecated(note = "arrow2 migration")]
-    pub fn to_pickled_arrow2(&self) -> DaftResult<daft_arrow::array::BinaryArray<i64>> {
-        let pickled = Python::attach(|py| {
-            self.iter()
-                .map(|v| v.map(|obj| pickle_dumps(py, obj)).transpose())
-                .collect::<PyResult<Vec<_>>>()
-        })?;
-
-        Ok(daft_arrow::array::BinaryArray::from(pickled))
-    }
-
     pub fn to_pickled_arrow(&self) -> DaftResult<arrow::array::LargeBinaryArray> {
         Python::attach(|py| {
             self.iter()

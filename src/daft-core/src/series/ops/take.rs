@@ -1,6 +1,5 @@
 use common_display::table_display::StrValue;
 use common_error::DaftResult;
-use daft_arrow::types::IndexRange;
 
 use crate::{
     datatypes::Utf8Array,
@@ -26,8 +25,7 @@ impl Series {
     }
 
     pub fn to_str_values(&self) -> DaftResult<Self> {
-        let iter =
-            IndexRange::new(0i64, self.len() as i64).map(|i| Some(self.str_value(i as usize)));
+        let iter = (0..self.len()).map(|i| Some(self.str_value(i)));
         let array = Utf8Array::from_iter(self.name(), iter);
         Ok(array.into_series())
     }

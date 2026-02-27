@@ -1084,7 +1084,7 @@ class ScanTask:
         size_bytes: int | None,
         pushdowns: PyPushdowns | None,
         stats: PyRecordBatch | None,
-        source_type: str | None = None,
+        source_name: str | None = None,
     ) -> ScanTask:
         """Create a Python factory function Scan Task."""
         ...
@@ -2162,14 +2162,15 @@ class RaySwordfishWorker:
         ip_address: str,
     ) -> None: ...
 
-class PyExecutionEngineFinalResult:
+class PyExecutionStats:
     def encode(self) -> bytes: ...
     def to_recordbatch(self) -> PyRecordBatch: ...
 
 class PyExecutionEngineResult:
     def __aiter__(self) -> PyExecutionEngineResult: ...
     async def __anext__(self) -> PyMicroPartition | None: ...
-    async def finish(self) -> PyExecutionEngineFinalResult: ...
+    async def query_plan(self) -> str: ...
+    async def finish(self) -> PyExecutionStats: ...
 
 class LocalPhysicalPlan:
     @staticmethod
@@ -2199,19 +2200,6 @@ class NativeExecutor:
     def repr_mermaid(
         builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, options: MermaidOptions
     ) -> str: ...
-    @staticmethod
-    def get_relationship_info(
-        logical_plan_builder: LogicalPlanBuilder,
-        daft_execution_config: PyDaftExecutionConfig,
-    ) -> RelationshipInformation: ...
-
-class RelationshipInformation:
-    ids: list[RelationshipNode]
-    plan_id: str
-
-class RelationshipNode:
-    id: int
-    parent_id: int | None
 
 class PyDaftExecutionConfig:
     @staticmethod
@@ -2497,6 +2485,7 @@ class PySession:
     def set_namespace(self, ident: PyIdentifier | None) -> None: ...
     def set_provider(self, ident: str | None) -> None: ...
     def set_model(self, ident: str | None) -> None: ...
+    def read_source(self, name: str, options: str) -> LogicalPlanBuilder: ...
 
 class FlightServerConnectionHandle:
     def shutdown(self) -> None: ...

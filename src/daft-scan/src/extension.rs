@@ -40,6 +40,7 @@ impl ExtensionScanOperator {
 }
 
 impl common_scan_info::ScanOperator for ExtensionScanOperator {
+    #[allow(clippy::unnecessary_literal_bound)]
     fn name(&self) -> &str {
         "ExtensionScanOperator"
     }

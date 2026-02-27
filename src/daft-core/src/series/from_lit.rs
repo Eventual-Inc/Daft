@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_image::CowImage;
-use daft_arrow::trusted_len::TrustedLen;
 use indexmap::IndexMap;
 use itertools::Itertools;
 
@@ -91,7 +90,7 @@ pub(crate) fn combine_lit_types(left: &DataType, right: &DataType) -> Option<Dat
 /// Creates a series from an iterator of `Result<Literal>`.
 /// It also captures any errors occurred during iteration
 /// It returns a Series, along with an IndexMap<row_idx, error>
-pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>> + TrustedLen>(
+pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>>>(
     values: I,
     dtype: Option<DataType>,
 ) -> DaftResult<Series> {
@@ -280,7 +279,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<DaftResult<_>>()?;
 
-            let nulls = daft_arrow::buffer::NullBuffer::from_iter(
+            let nulls = arrow::buffer::NullBuffer::from_iter(
                 values
                     .iter()
                     .map(|(_, v)| v.as_ref().is_ok_and(|v| v != &Literal::Null)),
@@ -365,7 +364,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .unzip();
 
-            let nulls = daft_arrow::buffer::NullBuffer::from(nulls);
+            let nulls = arrow::buffer::NullBuffer::from(nulls);
 
             let flat_child = Series::concat(&data.iter().collect::<Vec<_>>())?;
 

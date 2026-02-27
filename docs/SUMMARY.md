@@ -72,7 +72,6 @@
     * [Multimodal Structured Outputs: Evaluating Image Understanding](examples/mm_structured_outputs.md)
     * [Voice AI Analytics with Faster-Whisper and embed_text](examples/voice-ai-analytics.md)
     * [Web Text Deduplication](examples/minhash-dedupe.md)
-    * [Voice AI Analytics](examples/voice-ai-analytics.md)
     * [Audio Transcription](examples/audio-transcription.md)
     * [Generate Text Embeddings for Turbopuffer](examples/text-embeddings.md)
     * [Running LLMs on the Red Pajamas Dataset](examples/llms-red-pajamas.md)

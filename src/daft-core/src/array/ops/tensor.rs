@@ -25,7 +25,7 @@ mod tests {
 
     #[test]
     fn test_tensor_to_sparse_roundtrip() -> DaftResult<()> {
-        let nulls = daft_arrow::buffer::NullBuffer::from(&[true, false, true]);
+        let nulls = arrow::buffer::NullBuffer::from(&[true, false, true]);
         let flat_child =
             Int64Array::from_slice("item", &[0, 1, 2, 100, 101, 102, 0, 0, 3]).into_series();
         let list_array = ListArray::new(
@@ -62,7 +62,7 @@ mod tests {
     #[test]
     fn test_fixed_shape_tensor_to_fixed_shape_sparse_roundtrip() -> DaftResult<()> {
         let raw_nulls = vec![true, false, true];
-        let nulls = daft_arrow::buffer::NullBuffer::from(raw_nulls.as_slice());
+        let nulls = arrow::buffer::NullBuffer::from(raw_nulls.as_slice());
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int64), 3));
         let flat_child = Int64Array::from_vec("foo", (0..9).collect::<Vec<i64>>());
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), Some(nulls));

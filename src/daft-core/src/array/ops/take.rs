@@ -1,9 +1,9 @@
 use arrow::{
     array::NullBufferBuilder,
     buffer::{NullBuffer, OffsetBuffer},
+    datatypes::ArrowNativeType,
 };
 use common_error::DaftResult;
-use daft_arrow::types::Index;
 
 use crate::{
     array::{
@@ -61,7 +61,7 @@ impl FixedSizeListArray {
                     child_indices.extend(std::iter::repeat_n(0, fixed_size as _));
                 }
                 Some(i) => {
-                    let i = i.to_usize();
+                    let i = i.to_usize().unwrap();
                     nulls_builder.append(self.is_valid(i));
                     let start: u64 = i as u64 * fixed_size as u64;
                     child_indices.extend(start..start + fixed_size as u64);
@@ -99,7 +99,7 @@ impl ListArray {
                     let end = self.offsets()[i as usize + 1] as usize;
                     child_indices.extend(start..end);
                     new_offsets.push(*new_offsets.last().unwrap() + (end - start) as i64);
-                    nulls_builder.append(self.is_valid(i.to_usize()));
+                    nulls_builder.append(self.is_valid(i.to_usize().unwrap()));
                 }
             }
         }
@@ -121,7 +121,7 @@ impl StructArray {
         let nulls = self.nulls().map(|v| {
             NullBuffer::from_iter(idx.into_iter().map(|i| match i {
                 None => false,
-                Some(i) => v.is_valid(i.to_usize()),
+                Some(i) => v.is_valid(i.to_usize().unwrap()),
             }))
         });
         Ok(Self::new(
@@ -162,7 +162,7 @@ impl PythonArray {
                     growable.add_nulls(1);
                 }
                 Some(i) => {
-                    growable.extend(0, i.to_usize(), 1);
+                    growable.extend(0, i.to_usize().unwrap(), 1);
                 }
             }
         }

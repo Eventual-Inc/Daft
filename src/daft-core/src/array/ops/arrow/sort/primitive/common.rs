@@ -2,7 +2,8 @@ use arrow::{
     array::{PrimitiveArray, types::UInt64Type},
     buffer::NullBuffer,
 };
-use daft_arrow::array::ord::DynComparator;
+
+use crate::utils::ord::DynComparator;
 
 pub fn idx_sort<F>(
     nulls: Option<&NullBuffer>,

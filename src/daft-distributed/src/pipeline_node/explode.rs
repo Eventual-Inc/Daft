@@ -175,10 +175,7 @@ impl PipelineNodeImpl for ExplodeNode {
                 index_column.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             )
         })
     }

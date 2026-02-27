@@ -7,7 +7,7 @@ use daft_catalog::{
     python::{PyIdentifier, PyTableSource, pyobj_to_catalog, pyobj_to_table},
 };
 use daft_dsl::functions::python::WrappedUDFClass;
-use daft_logical_plan::{LogicalPlanBuilder, python::PyLogicalPlanBuilder};
+use daft_logical_plan::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 use pyo3::{prelude::*, types::PyTuple};
 
 use crate::Session;
@@ -179,10 +179,8 @@ impl PySession {
         let schema = Arc::new(daft_schema);
         let num_tasks = handle.num_tasks(options)?;
         let scan_op = daft_scan::ExtensionScanOperator::new(name, options, schema, num_tasks);
-        let builder = LogicalPlanBuilder::from_tabular_scan(
-            ScanOperatorRef(Arc::new(scan_op)),
-        )?;
-        Ok(builder.into())
+        let builder = LogicalPlanBuilder::table_scan(ScanOperatorRef(Arc::new(scan_op)), None)?;
+        Ok(PyLogicalPlanBuilder::from(builder))
     }
 
     #[pyo3(signature = (name, *args))]
