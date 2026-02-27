@@ -1050,6 +1050,26 @@ class Expression:
 
         return mean(self)
 
+    def percentile(self, percentage: builtins.float) -> Expression:
+        """Calculates the exact percentile for a column of numeric values.
+
+        Tip: See Also
+            [`daft.functions.percentile`](https://docs.daft.ai/en/stable/api/functions/percentile/)
+        """
+        from daft.functions import percentile
+
+        return percentile(self, percentage)
+
+    def median(self) -> Expression:
+        """Calculates the median of the values in the expression.
+
+        Tip: See Also
+            [`daft.functions.median`](https://docs.daft.ai/en/stable/api/functions/median/)
+        """
+        from daft.functions import median
+
+        return median(self)
+
     def stddev(self) -> Expression:
         """Calculates the standard deviation of the values in the expression.
 

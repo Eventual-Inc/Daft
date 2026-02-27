@@ -15,6 +15,7 @@ use daft_core::{
     datatypes::{IntervalValue, IntervalValueBuilder},
     prelude::*,
     python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
+    utils::stats,
 };
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
 use serde::{Deserialize, Serialize};
@@ -459,7 +460,7 @@ impl PyExpr {
         };
 
         for &p in &percentiles {
-            if !(0. ..=1.).contains(&p) {
+            if !stats::is_valid_percentile_percentage(p) {
                 return Err(PyValueError::new_err(format!(
                     "Provided percentile must be between 0 and 1: {}",
                     p
@@ -474,8 +475,21 @@ impl PyExpr {
             .into())
     }
 
+    pub fn percentile(&self, percentage: f64) -> PyResult<Self> {
+        if !stats::is_valid_percentile_percentage(percentage) {
+            return Err(PyValueError::new_err(format!(
+                "Provided percentile must be between 0 and 1: {percentage}"
+            )));
+        }
+        Ok(self.expr.clone().percentile(percentage).into())
+    }
+
     pub fn mean(&self) -> PyResult<Self> {
         Ok(self.expr.clone().mean().into())
+    }
+
+    pub fn median(&self) -> PyResult<Self> {
+        Ok(self.expr.clone().median().into())
     }
 
     pub fn stddev(&self) -> PyResult<Self> {

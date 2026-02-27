@@ -8,14 +8,15 @@ use crate::{
         growable::make_growable,
         ops::{
             DaftApproxSketchAggable, DaftBoolAggable, DaftConcatAggable, DaftCountAggable,
-            DaftHllMergeAggable, DaftMeanAggable, DaftMergeSketchAggable, DaftProductAggable,
-            DaftSetAggable, DaftSkewAggable, DaftStddevAggable, DaftSumAggable,
+            DaftHllMergeAggable, DaftMeanAggable, DaftMergeSketchAggable, DaftPercentileAggable,
+            DaftProductAggable, DaftSetAggable, DaftSkewAggable, DaftStddevAggable, DaftSumAggable,
             DaftVarianceAggable, GroupIndices,
         },
     },
     count_mode::CountMode,
     datatypes::*,
     series::{Series, array_impl::IntoSeries},
+    utils::stats,
     with_match_physical_daft_types,
 };
 
@@ -237,6 +238,40 @@ impl Series {
             _ => Err(DaftError::not_implemented(format!(
                 "Mean not implemented for {target_type}, source type: {}",
                 self.data_type()
+            ))),
+        }
+    }
+
+    pub fn percentile(&self, groups: Option<&GroupIndices>, percentage: f64) -> DaftResult<Self> {
+        if !stats::is_valid_percentile_percentage(percentage) {
+            return Err(DaftError::ValueError(format!(
+                "Provided percentile must be between 0 and 1: {percentage}"
+            )));
+        }
+
+        match self.data_type() {
+            dt if dt.is_numeric() => {
+                let casted = self.cast(&DataType::Float64)?;
+                let casted = casted.f64()?;
+                let result = match groups {
+                    Some(groups) => casted.grouped_percentile(groups, percentage),
+                    None => casted.percentile(percentage),
+                }?;
+                Ok(result.into_series())
+            }
+            DataType::List(inner_dtype) | DataType::FixedSizeList(inner_dtype, _)
+                if inner_dtype.is_numeric() =>
+            {
+                let casted = self.cast(&DataType::List(Box::new(DataType::Float64)))?;
+                let downcasted = casted.downcast::<ListArray>()?;
+                let result = match groups {
+                    Some(groups) => downcasted.grouped_percentile(groups, percentage),
+                    None => downcasted.percentile(percentage),
+                }?;
+                Ok(result.into_series())
+            }
+            other => Err(DaftError::TypeError(format!(
+                "Percentile is not implemented for type {other}"
             ))),
         }
     }
