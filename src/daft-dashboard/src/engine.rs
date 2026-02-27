@@ -642,6 +642,16 @@ async fn query_end(
     StatusCode::OK
 }
 
+/// Receive Chrome Trace Event Format JSON for a completed query.
+async fn receive_trace(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    body: String,
+) -> StatusCode {
+    state.traces.insert(query_id, body);
+    StatusCode::OK
+}
+
 pub(crate) fn routes() -> Router<Arc<DashboardState>> {
     Router::new()
         // Query lifecycle
@@ -655,4 +665,5 @@ pub(crate) fn routes() -> Router<Arc<DashboardState>> {
         .route("/query/{query_id}/exec/emit_stats", post(exec_emit_stats))
         .route("/query/{query_id}/exec/end", post(exec_end))
         .route("/query/{query_id}/end", post(query_end))
+        .route("/query/{query_id}/trace", post(receive_trace))
 }

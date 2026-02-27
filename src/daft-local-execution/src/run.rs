@@ -8,7 +8,7 @@ use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
 use common_error::DaftResult;
 use common_metrics::{QueryEndState, QueryPlan};
 use common_runtime::RuntimeTask;
-use common_tracing::flush_opentelemetry_providers;
+use common_tracing::{flush_opentelemetry_providers, is_chrome_trace_enabled};
 use daft_context::{DaftContext, Subscriber};
 use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
@@ -16,6 +16,7 @@ use daft_micropartition::MicroPartition;
 use futures::{FutureExt, future::BoxFuture};
 use tokio::{runtime::Handle, sync::Mutex};
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
@@ -187,6 +188,22 @@ impl NativeExecutor {
 
         // Spawn execution on the global runtime - returns immediately
         let handle = get_global_runtime();
+
+        let chrome_trace_enabled = is_chrome_trace_enabled();
+        let query_id_for_trace = if chrome_trace_enabled {
+            let qid = query_id.to_string();
+            common_tracing::start_trace(&qid);
+            Some(qid)
+        } else {
+            None
+        };
+
+        let trace_span = if chrome_trace_enabled {
+            tracing::info_span!("query_execution", query_id = %query_id)
+        } else {
+            tracing::Span::none()
+        };
+
         let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
 
         let (enqueue_input_tx, mut enqueue_input_rx) = create_channel::<EnqueueInputMessage>(1);
@@ -241,9 +258,16 @@ impl NativeExecutor {
             // Finish the stats manager
             let final_stats = stats_manager.finish(finish_status).await;
 
+            // Finish chrome trace capture and post to dashboard
+            if let Some(ref qid) = query_id_for_trace {
+                common_tracing::finish_trace(qid);
+                common_tracing::post_trace_to_dashboard(qid).await;
+            }
+
             flush_opentelemetry_providers();
             result.map(|()| final_stats)
-        };
+        }
+        .instrument(trace_span);
 
         let handle = RuntimeTask::new(handle, task);
 

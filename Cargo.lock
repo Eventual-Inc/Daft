@@ -2041,10 +2041,14 @@ name = "common-tracing"
 version = "0.3.0-dev0"
 dependencies = [
  "common-runtime",
+ "dashmap",
  "log",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
@@ -2657,6 +2661,7 @@ dependencies = [
  "async-stream",
  "axum",
  "common-metrics",
+ "common-tracing",
  "daft-recordbatch",
  "dashmap",
  "futures",

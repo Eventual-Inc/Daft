@@ -1,3 +1,4 @@
+pub mod chrome;
 mod config;
 
 use std::{
@@ -5,6 +6,9 @@ use std::{
     time::Duration,
 };
 
+pub use chrome::{
+    finish_trace, get_trace_json, is_chrome_trace_enabled, post_trace_to_dashboard, start_trace,
+};
 use common_runtime::get_io_runtime;
 pub use config::Config;
 use opentelemetry::{global, trace::TracerProvider};
@@ -27,33 +31,106 @@ static GLOBAL_METER_PROVIDER: LazyLock<
 pub static GLOBAL_LOGGER_PROVIDER: LazyLock<Mutex<Option<SdkLoggerProvider>>> =
     LazyLock::new(|| Mutex::new(None));
 
-pub fn init_opentelemetry_providers() {
+/// Initialize all tracing providers (OTEL + Chrome Trace) with a single global subscriber.
+///
+/// This must be called once at process startup. It composes all enabled layers
+/// onto a single `tracing_subscriber::Registry`.
+pub fn init_tracing() {
     let config = Config::from_env();
-    if !config.enabled() {
-        return;
+    let chrome_trace_enabled = is_chrome_trace_enabled();
+
+    // Build the OTEL tracing layer if configured
+    let otel_layer = if config.enabled() {
+        let runtime = get_io_runtime(true);
+        runtime.block_on_current_thread(async {
+            let resource = Resource::builder().with_service_name("daft").build();
+
+            if let Some(endpoint) = config.metrics_endpoint() {
+                init_otlp_metrics_provider(&config, endpoint, resource.clone()).await;
+            }
+            if let Some(endpoint) = config.logs_endpoint() {
+                init_otlp_logger_provider(&config, endpoint, resource.clone()).await;
+            }
+            if let Some(endpoint) = config.traces_endpoint() {
+                Some(build_otel_tracing_layer(&config, endpoint, resource).await)
+            } else {
+                None
+            }
+        })
+    } else {
+        None
+    };
+
+    // Build chrome trace layer if enabled
+    let chrome_layer = if chrome_trace_enabled {
+        Some(chrome::ChromeTraceLayer)
+    } else {
+        None
+    };
+
+    // Only install global subscriber if we have at least one layer
+    if otel_layer.is_some() || chrome_layer.is_some() {
+        let subscriber = tracing_subscriber::registry()
+            .with(otel_layer)
+            .with(chrome_layer);
+        // Ignore error if subscriber was already set (e.g., in tests)
+        let _ = tracing::subscriber::set_global_default(subscriber);
     }
+}
 
-    let runtime = get_io_runtime(true);
-    runtime.block_on_current_thread(async {
-        // Backed by inner Arc, cheap to clone
-        let resource = Resource::builder().with_service_name("daft").build();
-
-        if let Some(endpoint) = config.metrics_endpoint() {
-            init_otlp_metrics_provider(&config, endpoint, resource.clone()).await;
-        }
-        if let Some(endpoint) = config.traces_endpoint() {
-            init_otlp_tracer_provider(&config, endpoint, resource.clone()).await;
-        }
-        if let Some(endpoint) = config.logs_endpoint() {
-            init_otlp_logger_provider(&config, endpoint, resource).await;
-        }
-    });
+/// Legacy entry point — calls `init_tracing()`.
+pub fn init_opentelemetry_providers() {
+    init_tracing();
 }
 
 pub fn flush_opentelemetry_providers() {
     flush_oltp_tracer_provider();
     flush_oltp_metrics_provider();
     flush_oltp_logger_provider();
+}
+
+async fn build_otel_tracing_layer(
+    config: &Config,
+    otlp_endpoint: &str,
+    resource: Resource,
+) -> tracing_subscriber::filter::Filtered<
+    tracing_opentelemetry::OpenTelemetryLayer<
+        tracing_subscriber::Registry,
+        opentelemetry_sdk::trace::SdkTracer,
+    >,
+    tracing::level_filters::LevelFilter,
+    tracing_subscriber::Registry,
+> {
+    let mut mg = GLOBAL_TRACER_PROVIDER.lock().unwrap();
+    assert!(mg.is_none(), "Expected tracer provider to be None on init");
+
+    if config.otlp_protocol != Protocol::Grpc {
+        log::warn!(
+            "`http/json` or `http/protobuf` protocol is currently not supported for the OTEL traces exporter. gRPC will be used instead."
+        );
+    }
+
+    let exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_tonic()
+        .with_endpoint(otlp_endpoint)
+        .with_timeout(Duration::from_secs(10))
+        .build()
+        .expect("Failed to build OTLP span exporter for tracing");
+
+    let tracer_provider: SdkTracerProvider = SdkTracerProvider::builder()
+        .with_batch_exporter(exporter)
+        .with_resource(resource)
+        .with_sampler(Sampler::AlwaysOn)
+        .build();
+
+    let tracer = tracer_provider.tracer("daft-otel-tracer");
+    let telemetry_layer = tracing_opentelemetry::layer()
+        .with_tracer(tracer)
+        .with_filter(tracing::level_filters::LevelFilter::INFO);
+
+    *mg = Some(tracer_provider);
+
+    telemetry_layer
 }
 
 async fn init_otlp_logger_provider(config: &Config, otlp_endpoint: &str, resource: Resource) {
@@ -137,40 +214,6 @@ pub fn flush_oltp_metrics_provider() {
     {
         eprintln!("Failed to flush OTLP metrics provider: {}", e);
     }
-}
-
-async fn init_otlp_tracer_provider(config: &Config, otlp_endpoint: &str, resource: Resource) {
-    let mut mg = GLOBAL_TRACER_PROVIDER.lock().unwrap();
-    assert!(mg.is_none(), "Expected tracer provider to be None on init");
-
-    if config.otlp_protocol != Protocol::Grpc {
-        log::warn!(
-            "`http/json` or `http/protobuf` protocol is currently not supported for the OTEL traces exporter. gRPC will be used instead."
-        );
-    }
-
-    let exporter = opentelemetry_otlp::SpanExporter::builder()
-        .with_tonic()
-        .with_endpoint(otlp_endpoint)
-        .with_timeout(Duration::from_secs(10))
-        .build()
-        .expect("Failed to build OTLP span exporter for tracing");
-
-    let tracer_provider: SdkTracerProvider = SdkTracerProvider::builder()
-        .with_batch_exporter(exporter)
-        .with_resource(resource)
-        .with_sampler(Sampler::AlwaysOn)
-        .build();
-
-    let tracer = tracer_provider.tracer("daft-otel-tracer");
-    let telemetry_layer = tracing_opentelemetry::layer()
-        .with_tracer(tracer)
-        .with_filter(tracing::level_filters::LevelFilter::INFO);
-
-    tracing::subscriber::set_global_default(tracing_subscriber::registry().with(telemetry_layer))
-        .unwrap();
-
-    *mg = Some(tracer_provider);
 }
 
 fn flush_oltp_tracer_provider() {
