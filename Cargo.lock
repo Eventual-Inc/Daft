@@ -3095,6 +3095,7 @@ dependencies = [
  "arrow-schema",
  "bincode",
  "common-error",
+ "common-file-formats",
  "common-io-config",
  "common-metrics",
  "common-py-serde",

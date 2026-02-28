@@ -362,7 +362,7 @@ pub fn read_warc_into_micropartition(
     schema: SchemaRef,
     io_config: Arc<IOConfig>,
     multithreaded_io: bool,
-    io_stats: Option<IOStatsRef>,
+    io_stats: IOStatsRef,
 ) -> DaftResult<MicroPartition> {
     let io_client = daft_io::get_io_client(multithreaded_io, io_config)?;
     let convert_options = WarcConvertOptions {

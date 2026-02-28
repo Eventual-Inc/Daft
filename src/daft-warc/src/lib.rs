@@ -10,7 +10,7 @@ use common_runtime::{get_compute_runtime, get_io_runtime};
 use daft_compression::CompressionCodec;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
-use daft_io::{CountingReader, GetResult, IOClient, IOStatsRef};
+use daft_io::{GetResult, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{StreamExt, TryStreamExt, stream::BoxStream};
 use snafu::{Snafu, futures::try_future::TryFutureExt};
@@ -270,7 +270,7 @@ impl WarcRecordBatchBuilder {
 struct WarcRecordBatchIterator {
     reader: Box<dyn AsyncBufRead + Unpin + Send>,
     chunk_size: usize,
-    bytes_read: usize,
+    io_stats: IOStatsRef,
     header_state: WarcHeaderState,
     rb_builder: WarcRecordBatchBuilder,
 }
@@ -280,11 +280,12 @@ impl WarcRecordBatchIterator {
         reader: Box<dyn AsyncBufRead + Unpin + Send>,
         schema: SchemaRef,
         chunk_size: usize,
+        io_stats: IOStatsRef,
     ) -> Self {
         Self {
             reader,
             chunk_size,
-            bytes_read: 0,
+            io_stats,
             header_state: WarcHeaderState {
                 content_length: None,
                 record_id: None,
@@ -300,6 +301,7 @@ impl WarcRecordBatchIterator {
 
     async fn read_chunk(&mut self) -> DaftResult<Option<RecordBatch>> {
         let mut line_buf = Vec::with_capacity(4096);
+        let mut bytes_read = 0;
 
         loop {
             line_buf.clear();
@@ -312,7 +314,7 @@ impl WarcRecordBatchIterator {
                         && line_buf[1] == b'\n'
                         && self.header_state.content_length.is_some() =>
                 {
-                    self.bytes_read += 2;
+                    bytes_read += 2;
 
                     // Create properly escaped JSON object from accumulated headers
                     let header_json = if self.header_state.header_lines.is_empty() {
@@ -356,7 +358,7 @@ impl WarcRecordBatchIterator {
                         let mut buffer = vec![0u8; len];
                         self.reader.read_exact(&mut buffer).await?;
                         self.rb_builder.content_array.append_value(&buffer);
-                        self.bytes_read += len;
+                        bytes_read += len;
                     }
 
                     self.header_state.reset();
@@ -367,7 +369,7 @@ impl WarcRecordBatchIterator {
                 }
                 Ok(n) => {
                     // Handle WARC header lines.
-                    self.bytes_read += n;
+                    bytes_read += n;
                     let line = String::from_utf8_lossy(&line_buf);
                     let line = line.trim();
 
@@ -419,6 +421,8 @@ impl WarcRecordBatchIterator {
                 }
             }
         }
+
+        self.io_stats.mark_bytes_read(bytes_read);
         self.rb_builder.process_arrays()
     }
 }
@@ -427,7 +431,7 @@ pub fn read_warc_bulk(
     uris: &[&str],
     convert_options: WarcConvertOptions,
     io_client: Arc<IOClient>,
-    io_stats: Option<IOStatsRef>,
+    io_stats: IOStatsRef,
     multithreaded_io: bool,
     max_chunks_in_flight: Option<usize>,
     num_parallel_tasks: usize,
@@ -488,7 +492,7 @@ async fn read_warc_single_into_tables(
     uri: &str,
     convert_options: WarcConvertOptions,
     io_client: Arc<IOClient>,
-    io_stats: Option<IOStatsRef>,
+    io_stats: IOStatsRef,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<Vec<RecordBatch>> {
     let record_batch_stream = stream_warc(
@@ -510,7 +514,7 @@ async fn read_warc_single_into_tables(
 pub async fn stream_warc(
     uri: &str,
     io_client: Arc<IOClient>,
-    io_stats: Option<IOStatsRef>,
+    io_stats: IOStatsRef,
     convert_options: WarcConvertOptions,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
@@ -529,15 +533,14 @@ pub async fn stream_warc(
 
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
         match io_client
-            .single_url_get(uri.to_string(), None, io_stats.clone())
+            .single_url_get(uri.to_string(), None, Some(io_stats.clone()))
             .await?
         {
             GetResult::File(file) => {
                 let buffer_size = 256 * 1024;
                 let file_reader = File::open(file.path).await?;
-                let counting_reader = CountingReader::new(file_reader, io_stats);
                 (
-                    Box::new(BufReader::with_capacity(buffer_size, counting_reader)),
+                    Box::new(BufReader::with_capacity(buffer_size, file_reader)),
                     buffer_size,
                     64,
                 )
@@ -558,11 +561,11 @@ pub async fn stream_warc(
 
     let schema = convert_options.schema.clone();
 
-    let warc_record_batch_iter = WarcRecordBatchIterator::new(reader, schema, chunk_size);
+    let warc_record_batch_iter =
+        WarcRecordBatchIterator::new(reader, schema, chunk_size, io_stats.clone());
 
     let stream = futures::stream::unfold(warc_record_batch_iter, |mut reader| async move {
         let val = reader.read_chunk().await;
-        // println!("stuck in loop: {:#?}", val);
         match val {
             Ok(Some(batch)) => Some((Ok(batch), reader)),
             Ok(None) => None,
@@ -668,7 +671,7 @@ mod tests {
             &[&warc_file, &warc_gz_file],
             convert_options,
             io_client,
-            Some(io_stats.clone()),
+            io_stats.clone(),
             true,
             None,
             8,
