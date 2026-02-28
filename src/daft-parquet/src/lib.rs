@@ -6,6 +6,9 @@ use daft_arrow::io::parquet::read::schema::{SchemaInferenceOptions, infer_schema
 use daft_core::prelude::SchemaRef;
 use snafu::Snafu;
 
+mod arrow_bridge;
+mod arrowrs_reader;
+mod async_reader;
 mod file;
 pub mod metadata;
 mod metadata_adapter;
@@ -13,11 +16,14 @@ pub use metadata_adapter::{DaftParquetMetadata, DaftRowGroupMetaData};
 #[cfg(feature = "python")]
 pub mod python;
 pub mod read;
-mod statistics;
-mod utils;
-pub use statistics::row_group_metadata_to_table_stats;
 mod read_planner;
+mod schema_inference;
+mod statistics;
+pub use statistics::{
+    arrowrs_row_group_metadata_to_table_stats, row_group_metadata_to_table_stats,
+};
 mod stream_reader;
+mod utils;
 
 #[cfg(feature = "python")]
 pub use python::register_modules;
