@@ -138,13 +138,13 @@ impl AsyncFileReader for DaftAsyncFileReader {
             for range in &usize_ranges {
                 planner.add_range(range.start, range.end);
             }
-            planner.add_pass(Box::new(CoalescePass {
-                max_hole_size: COALESCE_MAX_HOLE_SIZE,
-                max_request_size: COALESCE_MAX_REQUEST_SIZE,
-            }));
             planner.add_pass(Box::new(SplitLargeRequestPass {
                 max_request_size: SPLIT_MAX_REQUEST_SIZE,
                 split_threshold: SPLIT_THRESHOLD,
+            }));
+            planner.add_pass(Box::new(CoalescePass {
+                max_hole_size: COALESCE_MAX_HOLE_SIZE,
+                max_request_size: COALESCE_MAX_REQUEST_SIZE,
             }));
             planner
                 .run_passes()

@@ -287,6 +287,10 @@ impl RangesContainer {
     ///
     /// This resolves all underlying cache entries that overlap the requested range
     /// and concatenates the slices into a single `Bytes` value.
+    ///
+    /// This is the arrow-rs counterpart to `get_range_reader()`. Arrow-rs requires
+    /// fully materialized `Bytes` per column chunk (via `AsyncFileReader::get_byte_ranges`),
+    /// whereas parquet2 consumed column chunks incrementally as `AsyncRead` streams.
     pub async fn get_range_bytes(self: &Arc<Self>, range: Range<usize>) -> DaftResult<Bytes> {
         let mut current_pos = range.start;
         let mut curr_index;
