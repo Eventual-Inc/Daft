@@ -25,6 +25,9 @@ pub struct IOConfig {
     /// Additional backends configured via OpenDAL.
     /// Keys are scheme names (e.g. "oss", "cos"), values are key-value config maps.
     pub opendal_backends: BTreeMap<String, BTreeMap<String, String>>,
+    /// Protocol aliases: maps custom scheme names to existing scheme names.
+    /// For example, {"my-s3": "s3"} rewrites "my-s3://bucket/path" to "s3://bucket/path".
+    pub protocol_aliases: BTreeMap<String, String>,
 }
 
 impl IOConfig {
@@ -74,7 +77,27 @@ impl IOConfig {
         if !self.opendal_backends.is_empty() {
             res.push(format!("OpenDAL backends = {:?}", self.opendal_backends));
         }
+        if !self.protocol_aliases.is_empty() {
+            res.push(format!("Protocol aliases = {:?}", self.protocol_aliases));
+        }
         res
+    }
+
+    /// Validates that no protocol alias key shadows a built-in scheme.
+    pub fn validate_protocol_aliases(&self) -> std::result::Result<(), String> {
+        const BUILTIN_SCHEMES: &[&str] = &[
+            "file", "http", "https", "s3", "s3a", "s3n", "az", "abfs", "abfss", "gcs", "gs", "hf",
+            "tos", "cos", "cosn", "vol+dbfs", "dbfs", "gvfs",
+        ];
+        for key in self.protocol_aliases.keys() {
+            if BUILTIN_SCHEMES.contains(&key.as_str()) {
+                return Err(format!(
+                    "Protocol alias key '{key}' conflicts with built-in scheme. \
+                     Aliases can only map new custom scheme names to existing schemes."
+                ));
+            }
+        }
+        Ok(())
     }
 }
 

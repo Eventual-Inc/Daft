@@ -233,7 +233,8 @@ impl IOClient {
         &self,
         input: &str,
     ) -> Result<(Arc<dyn ObjectSource>, String)> {
-        let (source_type, path) = parse_url(input)?;
+        let resolved = resolve_url_alias(input, &self.config);
+        let (source_type, path) = parse_url(&resolved)?;
 
         {
             if let Some(client) = self.source_type_to_store.read().await.get(&source_type) {
@@ -367,8 +368,9 @@ impl IOClient {
         range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> Result<GetResult> {
-        let (_, path) = parse_url(&input)?;
-        let source = self.get_source(&input).await?;
+        let resolved = resolve_url_alias(&input, &self.config);
+        let (_, path) = parse_url(&resolved)?;
+        let source = self.get_source(&resolved).await?;
 
         if let Some(GetRange::Suffix(_)) = range
             && !self.support_suffix_range()
@@ -390,8 +392,9 @@ impl IOClient {
         data: bytes::Bytes,
         io_stats: Option<IOStatsRef>,
     ) -> Result<()> {
-        let (_, path) = parse_url(dest)?;
-        let source = self.get_source(dest).await?;
+        let resolved = resolve_url_alias(dest, &self.config);
+        let (_, path) = parse_url(&resolved)?;
+        let source = self.get_source(&resolved).await?;
         source.put(path.as_ref(), data, io_stats.clone()).await
     }
 
@@ -400,8 +403,9 @@ impl IOClient {
         input: String,
         io_stats: Option<IOStatsRef>,
     ) -> Result<usize> {
-        let (_, path) = parse_url(&input)?;
-        let source = self.get_source(&input).await?;
+        let resolved = resolve_url_alias(&input, &self.config);
+        let (_, path) = parse_url(&resolved)?;
+        let source = self.get_source(&resolved).await?;
         source.get_size(path.as_ref(), io_stats).await
     }
 
@@ -593,6 +597,27 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         _ => Ok((SourceType::OpenDAL { scheme }, fixed_input)),
     }
 }
+
+/// Resolves a URL's scheme against the protocol aliases in the given `IOConfig`.
+///
+/// If the URL's scheme matches an alias key, the scheme is rewritten to the alias target.
+/// Only single-level resolution is performed (no chaining).
+/// Returns `Cow::Borrowed` when no rewriting occurs (zero allocation).
+pub fn resolve_url_alias<'a>(input: &'a str, config: &IOConfig) -> Cow<'a, str> {
+    if config.protocol_aliases.is_empty() {
+        return Cow::Borrowed(input);
+    }
+    if let Some(sep) = input.find("://") {
+        let scheme = &input[..sep];
+        let lowered = scheme.to_lowercase();
+        if let Some(target) = config.protocol_aliases.get(&lowered) {
+            let rest = &input[sep..]; // includes "://..."
+            return Cow::Owned(format!("{target}{rest}"));
+        }
+    }
+    Cow::Borrowed(input)
+}
+
 type CacheKey = (bool, Arc<IOConfig>);
 
 static CLIENT_CACHE: LazyLock<std::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>>> =
@@ -618,3 +643,73 @@ pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Ar
 }
 
 type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
+#[cfg(test)]
+mod resolve_alias_tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    fn config_with_aliases(aliases: &[(&str, &str)]) -> IOConfig {
+        let mut config = IOConfig::default();
+        config.protocol_aliases = aliases
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect::<BTreeMap<_, _>>();
+        config
+    }
+
+    #[test]
+    fn test_resolve_empty_aliases() {
+        let config = IOConfig::default();
+        let result = resolve_url_alias("my-s3://bucket/path", &config);
+        assert_eq!(result.as_ref(), "my-s3://bucket/path");
+        assert!(matches!(result, Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn test_resolve_matching_alias() {
+        let config = config_with_aliases(&[("my-s3", "s3")]);
+        let result = resolve_url_alias("my-s3://bucket/path", &config);
+        assert_eq!(result.as_ref(), "s3://bucket/path");
+        assert!(matches!(result, Cow::Owned(_)));
+    }
+
+    #[test]
+    fn test_resolve_no_match() {
+        let config = config_with_aliases(&[("my-s3", "s3")]);
+        let result = resolve_url_alias("gcs://bucket/path", &config);
+        assert_eq!(result.as_ref(), "gcs://bucket/path");
+        assert!(matches!(result, Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn test_resolve_case_insensitive() {
+        let config = config_with_aliases(&[("my-s3", "s3")]);
+        let result = resolve_url_alias("MY-S3://bucket/path", &config);
+        assert_eq!(result.as_ref(), "s3://bucket/path");
+    }
+
+    #[test]
+    fn test_resolve_no_scheme() {
+        let config = config_with_aliases(&[("my-s3", "s3")]);
+        let result = resolve_url_alias("/local/path/file.parquet", &config);
+        assert_eq!(result.as_ref(), "/local/path/file.parquet");
+        assert!(matches!(result, Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn test_resolve_single_level_only() {
+        // "a" -> "b" and "b" -> "s3"; resolving "a://" should give "b://", NOT "s3://"
+        let config = config_with_aliases(&[("a", "b"), ("b", "s3")]);
+        let result = resolve_url_alias("a://bucket/path", &config);
+        assert_eq!(result.as_ref(), "b://bucket/path");
+    }
+
+    #[test]
+    fn test_resolve_preserves_full_path() {
+        let config = config_with_aliases(&[("custom", "s3")]);
+        let result = resolve_url_alias("custom://my-bucket/some/deep/path?query=1", &config);
+        assert_eq!(result.as_ref(), "s3://my-bucket/some/deep/path?query=1");
+    }
+}
