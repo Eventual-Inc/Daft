@@ -92,6 +92,7 @@ pub struct S3Credentials {
 ///     anonymous (bool, optional): Whether or not to use "anonymous mode", which will access Azure without any credentials
 ///     endpoint_url (str, optional): Custom URL to the Azure endpoint, e.g. ``https://my-account-name.blob.core.windows.net``. Overrides `use_fabric_endpoint` if set
 ///     use_ssl (bool, optional): Whether or not to use SSL, which require accessing Azure over HTTPS rather than HTTP, defaults to True
+///     max_connections (int, optional): Maximum number of connections to Azure at any time per io thread, defaults to 8
 ///
 /// Examples:
 ///     >>> io_config = IOConfig(azure=AzureConfig(storage_account="dafttestdata", access_key="xxx"))
@@ -924,7 +925,8 @@ impl AzureConfig {
         use_fabric_endpoint=None,
         anonymous=None,
         endpoint_url=None,
-        use_ssl=None
+        use_ssl=None,
+        max_connections=None
     ))]
     pub fn new(
         storage_account: Option<String>,
@@ -938,6 +940,7 @@ impl AzureConfig {
         anonymous: Option<bool>,
         endpoint_url: Option<String>,
         use_ssl: Option<bool>,
+        max_connections: Option<u32>,
     ) -> Self {
         let def = crate::AzureConfig::default();
         Self {
@@ -955,6 +958,8 @@ impl AzureConfig {
                 anonymous: anonymous.unwrap_or(def.anonymous),
                 endpoint_url: endpoint_url.or(def.endpoint_url),
                 use_ssl: use_ssl.unwrap_or(def.use_ssl),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(def.max_connections_per_io_thread),
             },
         }
     }
@@ -972,7 +977,8 @@ impl AzureConfig {
         use_fabric_endpoint=None,
         anonymous=None,
         endpoint_url=None,
-        use_ssl=None
+        use_ssl=None,
+        max_connections=None
     ))]
     pub fn replace(
         &self,
@@ -987,6 +993,7 @@ impl AzureConfig {
         anonymous: Option<bool>,
         endpoint_url: Option<String>,
         use_ssl: Option<bool>,
+        max_connections: Option<u32>,
     ) -> Self {
         Self {
             config: crate::AzureConfig {
@@ -1005,6 +1012,8 @@ impl AzureConfig {
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
                 endpoint_url: endpoint_url.or_else(|| self.config.endpoint_url.clone()),
                 use_ssl: use_ssl.unwrap_or(self.config.use_ssl),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(self.config.max_connections_per_io_thread),
             },
         }
     }
@@ -1084,6 +1093,12 @@ impl AzureConfig {
     #[getter]
     pub fn use_ssl(&self) -> PyResult<bool> {
         Ok(self.config.use_ssl)
+    }
+
+    /// Maximum number of connections per IO thread for Azure
+    #[getter]
+    pub fn max_connections(&self) -> PyResult<u32> {
+        Ok(self.config.max_connections_per_io_thread)
     }
 }
 
