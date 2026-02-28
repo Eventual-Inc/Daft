@@ -152,6 +152,24 @@ fn build_row_filter(
     ))
 }
 
+/// Build a `RowSelection` that skips the first `offset` rows.
+///
+/// This is used to implement file-level offset when a RowFilter (predicate pushdown)
+/// is active, because arrow-rs's `with_offset` is applied *after* RowFilter, but
+/// Daft's `start_offset` should be applied *before* the filter (it's a file-level
+/// row skip). RowSelection is applied before RowFilter, so converting offset to a
+/// RowSelection gives the correct semantics.
+fn build_offset_row_selection(offset: usize, total_rows: usize) -> RowSelection {
+    if offset >= total_rows {
+        RowSelection::from(vec![RowSelector::skip(total_rows)])
+    } else {
+        RowSelection::from(vec![
+            RowSelector::skip(offset),
+            RowSelector::select(total_rows - offset),
+        ])
+    }
+}
+
 /// Build a `RowSelection` from Iceberg positional delete indices.
 ///
 /// Converts absolute file-level row indices into a selection relative to the
@@ -240,6 +258,21 @@ fn deletes_to_row_selection(local_deletes: &[usize], total_rows: usize) -> RowSe
 /// This is the arrow-rs equivalent of the parquet2-based `read_parquet_single`.
 /// When `predicate` and/or `delete_rows` are provided, the reader handles them
 /// internally using arrow-rs `RowFilter` and `RowSelection` for late materialization.
+///
+/// # `start_offset` semantics
+///
+/// `start_offset` is a file-level row skip: skip the first N rows before applying
+/// predicates or limits. The intended order of operations is:
+///
+///   offset (skip file rows) → predicate filter → limit
+///
+/// Note: `start_offset > 0` is rejected by the micropartition reader and never used
+/// in production (the streaming scan path doesn't even accept the parameter). The
+/// parquet2 reader has latent bugs for this case — both its local and remote paths
+/// produce RecordBatch size mismatches when `start_offset > 0`. Our implementation
+/// follows the intended semantics based on the code structure and the `apply_delete_rows`
+/// docstring in `read.rs`, but there is no working reference implementation to compare
+/// against.
 #[allow(clippy::too_many_arguments)]
 pub async fn read_parquet_single_arrowrs(
     uri: &str,
@@ -338,16 +371,52 @@ pub async fn read_parquet_single_arrowrs(
             .unwrap_or(DEFAULT_BATCH_SIZE)
     });
     let mut builder = builder.with_row_groups(rg_indices.clone());
-    if let Some(offset) = start_offset {
+
+    // Offset handling: arrow-rs `with_offset` is applied post-RowFilter, but Daft's
+    // start_offset is a file-level skip (pre-filter). When a predicate is pushed,
+    // convert offset to a RowSelection (applied pre-RowFilter) instead.
+    let use_offset_selection = predicate_pushed && start_offset.is_some_and(|o| o > 0);
+    if !use_offset_selection && let Some(offset) = start_offset {
         builder = builder.with_offset(offset);
     }
 
-    // Wire RowSelection for delete_rows (applied before RowFilter by arrow-rs).
-    if let Some(delete_rows) = delete_rows
-        && !delete_rows.is_empty()
+    // Wire RowSelection for offset and/or delete_rows (applied before RowFilter).
     {
-        let row_selection = build_delete_row_selection(delete_rows, &rg_indices, &parquet_metadata);
-        builder = builder.with_row_selection(row_selection);
+        let total_selected_rows: usize = rg_indices
+            .iter()
+            .map(|&idx| parquet_metadata.row_group(idx).num_rows() as usize)
+            .sum();
+
+        let offset_selection = if use_offset_selection {
+            Some(build_offset_row_selection(
+                start_offset.unwrap(),
+                total_selected_rows,
+            ))
+        } else {
+            None
+        };
+
+        let delete_selection = if let Some(delete_rows) = delete_rows
+            && !delete_rows.is_empty()
+        {
+            Some(build_delete_row_selection(
+                delete_rows,
+                &rg_indices,
+                &parquet_metadata,
+            ))
+        } else {
+            None
+        };
+
+        let combined = match (offset_selection, delete_selection) {
+            (Some(a), Some(b)) => Some(a.intersection(&b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        };
+        if let Some(selection) = combined {
+            builder = builder.with_row_selection(selection);
+        }
     }
 
     // Wire RowFilter for predicate pushdown (late materialization).
@@ -408,6 +477,8 @@ pub async fn read_parquet_single_arrowrs(
 /// Row groups are decoded in parallel using rayon, matching the parquet2 reader's
 /// parallelism strategy. Supports late materialization via `RowFilter` and
 /// positional delete skipping via `RowSelection`.
+///
+/// See [`read_parquet_single_arrowrs`] for `start_offset` semantics.
 #[allow(clippy::too_many_arguments)]
 pub fn local_parquet_read_arrowrs(
     path: &str,
@@ -497,15 +568,11 @@ pub fn local_parquet_read_arrowrs(
 
     // 7. Compute per-row-group local offset/limit so the decoder only
     //    materializes the rows we actually need.
-    //    Note: when predicate is pushed down, we don't apply offset/limit at the
-    //    decoder level since those should apply post-filter. The RowFilter + limit
-    //    is handled per-builder below.
+    //    Offset is always applied at decode time (it's a file-level row offset).
+    //    Limit is only applied at decode time when there's no predicate;
+    //    with a predicate, we read all rows post-offset, filter, then limit.
     let has_predicate = predicate.is_some();
-    let global_start = if has_predicate {
-        0
-    } else {
-        start_offset.unwrap_or(0)
-    };
+    let global_start = start_offset.unwrap_or(0);
     let global_limit = if has_predicate { None } else { num_rows };
     let global_end = global_start + global_limit.unwrap_or(usize::MAX - global_start);
 
@@ -571,6 +638,9 @@ pub fn local_parquet_read_arrowrs(
     let delete_rows_arc: Option<Arc<[i64]>> = delete_rows.map(|d| d.into());
 
     /// Build a RowFilter + RowSelection for a single RG builder.
+    ///
+    /// When `predicate_pushed` and `offset > 0`, the offset is converted to a
+    /// RowSelection (pre-filter) rather than using `with_offset` (post-filter).
     fn apply_rg_filter_and_deletes(
         builder: ParquetRecordBatchReaderBuilder<std::fs::File>,
         predicate: Option<&ExprRef>,
@@ -581,16 +651,38 @@ pub fn local_parquet_read_arrowrs(
         delete_rows: Option<&[i64]>,
         rg_global_start: usize,
         rg_rows: usize,
+        offset: usize,
         limit: Option<usize>,
     ) -> DaftResult<ParquetRecordBatchReaderBuilder<std::fs::File>> {
         let mut builder = builder;
 
-        // Wire RowSelection for delete_rows.
-        if let Some(deletes) = delete_rows
+        // Build RowSelections: offset (when predicate pushed) and delete_rows.
+        let offset_selection = if predicate_pushed && offset > 0 {
+            Some(build_offset_row_selection(offset, rg_rows))
+        } else {
+            None
+        };
+
+        let delete_selection = if let Some(deletes) = delete_rows
             && !deletes.is_empty()
         {
-            let row_selection = build_single_rg_delete_selection(deletes, rg_global_start, rg_rows);
-            builder = builder.with_row_selection(row_selection);
+            Some(build_single_rg_delete_selection(
+                deletes,
+                rg_global_start,
+                rg_rows,
+            ))
+        } else {
+            None
+        };
+
+        let combined = match (offset_selection, delete_selection) {
+            (Some(a), Some(b)) => Some(a.intersection(&b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        };
+        if let Some(selection) = combined {
+            builder = builder.with_row_selection(selection);
         }
 
         // Wire RowFilter for predicate pushdown.
@@ -620,10 +712,14 @@ pub fn local_parquet_read_arrowrs(
         }
         rg_builder = rg_builder
             .with_row_groups(vec![task.rg_idx])
-            .with_batch_size(batch_size)
-            .with_offset(task.local_offset);
-        if !predicate_pushed && let Some(lim) = task.local_limit {
-            rg_builder = rg_builder.with_limit(lim);
+            .with_batch_size(batch_size);
+        // Only use with_offset when predicate is NOT pushed (offset is pre-filter
+        // via RowSelection when pushed).
+        if !predicate_pushed {
+            rg_builder = rg_builder.with_offset(task.local_offset);
+            if let Some(lim) = task.local_limit {
+                rg_builder = rg_builder.with_limit(lim);
+            }
         }
         rg_builder = apply_rg_filter_and_deletes(
             rg_builder,
@@ -635,6 +731,7 @@ pub fn local_parquet_read_arrowrs(
             delete_rows_arc.as_deref(),
             rg_global_starts[task.rg_idx],
             rg_rows,
+            task.local_offset,
             num_rows,
         )?;
         let reader = rg_builder.build().map_err(parquet_err)?;
@@ -689,10 +786,12 @@ pub fn local_parquet_read_arrowrs(
             }
             builder = builder
                 .with_row_groups(vec![task.rg_idx])
-                .with_batch_size(batch_size)
-                .with_offset(task.local_offset);
-            if !predicate_pushed && let Some(lim) = task.local_limit {
-                builder = builder.with_limit(lim);
+                .with_batch_size(batch_size);
+            if !predicate_pushed {
+                builder = builder.with_offset(task.local_offset);
+                if let Some(lim) = task.local_limit {
+                    builder = builder.with_limit(lim);
+                }
             }
             builder = apply_rg_filter_and_deletes(
                 builder,
@@ -704,10 +803,8 @@ pub fn local_parquet_read_arrowrs(
                 delete_rows_arc.as_deref(),
                 rg_global_starts[task.rg_idx],
                 rg_rows,
-                // Per-RG limit: not meaningful when predicate is pushed per-RG
-                // (we can't know how many rows will survive the filter across RGs).
-                // Limit is applied post-concat below.
-                None,
+                task.local_offset,
+                None, // limit applied post-concat
             )?;
             let reader = builder.build().map_err(parquet_err)?;
             reader.collect::<Result<Vec<_>, _>>().map_err(parquet_err)
@@ -735,17 +832,9 @@ pub fn local_parquet_read_arrowrs(
     }
 
     // 12. Apply limit post-filter for predicate path.
-    if has_predicate {
-        if let Some(limit) = num_rows {
-            table = table.head(limit)?;
-        }
-        if let Some(offset) = start_offset {
-            if offset > 0 && table.len() > offset {
-                table = table.slice(offset, table.len() - offset)?;
-            } else if offset > 0 {
-                return Ok(RecordBatch::empty(Some(Arc::new(return_daft_schema))));
-            }
-        }
+    //     Offset was already applied at decode time (file-level row skip).
+    if has_predicate && let Some(limit) = num_rows {
+        table = table.head(limit)?;
     }
 
     // 13. Strip predicate-only columns.
@@ -856,16 +945,50 @@ pub async fn stream_parquet_single_arrowrs(
 
     // 7. Apply row groups, offset, batch size, RowFilter, RowSelection, and limit.
     let mut builder = builder.with_row_groups(rg_indices.clone());
-    if let Some(offset) = start_offset {
+
+    // Offset: arrow-rs with_offset is post-RowFilter, but Daft offset is file-level.
+    let use_offset_selection = predicate_pushed && start_offset.is_some_and(|o| o > 0);
+    if !use_offset_selection && let Some(offset) = start_offset {
         builder = builder.with_offset(offset);
     }
 
-    // Wire RowSelection for delete_rows.
-    if let Some(delete_rows) = delete_rows
-        && !delete_rows.is_empty()
+    // Wire RowSelection for offset and/or delete_rows (applied before RowFilter).
     {
-        let row_selection = build_delete_row_selection(delete_rows, &rg_indices, &parquet_metadata);
-        builder = builder.with_row_selection(row_selection);
+        let total_selected_rows: usize = rg_indices
+            .iter()
+            .map(|&idx| parquet_metadata.row_group(idx).num_rows() as usize)
+            .sum();
+
+        let offset_selection = if use_offset_selection {
+            Some(build_offset_row_selection(
+                start_offset.unwrap(),
+                total_selected_rows,
+            ))
+        } else {
+            None
+        };
+
+        let delete_selection = if let Some(delete_rows) = delete_rows
+            && !delete_rows.is_empty()
+        {
+            Some(build_delete_row_selection(
+                delete_rows,
+                &rg_indices,
+                &parquet_metadata,
+            ))
+        } else {
+            None
+        };
+
+        let combined = match (offset_selection, delete_selection) {
+            (Some(a), Some(b)) => Some(a.intersection(&b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        };
+        if let Some(selection) = combined {
+            builder = builder.with_row_selection(selection);
+        }
     }
 
     // Wire RowFilter for predicate pushdown.
@@ -1332,5 +1455,330 @@ mod tests {
         // The MVP parquet file should have some rows and columns.
         assert!(result.len() > 0, "MVP parquet should have rows");
         assert!(result.num_columns() > 0, "MVP parquet should have columns");
+    }
+
+    /// Helper: write a parquet file with columns "val" (Int32: 0..n) and "label" (Utf8).
+    /// Returns the file path.
+    fn write_test_parquet(dir: &std::path::Path, n: i32) -> String {
+        let schema = Arc::new(ArrowSchema::new(vec![
+            ArrowField::new("val", ArrowDataType::Int32, false),
+            ArrowField::new("label", ArrowDataType::Utf8, false),
+        ]));
+        let file_path = dir.join("test.parquet");
+        let file = std::fs::File::create(&file_path).unwrap();
+        let mut writer = ArrowWriter::try_new(file, schema.clone(), None).unwrap();
+        let vals: Vec<i32> = (0..n).collect();
+        let labels: Vec<String> = (0..n).map(|i| format!("row_{i}")).collect();
+        let batch = arrow::array::RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Int32Array::from(vals)),
+                Arc::new(arrow::array::StringArray::from(labels)),
+            ],
+        )
+        .unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+        file_path.to_str().unwrap().to_string()
+    }
+
+    /// Helper: read via parquet2 path (read_parquet_single, bypassing arrowrs env var).
+    async fn read_via_parquet2(
+        uri: &str,
+        columns: Option<Vec<String>>,
+        start_offset: Option<usize>,
+        num_rows: Option<usize>,
+        predicate: Option<ExprRef>,
+    ) -> RecordBatch {
+        let io_client =
+            Arc::new(daft_io::IOClient::new(daft_io::IOConfig::default().into()).unwrap());
+        // Call read_parquet_single directly (async) to avoid runtime nesting.
+        // This always goes through the parquet2 path since we don't set the env var.
+        // SAFETY: tests are single-threaded for this module.
+        unsafe { std::env::remove_var("DAFT_PARQUET_READER") };
+        crate::read::read_parquet_single_for_test(
+            uri,
+            columns,
+            start_offset,
+            num_rows,
+            None,
+            predicate,
+            io_client,
+            None,
+            ParquetSchemaInferenceOptions::default(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap()
+    }
+
+    /// Helper: read via arrowrs path directly.
+    async fn read_via_arrowrs(
+        uri: &str,
+        columns: Option<&[&str]>,
+        start_offset: Option<usize>,
+        num_rows: Option<usize>,
+        predicate: Option<ExprRef>,
+    ) -> RecordBatch {
+        let io_client =
+            Arc::new(daft_io::IOClient::new(daft_io::IOConfig::default().into()).unwrap());
+        read_parquet_single_arrowrs(
+            uri,
+            columns,
+            start_offset,
+            num_rows,
+            None,
+            predicate,
+            io_client,
+            None,
+            ParquetSchemaInferenceOptions::default(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap()
+    }
+
+    /// Helper: read via arrowrs local path directly.
+    fn read_via_arrowrs_local(
+        uri: &str,
+        columns: Option<&[&str]>,
+        start_offset: Option<usize>,
+        num_rows: Option<usize>,
+        predicate: Option<ExprRef>,
+    ) -> RecordBatch {
+        local_parquet_read_arrowrs(
+            uri,
+            columns,
+            start_offset,
+            num_rows,
+            None,
+            predicate,
+            ParquetSchemaInferenceOptions::default(),
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    }
+
+    /// Build a predicate: val > 3 (keep rows with val 4,5,6,7,8,9).
+    fn val_gt_3_predicate() -> ExprRef {
+        use daft_dsl::{lit, resolved_col};
+        resolved_col("val").gt(lit(3i32))
+    }
+
+    /// Extract the "val" column as a Vec<i32> for easy comparison.
+    fn extract_val_column(batch: &RecordBatch) -> Vec<i32> {
+        let idx = batch.schema.get_index("val").unwrap();
+        let series = &batch.columns()[idx];
+        let arr = series.i32().unwrap();
+        (0..arr.len()).map(|i| arr.get(i).unwrap()).collect()
+    }
+
+    // ---- Scenario 1: offset + predicate (no limit) ----
+    // File has val=0..10. Predicate: val > 3. Offset=3.
+    // Offset skips first 3 file rows → decode [3,4,5,6,7,8,9]
+    // → filter val>3 → [4,5,6,7,8,9]
+
+    #[test]
+    fn test_offset_with_predicate() {
+        let dir = std::env::temp_dir().join("daft_test_offset_pred");
+        std::fs::create_dir_all(&dir).unwrap();
+        let uri = write_test_parquet(&dir, 10);
+
+        let result = read_via_arrowrs_local(
+            &uri,
+            Some(&["val"]),
+            Some(3),
+            None,
+            Some(val_gt_3_predicate()),
+        );
+
+        let vals = extract_val_column(&result);
+        assert_eq!(vals, vec![4, 5, 6, 7, 8, 9]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---- Scenario 2: offset + limit + predicate ----
+    // File has val=0..10. Predicate: val > 3. Offset=3, limit=2.
+    // Offset skips first 3 file rows → decode [3,4,5,6,7,8,9]
+    // → filter val>3 → [4,5,6,7,8,9] → limit 2 → [4,5]
+
+    #[test]
+    fn test_offset_limit_predicate() {
+        let dir = std::env::temp_dir().join("daft_test_offset_limit_pred");
+        std::fs::create_dir_all(&dir).unwrap();
+        let uri = write_test_parquet(&dir, 10);
+
+        let result = read_via_arrowrs_local(
+            &uri,
+            Some(&["val"]),
+            Some(3),
+            Some(2),
+            Some(val_gt_3_predicate()),
+        );
+
+        let vals = extract_val_column(&result);
+        assert_eq!(vals, vec![4, 5]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---- Scenario 3: predicate + limit (no offset) ----
+    // Verify limit applies post-filter, matching parquet2 behavior.
+    // File has val=0..10. Predicate: val > 3. Limit=3.
+    // → decode all [0..9] → filter val>3 → [4,5,6,7,8,9] → limit 3 → [4,5,6]
+
+    #[tokio::test]
+    async fn test_predicate_with_limit_matches_parquet2() {
+        let dir = std::env::temp_dir().join("daft_test_pred_limit");
+        std::fs::create_dir_all(&dir).unwrap();
+        let uri = write_test_parquet(&dir, 10);
+
+        let pq2 = read_via_parquet2(
+            &uri,
+            Some(vec!["val".into()]),
+            None,
+            Some(3),
+            Some(val_gt_3_predicate()),
+        )
+        .await;
+        let arrowrs = read_via_arrowrs_local(
+            &uri,
+            Some(&["val"]),
+            None,
+            Some(3),
+            Some(val_gt_3_predicate()),
+        );
+
+        let pq2_vals = extract_val_column(&pq2);
+        let arrowrs_vals = extract_val_column(&arrowrs);
+        assert_eq!(
+            arrowrs_vals, pq2_vals,
+            "predicate+limit: arrowrs should match parquet2"
+        );
+        assert_eq!(pq2_vals, vec![4, 5, 6]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---- Scenario 4: predicate + column expansion ----
+    // Request only "label" but predicate references "val". Reader must expand
+    // columns to include "val" for the predicate, then strip it from output.
+    // File has val=0..10. Predicate: val > 3. Columns: ["label"].
+    // → decode all → filter val>3 → rows 4..9 → strip "val" → only "label"
+
+    #[tokio::test]
+    async fn test_predicate_column_expansion_matches_parquet2() {
+        let dir = std::env::temp_dir().join("daft_test_pred_col_expand");
+        std::fs::create_dir_all(&dir).unwrap();
+        let uri = write_test_parquet(&dir, 10);
+
+        let pq2 = read_via_parquet2(
+            &uri,
+            Some(vec!["label".into()]),
+            None,
+            None,
+            Some(val_gt_3_predicate()),
+        )
+        .await;
+        let arrowrs = read_via_arrowrs_local(
+            &uri,
+            Some(&["label"]),
+            None,
+            None,
+            Some(val_gt_3_predicate()),
+        );
+
+        // Both should return only the "label" column (not "val").
+        assert_eq!(arrowrs.num_columns(), 1);
+        assert_eq!(arrowrs.schema.fields()[0].name, "label");
+        assert_eq!(pq2.num_columns(), 1);
+        assert_eq!(pq2.schema.fields()[0].name, "label");
+        // Both should have 6 rows (val 4..9 pass val > 3).
+        assert_eq!(arrowrs.len(), pq2.len());
+        assert_eq!(pq2.len(), 6);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---- Scenario 5: offset + predicate, arrowrs async matches local ----
+    // NOTE: parquet2 has a pre-existing bug where offset + predicate on local reads
+    // causes a RecordBatch size mismatch (num_rows_read doesn't subtract start offset).
+    // So we compare arrowrs async against arrowrs local (already verified in scenarios 1-2).
+
+    #[tokio::test]
+    async fn test_offset_with_predicate_async_matches_local() {
+        let dir = std::env::temp_dir().join("daft_test_offset_pred_async");
+        std::fs::create_dir_all(&dir).unwrap();
+        let uri = write_test_parquet(&dir, 10);
+
+        let local = read_via_arrowrs_local(
+            &uri,
+            Some(&["val"]),
+            Some(3),
+            None,
+            Some(val_gt_3_predicate()),
+        );
+        let async_result = read_via_arrowrs(
+            &uri,
+            Some(&["val"]),
+            Some(3),
+            None,
+            Some(val_gt_3_predicate()),
+        )
+        .await;
+
+        let local_vals = extract_val_column(&local);
+        let async_vals = extract_val_column(&async_result);
+        assert_eq!(
+            async_vals, local_vals,
+            "offset+predicate: async should match local"
+        );
+        assert_eq!(local_vals, vec![4, 5, 6, 7, 8, 9]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---- Scenario 6: offset + limit + predicate, arrowrs async matches local ----
+
+    #[tokio::test]
+    async fn test_offset_limit_predicate_async_matches_local() {
+        let dir = std::env::temp_dir().join("daft_test_offset_limit_pred_async");
+        std::fs::create_dir_all(&dir).unwrap();
+        let uri = write_test_parquet(&dir, 10);
+
+        let local = read_via_arrowrs_local(
+            &uri,
+            Some(&["val"]),
+            Some(3),
+            Some(2),
+            Some(val_gt_3_predicate()),
+        );
+        let async_result = read_via_arrowrs(
+            &uri,
+            Some(&["val"]),
+            Some(3),
+            Some(2),
+            Some(val_gt_3_predicate()),
+        )
+        .await;
+
+        let local_vals = extract_val_column(&local);
+        let async_vals = extract_val_column(&async_result);
+        assert_eq!(
+            async_vals, local_vals,
+            "offset+limit+predicate: async should match local"
+        );
+        assert_eq!(local_vals, vec![4, 5]);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

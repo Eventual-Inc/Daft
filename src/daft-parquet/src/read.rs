@@ -203,6 +203,42 @@ fn adapter_to_pq2_arc(metadata: Arc<DaftParquetMetadata>) -> Arc<FileMetaData> {
     }
 }
 
+/// Test-only alias for `read_parquet_single` to avoid runtime nesting issues.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn read_parquet_single_for_test(
+    uri: &str,
+    columns: Option<Vec<String>>,
+    start_offset: Option<usize>,
+    num_rows: Option<usize>,
+    row_groups: Option<Vec<i64>>,
+    predicate: Option<ExprRef>,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    schema_infer_options: ParquetSchemaInferenceOptions,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    metadata: Option<Arc<DaftParquetMetadata>>,
+    delete_rows: Option<Vec<i64>>,
+    chunk_size: Option<usize>,
+) -> DaftResult<RecordBatch> {
+    read_parquet_single(
+        uri,
+        columns,
+        start_offset,
+        num_rows,
+        row_groups,
+        predicate,
+        io_client,
+        io_stats,
+        schema_infer_options,
+        field_id_mapping,
+        metadata,
+        delete_rows,
+        chunk_size,
+    )
+    .await
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn read_parquet_single(
     uri: &str,
