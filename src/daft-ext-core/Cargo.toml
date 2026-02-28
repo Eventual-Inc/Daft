@@ -1,0 +1,15 @@
+[package]
+name = "daft-ext-core"
+description = "Daft extension core types and utilities"
+edition = {workspace = true}
+license = "Apache-2.0"
+version = {workspace = true}
+
+[dependencies]
+daft-ext-abi = {workspace = true}
+arrow = {workspace = true, features = ["ffi"]}
+arrow-array = {workspace = true}
+arrow-schema = {workspace = true}
+
+[lints]
+workspace = true

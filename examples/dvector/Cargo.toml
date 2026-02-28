@@ -1,0 +1,16 @@
+[workspace]
+
+[package]
+name = "dvector"
+edition = "2024"
+version = "0.1.0"
+
+[lib]
+name = "dvector"
+crate-type = ["cdylib"]
+
+[dependencies]
+daft-ext = {path = "../../src/daft-ext"}
+arrow-array = {version = "57.1.0", features = ["chrono-tz"]}
+arrow-buffer = "57.1.0"
+arrow-schema = "57.1.0"

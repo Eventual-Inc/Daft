@@ -1,0 +1,12 @@
+[dependencies]
+arrow = {workspace = true, features = ["ffi"]}
+arrow-array = {workspace = true}
+
+[lints]
+workspace = true
+
+[package]
+description = "Daft extension C ABI contract"
+edition = {workspace = true}
+name = "daft-ext-abi"
+version = {workspace = true}

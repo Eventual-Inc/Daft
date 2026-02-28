@@ -46,6 +46,8 @@
         * [SQL Databases](connectors/sql.md)
         * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
+    * Extensions
+        * [Extensions](extensions/index.md)
     * Scaling Out and Deployment
         * [Distributed Execution](distributed/index.md)
         * [Running on Kubernetes](distributed/kubernetes.md)
