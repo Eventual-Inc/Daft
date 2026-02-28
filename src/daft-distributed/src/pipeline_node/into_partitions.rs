@@ -104,7 +104,7 @@ impl IntoPartitionsNode {
                 .take(chunk_size)
                 .map(|builder| {
                     let submittable_task = builder.build(self.context.query_idx, task_id_counter);
-                    submittable_task.submit(scheduler_handle)
+                    scheduler_handle.submit_task(submittable_task)
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
             tasks_per_partition.push(submitted_tasks);
@@ -186,7 +186,7 @@ impl IntoPartitionsNode {
             // Build and submit
             let submittable_task =
                 into_partitions_builder.build(self.context.query_idx, task_id_counter);
-            let submitted_task = submittable_task.submit(scheduler_handle)?;
+            let submitted_task = scheduler_handle.submit_task(submittable_task)?;
             submitted_tasks.push(submitted_task);
         }
 

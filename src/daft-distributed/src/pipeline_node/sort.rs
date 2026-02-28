@@ -150,7 +150,7 @@ pub(crate) fn create_sample_tasks(
             let builder = SwordfishTaskBuilder::new(plan, pipeline_node)
                 .with_psets(pipeline_node.node_id(), psets);
             let submittable_task = builder.build(context.query_idx, task_id_counter);
-            let submitted_task = submittable_task.submit(scheduler_handle)?;
+            let submitted_task = scheduler_handle.submit_task(submittable_task)?;
             Ok(submitted_task)
         })
         .collect::<DaftResult<Vec<_>>>()
@@ -198,7 +198,7 @@ pub(crate) fn create_range_repartition_tasks(
             let builder = SwordfishTaskBuilder::new(plan, pipeline_node)
                 .with_psets(node_id, mo.into_inner().0);
             let submittable_task = builder.build(context.query_idx, task_id_counter);
-            let submitted_task = submittable_task.submit(scheduler_handle)?;
+            let submitted_task = scheduler_handle.submit_task(submittable_task)?;
             Ok(submitted_task)
         })
         .collect::<DaftResult<Vec<_>>>()

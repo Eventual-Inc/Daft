@@ -304,7 +304,7 @@ impl LimitNode {
                     });
                     let submittable =
                         builder_with_limit.build(self.context.query_idx, &task_id_counter);
-                    let future = submittable.submit(&scheduler_handle)?;
+                    let future = scheduler_handle.submit_task(submittable)?;
                     local_limits.push_back(future);
                 } else {
                     input_exhausted = true;

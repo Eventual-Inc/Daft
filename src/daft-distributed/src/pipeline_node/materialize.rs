@@ -26,7 +26,7 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
         scheduler_handle: SchedulerHandle<T>,
     ) -> DaftResult<()> {
         while let Some(pipeline_output) = input.next().await {
-            let finalized_task = pipeline_output.submit(&scheduler_handle)?;
+            let finalized_task = scheduler_handle.submit_task(pipeline_output)?;
             if tx.send(finalized_task).await.is_err() {
                 break;
             }
