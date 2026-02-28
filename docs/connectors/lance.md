@@ -391,28 +391,43 @@ Daft provides a distributed implementation of compaction through [`daft.io.lance
 ```python
 daft.io.lance.compact_files(
     uri,
-    compaction_options=None,
     io_config=None,
-    # --- other options ---
-    index_cache_size=None,
+    *,
+    storage_options=None,
+    version=None,
+    asof=None,
     block_size=None,
+    commit_lock=None,
+    index_cache_size=None,
     default_scan_options=None,
     metadata_cache_size_bytes=None,
-    partition_num=None,
+    compaction_options=None,
+    num_partitions=None,
+    concurrency=None,
+    micro_commit_batch_size=None,
 )
 ```
 
 - **`uri`**: Path to the Lance dataset.
-- **`compaction_options`**: A dictionary of options to control compaction behavior (e.g., `target_rows_per_fragment`, `materialize_deletions`), see [Lance documentation](https://lance-format.github.io/lance-python-doc/all-modules.html#lance.dataset.DatasetOptimizer.compact_files) for more details.
-- **Returns**: A `CompactionMetrics` object with statistics if compaction was performed, or `None` if no action was needed. The `CompactionMetrics` object contains the following fields:
+- **`compaction_options`**: A dictionary of options to control compaction behavior. Common keys include:
+    - `target_rows_per_fragment`: Target number of rows per fragment after compaction.
+    - `materialize_deletions`: Whether to materialize soft deletions into physical deletes.
+    - `materialize_deletions_threadhold`: The fraction of original rows that are soft deleted in a fragment before it becomes a candidate for compaction.
+- **`num_partitions`**: Optional number of partitions to use when repartitioning fragment batches before execution. Only values greater than 1 enable additional parallelism on distributed runners; values <= 1 or None will use the default partitioning.
+- **`concurrency`**: Maximum number of `CompactionTask` instances executed concurrently per worker.
+- **`micro_commit_batch_size`**: Number of compaction tasks to commit in a single micro-batch.
+
+    - If `micro_commit_batch_size` is `None` (the default), all tasks are committed in a single batch and the function returns a `CompactionMetrics` object.
+    - Values <= 0 are treated the same as `None` (single-batch commit; no micro-batching).
+    - If `0 < micro_commit_batch_size < plan.num_tasks()`, compaction tasks are committed in multiple micro-batches and the function returns `None` (per-batch metrics are not aggregated).
+    - If `micro_commit_batch_size` is greater than or equal to `plan.num_tasks()`, the behavior is equivalent to committing in a single batch and the function returns a `CompactionMetrics` object.
+- **Returns**: A `CompactionMetrics` object with statistics if compaction was performed and committed in a single batch, or `None` if no action was needed or when micro-batch commits are used. The `CompactionMetrics` object contains the following fields:
     - `fragments_removed`: Number of fragments removed during compaction.
     - `fragments_added`: Number of fragments added during compaction.
     - `files_removed`: Number of files removed during compaction.
     - `files_added`: Number of files added during compaction.
-- **`partition_num`**: On the Ray Runner, this controls the number of parallel compaction tasks. Defaults to 1. On the native runner, this option is ignored.
 
-
-This example compacts a dataset with multiple fragments into a single, larger fragment, and uses `partition_num` to control the number of parallel compaction tasks.
+This example compacts a dataset with multiple fragments into a single, larger fragment, and uses `num_partitions` to control the number of parallel compaction tasks.
 
 === "🐍 Python"
 
@@ -436,8 +451,11 @@ This example compacts a dataset with multiple fragments into a single, larger fr
         dataset_path,
         compaction_options={
             "target_rows_per_fragment": 400,
+            "materialize_deletions": True,
+            "materialize_deletions_threadhold": 0.5,
         },
-        partition_num=2,
+        num_partitions=2,
+        concurrency=2,
     )
 
     dataset = lance.dataset(dataset_path)
