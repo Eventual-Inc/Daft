@@ -91,6 +91,12 @@ def test_glob_files(tmpdir):
     assert_df_equals(daft_pd_df, pd_df, sort_key="path")
 
 
+def test_glob_files_with_empty_path():
+    with pytest.raises(ValueError) as excinfo:
+        daft.from_glob_path(path=[]).collect()
+    assert "Must specify at least one glob path" in str(excinfo.value)
+
+
 def test_glob_files_single_file(tmpdir):
     filepath = pathlib.Path(tmpdir) / "file.foo"
     filepath.write_text("b" * 10)
@@ -166,7 +172,7 @@ def test_glob_files_from_multiple_path(tmpdir):
         filepath = folder_c / f"file_{i}.foo"
         filepath.write_text("a" * i)
 
-    # glob files from folder a & b and an non-exist path
+    # glob files from folder a & b and a non-exist path
     daft_df = daft.from_glob_path([str(folder_a), str(folder_b), "/not_exists"])
     daft_pd_df = daft_df.to_pandas()
 
@@ -186,22 +192,40 @@ def test_glob_files_from_multiple_path(tmpdir):
     daft_df = daft.from_glob_path([str(folder_a), str(folder_b), str(folder_a) + "/*.foo"])
     assert_df_equals(daft_df.to_pandas(), pd_df, sort_key="path")
 
-    with pytest.raises(FileNotFoundError):
-        daft.from_glob_path(str(pathlib.Path(tmpdir))).collect()
+    daft_df = daft.from_glob_path(str(pathlib.Path(tmpdir))).collect()
+    assert 0 == len(daft_df)
 
-    with pytest.raises(FileNotFoundError):
-        daft.from_glob_path("/not_exists").collect()
+    daft_df = daft.from_glob_path("/not_exists").collect()
+    assert 0 == len(daft_df)
 
 
 @pytest.mark.parametrize("batch_size", list(range(1, 10)))
 def test_glob_files_with_limit(batch_size, tmpdir):
-    folder = pathlib.Path(tmpdir) / "glob_files_with_limit"
-    folder.mkdir()
+    folder_a = pathlib.Path(tmpdir) / "ab"
+    folder_b = pathlib.Path(tmpdir) / "ac"
+    folder_a.mkdir()
+    folder_b.mkdir()
+
     filepaths = []
     for i in range(10):
-        filepath = folder / f"file_{i}.foo"
-        filepath.write_text("a" * i)
-        filepaths.append(str(filepath))
+        for folder in [folder_a, folder_b]:
+            filepath = folder / f"file_{i}.foo"
+            filepath.write_text("a" * i)
+            filepaths.append(str(filepath))
+    assert 20 == len(filepaths)
 
-    daft_df = daft.from_glob_path(filepaths).limit(5).into_batches(batch_size).collect()
-    assert len(daft_df) == 5
+    glob_df = daft.from_glob_path(path=[str(folder_a), str(folder_b)]).collect()
+    assert 20 == len(glob_df)
+
+    df = daft.from_glob_path(path=[str(folder_a), str(folder_b), f"{folder_a}/*.foo", f"{folder_b}/*.foo"])
+    glob_df = df.collect()
+    assert 20 == len(glob_df)
+
+    glob_df = df.limit(7).into_batches(batch_size).collect()
+    assert 7 == len(glob_df)
+
+    glob_df = df.limit(17).into_batches(batch_size).collect()
+    assert 17 == len(glob_df)
+
+    glob_df = df.limit(27).into_batches(batch_size).collect()
+    assert 20 == len(glob_df)

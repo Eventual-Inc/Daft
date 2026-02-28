@@ -13,6 +13,7 @@ common-scan-info = {path = "../common/scan-info", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-context = {path = "../daft-context", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
 smallvec = "1.11"
 daft-local-plan = {path = "../daft-local-plan", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
