@@ -26,6 +26,12 @@ def test_aggs_sql():
                 col("values").count().alias("count"),
                 col("values").count_distinct().alias("count_distinct"),
                 col("values").stddev().alias("std"),
+                col("values").stddev(ddof=0).alias("std_pop"),
+                col("values").stddev(ddof=1).alias("std_samp"),
+                col("values").var(ddof=1).alias("variance"),
+                col("values").var(ddof=1).alias("var"),
+                col("values").var(ddof=1).alias("var_samp"),
+                col("values").var(ddof=0).alias("var_pop"),
             ]
         )
         .collect()
@@ -43,7 +49,13 @@ def test_aggs_sql():
         max(values) as max,
         count(values) as count,
         count(distinct values) as count_distinct,
-        stddev(values) as std
+        stddev(values) as std,
+        stddev_pop(values) AS std_pop,
+        stddev_samp(values) AS std_samp,
+        variance(values) AS variance,
+        var(values) AS var,
+        var_samp(values) AS var_samp,
+        var_pop(values) AS var_pop
     FROM df
     """)
         .collect()

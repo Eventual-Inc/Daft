@@ -356,6 +356,10 @@ impl PySeries {
         Ok((self.series).mean(None)?.into())
     }
 
+    pub fn stddev(&self, ddof: usize) -> PyResult<Self> {
+        Ok((self.series).stddev(None, ddof)?.into())
+    }
+
     pub fn min(&self) -> PyResult<Self> {
         Ok((self.series).min(None)?.into())
     }

@@ -74,11 +74,12 @@ pub fn calculate_mean(sum: f64, count: u64) -> Option<f64> {
     }
 }
 
-pub fn calculate_stddev(stats: Stats, values: impl Iterator<Item = f64>) -> Option<f64> {
-    stats.mean.map(|mean| {
-        let sum_of_squares = values.map(|value| (value - mean).powi(2)).sum::<f64>();
-        (sum_of_squares / stats.count).sqrt()
-    })
+pub fn calculate_stddev(
+    stats: Stats,
+    values: impl Iterator<Item = f64>,
+    ddof: usize,
+) -> Option<f64> {
+    calculate_variance(stats, values, ddof).map(f64::sqrt)
 }
 
 pub fn calculate_variance(
