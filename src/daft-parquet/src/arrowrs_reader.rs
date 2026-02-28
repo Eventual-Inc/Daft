@@ -5,7 +5,7 @@
 //! as the IO bridge for remote reads, and the sync `ParquetRecordBatchReaderBuilder`
 //! with `std::fs::File` for local reads (avoiding IOClient overhead).
 
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::prelude::*;
@@ -26,6 +26,7 @@ use rayon::prelude::*;
 
 use crate::{
     async_reader::DaftAsyncFileReader,
+    metadata::apply_field_ids_to_arrowrs_parquet_metadata,
     read::ParquetSchemaInferenceOptions,
     schema_inference::{arrow_schema_to_daft_schema, infer_schema_from_parquet_metadata_arrowrs},
     statistics::arrowrs_row_group_metadata_to_table_stats,
@@ -98,10 +99,16 @@ pub async fn read_parquet_single_arrowrs(
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<ParquetMetaData>>,
     batch_size: Option<usize>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<RecordBatch> {
     // 1. Create the async file reader and fetch metadata.
     let mut reader = DaftAsyncFileReader::new(uri.to_string(), io_client, io_stats, metadata, None);
-    let parquet_metadata = reader.get_metadata(None).await.map_err(parquet_err)?;
+    let mut parquet_metadata = reader.get_metadata(None).await.map_err(parquet_err)?;
+
+    // 1b. Apply field ID mapping (Iceberg schema evolution) if provided.
+    if let Some(ref mapping) = field_id_mapping {
+        parquet_metadata = apply_field_ids_to_arrowrs_parquet_metadata(parquet_metadata, mapping)?;
+    }
 
     // 2. Infer schema with Daft options (INT96 coercion, string encoding).
     let (arrow_schema, daft_schema) = infer_schemas(&parquet_metadata, &schema_infer_options)?;
@@ -138,6 +145,15 @@ pub async fn read_parquet_single_arrowrs(
     }
 
     // 6. Apply row groups, offset, limit, and batch size.
+    // Default to reading each row group as a single batch to avoid
+    // unnecessary concat overhead when collecting all batches.
+    let batch_size = batch_size.unwrap_or_else(|| {
+        rg_indices
+            .iter()
+            .map(|&idx| parquet_metadata.row_group(idx).num_rows() as usize)
+            .max()
+            .unwrap_or(DEFAULT_BATCH_SIZE)
+    });
     let mut builder = builder.with_row_groups(rg_indices);
     if let Some(offset) = start_offset {
         builder = builder.with_offset(offset);
@@ -145,7 +161,7 @@ pub async fn read_parquet_single_arrowrs(
     if let Some(limit) = num_rows {
         builder = builder.with_limit(limit);
     }
-    builder = builder.with_batch_size(batch_size.unwrap_or(DEFAULT_BATCH_SIZE));
+    builder = builder.with_batch_size(batch_size);
 
     // 7. Build the stream and collect all batches.
     let stream = builder.build().map_err(parquet_err)?;
@@ -172,6 +188,7 @@ pub fn local_parquet_read_arrowrs(
     predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     batch_size: Option<usize>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<RecordBatch> {
     // 1. Open the file and read metadata once.
     let file = std::fs::File::open(path).map_err(|e| {
@@ -183,7 +200,12 @@ pub fn local_parquet_read_arrowrs(
 
     let arrow_reader_metadata =
         ArrowReaderMetadata::load(&file, ArrowReaderOptions::new()).map_err(parquet_err)?;
-    let parquet_metadata = arrow_reader_metadata.metadata().clone();
+    let mut parquet_metadata = arrow_reader_metadata.metadata().clone();
+
+    // 1b. Apply field ID mapping (Iceberg schema evolution) if provided.
+    if let Some(ref mapping) = field_id_mapping {
+        parquet_metadata = apply_field_ids_to_arrowrs_parquet_metadata(parquet_metadata, mapping)?;
+    }
 
     // 2. Infer schema with Daft options.
     let (arrow_schema, daft_schema) = infer_schemas(&parquet_metadata, &schema_infer_options)?;
@@ -375,10 +397,16 @@ pub async fn stream_parquet_single_arrowrs(
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<ParquetMetaData>>,
     batch_size: Option<usize>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     // 1. Create the async file reader and fetch metadata.
     let mut reader = DaftAsyncFileReader::new(uri.to_string(), io_client, io_stats, metadata, None);
-    let parquet_metadata = reader.get_metadata(None).await.map_err(parquet_err)?;
+    let mut parquet_metadata = reader.get_metadata(None).await.map_err(parquet_err)?;
+
+    // 1b. Apply field ID mapping (Iceberg schema evolution) if provided.
+    if let Some(ref mapping) = field_id_mapping {
+        parquet_metadata = apply_field_ids_to_arrowrs_parquet_metadata(parquet_metadata, mapping)?;
+    }
 
     // 2. Infer schema with Daft options.
     let (arrow_schema, daft_schema) = infer_schemas(&parquet_metadata, &schema_infer_options)?;
@@ -626,6 +654,7 @@ mod tests {
             ParquetSchemaInferenceOptions::default(),
             None, // no cached metadata
             None, // default batch size
+            None, // no field_id_mapping
         )
         .await
         .unwrap();
@@ -689,6 +718,7 @@ mod tests {
             ParquetSchemaInferenceOptions::default(),
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -743,6 +773,7 @@ mod tests {
             ParquetSchemaInferenceOptions::default(),
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -791,6 +822,7 @@ mod tests {
             ParquetSchemaInferenceOptions::default(),
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -832,6 +864,7 @@ mod tests {
             io_client,
             None,
             ParquetSchemaInferenceOptions::default(),
+            None,
             None,
             None,
         )

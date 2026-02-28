@@ -208,8 +208,8 @@ async fn read_parquet_single(
     }
 
     // Arrow-rs reader path: enabled via DAFT_PARQUET_READER=arrowrs.
-    // Does not yet support field_id_mapping or delete_rows.
-    if use_arrowrs_reader() && field_id_mapping.is_none() && delete_rows.is_none() {
+    // Does not yet support delete_rows.
+    if use_arrowrs_reader() && delete_rows.is_none() {
         let columns_ref: Option<Vec<&str>> = columns_to_read
             .as_ref()
             .map(|v| v.iter().map(|s| s.as_str()).collect());
@@ -227,6 +227,7 @@ async fn read_parquet_single(
                     .map(|c| c.iter().map(|s| (*s).to_string()).collect());
                 let row_groups_owned = row_groups.as_deref().map(|r| r.to_vec());
                 let predicate = predicate.clone();
+                let field_id_mapping = field_id_mapping.clone();
                 move || {
                     let col_refs: Option<Vec<&str>> = columns_ref_owned
                         .as_ref()
@@ -240,6 +241,7 @@ async fn read_parquet_single(
                         predicate,
                         schema_infer_options,
                         chunk_size,
+                        field_id_mapping,
                     )
                 }
             })
@@ -258,6 +260,7 @@ async fn read_parquet_single(
                 schema_infer_options,
                 None,
                 chunk_size,
+                field_id_mapping,
             )
             .await?
         };
@@ -510,7 +513,8 @@ async fn stream_parquet_single(
     }
 
     // Arrow-rs reader path: enabled via DAFT_PARQUET_READER=arrowrs.
-    if use_arrowrs_reader() && field_id_mapping.is_none() && delete_rows.is_none() {
+    // Does not yet support delete_rows.
+    if use_arrowrs_reader() && delete_rows.is_none() {
         let columns_ref: Option<Vec<&str>> = columns_to_read
             .as_ref()
             .map(|v| v.iter().map(|s| s.as_str()).collect());
@@ -529,6 +533,7 @@ async fn stream_parquet_single(
                         .map(|c| c.iter().map(|s| (*s).to_string()).collect());
                     let row_groups_owned = row_groups.as_deref().map(|r| r.to_vec());
                     let predicate = predicate.clone();
+                    let field_id_mapping = field_id_mapping.clone();
                     move || {
                         let col_refs: Option<Vec<&str>> = columns_ref_owned
                             .as_ref()
@@ -542,6 +547,7 @@ async fn stream_parquet_single(
                             predicate,
                             schema_infer_options,
                             chunk_size,
+                            field_id_mapping,
                         )
                     }
                 })
@@ -561,6 +567,7 @@ async fn stream_parquet_single(
                     schema_infer_options,
                     None,
                     chunk_size,
+                    field_id_mapping,
                 )
                 .await?
             };
