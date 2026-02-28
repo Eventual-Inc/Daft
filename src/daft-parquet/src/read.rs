@@ -152,6 +152,43 @@ fn limit_with_delete_rows(
     }
 }
 
+/// Applies Iceberg positional deletes to a table by masking out deleted rows.
+/// `start_offset` is the global row offset of the first row in the table.
+fn apply_delete_rows(
+    table: &mut RecordBatch,
+    delete_rows: Vec<i64>,
+    start_offset: usize,
+    num_rows_to_read: Option<usize>,
+    uri: &str,
+) -> DaftResult<usize> {
+    if delete_rows.is_empty() {
+        return Ok(0);
+    }
+    let mut selection_mask = Bitmap::new_trued(table.len()).make_mut();
+    for row in delete_rows.into_iter().map(|r| r as usize) {
+        if row >= start_offset && num_rows_to_read.is_none_or(|n| row < start_offset + n) {
+            let table_row = row - start_offset;
+            if table_row < table.len() {
+                unsafe {
+                    selection_mask.set_unchecked(table_row, false);
+                }
+            } else {
+                return Err(super::Error::ParquetDeleteRowOutOfIndex {
+                    path: uri.into(),
+                    row: table_row,
+                    read_rows: table.len(),
+                }
+                .into());
+            }
+        }
+    }
+    let num_deleted = selection_mask.unset_bits();
+    let nb = daft_arrow::buffer::NullBuffer::from(Bitmap::from(selection_mask));
+    let selection_mask = BooleanArray::from_null_buffer("selection_mask", &nb)?;
+    *table = table.mask_filter(&selection_mask.into_series())?;
+    Ok(num_deleted)
+}
+
 fn pq2_to_adapter_arc(metadata: Arc<FileMetaData>) -> Arc<DaftParquetMetadata> {
     match Arc::try_unwrap(metadata) {
         Ok(metadata) => Arc::new(metadata.into()),
@@ -208,8 +245,7 @@ async fn read_parquet_single(
     }
 
     // Arrow-rs reader path: enabled via DAFT_PARQUET_READER=arrowrs.
-    // Does not yet support delete_rows.
-    if use_arrowrs_reader() && delete_rows.is_none() {
+    if use_arrowrs_reader() {
         let columns_ref: Option<Vec<&str>> = columns_to_read
             .as_ref()
             .map(|v| v.iter().map(|s| s.as_str()).collect());
@@ -264,6 +300,21 @@ async fn read_parquet_single(
             )
             .await?
         };
+
+        // Post-read delete_rows filtering (Iceberg positional deletes).
+        if let Some(delete_rows) = delete_rows {
+            assert!(
+                row_groups.is_none(),
+                "Row group splitting is not supported with Iceberg deletion files."
+            );
+            apply_delete_rows(
+                &mut table,
+                delete_rows,
+                start_offset.unwrap_or(0),
+                num_rows_to_read,
+                uri,
+            )?;
+        }
 
         // Post-read predicate filtering (same as parquet2 path).
         if let Some(predicate) = predicate {
@@ -347,45 +398,18 @@ async fn read_parquet_single(
     let metadata_num_rows = metadata.num_rows();
     let metadata_num_columns = metadata.as_parquet2().schema().fields().len();
 
-    let num_deleted_rows = if let Some(delete_rows) = delete_rows
-        && !delete_rows.is_empty()
-    {
+    let num_deleted_rows = if let Some(delete_rows) = delete_rows {
         assert!(
             row_groups.is_none(),
             "Row group splitting is not supported with Iceberg deletion files."
         );
-
-        let mut selection_mask = Bitmap::new_trued(table.len()).make_mut();
-
-        let start_offset = start_offset.unwrap_or(0);
-
-        for row in delete_rows.into_iter().map(|r| r as usize) {
-            if row >= start_offset && num_rows_to_read.is_none_or(|n| row < start_offset + n) {
-                let table_row = row - start_offset;
-
-                if table_row < table.len() {
-                    unsafe {
-                        selection_mask.set_unchecked(table_row, false);
-                    }
-                } else {
-                    return Err(super::Error::ParquetDeleteRowOutOfIndex {
-                        path: uri.into(),
-                        row: table_row,
-                        read_rows: table.len(),
-                    }
-                    .into());
-                }
-            }
-        }
-
-        let num_deleted_rows = selection_mask.unset_bits();
-        let nb = daft_arrow::buffer::NullBuffer::from(Bitmap::from(selection_mask));
-
-        let selection_mask = BooleanArray::from_null_buffer("selection_mask", &nb)?;
-
-        table = table.mask_filter(&selection_mask.into_series())?;
-
-        num_deleted_rows
+        apply_delete_rows(
+            &mut table,
+            delete_rows,
+            start_offset.unwrap_or(0),
+            num_rows_to_read,
+            uri,
+        )?
     } else {
         0
     };
@@ -513,8 +537,7 @@ async fn stream_parquet_single(
     }
 
     // Arrow-rs reader path: enabled via DAFT_PARQUET_READER=arrowrs.
-    // Does not yet support delete_rows.
-    if use_arrowrs_reader() && delete_rows.is_none() {
+    if use_arrowrs_reader() {
         let columns_ref: Option<Vec<&str>> = columns_to_read
             .as_ref()
             .map(|v| v.iter().map(|s| s.as_str()).collect());
@@ -572,11 +595,35 @@ async fn stream_parquet_single(
                 .await?
             };
 
-        // Apply post-read predicate filtering per batch.
+        // Apply post-read delete_rows and predicate filtering per batch.
+        let mut index_so_far: usize = 0;
+        let mut curr_delete_row_idx: usize = 0;
         let mut remaining_rows = num_rows_to_return.map(|limit| limit as i64);
         let stream = table_stream
             .map(move |result| {
                 let mut table = result?;
+                let len = table.len();
+
+                // Apply delete_rows (Iceberg positional deletes).
+                if let Some(ref delete_rows) = delete_rows
+                    && !delete_rows.is_empty()
+                {
+                    let mut selection_mask = Bitmap::new_trued(len).make_mut();
+                    while curr_delete_row_idx < delete_rows.len()
+                        && (delete_rows[curr_delete_row_idx] as usize) < index_so_far + len
+                    {
+                        let table_row = delete_rows[curr_delete_row_idx] as usize - index_so_far;
+                        unsafe {
+                            selection_mask.set_unchecked(table_row, false);
+                        }
+                        curr_delete_row_idx += 1;
+                    }
+                    let nb = daft_arrow::buffer::NullBuffer::from(Bitmap::from(selection_mask));
+                    let selection_mask = BooleanArray::from_null_buffer("selection_mask", &nb)?;
+                    table = table.mask_filter(&selection_mask.into_series())?;
+                }
+                index_so_far += len;
+
                 if let Some(ref pred) = predicate {
                     let bound = BoundExpr::try_new(pred.clone(), &table.schema)?;
                     table = table.filter(&[bound])?;

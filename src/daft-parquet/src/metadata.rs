@@ -220,6 +220,11 @@ fn apply_field_ids_to_parquet_file_metadata(
 // Arrow-rs field ID mapping
 // ---------------------------------------------------------------------------
 
+/// Extract the optional field ID from a parquet `BasicTypeInfo`.
+fn get_field_id(info: &parquet::schema::types::BasicTypeInfo) -> Option<i32> {
+    info.has_id().then(|| info.id())
+}
+
 /// Recursively rewrite an arrow-rs `Type`, renaming fields per the mapping and
 /// dropping unmapped struct children.  Returns `None` if this field should be
 /// dropped entirely (no field ID, or ID not in the mapping).
@@ -230,10 +235,9 @@ fn rewrite_arrowrs_type_with_field_ids(
     use parquet::schema::types::Type;
 
     let info = tp.get_basic_info();
-    let field_id = if info.has_id() { Some(info.id()) } else { None };
 
     // If this node has no field ID or its ID isn't in the mapping, drop it.
-    let mapped_field = field_id.and_then(|fid| field_id_mapping.get(&fid))?;
+    let mapped_field = get_field_id(info).and_then(|fid| field_id_mapping.get(&fid))?;
 
     match tp {
         Type::PrimitiveType {
@@ -250,7 +254,7 @@ fn rewrite_arrowrs_type_with_field_ids(
                 .with_length(*type_length)
                 .with_precision(*precision)
                 .with_scale(*scale)
-                .with_id(field_id)
+                .with_id(get_field_id(info))
                 .build()
                 .expect("rebuilding primitive type with same attributes should not fail");
             Some(new_type)
@@ -278,7 +282,7 @@ fn rewrite_arrowrs_type_with_field_ids(
                 .with_converted_type(info.converted_type())
                 .with_logical_type(info.logical_type_ref().cloned())
                 .with_fields(new_children)
-                .with_id(field_id)
+                .with_id(get_field_id(info))
                 .build()
                 .expect("rebuilding group type with same attributes should not fail");
             Some(new_type)
@@ -325,11 +329,7 @@ pub(crate) fn apply_field_ids_to_arrowrs_parquet_metadata(
         .iter()
         .filter_map(|col_descr| {
             let info = col_descr.self_type().get_basic_info();
-            if info.has_id() {
-                Some((info.id(), col_descr.clone()))
-            } else {
-                None
-            }
+            get_field_id(info).map(|fid| (fid, col_descr.clone()))
         })
         .collect();
 
@@ -343,12 +343,8 @@ pub(crate) fn apply_field_ids_to_arrowrs_parquet_metadata(
                 .iter()
                 .filter_map(|col| {
                     let col_info = col.column_descr().self_type().get_basic_info();
-                    let col_field_id = if col_info.has_id() {
-                        Some(col_info.id())
-                    } else {
-                        None
-                    };
-                    let new_descr = col_field_id.and_then(|fid| field_id_to_col_descr.get(&fid))?;
+                    let new_descr =
+                        get_field_id(col_info).and_then(|fid| field_id_to_col_descr.get(&fid))?;
 
                     // Rebuild ColumnChunkMetaData with new descriptor.
                     // No set_column_descr on the builder, so we construct from scratch.
