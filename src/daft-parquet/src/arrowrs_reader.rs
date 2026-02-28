@@ -238,42 +238,63 @@ pub fn local_parquet_read_arrowrs(
         return Ok(RecordBatch::empty(Some(Arc::new(projected_daft_schema))));
     }
 
-    // 6. Apply offset and limit: trim row groups to only those we need.
-    let start = start_offset.unwrap_or(0);
-    let limit = num_rows;
+    // 6. Compute per-row-group local offset/limit so the decoder only
+    //    materializes the rows we actually need.
+    let global_start = start_offset.unwrap_or(0);
+    let global_limit = num_rows;
+    let global_end = global_start + global_limit.unwrap_or(usize::MAX - global_start);
+
+    struct RgTask {
+        rg_idx: usize,
+        local_offset: usize,
+        local_limit: Option<usize>,
+    }
+
+    let mut rg_tasks = Vec::new();
+    let mut cumulative_rows = 0usize;
+    for &rg_idx in &rg_indices {
+        let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
+        let rg_start = cumulative_rows;
+        let rg_end = cumulative_rows + rg_rows;
+        cumulative_rows = rg_end;
+
+        // Skip row groups entirely outside the requested range.
+        if rg_end <= global_start || rg_start >= global_end {
+            continue;
+        }
+
+        let local_offset = global_start.saturating_sub(rg_start);
+        let local_end = global_end.min(rg_end) - rg_start;
+        let local_limit = if global_limit.is_some() || local_offset > 0 {
+            Some(local_end - local_offset)
+        } else {
+            None
+        };
+
+        rg_tasks.push(RgTask {
+            rg_idx,
+            local_offset,
+            local_limit,
+        });
+    }
+
+    if rg_tasks.is_empty() {
+        return Ok(RecordBatch::empty(Some(Arc::new(projected_daft_schema))));
+    }
+
     // Use a large batch size so each row group produces a single batch,
     // matching parquet2's behavior and avoiding per-batch concat overhead.
-    // Default to reading each row group as a single batch.
     let batch_size = batch_size.unwrap_or_else(|| {
-        // Calculate the max row group size to use as batch size.
-        rg_indices
+        rg_tasks
             .iter()
-            .map(|&idx| parquet_metadata.row_group(idx).num_rows() as usize)
+            .map(|t| parquet_metadata.row_group(t.rg_idx).num_rows() as usize)
             .max()
             .unwrap_or(256 * 1024)
     });
 
-    // Trim the row group list if we have an offset/limit so we don't decode
-    // row groups we'll never use.
-    let rg_indices = if start > 0 || limit.is_some() {
-        let mut trimmed = Vec::new();
-        let mut cumulative_rows = 0usize;
-        let rows_needed = start + limit.unwrap_or(usize::MAX - start);
-        for &rg_idx in &rg_indices {
-            let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
-            if cumulative_rows >= rows_needed {
-                break;
-            }
-            trimmed.push(rg_idx);
-            cumulative_rows += rg_rows;
-        }
-        trimmed
-    } else {
-        rg_indices
-    };
-
-    // 7a. Fast path for single row group: skip rayon dispatch, use limit/offset directly.
-    if rg_indices.len() == 1 {
+    // 7a. Fast path for single row group: skip rayon dispatch.
+    if rg_tasks.len() == 1 {
+        let task = &rg_tasks[0];
         let mut rg_builder =
             ParquetRecordBatchReaderBuilder::new_with_metadata(file, arrow_reader_metadata);
         if let Some(ref col_set) = col_set {
@@ -281,12 +302,10 @@ pub fn local_parquet_read_arrowrs(
             rg_builder = rg_builder.with_projection(mask);
         }
         rg_builder = rg_builder
-            .with_row_groups(rg_indices)
-            .with_batch_size(batch_size);
-        if let Some(off) = start_offset {
-            rg_builder = rg_builder.with_offset(off);
-        }
-        if let Some(lim) = limit {
+            .with_row_groups(vec![task.rg_idx])
+            .with_batch_size(batch_size)
+            .with_offset(task.local_offset);
+        if let Some(lim) = task.local_limit {
             rg_builder = rg_builder.with_limit(lim);
         }
         let reader = rg_builder.build().map_err(parquet_err)?;
@@ -306,9 +325,9 @@ pub fn local_parquet_read_arrowrs(
     let path_owned = path.to_string();
     let arrow_reader_metadata = Arc::new(arrow_reader_metadata);
 
-    let rg_batches: Vec<DaftResult<Vec<arrow::array::RecordBatch>>> = rg_indices
+    let rg_batches: Vec<DaftResult<Vec<arrow::array::RecordBatch>>> = rg_tasks
         .par_iter()
-        .map(|&rg_idx| {
+        .map(|task| {
             let file = std::fs::File::open(&path_owned)
                 .map_err(|e| parquet_err(format!("Failed to open '{}': {}", path_owned, e)))?;
             let mut builder = ParquetRecordBatchReaderBuilder::new_with_metadata(
@@ -319,63 +338,25 @@ pub fn local_parquet_read_arrowrs(
                 let mask = build_projection_mask(col_set, &arrow_schema, builder.parquet_schema());
                 builder = builder.with_projection(mask);
             }
-            let reader = builder
-                .with_row_groups(vec![rg_idx])
+            builder = builder
+                .with_row_groups(vec![task.rg_idx])
                 .with_batch_size(batch_size)
-                .build()
-                .map_err(parquet_err)?;
+                .with_offset(task.local_offset);
+            if let Some(lim) = task.local_limit {
+                builder = builder.with_limit(lim);
+            }
+            let reader = builder.build().map_err(parquet_err)?;
             reader.collect::<Result<Vec<_>, _>>().map_err(parquet_err)
         })
         .collect();
 
-    // 8. Flatten batches from all row groups, applying offset/limit.
-    let mut all_batches = Vec::new();
-    let mut rows_skipped = 0usize;
-    let mut rows_collected = 0usize;
-
-    for rg_result in rg_batches {
-        let batches = rg_result?;
-        for batch in batches {
-            let batch_rows = batch.num_rows();
-
-            // Handle offset: skip initial rows.
-            if rows_skipped < start {
-                let skip_in_batch = (start - rows_skipped).min(batch_rows);
-                rows_skipped += skip_in_batch;
-                if skip_in_batch == batch_rows {
-                    continue;
-                }
-                // Partially skip this batch.
-                let remaining = batch.slice(skip_in_batch, batch_rows - skip_in_batch);
-                let take = if let Some(lim) = limit {
-                    remaining.num_rows().min(lim - rows_collected)
-                } else {
-                    remaining.num_rows()
-                };
-                all_batches.push(remaining.slice(0, take));
-                rows_collected += take;
-            } else {
-                let take = if let Some(lim) = limit {
-                    batch_rows.min(lim - rows_collected)
-                } else {
-                    batch_rows
-                };
-                if take < batch_rows {
-                    all_batches.push(batch.slice(0, take));
-                } else {
-                    all_batches.push(batch);
-                }
-                rows_collected += take;
-            }
-
-            if limit.is_some_and(|lim| rows_collected >= lim) {
-                break;
-            }
-        }
-        if limit.is_some_and(|lim| rows_collected >= lim) {
-            break;
-        }
-    }
+    // 8. Flatten batches (already trimmed per-RG, no post-decode slicing needed).
+    let all_batches: Vec<arrow::array::RecordBatch> = rg_batches
+        .into_iter()
+        .collect::<DaftResult<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect();
 
     // 9. Convert to Daft RecordBatch.
     crate::arrow_bridge::arrowrs_batches_to_daft_recordbatch(&all_batches, &projected_daft_schema)
