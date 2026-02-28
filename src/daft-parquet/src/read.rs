@@ -203,6 +203,42 @@ fn adapter_to_pq2_arc(metadata: Arc<DaftParquetMetadata>) -> Arc<FileMetaData> {
     }
 }
 
+/// Test-only alias for `read_parquet_single` to avoid runtime nesting issues.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn read_parquet_single_for_test(
+    uri: &str,
+    columns: Option<Vec<String>>,
+    start_offset: Option<usize>,
+    num_rows: Option<usize>,
+    row_groups: Option<Vec<i64>>,
+    predicate: Option<ExprRef>,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    schema_infer_options: ParquetSchemaInferenceOptions,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    metadata: Option<Arc<DaftParquetMetadata>>,
+    delete_rows: Option<Vec<i64>>,
+    chunk_size: Option<usize>,
+) -> DaftResult<RecordBatch> {
+    read_parquet_single(
+        uri,
+        columns,
+        start_offset,
+        num_rows,
+        row_groups,
+        predicate,
+        io_client,
+        io_stats,
+        schema_infer_options,
+        field_id_mapping,
+        metadata,
+        delete_rows,
+        chunk_size,
+    )
+    .await
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn read_parquet_single(
     uri: &str,
@@ -245,14 +281,16 @@ async fn read_parquet_single(
     }
 
     // Arrow-rs reader path: enabled via DAFT_PARQUET_READER=arrowrs.
+    // The arrowrs reader handles predicate, delete_rows, column expansion,
+    // and limit internally via RowFilter/RowSelection.
     if use_arrowrs_reader() {
-        let columns_ref: Option<Vec<&str>> = columns_to_read
+        let columns_ref: Option<Vec<&str>> = columns_to_return
             .as_ref()
             .map(|v| v.iter().map(|s| s.as_str()).collect());
 
         // Use sync local reader for local files, async reader for remote.
         let (source_type_check, fixed_uri_check) = parse_url(uri)?;
-        let mut table = if matches!(source_type_check, SourceType::File) {
+        let table = if matches!(source_type_check, SourceType::File) {
             tokio::task::spawn_blocking({
                 let path = fixed_uri_check
                     .strip_prefix("file://")
@@ -264,6 +302,7 @@ async fn read_parquet_single(
                 let row_groups_owned = row_groups.as_deref().map(|r| r.to_vec());
                 let predicate = predicate.clone();
                 let field_id_mapping = field_id_mapping.clone();
+                let delete_rows = delete_rows.clone();
                 move || {
                     let col_refs: Option<Vec<&str>> = columns_ref_owned
                         .as_ref()
@@ -272,12 +311,13 @@ async fn read_parquet_single(
                         &path,
                         col_refs.as_deref(),
                         start_offset,
-                        num_rows_to_read,
+                        num_rows_to_return,
                         row_groups_owned.as_deref(),
                         predicate,
                         schema_infer_options,
                         chunk_size,
                         field_id_mapping,
+                        delete_rows.as_deref(),
                     )
                 }
             })
@@ -288,7 +328,7 @@ async fn read_parquet_single(
                 uri,
                 columns_ref.as_deref(),
                 start_offset,
-                num_rows_to_read,
+                num_rows_to_return,
                 row_groups.as_deref(),
                 predicate.clone(),
                 io_client,
@@ -297,40 +337,11 @@ async fn read_parquet_single(
                 None,
                 chunk_size,
                 field_id_mapping,
+                delete_rows.as_deref(),
             )
             .await?
         };
 
-        // Post-read delete_rows filtering (Iceberg positional deletes).
-        if let Some(delete_rows) = delete_rows {
-            assert!(
-                row_groups.is_none(),
-                "Row group splitting is not supported with Iceberg deletion files."
-            );
-            apply_delete_rows(
-                &mut table,
-                delete_rows,
-                start_offset.unwrap_or(0),
-                num_rows_to_read,
-                uri,
-            )?;
-        }
-
-        // Post-read predicate filtering (same as parquet2 path).
-        if let Some(predicate) = predicate {
-            let predicate = BoundExpr::try_new(predicate, &table.schema)?;
-            table = table.filter(&[predicate])?;
-            if let Some(oc) = columns_to_return {
-                let oc_indices = oc
-                    .iter()
-                    .map(|name| table.schema.get_index(name))
-                    .collect::<DaftResult<Vec<_>>>()?;
-                table = table.get_columns(&oc_indices);
-            }
-            if let Some(nr) = num_rows_to_return {
-                table = table.head(nr)?;
-            }
-        }
         return Ok(table);
     }
 
@@ -537,8 +548,10 @@ async fn stream_parquet_single(
     }
 
     // Arrow-rs reader path: enabled via DAFT_PARQUET_READER=arrowrs.
+    // The arrowrs reader handles predicate, delete_rows, column expansion,
+    // and limit internally via RowFilter/RowSelection.
     if use_arrowrs_reader() {
-        let columns_ref: Option<Vec<&str>> = columns_to_read
+        let columns_ref: Option<Vec<&str>> = columns_to_return
             .as_ref()
             .map(|v| v.iter().map(|s| s.as_str()).collect());
 
@@ -557,6 +570,7 @@ async fn stream_parquet_single(
                     let row_groups_owned = row_groups.as_deref().map(|r| r.to_vec());
                     let predicate = predicate.clone();
                     let field_id_mapping = field_id_mapping.clone();
+                    let delete_rows = delete_rows.clone();
                     move || {
                         let col_refs: Option<Vec<&str>> = columns_ref_owned
                             .as_ref()
@@ -565,12 +579,13 @@ async fn stream_parquet_single(
                             &path,
                             col_refs.as_deref(),
                             None, // start_offset not supported in stream path
-                            num_rows_to_read,
+                            num_rows_to_return,
                             row_groups_owned.as_deref(),
                             predicate,
                             schema_infer_options,
                             chunk_size,
                             field_id_mapping,
+                            delete_rows.as_deref(),
                         )
                     }
                 })
@@ -582,7 +597,7 @@ async fn stream_parquet_single(
                     uri.as_str(),
                     columns_ref.as_deref(),
                     None, // start_offset not supported in stream path
-                    num_rows_to_read,
+                    num_rows_to_return,
                     row_groups.as_deref(),
                     predicate.clone(),
                     io_client,
@@ -591,62 +606,24 @@ async fn stream_parquet_single(
                     None,
                     chunk_size,
                     field_id_mapping,
+                    delete_rows.as_deref(),
                 )
                 .await?
             };
 
-        // Apply post-read delete_rows and predicate filtering per batch.
-        let mut index_so_far: usize = 0;
-        let mut curr_delete_row_idx: usize = 0;
+        // The arrowrs reader handles everything internally. Just apply the
+        // remaining_rows limit to the stream.
         let mut remaining_rows = num_rows_to_return.map(|limit| limit as i64);
-        let stream = table_stream
-            .map(move |result| {
-                let mut table = result?;
-                let len = table.len();
-
-                // Apply delete_rows (Iceberg positional deletes).
-                if let Some(ref delete_rows) = delete_rows
-                    && !delete_rows.is_empty()
-                {
-                    let mut selection_mask = Bitmap::new_trued(len).make_mut();
-                    while curr_delete_row_idx < delete_rows.len()
-                        && (delete_rows[curr_delete_row_idx] as usize) < index_so_far + len
-                    {
-                        let table_row = delete_rows[curr_delete_row_idx] as usize - index_so_far;
-                        unsafe {
-                            selection_mask.set_unchecked(table_row, false);
-                        }
-                        curr_delete_row_idx += 1;
-                    }
-                    let nb = daft_arrow::buffer::NullBuffer::from(Bitmap::from(selection_mask));
-                    let selection_mask = BooleanArray::from_null_buffer("selection_mask", &nb)?;
-                    table = table.mask_filter(&selection_mask.into_series())?;
+        let stream = table_stream.try_take_while(move |table| {
+            let should_continue = match remaining_rows {
+                Some(ref mut remaining) => {
+                    *remaining -= table.len() as i64;
+                    *remaining > 0
                 }
-                index_so_far += len;
-
-                if let Some(ref pred) = predicate {
-                    let bound = BoundExpr::try_new(pred.clone(), &table.schema)?;
-                    table = table.filter(&[bound])?;
-                    if let Some(ref oc) = columns_to_return {
-                        let oc_indices = oc
-                            .iter()
-                            .map(|name| table.schema.get_index(name))
-                            .collect::<DaftResult<Vec<_>>>()?;
-                        table = table.get_columns(&oc_indices);
-                    }
-                }
-                Ok(table)
-            })
-            .try_take_while(move |table| {
-                let should_continue = match remaining_rows {
-                    Some(ref mut remaining) => {
-                        *remaining -= table.len() as i64;
-                        *remaining > 0
-                    }
-                    None => true,
-                };
-                futures::future::ready(Ok(should_continue))
-            });
+                None => true,
+            };
+            futures::future::ready(Ok(should_continue))
+        });
         return Ok(stream.boxed());
     }
 
