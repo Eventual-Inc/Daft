@@ -25,8 +25,6 @@ struct UrlUploadArgs<T> {
     #[arg(optional)]
     multi_thread: Option<bool>,
     #[arg(optional)]
-    is_single_folder: Option<bool>,
-    #[arg(optional)]
     io_config: Option<IOConfig>,
 }
 
@@ -43,15 +41,43 @@ impl ScalarUDF for UrlUpload {
             max_connections,
             on_error,
             multi_thread,
-            is_single_folder,
             io_config,
         } = inputs.try_into()?;
 
         let max_connections = max_connections.unwrap_or(32);
         let on_error = on_error.unwrap_or_else(|| "raise".to_string());
         let multi_thread = multi_thread.unwrap_or(true);
-        let is_single_folder = is_single_folder.unwrap_or(false);
         let io_config = io_config.unwrap_or_default();
+        
+        // Determine if this is a single folder upload based on the location data
+        let location_series = location.cast(&DataType::Utf8)?;
+        let location_arr = location_series.utf8().unwrap();
+        let is_single_folder = location_arr.len() == 1;
+
+        // Extract filename template from location if it contains "{}"
+        // Only apply template logic for single folder uploads (not row-specific paths)
+        if is_single_folder {
+            let location_str = location_arr.get(0).unwrap();
+            if location_str.contains("{}") {
+                // Extract the template part (everything after the last "/")
+                if let Some(last_slash) = location_str.rfind('/') {
+                    let template_part = &location_str[last_slash + 1..];
+                    if template_part.contains("{}") {
+                        template_part.to_string()
+                    } else {
+                        "{}".to_string()
+                    }
+                } else {
+                    "{}".to_string()
+                }
+            } else {
+                "{}".to_string()
+            }
+        } else {
+            // For row-specific paths (when location is an expression), 
+            // templates are not supported - upload directly to specified paths
+            "{}".to_string()
+        }
 
         let raise_error_on_failure = match on_error.as_str() {
             "raise" => true,
@@ -71,6 +97,7 @@ impl ScalarUDF for UrlUpload {
             raise_error_on_failure,
             multi_thread,
             is_single_folder,
+            filename_template,
             Arc::new(io_config),
             None,
         )
@@ -193,6 +220,7 @@ pub fn url_upload(
     raise_error_on_failure: bool,
     multi_thread: bool,
     is_single_folder: bool,
+    filename_template: String,
     config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<Series> {
@@ -210,6 +238,7 @@ pub fn url_upload(
         raise_error_on_failure: bool,
         multi_thread: bool,
         is_single_folder: bool,
+        filename_template: String,
         config: Arc<IOConfig>,
         io_stats: Option<IOStatsRef>,
     ) -> DaftResult<Vec<Option<String>>> {
@@ -226,12 +255,12 @@ pub fn url_upload(
                     let owned_client = io_client.clone();
                     let owned_io_stats = io_stats.clone();
 
-                    // TODO: Allow configuration of the folder path (e.g. providing a file extension, or a corresponding Series with matching length with filenames)
-
                     // If the user specifies a single location via a string, we should upload to a single folder by appending a UUID to each path. Otherwise,
                     // if the user gave an expression, we assume that each row has a specific url to upload to.
                     let path = if is_single_folder {
-                        format!("{}/{}", folder_path, uuid::Uuid::new_v4())
+                        let uuid = uuid::Uuid::new_v4();
+                        let filename = filename_template.replace("{}", &uuid.to_string());
+                        format!("{}/{}", folder_path, filename)
                     } else {
                         folder_path
                     };
@@ -284,6 +313,7 @@ pub fn url_upload(
                 raise_error_on_failure,
                 multi_thread,
                 is_single_folder,
+                filename_template.clone(),
                 config,
                 io_stats,
             )
@@ -302,6 +332,7 @@ pub fn url_upload(
                 raise_error_on_failure,
                 multi_thread,
                 is_single_folder,
+                filename_template.clone(),
                 config,
                 io_stats,
             )
@@ -320,6 +351,7 @@ pub fn url_upload(
                 raise_error_on_failure,
                 multi_thread,
                 is_single_folder,
+                filename_template.clone(),
                 config,
                 io_stats,
             )
