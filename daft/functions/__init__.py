@@ -74,6 +74,7 @@ from .file_ import file, file_size, video_file, audio_file, guess_mime_type
 
 from .image import (
     resize,
+    center_crop,
     crop,
     encode_image,
     decode_image,
@@ -258,6 +259,7 @@ __all__ = [
     "cast",
     "cbrt",
     "ceil",
+    "center_crop",
     "chunk",
     "classify_image",
     "classify_text",
