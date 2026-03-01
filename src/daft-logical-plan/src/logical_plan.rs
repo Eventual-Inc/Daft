@@ -795,82 +795,105 @@ impl LogicalPlan {
     pub fn get_schema_for_alias(self: &Arc<Self>, alias: &str) -> DaftResult<Option<SchemaRef>> {
         use common_treenode::TreeNode;
 
-        let mut schema = None;
-        let mut found_match = false;
-
-        self.apply(|node| {
-            if let Self::SubqueryAlias(subquery_alias) = node.as_ref() {
-
-                let SubqueryAlias { name, input, .. } = subquery_alias;
-                if name.as_ref() == alias {
-                    if schema.is_some() {
-                        return Err(DaftError::ValueError(format!(
-                            "Plan must not have duplicate aliases in the same scope, found: {alias}"
-                        )));
-                    }
-
-                    schema = Some(node.schema());
-                    found_match = true;
-                    return Ok(TreeNodeRecursion::Jump);
+        match self.as_ref() {
+            Self::Union(union) => {
+                if let Ok(Some(s)) = union.lhs.get_schema_for_alias(alias) {
+                    return Ok(Some(s));
                 }
+                if let Ok(Some(s)) = union.rhs.get_schema_for_alias(alias) {
+                    return Ok(Some(s));
+                }
+                Ok(None)
+            }
+            _ => {
+                let mut schema = None;
+                let mut found_match = false;
 
-                let input_schema = input.schema();
-                let fields = input_schema.get_fields_with_name(alias);
-                for (_, field) in fields {
-                    if let DataType::Struct(struct_fields) = &field.dtype {
-                        if schema.is_some() {
-                            return Err(DaftError::ValueError(format!(
-                                "Plan must not have duplicate aliases in the same scope, found: {alias}"
-                            )));
+                self.apply(|node| {
+                    if let Self::SubqueryAlias(subquery_alias) = node.as_ref() {
+                        let SubqueryAlias { name, input, .. } = subquery_alias;
+                        if name.as_ref() == alias {
+                            if schema.is_some() {
+                                return Err(DaftError::ValueError(format!(
+                                    "Plan must not have duplicate aliases in the same scope, found: {alias}"
+                                )));
+                            }
+
+                            schema = Some(node.schema());
+                            found_match = true;
+                            return Ok(TreeNodeRecursion::Jump);
                         }
 
-                        let new_fields: Vec<Field> = struct_fields
-                            .iter()
-                            .map(|f| Field::new(f.name.clone(), f.dtype.clone()))
-                            .collect();
+                        let input_schema = input.schema();
+                        let fields = input_schema.get_fields_with_name(alias);
+                        for (_, field) in fields {
+                            if let DataType::Struct(struct_fields) = &field.dtype {
+                                if schema.is_some() {
+                                    return Err(DaftError::ValueError(format!(
+                                        "Plan must not have duplicate aliases in the same scope, found: {alias}"
+                                    )));
+                                }
 
-                        let new_schema = Schema::new(new_fields);
-                        schema = Some(Arc::new(new_schema));
-                        found_match = true;
+                                let new_fields: Vec<Field> = struct_fields
+                                    .iter()
+                                    .map(|f| Field::new(f.name.clone(), f.dtype.clone()))
+                                    .collect();
+
+                                let new_schema = Schema::new(new_fields);
+                                schema = Some(Arc::new(new_schema));
+                                found_match = true;
+                                return Ok(TreeNodeRecursion::Jump);
+                            }
+                        }
                         return Ok(TreeNodeRecursion::Jump);
                     }
-                }
-                if !found_match {
-                    return Ok(TreeNodeRecursion::Jump);
-                }
-            }
-            Ok(TreeNodeRecursion::Continue)
-        })?;
+                    Ok(TreeNodeRecursion::Continue)
+                })?;
 
-        Ok(schema)
+                Ok(schema)
+            }
+        }
     }
 
     pub fn get_schema_for_id(self: &Arc<Self>, id: usize) -> DaftResult<Option<SchemaRef>> {
         use common_treenode::TreeNode;
 
-        let mut schema = None;
-
-        self.apply(|node| {
-            if let Some(plan_id) = node.plan_id() {
-                if plan_id == &id {
-                    if schema.is_some() {
-                        return Err(DaftError::ValueError(format!(
-                            "Plan must not have duplicate plan ids in the same scope, found: {id}"
-                        )));
-                    }
-
-                    schema = Some(node.schema());
-
-                    Ok(TreeNodeRecursion::Jump)
-                } else {
-                    Ok(TreeNodeRecursion::Continue)
+        match self.as_ref() {
+            Self::Union(union) => {
+                if let Ok(Some(s)) = union.lhs.get_schema_for_id(id) {
+                    return Ok(Some(s));
                 }
-            } else {
-                Ok(TreeNodeRecursion::Continue)
+                if let Ok(Some(s)) = union.rhs.get_schema_for_id(id) {
+                    return Ok(Some(s));
+                }
+                Ok(None)
             }
-        })?;
+            _ => {
+                let mut schema = None;
 
-        Ok(schema)
+                self.apply(|node| {
+                    if let Some(plan_id) = node.plan_id() {
+                        if plan_id == &id {
+                            if schema.is_some() {
+                                return Err(DaftError::ValueError(format!(
+                                    "Plan must not have duplicate plan ids in the same scope, found: {id}"
+                                )));
+                            }
+
+                            schema = Some(node.schema());
+
+                            Ok(TreeNodeRecursion::Jump)
+                        } else {
+                            Ok(TreeNodeRecursion::Continue)
+                        }
+                    } else {
+                        Ok(TreeNodeRecursion::Continue)
+                    }
+                })?;
+
+                Ok(schema)
+            }
+        }
     }
 
     pub fn plan_id(&self) -> &Option<usize> {
