@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import types
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -50,6 +49,5 @@ def test_get_shared_lib_single_library(tmp_path: Path):
     mod.__file__ = str(tmp_path / "__init__.py")
     lib = tmp_path / "libfake.so"
     lib.touch()
-    with patch("daft.session._get_shared_lib_extension", return_value=".so"):
-        result = _get_shared_lib(mod)
+    result = _get_shared_lib(mod)
     assert result == str(lib)
