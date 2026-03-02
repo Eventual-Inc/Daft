@@ -1,0 +1,9 @@
+[package]
+name = "daft-ext"
+edition = {workspace = true}
+version = {workspace = true}
+
+[dependencies]
+daft-ext-abi = {path = "../daft-ext-abi"}
+daft-ext-core = {path = "../daft-ext-core"}
+daft-ext-macros = {path = "../daft-ext-macros"}
