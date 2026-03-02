@@ -120,10 +120,7 @@ impl FlightShuffleNode {
                 source_id,
                 self.config.schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.context.node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self.context.node_id as usize)),
             );
 
             let input = FlightShuffleReadInput {
@@ -191,10 +188,7 @@ impl PipelineNodeImpl for FlightShuffleNode {
                     self.shuffle_dirs.clone(),
                     self.compression.clone(),
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(self.context.node_id as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(self.context.node_id as usize)),
                 )
             });
 

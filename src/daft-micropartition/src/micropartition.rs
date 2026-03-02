@@ -15,14 +15,13 @@ use daft_dsl::{AggExpr, Expr, ExprRef};
 use daft_io::{IOClient, IOConfig, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::{
-    infer_arrow_schema_from_metadata,
+    DaftParquetMetadata, infer_arrow_schema_from_metadata,
     read::{ParquetSchemaInferenceOptions, read_parquet_bulk, read_parquet_metadata_bulk},
 };
 use daft_recordbatch::RecordBatch;
 use daft_stats::{ColumnRangeStatistics, PartitionSpec, TableMetadata, TableStatistics};
 use daft_warc::WarcConvertOptions;
 use futures::{Future, Stream};
-use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
 
 use crate::DaftCoreComputeSnafu;
@@ -592,7 +591,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     schema_infer_options: &ParquetSchemaInferenceOptions,
     catalog_provided_schema: Option<SchemaRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-    parquet_metadata: Option<Vec<Arc<FileMetaData>>>,
+    parquet_metadata: Option<Vec<Arc<DaftParquetMetadata>>>,
     chunk_size: Option<usize>,
     aggregation_pushdown: Option<&Expr>,
 ) -> DaftResult<MicroPartition> {
@@ -642,8 +641,10 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema =
-                    infer_arrow_schema_from_metadata(m, Some((*schema_infer_options).into()))?;
+                let schema = infer_arrow_schema_from_metadata(
+                    m.as_parquet2(),
+                    Some((*schema_infer_options).into()),
+                )?;
                 let daft_schema = Schema::from(schema);
                 DaftResult::Ok(Arc::new(daft_schema))
             })
@@ -667,8 +668,10 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema =
-                    infer_arrow_schema_from_metadata(m, Some((*schema_infer_options).into()))?;
+                let schema = infer_arrow_schema_from_metadata(
+                    m.as_parquet2(),
+                    Some((*schema_infer_options).into()),
+                )?;
                 let daft_schema = schema.into();
                 DaftResult::Ok(Arc::new(daft_schema))
             })
@@ -678,7 +681,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
 
     // Handle count pushdown aggregation optimization.
     if let Some(Expr::Agg(AggExpr::Count(_, _))) = aggregation_pushdown {
-        let count: usize = metadata.iter().map(|m| m.num_rows).sum();
+        let count: usize = metadata.iter().map(|m| m.num_rows()).sum();
         let count_field = daft_core::datatypes::Field::new(
             aggregation_pushdown.unwrap().name(),
             daft_core::datatypes::DataType::UInt64,

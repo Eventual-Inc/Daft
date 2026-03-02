@@ -37,7 +37,6 @@ pub struct DefaultRuntimeStats {
 impl DefaultRuntimeStats {
     pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
         let node_kv = node_info.to_key_values();
-
         Self {
             duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
             rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),

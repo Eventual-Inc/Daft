@@ -1,7 +1,7 @@
 mod time;
 mod to_string;
 mod total;
-mod truncate;
+pub mod truncate;
 mod unix_timestamp;
 
 use common_error::{DaftResult, ensure};

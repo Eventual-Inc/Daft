@@ -3,15 +3,18 @@ use std::{cmp::max, num::NonZeroUsize};
 
 use common_error::DaftError;
 use daft_arrow::io::parquet::read::schema::{SchemaInferenceOptions, infer_schema_with_options};
-use daft_core::{prelude::SchemaRef, utils::arrow::coerce_to_daft_compatible_schema};
+use daft_core::prelude::SchemaRef;
 use snafu::Snafu;
 
 mod file;
 pub mod metadata;
+mod metadata_adapter;
+pub use metadata_adapter::{DaftParquetMetadata, DaftRowGroupMetaData};
 #[cfg(feature = "python")]
 pub mod python;
 pub mod read;
 mod statistics;
+mod utils;
 pub use statistics::row_group_metadata_to_table_stats;
 mod read_planner;
 mod stream_reader;
@@ -40,7 +43,7 @@ pub fn infer_arrow_schema_from_metadata(
     options: Option<SchemaInferenceOptions>,
 ) -> daft_arrow::error::Result<daft_arrow::datatypes::Schema> {
     let arrow_schema = infer_schema_with_options(metadata, options)?;
-    let coerced_arrow_schema = coerce_to_daft_compatible_schema(arrow_schema);
+    let coerced_arrow_schema = utils::coerce_to_daft_compatible_schema(arrow_schema);
     Ok(coerced_arrow_schema)
 }
 

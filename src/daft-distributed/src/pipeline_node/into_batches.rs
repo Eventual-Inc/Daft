@@ -21,6 +21,9 @@ use crate::{
     utils::channel::{Sender, create_channel},
 };
 
+const INITIAL_BATCH_PHASE: &str = "local";
+const REBATCH_PHASE: &str = "rebatch";
+
 pub(crate) struct IntoBatchesNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
@@ -113,10 +116,8 @@ impl IntoBatchesNode {
                         group_size,
                         true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
                         StatsState::NotMaterialized,
-                        LocalNodeContext {
-                            origin_node_id: Some(self.node_id() as usize),
-                            additional: None,
-                        },
+                        LocalNodeContext::new(Some(self.node_id() as usize))
+                            .with_phase(REBATCH_PHASE),
                     );
                     let builder = SwordfishTaskBuilder::new(plan, self.as_ref())
                         .with_psets(self.node_id(), psets);
@@ -138,10 +139,7 @@ impl IntoBatchesNode {
                 current_group_size,
                 true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self.node_id() as usize)).with_phase(REBATCH_PHASE),
             );
             let builder =
                 SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
@@ -181,10 +179,7 @@ impl PipelineNodeImpl for IntoBatchesNode {
                 batch_size,
                 false, // No need strict batch sizes for the child tasks, as we coalesce them later on.
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)).with_phase(INITIAL_BATCH_PHASE),
             )
         });
 

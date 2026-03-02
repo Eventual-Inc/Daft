@@ -70,10 +70,7 @@ impl InMemorySourceNode {
             self.info.source_schema.clone(),
             partition_ref.size_bytes(),
             StatsState::NotMaterialized,
-            LocalNodeContext {
-                origin_node_id: Some(self.node_id() as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.node_id() as usize)),
         );
 
         SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())

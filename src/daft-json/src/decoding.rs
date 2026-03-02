@@ -1,21 +1,28 @@
 use std::{borrow::Borrow, fmt::Write};
 
-use chrono::{Datelike, Timelike};
-use daft_arrow::{
+use arrow::{
     array::{
-        Array, MutableArray, MutableBooleanArray, MutableFixedSizeListArray, MutableListArray,
-        MutableNullArray, MutablePrimitiveArray, MutableStructArray, MutableUtf8Array,
+        ArrayRef, OffsetSizeTrait,
+        builder::{
+            ArrayBuilder, BooleanBuilder, FixedSizeListBuilder, GenericListBuilder,
+            GenericStringBuilder, NullBuilder, PrimitiveBuilder, StructBuilder,
+        },
     },
-    bitmap::MutableBitmap,
-    datatypes::{DataType, Field, IntervalUnit, Schema, TimeUnit},
-    error::{Error, Result},
-    offset::Offsets,
+    datatypes::{
+        ArrowPrimitiveType, DataType, Date32Type, Date64Type, DurationMicrosecondType,
+        DurationMillisecondType, DurationNanosecondType, DurationSecondType, Field, Float16Type,
+        Float32Type, Float64Type, Int8Type, Int16Type, Int32Type, Int64Type, IntervalUnit,
+        IntervalYearMonthType, Schema, Time32MillisecondType, Time32SecondType,
+        Time64MicrosecondType, Time64NanosecondType, TimeUnit, TimestampMicrosecondType,
+        TimestampMillisecondType, TimestampNanosecondType, TimestampSecondType, UInt8Type,
+        UInt16Type, UInt32Type, UInt64Type,
+    },
+    error::ArrowError,
     temporal_conversions,
-    types::{NativeType, Offset, f16},
 };
+use chrono::{Datelike, Timelike};
 use daft_decoding::deserialize::{
     deserialize_datetime, deserialize_naive_date, deserialize_naive_datetime,
-    get_factor_from_timeunit,
 };
 use indexmap::IndexMap;
 use num_traits::NumCast;
@@ -23,30 +30,32 @@ use simd_json::StaticNode;
 
 use crate::deserializer::Value as BorrowedValue;
 const JSON_NULL_VALUE: BorrowedValue = BorrowedValue::Static(StaticNode::Null);
-/// Deserialize chunk of JSON records into a chunk of Arrow2 arrays.
+
+/// Deserialize chunk of JSON records into a chunk of Arrow arrays.
 pub fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
     records: &[A],
     schema: &Schema,
-) -> Result<Vec<Box<dyn Array>>> {
+) -> Result<Vec<ArrayRef>, ArrowError> {
     // Allocate mutable arrays.
-    let mut results = schema
-        .fields
+    let fields: Vec<_> = schema.fields().iter().collect();
+    let mut builders: IndexMap<&str, Box<dyn ArrayBuilder>> = fields
         .iter()
-        .map(|f| (f.name.as_str(), allocate_array(f, records.len())))
-        .collect::<IndexMap<_, _>>();
+        .map(|f| (f.name().as_str(), allocate_array(f, records.len())))
+        .collect();
     for record in records {
         match record.borrow() {
             BorrowedValue::Object(record) => {
-                for (key, arr) in &mut results {
+                for (i, (key, arr)) in builders.iter_mut().enumerate() {
+                    let dtype = fields[i].data_type();
                     if let Some(value) = record.get(&**key) {
-                        deserialize_into(arr, &[value]);
+                        deserialize_into(arr, dtype, &[value]);
                     } else {
-                        arr.push_null();
+                        deserialize_into(arr, dtype, &[&JSON_NULL_VALUE]);
                     }
                 }
             }
             _ => {
-                return Err(Error::ExternalFormat(format!(
+                return Err(ArrowError::InvalidArgumentError(format!(
                     "Each line in a newline-delimited JSON file must be a JSON object, but got: {:?}",
                     record.borrow()
                 )));
@@ -54,139 +63,201 @@ pub fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
         }
     }
 
-    Ok(results.into_values().map(|mut ma| ma.as_box()).collect())
+    Ok(builders
+        .into_values()
+        .map(|mut builder| builder.finish())
+        .collect())
 }
 
-pub fn allocate_array(f: &Field, length: usize) -> Box<dyn MutableArray> {
+pub fn allocate_array(f: &Field, length: usize) -> Box<dyn ArrayBuilder> {
     match f.data_type() {
-        DataType::Null => Box::new(MutableNullArray::new(DataType::Null, 0)),
-        DataType::Int8 => Box::new(MutablePrimitiveArray::<i8>::with_capacity(length)),
-        DataType::Int16 => Box::new(MutablePrimitiveArray::<i16>::with_capacity(length)),
-        dt @ (DataType::Int32
-        | DataType::Date32
-        | DataType::Time32(_)
-        | DataType::Interval(IntervalUnit::YearMonth)) => {
-            Box::new(MutablePrimitiveArray::<i32>::with_capacity(length).to(dt.clone()))
+        DataType::Null => Box::new(NullBuilder::new()),
+        DataType::Int8 => Box::new(PrimitiveBuilder::<Int8Type>::with_capacity(length)),
+        DataType::Int16 => Box::new(PrimitiveBuilder::<Int16Type>::with_capacity(length)),
+        DataType::Int32 => Box::new(PrimitiveBuilder::<Int32Type>::with_capacity(length)),
+        DataType::Date32 => Box::new(PrimitiveBuilder::<Date32Type>::with_capacity(length)),
+        DataType::Time32(TimeUnit::Second) => {
+            Box::new(PrimitiveBuilder::<Time32SecondType>::with_capacity(length))
         }
-        dt @ (DataType::Int64
-        | DataType::Date64
-        | DataType::Time64(_)
-        | DataType::Duration(_)
-        | DataType::Timestamp(..)) => {
-            Box::new(MutablePrimitiveArray::<i64>::with_capacity(length).to(dt.clone()))
-        }
-        DataType::UInt8 => Box::new(MutablePrimitiveArray::<u8>::with_capacity(length)),
-        DataType::UInt16 => Box::new(MutablePrimitiveArray::<u16>::with_capacity(length)),
-        DataType::UInt32 => Box::new(MutablePrimitiveArray::<u32>::with_capacity(length)),
-        DataType::UInt64 => Box::new(MutablePrimitiveArray::<u64>::with_capacity(length)),
-        DataType::Float16 => Box::new(MutablePrimitiveArray::<f16>::with_capacity(length)),
-        DataType::Float32 => Box::new(MutablePrimitiveArray::<f32>::with_capacity(length)),
-        DataType::Float64 => Box::new(MutablePrimitiveArray::<f64>::with_capacity(length)),
-        DataType::Boolean => Box::new(MutableBooleanArray::with_capacity(length)),
-        DataType::Utf8 => Box::new(MutableUtf8Array::<i32>::with_capacity(length)),
-        DataType::LargeUtf8 => Box::new(MutableUtf8Array::<i64>::with_capacity(length)),
-        DataType::FixedSizeList(inner, size) => Box::new(MutableFixedSizeListArray::new_from(
-            allocate_array(inner, length),
-            f.data_type().clone(),
-            *size,
-        )),
-        // TODO(Clark): Ensure that these mutable list arrays work correctly and efficiently for arbitrarily nested arrays.
-        // TODO(Clark): We have to manually give a non-None bitmap due to a bug in try_extend_from_lengths for
-        // mutable list arrays, which will unintentionally drop the validity mask if the bitmap isn't already non-None.
-        DataType::List(inner) => Box::new(MutableListArray::new_from_mutable(
-            allocate_array(inner, length),
-            Offsets::<i32>::with_capacity(length),
-            Some(MutableBitmap::with_capacity(length)),
-        )),
-        DataType::LargeList(inner) => Box::new(MutableListArray::new_from_mutable(
-            allocate_array(inner, length),
-            Offsets::<i64>::with_capacity(length),
-            Some(MutableBitmap::with_capacity(length)),
-        )),
-        // TODO(Clark): We have to manually give a non-None bitmap due to a bug in MutableStructArray::push(), which will
-        // unintentionally drop the first null added to the validity mask if a bitmap hasn't been initialized from the start.
-        dt @ DataType::Struct(inner) => Box::new(
-            MutableStructArray::try_new(
-                dt.clone(),
-                inner
-                    .iter()
-                    .map(|field| allocate_array(field, length))
-                    .collect::<Vec<_>>(),
-                Some(MutableBitmap::with_capacity(length)),
-            )
-            .unwrap(),
+        DataType::Time32(TimeUnit::Millisecond) => Box::new(PrimitiveBuilder::<
+            Time32MillisecondType,
+        >::with_capacity(length)),
+        DataType::Interval(IntervalUnit::YearMonth) => Box::new(PrimitiveBuilder::<
+            IntervalYearMonthType,
+        >::with_capacity(length)),
+        DataType::Int64 => Box::new(PrimitiveBuilder::<Int64Type>::with_capacity(length)),
+        DataType::Date64 => Box::new(PrimitiveBuilder::<Date64Type>::with_capacity(length)),
+        DataType::Time64(TimeUnit::Microsecond) => Box::new(PrimitiveBuilder::<
+            Time64MicrosecondType,
+        >::with_capacity(length)),
+        DataType::Time64(TimeUnit::Nanosecond) => Box::new(
+            PrimitiveBuilder::<Time64NanosecondType>::with_capacity(length),
         ),
+        DataType::Duration(tu) => match tu {
+            TimeUnit::Second => Box::new(PrimitiveBuilder::<DurationSecondType>::with_capacity(
+                length,
+            )),
+            TimeUnit::Millisecond => Box::new(
+                PrimitiveBuilder::<DurationMillisecondType>::with_capacity(length),
+            ),
+            TimeUnit::Microsecond => Box::new(
+                PrimitiveBuilder::<DurationMicrosecondType>::with_capacity(length),
+            ),
+            TimeUnit::Nanosecond => Box::new(
+                PrimitiveBuilder::<DurationNanosecondType>::with_capacity(length),
+            ),
+        },
+        dt @ DataType::Timestamp(tu, _) => match tu {
+            TimeUnit::Second => Box::new(
+                PrimitiveBuilder::<TimestampSecondType>::with_capacity(length)
+                    .with_data_type(dt.clone()),
+            ),
+            TimeUnit::Millisecond => Box::new(
+                PrimitiveBuilder::<TimestampMillisecondType>::with_capacity(length)
+                    .with_data_type(dt.clone()),
+            ),
+            TimeUnit::Microsecond => Box::new(
+                PrimitiveBuilder::<TimestampMicrosecondType>::with_capacity(length)
+                    .with_data_type(dt.clone()),
+            ),
+            TimeUnit::Nanosecond => Box::new(
+                PrimitiveBuilder::<TimestampNanosecondType>::with_capacity(length)
+                    .with_data_type(dt.clone()),
+            ),
+        },
+        DataType::UInt8 => Box::new(PrimitiveBuilder::<UInt8Type>::with_capacity(length)),
+        DataType::UInt16 => Box::new(PrimitiveBuilder::<UInt16Type>::with_capacity(length)),
+        DataType::UInt32 => Box::new(PrimitiveBuilder::<UInt32Type>::with_capacity(length)),
+        DataType::UInt64 => Box::new(PrimitiveBuilder::<UInt64Type>::with_capacity(length)),
+        DataType::Float16 => Box::new(PrimitiveBuilder::<Float16Type>::with_capacity(length)),
+        DataType::Float32 => Box::new(PrimitiveBuilder::<Float32Type>::with_capacity(length)),
+        DataType::Float64 => Box::new(PrimitiveBuilder::<Float64Type>::with_capacity(length)),
+        DataType::Boolean => Box::new(BooleanBuilder::with_capacity(length)),
+        DataType::Utf8 => Box::new(GenericStringBuilder::<i32>::with_capacity(length, 1024)),
+        DataType::LargeUtf8 => Box::new(GenericStringBuilder::<i64>::with_capacity(length, 1024)),
+        DataType::FixedSizeList(inner, size) => {
+            let inner_builder = allocate_array(inner.as_ref(), length);
+            Box::new(FixedSizeListBuilder::with_capacity(
+                inner_builder,
+                *size,
+                length,
+            ))
+        }
+        DataType::List(inner) => {
+            let inner_builder = allocate_array(inner.as_ref(), length);
+            Box::new(
+                GenericListBuilder::<i32, _>::with_capacity(inner_builder, length)
+                    .with_field(inner.clone()),
+            )
+        }
+        DataType::LargeList(inner) => {
+            let inner_builder = allocate_array(inner.as_ref(), length);
+            Box::new(
+                GenericListBuilder::<i64, _>::with_capacity(inner_builder, length)
+                    .with_field(inner.clone()),
+            )
+        }
+        DataType::Struct(fields) => Box::new(StructBuilder::from_fields(fields.clone(), length)),
         dt => todo!("Dtype not supported: {:?}", dt),
     }
 }
 
-/// Deserialize `rows` by extending them into the given `target`
+/// Deserialize `rows` by extending them into the given `target`.
 pub fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
-    target: &mut Box<dyn MutableArray>,
+    target: &mut Box<dyn ArrayBuilder>,
+    dtype: &DataType,
     rows: &[A],
 ) {
-    match target.data_type() {
+    match dtype {
         DataType::Null => {
-            // TODO(Clark): Return an error if any of rows are not Value::Null.
+            let target = target.as_any_mut().downcast_mut::<NullBuilder>().unwrap();
             for _ in 0..rows.len() {
-                target.push_null();
+                target.append_null();
             }
         }
-        DataType::Boolean => generic_deserialize_into(target, rows, deserialize_boolean_into),
-        DataType::Float32 => deserialize_primitive_into::<_, f32>(target, rows),
-        DataType::Float64 => deserialize_primitive_into::<_, f64>(target, rows),
-        DataType::Int8 => deserialize_primitive_into::<_, i8>(target, rows),
-        DataType::Int16 => deserialize_primitive_into::<_, i16>(target, rows),
-        DataType::Int32 | DataType::Interval(IntervalUnit::YearMonth) => {
-            deserialize_primitive_into::<_, i32>(target, rows);
+        DataType::Boolean => {
+            generic_deserialize_into(target, rows, deserialize_boolean_into);
         }
-        DataType::Date32 | DataType::Time32(_) => deserialize_date_into(target, rows),
+        DataType::Float32 => deserialize_primitive_into::<_, Float32Type>(target, rows),
+        DataType::Float64 => deserialize_primitive_into::<_, Float64Type>(target, rows),
+        DataType::Float16 => deserialize_primitive_into::<_, Float16Type>(target, rows),
+        DataType::Int8 => deserialize_primitive_into::<_, Int8Type>(target, rows),
+        DataType::Int16 => deserialize_primitive_into::<_, Int16Type>(target, rows),
+        DataType::Int32 => deserialize_primitive_into::<_, Int32Type>(target, rows),
+        DataType::Interval(IntervalUnit::YearMonth) => {
+            deserialize_primitive_into::<_, IntervalYearMonthType>(target, rows);
+        }
+        DataType::Date32 => {
+            deserialize_date_into::<_, Date32Type>(target, dtype, rows);
+        }
+        DataType::Time32(TimeUnit::Second) => {
+            deserialize_date_into::<_, Time32SecondType>(target, dtype, rows);
+        }
+        DataType::Time32(TimeUnit::Millisecond) => {
+            deserialize_date_into::<_, Time32MillisecondType>(target, dtype, rows);
+        }
         DataType::Interval(IntervalUnit::DayTime) => {
             unimplemented!("There is no natural representation of DayTime in JSON.")
         }
-        DataType::Int64 | DataType::Duration(_) => {
-            deserialize_primitive_into::<_, i64>(target, rows);
+        DataType::Int64 => deserialize_primitive_into::<_, Int64Type>(target, rows),
+        DataType::Duration(TimeUnit::Second) => {
+            deserialize_primitive_into::<_, DurationSecondType>(target, rows);
         }
-        DataType::Timestamp(..) | DataType::Date64 | DataType::Time64(_) => {
-            deserialize_datetime_into(target, rows);
+        DataType::Duration(TimeUnit::Millisecond) => {
+            deserialize_primitive_into::<_, DurationMillisecondType>(target, rows);
         }
-        DataType::UInt8 => deserialize_primitive_into::<_, u8>(target, rows),
-        DataType::UInt16 => deserialize_primitive_into::<_, u16>(target, rows),
-        DataType::UInt32 => deserialize_primitive_into::<_, u32>(target, rows),
-        DataType::UInt64 => deserialize_primitive_into::<_, u64>(target, rows),
-        DataType::Utf8 => generic_deserialize_into::<_, MutableUtf8Array<i32>>(
+        DataType::Duration(TimeUnit::Microsecond) => {
+            deserialize_primitive_into::<_, DurationMicrosecondType>(target, rows);
+        }
+        DataType::Duration(TimeUnit::Nanosecond) => {
+            deserialize_primitive_into::<_, DurationNanosecondType>(target, rows);
+        }
+        DataType::Timestamp(TimeUnit::Second, _) => {
+            deserialize_datetime_into::<_, TimestampSecondType>(target, dtype, rows);
+        }
+        DataType::Timestamp(TimeUnit::Millisecond, _) => {
+            deserialize_datetime_into::<_, TimestampMillisecondType>(target, dtype, rows);
+        }
+        DataType::Timestamp(TimeUnit::Microsecond, _) => {
+            deserialize_datetime_into::<_, TimestampMicrosecondType>(target, dtype, rows);
+        }
+        DataType::Timestamp(TimeUnit::Nanosecond, _) => {
+            deserialize_datetime_into::<_, TimestampNanosecondType>(target, dtype, rows);
+        }
+        DataType::Date64 => {
+            deserialize_datetime_into::<_, Date64Type>(target, dtype, rows);
+        }
+        DataType::Time64(TimeUnit::Microsecond) => {
+            deserialize_datetime_into::<_, Time64MicrosecondType>(target, dtype, rows);
+        }
+        DataType::Time64(TimeUnit::Nanosecond) => {
+            deserialize_datetime_into::<_, Time64NanosecondType>(target, dtype, rows);
+        }
+        DataType::UInt8 => deserialize_primitive_into::<_, UInt8Type>(target, rows),
+        DataType::UInt16 => deserialize_primitive_into::<_, UInt16Type>(target, rows),
+        DataType::UInt32 => deserialize_primitive_into::<_, UInt32Type>(target, rows),
+        DataType::UInt64 => deserialize_primitive_into::<_, UInt64Type>(target, rows),
+        DataType::Utf8 => generic_deserialize_into::<_, GenericStringBuilder<i32>>(
             target,
             rows,
             deserialize_utf8_into,
         ),
-        DataType::LargeUtf8 => generic_deserialize_into::<_, MutableUtf8Array<i64>>(
+        DataType::LargeUtf8 => generic_deserialize_into::<_, GenericStringBuilder<i64>>(
             target,
             rows,
             deserialize_utf8_into,
         ),
-        DataType::FixedSizeList(_, _) => {
-            generic_deserialize_into(target, rows, deserialize_fixed_size_list_into);
+        DataType::FixedSizeList(inner, size) => {
+            deserialize_fixed_size_list_into(target, inner.data_type(), *size, rows);
         }
-        DataType::List(_) => deserialize_list_into(
-            target
-                .as_mut_any()
-                .downcast_mut::<MutableListArray<i32, Box<dyn MutableArray>>>()
-                .unwrap(),
-            rows,
-        ),
-        DataType::LargeList(_) => deserialize_list_into(
-            target
-                .as_mut_any()
-                .downcast_mut::<MutableListArray<i64, Box<dyn MutableArray>>>()
-                .unwrap(),
-            rows,
-        ),
-        DataType::Struct(_) => {
-            generic_deserialize_into::<_, MutableStructArray>(
-                target,
-                rows,
-                deserialize_struct_into,
-            );
+        DataType::List(inner) => {
+            deserialize_list_into::<i32, _>(target, inner.data_type(), rows);
+        }
+        DataType::LargeList(inner) => {
+            deserialize_list_into::<i64, _>(target, inner.data_type(), rows);
+        }
+        DataType::Struct(fields) => {
+            deserialize_struct_into(target, fields, rows);
         }
         // TODO(Clark): Add support for decimal type.
         // TODO(Clark): Add support for binary and large binary types.
@@ -196,234 +267,272 @@ pub fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
     }
 }
 
-fn deserialize_primitive_into<'a, A: Borrow<BorrowedValue<'a>>, T: NativeType + NumCast>(
-    target: &mut Box<dyn MutableArray>,
+fn deserialize_primitive_into<'a, A: Borrow<BorrowedValue<'a>>, T: ArrowPrimitiveType>(
+    target: &mut Box<dyn ArrayBuilder>,
     rows: &[A],
-) {
+) where
+    T::Native: NumCast,
+{
     let target = target
-        .as_mut_any()
-        .downcast_mut::<MutablePrimitiveArray<T>>()
+        .as_any_mut()
+        .downcast_mut::<PrimitiveBuilder<T>>()
         .unwrap();
 
-    let iter = rows.iter().map(|row| match row.borrow() {
-        BorrowedValue::Static(StaticNode::I64(v)) => T::from(*v),
-        BorrowedValue::Static(StaticNode::U64(v)) => T::from(*v),
-        BorrowedValue::Static(StaticNode::F64(v)) => T::from(*v),
-        BorrowedValue::Static(StaticNode::Bool(v)) => T::from(*v as u8),
-        _ => None,
-    });
-    target.extend_trusted_len(iter);
+    for row in rows {
+        let value = match row.borrow() {
+            BorrowedValue::Static(StaticNode::I64(v)) => NumCast::from(*v),
+            BorrowedValue::Static(StaticNode::U64(v)) => NumCast::from(*v),
+            BorrowedValue::Static(StaticNode::F64(v)) => NumCast::from(*v),
+            BorrowedValue::Static(StaticNode::Bool(v)) => NumCast::from(*v as u8),
+            _ => None,
+        };
+        target.append_option(value);
+    }
 }
 
 fn generic_deserialize_into<'a, A: Borrow<BorrowedValue<'a>>, M: 'static>(
-    target: &mut Box<dyn MutableArray>,
+    target: &mut Box<dyn ArrayBuilder>,
     rows: &[A],
-    deserialize_into: fn(&mut M, &[A]) -> (),
+    deserialize_into: fn(&mut M, &[A]),
 ) {
-    deserialize_into(target.as_mut_any().downcast_mut::<M>().unwrap(), rows);
+    deserialize_into(target.as_any_mut().downcast_mut::<M>().unwrap(), rows);
 }
 
-fn deserialize_utf8_into<'a, O: Offset, A: Borrow<BorrowedValue<'a>>>(
-    target: &mut MutableUtf8Array<O>,
+fn deserialize_utf8_into<'a, O: OffsetSizeTrait, A: Borrow<BorrowedValue<'a>>>(
+    target: &mut GenericStringBuilder<O>,
     rows: &[A],
 ) {
     let mut scratch = String::new();
 
     for row in rows {
         match row.borrow() {
-            BorrowedValue::String(v) => target.push(Some(v.as_ref())),
+            BorrowedValue::String(v) => target.append_value(v.as_ref()),
             BorrowedValue::Static(StaticNode::Bool(v)) => {
-                target.push(Some(if *v { "true" } else { "false" }));
+                target.append_value(if *v { "true" } else { "false" });
             }
             BorrowedValue::Static(node) if !matches!(node, StaticNode::Null) => {
                 write!(scratch, "{node}").unwrap();
-                target.push(Some(scratch.as_str()));
+                target.append_value(scratch.as_str());
                 scratch.clear();
             }
-            _ => target.push_null(),
+            _ => target.append_null(),
         }
     }
 }
 
 fn deserialize_boolean_into<'a, A: Borrow<BorrowedValue<'a>>>(
-    target: &mut MutableBooleanArray,
-    rows: &[A],
-) {
-    let iter = rows.iter().map(|row| match row.borrow() {
-        BorrowedValue::Static(StaticNode::Bool(v)) => Some(v),
-        _ => None,
-    });
-    target.extend_trusted_len(iter);
-}
-
-fn deserialize_date_into<'a, A: Borrow<BorrowedValue<'a>>>(
-    target: &mut Box<dyn MutableArray>,
-    rows: &[A],
-) {
-    let target = target
-        .as_mut_any()
-        .downcast_mut::<MutablePrimitiveArray<i32>>()
-        .unwrap();
-    let dtype = target.data_type().clone();
-    let mut last_fmt_idx = 0;
-
-    let iter = rows.iter().map(|row| match row.borrow() {
-        BorrowedValue::Static(StaticNode::I64(i)) => i32::try_from(*i).ok(),
-        BorrowedValue::Static(StaticNode::U64(i)) => i32::try_from(*i).ok(),
-        BorrowedValue::String(v) => match dtype {
-            DataType::Time32(tu) => {
-                let factor = get_factor_from_timeunit(tu);
-                v.parse::<chrono::NaiveTime>().ok().map(|x| {
-                    (x.hour() * 3_600 * factor
-                        + x.minute() * 60 * factor
-                        + x.second() * factor
-                        + x.nanosecond() / (1_000_000_000 / factor)) as i32
-                })
-            }
-            DataType::Date32 => deserialize_naive_date(v, &mut last_fmt_idx)
-                .map(|x| x.num_days_from_ce() - (temporal_conversions::UNIX_EPOCH_DAY as i32)),
-            _ => unreachable!(),
-        },
-        _ => None,
-    });
-    target.extend_trusted_len(iter);
-}
-fn deserialize_datetime_into<'a, A: Borrow<BorrowedValue<'a>>>(
-    target: &mut Box<dyn MutableArray>,
-    rows: &[A],
-) {
-    let target = target
-        .as_mut_any()
-        .downcast_mut::<MutablePrimitiveArray<i64>>()
-        .unwrap();
-    let dtype = target.data_type().clone();
-    let mut last_fmt_idx = 0;
-    let iter = rows.iter().map(|row| match row.borrow() {
-        BorrowedValue::Static(StaticNode::I64(i)) => Some(*i),
-        BorrowedValue::Static(StaticNode::U64(i)) => i64::try_from(*i).ok(),
-        BorrowedValue::String(v) => match dtype {
-            DataType::Time64(tu) => {
-                let factor = get_factor_from_timeunit(tu) as u64;
-                v.parse::<chrono::NaiveTime>().ok().map(|x| {
-                    (x.hour() as u64 * 3_600 * factor
-                        + x.minute() as u64 * 60 * factor
-                        + x.second() as u64 * factor
-                        + x.nanosecond() as u64 / (1_000_000_000 / factor))
-                        as i64
-                })
-            }
-            DataType::Date64 => deserialize_naive_datetime(v, &mut last_fmt_idx)
-                .map(|x| x.and_utc().timestamp_millis()),
-            DataType::Timestamp(tu, None) => deserialize_naive_datetime(v, &mut last_fmt_idx)
-                .and_then(|dt| match tu {
-                    TimeUnit::Second => Some(dt.and_utc().timestamp()),
-                    TimeUnit::Millisecond => Some(dt.and_utc().timestamp_millis()),
-                    TimeUnit::Microsecond => Some(dt.and_utc().timestamp_micros()),
-                    TimeUnit::Nanosecond => dt.and_utc().timestamp_nanos_opt(),
-                }),
-            DataType::Timestamp(tu, Some(ref tz)) => {
-                let tz = if tz == "Z" { "UTC" } else { tz };
-                let tz = daft_schema::time_unit::parse_offset(tz).unwrap();
-                deserialize_datetime(v, &tz, &mut last_fmt_idx).and_then(|dt| match tu {
-                    TimeUnit::Second => Some(dt.timestamp()),
-                    TimeUnit::Millisecond => Some(dt.timestamp_millis()),
-                    TimeUnit::Microsecond => Some(dt.timestamp_micros()),
-                    TimeUnit::Nanosecond => dt.timestamp_nanos_opt(),
-                })
-            }
-            _ => unreachable!(),
-        },
-        _ => None,
-    });
-    target.extend_trusted_len(iter);
-}
-
-fn deserialize_list_into<'a, O: Offset, A: Borrow<BorrowedValue<'a>>>(
-    target: &mut MutableListArray<O, Box<dyn MutableArray>>,
-    rows: &[A],
-) {
-    let empty = [];
-    let inner: Vec<_> = rows
-        .iter()
-        .flat_map(|row| match row.borrow() {
-            BorrowedValue::Array(value) => value.iter(),
-            _ => empty.iter(),
-        })
-        .collect();
-
-    deserialize_into(target.mut_values(), &inner);
-
-    let lengths = rows.iter().map(|row| match row.borrow() {
-        BorrowedValue::Array(value) => Some(value.len()),
-        _ => None,
-    });
-
-    // NOTE(Clark): A bug in Arrow2 will cause the validity mask to be dropped if it's currently None in target,
-    // which will be the case unless we explicitly initialize the mutable array with a bitmap.
-    target
-        .try_extend_from_lengths(lengths)
-        .expect("Offsets overflow");
-}
-
-fn deserialize_fixed_size_list_into<'a, A: Borrow<BorrowedValue<'a>>>(
-    target: &mut MutableFixedSizeListArray<Box<dyn MutableArray>>,
+    target: &mut BooleanBuilder,
     rows: &[A],
 ) {
     for row in rows {
         match row.borrow() {
+            BorrowedValue::Static(StaticNode::Bool(v)) => target.append_value(*v),
+            _ => target.append_null(),
+        }
+    }
+}
+
+fn get_factor_from_timeunit(time_unit: &TimeUnit) -> u32 {
+    match time_unit {
+        TimeUnit::Second => 1,
+        TimeUnit::Millisecond => 1_000,
+        TimeUnit::Microsecond => 1_000_000,
+        TimeUnit::Nanosecond => 1_000_000_000,
+    }
+}
+
+fn deserialize_date_into<'a, A: Borrow<BorrowedValue<'a>>, T: ArrowPrimitiveType<Native = i32>>(
+    target: &mut Box<dyn ArrayBuilder>,
+    dtype: &DataType,
+    rows: &[A],
+) {
+    let target = target
+        .as_any_mut()
+        .downcast_mut::<PrimitiveBuilder<T>>()
+        .unwrap();
+    let mut last_fmt_idx = 0;
+
+    for row in rows {
+        let value = match row.borrow() {
+            BorrowedValue::Static(StaticNode::I64(i)) => i32::try_from(*i).ok(),
+            BorrowedValue::Static(StaticNode::U64(i)) => i32::try_from(*i).ok(),
+            BorrowedValue::String(v) => match dtype {
+                DataType::Time32(tu) => {
+                    let factor = get_factor_from_timeunit(tu);
+                    v.parse::<chrono::NaiveTime>().ok().map(|x| {
+                        (x.hour() * 3_600 * factor
+                            + x.minute() * 60 * factor
+                            + x.second() * factor
+                            + x.nanosecond() / (1_000_000_000 / factor))
+                            as i32
+                    })
+                }
+                DataType::Date32 => deserialize_naive_date(v, &mut last_fmt_idx)
+                    .map(|x| x.num_days_from_ce() - (temporal_conversions::UNIX_EPOCH_DAY as i32)),
+                _ => unreachable!(),
+            },
+            _ => None,
+        };
+        target.append_option(value);
+    }
+}
+
+fn deserialize_datetime_into<
+    'a,
+    A: Borrow<BorrowedValue<'a>>,
+    T: ArrowPrimitiveType<Native = i64>,
+>(
+    target: &mut Box<dyn ArrayBuilder>,
+    dtype: &DataType,
+    rows: &[A],
+) {
+    let target = target
+        .as_any_mut()
+        .downcast_mut::<PrimitiveBuilder<T>>()
+        .unwrap();
+    let mut last_fmt_idx = 0;
+
+    for row in rows {
+        let value = match row.borrow() {
+            BorrowedValue::Static(StaticNode::I64(i)) => Some(*i),
+            BorrowedValue::Static(StaticNode::U64(i)) => i64::try_from(*i).ok(),
+            BorrowedValue::String(v) => match dtype {
+                DataType::Time64(tu) => {
+                    let factor = get_factor_from_timeunit(tu) as u64;
+                    v.parse::<chrono::NaiveTime>().ok().map(|x| {
+                        (x.hour() as u64 * 3_600 * factor
+                            + x.minute() as u64 * 60 * factor
+                            + x.second() as u64 * factor
+                            + x.nanosecond() as u64 / (1_000_000_000 / factor))
+                            as i64
+                    })
+                }
+                DataType::Date64 => deserialize_naive_datetime(v, &mut last_fmt_idx)
+                    .map(|x| x.and_utc().timestamp_millis()),
+                DataType::Timestamp(tu, None) => deserialize_naive_datetime(v, &mut last_fmt_idx)
+                    .and_then(|dt| match tu {
+                        TimeUnit::Second => Some(dt.and_utc().timestamp()),
+                        TimeUnit::Millisecond => Some(dt.and_utc().timestamp_millis()),
+                        TimeUnit::Microsecond => Some(dt.and_utc().timestamp_micros()),
+                        TimeUnit::Nanosecond => dt.and_utc().timestamp_nanos_opt(),
+                    }),
+                DataType::Timestamp(tu, Some(tz)) => {
+                    let tz = if tz.as_ref() == "Z" { "UTC" } else { tz };
+                    let tz = daft_schema::time_unit::parse_offset(tz).unwrap();
+                    deserialize_datetime(v, &tz, &mut last_fmt_idx).and_then(|dt| match tu {
+                        TimeUnit::Second => Some(dt.timestamp()),
+                        TimeUnit::Millisecond => Some(dt.timestamp_millis()),
+                        TimeUnit::Microsecond => Some(dt.timestamp_micros()),
+                        TimeUnit::Nanosecond => dt.timestamp_nanos_opt(),
+                    })
+                }
+                _ => unreachable!(),
+            },
+            _ => None,
+        };
+        target.append_option(value);
+    }
+}
+
+fn deserialize_list_into<'a, O: OffsetSizeTrait, A: Borrow<BorrowedValue<'a>>>(
+    target: &mut Box<dyn ArrayBuilder>,
+    inner_dtype: &DataType,
+    rows: &[A],
+) {
+    let target = target
+        .as_any_mut()
+        .downcast_mut::<GenericListBuilder<O, Box<dyn ArrayBuilder>>>()
+        .unwrap();
+
+    for row in rows {
+        match row.borrow() {
+            BorrowedValue::Array(values) => {
+                deserialize_into(target.values(), inner_dtype, values);
+                target.append(true);
+            }
+            _ => {
+                target.append(false);
+            }
+        }
+    }
+}
+
+fn deserialize_fixed_size_list_into<'a, A: Borrow<BorrowedValue<'a>>>(
+    target: &mut Box<dyn ArrayBuilder>,
+    inner_dtype: &DataType,
+    size: i32,
+    rows: &[A],
+) {
+    let target = target
+        .as_any_mut()
+        .downcast_mut::<FixedSizeListBuilder<Box<dyn ArrayBuilder>>>()
+        .unwrap();
+
+    let null_values: Vec<_> = std::iter::repeat_n(&JSON_NULL_VALUE, size as usize).collect();
+
+    for row in rows {
+        match row.borrow() {
             BorrowedValue::Array(value) => {
-                if value.len() == target.size() {
-                    deserialize_into(target.mut_values(), value);
-                    // Unless alignment is already off, the if above should
-                    // prevent this from ever happening.
-                    target.try_push_valid().expect("unaligned backing array");
+                if value.len() == size as usize {
+                    deserialize_into(target.values(), inner_dtype, value);
+                    target.append(true);
                 } else {
                     // TODO(Clark): Return an error instead of dropping incorrectly sized lists.
-                    target.push_null();
+                    // Push placeholder nulls to maintain alignment, then mark as null.
+                    deserialize_into(target.values(), inner_dtype, &null_values);
+                    target.append(false);
                 }
             }
-            _ => target.push_null(),
+            _ => {
+                // Push placeholder nulls to maintain alignment, then mark as null.
+                deserialize_into(target.values(), inner_dtype, &null_values);
+                target.append(false);
+            }
         }
     }
 }
 
 fn deserialize_struct_into<'a, A: Borrow<BorrowedValue<'a>>>(
-    target: &mut MutableStructArray,
+    target: &mut Box<dyn ArrayBuilder>,
+    fields: &arrow::datatypes::Fields,
     rows: &[A],
 ) {
-    let dtype = target.data_type().clone();
-    // Build a map from struct field -> JSON values.
-    let mut values = match dtype {
-        DataType::Struct(fields) => fields
-            .into_iter()
-            .map(|field| (field.name, vec![]))
-            .collect::<IndexMap<_, _>>(),
-        _ => unreachable!(),
-    };
+    let target = target.as_any_mut().downcast_mut::<StructBuilder>().unwrap();
+
+    // Build a map from struct field name -> accumulated JSON values.
+    let mut values: IndexMap<&str, Vec<&BorrowedValue<'a>>> = fields
+        .iter()
+        .map(|field| (field.name().as_str(), vec![]))
+        .collect();
+
     for row in rows {
         match row.borrow() {
             BorrowedValue::Object(value) => {
                 values.iter_mut().for_each(|(s, inner)| {
-                    inner.push(value.get(s.as_str()).unwrap_or(&JSON_NULL_VALUE));
+                    inner.push(value.get(*s).unwrap_or(&JSON_NULL_VALUE));
                 });
-                target.push(true);
+                target.append(true);
             }
             _ => {
                 values
                     .iter_mut()
                     .for_each(|(_, inner)| inner.push(&JSON_NULL_VALUE));
-                target.push(false);
+                target.append(false);
             }
         }
     }
-    // Then deserialize each field's JSON values buffer to the appropriate Arrow2 array.
+
+    // Then deserialize each field's JSON values buffer to the appropriate Arrow array.
     //
-    // Column ordering invariant - this assumes that values and target.mut_values() have aligned columns;
-    // we can assume this because:
-    // - target.mut_values() is guaranteed to have the same column ordering as target.data_type().fields,
-    // - values is an ordered map, whose ordering is tied to target.data_type().fields.
+    // Column ordering invariant - this assumes that values and target.field_builders_mut()
+    // have aligned columns; we can assume this because:
+    // - field_builders_mut() is guaranteed to have the same column ordering as the fields,
+    // - values is an ordered map, whose ordering is tied to fields.
     values
         .into_values()
-        .zip(target.mut_values())
-        .for_each(|(col_values, col_mut_arr)| deserialize_into(col_mut_arr, col_values.as_slice()));
+        .zip(fields.iter())
+        .zip(target.field_builders_mut().iter_mut())
+        .for_each(|((col_values, field), col_builder)| {
+            deserialize_into(col_builder, field.data_type(), col_values.as_slice());
+        });
 }

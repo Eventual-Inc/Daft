@@ -180,7 +180,7 @@ impl Default for DaftExecutionConfig {
             maintain_order: true,
             enable_dynamic_batching: false,
             dynamic_batching_strategy: "auto".to_string(),
-            flight_shuffle_dirs: Vec::new(),
+            flight_shuffle_dirs: vec!["/tmp".to_string()],
         }
     }
 }

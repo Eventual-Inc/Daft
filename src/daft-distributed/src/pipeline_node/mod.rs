@@ -151,19 +151,33 @@ impl MaterializedOutput {
         schema: SchemaRef,
         node_id: NodeID,
     ) -> (LocalPhysicalPlanRef, Vec<PartitionRef>) {
-        Self::into_in_memory_scan_with_psets_and_context(
+        Self::build_in_memory_scan(
             materialized_outputs,
             schema,
             node_id,
-            None,
+            LocalNodeContext::new(Some(node_id as usize)),
         )
     }
 
-    pub fn into_in_memory_scan_with_psets_and_context(
+    pub fn into_in_memory_scan_with_psets_and_phase(
         materialized_outputs: Vec<Self>,
         schema: SchemaRef,
         node_id: NodeID,
-        additional: Option<HashMap<String, String>>,
+        node_phase: impl Into<String>,
+    ) -> (LocalPhysicalPlanRef, Vec<PartitionRef>) {
+        Self::build_in_memory_scan(
+            materialized_outputs,
+            schema,
+            node_id,
+            LocalNodeContext::new(Some(node_id as usize)).with_phase(node_phase),
+        )
+    }
+
+    fn build_in_memory_scan(
+        materialized_outputs: Vec<Self>,
+        schema: SchemaRef,
+        node_id: NodeID,
+        local_ctx: LocalNodeContext,
     ) -> (LocalPhysicalPlanRef, Vec<PartitionRef>) {
         let total_size_bytes = materialized_outputs
             .iter()
@@ -175,10 +189,7 @@ impl MaterializedOutput {
             schema,
             total_size_bytes,
             StatsState::NotMaterialized,
-            LocalNodeContext {
-                origin_node_id: Some(node_id as usize),
-                additional,
-            },
+            local_ctx,
         );
 
         let partition_refs = materialized_outputs

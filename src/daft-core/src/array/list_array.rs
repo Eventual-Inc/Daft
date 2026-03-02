@@ -186,7 +186,7 @@ impl ListArray {
         )))
     }
 
-    pub fn with_nulls(&self, nulls: Option<daft_arrow::buffer::NullBuffer>) -> DaftResult<Self> {
+    pub fn with_nulls(&self, nulls: Option<arrow::buffer::NullBuffer>) -> DaftResult<Self> {
         if let Some(v) = &nulls
             && v.len() != self.len()
         {

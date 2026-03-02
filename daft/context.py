@@ -230,7 +230,7 @@ def set_execution_config(
         maintain_order: Whether to maintain order during execution. Defaults to True. Some blocking sink operators (e.g. write_parquet) won't respect this flag and will always keep maintain_order as false, and propagate to child operators. It's useful to set this to False for running df.collect() when no ordering is required.
         enable_dynamic_batching: Whether to enable dynamic batching. Defaults to False.
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
-        flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to None.
+        flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to ["/tmp"]. Must not be empty.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()

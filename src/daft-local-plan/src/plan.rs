@@ -32,7 +32,28 @@ use crate::SourceId;
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct LocalNodeContext {
     pub origin_node_id: Option<usize>,
+    pub phase: Option<String>,
     pub additional: Option<HashMap<String, String>>,
+}
+
+impl LocalNodeContext {
+    pub fn new(origin_node_id: Option<usize>) -> Self {
+        Self {
+            origin_node_id,
+            phase: None,
+            additional: None,
+        }
+    }
+
+    pub fn with_phase(mut self, phase: impl Into<String>) -> Self {
+        self.phase = Some(phase.into());
+        self
+    }
+
+    pub fn with_additional(mut self, additional: HashMap<String, String>) -> Self {
+        self.additional = Some(additional);
+        self
+    }
 }
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;

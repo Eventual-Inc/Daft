@@ -26,6 +26,12 @@ def test_aggs_sql():
                 col("values").count().alias("count"),
                 col("values").count_distinct().alias("count_distinct"),
                 col("values").stddev().alias("std"),
+                col("values").stddev(ddof=0).alias("std_pop"),
+                col("values").stddev(ddof=1).alias("std_samp"),
+                col("values").var(ddof=1).alias("variance"),
+                col("values").var(ddof=1).alias("var"),
+                col("values").var(ddof=1).alias("var_samp"),
+                col("values").var(ddof=0).alias("var_pop"),
             ]
         )
         .collect()
@@ -43,7 +49,13 @@ def test_aggs_sql():
         max(values) as max,
         count(values) as count,
         count(distinct values) as count_distinct,
-        stddev(values) as std
+        stddev(values) as std,
+        stddev_pop(values) AS std_pop,
+        stddev_samp(values) AS std_samp,
+        variance(values) AS variance,
+        var(values) AS var,
+        var_samp(values) AS var_samp,
+        var_pop(values) AS var_pop
     FROM df
     """)
         .collect()
@@ -384,3 +396,24 @@ def test_group_by_ordinal_non_integer_raises():
     with pytest.raises(Exception) as excinfo:
         daft.sql("SELECT count(1) FROM df GROUP BY 1.5", df=df).collect()
     assert "GROUP BY position" in str(excinfo.value) or "not a valid non-negative integer" in str(excinfo.value)
+
+
+def test_group_by_derived_expression_naming():
+    """Regression test for #4315: GROUP BY with derived expressions that share a base column name."""
+    df = daft.from_pydict({"ClientIP": [1, 2, 3, 4, 5]})
+    result = daft.sql(
+        """
+        SELECT ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3, COUNT(*) AS c
+        FROM df
+        GROUP BY ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3
+        ORDER BY ClientIP
+        LIMIT 10
+        """,
+        df=df,
+    )
+    res = result.collect().to_pydict()
+    assert res["ClientIP"] == [1, 2, 3, 4, 5]
+    assert res["(ClientIP - 1)"] == [0, 1, 2, 3, 4]
+    assert res["(ClientIP - 2)"] == [-1, 0, 1, 2, 3]
+    assert res["(ClientIP - 3)"] == [-2, -1, 0, 1, 2]
+    assert res["c"] == [1, 1, 1, 1, 1]

@@ -38,14 +38,11 @@ macro_rules! impl_series_like_for_nested_arrays {
                 self
             }
 
-            fn with_nulls(
-                &self,
-                nulls: Option<daft_arrow::buffer::NullBuffer>,
-            ) -> DaftResult<Series> {
+            fn with_nulls(&self, nulls: Option<arrow::buffer::NullBuffer>) -> DaftResult<Series> {
                 Ok(self.0.with_nulls(nulls)?.into_series())
             }
 
-            fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+            fn nulls(&self) -> Option<&arrow::buffer::NullBuffer> {
                 self.0.nulls()
             }
 

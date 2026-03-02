@@ -397,13 +397,19 @@ impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
             .map(|child| child.repr_json())
             .collect();
 
-        serde_json::json!({
+        let mut json = serde_json::json!({
             "id": self.node_id(),
             "category": "StreamingSink",
             "type": self.op.op_type().to_string(),
             "name": self.name(),
             "children": children,
-        })
+        });
+
+        if let StatsState::Materialized(stats) = &self.plan_stats {
+            json["approx_stats"] = serde_json::json!(stats);
+        }
+
+        json
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
@@ -442,10 +448,13 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
     }
 
     fn start(
-        &mut self,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+        let node_id = self.node_id();
+        let name = self.name();
+
         let child_result_receiver = self.child.start(maintain_order, runtime_handle)?;
 
         let (destination_sender, destination_receiver) = create_channel(1);
@@ -485,7 +494,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
             runtime_stats: self.runtime_stats.clone(),
             stats_manager: runtime_handle.stats_manager(),
         };
-        let node_id = self.node_id();
         runtime_handle.spawn(
             async move {
                 Self::process_input(node_id, child_result_receiver, &mut ctx).await?;
@@ -518,7 +526,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                 ctx.stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            &self.name(),
+            &name,
         );
         Ok(destination_receiver)
     }
@@ -527,9 +535,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
     }
     fn node_id(&self) -> usize {
         self.node_info.id
-    }
-    fn plan_id(&self) -> Arc<str> {
-        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()

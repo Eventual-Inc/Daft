@@ -195,6 +195,10 @@ skip = "tests/series/*,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*
 [tool.maturin]
 # "python" tells pyo3 we want to build an extension module (skips linking against libpython.so)
 features = ["python"]
+# Include pre-built dashboard frontend assets in the sdist so they're available
+# inside maturin's Docker container for manylinux builds (the assets are gitignored
+# but built in a prior CI step).
+include = [{path = "src/daft-dashboard/frontend/out/**/*", format = "sdist"}]
 
 [tool.mypy]
 exclude = ['daft/pickle/*.py$']

@@ -133,10 +133,7 @@ impl SinkNode {
                 file_schema,
                 info.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             ),
             #[cfg(feature = "python")]
             SinkInfo::CatalogInfo(info) => match &info.catalog {
@@ -147,10 +144,7 @@ impl SinkNode {
                     data_schema,
                     file_schema,
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(node_id as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(node_id as usize)),
                 ),
                 daft_logical_plan::CatalogType::Lance(info) => LocalPhysicalPlan::lance_write(
                     input,
@@ -158,10 +152,7 @@ impl SinkNode {
                     data_schema,
                     file_schema,
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(node_id as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(node_id as usize)),
                 ),
             },
             #[cfg(feature = "python")]
@@ -170,10 +161,7 @@ impl SinkNode {
                 data_sink_info.clone(),
                 file_schema,
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             ),
         }
     }
@@ -202,10 +190,7 @@ impl SinkNode {
             file_schema,
             info,
             StatsState::NotMaterialized,
-            LocalNodeContext {
-                origin_node_id: Some(self.node_id() as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.node_id() as usize)),
         );
         let builder =
             SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);

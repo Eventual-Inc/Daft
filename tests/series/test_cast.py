@@ -1138,6 +1138,29 @@ def test_series_cast_date_numeric(dtype, result_n1, result_0, result_p1) -> None
     assert casted.to_pylist() == [-1, 0, 1]
 
 
+@pytest.mark.parametrize(
+    "source_dtype",
+    [
+        DataType.uint8(),
+        DataType.uint16(),
+        DataType.uint32(),
+        DataType.int8(),
+        DataType.int16(),
+        DataType.int32(),
+    ],
+)
+def test_series_cast_numeric_to_date(source_dtype) -> None:
+    """Casting integer types to Date should work via the physical type (Int32) fallback.
+
+    Regression test: UInt16 -> Date panicked because arrow-rs doesn't support
+    direct UInt16 -> Date32 casting, and the physical-type fallback produced an
+    Int32Array that wasn't reinterpreted as Date32Array before downstream use.
+    """
+    series = Series.from_pylist([0, 1, 2]).cast(source_dtype)
+    casted = series.cast(DataType.date())
+    assert casted.to_pylist() == [date(1970, 1, 1), date(1970, 1, 2), date(1970, 1, 3)]
+
+
 def test_cast_date_to_timestamp():
     from datetime import date, datetime
 

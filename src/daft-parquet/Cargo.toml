@@ -1,3 +1,7 @@
+[[bench]]
+harness = false
+name = "parquet_read"
+
 [dependencies]
 arrow = {workspace = true}
 async-compat = {workspace = true}
@@ -26,7 +30,10 @@ tokio-util = {workspace = true}
 
 [dev-dependencies]
 bincode = {workspace = true}
+fastrand = "2.1.0"
+parquet = {workspace = true}
 path_macro = {workspace = true}
+tango-bench.workspace = true
 
 [features]
 python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-io/python", "daft-recordbatch/python", "daft-stats/python", "daft-dsl/python"]

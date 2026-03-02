@@ -138,6 +138,7 @@ pub const ATTR_QUERY_ID: &str = "query.id";
 // Node attributes
 pub const ATTR_NODE_ID: &str = "node.id";
 pub const ATTR_NODE_TYPE: &str = "node.type";
+pub const ATTR_NODE_PHASE: &str = "node.phase";
 
 // Units (UCUM)
 pub const UNIT_ROWS: &str = "{row}";

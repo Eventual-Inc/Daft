@@ -11,7 +11,6 @@ pub use array_impl::{ArrayWrapper, IntoSeries};
 use arrow::array::ArrayRef;
 use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::DaftResult;
-use daft_arrow::trusted_len::TrustedLen;
 use derive_more::Display;
 use indexmap::{IndexMap, map::RawEntryApiV1};
 pub use ops::cast_series_to_supertype;
@@ -109,20 +108,6 @@ impl Series {
         self.inner.to_arrow()
     }
 
-    /// Creates a Series given an Arrow [`daft_arrow::array::Array`]
-    ///
-    /// TODO chore: consider accepting Into<FieldRef>
-    ///
-    /// This function will check the provided [`Field`] (and all its associated potentially nested fields/dtypes) against
-    /// the provided [`daft_arrow::array::Array`] for compatibility, and returns an error if they do not match.
-    pub fn from_arrow2(
-        field: FieldRef,
-        arrow_arr: Box<dyn daft_arrow::array::Array>,
-    ) -> DaftResult<Self> {
-        with_match_daft_types!(field.dtype, |$T| {
-            Ok(<<$T as DaftDataType>::ArrayType as FromArrow>::from_arrow2(field, arrow_arr)?.into_series())
-        })
-    }
     pub fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
         let field = field.into();
         with_match_daft_types!(field.dtype, |$T| {
@@ -185,11 +170,11 @@ impl Series {
         )
     }
 
-    pub fn with_nulls(&self, nulls: Option<daft_arrow::buffer::NullBuffer>) -> DaftResult<Self> {
+    pub fn with_nulls(&self, nulls: Option<arrow::buffer::NullBuffer>) -> DaftResult<Self> {
         self.inner.with_nulls(nulls)
     }
 
-    pub fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+    pub fn nulls(&self) -> Option<&arrow::buffer::NullBuffer> {
         self.inner.nulls()
     }
 
@@ -250,7 +235,7 @@ impl Series {
         self.inner.get_lit(idx)
     }
 
-    pub fn to_literals(&self) -> impl ExactSizeIterator<Item = Literal> + use<'_> + TrustedLen {
+    pub fn to_literals(&self) -> impl ExactSizeIterator<Item = Literal> + use<'_> {
         (0..self.len()).map(|i| self.get_lit(i))
     }
 }

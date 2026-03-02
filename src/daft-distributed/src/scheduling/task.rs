@@ -6,7 +6,7 @@ use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
 use common_scan_info::ScanTaskLikeRef;
 use daft_local_plan::{
-    ExecutionEngineFinalResult, FlightShuffleReadInput, Input, LocalPhysicalPlanRef, SourceId,
+    ExecutionStats, FlightShuffleReadInput, Input, LocalPhysicalPlanRef, SourceId,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -443,7 +443,7 @@ impl SwordfishTaskBuilder {
 pub(crate) enum TaskStatus {
     Success {
         result: MaterializedOutput,
-        stats: ExecutionEngineFinalResult,
+        stats: ExecutionStats,
     },
     Failed {
         error: DaftError,
@@ -718,7 +718,7 @@ pub(super) mod tests {
                 }
                 TaskStatus::Success {
                     result: task.task_result,
-                    stats: ExecutionEngineFinalResult::new(vec![]),
+                    stats: ExecutionStats::new("".into(), vec![]),
                 }
             }
         }

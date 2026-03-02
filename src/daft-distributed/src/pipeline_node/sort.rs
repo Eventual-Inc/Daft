@@ -138,20 +138,14 @@ pub(crate) fn create_sample_tasks(
                 true,
                 None,
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(pipeline_node.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(pipeline_node.node_id() as usize)),
             );
             let plan = LocalPhysicalPlan::project(
                 sample,
                 sample_by.clone(),
                 sample_schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(pipeline_node.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(pipeline_node.node_id() as usize)),
             );
             let builder = SwordfishTaskBuilder::new(plan, pipeline_node)
                 .with_psets(pipeline_node.node_id(), psets);
@@ -186,10 +180,7 @@ pub(crate) fn create_range_repartition_tasks(
                 input_schema.clone(),
                 mo.size_bytes(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             );
             let plan = LocalPhysicalPlan::repartition(
                 in_memory_source_plan,
@@ -202,10 +193,7 @@ pub(crate) fn create_range_repartition_tasks(
                 num_partitions,
                 input_schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             );
             let builder = SwordfishTaskBuilder::new(plan, pipeline_node)
                 .with_psets(node_id, mo.into_inner().0);
@@ -300,10 +288,7 @@ impl SortNode {
                 self.descending.clone(),
                 self.nulls_first.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self.node_id() as usize)),
             );
             let task =
                 SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
@@ -372,10 +357,7 @@ impl SortNode {
                 self.descending.clone(),
                 self.nulls_first.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self.node_id() as usize)),
             );
             let task =
                 SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);

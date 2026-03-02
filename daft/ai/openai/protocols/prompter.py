@@ -107,6 +107,48 @@ class OpenAIPrompter(Prompter):
             k: v for k, v in prompt_options_dict.items() if k not in OpenAIProviderOptions.__annotations__.keys()
         }
 
+    IMAGE_EXTENSIONS = frozenset(
+        (
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".gif",
+            ".webp",
+            ".bmp",
+            ".tiff",
+            ".tif",
+            ".svg",
+            ".heic",
+            ".heif",
+            ".avif",
+            ".ico",
+            ".jp2",
+            ".j2k",
+        )
+    )
+    VIDEO_EXTENSIONS = frozenset(
+        (
+            ".mp4",
+            ".mpeg",
+            ".mpg",
+            ".mov",
+            ".avi",
+            ".webm",
+            ".mkv",
+            ".flv",
+            ".wmv",
+            ".m4v",
+            ".3gp",
+            ".3g2",
+            ".rm",
+            ".rmvb",
+            ".ogv",
+            ".ogg",
+            ".ts",
+            ".asf",
+        )
+    )
+
     @singledispatchmethod
     def _process_message(self, msg: Any) -> dict[str, Any]:
         """Fallback for unsupported message content types."""
@@ -114,7 +156,13 @@ class OpenAIPrompter(Prompter):
 
     @_process_message.register
     def _process_str_message(self, msg: str) -> dict[str, Any]:
-        """Handle string messages as plain text."""
+        """Handle string messages as plain text or URL."""
+        if self._is_http_url(msg):
+            if self._is_image_url(msg):
+                return self._build_image_url_message(msg)
+            if self._is_video_url(msg):
+                return self._build_video_url_message(msg)
+
         if self.use_chat_completions:
             return {"type": "text", "text": msg}
         else:
@@ -203,10 +251,32 @@ class OpenAIPrompter(Prompter):
 
         raise TypeError("File contents must be bytes or string")
 
+    def _is_http_url(self, url: str) -> bool:
+        url_lower = url.lower()
+        return url_lower.startswith("http://") or url_lower.startswith("https://")
+
+    def _is_image_url(self, url: str) -> bool:
+        url_lower = url.lower().split("?")[0].split("#")[0]
+        return any(url_lower.endswith(ext) for ext in self.IMAGE_EXTENSIONS)
+
+    def _is_video_url(self, url: str) -> bool:
+        url_lower = url.lower().split("?")[0].split("#")[0]
+        return any(url_lower.endswith(ext) for ext in self.VIDEO_EXTENSIONS)
+
     def _build_image_message(self, encoded_content: str) -> dict[str, Any]:
         if self.use_chat_completions:
             return {"type": "image_url", "image_url": {"url": encoded_content}}
         return {"type": "input_image", "image_url": encoded_content}
+
+    def _build_image_url_message(self, url: str) -> dict[str, Any]:
+        if self.use_chat_completions:
+            return {"type": "image_url", "image_url": {"url": url}}
+        return {"type": "input_image", "image_url": url}
+
+    def _build_video_url_message(self, url: str) -> dict[str, Any]:
+        if self.use_chat_completions:
+            return {"type": "video_url", "video_url": {"url": url}}
+        return {"type": "input_video", "video_url": url}
 
     def _build_file_message(self, encoded_content: str, filename: str = "file") -> dict[str, Any]:
         if self.use_chat_completions:
