@@ -123,6 +123,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |       anonymous: false
 |       endpoint_url: None
 |       use_ssl: true
+|       max_connections_per_io_thread: 8
 |   GCSConfig
 |       project_id: None
 |       anonymous: false

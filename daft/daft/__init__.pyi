@@ -640,6 +640,7 @@ class AzureConfig:
     anonymous: bool | None
     endpoint_url: str | None = None
     use_ssl: bool | None = None
+    max_connections: int
 
     def __init__(
         self,
@@ -654,6 +655,7 @@ class AzureConfig:
         anonymous: bool | None = None,
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
+        max_connections: int | None = None,
     ): ...
     def replace(
         self,
@@ -668,6 +670,7 @@ class AzureConfig:
         anonymous: bool | None = None,
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
+        max_connections: int | None = None,
     ) -> AzureConfig:
         """Replaces values if provided, returning a new AzureConfig."""
         ...
