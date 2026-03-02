@@ -52,7 +52,7 @@ def read_warc(
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
     if isinstance(path, list) and len(path) == 0:
-        raise ValueError("Cannot read DataFrame from from empty list of Warc filepaths")
+        raise ValueError("Cannot read DataFrame from empty list of Warc filepaths")
 
     # If running on Ray, we want to limit the amount of concurrency and requests being made.
     # This is because each Ray worker process receives its own pool of thread workers and connections.

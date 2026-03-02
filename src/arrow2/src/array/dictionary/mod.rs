@@ -244,7 +244,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
         DictionaryValuesIter::new(self)
     }
 
-    /// Returns an iterator over the the values [`V::IterValue`].
+    /// Returns an iterator over the values [`V::IterValue`].
     ///
     /// # Panics
     ///
@@ -260,7 +260,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
         Ok(unsafe { DictionaryValuesIterTyped::new(keys, values) })
     }
 
-    /// Returns an iterator over the the optional values of  [`Option<V::IterValue>`].
+    /// Returns an iterator over the optional values of  [`Option<V::IterValue>`].
     ///
     /// # Panics
     ///
