@@ -375,6 +375,96 @@ merge_columns(
 )
 ```
 
+### Updating Columns
+
+If you need to update existing columns in a Lance dataset (e.g., modify values based on a condition), use `daft.io.lance.update_columns`. This function performs a row-level update by joining new values from a DataFrame.
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    import lance
+    import pyarrow as pa
+
+    # 1. Create an initial dataset
+    data = pa.table({"id": [1, 2, 3], "val": ["a", "b", "c"]})
+    lance.write_dataset(data, "/tmp/lance/test_update.lance")
+
+    # 2. Prepare updates
+    # We want to update 'val' where id=2 to 'updated_b'
+    # We need to read the existing dataset to get the necessary metadata (fragment_id and _rowid)
+    existing = daft.read_lance(
+        "/tmp/lance/test_update.lance",
+        include_fragment_id=True,
+        default_scan_options={'with_row_id': True}
+    )
+
+    # Filter for the rows we want to update and set the new value
+    updates = existing.where(existing["id"] == 2).select("fragment_id", "_rowid")
+    updates = updates.with_column("val", daft.lit("updated_b"))
+
+    # 3. Perform update
+    daft.io.lance.update_columns(
+        updates,
+        "/tmp/lance/test_update.lance",
+        left_on="_rowid" # Default join key
+    )
+
+    # 4. Verify the result
+    result = daft.read_lance("/tmp/lance/test_update.lance")
+    result.show()
+    ```
+
+    **Updating with Custom Keys**
+
+    You can also update using a custom business key instead of `_rowid`.
+
+    ```python
+    import daft
+    import lance
+    import pyarrow as pa
+
+    # 1. Create an initial dataset
+    data = pa.table({"id": [1, 2, 3], "val": ["a", "b", "c"]})
+    lance.write_dataset(data, "/tmp/lance/test_update_custom.lance")
+
+    # 2. Prepare updates
+    # For custom key, we need fragment_id and the join key ("id")
+    existing = daft.read_lance("/tmp/lance/test_update_custom.lance", include_fragment_id=True)
+
+    # Create update dataframe
+    updates = existing.where(existing["id"] == 3).select("fragment_id", "id")
+    updates = updates.with_column("val", daft.lit("updated_c"))
+
+    # 3. Perform update
+    daft.io.lance.update_columns(
+        updates,
+        "/tmp/lance/test_update_custom.lance",
+        left_on="id",
+        right_on="id"
+    )
+
+    # 4. Verify
+    daft.read_lance("/tmp/lance/test_update_custom.lance").show()
+    ```
+
+    **Controlling Updated Columns**
+
+    By default, `update_columns` attempts to update all columns present in the DataFrame (excluding `fragment_id` and the join key).
+
+    - **Default Behavior**: If `read_columns` is not specified, Daft will try to update all columns in the DataFrame. If the DataFrame contains any column that does not exist in the target Lance dataset, a `ValueError` will be raised.
+    - **Selective Update**: If your DataFrame contains extra columns (e.g., intermediate calculations) that should not be updated, you can explicitly specify the columns to update using the `read_columns` parameter.
+
+    ```python
+    # Only update column 'val', ignoring other columns in 'updates'
+    # Note: read_columns must include the join key (e.g. '_rowid' or 'id')
+    daft.io.lance.update_columns(
+        updates,
+        "/tmp/lance/test_update.lance",
+        read_columns=["val", "_rowid"]
+    )
+    ```
+
 ### Compaction
 
 Compaction is the process of rewriting a Lance dataset to optimize its structure for query performance. This operation can:

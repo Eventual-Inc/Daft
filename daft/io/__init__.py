@@ -17,7 +17,7 @@ from daft.io._csv import read_csv
 from daft.io.delta_lake._deltalake import read_deltalake
 from daft.io.hudi._hudi import read_hudi
 from daft.io.iceberg._iceberg import read_iceberg
-from daft.io.lance._lance import read_lance, merge_columns, merge_columns_df
+from daft.io.lance._lance import read_lance, merge_columns, merge_columns_df, update_columns
 from daft.io.lance.rest_config import LanceRestConfig
 from daft.io.lance.rest_write import write_lance_rest, create_lance_table_rest, register_lance_table_rest
 from daft.io._json import read_json
@@ -69,5 +69,6 @@ __all__ = [
     "read_video_frames",
     "read_warc",
     "register_lance_table_rest",
+    "update_columns",
     "write_lance_rest",
 ]
