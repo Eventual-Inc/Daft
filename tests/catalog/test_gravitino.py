@@ -471,12 +471,25 @@ class TestGravitinoTable:
             gravitino_table.read()
 
     def test_read_non_iceberg_table(self, mock_inner_table):
-        """Test reading a non-Iceberg table raises NotImplementedError."""
+        """Test reading a Parquet table works with proper table_type."""
         mock_inner_table.table_info.format = "PARQUET"
+        mock_inner_table.table_info.table_type = "hive"
+        mock_inner_table.table_info.storage_location = "s3://bucket/path"
         table = TableWrapper._from_obj(mock_inner_table)
 
-        with pytest.raises(NotImplementedError, match="Reading PARQUET format tables is not yet supported"):
-            table.read()
+        # Now Parquet tables are supported, so this should work
+        with patch("daft.io._parquet.read_parquet") as mock_read_parquet:
+            mock_df = Mock()
+            mock_read_parquet.return_value = mock_df
+
+            result = table.read()
+
+            assert result is mock_df
+            mock_read_parquet.assert_called_once_with(
+                path="s3://bucket/path",
+                io_config=mock_inner_table.io_config,
+                hive_partitioning=True,
+            )
 
     def test_read_with_invalid_option(self, gravitino_table):
         """Test read with invalid option raises error."""
@@ -503,12 +516,13 @@ class TestGravitinoTable:
             gravitino_table.append(mock_df)
 
     def test_append_non_iceberg_not_implemented(self, mock_inner_table):
-        """Test append on non-Iceberg table raises NotImplementedError."""
+        """Test append on Parquet table raises NotImplementedError."""
         mock_inner_table.table_info.format = "PARQUET"
+        mock_inner_table.table_info.table_type = "hive"
         table = TableWrapper._from_obj(mock_inner_table)
         mock_df = Mock()
 
-        with pytest.raises(NotImplementedError, match="Writing PARQUET format tables is not yet supported"):
+        with pytest.raises(NotImplementedError, match="Writing to Hive/Parquet tables"):
             table.append(mock_df)
 
     def test_overwrite_not_implemented(self, gravitino_table):
@@ -519,12 +533,14 @@ class TestGravitinoTable:
             gravitino_table.overwrite(mock_df)
 
     def test_overwrite_non_iceberg_not_implemented(self, mock_inner_table):
-        """Test overwrite on non-Iceberg table raises NotImplementedError."""
+        """Test overwrite on unsupported format raises ValueError."""
         mock_inner_table.table_info.format = "DELTA"
+        mock_inner_table.table_info.table_type = "delta"
         table = TableWrapper._from_obj(mock_inner_table)
         mock_df = Mock()
 
-        with pytest.raises(NotImplementedError, match="Writing DELTA format tables is not yet supported"):
+        # DELTA format is not supported, so it should raise ValueError during format detection
+        with pytest.raises(ValueError, match="Unsupported table format: DELTA"):
             table.overwrite(mock_df)
 
     def test_read_iceberg_variant_format(self, mock_inner_table):

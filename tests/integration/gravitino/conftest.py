@@ -93,12 +93,17 @@ def gravitino_sample_dir() -> str:
 
 @pytest.fixture(scope="session")
 def gravitino_minio_io_config():
-    """IOConfig for MinIO S3-compatible storage used in Gravitino tests."""
+    """IOConfig for MinIO S3-compatible storage used in Gravitino tests.
+
+    Uses MINIO_ENDPOINT environment variable if set (for Docker), otherwise defaults to localhost.
+    """
     import daft
+
+    minio_endpoint = os.environ.get("MINIO_ENDPOINT", "http://127.0.0.1:9000")
 
     return daft.io.IOConfig(
         s3=daft.io.S3Config(
-            endpoint_url="http://127.0.0.1:9001",
+            endpoint_url=minio_endpoint,
             key_id="minioadmin",
             access_key="minioadmin",
             region_name="us-east-1",

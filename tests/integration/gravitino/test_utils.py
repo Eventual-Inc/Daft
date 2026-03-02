@@ -92,6 +92,7 @@ def create_catalog(
     metalake: str,
     catalog_name: str,
     catalog_type: str = "FILESET",
+    provider: str | None = None,
     comment: str | None = None,
     properties: dict | None = None,
 ):
@@ -99,8 +100,9 @@ def create_catalog(
 
     Args:
         catalog_type: Catalog type (e.g., "FILESET", "RELATIONAL"). Must be uppercase.
+        provider: Catalog provider (e.g., "hadoop", "lakehouse-iceberg"). Optional.
     """
-    print(f"[DEBUG] Creating catalog: {catalog_name} (type={catalog_type})")
+    print(f"[DEBUG] Creating catalog: {catalog_name} (type={catalog_type}, provider={provider})")
     print(f"[DEBUG] Catalog properties: {properties}")
     payload = {
         "name": catalog_name,
@@ -108,6 +110,8 @@ def create_catalog(
         "comment": comment or f"Daft integration {catalog_type.lower()} catalog",
         "properties": properties or {},
     }
+    if provider:
+        payload["provider"] = provider
     api_request(client, "POST", f"/metalakes/{metalake}/catalogs", json=payload)
     print(f"[DEBUG] Catalog created: {catalog_name}")
 
