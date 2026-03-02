@@ -797,10 +797,10 @@ impl LogicalPlan {
 
         match self.as_ref() {
             Self::Union(union) => {
-                if let Ok(Some(s)) = union.lhs.get_schema_for_alias(alias) {
+                if let Some(s) = union.lhs.get_schema_for_alias(alias)? {
                     return Ok(Some(s));
                 }
-                if let Ok(Some(s)) = union.rhs.get_schema_for_alias(alias) {
+                if let Some(s) = union.rhs.get_schema_for_alias(alias)? {
                     return Ok(Some(s));
                 }
                 Ok(None)
