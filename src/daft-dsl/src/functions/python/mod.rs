@@ -354,8 +354,11 @@ impl UDFProperties {
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(row_wise_fn))) => {
                     num_udfs += 1;
-                    let rr =
-                        ResourceRequest::try_new_internal(None, Some(row_wise_fn.gpus.0), None)?;
+                    let rr = ResourceRequest::try_new_internal(
+                        row_wise_fn.cpus.as_ref().map(|v| v.0),
+                        Some(row_wise_fn.gpus.0),
+                        None,
+                    )?;
 
                     #[cfg(feature = "python")]
                     let rr = Python::attach(|py| {
@@ -364,34 +367,18 @@ impl UDFProperties {
                             .ray_options
                             .as_ref()
                             .and_then(|o| o.as_ref().bind(py).cast::<PyDict>().ok())
-                        {
-                            if let Some(cpus) = options
-                                .get_item("num_cpus")
-                                .ok()
-                                .flatten()
-                                .and_then(|v| v.extract::<f64>().ok())
-                            {
-                                rr = ResourceRequest::try_new_internal(
-                                    Some(cpus),
-                                    rr.num_gpus(),
-                                    rr.memory_bytes(),
-                                )
-                                .unwrap_or(rr);
-                            }
-
-                            if let Some(memory) = options
+                            && let Some(memory) = options
                                 .get_item("memory")
                                 .ok()
                                 .flatten()
                                 .and_then(|v| v.extract::<usize>().ok())
-                            {
-                                rr = ResourceRequest::try_new_internal(
-                                    rr.num_cpus(),
-                                    rr.num_gpus(),
-                                    Some(memory),
-                                )
-                                .unwrap_or(rr);
-                            }
+                        {
+                            rr = ResourceRequest::try_new_internal(
+                                rr.num_cpus(),
+                                rr.num_gpus(),
+                                Some(memory),
+                            )
+                            .unwrap_or(rr);
                         }
                         rr
                     });
@@ -412,7 +399,11 @@ impl UDFProperties {
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(batch_fn))) => {
                     num_udfs += 1;
-                    let rr = ResourceRequest::try_new_internal(None, Some(batch_fn.gpus.0), None)?;
+                    let rr = ResourceRequest::try_new_internal(
+                        batch_fn.cpus.as_ref().map(|v| v.0),
+                        Some(batch_fn.gpus.0),
+                        None,
+                    )?;
 
                     #[cfg(feature = "python")]
                     let rr = Python::attach(|py| {
@@ -421,34 +412,18 @@ impl UDFProperties {
                             .ray_options
                             .as_ref()
                             .and_then(|o| o.as_ref().bind(py).cast::<PyDict>().ok())
-                        {
-                            if let Some(cpus) = options
-                                .get_item("num_cpus")
-                                .ok()
-                                .flatten()
-                                .and_then(|v| v.extract::<f64>().ok())
-                            {
-                                rr = ResourceRequest::try_new_internal(
-                                    Some(cpus),
-                                    rr.num_gpus(),
-                                    rr.memory_bytes(),
-                                )
-                                .unwrap_or(rr);
-                            }
-
-                            if let Some(memory) = options
+                            && let Some(memory) = options
                                 .get_item("memory")
                                 .ok()
                                 .flatten()
                                 .and_then(|v| v.extract::<usize>().ok())
-                            {
-                                rr = ResourceRequest::try_new_internal(
-                                    rr.num_cpus(),
-                                    rr.num_gpus(),
-                                    Some(memory),
-                                )
-                                .unwrap_or(rr);
-                            }
+                        {
+                            rr = ResourceRequest::try_new_internal(
+                                rr.num_cpus(),
+                                rr.num_gpus(),
+                                Some(memory),
+                            )
+                            .unwrap_or(rr);
                         }
                         rr
                     });

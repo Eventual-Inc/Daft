@@ -315,9 +315,6 @@ class Func(Generic[P, T, C]):
                 "Cannot set 'memory' in `ray_options`. Please use the 'memory_bytes' argument in @daft.func or @daft.cls instead."
             )
 
-        if self.cpus is not None:
-            ray_options["num_cpus"] = self.cpus
-
         max_concurrency = self.max_concurrency or (1 if is_complex_ray_options(ray_options) else None)
 
         # TODO: implement generator UDFs on the engine side
@@ -335,6 +332,7 @@ class Func(Generic[P, T, C]):
                     self.name_override is not None,
                     self.is_async,
                     DataType.list(self.return_dtype)._dtype,
+                    self.cpus,
                     self.gpus,
                     self.use_process,
                     max_concurrency,
@@ -355,6 +353,7 @@ class Func(Generic[P, T, C]):
                     self.name_override is not None,
                     self.is_async,
                     self.return_dtype._dtype,
+                    self.cpus,
                     self.gpus,
                     self.use_process,
                     max_concurrency,
@@ -376,6 +375,7 @@ class Func(Generic[P, T, C]):
                     self.name_override is not None,
                     self.is_async,
                     self.return_dtype._dtype,
+                    self.cpus,
                     self.gpus,
                     self.use_process,
                     max_concurrency,
