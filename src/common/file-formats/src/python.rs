@@ -76,6 +76,7 @@ impl PyFileFormatConfig {
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),
             FileFormatConfig::PythonFunction { .. } => Ok(py.None()),
+            FileFormatConfig::Extension { .. } => Ok(py.None()),
         }
     }
 

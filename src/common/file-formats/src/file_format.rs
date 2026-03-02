@@ -20,6 +20,7 @@ pub enum FileFormat {
     Warc,
     Database,
     Python,
+    Extension,
 }
 
 #[cfg(feature = "python")]
@@ -33,6 +34,7 @@ impl FileFormat {
             Self::Warc => "warc",
             Self::Database => "db",
             Self::Python => "py",
+            Self::Extension => "ext",
         }
     }
 }

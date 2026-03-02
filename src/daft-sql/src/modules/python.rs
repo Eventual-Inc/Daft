@@ -1,5 +1,6 @@
 use common_error::DaftResult;
 use daft_dsl::{Expr, functions::python::WrappedUDFClass};
+use daft_session::ScalarFunction;
 #[cfg(feature = "python")]
 use {
     common_error::DaftError,
@@ -99,6 +100,21 @@ impl SQLFunction for WrappedUDFClass {
         #[cfg(not(feature = "python"))]
         {
             unsupported_sql_err!("Python UDFs")
+        }
+    }
+}
+
+impl SQLFunction for ScalarFunction {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::SQLPlanner,
+    ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
+        match self {
+            Self::Python(udf) => udf.to_expr(inputs, planner),
+            Self::Native(_) => Err(crate::error::PlannerError::unsupported_sql(
+                "Native extension functions are not yet supported in SQL".to_string(),
+            )),
         }
     }
 }

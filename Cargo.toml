@@ -24,6 +24,9 @@ daft-csv = {path = "src/daft-csv", default-features = false}
 daft-dashboard = {path = "src/daft-dashboard", default-features = false}
 daft-distributed = {path = "src/daft-distributed", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
+daft-ext-abi = {path = "src/daft-ext-abi", default-features = false}
+daft-ext-core = {path = "src/daft-ext-core", default-features = false}
+daft-ext-internal = {path = "src/daft-ext-internal", default-features = false}
 daft-file = {path = "src/daft-file", default-features = false}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-binary = {path = "src/daft-functions-binary", default-features = false}
@@ -373,6 +376,7 @@ url = "2.4.0"
 uuid = {version = "1.19.0", features = ["v4"]}
 xxhash-rust = {version = "0.8.15", features = ["const_xxh3", "const_xxh64", "const_xxh32", "xxh64", "xxh3", "xxh32"]}
 libc = {version = "^0.2.150", default-features = false}
+libloading = "0.9"
 
 [workspace.dependencies.arrow2]
 features = ["serde_types"]

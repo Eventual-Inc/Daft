@@ -28,6 +28,9 @@ pub enum FileFormatConfig {
         module_name: Option<String>,
         function_name: Option<String>,
     },
+    Extension {
+        source_name: String,
+    },
 }
 #[cfg(not(debug_assertions))]
 impl std::fmt::Debug for FileFormatConfig {
@@ -66,6 +69,7 @@ impl FileFormatConfig {
                     "PythonFunction".to_string()
                 }
             }
+            Self::Extension { source_name } => format!("Extension({source_name})"),
         }
     }
 
@@ -96,6 +100,7 @@ impl FileFormatConfig {
                 }
                 res
             }
+            Self::Extension { source_name } => vec![format!("Source = {source_name}")],
         }
     }
 }

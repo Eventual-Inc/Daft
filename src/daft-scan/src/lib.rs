@@ -22,6 +22,8 @@ use serde::{Deserialize, Serialize};
 
 mod anonymous;
 pub use anonymous::AnonymousScanOperator;
+pub mod extension;
+pub use extension::ExtensionScanOperator;
 pub mod glob;
 mod hive;
 use common_daft_config::DaftExecutionConfig;
@@ -163,6 +165,14 @@ pub enum DataSource {
         statistics: Option<TableStatistics>,
         partition_spec: Option<PartitionSpec>,
     },
+    Extension {
+        source_name: String,
+        options: String,
+        task_index: u32,
+        size_bytes: Option<u64>,
+        metadata: Option<TableMetadata>,
+        statistics: Option<TableStatistics>,
+    },
 }
 
 impl Hash for DataSource {
@@ -218,6 +228,21 @@ impl Hash for DataSource {
                 statistics.hash(state);
                 partition_spec.hash(state);
             }
+            Self::Extension {
+                source_name,
+                options,
+                task_index,
+                size_bytes,
+                metadata,
+                statistics,
+            } => {
+                source_name.hash(state);
+                options.hash(state);
+                task_index.hash(state);
+                size_bytes.hash(state);
+                metadata.hash(state);
+                statistics.hash(state);
+            }
         }
     }
 }
@@ -229,6 +254,7 @@ impl DataSource {
             Self::File { path, .. } | Self::Database { path, .. } => path,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { module, .. } => module,
+            Self::Extension { source_name, .. } => source_name,
         }
     }
 
@@ -246,7 +272,7 @@ impl DataSource {
     pub fn get_chunk_spec(&self) -> Option<&ChunkSpec> {
         match self {
             Self::File { chunk_spec, .. } => chunk_spec.as_ref(),
-            Self::Database { .. } => None,
+            Self::Database { .. } | Self::Extension { .. } => None,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { .. } => None,
         }
@@ -255,7 +281,9 @@ impl DataSource {
     #[must_use]
     pub fn get_size_bytes(&self) -> Option<u64> {
         match self {
-            Self::File { size_bytes, .. } | Self::Database { size_bytes, .. } => *size_bytes,
+            Self::File { size_bytes, .. }
+            | Self::Database { size_bytes, .. }
+            | Self::Extension { size_bytes, .. } => *size_bytes,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { size_bytes, .. } => *size_bytes,
         }
@@ -264,7 +292,9 @@ impl DataSource {
     #[must_use]
     pub fn get_metadata(&self) -> Option<&TableMetadata> {
         match self {
-            Self::File { metadata, .. } | Self::Database { metadata, .. } => metadata.as_ref(),
+            Self::File { metadata, .. }
+            | Self::Database { metadata, .. }
+            | Self::Extension { metadata, .. } => metadata.as_ref(),
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { metadata, .. } => metadata.as_ref(),
         }
@@ -273,9 +303,9 @@ impl DataSource {
     #[must_use]
     pub fn get_statistics(&self) -> Option<&TableStatistics> {
         match self {
-            Self::File { statistics, .. } | Self::Database { statistics, .. } => {
-                statistics.as_ref()
-            }
+            Self::File { statistics, .. }
+            | Self::Database { statistics, .. }
+            | Self::Extension { statistics, .. } => statistics.as_ref(),
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { statistics, .. } => statistics.as_ref(),
         }
@@ -285,7 +315,7 @@ impl DataSource {
     pub fn get_partition_spec(&self) -> Option<&PartitionSpec> {
         match self {
             Self::File { partition_spec, .. } => partition_spec.as_ref(),
-            Self::Database { .. } => None,
+            Self::Database { .. } | Self::Extension { .. } => None,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { partition_spec, .. } => partition_spec.as_ref(),
         }
@@ -395,6 +425,32 @@ impl DataSource {
                     res.push(format!("Statistics = {statistics}"));
                 }
             }
+            Self::Extension {
+                source_name,
+                options,
+                task_index,
+                size_bytes,
+                metadata,
+                statistics,
+            } => {
+                res.push(format!("Extension = {source_name}"));
+                res.push(format!("Task index = {task_index}"));
+                if !options.is_empty() {
+                    res.push(format!("Options = {options}"));
+                }
+                if let Some(size_bytes) = size_bytes {
+                    res.push(format!("Size bytes = {size_bytes}"));
+                }
+                if let Some(metadata) = metadata {
+                    res.push(format!(
+                        "Metadata = {}",
+                        metadata.multiline_display().join(", ")
+                    ));
+                }
+                if let Some(statistics) = statistics {
+                    res.push(format!("Statistics = {statistics}"));
+                }
+            }
         }
         res
     }
@@ -414,6 +470,13 @@ impl DisplayAs for DataSource {
                         module, func_name, ..
                     } => {
                         format!("{module}:{func_name}")
+                    }
+                    Self::Extension {
+                        source_name,
+                        task_index,
+                        ..
+                    } => {
+                        format!("Extension {{{source_name}[{task_index}]}}")
                     }
                 }
             }
@@ -776,6 +839,7 @@ impl ScanTask {
                         FileFormatConfig::Database(_) | FileFormatConfig::PythonFunction { .. } => {
                             1.0
                         }
+                        FileFormatConfig::Extension { .. } => 1.0,
                     };
                     let in_mem_size: f64 = (file_size as f64) * inflation_factor;
                     let read_row_size = if self.is_warc() {
@@ -1502,5 +1566,188 @@ mod test {
             assert!(estimate_val <= REASONABLE_SIZE_BYTES);
             assert!(estimate_val > 0);
         }
+    }
+
+    // ---- DataSource::Extension tests ----
+
+    fn make_extension_source() -> DataSource {
+        DataSource::Extension {
+            source_name: "my_ext".to_string(),
+            options: r#"{"key":"val"}"#.to_string(),
+            task_index: 0,
+            size_bytes: Some(1024),
+            metadata: Some(TableMetadata { length: 100 }),
+            statistics: None,
+        }
+    }
+
+    #[test]
+    fn extension_get_path_returns_source_name() {
+        let ds = make_extension_source();
+        assert_eq!(ds.get_path(), "my_ext");
+    }
+
+    #[test]
+    fn extension_get_chunk_spec_is_none() {
+        let ds = make_extension_source();
+        assert!(ds.get_chunk_spec().is_none());
+    }
+
+    #[test]
+    fn extension_get_size_bytes() {
+        let ds = make_extension_source();
+        assert_eq!(ds.get_size_bytes(), Some(1024));
+    }
+
+    #[test]
+    fn extension_get_metadata() {
+        let ds = make_extension_source();
+        assert_eq!(ds.get_metadata().unwrap().length, 100);
+    }
+
+    #[test]
+    fn extension_get_statistics_is_none() {
+        let ds = make_extension_source();
+        assert!(ds.get_statistics().is_none());
+    }
+
+    #[test]
+    fn extension_get_partition_spec_is_none() {
+        let ds = make_extension_source();
+        assert!(ds.get_partition_spec().is_none());
+    }
+
+    #[test]
+    fn extension_display_compact() {
+        let ds = DataSource::Extension {
+            source_name: "range".to_string(),
+            options: "{}".to_string(),
+            task_index: 3,
+            size_bytes: None,
+            metadata: None,
+            statistics: None,
+        };
+        let compact = ds.display_as(DisplayLevel::Compact);
+        assert_eq!(compact, "Extension {range[3]}");
+    }
+
+    #[test]
+    fn extension_multiline_display_all_fields() {
+        let ds = make_extension_source();
+        let lines = ds.multiline_display();
+        assert!(lines.iter().any(|l| l == "Extension = my_ext"));
+        assert!(lines.iter().any(|l| l == "Task index = 0"));
+        assert!(lines.iter().any(|l| l.starts_with("Options = ")));
+        assert!(lines.iter().any(|l| l == "Size bytes = 1024"));
+        assert!(lines.iter().any(|l| l.starts_with("Metadata = ")));
+    }
+
+    #[test]
+    fn extension_multiline_display_omits_empty_options() {
+        let ds = DataSource::Extension {
+            source_name: "range".to_string(),
+            options: String::new(),
+            task_index: 0,
+            size_bytes: None,
+            metadata: None,
+            statistics: None,
+        };
+        let lines = ds.multiline_display();
+        assert!(!lines.iter().any(|l| l.starts_with("Options = ")));
+    }
+
+    #[test]
+    fn extension_hash_consistency() {
+        use std::hash::{DefaultHasher, Hash, Hasher};
+
+        let ds1 = make_extension_source();
+        let ds2 = make_extension_source();
+
+        let hash = |ds: &DataSource| {
+            let mut h = DefaultHasher::new();
+            ds.hash(&mut h);
+            h.finish()
+        };
+        assert_eq!(hash(&ds1), hash(&ds2));
+    }
+
+    #[test]
+    fn extension_hash_differs_by_task_index() {
+        use std::hash::{DefaultHasher, Hash, Hasher};
+
+        let ds1 = DataSource::Extension {
+            source_name: "x".into(),
+            options: "{}".into(),
+            task_index: 0,
+            size_bytes: None,
+            metadata: None,
+            statistics: None,
+        };
+        let ds2 = DataSource::Extension {
+            source_name: "x".into(),
+            options: "{}".into(),
+            task_index: 1,
+            size_bytes: None,
+            metadata: None,
+            statistics: None,
+        };
+
+        let hash = |ds: &DataSource| {
+            let mut h = DefaultHasher::new();
+            ds.hash(&mut h);
+            h.finish()
+        };
+        assert_ne!(hash(&ds1), hash(&ds2));
+    }
+
+    // ---- FileFormatConfig::Extension tests ----
+
+    #[test]
+    fn file_format_config_extension_var_name() {
+        let cfg = FileFormatConfig::Extension {
+            source_name: "my_ext".to_string(),
+        };
+        assert_eq!(cfg.var_name(), "Extension(my_ext)");
+    }
+
+    #[test]
+    fn file_format_config_extension_multiline_display() {
+        let cfg = FileFormatConfig::Extension {
+            source_name: "range".to_string(),
+        };
+        let lines = cfg.multiline_display();
+        assert_eq!(lines, vec!["Source = range"]);
+    }
+
+    #[test]
+    fn file_format_config_extension_clone_eq() {
+        let cfg = FileFormatConfig::Extension {
+            source_name: "test".to_string(),
+        };
+        let cfg2 = cfg.clone();
+        assert_eq!(cfg, cfg2);
+    }
+
+    #[test]
+    fn file_format_config_extension_hash() {
+        use std::hash::{DefaultHasher, Hash, Hasher};
+
+        let hash = |cfg: &FileFormatConfig| {
+            let mut h = DefaultHasher::new();
+            cfg.hash(&mut h);
+            h.finish()
+        };
+
+        let cfg1 = FileFormatConfig::Extension {
+            source_name: "a".to_string(),
+        };
+        let cfg2 = FileFormatConfig::Extension {
+            source_name: "a".to_string(),
+        };
+        let cfg3 = FileFormatConfig::Extension {
+            source_name: "b".to_string(),
+        };
+        assert_eq!(hash(&cfg1), hash(&cfg2));
+        assert_ne!(hash(&cfg1), hash(&cfg3));
     }
 }
