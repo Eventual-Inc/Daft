@@ -1,5 +1,5 @@
+use arrow::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
 use arrow_array::ArrayRef;
-use daft_ext_abi::{FFI_ArrowArray, FFI_ArrowSchema};
 
 use crate::error::{DaftError, DaftResult};
 

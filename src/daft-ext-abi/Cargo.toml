@@ -1,6 +1,6 @@
 [dependencies]
-arrow = {workspace = true, features = ["ffi"]}
-arrow-array = {workspace = true}
+arrow = {version = ">53", features = ["ffi"]}
+arrow-array = {version = ">53"}
 
 [lints]
 workspace = true

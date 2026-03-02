@@ -5,7 +5,7 @@ use std::{
 
 use arrow_array::ArrayRef;
 use arrow_schema::Field;
-use daft_ext_abi::{FFI_ArrowArray, FFI_ArrowSchema, FFI_ScalarFunction};
+use daft_ext_abi::{CArrowArray, CArrowSchema, FFI_ArrowSchema, FFI_ScalarFunction};
 
 use crate::{
     error::{DaftError, DaftResult},
@@ -51,13 +51,14 @@ unsafe extern "C" fn ffi_name(ctx: *const c_void) -> *const c_char {
 #[rustfmt::skip]
 unsafe extern "C" fn ffi_get_return_field(
     ctx:        *const c_void,
-    args:       *const FFI_ArrowSchema,
+    args:       *const CArrowSchema,
     args_count: usize,
-    ret:        *mut FFI_ArrowSchema,
+    ret:        *mut CArrowSchema,
     errmsg:     *mut *mut c_char,
 ) -> c_int {
     unsafe { trampoline(errmsg, "panic in get_return_field", || {
         let ctx = &*ctx.cast::<DaftScalarFunctionRef>();
+        let args = args.cast::<FFI_ArrowSchema>();
         let mut fields = Vec::with_capacity(args_count);
         for i in 0..args_count {
             let schema = &*args.add(i);
@@ -68,7 +69,7 @@ unsafe extern "C" fn ffi_get_return_field(
         let result = ctx.return_field(&fields)?;
         let out_schema = FFI_ArrowSchema::try_from(&result)
             .map_err(|e| DaftError::RuntimeError(format!("schema export failed: {e}")))?;
-        std::ptr::write(ret, out_schema);
+        std::ptr::write(ret.cast(), out_schema);
         Ok(())
     })}
 }
@@ -77,18 +78,18 @@ unsafe extern "C" fn ffi_get_return_field(
 #[rustfmt::skip]
 unsafe extern "C" fn ffi_call(
     ctx:          *const c_void,
-    args:         *const FFI_ArrowArray,
-    args_schemas: *const FFI_ArrowSchema,
+    args:         *const CArrowArray,
+    args_schemas: *const CArrowSchema,
     args_count:   usize,
-    ret_array:    *mut FFI_ArrowArray,
-    ret_schema:   *mut FFI_ArrowSchema,
+    ret_array:    *mut CArrowArray,
+    ret_schema:   *mut CArrowSchema,
     errmsg:       *mut *mut c_char,
 ) -> c_int {
     unsafe { trampoline(errmsg, "panic in call", || {
         let ctx = &*ctx.cast::<DaftScalarFunctionRef>();
-        let arrays = import_arrow_args(args, args_schemas, args_count)?;
+        let arrays = import_arrow_args(args.cast(), args_schemas.cast(), args_count)?;
         let result = ctx.call(&arrays)?;
-        export_arrow_result(result, ret_array, ret_schema)
+        export_arrow_result(result, ret_array.cast(), ret_schema.cast())
     })}
 }
 
@@ -104,9 +105,24 @@ mod tests {
     use arrow::ffi as arrow_ffi;
     use arrow_array::{Array, Int32Array, make_array};
     use arrow_schema::{DataType, Field};
+    use daft_ext_abi::{FFI_ArrowArray, FFI_ArrowSchema};
 
     use super::*;
     use crate::ffi::strings::free_string;
+
+    /// Cast a concrete FFI pointer to the opaque vtable type.
+    fn schema_ptr(p: *const FFI_ArrowSchema) -> *const CArrowSchema {
+        p.cast()
+    }
+    fn schema_mut(p: *mut FFI_ArrowSchema) -> *mut CArrowSchema {
+        p.cast()
+    }
+    fn array_ptr(p: *const FFI_ArrowArray) -> *const CArrowArray {
+        p.cast()
+    }
+    fn array_mut(p: *mut FFI_ArrowArray) -> *mut CArrowArray {
+        p.cast()
+    }
 
     struct IncrementFn;
 
@@ -152,9 +168,9 @@ mod tests {
         let rc = unsafe {
             (vtable.get_return_field)(
                 vtable.ctx,
-                &raw const ffi_field,
+                schema_ptr(&raw const ffi_field),
                 1,
-                &raw mut ret_schema,
+                schema_mut(&raw mut ret_schema),
                 &raw mut errmsg,
             )
         };
@@ -185,11 +201,11 @@ mod tests {
         let rc = unsafe {
             (vtable.call)(
                 vtable.ctx,
-                &raw const *ffi_array,
-                &raw const ffi_schema,
+                array_ptr(&raw const *ffi_array),
+                schema_ptr(&raw const ffi_schema),
                 1,
-                &raw mut ret_array,
-                &raw mut ret_schema,
+                array_mut(&raw mut ret_array),
+                schema_mut(&raw mut ret_schema),
                 &raw mut errmsg,
             )
         };
@@ -229,7 +245,7 @@ mod tests {
                 vtable.ctx,
                 std::ptr::null(),
                 0,
-                &raw mut ret_schema,
+                schema_mut(&raw mut ret_schema),
                 &raw mut errmsg,
             )
         };
@@ -274,11 +290,11 @@ mod tests {
         let rc = unsafe {
             (vtable.call)(
                 vtable.ctx,
-                &raw const *ffi_array,
-                &raw const ffi_schema,
+                array_ptr(&raw const *ffi_array),
+                schema_ptr(&raw const ffi_schema),
                 1,
-                &raw mut ret_array,
-                &raw mut ret_schema,
+                array_mut(&raw mut ret_array),
+                schema_mut(&raw mut ret_schema),
                 &raw mut errmsg,
             )
         };
@@ -323,7 +339,7 @@ mod tests {
                 vtable.ctx,
                 std::ptr::null(),
                 0,
-                &raw mut ret_schema,
+                schema_mut(&raw mut ret_schema),
                 &raw mut errmsg,
             )
         };

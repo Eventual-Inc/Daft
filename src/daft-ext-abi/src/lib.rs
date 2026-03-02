@@ -13,6 +13,25 @@ use std::ffi::{c_char, c_int, c_void};
 
 pub use arrow::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
 
+/// Opaque Arrow C Data Interface schema, used in vtable signatures.
+///
+/// The host (daft-ext-internal) and extensions (daft-ext-core) may link
+/// different versions of the `arrow` crate, producing distinct Rust types
+/// for `FFI_ArrowSchema`. Because the Arrow C Data Interface layout is
+/// stable across versions, a simple pointer cast between each side's
+/// concrete `FFI_ArrowSchema` and this opaque type is safe. Using an
+/// opaque type in the vtable avoids coupling the ABI to any specific
+/// arrow crate version.
+///
+/// Never constructed; only used as `*const CArrowSchema` / `*mut CArrowSchema`.
+pub struct CArrowSchema(());
+
+/// Opaque Arrow C Data Interface array, used in vtable signatures.
+///
+/// See [`CArrowSchema`] for rationale — the same pointer-cast approach
+/// applies to `FFI_ArrowArray`.
+pub struct CArrowArray(());
+
 /// Modules built against a different ABI version are rejected at load time.
 pub const DAFT_ABI_VERSION: u32 = 1;
 
@@ -78,9 +97,9 @@ pub struct FFI_ScalarFunction {
     /// Returns 0 on success, non-zero on error.
     pub get_return_field: unsafe extern "C" fn(
         ctx: *const c_void,
-        args: *const FFI_ArrowSchema,
+        args: *const CArrowSchema,
         args_count: usize,
-        ret: *mut FFI_ArrowSchema,
+        ret: *mut CArrowSchema,
         errmsg: *mut *mut c_char,
     ) -> c_int,
 
@@ -92,11 +111,11 @@ pub struct FFI_ScalarFunction {
     /// Returns 0 on success, non-zero on error.
     pub call: unsafe extern "C" fn(
         ctx: *const c_void,
-        args: *const FFI_ArrowArray,
-        args_schemas: *const FFI_ArrowSchema,
+        args: *const CArrowArray,
+        args_schemas: *const CArrowSchema,
         args_count: usize,
-        ret_array: *mut FFI_ArrowArray,
-        ret_schema: *mut FFI_ArrowSchema,
+        ret_array: *mut CArrowArray,
+        ret_schema: *mut CArrowSchema,
         errmsg: *mut *mut c_char,
     ) -> c_int,
 
