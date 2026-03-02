@@ -1651,10 +1651,10 @@ class DataFrame:
             - File paths: "/path/to/lance/data/" or cloud URIs like "s3://bucket/path"
             - REST URIs: "rest://namespace/table_name" (requires rest_config)
           mode: The write mode. One of "create", "append", "overwrite", or "merge".
-          - "create" will create the dataset if it does not exist, otherwise raise an error.
-          - "append" will append to the existing dataset if it exists, otherwise raise an error.
-          - "overwrite" will overwrite the existing dataset if it exists, otherwise raise an error.
-          - "merge" will add new columns to the existing dataset.
+              - "create" will create the dataset if it does not exist, otherwise raise an error.
+              - "append" will append to the existing dataset if it exists, otherwise raise an error.
+              - "overwrite" will overwrite the existing dataset if it exists, otherwise raise an error.
+              - "merge" will add new columns to the existing dataset.
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
           rest_config (RestConfig, optional): Configuration for REST-based Lance services. Required when using REST URIs.
           schema (Schema | pyarrow.Schema, optional): Desired schema to enforce during write.
@@ -1664,8 +1664,9 @@ class DataFrame:
               on the pyarrow schema is preserved during create/overwrite.
             - If the target Lance dataset already exists, the data will be cast to the existing table schema
               to ensure compatibility unless ``mode="overwrite"``.
-          left_on/right_on (Optional[str]): Only supported in ``mode="merge"``. Specify the join key for aligning rows when merging new columns.
+          left_on (Optional[str]): Only supported in ``mode="merge"``. Specify the join key for aligning rows when merging new columns.
               - If omitted, defaults to ``"_rowaddr"``.
+          right_on (Optional[str]): Only supported in ``mode="merge"``. Specify the join key for aligning rows when merging new columns.
               - If ``right_on`` is omitted, it defaults to the value of ``left_on``.
               - The DataFrame passed to ``write_lance(mode="merge")`` must contain ``fragment_id`` and the join key column specified by ``right_on`` (or ``_rowaddr`` by default).
           **kwargs: Additional keyword arguments to pass to the Lance writer.

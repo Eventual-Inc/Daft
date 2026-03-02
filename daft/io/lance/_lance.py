@@ -1,7 +1,6 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 import pathlib
-import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Optional, Union
 
@@ -54,17 +53,18 @@ def read_lance(
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
         rest_config: Configuration for REST-based Lance services. Required when using REST URIs.
         version : optional, int | str
+        version: optional, int | str
             If specified, load a specific version of the Lance dataset. Else, loads the
             latest version. A version number (`int`) or a tag (`str`) can be provided.
-        asof : optional, datetime or str
+        asof: optional, datetime or str
             If specified, find the latest version created on or earlier than the given
             argument value. If a version is already specified, this arg is ignored.
-        block_size : optional, int
+        block_size: optional, int
             Block size in bytes. Provide a hint for the size of the minimal I/O request.
-        commit_lock : optional, lance.commit.CommitLock
+        commit_lock: optional, lance.commit.CommitLock
             A custom commit lock.  Only needed if your object store does not support
             atomic commits.  See the user guide for more details.
-        index_cache_size : optional, int
+        index_cache_size: optional, int
             Index cache size. Index cache is a LRU cache with TTL. This number specifies the
             number of index pages, for example, IVF partitions, to be cached in
             the host memory. Default value is ``256``.
@@ -73,7 +73,7 @@ def read_lance(
             page equals the combination of the pq code (``np.array([n,pq], dtype=uint8))``
             Approximately, ``n = Total Rows / number of IVF partitions``.
             ``pq = number of PQ sub-vectors``.
-        default_scan_options : optional, dict
+        default_scan_options: optional, dict
             Default scan options that are used when scanning the dataset.  This accepts
             the same arguments described in :py:meth:`lance.LanceDataset.scanner`.  The
             arguments will be applied to any scan operation.
@@ -88,14 +88,14 @@ def read_lance(
             like this:
             default_scan_options = {"with_row_address": True, "with_row_id" : True,  "batch_size": 1024}
             more see: https://lance-format.github.io/lance-python-doc/dataset.html
-        metadata_cache_size_bytes : optional, int
+        metadata_cache_size_bytes: optional, int
             Size of the metadata cache in bytes. This cache is used to store metadata
             information about the dataset, such as schema and statistics. If not specified,
             a default size will be used.
-        fragment_group_size : optional, int
+        fragment_group_size: optional, int
             Number of fragments to group together in a single scan task. If None or <= 1,
             each fragment will be processed individually (default behavior).
-        include_fragment_id : Optional, bool
+        include_fragment_id: Optional, bool
             Whether to display fragment_id.
             if you have the behavior of 'merge_columns_df' or 'write_lance(mode = 'merge')', the `include_fragment_id` must be set to True
 
@@ -227,13 +227,6 @@ def merge_columns(
         ...     return batch.append_column("new_column", pc.multiply(batch["c"], 2))
         >>> daft.io.lance.merge_columns("s3://my-lancedb-bucket/data/", transform=double_score)
     """
-    warnings.warn(
-        "daft.io.lance.merge_columns is deprecated and will be removed in a future release. "
-        "Please use daft.io.lance.merge_columns_df instead.",
-        category=DeprecationWarning,
-        stacklevel=2,
-    )
-
     if transform is None:
         raise ValueError(
             "merge_columns requires a `transform` function; prefer using merge_columns_df with a prepared DataFrame if no transform is needed."
@@ -370,6 +363,71 @@ def merge_columns_df(
         daft_remote_args=daft_remote_args,
         concurrency=concurrency,
         left_on=left_on,
+        right_on=effective_right_on,
+        batch_size=effective_batch_size,
+    )
+
+
+@PublicAPI
+def update_columns(
+    df: DataFrame,
+    uri: str | pathlib.Path,
+    io_config: IOConfig | None = None,
+    *,
+    read_columns: list[str] | None = None,
+    storage_options: dict[str, Any] | None = None,
+    daft_remote_args: dict[str, Any] | None = None,
+    concurrency: int | None = None,
+    version: int | str | None = None,
+    asof: str | None = None,
+    block_size: int | None = None,
+    commit_lock: Any | None = None,
+    index_cache_size: int | None = None,
+    default_scan_options: dict[str, Any] | None = None,
+    metadata_cache_size_bytes: int | None = None,
+    batch_size: int | None = None,
+    left_on: str | None = "_rowid",
+    right_on: str | None = None,
+) -> None:
+    """Row-level column update entrypoint using a DataFrame.
+
+    This function updates existing columns in a LanceDB table in-place by joining
+    per-fragment data from a DataFrame and applying LanceFragment.update_columns.
+    """
+    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+    storage_options = storage_options or io_config_to_storage_options(io_config, uri)
+
+    # Build Lance dataset handle for committing
+    lance_ds = construct_lance_dataset(
+        uri,
+        storage_options=storage_options,
+        version=version,
+        asof=asof,
+        block_size=block_size,
+        commit_lock=commit_lock,
+        index_cache_size=index_cache_size,
+        default_scan_options=default_scan_options,
+        metadata_cache_size_bytes=metadata_cache_size_bytes,
+    )
+
+    effective_left_on = left_on or "_rowid"
+    effective_right_on = right_on or effective_left_on
+    effective_batch_size = (
+        batch_size if batch_size is not None else daft_remote_args.get("batch_size", None) if daft_remote_args else None
+    )
+
+    # Import here to avoid circular imports
+    from daft.io.lance.lance_update_column import update_columns_from_df
+
+    update_columns_from_df(
+        df=df,
+        lance_ds=lance_ds,
+        uri=uri,
+        read_columns=read_columns,
+        storage_options=storage_options,
+        daft_remote_args=daft_remote_args,
+        concurrency=concurrency,
+        left_on=effective_left_on,
         right_on=effective_right_on,
         batch_size=effective_batch_size,
     )
