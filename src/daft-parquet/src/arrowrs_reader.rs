@@ -147,15 +147,11 @@ fn build_row_filter(
     // Build projection mask for filter columns only.
     let filter_projection = build_projection_mask(&filter_col_set, arrow_schema, parquet_schema);
 
-    // Build the Daft schema for filter columns only (preserving file column order).
-    let filter_daft_schema = Arc::new(project_daft_schema(daft_schema, &filter_col_set));
-
     let pred = predicate.clone();
     let predicate_fn = ArrowPredicateFn::new(filter_projection, move |batch| {
         // Convert arrow-rs RecordBatch (filter columns only) to Daft RecordBatch.
-        let daft_batch =
-            crate::arrow_bridge::arrowrs_to_daft_recordbatch(&batch, &filter_daft_schema)
-                .map_err(|e| arrow::error::ArrowError::ExternalError(e.into()))?;
+        let daft_batch = RecordBatch::try_from(&batch)
+            .map_err(|e| arrow::error::ArrowError::ExternalError(e.into()))?;
 
         // Bind and evaluate the predicate.
         let bound = BoundExpr::try_new(pred.clone(), &daft_batch.schema)
@@ -470,9 +466,13 @@ pub async fn read_parquet_single_arrowrs(
         stream.try_collect().await.map_err(parquet_err)?;
 
     // 9. Convert to Daft RecordBatch.
-    let mut table = crate::arrow_bridge::arrowrs_batches_to_daft_recordbatch(
-        &arrow_batches,
-        &read_daft_schema,
+    let daft_batches: Vec<RecordBatch> = arrow_batches
+        .iter()
+        .map(RecordBatch::try_from)
+        .collect::<DaftResult<Vec<_>>>()?;
+    let mut table = RecordBatch::concat_or_empty(
+        daft_batches.iter().collect::<Vec<_>>().as_slice(),
+        Some(Arc::new(read_daft_schema.clone())),
     )?;
 
     // 10. Post-read predicate fallback (if RowFilter couldn't be built).
@@ -821,9 +821,13 @@ pub(crate) fn decode_single_rg(
     let reader = builder.build().map_err(parquet_err)?;
     let arrow_batches: Vec<arrow::array::RecordBatch> =
         reader.collect::<Result<Vec<_>, _>>().map_err(parquet_err)?;
-    let mut table = crate::arrow_bridge::arrowrs_batches_to_daft_recordbatch(
-        &arrow_batches,
-        &setup.read_daft_schema,
+    let daft_batches: Vec<RecordBatch> = arrow_batches
+        .iter()
+        .map(RecordBatch::try_from)
+        .collect::<DaftResult<Vec<_>>>()?;
+    let mut table = RecordBatch::concat_or_empty(
+        daft_batches.iter().collect::<Vec<_>>().as_slice(),
+        Some(Arc::new(setup.read_daft_schema.clone())),
     )?;
 
     // Post-read predicate fallback (no limit — caller handles cross-RG limit).
@@ -1180,13 +1184,11 @@ pub async fn stream_parquet_single_arrowrs(
 
     // 8. Build the stream.
     let stream = builder.build().map_err(parquet_err)?;
-    let read_schema = Arc::new(read_daft_schema);
     let return_schema = Arc::new(return_daft_schema);
 
     let mapped = stream.map(move |result| {
         let arrow_batch = result.map_err(parquet_err)?;
-        let mut table =
-            crate::arrow_bridge::arrowrs_to_daft_recordbatch(&arrow_batch, &read_schema)?;
+        let mut table = RecordBatch::try_from(&arrow_batch)?;
 
         // Post-read predicate fallback.
         if let Some(ref pred) = predicate

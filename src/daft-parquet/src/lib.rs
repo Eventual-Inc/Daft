@@ -6,7 +6,6 @@ use daft_arrow::io::parquet::read::schema::{SchemaInferenceOptions, infer_schema
 use daft_core::prelude::SchemaRef;
 use snafu::Snafu;
 
-mod arrow_bridge;
 mod arrowrs_reader;
 mod async_reader;
 mod file;

@@ -1596,6 +1596,15 @@ impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
     }
 }
 
+impl TryFrom<&arrow_array::RecordBatch> for RecordBatch {
+    type Error = DaftError;
+
+    fn try_from(arrow_rb: &arrow_array::RecordBatch) -> DaftResult<Self> {
+        let schema: Arc<Schema> = Arc::new(arrow_rb.schema().as_ref().try_into()?);
+        Self::from_arrow(schema, arrow_rb.columns().to_vec())
+    }
+}
+
 impl TryFrom<RecordBatch> for FileInfos {
     type Error = DaftError;
 
