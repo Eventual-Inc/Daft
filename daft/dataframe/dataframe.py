@@ -3737,11 +3737,14 @@ class DataFrame:
         return self._apply_agg_fn(Expression.mean, cols)
 
     @DataframePublicAPI
-    def stddev(self, *cols: ColumnInputType) -> "DataFrame":
+    def stddev(self, *cols: ColumnInputType, ddof: int = 1) -> "DataFrame":
         """Performs a global standard deviation on the DataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to stddev
+            ddof (int): Delta degrees of freedom used in the denominator `N - ddof`.
+                Defaults to 1 (sample standard deviation).
+
         Returns:
             DataFrame: Globally aggregated standard deviation. Should be a single row.
 
@@ -3750,18 +3753,18 @@ class DataFrame:
             >>> df = daft.from_pydict({"col_a": [0, 1, 2]})
             >>> df = df.stddev("col_a")
             >>> df.show()
-            ╭───────────────────╮
-            │ col_a             │
-            │ ---               │
-            │ Float64           │
-            ╞═══════════════════╡
-            │ 0.816496580927726 │
-            ╰───────────────────╯
+            ╭─────────╮
+            │ col_a   │
+            │ ---     │
+            │ Float64 │
+            ╞═════════╡
+            │ 1       │
+            ╰─────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
 
         """
-        return self._apply_agg_fn(Expression.stddev, cols)
+        return self._apply_agg_fn(lambda expr: Expression.stddev(expr, ddof), cols)
 
     @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
@@ -5119,11 +5122,13 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.mean, cols, self.group_by)
 
-    def stddev(self, *cols: ColumnInputType) -> DataFrame:
+    def stddev(self, *cols: ColumnInputType, ddof: int = 1) -> DataFrame:
         """Performs grouped standard deviation on this GroupedDataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to stddev
+            ddof (int): Delta degrees of freedom used in the denominator `N - ddof`.
+                Defaults to 1 (sample standard deviation).
 
         Returns:
             DataFrame: DataFrame with grouped standard deviation.
@@ -5134,20 +5139,20 @@ class GroupedDataFrame:
             >>> df = df.groupby("keys").stddev()
             >>> df = df.sort("keys")
             >>> df.show()
-            ╭────────┬───────────────────╮
-            │ keys   ┆ col_a             │
-            │ ---    ┆ ---               │
-            │ String ┆ Float64           │
-            ╞════════╪═══════════════════╡
-            │ a      ┆ 0.816496580927726 │
-            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ b      ┆ 0                 │
-            ╰────────┴───────────────────╯
+            ╭────────┬─────────╮
+            │ keys   ┆ col_a   │
+            │ ---    ┆ ---     │
+            │ String ┆ Float64 │
+            ╞════════╪═════════╡
+            │ a      ┆ 1       │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ b      ┆ None    │
+            ╰────────┴─────────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
 
         """
-        return self.df._apply_agg_fn(Expression.stddev, cols, self.group_by)
+        return self.df._apply_agg_fn(lambda expr: Expression.stddev(expr, ddof), cols, self.group_by)
 
     def min(self, *cols: ColumnInputType) -> DataFrame:
         """Perform grouped min on this GroupedDataFrame.

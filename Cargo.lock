@@ -2597,7 +2597,6 @@ dependencies = [
  "common-io-config",
  "common-ndarray",
  "common-py-serde",
- "daft-arrow",
  "daft-hash",
  "daft-minhash",
  "daft-schema",
@@ -2624,19 +2623,21 @@ dependencies = [
 name = "daft-csv"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-schema",
  "async-compat",
  "async-stream",
  "common-error",
  "common-py-serde",
  "common-runtime",
+ "csv",
  "csv-async",
- "daft-arrow",
  "daft-compression",
  "daft-core",
  "daft-decoding",
  "daft-dsl",
  "daft-io",
  "daft-recordbatch",
+ "daft-schema",
  "futures",
  "memchr",
  "parking_lot 0.12.5",
@@ -2678,11 +2679,12 @@ dependencies = [
 name = "daft-decoding"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
  "arrow-schema",
  "atoi_simd",
  "chrono",
+ "csv",
  "csv-async",
- "daft-arrow",
  "daft-schema",
  "fast-float2",
  "simdutf8",

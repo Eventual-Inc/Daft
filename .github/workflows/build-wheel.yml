@@ -144,7 +144,7 @@ jobs:
         GITHUB_ACTIONS: true
 
     - name: Upload wheels
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-lto=${{ inputs.use_lto }}
         path: dist
@@ -164,7 +164,7 @@ jobs:
     steps:
     - uses: actions/checkout@v6
     - name: Download built wheels
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         pattern: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-lto=${{ inputs.use_lto }}
         merge-multiple: true

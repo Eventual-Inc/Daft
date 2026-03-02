@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import sys
-import uuid
 from typing import TYPE_CHECKING
 
 from daft.context import get_context
@@ -19,6 +18,7 @@ from daft.errors import UDFException
 from daft.execution.metadata import ExecutionMetadata
 from daft.execution.native_executor import NativeExecutor
 from daft.filesystem import glob_path_with_stats
+from daft.naming import generate_query_name
 from daft.recordbatch import MicroPartition
 from daft.runners import runner_io
 from daft.runners.partitioning import (
@@ -85,7 +85,7 @@ class NativeRunner(Runner[MicroPartition]):
 
         # NOTE: Freeze and use this same execution config for the entire execution
         ctx = get_context()
-        query_id = str(uuid.uuid4())
+        query_id = generate_query_name()
         output_schema = builder.schema()
 
         entrypoint = "python " + " ".join(sys.argv)

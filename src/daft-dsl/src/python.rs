@@ -478,8 +478,8 @@ impl PyExpr {
         Ok(self.expr.clone().mean().into())
     }
 
-    pub fn stddev(&self) -> PyResult<Self> {
-        Ok(self.expr.clone().stddev().into())
+    pub fn stddev(&self, ddof: usize) -> PyResult<Self> {
+        Ok(self.expr.clone().stddev(ddof).into())
     }
 
     pub fn var(&self, ddof: usize) -> PyResult<Self> {
