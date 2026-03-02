@@ -118,3 +118,8 @@ export type QueryInfo = {
   entrypoint?: string;
   state: QueryState;
 };
+
+export type ResultPreview = {
+  html: string | null;
+  num_rows: number;
+};

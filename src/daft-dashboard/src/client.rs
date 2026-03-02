@@ -15,7 +15,7 @@ use tokio_stream::{
     wrappers::{BroadcastStream, errors::BroadcastStreamRecvError},
 };
 
-use crate::state::{DashboardState, QueryInfo, QuerySummary};
+use crate::state::{DashboardState, QueryInfo, QueryState, QuerySummary};
 
 /// Get the summaries of all queries
 /// Note, this is used for internal testing, not by the frontend
@@ -157,10 +157,38 @@ async fn subscribe_query_updates(
     ))
 }
 
+/// Get the result preview HTML for a finished query
+async fn get_query_results(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let Some(query) = state.queries.get(&query_id) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    match &query.value().state {
+        QueryState::Finished {
+            results: Some(rb), ..
+        } => {
+            let html = rb.repr_html();
+            let num_rows = rb.num_rows();
+            Ok(Json(serde_json::json!({
+                "html": html,
+                "num_rows": num_rows,
+            })))
+        }
+        _ => Ok(Json(serde_json::json!({
+            "html": null,
+            "num_rows": 0,
+        }))),
+    }
+}
+
 pub(crate) fn routes() -> Router<Arc<DashboardState>> {
     Router::new()
         .route("/queries", get(get_query_summaries))
         .route("/queries/subscribe", get(subscribe_queries_updates))
         .route("/query/{query_id}", get(get_query))
         .route("/query/{query_id}/subscribe", get(subscribe_query_updates))
+        .route("/query/{query_id}/results", get(get_query_results))
 }
