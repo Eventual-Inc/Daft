@@ -11,7 +11,7 @@ use futures::StreamExt;
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -31,7 +31,7 @@ pub(crate) struct IntoPartitionsNode {
 }
 
 impl IntoPartitionsNode {
-    const NODE_NAME: NodeName = "IntoPartitions";
+    const NODE_NAME: &'static str = "IntoPartitions";
 
     pub fn new(
         node_id: NodeID,
@@ -44,7 +44,7 @@ impl IntoPartitionsNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::IntoPartitions,
             NodeCategory::BlockingSink,
         );

@@ -16,9 +16,7 @@ use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
 use opentelemetry::{KeyValue, metrics::Meter};
 
-use super::{
-    NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
-};
+use super::{PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID, metrics::key_values_from_context},
     plan::{PlanConfig, PlanExecutionContext},
@@ -75,7 +73,7 @@ pub(crate) struct ScanSourceNode {
 }
 
 impl ScanSourceNode {
-    const NODE_NAME: NodeName = "ScanSource";
+    const NODE_NAME: &'static str = "ScanTaskSource";
 
     pub fn new(
         node_id: NodeID,
@@ -88,7 +86,7 @@ impl ScanSourceNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::ScanTask,
             NodeCategory::Source,
         );

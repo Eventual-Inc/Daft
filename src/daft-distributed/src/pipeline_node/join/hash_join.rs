@@ -9,8 +9,8 @@ use futures::StreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, TaskBuilderStream,
+        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
+        TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
@@ -31,7 +31,7 @@ pub(crate) struct HashJoinNode {
 }
 
 impl HashJoinNode {
-    const NODE_NAME: NodeName = "HashJoin";
+    const NODE_NAME: &'static str = "HashJoin";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -50,7 +50,7 @@ impl HashJoinNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::DistributedHashJoin,
             NodeCategory::BlockingSink,
         );

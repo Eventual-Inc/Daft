@@ -15,7 +15,7 @@ use opentelemetry::{KeyValue, metrics::Meter};
 use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, metrics::key_values_from_context,
+        NodeID, PipelineNodeConfig, PipelineNodeContext, metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext},
     statistics::{RuntimeStats, stats::RuntimeStatsRef},
@@ -89,7 +89,7 @@ pub(crate) struct ExplodeNode {
 }
 
 impl ExplodeNode {
-    const NODE_NAME: NodeName = "Explode";
+    const NODE_NAME: &'static str = "Explode";
 
     pub fn new(
         node_id: NodeID,
@@ -104,7 +104,7 @@ impl ExplodeNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Explode,
             NodeCategory::Intermediate,
         );

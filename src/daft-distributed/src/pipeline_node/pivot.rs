@@ -8,9 +8,7 @@ use daft_schema::schema::SchemaRef;
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-    },
+    pipeline_node::{DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
 };
 
@@ -26,7 +24,7 @@ pub(crate) struct PivotNode {
 }
 
 impl PivotNode {
-    const NODE_NAME: NodeName = "Pivot";
+    const NODE_NAME: &'static str = "Pivot";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -44,7 +42,7 @@ impl PivotNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Pivot,
             NodeCategory::BlockingSink,
         );
