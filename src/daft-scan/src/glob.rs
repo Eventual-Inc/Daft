@@ -102,8 +102,9 @@ async fn run_glob(
     let (_, parsed_glob_path) = parse_url(&glob_path)?;
     // Construct a static-lifetime BoxStream returning the FileMetadata
     let glob_input = parsed_glob_path.as_ref().to_string();
+    let file_format_filter = (file_format != FileFormat::Binary).then_some(file_format);
     let stream = io_client
-        .glob(glob_input, None, None, limit, io_stats, Some(file_format))
+        .glob(glob_input, None, None, limit, io_stats, file_format_filter)
         .await?;
 
     let stream = stream.map_err(|e| e.into());
@@ -128,8 +129,9 @@ fn run_glob_parallel(
         let io_stats = io_stats.clone();
 
         runtime.spawn(async move {
+            let file_format_filter = (file_format != FileFormat::Binary).then_some(file_format);
             let stream = io_client
-                .glob(glob_input, None, None, None, io_stats, Some(file_format))
+                .glob(glob_input, None, None, None, io_stats, file_format_filter)
                 .await?;
             let results = stream.map_err(|e| e.into()).collect::<Vec<_>>().await;
             DaftResult::Ok(futures::stream::iter(results))
@@ -316,6 +318,9 @@ impl GlobScanOperator {
                         // Use schema inferred from first file.
                         (first_schema, None, first_filepath)
                     }
+                }
+                FileFormatConfig::Binary(_) => {
+                    return Err(DaftError::ValueError("Binary schema is fixed".to_string()));
                 }
                 FileFormatConfig::Warc(_) => {
                     return Err(DaftError::ValueError(

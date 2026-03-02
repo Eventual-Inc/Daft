@@ -2439,6 +2439,7 @@ dependencies = [
  "daft-ai",
  "daft-algebra",
  "daft-arrow",
+ "daft-binary",
  "daft-catalog",
  "daft-cli",
  "daft-compression",
@@ -2514,6 +2515,19 @@ dependencies = [
  "arrow-buffer",
  "arrow-schema",
  "arrow2",
+]
+
+[[package]]
+name = "daft-binary"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-core",
+ "daft-io",
+ "daft-recordbatch",
+ "futures",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -3104,6 +3118,7 @@ dependencies = [
  "common-system-info",
  "common-tracing",
  "console",
+ "daft-binary",
  "daft-context",
  "daft-core",
  "daft-csv",

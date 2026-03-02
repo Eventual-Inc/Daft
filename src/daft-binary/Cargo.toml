@@ -1,0 +1,24 @@
+[dependencies]
+common-error = {path = "../common/error", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
+futures = {workspace = true}
+tokio = {workspace = true}
+tokio-util = {workspace = true}
+
+[features]
+python = [
+  "common-error/python",
+  "daft-core/python",
+  "daft-io/python",
+  "daft-recordbatch/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-binary"
+version = {workspace = true}

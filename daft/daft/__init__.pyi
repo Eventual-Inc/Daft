@@ -237,6 +237,10 @@ class FileFormat(Enum):
     Parquet = 1
     Csv = 2
     Json = 3
+    Binary = 4
+    Warc = 5
+    Database = 6
+    Python = 7
 
     def ext(self) -> str: ...
 
@@ -306,6 +310,18 @@ class JsonSourceConfig:
         skip_empty_files: bool = False,
     ): ...
 
+class BinarySourceConfig:
+    """Configuration of a binary data source."""
+
+    buffer_size: int | None
+    max_bytes: int | None
+
+    def __init__(
+        self,
+        buffer_size: int | None = None,
+        max_bytes: int | None = None,
+    ) -> None: ...
+
 class WarcSourceConfig:
     """Configuration of a Warc data source."""
 
@@ -322,7 +338,14 @@ class DatabaseSourceConfig:
 class FileFormatConfig:
     """Configuration for parsing a particular file format (Parquet, CSV, JSON)."""
 
-    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | DatabaseSourceConfig | WarcSourceConfig
+    config: (
+        ParquetSourceConfig
+        | CsvSourceConfig
+        | JsonSourceConfig
+        | BinarySourceConfig
+        | DatabaseSourceConfig
+        | WarcSourceConfig
+    )
 
     @staticmethod
     def from_parquet_config(config: ParquetSourceConfig) -> FileFormatConfig:
@@ -337,6 +360,11 @@ class FileFormatConfig:
     @staticmethod
     def from_json_config(config: JsonSourceConfig) -> FileFormatConfig:
         """Create a JSON file format config."""
+        ...
+
+    @staticmethod
+    def from_binary_config(config: BinarySourceConfig) -> FileFormatConfig:
+        """Create a binary file format config."""
         ...
 
     @staticmethod

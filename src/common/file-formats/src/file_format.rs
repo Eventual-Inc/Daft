@@ -17,6 +17,7 @@ pub enum FileFormat {
     Parquet,
     Csv,
     Json,
+    Binary,
     Warc,
     Database,
     Python,
@@ -30,6 +31,7 @@ impl FileFormat {
             Self::Parquet => "parquet",
             Self::Csv => "csv",
             Self::Json => "json",
+            Self::Binary => "bin",
             Self::Warc => "warc",
             Self::Database => "db",
             Self::Python => "py",
@@ -41,7 +43,7 @@ impl FromStr for FileFormat {
     type Err = DaftError;
 
     fn from_str(file_format: &str) -> DaftResult<Self> {
-        use FileFormat::{Csv, Database, Json, Parquet, Warc};
+        use FileFormat::{Binary, Csv, Database, Json, Parquet, Warc};
 
         if file_format.trim().eq_ignore_ascii_case("parquet") {
             Ok(Parquet)
@@ -49,6 +51,10 @@ impl FromStr for FileFormat {
             Ok(Csv)
         } else if file_format.trim().eq_ignore_ascii_case("json") {
             Ok(Json)
+        } else if file_format.trim().eq_ignore_ascii_case("binary")
+            || file_format.trim().eq_ignore_ascii_case("bin")
+        {
+            Ok(Binary)
         } else if file_format.trim().eq_ignore_ascii_case("warc") {
             Ok(Warc)
         } else if file_format.trim().eq_ignore_ascii_case("database") {

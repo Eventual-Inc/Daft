@@ -19,6 +19,7 @@ pub enum FileFormatConfig {
     Parquet(ParquetSourceConfig),
     Csv(CsvSourceConfig),
     Json(JsonSourceConfig),
+    Binary(BinarySourceConfig),
     Warc(WarcSourceConfig),
     #[cfg(feature = "python")]
     Database(DatabaseSourceConfig),
@@ -48,6 +49,7 @@ impl FileFormatConfig {
             Self::Parquet(_) => "Parquet".to_string(),
             Self::Csv(_) => "Csv".to_string(),
             Self::Json(_) => "Json".to_string(),
+            Self::Binary(_) => "Binary".to_string(),
             Self::Warc(_) => "Warc".to_string(),
             #[cfg(feature = "python")]
             Self::Database(_) => "Database".to_string(),
@@ -75,6 +77,7 @@ impl FileFormatConfig {
             Self::Parquet(source) => source.multiline_display(),
             Self::Csv(source) => source.multiline_display(),
             Self::Json(source) => source.multiline_display(),
+            Self::Binary(source) => source.multiline_display(),
             Self::Warc(source) => source.multiline_display(),
             #[cfg(feature = "python")]
             Self::Database(source) => source.multiline_display(),
@@ -426,6 +429,32 @@ impl DatabaseSourceConfig {
 }
 
 impl_bincode_py_state_serialization!(DatabaseSourceConfig);
+
+/// Configuration for a binary file data source.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+pub struct BinarySourceConfig {}
+
+impl BinarySourceConfig {
+    #[must_use]
+    pub fn multiline_display(&self) -> Vec<String> {
+        vec![]
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl BinarySourceConfig {
+    /// Create a config for a binary file data source.
+    #[new]
+    #[pyo3(signature = ())]
+    fn new() -> PyResult<Self> {
+        Ok(Self {})
+    }
+}
+
+impl_bincode_py_state_serialization!(BinarySourceConfig);
 
 /// Configuration for a Warc data source.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]

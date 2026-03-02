@@ -5,8 +5,8 @@ use pyo3::{basic::CompareOp, prelude::*};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CsvSourceConfig, FileFormat, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig,
-    WarcSourceConfig, WriteMode, file_format_config::DatabaseSourceConfig,
+    BinarySourceConfig, CsvSourceConfig, FileFormat, FileFormatConfig, JsonSourceConfig,
+    ParquetSourceConfig, WarcSourceConfig, WriteMode, file_format_config::DatabaseSourceConfig,
 };
 
 /// Configuration for parsing a particular file format.
@@ -39,6 +39,12 @@ impl PyFileFormatConfig {
         Self(Arc::new(FileFormatConfig::Json(config)))
     }
 
+    /// Create a binary file format config.
+    #[staticmethod]
+    fn from_binary_config(config: BinarySourceConfig) -> Self {
+        Self(Arc::new(FileFormatConfig::Binary(config)))
+    }
+
     /// Create a Warc file format config.
     #[staticmethod]
     fn from_warc_config(config: WarcSourceConfig) -> Self {
@@ -64,6 +70,10 @@ impl PyFileFormatConfig {
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),
             FileFormatConfig::Json(config) => config
+                .clone()
+                .into_pyobject(py)
+                .map(|c| c.unbind().into_any()),
+            FileFormatConfig::Binary(config) => config
                 .clone()
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),
