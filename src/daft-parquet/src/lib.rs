@@ -34,7 +34,7 @@ const PARQUET_MORSEL_SIZE: usize = 128 * 1024;
 // This function determines the number of parallel deserialize tasks to use when reading parquet files
 // It is calculated by taking 2x the number of cores available (to ensure pipelining), and dividing
 // by the number of columns in the schema.
-fn determine_parquet_parallelism(daft_schema: &SchemaRef) -> usize {
+pub(crate) fn determine_parquet_parallelism(daft_schema: &SchemaRef) -> usize {
     (std::thread::available_parallelism()
         .unwrap_or(NonZeroUsize::new(2).unwrap())
         .checked_mul(2.try_into().unwrap())

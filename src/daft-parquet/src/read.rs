@@ -291,38 +291,37 @@ async fn read_parquet_single(
         // Use sync local reader for local files, async reader for remote.
         let (source_type_check, fixed_uri_check) = parse_url(uri)?;
         let table = if matches!(source_type_check, SourceType::File) {
-            tokio::task::spawn_blocking({
-                let path = fixed_uri_check
-                    .strip_prefix("file://")
-                    .unwrap_or(&fixed_uri_check)
-                    .to_string();
-                let columns_ref_owned: Option<Vec<String>> = columns_ref
-                    .as_deref()
-                    .map(|c| c.iter().map(|s| (*s).to_string()).collect());
-                let row_groups_owned = row_groups.as_deref().map(|r| r.to_vec());
-                let predicate = predicate.clone();
-                let field_id_mapping = field_id_mapping.clone();
-                let delete_rows = delete_rows.clone();
-                move || {
-                    let col_refs: Option<Vec<&str>> = columns_ref_owned
-                        .as_ref()
-                        .map(|v| v.iter().map(|s| s.as_str()).collect());
-                    crate::arrowrs_reader::local_parquet_read_arrowrs(
-                        &path,
-                        col_refs.as_deref(),
-                        start_offset,
-                        num_rows_to_return,
-                        row_groups_owned.as_deref(),
-                        predicate,
-                        schema_infer_options,
-                        chunk_size,
-                        field_id_mapping,
-                        delete_rows.as_deref(),
-                    )
-                }
-            })
-            .await
-            .map_err(|e| common_error::DaftError::External(e.into()))??
+            let (send, recv) = tokio::sync::oneshot::channel();
+            let path = fixed_uri_check
+                .strip_prefix("file://")
+                .unwrap_or(&fixed_uri_check)
+                .to_string();
+            let columns_ref_owned: Option<Vec<String>> = columns_ref
+                .as_deref()
+                .map(|c| c.iter().map(|s| (*s).to_string()).collect());
+            let row_groups_owned = row_groups.as_deref().map(|r| r.to_vec());
+            let predicate = predicate.clone();
+            let field_id_mapping = field_id_mapping.clone();
+            let delete_rows = delete_rows.clone();
+            rayon::spawn(move || {
+                let col_refs: Option<Vec<&str>> = columns_ref_owned
+                    .as_ref()
+                    .map(|v| v.iter().map(|s| s.as_str()).collect());
+                let result = crate::arrowrs_reader::local_parquet_read_arrowrs(
+                    &path,
+                    col_refs.as_deref(),
+                    start_offset,
+                    num_rows_to_return,
+                    row_groups_owned.as_deref(),
+                    predicate,
+                    schema_infer_options,
+                    chunk_size,
+                    field_id_mapping,
+                    delete_rows.as_deref(),
+                );
+                let _ = send.send(result);
+            });
+            recv.await.context(super::OneShotRecvSnafu {})??
         } else {
             crate::arrowrs_reader::read_parquet_single_arrowrs(
                 uri,
@@ -555,44 +554,28 @@ async fn stream_parquet_single(
             .as_ref()
             .map(|v| v.iter().map(|s| s.as_str()).collect());
 
-        // For local files, use the sync reader and emit a single-batch stream.
         let (source_type_check, fixed_uri_check) = parse_url(uri.as_str())?;
         let table_stream: BoxStream<'static, DaftResult<RecordBatch>> =
             if matches!(source_type_check, SourceType::File) {
-                let batch = tokio::task::spawn_blocking({
-                    let path = fixed_uri_check
-                        .strip_prefix("file://")
-                        .unwrap_or(&fixed_uri_check)
-                        .to_string();
-                    let columns_ref_owned: Option<Vec<String>> = columns_ref
-                        .as_deref()
-                        .map(|c| c.iter().map(|s| (*s).to_string()).collect());
-                    let row_groups_owned = row_groups.as_deref().map(|r| r.to_vec());
-                    let predicate = predicate.clone();
-                    let field_id_mapping = field_id_mapping.clone();
-                    let delete_rows = delete_rows.clone();
-                    move || {
-                        let col_refs: Option<Vec<&str>> = columns_ref_owned
-                            .as_ref()
-                            .map(|v| v.iter().map(|s| s.as_str()).collect());
-                        crate::arrowrs_reader::local_parquet_read_arrowrs(
-                            &path,
-                            col_refs.as_deref(),
-                            None, // start_offset not supported in stream path
-                            num_rows_to_return,
-                            row_groups_owned.as_deref(),
-                            predicate,
-                            schema_infer_options,
-                            chunk_size,
-                            field_id_mapping,
-                            delete_rows.as_deref(),
-                        )
-                    }
-                })
-                .await
-                .map_err(|e| common_error::DaftError::External(e.into()))??;
-                futures::stream::once(async move { Ok(batch) }).boxed()
+                // Local files: per-RG async tasks on the compute pool.
+                let path = fixed_uri_check
+                    .strip_prefix("file://")
+                    .unwrap_or(&fixed_uri_check)
+                    .to_string();
+                crate::arrowrs_reader::local_parquet_stream_arrowrs(
+                    &path,
+                    columns_ref.as_deref(),
+                    num_rows_to_return,
+                    row_groups.as_deref(),
+                    predicate.clone(),
+                    schema_infer_options,
+                    chunk_size,
+                    field_id_mapping.clone(),
+                    delete_rows.as_deref(),
+                )
+                .await?
             } else {
+                // Remote files: async stream reader.
                 crate::arrowrs_reader::stream_parquet_single_arrowrs(
                     uri.as_str(),
                     columns_ref.as_deref(),
@@ -611,8 +594,7 @@ async fn stream_parquet_single(
                 .await?
             };
 
-        // The arrowrs reader handles everything internally. Just apply the
-        // remaining_rows limit to the stream.
+        // Apply remaining_rows limit to the stream.
         let mut remaining_rows = num_rows_to_return.map(|limit| limit as i64);
         let stream = table_stream.try_take_while(move |table| {
             let should_continue = match remaining_rows {
