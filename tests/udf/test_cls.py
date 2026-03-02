@@ -121,7 +121,7 @@ def test_cls_with_ray_options():
     explanation = f.getvalue()
 
     # Check ray_options
-    assert "'num_cpus': 1" in explanation
+    assert "num_cpus = 1" in explanation
     assert "'scheduling_strategy': 'SPREAD'" in explanation
 
     # Verify execution
