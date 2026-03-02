@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 env:
-  DAFT_ANALYTICS_ENABLED: '0'
+  DAFT_ANALYTICS_ENABLED: "0"
   RUST_BACKTRACE: 1
   DAFT_PROGRESS_BAR: 0
 
@@ -77,25 +77,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.13']
+        python-version: ["3.10", "3.13"]
         daft-runner: [ray, native]
-        pyarrow-version: ['22.0.0']
+        pyarrow-version: ["22.0.0"]
         os: [ubuntu-latest, macos-latest]
         coverage: [true]
         on-main:
         - ${{ github.ref == 'refs/heads/main' }}
         include:
-        # pyarrow compat test — runs without coverage instrumentation
-        - python-version: '3.10'
+          # pyarrow compat test — runs without coverage instrumentation
+        - python-version: "3.10"
           daft-runner: native
-          pyarrow-version: '8.0.0'
+          pyarrow-version: "8.0.0"
           os: ubuntu-latest
           on-main: ${{ github.ref == 'refs/heads/main' }}
           coverage: false
         exclude:
-        - python-version: '3.10'
+        - python-version: "3.10"
           os: macos-latest
-        # don't run mac unit tests in PRs
+          # don't run mac unit tests in PRs
         - os: macos-latest
           on-main: false
 
@@ -121,13 +121,18 @@ jobs:
         sudo rm -rf /opt/hostedtoolcache/node || true
 
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        prefix-key: ${{ runner.os }}-build
-        cache-all-crates: 'true'
+        shared-key: ${{ runner.os }}-dev-build
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
     - name: Install cargo-llvm-cov
       if: matrix.coverage != false
       uses: taiki-e/install-action@cargo-llvm-cov
@@ -169,10 +174,17 @@ jobs:
         command: |
           uv sync --no-install-project --all-extras --all-groups
 
-    - name: Override pyarrow
+    - name: Override pyarrow and pyiceberg
       run: |
         source .venv/bin/activate
-        uv pip install pyarrow==${{ matrix.pyarrow-version }}
+        PYARROW_VERSION="${{ matrix.pyarrow-version }}"
+        PYARROW_MAJOR="${PYARROW_VERSION%%.*}"
+
+        uv pip install pyarrow==${PYARROW_VERSION}
+
+        if [ "$PYARROW_MAJOR" -le 17 ]; then
+          uv pip install "pyiceberg==0.7.0"
+        fi
 
     - name: Build library and Test with pytest (with coverage)
       if: matrix.coverage != false
@@ -194,7 +206,7 @@ jobs:
         coverage xml -o ./report-output/coverage-${{ join(matrix.*, '-') }}.xml
         cargo llvm-cov report --lcov --output-path report-output/rust-coverage-${{ join(matrix.*, '-') }}.lcov
       env:
-        # output of `cargo llvm-cov show-env --export-prefix`
+          # output of `cargo llvm-cov show-env --export-prefix`
         RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
         LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
         CARGO_LLVM_COV: 1
@@ -224,7 +236,7 @@ jobs:
 
     - name: Upload coverage report
       if: matrix.coverage != false
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: coverage-reports-unit-tests-${{ join(matrix.*, '-') }}
         path: ./report-output
@@ -266,17 +278,18 @@ jobs:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     env:
       package-name: daft
     strategy:
       matrix:
-        python-version: ['3.10']
+        python-version: ["3.10"]
     steps:
     - uses: actions/checkout@v6
       with:
         submodules: true
         fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -294,31 +307,35 @@ jobs:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        prefix-key: ${{ runner.os }}-integration-build
-        cache-all-crates: 'true'
-    - uses: oven-sh/setup-bun@v2
+        shared-key: ${{ runner.os }}-integration-build
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: actions/setup-node@v6
       with:
-        bun-version: latest
-    - name: Build dashboard with Bun
+        node-version: "22"
+        cache: "npm"
+        cache-dependency-path: src/daft-dashboard/frontend/package-lock.json
+    - name: Build dashboard
       working-directory: ./src/daft-dashboard/frontend
       run: |
-        bun install
-        bun run build
+        npm ci
+        npm run build
 
-    # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
+      # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
       run: |
         source .venv/bin/activate
         maturin build --release --compatibility linux --out dist
     - name: Upload wheels
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: wheels-${{ matrix.python-version }}
         path: dist
 
   integration-test-tpch:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [skipcheck, integration-test-build]
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
@@ -329,7 +346,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -337,7 +354,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
-        python-version: '3.10'
+        python-version: "3.10"
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -402,7 +419,7 @@ jobs:
 
   integration-test-io:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [skipcheck, integration-test-build]
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
@@ -410,7 +427,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10']
+        python-version: ["3.10"]
         daft-runner: [ray, native]
     steps:
     - name: Free Disk Space (Ubuntu)
@@ -435,7 +452,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -466,7 +483,7 @@ jobs:
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.4.3
+      uses: isbang/compose-action@v2.5.0
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -506,7 +523,7 @@ jobs:
   # Uncomment when re-enabling credentialed testing.
   # integration-test-io-credentialed:
   #   runs-on: ubuntu-latest
-  #   timeout-minutes: 30
+  #   timeout-minutes: 45
   #   needs: [skipcheck, integration-test-build]
   #   if: ${{ needs.skipcheck.outputs.skip == 'false' && github.ref == 'refs/heads/main' }}
   #   env:
@@ -544,7 +561,7 @@ jobs:
   #       submodules: true
   #       fetch-depth: 0
   #   - name: Download built wheels
-  #     uses: actions/download-artifact@v7
+  #     uses: actions/download-artifact@v8
   #     with:
   #       pattern: wheels-*
   #       merge-multiple: true
@@ -589,7 +606,7 @@ jobs:
   #       # workload_identity_provider: ${{ secrets.ACTIONS_GCP_WORKLOAD_IDENTITY_PROVIDER }}
   #       # service_account: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT }}
   #   - name: Spin up IO services
-  #     uses: isbang/compose-action@v2.4.3
+  #     uses: isbang/compose-action@v2.5.0
   #     with:
   #       compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
   #       down-flags: --volumes
@@ -623,7 +640,7 @@ jobs:
 
   integration-test-sql:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [skipcheck, integration-test-build]
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
@@ -651,7 +668,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -659,7 +676,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
-        python-version: '3.10'
+        python-version: "3.10"
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -729,7 +746,7 @@ jobs:
 
   integration-test-catalogs:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [skipcheck, integration-test-build]
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
@@ -758,8 +775,8 @@ jobs:
         fetch-depth: 0
     - uses: actions/setup-java@v5
       with:
-        distribution: 'temurin'
-        java-version: '17'
+        distribution: "temurin"
+        java-version: "17"
     - uses: actions/checkout@v6
       with:
         repository: unitycatalog/unitycatalog
@@ -770,7 +787,7 @@ jobs:
       working-directory: ./unitycatalog
       run: bin/start-uc-server -p 3000 &
     - name: Download built wheels
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -778,7 +795,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
-        python-version: '3.10'
+        python-version: "3.10"
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -796,7 +813,7 @@ jobs:
           uv sync --no-install-project --all-extras --all-groups
           uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
-    # Iceberg test setup
+      # Iceberg test setup
     - uses: docker/setup-buildx-action@v3
     - uses: docker/build-push-action@v6
       with:
@@ -809,14 +826,14 @@ jobs:
         pushd ./tests/integration/iceberg/docker-compose/
         docker compose -f ./docker-compose.yml up -d
         popd
-    # Gravitino test setup
+      # Gravitino test setup
     - name: Spin up Gravitino service
       run: |
         pushd ./tests/integration/gravitino/docker-compose/
         docker compose -f ./docker-compose.yml up -d
         popd
 
-    # Unity tests
+      # Unity tests
     - name: Run Unity integration tests (native)
       if: always()
       run: |
@@ -843,7 +860,7 @@ jobs:
         DATABRICKS_ENDPOINT: ${{ secrets.ACTIONS_DATABRICKS_ENDPOINT }}
         DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID }}
         DATABRICKS_SERVICE_PRINCIPAL_SECRET: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_SECRET }}
-    # Iceberg tests
+      # Iceberg tests
     - name: Run Iceberg integration tests (native)
       if: always()
       run: |
@@ -862,7 +879,7 @@ jobs:
         python tools/aggregate_test_durations.py iceberg_pytest_output.txt
       env:
         DAFT_RUNNER: ray
-    # Delta Lake tests
+      # Delta Lake tests
     - name: Run Delta Lake integration tests (native)
       if: always()
       run: |
@@ -881,7 +898,7 @@ jobs:
         python ./tools/aggregate_test_durations.py delta_lake_pytest_output.txt
       env:
         DAFT_RUNNER: ray
-    # Gravitino tests
+      # Gravitino tests
     - name: Run Gravitino integration tests (native)
       if: always()
       run: |
@@ -905,7 +922,7 @@ jobs:
         GRAVITINO_ENDPOINT: http://127.0.0.1:8090
         GRAVITINO_METALAKE: metalake_demo
 
-    # Cleanup docker services
+      # Cleanup docker services
     - name: Cleanup Docker services
       if: always()
       run: |
@@ -937,10 +954,9 @@ jobs:
         webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
-
   integration-test-ai:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [skipcheck, integration-test-build]
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
@@ -948,7 +964,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10']
+        python-version: ["3.10"]
         daft-runner: [ray, native]
     steps:
     - name: Free Disk Space (Ubuntu)
@@ -973,7 +989,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -1028,13 +1044,12 @@ jobs:
         webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
-
   # NOTE: Credentialed AI tests are commented out while secrets are being audited.
   # These tests have non-credentialed equivalents in the integration-test-ai job.
   # Uncomment when re-enabling credentialed testing.
   # integration-test-ai-credentialed:
   #   runs-on: ubuntu-latest
-  #   timeout-minutes: 30
+  #   timeout-minutes: 45
   #   needs: [skipcheck, integration-test-build]
   #   if: ${{ needs.skipcheck.outputs.skip == 'false' && github.ref == 'refs/heads/main' }}
   #   env:
@@ -1050,7 +1065,7 @@ jobs:
   #       submodules: true
   #       fetch-depth: 0
   #   - name: Download built wheels
-  #     uses: actions/download-artifact@v7
+  #     uses: actions/download-artifact@v8
   #     with:
   #       pattern: wheels-*
   #       merge-multiple: true
@@ -1108,7 +1123,7 @@ jobs:
 
   integration-test-ray:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [skipcheck, integration-test-build]
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
@@ -1119,7 +1134,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v8
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -1127,7 +1142,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
-        python-version: '3.10'
+        python-version: "3.10"
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -1186,11 +1201,11 @@ jobs:
     needs:
     - integration-test-tpch
     - integration-test-io
-    # - integration-test-io-credentialed
+      # - integration-test-io-credentialed
     - integration-test-sql
     - integration-test-catalogs
     - integration-test-ai
-    # - integration-test-ai-credentialed
+      # - integration-test-ai-credentialed
     - integration-test-ray
     if: always()
     steps:
@@ -1205,25 +1220,29 @@ jobs:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: buildjet-8vcpu-ubuntu-2204
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       package-name: daft
       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
     steps:
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        prefix-key: dev-bench
-        key: ${{ runner.os }}-benchmark-build
-        cache-all-crates: 'true'
+        shared-key: ${{ runner.os }}-dev-bench-build
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
         cache-provider: buildjet
+        save-if: ${{ github.ref == 'refs/heads/main' }}
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
-        python-version: '3.12'  # Codspeed requires Python 3.12
+        python-version: "3.12"   # Codspeed requires Python 3.12
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -1252,7 +1271,7 @@ jobs:
     - name: Run benchmarks
       uses: CodSpeedHQ/action@v4
       with:
-        run: source .venv/bin/activate; pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py -m benchmark --codspeed
+        run: source .venv/bin/activate; pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py tests/benchmarks/test_json_reads.py -m benchmark --codspeed
         mode: "simulation"
       env:
         DAFT_RUNNER: native
@@ -1295,17 +1314,23 @@ jobs:
           on-main: false
     steps:
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
+      if: ${{ matrix.os != 'Windows' }}
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
         bins: cargo-llvm-cov@0.6.14
         components: llvm-tools-preview
     - uses: Swatinem/rust-cache@v2
-      # skip on windows because it misses the cache and is very slow (~15 minutes)
+        # skip on windows because it misses the cache and is very slow (~15 minutes)
       if: ${{ matrix.os != 'Windows' }}
       with:
-        key: ${{ runner.os }}-rust-build
-        cache-all-crates: 'true'
+        shared-key: ${{ runner.os }}-dev-build
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
     - name: Free Disk Space (Ubuntu)
       if: ${{ matrix.os == 'ubuntu' }}
       uses: jlumbroso/free-disk-space@main
@@ -1328,7 +1353,7 @@ jobs:
     - name: Generate code coverage
       run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --exclude common-arrow-ffi --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: coverage-reports-rust-tests-${{ runner.os }}
         path: ./report-output
@@ -1383,7 +1408,7 @@ jobs:
   doctests:
     runs-on: ubuntu-latest
     env:
-      python-version: '3.10'
+      python-version: "3.10"
     steps:
     - name: Free Disk Space (Ubuntu)
       uses: jlumbroso/free-disk-space@main
@@ -1403,13 +1428,18 @@ jobs:
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        prefix-key: ${{ runner.os }}-build
-        cache-all-crates: 'true'
+        shared-key: ${{ runner.os }}-dev-build
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1435,7 +1465,6 @@ jobs:
       env:
         DAFT_RUNNER: native
 
-
   publish-coverage-reports:
     name: Publish coverage reports to CodeCov
     runs-on: ubuntu-latest
@@ -1444,7 +1473,7 @@ jobs:
     - rust-tests-platform
     steps:
     - uses: actions/checkout@v6
-    - uses: actions/download-artifact@v7
+    - uses: actions/download-artifact@v8
       with:
         pattern: coverage-reports*
         merge-multiple: true
@@ -1481,12 +1510,12 @@ jobs:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ${{ matrix.os }}-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu, Windows]
-        python-version: ['3.10']
+        python-version: ["3.10"]
         on-main:
         - ${{ github.ref == 'refs/heads/main' }}
         exclude:
@@ -1495,13 +1524,19 @@ jobs:
           on-main: false
     steps:
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
+      if: ${{ runner.os != 'Windows' }}
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        prefix-key: ${{ runner.os }}-build
-        cache-all-crates: 'true'
+        shared-key: ${{ runner.os }}-dev-build
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
 
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
@@ -1582,14 +1617,16 @@ jobs:
       if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
       run: exit 1
 
-
   style:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      python-version: '3.10'
+      python-version: "3.10"
     steps:
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1605,8 +1642,10 @@ jobs:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        prefix-key: ${{ runner.os }}-build
-        cache-all-crates: 'true'
+        shared-key: ${{ runner.os }}-dev-build
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
 
     - uses: actions/cache@v5
       id: pre-commit-cache

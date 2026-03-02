@@ -4,7 +4,9 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{QueryID, Stat, Stats, snapshot::StatSnapshotImpl};
+use common_metrics::{
+    DURATION_KEY, QueryID, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, Stats, snapshot::StatSnapshotImpl,
+};
 use daft_context::get_context;
 
 use crate::statistics::{StatisticsSubscriber, TaskEvent};
@@ -67,9 +69,9 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
                     let task_stats = task_stats.to_stats();
                     for (key, stat) in &task_stats.0 {
                         let mapped_key = match key.as_ref() {
-                            "rows_in" => "rows in",
-                            "rows_out" => "rows out",
-                            "cpu_us" => "cpu us",
+                            "rows_in" => ROWS_IN_KEY,
+                            "rows_out" => ROWS_OUT_KEY,
+                            "duration_us" => DURATION_KEY,
                             _ => key.as_ref(),
                         };
                         let arc_key: Arc<str> = Arc::from(mapped_key);

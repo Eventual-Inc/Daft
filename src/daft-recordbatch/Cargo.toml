@@ -4,7 +4,6 @@ arrow = {workspace = true}
 arrow-array = {workspace = true}
 arrow-ipc = {workspace = true}
 comfy-table = {workspace = true}
-daft-arrow = {path = "../daft-arrow"}
 common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional = true}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}

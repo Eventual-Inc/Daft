@@ -86,8 +86,8 @@ pub(crate) trait StreamingSink: Send + Sync {
     fn make_state(&self) -> DaftResult<Self::State>;
 
     /// Create a new RuntimeStats for this StreamingSink.
-    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::new(meter, id))
+    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::new(meter, node_info))
     }
 
     /// The maximum number of concurrent workers that can be spawned for this sink.
@@ -142,7 +142,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         let name: Arc<str> = op.name().into();
         let node_info =
             ctx.next_node_info(name, op.op_type(), NodeCategory::StreamingSink, context);
-        let runtime_stats = op.make_runtime_stats(&ctx.meter, node_info.id);
+        let runtime_stats = op.make_runtime_stats(&ctx.meter, &node_info);
 
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
@@ -397,13 +397,19 @@ impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
             .map(|child| child.repr_json())
             .collect();
 
-        serde_json::json!({
+        let mut json = serde_json::json!({
             "id": self.node_id(),
             "category": "StreamingSink",
             "type": self.op.op_type().to_string(),
             "name": self.name(),
             "children": children,
-        })
+        });
+
+        if let StatsState::Materialized(stats) = &self.plan_stats {
+            json["approx_stats"] = serde_json::json!(stats);
+        }
+
+        json
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
@@ -442,10 +448,13 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
     }
 
     fn start(
-        &self,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+        let node_id = self.node_id();
+        let name = self.name();
+
         let child_result_receiver = self.child.start(maintain_order, runtime_handle)?;
 
         let (destination_sender, destination_receiver) = create_channel(1);
@@ -485,7 +494,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
             runtime_stats: self.runtime_stats.clone(),
             stats_manager: runtime_handle.stats_manager(),
         };
-        let node_id = self.node_id();
         runtime_handle.spawn(
             async move {
                 Self::process_input(node_id, child_result_receiver, &mut ctx).await?;
@@ -518,7 +526,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                 ctx.stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            &self.name(),
+            &name,
         );
         Ok(destination_receiver)
     }
@@ -527,9 +535,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
     }
     fn node_id(&self) -> usize {
         self.node_info.id
-    }
-    fn plan_id(&self) -> Arc<str> {
-        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()

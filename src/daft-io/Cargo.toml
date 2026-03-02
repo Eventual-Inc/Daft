@@ -24,6 +24,15 @@ google-cloud-token = {version = "0.1.2"}
 home = "0.5.12"
 itertools = {workspace = true}
 log = {workspace = true}
+opendal = {workspace = true, features = [
+  "executors-tokio",  # Use tokio for async execution
+  "services-oss",  # Alibaba Cloud Object Storage Service
+  "services-cos",  # Tencent Cloud Object Storage
+  "services-obs",  # Huawei Cloud Object Storage
+  "services-memory",  # In-memory backend (used for testing)
+  "services-fs",  # Local filesystem (used for integration testing)
+  "services-github"  # GitHub repository contents
+]}
 pyo3 = {workspace = true, optional = true}
 rand = "0.8.5"
 regex = {version = "1.12.2"}

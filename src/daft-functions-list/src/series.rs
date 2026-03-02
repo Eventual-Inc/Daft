@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use arrow::buffer::OffsetBuffer;
 use common_error::{DaftError, DaftResult};
-use daft_arrow::offset::OffsetsBuffer;
 use daft_core::{
-    array::{ListArray, growable::make_growable, ops::GroupIndices},
+    array::{ListArray, ops::GroupIndices},
     prelude::{CountMode, DataType, Field, Int64Array, UInt64Array, Utf8Array},
     series::{IntoSeries, Series},
 };
@@ -15,7 +15,7 @@ pub trait SeriesListExtension: Sized {
     fn list_value_counts(&self) -> DaftResult<Self>;
     fn list_bool_and(&self) -> DaftResult<Self>;
     fn list_bool_or(&self) -> DaftResult<Self>;
-    fn explode(&self) -> DaftResult<Self>;
+    fn explode(&self, ignore_empty_and_null: bool) -> DaftResult<Self>;
     fn list_count(&self, mode: CountMode) -> DaftResult<UInt64Array>;
     fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array>;
     fn list_get(&self, idx: &Self, default: &Self) -> DaftResult<Self>;
@@ -79,10 +79,10 @@ impl SeriesListExtension for Series {
         }
     }
 
-    fn explode(&self) -> DaftResult<Self> {
+    fn explode(&self, ignore_empty_and_null: bool) -> DaftResult<Self> {
         match self.data_type() {
-            DataType::List(_) => self.list()?.explode(),
-            DataType::FixedSizeList(..) => self.fixed_size_list()?.explode(),
+            DataType::List(_) => self.list()?.explode(ignore_empty_and_null),
+            DataType::FixedSizeList(..) => self.fixed_size_list()?.explode(ignore_empty_and_null),
             dt => Err(DaftError::TypeError(format!(
                 "explode not implemented for {}",
                 dt
@@ -276,23 +276,8 @@ impl SeriesListExtension for Series {
         offsets.push(0i64);
         let mut current_offset = 0i64;
 
-        let field = Arc::new(input.field().to_exploded_field()?);
-        let child_data_type = if let DataType::List(inner_type) = input.data_type() {
-            inner_type.as_ref().clone()
-        } else {
-            return Err(DaftError::TypeError("Expected list type".into()));
-        };
-
-        // Create growable with the flat child as source, overestimating capacity
-        let mut growable = make_growable(
-            &field.name,
-            &child_data_type,
-            vec![&list.flat_child],
-            false,
-            list.flat_child.len(),
-        );
-
-        // Single pass: process each sub-series
+        // Collect indices of unique elements from each sub-series
+        let mut take_indices = Vec::new();
         let list_offsets = list.offsets();
         for (i, sub_series) in list.into_iter().enumerate() {
             let start_offset = list_offsets.get(i).unwrap();
@@ -301,17 +286,21 @@ impl SeriesListExtension for Series {
                 let indices: Vec<_> = probe_table.keys().map(|k| k.idx).collect();
                 let unique_count = indices.len();
                 for idx in indices {
-                    growable.extend(0, *start_offset as usize + idx as usize, 1);
+                    take_indices.push((*start_offset as usize + idx as usize) as u64);
                 }
                 current_offset += unique_count as i64;
             }
             offsets.push(current_offset);
         }
 
+        // Use take to extract unique elements
+        let take_indices_array = UInt64Array::from_vec("indices", take_indices);
+        let distinct_child = list.flat_child.take(&take_indices_array)?;
+
         let list_array = ListArray::new(
             Arc::new(Field::new(input.name(), input.data_type().clone())),
-            growable.build()?,
-            OffsetsBuffer::try_from(offsets)?,
+            distinct_child,
+            OffsetBuffer::new(offsets.into()),
             input.nulls().cloned(),
         );
 
@@ -327,32 +316,38 @@ impl SeriesListExtension for Series {
         let input = input.list()?;
 
         let other = other.cast(input.child_data_type())?;
-        let mut growable = make_growable(
-            self.name(),
-            input.child_data_type(),
-            vec![&input.flat_child, &other],
-            false,
-            input.flat_child.len() + other.len(),
-        );
 
+        // Collect indices for take operation: original list elements + appended element
+        let mut take_indices = Vec::new();
         let offsets = input.offsets();
         let mut new_lengths = Vec::with_capacity(input.len());
+        let flat_child_len = input.flat_child.len();
+
         for i in 0..self.len() {
             if input.is_valid(i) {
                 let start = *offsets.get(i).unwrap();
                 let end = *offsets.get(i + 1).unwrap();
                 let list_size = end - start;
-                growable.extend(0, start as usize, list_size as usize);
+                // Add indices from original list
+                for idx in start..end {
+                    take_indices.push(idx as u64);
+                }
+                // Add index from other series (appended element)
+                take_indices.push((flat_child_len + i) as u64);
                 new_lengths.push((list_size + 1) as usize);
             } else {
+                // For null lists, just append the element from other
+                take_indices.push((flat_child_len + i) as u64);
                 new_lengths.push(1);
             }
-
-            growable.extend(1, i, 1);
         }
 
-        let child_arr = growable.build()?;
-        let new_offsets = daft_arrow::offset::Offsets::try_from_lengths(new_lengths.into_iter())?;
+        // Concatenate flat_child and other, then take the selected indices
+        let concatenated = Self::concat(&[&input.flat_child, &other])?;
+        let take_indices_array = UInt64Array::from_vec("indices", take_indices);
+        let child_arr = concatenated.take(&take_indices_array)?;
+
+        let new_offsets = OffsetBuffer::from_lengths(new_lengths.into_iter());
         let list_array = ListArray::new(
             input.field.clone(),
             child_arr,

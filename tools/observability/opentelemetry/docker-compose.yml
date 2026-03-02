@@ -10,7 +10,7 @@ services:
   jaeger:
     image: jaegertracing/jaeger:2.5.0
     ports:
-    - "16686:16686" # Jaeger UI
+    - "16686:16686"   # Jaeger UI
     environment:
     - COLLECTOR_OTLP_ENABLED=true
   prometheus:

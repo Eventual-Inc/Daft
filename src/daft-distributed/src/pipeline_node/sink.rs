@@ -2,7 +2,8 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, Counter, ROWS_IN_KEY, StatSnapshot,
+    BYTES_WRITTEN_KEY, Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_WRITTEN_KEY, StatSnapshot,
+    UNIT_BYTES, UNIT_MICROSECONDS, UNIT_ROWS,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::WriteSnapshot,
 };
@@ -17,7 +18,7 @@ use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
-        PipelineNodeContext,
+        PipelineNodeContext, metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -29,7 +30,7 @@ use crate::{
 };
 
 pub struct WriteStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_written: Counter,
     bytes_written: Counter,
@@ -37,13 +38,13 @@ pub struct WriteStats {
 }
 
 impl WriteStats {
-    pub fn new(meter: &Meter, node_id: NodeID) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
+    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        let node_kv = key_values_from_context(context);
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
-            rows_written: Counter::new(meter, "rows written", None),
-            bytes_written: Counter::new(meter, "bytes written", None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            rows_written: Counter::new(meter, ROWS_WRITTEN_KEY, None, Some(UNIT_ROWS.into())),
+            bytes_written: Counter::new(meter, BYTES_WRITTEN_KEY, None, Some(UNIT_BYTES.into())),
             node_kv,
         }
     }
@@ -54,7 +55,8 @@ impl RuntimeStats for WriteStats {
         let StatSnapshot::Write(snapshot) = snapshot else {
             return;
         };
-        self.cpu_us.add(snapshot.cpu_us, self.node_kv.as_slice());
+        self.duration_us
+            .add(snapshot.cpu_us, self.node_kv.as_slice());
         self.rows_in.add(snapshot.rows_in, self.node_kv.as_slice());
         self.rows_written
             .add(snapshot.rows_written, self.node_kv.as_slice());
@@ -64,7 +66,7 @@ impl RuntimeStats for WriteStats {
 
     fn export_snapshot(&self) -> StatSnapshot {
         StatSnapshot::Write(WriteSnapshot {
-            cpu_us: self.cpu_us.load(Ordering::Relaxed),
+            cpu_us: self.duration_us.load(Ordering::Relaxed),
             rows_in: self.rows_in.load(Ordering::Relaxed),
             rows_written: self.rows_written.load(Ordering::Relaxed),
             bytes_written: self.bytes_written.load(Ordering::Relaxed),
@@ -131,10 +133,7 @@ impl SinkNode {
                 file_schema,
                 info.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             ),
             #[cfg(feature = "python")]
             SinkInfo::CatalogInfo(info) => match &info.catalog {
@@ -145,10 +144,7 @@ impl SinkNode {
                     data_schema,
                     file_schema,
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(node_id as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(node_id as usize)),
                 ),
                 daft_logical_plan::CatalogType::Lance(info) => LocalPhysicalPlan::lance_write(
                     input,
@@ -156,10 +152,7 @@ impl SinkNode {
                     data_schema,
                     file_schema,
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(node_id as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(node_id as usize)),
                 ),
             },
             #[cfg(feature = "python")]
@@ -168,10 +161,7 @@ impl SinkNode {
                 data_sink_info.clone(),
                 file_schema,
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             ),
         }
     }
@@ -200,12 +190,10 @@ impl SinkNode {
             file_schema,
             info,
             StatsState::NotMaterialized,
-            LocalNodeContext {
-                origin_node_id: Some(self.node_id() as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.node_id() as usize)),
         );
-        let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+        let builder =
+            SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
         let _ = sender.send(builder).await;
         Ok(())
     }
@@ -260,7 +248,7 @@ impl PipelineNodeImpl for SinkNode {
     }
 
     fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(WriteStats::new(meter, self.node_id()))
+        Arc::new(WriteStats::new(meter, self.context()))
     }
 
     fn produce_tasks(

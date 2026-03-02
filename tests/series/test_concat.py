@@ -101,13 +101,30 @@ def test_series_concat_map_array(chunks) -> None:
     concated = Series.concat(series)
 
     assert concated.datatype() == DataType.map(DataType.string(), DataType.float64())
-    concated_list = concated.to_pylist()
+    concated_list = concated.to_pylist(maps_as_pydicts="lossy")
     counter = 0
     for i in range(chunks):
         for j in range(i):
-            assert concated_list[counter][0][1] == i + j
-            assert concated_list[counter][1][1] == float(i * j)
+            assert concated_list[counter]["a"] == i + j
+            assert concated_list[counter]["b"] == float(i * j)
             counter += 1
+
+
+def test_series_map_to_pylist_modes() -> None:
+    series = Series.from_arrow(
+        pa.array(
+            [[("a", 1), ("a", 2)], [("b", 3), ("c", 4)]],
+            type=pa.map_(pa.string(), pa.int64()),
+        )
+    )
+
+    assert series.to_pylist() == [[("a", 1), ("a", 2)], [("b", 3), ("c", 4)]]
+
+    with pytest.warns(UserWarning, match="Duplicate key encountered"):
+        assert series.to_pylist(maps_as_pydicts="lossy") == [{"a": 2}, {"b": 3, "c": 4}]
+
+    with pytest.raises(ValueError, match="maps_as_pydicts='strict'"):
+        series.to_pylist(maps_as_pydicts="strict")
 
 
 @pytest.mark.parametrize("chunks", [1, 2, 3, 10])

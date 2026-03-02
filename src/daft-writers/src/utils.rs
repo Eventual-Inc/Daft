@@ -9,7 +9,7 @@ const DEFAULT_PARTITION_VALUE: &str = "__HIVE_DEFAULT_PARTITION__";
 
 /// Helper function to build the filename for the output file.
 pub(crate) fn build_filename(
-    source_type: SourceType,
+    source_type: &SourceType,
     root_dir: &str,
     partition_values: Option<&RecordBatch>,
     file_idx: usize,

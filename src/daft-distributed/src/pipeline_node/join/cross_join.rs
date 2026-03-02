@@ -90,10 +90,7 @@ impl CrossJoinNode {
                                 right_plan,
                                 self.config.schema.clone(),
                                 StatsState::NotMaterialized,
-                                LocalNodeContext {
-                                    origin_node_id: Some(self.node_id() as usize),
-                                    additional: None,
-                                },
+                                LocalNodeContext::new(Some(self.node_id() as usize)),
                             )
                         },
                     );
@@ -113,10 +110,7 @@ impl CrossJoinNode {
                                 right_plan,
                                 self.config.schema.clone(),
                                 StatsState::NotMaterialized,
-                                LocalNodeContext {
-                                    origin_node_id: Some(self.node_id() as usize),
-                                    additional: None,
-                                },
+                                LocalNodeContext::new(Some(self.node_id() as usize)),
                             )
                         },
                     );

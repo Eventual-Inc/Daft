@@ -1,0 +1,136 @@
+"""Human-readable query name generator.
+
+Produces Docker-style random names like ``eager-phoenix-a4f821`` for use as
+query identifiers.  With 55 adjectives x 55 nouns x 16^6 hex suffixes the
+combinatorial space is ~48 billion, which is more than sufficient for
+global uniqueness across tracing systems.
+"""
+
+from __future__ import annotations
+
+import os
+
+_ADJECTIVES = (
+    "agile",
+    "bold",
+    "brave",
+    "bright",
+    "calm",
+    "clever",
+    "cool",
+    "cosmic",
+    "daring",
+    "eager",
+    "epic",
+    "fair",
+    "fancy",
+    "fast",
+    "fierce",
+    "fleet",
+    "fresh",
+    "gentle",
+    "glad",
+    "golden",
+    "grand",
+    "happy",
+    "hardy",
+    "keen",
+    "kind",
+    "lively",
+    "lucky",
+    "merry",
+    "mighty",
+    "neat",
+    "nimble",
+    "noble",
+    "plucky",
+    "polite",
+    "proud",
+    "quick",
+    "quiet",
+    "rapid",
+    "sharp",
+    "shiny",
+    "sleek",
+    "smart",
+    "snappy",
+    "solar",
+    "steady",
+    "stellar",
+    "strong",
+    "sunny",
+    "super",
+    "swift",
+    "tidy",
+    "tough",
+    "vivid",
+    "warm",
+    "witty",
+)
+
+_NOUNS = (
+    "aurora",
+    "badger",
+    "bear",
+    "comet",
+    "condor",
+    "coral",
+    "crane",
+    "dolphin",
+    "eagle",
+    "falcon",
+    "finch",
+    "flame",
+    "forest",
+    "fox",
+    "galaxy",
+    "grove",
+    "hawk",
+    "heron",
+    "island",
+    "jade",
+    "lake",
+    "lark",
+    "lily",
+    "lotus",
+    "lynx",
+    "maple",
+    "meadow",
+    "nebula",
+    "oak",
+    "ocean",
+    "otter",
+    "owl",
+    "panda",
+    "pearl",
+    "phoenix",
+    "pine",
+    "plaza",
+    "quasar",
+    "raven",
+    "reef",
+    "river",
+    "sage",
+    "sierra",
+    "sparrow",
+    "star",
+    "stone",
+    "summit",
+    "tiger",
+    "valley",
+    "wave",
+    "willow",
+    "wind",
+    "wolf",
+    "wren",
+    "zenith",
+)
+
+
+def generate_query_name() -> str:
+    """Return a human-readable query name like ``eager-phoenix-a4f821``."""
+    raw = os.urandom(5)
+    adj_idx = raw[0] % len(_ADJECTIVES)
+    noun_idx = raw[1] % len(_NOUNS)
+    hex_suffix = raw[2:5].hex()
+    return f"{_ADJECTIVES[adj_idx]}-{_NOUNS[noun_idx]}-{hex_suffix}"

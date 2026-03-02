@@ -52,11 +52,13 @@
         * [Running on Ray](distributed/ray.md)
     * Architecture
         * [Architecture](architecture/index.md)
-    * Optimization and Debugging
+    * Optimization
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
-        * [Observability](optimization/observability.md)
-        * [Logging](optimization/logging.md)
+    * Observability
+        * [Progress Indicators](observability/progress-indicators.md)
+        * [Logging](observability/logging.md)
+        * [Telemetry](observability/telemetry.md)
     * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
     * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
@@ -68,7 +70,6 @@
     * [Multimodal Structured Outputs: Evaluating Image Understanding](examples/mm_structured_outputs.md)
     * [Voice AI Analytics with Faster-Whisper and embed_text](examples/voice-ai-analytics.md)
     * [Web Text Deduplication](examples/minhash-dedupe.md)
-    * [Voice AI Analytics](examples/voice-ai-analytics.md)
     * [Audio Transcription](examples/audio-transcription.md)
     * [Generate Text Embeddings for Turbopuffer](examples/text-embeddings.md)
     * [Running LLMs on the Red Pajamas Dataset](examples/llms-red-pajamas.md)

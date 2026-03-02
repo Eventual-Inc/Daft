@@ -134,12 +134,10 @@ impl IntoPartitionsNode {
                 in_memory_scan,
                 1,
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self.node_id() as usize)),
             );
-            let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+            let builder =
+                SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
             if result_tx.send(builder).await.is_err() {
                 break;
             }
@@ -182,10 +180,7 @@ impl IntoPartitionsNode {
                     plan,
                     num_outputs,
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(self.node_id() as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(self.node_id() as usize)),
                 )
             });
             // Build and submit
@@ -212,8 +207,8 @@ impl IntoPartitionsNode {
                             self.config.schema.clone(),
                             self.node_id(),
                         );
-                    let builder =
-                        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref()).with_psets(psets);
+                    let builder = SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())
+                        .with_psets(self.node_id(), psets);
                     if result_tx.send(builder).await.is_err() {
                         break;
                     }
@@ -249,10 +244,7 @@ impl IntoPartitionsNode {
                                 plan,
                                 1,
                                 StatsState::NotMaterialized,
-                                LocalNodeContext {
-                                    origin_node_id: Some(node_id as usize),
-                                    additional: None,
-                                },
+                                LocalNodeContext::new(Some(node_id as usize)),
                             )
                         });
                         let _ = result_tx.send(builder).await;

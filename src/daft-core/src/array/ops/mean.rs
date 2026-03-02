@@ -34,7 +34,7 @@ impl DataArray<Decimal128Type> {
         let means = self
             .into_iter()
             .zip(counts)
-            .map(|(sum, count)| sum.zip(count).map(|(s, c)| s / (*c as i128)));
+            .map(|(sum, count)| sum.zip(count).map(|(s, c)| s / (c as i128)));
         Ok(Self::from_iter(self.field.clone(), means))
     }
 }

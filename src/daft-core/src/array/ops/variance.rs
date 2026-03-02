@@ -14,7 +14,7 @@ impl DaftVarianceAggable for DataArray<Float64Type> {
 
     fn var(&self, ddof: usize) -> Self::Output {
         let stats = stats::calculate_stats(self)?;
-        let values = self.into_iter().flatten().copied();
+        let values = self.into_iter().flatten();
         let variance = stats::calculate_variance(stats, values, ddof);
         Ok(Self::from_iter(
             self.field().clone(),

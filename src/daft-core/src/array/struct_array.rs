@@ -4,7 +4,7 @@ use arrow::array::ArrayRef;
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    array::growable::{Growable, GrowableArray},
+    array::ops::from_arrow::FromArrow,
     datatypes::{DaftArrayType, DataType, Field},
     series::Series,
 };
@@ -15,7 +15,7 @@ pub struct StructArray {
 
     /// Column representations
     pub children: Vec<Series>,
-    nulls: Option<daft_arrow::buffer::NullBuffer>,
+    nulls: Option<arrow::buffer::NullBuffer>,
     len: usize,
 }
 
@@ -29,7 +29,7 @@ impl StructArray {
     pub fn new<F: Into<Arc<Field>>>(
         field: F,
         children: Vec<Series>,
-        nulls: Option<daft_arrow::buffer::NullBuffer>,
+        nulls: Option<arrow::buffer::NullBuffer>,
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
@@ -94,7 +94,7 @@ impl StructArray {
         }
     }
 
-    pub fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+    pub fn nulls(&self) -> Option<&arrow::buffer::NullBuffer> {
         self.nulls.as_ref()
     }
 
@@ -112,26 +112,23 @@ impl StructArray {
             ));
         }
 
-        let first_array = arrays.first().unwrap();
-        let mut growable = <Self as GrowableArray>::make_growable(
-            first_array.field.name.as_str(),
-            &first_array.field.dtype,
-            arrays.to_vec(),
-            arrays
-                .iter()
-                .map(|a| a.nulls.as_ref().map_or(0usize, |v| v.null_count()))
-                .sum::<usize>()
-                > 0,
-            arrays.iter().map(|a| a.len()).sum(),
-        );
-
-        for (i, arr) in arrays.iter().enumerate() {
-            growable.extend(i, 0, arr.len());
+        if arrays.len() == 1 {
+            return Ok((*arrays.first().unwrap()).clone());
         }
 
-        growable
-            .build()
-            .map(|s| s.downcast::<Self>().unwrap().clone())
+        let first_array = arrays.first().unwrap();
+        let field = first_array.field.clone();
+
+        let arrow_arrs = arrays
+            .iter()
+            .map(|arr| arr.to_arrow())
+            .collect::<DaftResult<Vec<_>>>()?;
+        let arrow_refs = arrow_arrs
+            .iter()
+            .map(|arr| arr.as_ref())
+            .collect::<Vec<_>>();
+        let concatenated = arrow::compute::concat(&arrow_refs)?;
+        Self::from_arrow(field, concatenated)
     }
 
     pub fn len(&self) -> usize {
@@ -180,15 +177,6 @@ impl StructArray {
                 .map(|v| v.clone().slice(start, end - start)),
         ))
     }
-    #[deprecated(note = "arrow2 migration")]
-    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-        let arrow_dtype = self.data_type().to_arrow2().unwrap();
-        Box::new(daft_arrow::array::StructArray::new(
-            arrow_dtype,
-            self.children.iter().map(|s| s.to_arrow2()).collect(),
-            daft_arrow::buffer::wrap_null_buffer(self.nulls.clone()),
-        ))
-    }
 
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
         let field = self.field().to_arrow()?;
@@ -214,7 +202,7 @@ impl StructArray {
         )) as _)
     }
 
-    pub fn with_nulls(&self, nulls: Option<daft_arrow::buffer::NullBuffer>) -> DaftResult<Self> {
+    pub fn with_nulls(&self, nulls: Option<arrow::buffer::NullBuffer>) -> DaftResult<Self> {
         if let Some(v) = &nulls
             && v.len() != self.len()
         {

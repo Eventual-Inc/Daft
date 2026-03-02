@@ -133,13 +133,10 @@ impl BroadcastJoinNode {
                         self.join_type,
                         self.config.schema.clone(),
                         StatsState::NotMaterialized,
-                        LocalNodeContext {
-                            origin_node_id: Some(self.node_id() as usize),
-                            additional: None,
-                        },
+                        LocalNodeContext::new(Some(self.node_id() as usize)),
                     )
                 })
-                .merge_psets(broadcast_psets.clone());
+                .with_psets(self.node_id(), broadcast_psets.clone());
 
             if result_tx.send(new_builder).await.is_err() {
                 break;

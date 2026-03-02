@@ -223,10 +223,7 @@ impl ActorUDF {
                 self.passthrough_columns.clone(),
                 self.required_columns.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self.node_id() as usize)),
             )
         })
     }
@@ -274,7 +271,7 @@ impl PipelineNodeImpl for ActorUDF {
     }
 
     fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(UdfStats::new(meter, self.node_id()))
+        Arc::new(UdfStats::new(meter, self.context()))
     }
 
     fn produce_tasks(

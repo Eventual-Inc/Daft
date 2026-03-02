@@ -113,7 +113,7 @@ where
             .zip(n.into_iter())
             .map(|(val, n)| match (val, n) {
                 (Some(val), Some(n)) => {
-                    let n: usize = NumCast::from(*n).ok_or_else(|| {
+                    let n: usize = NumCast::from(n).ok_or_else(|| {
                         DaftError::ComputeError(format!(
                             "Error in repeat: failed to cast rhs as usize {n}"
                         ))

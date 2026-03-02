@@ -174,6 +174,4 @@ async def my_api_call(prompt: str) -> str:
 
 - Specifying granular CPU and memory resource requests is not yet supported in the new API. We found that the behavior of the `num_cpus` and `memory_bytes` parameters in the legacy API were unclear, and that they were largely used to control the concurrency of the UDF. In those cases, consider using `max_concurrency` instead.
 
-- There is currently no method to control the number of concurrent calls to async UDFs in the new API.
-
 If you have any questions or feedback about the new UDF API, please submit an [issue on GitHub](https://github.com/Eventual-Inc/Daft/issues) or reach out to us on [Slack](https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg).

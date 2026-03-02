@@ -1050,15 +1050,20 @@ class Expression:
 
         return mean(self)
 
-    def stddev(self) -> Expression:
+    def stddev(self, ddof: int = 1) -> Expression:
         """Calculates the standard deviation of the values in the expression.
+
+        Args:
+            ddof: Delta degrees of freedom. The divisor used in calculations
+                is N - ddof, where N is the number of non-null elements.
+                Defaults to 1 (sample standard deviation).
 
         Tip: See Also
             [`daft.functions.stddev`](https://docs.daft.ai/en/stable/api/functions/stddev/)
         """
         from daft.functions import stddev
 
-        return stddev(self)
+        return stddev(self, ddof)
 
     def var(self, ddof: int = 1) -> Expression:
         """Calculates the variance of the values in the expression.
@@ -1498,15 +1503,19 @@ class Expression:
 
         return parse_url(self)
 
-    def explode(self) -> Expression:
+    def explode(self, ignore_empty_and_null: bool = False) -> Expression:
         """Explode a list expression.
+
+        Args:
+           ignore_empty_and_null: If True, drops rows where the list is empty or null.
+               If False (default), empty lists and null values each produce a single row with a null value.
 
         Tip: See Also
             [`daft.functions.explode`](https://docs.daft.ai/en/stable/api/functions/explode/)
         """
         from daft.functions import explode
 
-        return explode(self)
+        return explode(self, ignore_empty_and_null=ignore_empty_and_null)
 
     def cosine_distance(self, other: Expression) -> Expression:
         """Compute the cosine distance between two embeddings.

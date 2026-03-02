@@ -84,18 +84,16 @@ impl PipelineNodeImpl for GlobScanSourceNode {
         _plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
         let glob_scan_plan = LocalPhysicalPlan::glob_scan(
-            self.glob_paths.clone(),
+            self.node_id(),
             self.pushdowns.clone(),
             self.config.schema.clone(),
             StatsState::NotMaterialized,
             self.io_config.clone(),
-            LocalNodeContext {
-                origin_node_id: Some(self.node_id() as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.node_id() as usize)),
         );
-
-        let builder = SwordfishTaskBuilder::new(glob_scan_plan, self.as_ref());
+        let glob_paths = self.glob_paths.clone().to_vec();
+        let builder = SwordfishTaskBuilder::new(glob_scan_plan, self.as_ref())
+            .with_glob_paths(self.node_id(), glob_paths);
         TaskBuilderStream::new(stream::iter(std::iter::once(builder)).boxed())
     }
 
@@ -109,6 +107,6 @@ impl PipelineNodeImpl for GlobScanSourceNode {
     }
 
     fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(SourceStats::new(meter, self.node_id()))
+        Arc::new(SourceStats::new(meter, self.context()))
     }
 }

@@ -2,47 +2,70 @@ use std::sync::Arc;
 
 use arrow_array::{
     ArrayRef,
-    builder::{Float64Builder, LargeStringBuilder, MapBuilder, StructBuilder, UInt64Builder},
+    builder::{
+        DurationMicrosecondBuilder, Float64Builder, LargeStringBuilder, MapBuilder, StructBuilder,
+        UInt64Builder,
+    },
 };
 use common_error::{DaftError, DaftResult};
-use common_metrics::{StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl};
-use daft_core::prelude::{DataType, Field, Schema};
+use common_metrics::{
+    DURATION_KEY, QueryID, Stat, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl,
+};
+use daft_core::prelude::{DataType, Field, Schema, TimeUnit};
 use daft_recordbatch::RecordBatch;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
-pub struct ExecutionEngineFinalResult {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionStats {
+    pub query_id: QueryID,
+    pub query_plan: Option<serde_json::Value>,
     pub nodes: Vec<(Arc<NodeInfo>, StatSnapshot)>,
 }
 
-impl ExecutionEngineFinalResult {
-    pub fn new(mut nodes: Vec<(Arc<NodeInfo>, StatSnapshot)>) -> Self {
+impl ExecutionStats {
+    pub fn new(query_id: QueryID, mut nodes: Vec<(Arc<NodeInfo>, StatSnapshot)>) -> Self {
         nodes.sort_by_key(|(node_info, _)| node_info.id);
-        Self { nodes }
+        Self {
+            query_id,
+            query_plan: None,
+            nodes,
+        }
     }
 
+    pub fn with_query_plan(mut self, query_plan: serde_json::Value) -> Self {
+        self.query_plan = Some(query_plan);
+        self
+    }
+
+    /// Encode the ExecutionStats into a binary format for transmission to scheduler
     pub fn encode(&self) -> Vec<u8> {
         bincode::encode_to_vec(&self.nodes, bincode::config::legacy())
-            .expect("Failed to encode ExecutionEngineFinalResult")
+            .expect("Failed to encode ExecutionStats")
     }
 
+    /// Decode the ExecutionStats from a binary format received from scheduler
     pub fn decode(bytes: &[u8]) -> Self {
         let (nodes, _): (Vec<(Arc<NodeInfo>, StatSnapshot)>, usize) =
             bincode::decode_from_slice(bytes, bincode::config::legacy())
                 .map_err(|e| {
-                    DaftError::InternalError(format!(
-                        "Failed to decode ExecutionEngineFinalResult: {e}"
-                    ))
+                    DaftError::InternalError(format!("Failed to decode ExecutionStats: {e}"))
                 })
                 .unwrap();
-        Self { nodes }
+        Self {
+            query_id: "".into(),
+            query_plan: None,
+            nodes,
+        }
     }
 
+    /// Convert the ExecutionStats into a RecordBatch for visualization
     pub fn to_recordbatch(&self) -> DaftResult<RecordBatch> {
         let schema = Schema::new(vec![
             Field::new("id", DataType::UInt64),
             Field::new("name", DataType::Utf8),
             Field::new("type", DataType::Utf8),
             Field::new("category", DataType::Utf8),
+            Field::new("duration", DataType::Duration(TimeUnit::Microseconds)),
             Field::new(
                 "stats",
                 DataType::Map {
@@ -59,6 +82,7 @@ impl ExecutionEngineFinalResult {
         let mut names = LargeStringBuilder::new();
         let mut types = LargeStringBuilder::new();
         let mut categories = LargeStringBuilder::new();
+        let mut duration_values = DurationMicrosecondBuilder::new();
         let stats_values = StructBuilder::from_fields(
             vec![
                 arrow_schema::Field::new("value", arrow_schema::DataType::Float64, false),
@@ -74,6 +98,16 @@ impl ExecutionEngineFinalResult {
             types.append_value(node_info.node_type.to_string());
             categories.append_value(node_info.node_category.to_string());
             for (name, value) in stat_snapshot.to_stats() {
+                // Note: Always expect one stat for duration by the execution engine
+                // TODO: Add checks just in case
+                if name.as_ref() == DURATION_KEY {
+                    let Stat::Duration(duration) = value else {
+                        panic!("`duration` metric is always a Stat::Duration in stats");
+                    };
+                    duration_values.append_value(duration.as_micros() as i64);
+                    continue;
+                }
+
                 stats.keys().append_value(name);
                 let values = stats.values();
                 let (value, unit) = value.into_f64_and_unit();
@@ -97,6 +131,7 @@ impl ExecutionEngineFinalResult {
                 Arc::new(names.finish()) as ArrayRef,
                 Arc::new(types.finish()) as ArrayRef,
                 Arc::new(categories.finish()) as ArrayRef,
+                Arc::new(duration_values.finish()) as ArrayRef,
                 Arc::new(stats.finish()) as ArrayRef,
             ],
         )

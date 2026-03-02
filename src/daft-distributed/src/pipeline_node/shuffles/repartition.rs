@@ -96,8 +96,8 @@ impl RepartitionNode {
                 self.config.schema.clone(),
                 self.node_id(),
             );
-            let builder =
-                SwordfishTaskBuilder::new(in_memory_source_plan, self.as_ref()).with_psets(psets);
+            let builder = SwordfishTaskBuilder::new(in_memory_source_plan, self.as_ref())
+                .with_psets(self.node_id(), psets);
 
             let _ = result_tx.send(builder).await;
         }
@@ -140,10 +140,7 @@ impl PipelineNodeImpl for RepartitionNode {
                 self_clone.num_partitions,
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self_clone.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self_clone.node_id() as usize)),
             )
         });
 

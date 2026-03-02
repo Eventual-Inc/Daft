@@ -61,7 +61,7 @@ impl DaftMinHash for Utf8Array {
         let mut output: UInt32Builder = UInt32Builder::with_capacity(num_hashes * self.len());
         let mut alloc = VecDeque::new();
 
-        for elem in &internal_arrow_representation {
+        for elem in internal_arrow_representation {
             let Some(elem) = elem else {
                 output.append_nulls(num_hashes);
                 continue;
@@ -80,7 +80,7 @@ impl DaftMinHash for Utf8Array {
         }
 
         let output_series = Series::from_arrow(
-            Field::new(self.name(), DataType::UInt32).into(),
+            Field::new(self.name(), DataType::UInt32),
             Arc::new(output.finish()),
         )?;
         let field = Field::new(

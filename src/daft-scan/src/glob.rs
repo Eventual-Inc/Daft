@@ -222,7 +222,7 @@ impl GlobScanOperator {
                     let first_metadata = Some((
                         first_filepath.clone(),
                         TableMetadata {
-                            length: metadata.num_rows,
+                            length: metadata.num_rows(),
                         },
                     ));
                     (schema, first_metadata, first_filepath)
@@ -329,11 +329,7 @@ impl GlobScanOperator {
                     ));
                 }
                 #[cfg(feature = "python")]
-                FileFormatConfig::PythonFunction {
-                    source_type: _,
-                    module_name: _,
-                    function_name: _,
-                } => {
+                FileFormatConfig::PythonFunction { .. } => {
                     return Err(DaftError::ValueError(
                         "Cannot glob a PythonFunction source".to_string(),
                     ));

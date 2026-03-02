@@ -1,6 +1,6 @@
 [dependencies]
 common-py-serde = {path = "../py-serde", default-features = false}
-indicatif = "0.17"
+indicatif = {workspace = true}
 serde = {workspace = true}
 bincode = {workspace = true}
 smallvec = {workspace = true, features = ["serde"]}

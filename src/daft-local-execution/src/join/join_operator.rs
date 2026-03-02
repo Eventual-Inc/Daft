@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_metrics::ops::NodeType;
+use common_metrics::ops::{NodeInfo, NodeType};
 use common_runtime::get_compute_pool_num_threads;
 use daft_micropartition::MicroPartition;
 use opentelemetry::metrics::Meter;
@@ -88,8 +88,10 @@ pub(crate) trait JoinOperator: Send + Sync {
     fn multiline_display(&self) -> Vec<String>;
 
     /// Create runtime stats
-    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(crate::runtime_stats::DefaultRuntimeStats::new(meter, id))
+    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
+        Arc::new(crate::runtime_stats::DefaultRuntimeStats::new(
+            meter, node_info,
+        ))
     }
 
     /// Maximum number of concurrent probe workers

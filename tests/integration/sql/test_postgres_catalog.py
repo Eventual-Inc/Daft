@@ -708,7 +708,7 @@ def test_postgres_table_with_map_columns(test_db) -> None:
         assert len(result) == 3
         assert result.to_pydict()["a"] == [1, None, None]
         # The map column should contain the original data: [{"a": 1}], [], [{"b": 2}]
-        assert result.to_pydict()["map_col"] == [{"a": 1}, {}, {"b": 2}]
+        assert result.to_pydict(maps_as_pydicts="lossy")["map_col"] == [{"a": 1}, {}, {"b": 2}]
     finally:
         if catalog.has_table(f"public.{test_table}"):
             catalog.drop_table(f"public.{test_table}")

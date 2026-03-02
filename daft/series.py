@@ -230,9 +230,17 @@ class Series:
         else:
             return self._series.to_arrow()
 
-    def to_pylist(self) -> list[Any]:
-        """Convert this Series to a Python list."""
-        return self._series.to_pylist()
+    def to_pylist(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> list[Any]:
+        """Convert this Series to a Python list.
+
+        Args:
+            maps_as_pydicts: If None (default), Map values are converted to association lists
+                (`list[tuple[key, value]]`) preserving order and duplicates.
+                If `"lossy"` or `"strict"`, Map values are converted to Python dicts.
+                `"lossy"` keeps the last value for duplicate keys and warns.
+                `"strict"` raises on duplicate keys.
+        """
+        return self._series.to_pylist(maps_as_pydicts)
 
     def filter(self, mask: Series) -> Series:
         if not isinstance(mask, Series):
@@ -600,9 +608,9 @@ class Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.mean())
 
-    def stddev(self) -> Series:
+    def stddev(self, ddof: int = 1) -> Series:
         assert self._series is not None
-        return Series._from_pyseries(self._series.stddev())
+        return Series._from_pyseries(self._series.stddev(ddof))
 
     def sum(self) -> Series:
         assert self._series is not None

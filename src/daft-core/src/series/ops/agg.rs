@@ -1,5 +1,5 @@
+use arrow::buffer::OffsetBuffer;
 use common_error::{DaftError, DaftResult};
-use daft_arrow::offset::OffsetsBuffer;
 use itertools::Itertools;
 
 use crate::{
@@ -241,14 +241,17 @@ impl Series {
         }
     }
 
-    pub fn stddev(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+    pub fn stddev(&self, groups: Option<&GroupIndices>, ddof: usize) -> DaftResult<Self> {
         let target_type = try_stddev_aggregation_supertype(self.data_type())?;
         match target_type {
             DataType::Float64 => {
                 let casted = self.cast(&DataType::Float64)?;
                 let casted = casted.f64()?;
                 let series = groups
-                    .map_or_else(|| casted.stddev(), |groups| casted.grouped_stddev(groups))?
+                    .map_or_else(
+                        || casted.stddev(ddof),
+                        |groups| casted.grouped_stddev(groups, ddof),
+                    )?
                     .into_series();
                 Ok(series)
             }
@@ -460,7 +463,8 @@ impl DaftSetAggable for Series {
         let indices_array = UInt64Array::from_vec("", unique_indices);
         let deduped_series = child_series.take(&indices_array)?;
 
-        let offsets = OffsetsBuffer::try_from(vec![0, deduped_series.len() as i64])?;
+        let offsets = OffsetBuffer::new(vec![0, deduped_series.len() as i64].into());
+
         let list_field = self.field().to_list_field();
         Ok(ListArray::new(list_field, deduped_series, offsets, None))
     }
@@ -502,7 +506,7 @@ impl DaftSetAggable for Series {
         let result = ListArray::new(
             list_field,
             growable.build()?,
-            OffsetsBuffer::try_from(offsets)?,
+            OffsetBuffer::new(offsets.into()),
             None,
         );
 

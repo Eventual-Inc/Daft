@@ -35,9 +35,9 @@ where
                     .zip(left_bound.into_iter())
                     .zip(right_bound.into_iter())
                     .map(|((value, left), right)| match (left, right) {
-                        (Some(l), Some(r)) => Some(clamp(*value, *l, *r)),
-                        (Some(l), None) => Some(clamp_min(*value, *l)),
-                        (None, Some(r)) => Some(clamp_max(*value, *r)),
+                        (Some(l), Some(r)) => Some(clamp(*value, l, r)),
+                        (Some(l), None) => Some(clamp_min(*value, l)),
+                        (None, Some(r)) => Some(clamp_max(*value, r)),
                         (None, None) => Some(*value),
                     });
                 let data_array = Self::from_iter(self.field().clone(), result)
@@ -58,7 +58,7 @@ where
                                 .iter()
                                 .zip(left_bound.into_iter())
                                 .map(move |(value, left)| match left {
-                                    Some(l) => Some(clamp(*value, *l, r)),
+                                    Some(l) => Some(clamp(*value, l, r)),
                                     None => Some(clamp_max(*value, r)), // If left is null, we can just clamp_max
                                 });
                         let data_array = Self::from_iter(self.field().clone(), result)
@@ -70,7 +70,7 @@ where
                         // In this case, right_bound is null, so we can just do a simple clamp_min
                         let result = values.iter().zip(left_bound.into_iter()).map(
                             |(value, left)| match left {
-                                Some(l) => Some(clamp_min(*value, *l)),
+                                Some(l) => Some(clamp_min(*value, l)),
                                 None => Some(*value), // Left null, and right null, so we just don't do anything
                             },
                         );
@@ -88,7 +88,7 @@ where
                         let values = self.values();
                         let result = values.iter().zip(right_bound.into_iter()).map(
                             move |(value, right)| match right {
-                                Some(r) => Some(clamp(*value, l, *r)),
+                                Some(r) => Some(clamp(*value, l, r)),
                                 None => Some(clamp_min(*value, l)), // Right null, so we can just clamp_min
                             },
                         );
@@ -103,7 +103,7 @@ where
                                 .iter()
                                 .zip(right_bound.into_iter())
                                 .map(|(value, right)| match right {
-                                    Some(r) => Some(clamp_max(*value, *r)),
+                                    Some(r) => Some(clamp_max(*value, r)),
                                     None => Some(*value),
                                 });
                         let data_array = Self::from_iter(self.field().clone(), result)

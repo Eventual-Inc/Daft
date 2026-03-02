@@ -18,19 +18,20 @@ impl TensorArray {
 mod tests {
     use std::vec;
 
+    use arrow::buffer::OffsetBuffer;
     use common_error::DaftResult;
 
     use crate::{array::prelude::*, datatypes::prelude::*, series::IntoSeries};
 
     #[test]
     fn test_tensor_to_sparse_roundtrip() -> DaftResult<()> {
-        let nulls = daft_arrow::buffer::NullBuffer::from(&[true, false, true]);
+        let nulls = arrow::buffer::NullBuffer::from(&[true, false, true]);
         let flat_child =
             Int64Array::from_slice("item", &[0, 1, 2, 100, 101, 102, 0, 0, 3]).into_series();
         let list_array = ListArray::new(
             Field::new("data", DataType::List(Box::new(DataType::Int64))),
             flat_child,
-            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 3, 6, 9])?,
+            OffsetBuffer::new(vec![0, 3, 6, 9].into()),
             Some(nulls.clone()),
         )
         .into_series();
@@ -39,7 +40,7 @@ mod tests {
         let shapes_array = ListArray::new(
             Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
             flat_child,
-            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 2, 3])?,
+            OffsetBuffer::new(vec![0, 1, 2, 3].into()),
             Some(nulls.clone()),
         )
         .into_series();
@@ -61,7 +62,7 @@ mod tests {
     #[test]
     fn test_fixed_shape_tensor_to_fixed_shape_sparse_roundtrip() -> DaftResult<()> {
         let raw_nulls = vec![true, false, true];
-        let nulls = daft_arrow::buffer::NullBuffer::from(raw_nulls.as_slice());
+        let nulls = arrow::buffer::NullBuffer::from(raw_nulls.as_slice());
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int64), 3));
         let flat_child = Int64Array::from_vec("foo", (0..9).collect::<Vec<i64>>());
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), Some(nulls));

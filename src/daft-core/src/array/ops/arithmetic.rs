@@ -1,6 +1,7 @@
 use std::{
     iter::zip,
     ops::{Add, Div, Mul, Rem, Sub},
+    sync::Arc,
 };
 
 use arrow::buffer::NullBuffer;
@@ -147,15 +148,12 @@ impl Add for &FixedSizeBinaryArray {
     }
 }
 
-#[allow(
-    deprecated,
-    reason = "arrow2->arrow migration: add_utf8_arrays still uses arrow2"
-)]
 impl Add for &Utf8Array {
     type Output = DaftResult<Utf8Array>;
     fn add(self, rhs: Self) -> Self::Output {
-        let result = Box::new(add_utf8_arrays(self.as_arrow2(), rhs.as_arrow2())?);
-        Ok(Utf8Array::new(Field::new(self.name(), DataType::Utf8).into(), result).unwrap())
+        let result = Arc::new(add_utf8_arrays(self.as_arrow()?, rhs.as_arrow()?)?);
+
+        Utf8Array::from_arrow(Field::new(self.name(), DataType::Utf8), result)
     }
 }
 
@@ -242,7 +240,7 @@ where
 {
     type Output = DaftResult<DataArray<T>>;
     fn rem(self, rhs: Self) -> Self::Output {
-        if rhs.data().null_count() == 0 {
+        if rhs.null_count() == 0 {
             arithmetic_helper(self, rhs, |l, r| l % r)
         } else {
             match (self.len(), rhs.len()) {
@@ -282,7 +280,7 @@ where
 {
     type Output = DaftResult<DataArray<T>>;
     fn div(self, rhs: Self) -> Self::Output {
-        if rhs.data().null_count() == 0 {
+        if rhs.null_count() == 0 {
             arithmetic_helper(self, rhs, |l, r| l / r)
         } else {
             match (self.len(), rhs.len()) {
@@ -325,7 +323,7 @@ impl Div for &Decimal128Array {
         };
         let scale = 10i128.pow(*s as u32);
 
-        if rhs.data().null_count() == 0 {
+        if rhs.null_count() == 0 {
             arithmetic_helper(self, rhs, |l, r| (l * scale) / r)
         } else {
             match (self.len(), rhs.len()) {
@@ -377,13 +375,13 @@ where
     let (result_child, nulls) = match (lhs_len, rhs_len) {
         (a, b) if a == b => Ok((
             kernel(lhs_child, rhs_child)?,
-            daft_arrow::buffer::NullBuffer::union(lhs.nulls(), rhs.nulls()),
+            NullBuffer::union(lhs.nulls(), rhs.nulls()),
         )),
         (l, 1) => {
             let nulls = if rhs.is_valid(0) {
                 lhs.nulls().cloned()
             } else {
-                Some(daft_arrow::buffer::NullBuffer::new_null(l))
+                Some(NullBuffer::new_null(l))
             };
             Ok((kernel(lhs_child, &rhs_child.repeat(lhs_len)?)?, nulls))
         }
@@ -391,7 +389,7 @@ where
             let nulls = if lhs.is_valid(0) {
                 rhs.nulls().cloned()
             } else {
-                Some(daft_arrow::buffer::NullBuffer::new_null(r))
+                Some(NullBuffer::new_null(r))
             };
             Ok((kernel(&lhs_child.repeat(lhs_len)?, rhs_child)?, nulls))
         }

@@ -2,12 +2,12 @@ name: Nightly package build, S3 publish, and tests
 
 on:
   schedule:
-  #       ┌───────────── minute (0 - 59)
-  #       │ ┌───────────── hour (0 - 23)
-  #       │ │ ┌───────────── day of the month (1 - 31)
-  #       │ │ │ ┌───────────── month (1 - 12 or JAN-DEC)
-  #       │ │ │ │ ┌───────────── day of the week (0 - 6 or SUN-SAT)
-  #       │ │ │ │ │
+    #       ┌───────────── minute (0 - 59)
+    #       │ ┌───────────── hour (0 - 23)
+    #       │ │ ┌───────────── day of the month (1 - 31)
+    #       │ │ │ ┌───────────── month (1 - 12 or JAN-DEC)
+    #       │ │ │ │ ┌───────────── day of the week (0 - 6 or SUN-SAT)
+    #       │ │ │ │ │
   - cron: 0 5 * * *
 
   workflow_dispatch:
@@ -19,12 +19,12 @@ env:
   AWS_REGION: us-west-2
   CLOUDFRONT_DIST_ID: E3H8WN738AJ1D4
 
-  DAFT_ANALYTICS_ENABLED: '0'
-  PYTHON_VERSION: '3.10'
+  DAFT_ANALYTICS_ENABLED: "0"
+  PYTHON_VERSION: "3.10"
 
 jobs:
   build:
-    name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}'
+    name: "Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}"
     permissions:
       contents: read
     uses: ./.github/workflows/build-wheel.yml
@@ -59,13 +59,13 @@ jobs:
     - uses: actions/checkout@v6
       with:
         submodules: true
-    - uses: actions/download-artifact@v7
+    - uses: actions/download-artifact@v8
       with:
         pattern: wheels-*
         merge-multiple: true
         path: dist
     - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v5
+      uses: aws-actions/configure-aws-credentials@v6
       with:
         aws-region: ${{ env.AWS_REGION }}
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
@@ -190,11 +190,10 @@ jobs:
         webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
-
   integration-test-io:
     needs: [publish]
     runs-on: ${{ matrix.runner-name }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       package-name: daft
     strategy:
@@ -259,13 +258,13 @@ jobs:
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
     - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v5
+      uses: aws-actions/configure-aws-credentials@v6
       with:
         aws-region: us-west-2
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.4.3
+      uses: isbang/compose-action@v2.5.0
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes

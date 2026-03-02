@@ -7,7 +7,7 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_scan_info::{SPLIT_AND_MERGE_PASS, ScanTaskLike, ScanTaskLikeRef};
 use daft_io::IOStatsContext;
-use daft_parquet::read::read_parquet_metadata;
+use daft_parquet::{DaftParquetMetadata, read::read_parquet_metadata};
 use parquet2::metadata::RowGroupList;
 
 use crate::{ChunkSpec, DataSource, Pushdowns, ScanTask, ScanTaskRef};
@@ -240,12 +240,14 @@ fn split_by_row_groups(
                         let io_stats =
                             IOStatsContext::new(format!("split_by_row_groups for {path:#?}"));
 
-                        let mut file = io_runtime.block_on_current_thread(read_parquet_metadata(
-                            path,
-                            io_client,
-                            Some(io_stats),
-                            field_id_mapping.clone(),
-                        ))?;
+                        let mut file = io_runtime
+                            .block_on_current_thread(read_parquet_metadata(
+                                path,
+                                io_client,
+                                Some(io_stats),
+                                field_id_mapping.clone(),
+                            ))?
+                            .into_parquet2();
 
                         let mut new_tasks: Vec<DaftResult<ScanTaskRef>> = Vec::new();
                         let mut curr_row_group_indices = Vec::new();
@@ -275,7 +277,7 @@ fn split_by_row_groups(
                                     // only keep relevant row groups in the metadata
                                     let row_group_list = RowGroupList::from_iter(curr_row_groups.into_iter());
                                     let new_metadata = file.clone_with_row_groups(curr_num_rows, row_group_list);
-                                    *parquet_metadata = Some(Arc::new(new_metadata));
+                                    *parquet_metadata = Some(Arc::new(DaftParquetMetadata::from(new_metadata)));
 
                                     *chunk_spec = Some(ChunkSpec::Parquet(curr_row_group_indices));
                                     *size_bytes = Some(curr_size_bytes as u64);

@@ -162,6 +162,21 @@ df = daft.from_pydict({"urls": ["https://api.example.com/1", "https://api.exampl
 df = df.select(client.fetch_data(df["urls"]))
 ```
 
+When `max_concurrency` is set on a class with async methods, it controls the number of concurrent coroutines rather than the number of actor pool processes:
+
+```python
+@daft.cls(max_concurrency=10)
+class APIClient:
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+
+    async def fetch_data(self, url: str) -> str:
+        async with aiohttp.ClientSession() as session:
+            headers = {"Authorization": f"Bearer {self.api_key}"}
+            async with session.get(url, headers=headers) as response:
+                return await response.text()
+```
+
 #### Generator Methods
 
 ```python
