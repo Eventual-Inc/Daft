@@ -121,9 +121,10 @@ fn infer_schemas(
 
 /// Try to build an arrow-rs `RowFilter` from a Daft predicate expression.
 ///
-/// Returns `None` if any predicate column is missing from the schema (e.g. computed
-/// columns that don't exist in the parquet file). On success, returns the RowFilter
-/// and the set of column names required by the predicate.
+/// Returns `None` if the predicate has no required columns, or if any predicate
+/// column is missing from the schema (e.g. computed columns that don't exist in
+/// the parquet file). On success, returns the RowFilter and the set of column
+/// names required by the predicate.
 fn build_row_filter(
     predicate: &ExprRef,
     daft_schema: &Schema,
