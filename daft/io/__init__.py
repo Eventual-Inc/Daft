@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from daft.daft import (
     AzureConfig,
     CosConfig,
@@ -13,13 +15,11 @@ from daft.daft import (
     UnityConfig,
     HuggingFaceConfig,
 )
+from daft.lazy_import import LazyImport
 from daft.io._csv import read_csv
 from daft.io.delta_lake._deltalake import read_deltalake
 from daft.io.hudi._hudi import read_hudi
 from daft.io.iceberg._iceberg import read_iceberg
-from daft.io.lance._lance import read_lance, merge_columns, merge_columns_df
-from daft.io.lance.rest_config import LanceRestConfig
-from daft.io.lance.rest_write import write_lance_rest, create_lance_table_rest, register_lance_table_rest
 from daft.io._json import read_json
 from daft.io._parquet import read_parquet
 from daft.io._sql import read_sql
@@ -32,6 +32,19 @@ from daft.io.file_path import from_glob_path
 from daft.io.sink import DataSink
 from daft.io.source import DataSource, DataSourceTask
 from daft.io.av import read_video_frames
+
+# Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.
+if TYPE_CHECKING:
+    from daft.io.lance._lance import read_lance
+
+_lance = LazyImport("daft.io.lance")
+
+
+def __getattr__(name: str) -> object:
+    if name == "read_lance":
+        return getattr(_lance, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "AzureConfig",
@@ -46,16 +59,12 @@ __all__ = [
     "HTTPConfig",
     "HuggingFaceConfig",
     "IOConfig",
-    "LanceRestConfig",
     "S3Config",
     "S3Credentials",
     "TosConfig",
     "UnityConfig",
     "_range",
-    "create_lance_table_rest",
     "from_glob_path",
-    "merge_columns",
-    "merge_columns_df",
     "read_csv",
     "read_deltalake",
     "read_hudi",
@@ -68,6 +77,4 @@ __all__ = [
     "read_sql",
     "read_video_frames",
     "read_warc",
-    "register_lance_table_rest",
-    "write_lance_rest",
 ]
