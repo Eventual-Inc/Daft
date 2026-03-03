@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from daft.daft import (
     AzureConfig,
     CosConfig,
@@ -32,6 +34,9 @@ from daft.io.source import DataSource, DataSourceTask
 from daft.io.av import read_video_frames
 
 # Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.
+if TYPE_CHECKING:
+    from daft.io.lance._lance import read_lance
+
 _lance = LazyImport("daft.io.lance")
 
 
@@ -66,7 +71,7 @@ __all__ = [
     "read_huggingface",
     "read_iceberg",
     "read_json",
-    "read_lance",  # noqa: F822
+    "read_lance",
     "read_mcap",
     "read_parquet",
     "read_sql",
