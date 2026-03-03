@@ -1,5 +1,6 @@
 use std::{collections::HashSet, iter::repeat_n, path::Path, sync::Arc};
 
+use arrow::array::Array as _;
 use common_error::{DaftError, DaftResult, ensure};
 use common_runtime::get_io_runtime;
 use daft_core::{array::ops::as_arrow::AsArrow, prelude::*};
@@ -324,8 +325,6 @@ pub fn url_upload(
 
     Ok(Utf8Array::from_iter(series.name(), results.into_iter()).into_series())
 }
-
-use arrow::array::Array as _;
 
 /// Creates zero-copy [`bytes::Bytes`] slices from a variable-length arrow byte array
 /// (`LargeBinaryArray` or `LargeStringArray`). Each element shares ownership of the
