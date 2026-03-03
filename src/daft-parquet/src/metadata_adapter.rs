@@ -66,11 +66,6 @@ impl DaftParquetMetadata {
             .map(|rg| DaftRowGroupMetaData::from_parquet2(rg.clone()))
     }
 
-    /// Get a specific row group by its original index without cloning.
-    pub(crate) fn get_row_group_ref(&self, index: usize) -> Option<&Pq2RowGroupMetaData> {
-        self.inner.row_groups.get(&index)
-    }
-
     /// Check if a row group index exists.
     pub fn contains_row_group(&self, index: usize) -> bool {
         self.inner.row_groups.contains_key(&index)
