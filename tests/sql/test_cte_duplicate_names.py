@@ -94,7 +94,11 @@ def test_three_distinct_ctes_work():
 
 
 def test_duplicate_cte_names_case_sensitive():
-    """CTE names are case-sensitive: 'cte' and 'CTE' should be treated as different names."""
+    """CTE names are case-sensitive: 'cte' and 'CTE' should be treated as different names.
+
+    Note: This documents current behavior. Bindings has a TODO to implement
+    case normalization for identifiers — this test may need updating when that lands.
+    """
     df = daft.from_pydict({"a": [1, 2, 3]})
     # Different cases should NOT raise an error since SQL identifiers
     # preserve case as parsed
