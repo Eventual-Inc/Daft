@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING
 
 from daft.scarf_telemetry import track_import_on_scarf
 
@@ -157,6 +158,10 @@ from daft import gravitino
 
 
 # Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.
+if TYPE_CHECKING:
+    from daft.io import read_lance
+
+
 def __getattr__(name: str) -> object:
     if name == "read_lance":
         return getattr(io, name)
@@ -249,7 +254,7 @@ __all__ = [
     "read_huggingface",
     "read_iceberg",
     "read_json",
-    "read_lance",  # noqa: F822
+    "read_lance",
     "read_mcap",
     "read_parquet",
     "read_sql",
