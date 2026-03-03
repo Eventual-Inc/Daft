@@ -10,9 +10,9 @@ use daft_micropartition::MicroPartitionRef;
 #[cfg(feature = "python")]
 pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject, LanceWrite};
 pub use plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, FlightShuffleRead,
-    FlightShuffleWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches,
-    IntoPartitions, Limit, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,
+    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, FlightGatherWrite,
+    FlightShuffleRead, FlightShuffleWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan,
+    IntoBatches, IntoPartitions, Limit, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,
     MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Repartition, Sample,
     SamplingMethod, Sort, SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot,
     VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
