@@ -175,6 +175,7 @@
   max-width: 400px;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .result-preview-table tr:hover td {
   background: rgba(39, 39, 42, 0.5);
