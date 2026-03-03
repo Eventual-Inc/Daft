@@ -68,7 +68,8 @@ impl RuntimeNodeManager {
                 self.completed_tasks.add(1, self.node_kv.as_slice());
 
                 for (node_info, snapshot) in &stats.nodes {
-                    if node_info.id == self.node_info.id {
+                    // Local nodes are associated to this node through the node_plan_id
+                    if self.node_info.node_plan_id == node_info.node_plan_id {
                         self.runtime_stats
                             .handle_worker_node_stats(node_info, snapshot);
                     }
@@ -87,27 +88,53 @@ impl RuntimeNodeManager {
     }
 }
 
-pub struct DefaultRuntimeStats {
+pub struct BaseCounters {
+    duration_us: Counter,
+    rows_in: Counter,
+    rows_out: Counter,
     node_kv: Vec<KeyValue>,
-    completed_rows_in: Counter,
-    completed_rows_out: Counter,
-    completed_cpu_us: Counter,
+}
+
+impl BaseCounters {
+    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        let node_kv = key_values_from_context(context);
+        Self {
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
+            node_kv,
+        }
+    }
+
+    pub fn add_duration_us(&self, v: u64) {
+        self.duration_us.add(v, self.node_kv.as_slice());
+    }
+
+    pub fn add_rows_in(&self, v: u64) {
+        self.rows_in.add(v, self.node_kv.as_slice());
+    }
+
+    pub fn add_rows_out(&self, v: u64) {
+        self.rows_out.add(v, self.node_kv.as_slice());
+    }
+
+    pub fn export_default_snapshot(&self) -> StatSnapshot {
+        StatSnapshot::Default(DefaultSnapshot {
+            cpu_us: self.duration_us.load(Ordering::Relaxed),
+            rows_in: self.rows_in.load(Ordering::Relaxed),
+            rows_out: self.rows_out.load(Ordering::Relaxed),
+        })
+    }
+}
+
+pub struct DefaultRuntimeStats {
+    base: BaseCounters,
 }
 
 impl DefaultRuntimeStats {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
-        let node_kv = key_values_from_context(context);
-
         Self {
-            node_kv,
-            completed_rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
-            completed_rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
-            completed_cpu_us: Counter::new(
-                meter,
-                DURATION_KEY,
-                None,
-                Some(UNIT_MICROSECONDS.into()),
-            ),
+            base: BaseCounters::new(meter, context),
         }
     }
 }
@@ -119,19 +146,12 @@ impl RuntimeStats for DefaultRuntimeStats {
             return;
         };
 
-        self.completed_cpu_us
-            .add(snapshot.cpu_us, self.node_kv.as_slice());
-        self.completed_rows_in
-            .add(snapshot.rows_in, self.node_kv.as_slice());
-        self.completed_rows_out
-            .add(snapshot.rows_out, self.node_kv.as_slice());
+        self.base.add_duration_us(snapshot.cpu_us);
+        self.base.add_rows_in(snapshot.rows_in);
+        self.base.add_rows_out(snapshot.rows_out);
     }
 
     fn export_snapshot(&self) -> StatSnapshot {
-        StatSnapshot::Default(DefaultSnapshot {
-            cpu_us: self.completed_cpu_us.load(Ordering::Relaxed),
-            rows_in: self.completed_rows_in.load(Ordering::Relaxed),
-            rows_out: self.completed_rows_out.load(Ordering::Relaxed),
-        })
+        self.base.export_default_snapshot()
     }
 }

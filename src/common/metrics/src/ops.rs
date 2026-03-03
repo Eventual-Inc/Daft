@@ -4,7 +4,7 @@ use bincode::{Decode, Encode};
 use opentelemetry::KeyValue;
 use serde::{Deserialize, Serialize};
 
-use crate::{ATTR_NODE_ID, ATTR_NODE_PHASE, ATTR_NODE_TYPE, NodeID};
+use crate::{ATTR_NODE_ID, ATTR_NODE_PHASE, ATTR_NODE_PLAN_ID, ATTR_NODE_TYPE, NodeID};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Encode, Decode)]
 pub enum NodeType {
@@ -90,6 +90,7 @@ pub struct NodeInfo {
     pub name: Arc<str>,
     pub id: NodeID,
     #[allow(dead_code)]
+    pub node_plan_id: NodeID,
     pub node_type: NodeType,
     pub node_category: NodeCategory,
     pub node_phase: Option<String>,
@@ -99,6 +100,7 @@ pub struct NodeInfo {
 impl NodeInfo {
     pub fn to_key_values(&self) -> Vec<KeyValue> {
         let mut kvs = vec![
+            KeyValue::new(ATTR_NODE_PLAN_ID, self.node_plan_id.to_string()),
             KeyValue::new(ATTR_NODE_ID, self.id.to_string()),
             KeyValue::new(ATTR_NODE_TYPE, self.node_type.to_string()),
         ];
