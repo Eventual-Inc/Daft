@@ -12,7 +12,7 @@ const resultsFetcher = (url: string): Promise<ResultPreviewType> =>
   });
 
 export default function ResultPreview({ queryId }: { queryId: string }) {
-  const { data, isLoading } = useSWR<ResultPreviewType>(
+  const { data, isLoading, error } = useSWR<ResultPreviewType>(
     genApiUrl(`/client/query/${queryId}/results`),
     resultsFetcher,
     { revalidateOnFocus: false, revalidateOnReconnect: false }
@@ -22,6 +22,16 @@ export default function ResultPreview({ queryId }: { queryId: string }) {
     return (
       <div className="p-8 text-center">
         <p className={`${main.className} text-zinc-400`}>Loading results...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-8 text-center">
+        <p className={`${main.className} text-red-400`}>
+          Failed to load results
+        </p>
       </div>
     );
   }
