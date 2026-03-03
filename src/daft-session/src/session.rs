@@ -1,12 +1,18 @@
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::{
+    ffi::{CStr, c_int, c_void},
+    path::Path,
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
+};
 
+use common_error::{DaftError, DaftResult};
 use daft_ai::provider::ProviderRef;
-use daft_catalog::{Bindings, CatalogRef, Identifier, TableRef, TableSource, View};
-use daft_dsl::functions::python::WrappedUDFClass;
+use daft_catalog::{Bindings, CatalogRef, Identifier, LookupMode, TableRef, TableSource, View};
+use daft_ext_abi::{FFI_ScalarFunction, FFI_SessionContext};
+use daft_ext_internal::module::ModuleHandle;
 use uuid::Uuid;
 
 use crate::{
-    ambiguous_identifier_err,
+    ScalarFunction, ambiguous_identifier_err,
     error::CatalogResult,
     obj_already_exists_err, obj_not_found_err,
     options::{IdentifierMode, Options},
@@ -34,8 +40,8 @@ struct SessionState {
     providers: Bindings<ProviderRef>,
     /// Bindings for the attached tables.
     tables: Bindings<TableRef>,
-    /// User defined functions
-    functions: Bindings<WrappedUDFClass>,
+    /// Session-scoped functions (Python UDFs and native extension functions).
+    functions: Bindings<ScalarFunction>,
 }
 
 // TODO: Session should just use a Result not CatalogResult.
@@ -102,28 +108,14 @@ impl Session {
         Ok(())
     }
 
-    /// Attaches a function to this session, this does NOT err if it already exists.
-    pub fn attach_function(
-        &self,
-        function: WrappedUDFClass,
-        alias: Option<String>,
-    ) -> CatalogResult<()> {
-        #[cfg(feature = "python")]
-        {
-            let name = match alias {
-                Some(name) => name,
-                None => function.name()?,
-            };
-
-            self.state_mut().functions.bind(name, function);
-            Ok(())
-        }
-        #[cfg(not(feature = "python"))]
-        {
-            Err(daft_catalog::error::CatalogError::unsupported(
-                "attach_function without python",
-            ))
-        }
+    /// Attaches a function to this session. Does NOT err if it already exists.
+    ///
+    /// Accepts any type convertible to [`Function`], including
+    /// `WrappedUDFClass` (Python UDFs) and `Arc<dyn ScalarFunctionFactory>` (native).
+    pub fn attach_function(&self, name: impl Into<String>, function: impl Into<ScalarFunction>) {
+        self.state_mut()
+            .functions
+            .bind(name.into(), function.into());
     }
 
     /// Attaches a provider to this session, err if already exists.
@@ -254,8 +246,7 @@ impl Session {
     }
 
     /// Returns the function or none if it does not exist.
-    pub fn get_function(&self, name: &str) -> CatalogResult<Option<WrappedUDFClass>> {
-        // TODO update missing semantics to match other session objects.
+    pub fn get_function(&self, name: &str) -> CatalogResult<Option<ScalarFunction>> {
         self.state().get_function(name)
     }
 
@@ -381,6 +372,58 @@ impl Session {
         Ok(())
     }
 
+    /// Load an extension module from a shared library and initialize it.
+    ///
+    /// This validates the ABI version, calls the module's `init` function
+    /// with a session context, and registers any functions the module defines.
+    pub fn load_and_init_extension(&self, path: &Path) -> DaftResult<()> {
+        let module = daft_ext_internal::module::load_module(path)?;
+
+        // Context passed through the FFI callback's opaque pointer.
+        struct InitCtx {
+            session: *const Session,
+            module: Arc<ModuleHandle>,
+        }
+
+        unsafe extern "C" fn define_function_cb(
+            ctx: *mut c_void,
+            ffi: FFI_ScalarFunction,
+        ) -> c_int {
+            let init_ctx = unsafe { &*(ctx as *const InitCtx) };
+            let name_ptr = unsafe { (ffi.name)(ffi.ctx) };
+            let name = unsafe { CStr::from_ptr(name_ptr) }
+                .to_str()
+                .unwrap_or("unknown")
+                .to_string();
+            let factory = daft_ext_internal::function::into_scalar_function_factory(
+                ffi,
+                init_ctx.module.clone(),
+            );
+            let session = unsafe { &*init_ctx.session };
+            session.attach_function(name, factory);
+            0
+        }
+
+        let init_ctx = InitCtx {
+            session: std::ptr::from_ref::<Self>(self),
+            module: module.clone(),
+        };
+
+        let mut ffi_ctx = FFI_SessionContext {
+            ctx: (&raw const init_ctx) as *mut c_void,
+            define_function: define_function_cb,
+        };
+
+        let rc = unsafe { (module.ffi_module().init)(&raw mut ffi_ctx) };
+        if rc != 0 {
+            return Err(DaftError::InternalError(format!(
+                "extension init failed with code {rc}"
+            )));
+        }
+
+        Ok(())
+    }
+
     /// Returns an identifier normalization function based upon the session options.
     pub fn normalizer(&self) -> impl Fn(&str) -> String {
         match self.state().options.identifier_mode {
@@ -419,26 +462,16 @@ impl SessionState {
         }
     }
 
-    #[cfg(feature = "python")]
-    pub fn get_function(&self, name: &str) -> CatalogResult<Option<WrappedUDFClass>> {
-        let mut items = self
-            .functions
-            .lookup(name, daft_catalog::LookupMode::Insensitive)
-            .into_iter();
-
-        if items.len() > 1 {
-            let names = items
-                .map(|i| i.name())
-                .collect::<pyo3::PyResult<Vec<_>>>()?;
-
-            crate::ambiguous_identifier_err!("Function", names);
+    pub fn get_function(&self, name: &str) -> CatalogResult<Option<ScalarFunction>> {
+        // Functions always use case-insensitive lookup (SQL convention).
+        match self.functions.lookup(name, LookupMode::Insensitive) {
+            fns if fns.is_empty() => Ok(None),
+            fns if fns.len() == 1 => Ok(Some(fns[0].clone())),
+            fns => {
+                let names = fns.iter().filter_map(|f| f.name().ok());
+                ambiguous_identifier_err!("Function", names)
+            }
         }
-        Ok(items.next().cloned())
-    }
-
-    #[cfg(not(feature = "python"))]
-    pub fn get_function(&self, name: &str) -> CatalogResult<Option<WrappedUDFClass>> {
-        Ok(None)
     }
 }
 
@@ -501,5 +534,53 @@ mod tests {
             sess.get_table(&Identifier::simple("non_existent_table"))
                 .is_err()
         );
+    }
+
+    /// A minimal ScalarFunctionFactory for testing.
+    struct MockFunctionFactory(&'static str);
+
+    impl daft_dsl::functions::ScalarFunctionFactory for MockFunctionFactory {
+        fn name(&self) -> &'static str {
+            self.0
+        }
+
+        fn get_function(
+            &self,
+            _args: daft_dsl::functions::FunctionArgs<daft_dsl::ExprRef>,
+            _schema: &Schema,
+        ) -> common_error::DaftResult<daft_dsl::functions::BuiltinScalarFnVariant> {
+            Err(common_error::DaftError::ValueError(
+                "mock: not callable".into(),
+            ))
+        }
+    }
+
+    fn mock_factory(name: &'static str) -> Arc<dyn daft_dsl::functions::ScalarFunctionFactory> {
+        Arc::new(MockFunctionFactory(name))
+    }
+
+    #[test]
+    fn test_session_function_isolation() {
+        let session_a = Session::empty();
+        let session_b = Session::empty();
+
+        session_a.attach_function("my_ext_fn", mock_factory("my_ext_fn"));
+
+        // Session A can see it; session B cannot.
+        assert!(matches!(
+            session_a.get_function("my_ext_fn").unwrap(),
+            Some(ScalarFunction::Native(_))
+        ));
+        assert!(session_b.get_function("my_ext_fn").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_detach_function() {
+        let sess = Session::empty();
+        sess.attach_function("temp_fn", mock_factory("temp_fn"));
+
+        assert!(sess.get_function("temp_fn").unwrap().is_some());
+        sess.detach_function("temp_fn").unwrap();
+        assert!(sess.get_function("temp_fn").unwrap().is_none());
     }
 }

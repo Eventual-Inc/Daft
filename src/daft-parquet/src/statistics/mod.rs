@@ -6,7 +6,9 @@ use snafu::Snafu;
 mod column_range;
 mod table_stats;
 mod utils;
-pub use table_stats::row_group_metadata_to_table_stats;
+pub use table_stats::{
+    arrowrs_row_group_metadata_to_table_stats, row_group_metadata_to_table_stats,
+};
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub(crate)))]

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import ctypes
+import platform
+import types
+import warnings
 from contextvars import ContextVar, Token
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from daft.ai.provider import PROVIDERS, Provider, load_provider
@@ -9,6 +14,7 @@ from daft.context import get_context
 from daft.daft import LogicalPlanBuilder as PyBuilder
 from daft.daft import PySession, PyTableSource, sql_exec
 from daft.dataframe import DataFrame
+from daft.expressions import Expression
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
 from daft.udf import UDF
@@ -40,6 +46,7 @@ __all__ = [
     "drop_namespace",
     "drop_table",
     "get_catalog",
+    "get_function",
     "get_provider",
     "get_table",
     "has_catalog",
@@ -244,6 +251,34 @@ class Session:
     def detach_function(self, alias: str) -> None:
         """Detaches a Python function as a UDF in the current session."""
         self._session.detach_function(alias)
+
+    def load_extension(self, extension: str | types.ModuleType | Path) -> None:
+        """Load a native extension by module symbol or an explicit file path.
+
+        .. warning::
+            This API is experimental and may change in future releases.
+
+        Args:
+            extension: A module with a native library or a direct file path to the shared library.
+        """
+        warnings.warn(
+            "Native extensions are experimental and may change in future releases.",
+            stacklevel=2,
+        )
+        if isinstance(extension, str):
+            path = extension
+        elif isinstance(extension, Path):
+            path = str(extension)
+        elif isinstance(extension, types.ModuleType):
+            path = _get_shared_lib(extension)
+        else:
+            raise TypeError(f"Expected string, Path, or module, got {type(extension)}")
+
+        # Load the shared library globally so that symbols are visible to other libraries.
+        ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)
+
+        # Load the extension into the session on the Rust side.
+        self._session.load_extension(path)
 
     def detach_provider(self, alias: str) -> None:
         """Detaches the provider from this session or raises if the provider does not exist.
@@ -483,6 +518,18 @@ class Session:
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
         return self._session.get_table(identifier._ident)
+
+    def get_function(self, name: str, *args: Expression) -> Expression:
+        """Returns the function from the current session or raises an exception if it does not exist.
+
+        Args:
+            name (str): function name as registered by an extension
+            *args: Expression arguments to pass to the function
+
+        Returns:
+            Expression: result expression
+        """
+        return Expression._from_pyexpr(self._session.get_function(name, *[a._expr for a in args]))
 
     ###
     # has_*
@@ -810,6 +857,11 @@ def get_table(identifier: Identifier | str) -> Table:
     return _session().get_table(identifier)
 
 
+def get_function(name: str, *args: Expression) -> Expression:
+    """Returns the function from the current session or raises an exception if it does not exist."""
+    return _session().get_function(name, *args)
+
+
 ###
 # has_*
 ###
@@ -853,6 +905,16 @@ def list_namespaces(pattern: str | None = None) -> list[Identifier]:
 def list_tables(pattern: str | None = None) -> list[Identifier]:
     """Returns a list of available tables in the current session."""
     return _session().list_tables(pattern)
+
+
+###
+# load_*
+###
+
+
+def load_extension(extension: str | types.ModuleType | Path) -> None:
+    """Load a native extension by module symbol or an explicit file path."""
+    _session().load_extension(extension)
 
 
 ###
@@ -915,3 +977,42 @@ def set_session(session: Session) -> None:
     # ```
     global _SESSION
     _SESSION = session
+
+
+def _get_shared_lib_extension() -> str:
+    """Determine the platform-specific shared library extension."""
+    return ".dll" if platform.system() == "Windows" else ".so"
+
+
+def _get_shared_lib(mod: types.ModuleType) -> str:
+    """Locate the native library for the current platform in the module's directory.
+
+    Args:
+        mod (types.ModuleType): The imported Python module.
+
+    Returns:
+        str: File path to the discovered native library.
+
+    Raises:
+        ValueError: If the module has no __file__ attribute, no native library is found, or multiple are found.
+    """
+    # Find the package file for the given module.
+    pkg_file = getattr(mod, "__file__", None)
+    if pkg_file is None:
+        raise ValueError(f"Module '{mod.__name__}' has no __file__ attribute")
+
+    # Find the package directory for the given module.
+    pkg_dir = Path(pkg_file).parent
+
+    # Determine the platform-specific shared library extension.
+    extension = _get_shared_lib_extension()
+
+    # Find all candidate native libraries in the package directory (recursively).
+    pkg_libs = list(pkg_dir.rglob(f"*{extension}"))
+    if not pkg_libs:
+        raise ValueError(f"No native library (*{extension}) found in '{pkg_dir}'")
+    if len(pkg_libs) > 1:
+        raise ValueError(f"Multiple native libraries found in '{pkg_dir}': {[str(lib) for lib in pkg_libs]}")
+
+    # Return the one and only candidate as a string.
+    return str(pkg_libs[0])
