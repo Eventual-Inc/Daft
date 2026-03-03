@@ -21,19 +21,19 @@ pub enum TableSource {
 
 impl From<SchemaRef> for TableSource {
     fn from(schema: SchemaRef) -> Self {
-        TableSource::Schema(schema)
+        Self::Schema(schema)
     }
 }
 
 impl From<LogicalPlanRef> for TableSource {
     fn from(view: LogicalPlanRef) -> Self {
-        TableSource::View(view)
+        Self::View(view)
     }
 }
 
 impl From<LogicalPlanBuilder> for TableSource {
     fn from(view: LogicalPlanBuilder) -> Self {
-        TableSource::View(view.build())
+        Self::View(view.build())
     }
 }
 
