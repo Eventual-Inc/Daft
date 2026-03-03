@@ -562,9 +562,10 @@ async fn stream_parquet_single(
         let mut remaining_rows = num_rows_to_return.map(|limit| limit as i64);
         let stream = table_stream.try_take_while(move |table| {
             let should_continue = match remaining_rows {
-                Some(ref mut remaining) => {
-                    *remaining -= table.len() as i64;
-                    *remaining > 0
+                Some(rows_left) if rows_left <= 0 => false,
+                Some(rows_left) => {
+                    remaining_rows = Some(rows_left - table.len() as i64);
+                    true
                 }
                 None => true,
             };
@@ -1469,5 +1470,76 @@ mod tests {
             [field] => assert_eq!(field.data_type, DataType::LargeBinary),
             _ => panic!("There should only be one field in the schema"),
         };
+    }
+
+    /// Regression test: streaming with a limit equal to the batch size should
+    /// return all requested rows, not an empty stream.
+    #[test]
+    fn test_stream_limit_exact_batch_size() {
+        use arrow::{
+            array::Int32Array,
+            datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema},
+        };
+        use parquet::arrow::ArrowWriter;
+
+        let dir = std::env::temp_dir().join("daft_test_stream_limit_exact");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file_path = dir.join("test.parquet");
+
+        // Write a parquet file with exactly 5 rows.
+        let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
+            "id",
+            ArrowDataType::Int32,
+            false,
+        )]));
+        let file = std::fs::File::create(&file_path).unwrap();
+        let mut writer = ArrowWriter::try_new(file, schema.clone(), None).unwrap();
+        let batch = arrow::array::RecordBatch::try_new(
+            schema,
+            vec![Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5]))],
+        )
+        .unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let uri = file_path.to_str().unwrap().to_string();
+        let io_client = Arc::new(IOClient::new(IOConfig::default().into()).unwrap());
+        let runtime = get_io_runtime(true);
+
+        // Stream with num_rows=5 (exactly the file size).
+        let total_rows: usize = runtime
+            .block_within_async_context(async move {
+                let mut stream = stream_parquet_single(
+                    uri,
+                    None,
+                    Some(5),
+                    None,
+                    None,
+                    io_client,
+                    None,
+                    ParquetSchemaInferenceOptions::default(),
+                    None,
+                    None,
+                    None,
+                    true,
+                    None,
+                )
+                .await
+                .unwrap();
+
+                let mut count = 0;
+                while let Some(batch) = stream.next().await {
+                    count += batch.unwrap().len();
+                }
+                count
+            })
+            .unwrap();
+
+        assert_eq!(
+            total_rows, 5,
+            "stream with limit=5 on 5-row file should return 5 rows"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
