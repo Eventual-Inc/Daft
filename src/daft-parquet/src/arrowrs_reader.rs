@@ -252,6 +252,45 @@ fn build_single_rg_delete_selection(
     deletes_to_row_selection(&local_deletes, rg_rows)
 }
 
+/// Combine two optional `RowSelection`s via intersection.
+fn combine_selections(a: Option<RowSelection>, b: Option<RowSelection>) -> Option<RowSelection> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.intersection(&b)),
+        (a @ Some(_), None) | (None, a @ Some(_)) => a,
+        (None, None) => None,
+    }
+}
+
+/// Apply post-read predicate fallback and strip predicate-only columns.
+///
+/// When the predicate couldn't be pushed into the reader as a RowFilter, apply it
+/// now. Then remove any columns that were only needed for the predicate.
+fn finalize_batch(
+    mut table: RecordBatch,
+    predicate: Option<&ExprRef>,
+    predicate_pushed: bool,
+    read_schema: &Schema,
+    return_schema: &Schema,
+) -> DaftResult<RecordBatch> {
+    if let Some(pred) = predicate
+        && !predicate_pushed
+    {
+        let bound = BoundExpr::try_new(pred.clone(), &table.schema)?;
+        table = table.filter(&[bound])?;
+    }
+
+    if read_schema.len() != return_schema.len() {
+        let return_indices: Vec<usize> = return_schema
+            .names()
+            .iter()
+            .map(|name| table.schema.get_index(name))
+            .collect::<DaftResult<Vec<_>>>()?;
+        table = table.get_columns(&return_indices);
+    }
+
+    Ok(table)
+}
+
 /// Convert sorted local delete indices to alternating select/skip RowSelectors.
 fn deletes_to_row_selection(local_deletes: &[usize], total_rows: usize) -> RowSelection {
     if local_deletes.is_empty() {
@@ -430,13 +469,7 @@ pub async fn read_parquet_single_arrowrs(
             None
         };
 
-        let combined = match (offset_selection, delete_selection) {
-            (Some(a), Some(b)) => Some(a.intersection(&b)),
-            (Some(a), None) => Some(a),
-            (None, Some(b)) => Some(b),
-            (None, None) => None,
-        };
-        if let Some(selection) = combined {
+        if let Some(selection) = combine_selections(offset_selection, delete_selection) {
             builder = builder.with_row_selection(selection);
         }
     }
@@ -467,30 +500,25 @@ pub async fn read_parquet_single_arrowrs(
         .iter()
         .map(RecordBatch::try_from)
         .collect::<DaftResult<Vec<_>>>()?;
-    let mut table = RecordBatch::concat_or_empty(
-        daft_batches.iter().collect::<Vec<_>>().as_slice(),
-        Some(Arc::new(read_daft_schema.clone())),
+    let daft_refs: Vec<&RecordBatch> = daft_batches.iter().collect();
+    let mut table =
+        RecordBatch::concat_or_empty(&daft_refs, Some(Arc::new(read_daft_schema.clone())))?;
+
+    // 10. Post-read finalize: predicate fallback + column strip.
+    table = finalize_batch(
+        table,
+        predicate.as_ref(),
+        predicate_pushed,
+        &read_daft_schema,
+        &return_daft_schema,
     )?;
 
-    // 10. Post-read predicate fallback (if RowFilter couldn't be built).
-    if let Some(predicate) = predicate
+    // 11. Limit after non-pushed predicate.
+    if predicate.is_some()
         && !predicate_pushed
+        && let Some(limit) = num_rows
     {
-        let bound = BoundExpr::try_new(predicate, &table.schema)?;
-        table = table.filter(&[bound])?;
-        if let Some(limit) = num_rows {
-            table = table.head(limit)?;
-        }
-    }
-
-    // 11. Strip predicate-only columns from output.
-    if user_col_set.is_some() && read_daft_schema.len() != return_daft_schema.len() {
-        let return_indices: Vec<usize> = return_daft_schema
-            .names()
-            .iter()
-            .map(|name| table.schema.get_index(name))
-            .collect::<DaftResult<Vec<_>>>()?;
-        table = table.get_columns(&return_indices);
+        table = table.head(limit)?;
     }
 
     Ok(table)
@@ -517,7 +545,6 @@ pub(crate) struct LocalParquetSetup {
     pub read_daft_schema: Schema,
     pub return_daft_schema: Schema,
     pub read_col_set: Option<HashSet<String>>,
-    pub user_col_set: Option<HashSet<String>>,
     pub rg_tasks: Vec<RgTask>,
     pub rg_global_starts: Vec<usize>,
     pub batch_size: usize,
@@ -525,64 +552,58 @@ pub(crate) struct LocalParquetSetup {
     pub delete_rows: Option<Arc<[i64]>>,
 }
 
-/// Build a RowFilter + RowSelection for a single RG builder.
+/// Apply RowFilter, RowSelection (offset + deletes), and limit to a single-RG builder.
 ///
 /// When `predicate_pushed` and `offset > 0`, the offset is converted to a
 /// RowSelection (pre-filter) rather than using `with_offset` (post-filter).
-#[allow(clippy::too_many_arguments)]
 fn apply_rg_filter_and_deletes(
     builder: ParquetRecordBatchReaderBuilder<std::fs::File>,
+    setup: &LocalParquetSetup,
+    task: &RgTask,
     predicate: Option<&ExprRef>,
-    predicate_pushed: bool,
-    daft_schema: &Schema,
-    arrow_schema: &arrow::datatypes::Schema,
-    parquet_schema: &SchemaDescriptor,
-    delete_rows: Option<&[i64]>,
-    rg_global_start: usize,
     rg_rows: usize,
-    offset: usize,
-    limit: Option<usize>,
+    decoder_limit: Option<usize>,
 ) -> DaftResult<ParquetRecordBatchReaderBuilder<std::fs::File>> {
     let mut builder = builder;
 
     // Build RowSelections: offset (when predicate pushed) and delete_rows.
-    let offset_selection = if predicate_pushed && offset > 0 {
-        Some(build_offset_row_selection(offset, rg_rows))
+    let offset_selection = if setup.predicate_pushed && task.local_offset > 0 {
+        Some(build_offset_row_selection(task.local_offset, rg_rows))
     } else {
         None
     };
 
-    let delete_selection = if let Some(deletes) = delete_rows
+    let delete_selection = if let Some(ref deletes) = setup.delete_rows
         && !deletes.is_empty()
     {
         Some(build_single_rg_delete_selection(
             deletes,
-            rg_global_start,
+            setup.rg_global_starts[task.rg_idx],
             rg_rows,
         ))
     } else {
         None
     };
 
-    let combined = match (offset_selection, delete_selection) {
-        (Some(a), Some(b)) => Some(a.intersection(&b)),
-        (Some(a), None) => Some(a),
-        (None, Some(b)) => Some(b),
-        (None, None) => None,
-    };
-    if let Some(selection) = combined {
+    if let Some(selection) = combine_selections(offset_selection, delete_selection) {
         builder = builder.with_row_selection(selection);
     }
 
     // Wire RowFilter for predicate pushdown.
-    if predicate_pushed
+    if setup.predicate_pushed
         && let Some(pred) = predicate
-        && let Some((row_filter, _)) =
-            build_row_filter(pred, daft_schema, arrow_schema, parquet_schema)
+        && let Some((row_filter, _)) = build_row_filter(
+            pred,
+            &setup.daft_schema_for_filter,
+            &setup.arrow_schema,
+            &setup.parquet_schema,
+        )
     {
         builder = builder.with_row_filter(row_filter);
     }
-    if predicate_pushed && let Some(lim) = limit {
+    if setup.predicate_pushed
+        && let Some(lim) = decoder_limit
+    {
         builder = builder.with_limit(lim);
     }
 
@@ -684,7 +705,6 @@ pub(crate) fn local_parquet_setup(
             read_daft_schema,
             return_daft_schema,
             read_col_set,
-            user_col_set,
             rg_tasks: Vec::new(),
             rg_global_starts: Vec::new(),
             batch_size: batch_size.unwrap_or(256 * 1024),
@@ -756,7 +776,6 @@ pub(crate) fn local_parquet_setup(
         read_daft_schema,
         return_daft_schema,
         read_col_set,
-        user_col_set,
         rg_tasks,
         rg_global_starts,
         batch_size,
@@ -801,19 +820,7 @@ pub(crate) fn decode_single_rg(
             builder = builder.with_limit(lim);
         }
     }
-    builder = apply_rg_filter_and_deletes(
-        builder,
-        predicate,
-        setup.predicate_pushed,
-        &setup.daft_schema_for_filter,
-        &setup.arrow_schema,
-        &setup.parquet_schema,
-        setup.delete_rows.as_deref(),
-        setup.rg_global_starts[task.rg_idx],
-        rg_rows,
-        task.local_offset,
-        decoder_limit,
-    )?;
+    builder = apply_rg_filter_and_deletes(builder, setup, task, predicate, rg_rows, decoder_limit)?;
     let reader = builder.build().map_err(parquet_err)?;
     let arrow_batches: Vec<arrow::array::RecordBatch> =
         reader.collect::<Result<Vec<_>, _>>().map_err(parquet_err)?;
@@ -821,33 +828,19 @@ pub(crate) fn decode_single_rg(
         .iter()
         .map(RecordBatch::try_from)
         .collect::<DaftResult<Vec<_>>>()?;
-    let mut table = RecordBatch::concat_or_empty(
-        daft_batches.iter().collect::<Vec<_>>().as_slice(),
-        Some(Arc::new(setup.read_daft_schema.clone())),
-    )?;
+    let daft_refs: Vec<&RecordBatch> = daft_batches.iter().collect();
+    let table =
+        RecordBatch::concat_or_empty(&daft_refs, Some(Arc::new(setup.read_daft_schema.clone())))?;
 
-    // Post-read predicate fallback (no limit — caller handles cross-RG limit).
-    if let Some(pred) = predicate
-        && !setup.predicate_pushed
-    {
-        let bound = BoundExpr::try_new(pred.clone(), &table.schema)?;
-        table = table.filter(&[bound])?;
-    }
-
-    // Strip predicate-only columns.
-    if setup.user_col_set.is_some()
-        && setup.read_daft_schema.len() != setup.return_daft_schema.len()
-    {
-        let return_indices: Vec<usize> = setup
-            .return_daft_schema
-            .names()
-            .iter()
-            .map(|name| table.schema.get_index(name))
-            .collect::<DaftResult<Vec<_>>>()?;
-        table = table.get_columns(&return_indices);
-    }
-
-    Ok(table)
+    // Post-read finalize: predicate fallback + column strip.
+    // No limit here — caller handles cross-RG limit.
+    finalize_batch(
+        table,
+        predicate,
+        setup.predicate_pushed,
+        &setup.read_daft_schema,
+        &setup.return_daft_schema,
+    )
 }
 
 /// Read a local parquet file using the sync arrow-rs reader with parallel row group decode.
@@ -1100,8 +1093,6 @@ pub async fn stream_parquet_single_arrowrs(
     } else {
         daft_schema
     };
-    let needs_column_strip =
-        user_col_set.is_some() && read_daft_schema.len() != return_daft_schema.len();
 
     // 6. Row group pruning.
     let rg_indices = prune_row_groups(
@@ -1153,13 +1144,7 @@ pub async fn stream_parquet_single_arrowrs(
             None
         };
 
-        let combined = match (offset_selection, delete_selection) {
-            (Some(a), Some(b)) => Some(a.intersection(&b)),
-            (Some(a), None) => Some(a),
-            (None, Some(b)) => Some(b),
-            (None, None) => None,
-        };
-        if let Some(selection) = combined {
+        if let Some(selection) = combine_selections(offset_selection, delete_selection) {
             builder = builder.with_row_selection(selection);
         }
     }
@@ -1180,31 +1165,17 @@ pub async fn stream_parquet_single_arrowrs(
 
     // 8. Build the stream.
     let stream = builder.build().map_err(parquet_err)?;
-    let return_schema = Arc::new(return_daft_schema);
 
     let mapped = stream.map(move |result| {
         let arrow_batch = result.map_err(parquet_err)?;
-        let mut table = RecordBatch::try_from(&arrow_batch)?;
-
-        // Post-read predicate fallback.
-        if let Some(ref pred) = predicate
-            && !predicate_pushed
-        {
-            let bound = BoundExpr::try_new(pred.clone(), &table.schema)?;
-            table = table.filter(&[bound])?;
-        }
-
-        // Strip predicate-only columns.
-        if needs_column_strip {
-            let return_indices: Vec<usize> = return_schema
-                .names()
-                .iter()
-                .map(|name| table.schema.get_index(name))
-                .collect::<DaftResult<Vec<_>>>()?;
-            table = table.get_columns(&return_indices);
-        }
-
-        Ok(table)
+        let table = RecordBatch::try_from(&arrow_batch)?;
+        finalize_batch(
+            table,
+            predicate.as_ref(),
+            predicate_pushed,
+            &read_daft_schema,
+            &return_daft_schema,
+        )
     });
 
     Ok(mapped.boxed())
