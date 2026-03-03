@@ -89,8 +89,8 @@ impl Display for NodeCategory {
 pub struct NodeInfo {
     pub name: Arc<str>,
     pub id: NodeID,
-    #[allow(dead_code)]
     pub node_plan_id: NodeID,
+    #[allow(dead_code)]
     pub node_type: NodeType,
     pub node_category: NodeCategory,
     pub node_phase: Option<String>,
