@@ -157,30 +157,56 @@ async fn subscribe_query_updates(
     ))
 }
 
+/// Response for the result preview endpoint.
+#[derive(serde::Serialize)]
+struct QueryResultsResponse {
+    html: Option<String>,
+    num_rows: usize,
+    total_rows: Option<u64>,
+}
+
 /// Get the result preview HTML for a finished query
 async fn get_query_results(
     State(state): State<Arc<DashboardState>>,
     Path(query_id): Path<QueryID>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<QueryResultsResponse>, StatusCode> {
     let Some(query) = state.queries.get(&query_id) else {
         return Err(StatusCode::NOT_FOUND);
     };
 
-    match &query.value().state {
+    // Clone the RecordBatch (cheap — columns are Arc-backed) and drop the
+    // DashMap guard before calling repr_html(), which can be expensive.
+    let (rb, total_rows) = match &query.value().state {
         QueryState::Finished {
-            results: Some(rb), ..
+            results, exec_info, ..
         } => {
-            let html = rb.repr_html();
-            let num_rows = rb.num_rows();
-            Ok(Json(serde_json::json!({
-                "html": html,
-                "num_rows": num_rows,
-            })))
+            // The output operator has the highest ID in the plan tree;
+            // its rows.out stat is the total number of rows the query produced.
+            let total = exec_info
+                .operators
+                .iter()
+                .max_by_key(|(id, _)| *id)
+                .and_then(|(_, op)| match op.stats.get(common_metrics::ROWS_OUT_KEY) {
+                    Some(common_metrics::Stat::Count(n)) => Some(*n),
+                    _ => None,
+                });
+            (results.clone(), total)
         }
-        _ => Ok(Json(serde_json::json!({
-            "html": null,
-            "num_rows": 0,
-        }))),
+        _ => (None, None),
+    };
+    drop(query);
+
+    match rb {
+        Some(rb) => Ok(Json(QueryResultsResponse {
+            num_rows: rb.num_rows(),
+            html: Some(rb.repr_html()),
+            total_rows,
+        })),
+        None => Ok(Json(QueryResultsResponse {
+            html: None,
+            num_rows: 0,
+            total_rows,
+        })),
     }
 }
 

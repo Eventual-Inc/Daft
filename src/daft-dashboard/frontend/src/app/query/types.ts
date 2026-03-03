@@ -122,4 +122,5 @@ export type QueryInfo = {
 export type ResultPreview = {
   html: string | null;
   num_rows: number;
+  total_rows: number | null;
 };
