@@ -339,7 +339,7 @@ impl Subscriber for DashboardSubscriber {
 
         self.enqueue_json(
             format!("engine/query/{}/plan_end", query_id),
-            "optimization end",
+            "optimization_end",
             &daft_dashboard::engine::PlanEndArgs {
                 plan_end_sec: secs_from_epoch(),
                 optimized_plan,
@@ -359,7 +359,7 @@ impl Subscriber for DashboardSubscriber {
 
         self.enqueue_json(
             format!("engine/query/{}/exec/start", query_id),
-            "exec start",
+            "exec_start",
             &daft_dashboard::engine::ExecStartArgs {
                 exec_start_sec: secs_from_epoch(),
                 physical_plan,
