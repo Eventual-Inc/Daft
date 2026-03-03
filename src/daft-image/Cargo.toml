@@ -17,7 +17,6 @@ rayon.workspace = true
 
 [dev-dependencies]
 criterion = {workspace = true}
-image = {workspace = true, features = ["jpeg", "png"]}
 
 [features]
 python = ["common-error/python", "common-image/python"]

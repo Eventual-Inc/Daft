@@ -3031,7 +3031,6 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-schema",
- "image",
  "log",
  "rayon",
  "serde",
