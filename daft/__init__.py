@@ -130,7 +130,6 @@ from daft.io import (
     IOConfig,
     from_glob_path,
     _range as range,
-    read_lance,
     read_csv,
     read_deltalake,
     read_hudi,
@@ -149,12 +148,20 @@ from daft.viz import register_viz_hook
 from daft.window import Window
 from daft.file import File, VideoFile, AudioFile
 
-import daft.context as context
-import daft.io as io
-import daft.runners as runners
-import daft.datasets as datasets
-import daft.functions as functions
-import daft.gravitino as gravitino
+from daft import context
+from daft import io
+from daft import runners
+from daft import datasets
+from daft import functions
+from daft import gravitino
+
+
+# Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.
+def __getattr__(name: str) -> object:
+    if name == "read_lance":
+        return getattr(io, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "AudioFile",
@@ -242,7 +249,7 @@ __all__ = [
     "read_huggingface",
     "read_iceberg",
     "read_json",
-    "read_lance",
+    "read_lance",  # noqa: F822
     "read_mcap",
     "read_parquet",
     "read_sql",
