@@ -11,7 +11,7 @@ use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
-use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
+use daft_core::prelude::{BinaryArray, Int64Array, IntoSeries, Schema, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
@@ -19,6 +19,7 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_local_plan::InputId;
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
+use daft_recordbatch::RecordBatch;
 use daft_scan::{ChunkSpec, ScanTask};
 use daft_warc::WarcConvertOptions;
 use futures::{FutureExt, Stream, StreamExt};
@@ -606,6 +607,33 @@ async fn stream_scan_task(
                 // maintain_order, TODO: Implement maintain_order for JSON
             )
             .await?
+        }
+        FileFormatConfig::Binary(_) => {
+            let should_read_bytes = match &file_column_names {
+                None => true,
+                Some(cols) => cols.iter().any(|col| col == "bytes"),
+            };
+            let schema = if should_read_bytes {
+                scan_task.schema.clone()
+            } else {
+                Arc::new(Schema::empty())
+            };
+            let url = url.to_string();
+            Box::pin(futures::stream::once(async move {
+                if should_read_bytes {
+                    let bytes = io_client
+                        .single_url_get(url, None, Some(io_stats))
+                        .await?
+                        .bytes()
+                        .await?;
+                    let bytes_series =
+                        BinaryArray::from_iter("bytes", std::iter::once(Some(bytes.as_ref())))
+                            .into_series();
+                    Ok(RecordBatch::new_with_size(schema, vec![bytes_series], 1)?)
+                } else {
+                    Ok(RecordBatch::new_with_size(schema, vec![], 1)?)
+                }
+            }))
         }
         FileFormatConfig::Warc(_) => {
             let convert_options = WarcConvertOptions {

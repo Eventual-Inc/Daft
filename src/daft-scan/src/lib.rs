@@ -748,6 +748,28 @@ impl ScanTask {
     /// Obtain an approximate num_rows from the ScanTask, or `None` if this is not possible
     #[must_use]
     pub fn approx_num_rows(&self, config: Option<&DaftExecutionConfig>) -> Option<f64> {
+        if matches!(
+            self.file_format_config.as_ref(),
+            FileFormatConfig::Binary(_)
+        ) {
+            let approx_total_num_rows_before_pushdowns = self.sources.len() as f64;
+            return Some(approx_total_num_rows_before_pushdowns).map(
+                |approx_total_num_rows_before_pushdowns| {
+                    if self.pushdowns.filters.is_some() {
+                        // HACK: This might not be a good idea? We could also just return None here
+                        // Assume that filters filter out about 80% of the data
+                        let estimated_selectivity =
+                            self.pushdowns.estimated_selectivity(self.schema.as_ref());
+                        // Set the lower bound approximated number of rows to 1 to avoid underestimation.
+                        (approx_total_num_rows_before_pushdowns * estimated_selectivity).max(1.0)
+                    } else if let Some(limit) = self.pushdowns.limit {
+                        (limit as f64).min(approx_total_num_rows_before_pushdowns)
+                    } else {
+                        approx_total_num_rows_before_pushdowns
+                    }
+                },
+            );
+        }
         let approx_total_num_rows_before_pushdowns = self
             .metadata
             .as_ref()
@@ -765,6 +787,7 @@ impl ScanTask {
                         FileFormatConfig::Parquet(_) => config.parquet_inflation_factor,
                         FileFormatConfig::Csv(_) => config.csv_inflation_factor,
                         FileFormatConfig::Json(_) => config.json_inflation_factor,
+                        FileFormatConfig::Binary(_) => 1.0,
                         FileFormatConfig::Warc(_) => {
                             if self.is_gzipped() {
                                 5.0

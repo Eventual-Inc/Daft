@@ -13,6 +13,7 @@ from daft.daft import (
     UnityConfig,
     HuggingFaceConfig,
 )
+from daft.io._binary import read_binary_files
 from daft.io._csv import read_csv
 from daft.io.delta_lake._deltalake import read_deltalake
 from daft.io.hudi._hudi import read_hudi
@@ -56,6 +57,7 @@ __all__ = [
     "from_glob_path",
     "merge_columns",
     "merge_columns_df",
+    "read_binary_files",
     "read_csv",
     "read_deltalake",
     "read_hudi",
