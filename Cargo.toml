@@ -109,10 +109,10 @@ crate-type = ["cdylib"]
 name = "daft"
 
 [package]
-edition = "2024"
+edition = {workspace = true}
 name = "daft"
 publish = false
-version = "0.3.0-dev0"
+version = {workspace = true}
 # Exclude unnecessary files from sdist
 exclude = [
   "examples/dvector",
