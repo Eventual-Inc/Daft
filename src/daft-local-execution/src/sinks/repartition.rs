@@ -61,6 +61,9 @@ impl BlockingSink for RepartitionSink {
         mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
+        println!("print received input of {} rows", input.len());
+        eprintln!("eprint received input of {} rows", input.len());
+
         let repartition_spec = self.repartition_spec.clone();
         let num_partitions = self.num_partitions;
         let schema = self.schema.clone();
