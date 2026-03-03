@@ -204,6 +204,15 @@ fn build_delete_row_selection(
     rg_indices: &[usize],
     parquet_metadata: &ParquetMetaData,
 ) -> RowSelection {
+    debug_assert!(
+        delete_rows.iter().all(|&r| r >= 0),
+        "delete_rows contains negative values"
+    );
+    debug_assert!(
+        delete_rows.windows(2).all(|w| w[0] <= w[1]),
+        "delete_rows must be sorted"
+    );
+
     // Compute the global row start for each row group in the file.
     let mut rg_global_starts = Vec::with_capacity(parquet_metadata.num_row_groups());
     let mut cumulative = 0usize;
@@ -243,6 +252,15 @@ fn build_single_rg_delete_selection(
     rg_global_start: usize,
     rg_rows: usize,
 ) -> RowSelection {
+    debug_assert!(
+        delete_rows.iter().all(|&r| r >= 0),
+        "delete_rows contains negative values"
+    );
+    debug_assert!(
+        delete_rows.windows(2).all(|w| w[0] <= w[1]),
+        "delete_rows must be sorted"
+    );
+
     let rg_end = rg_global_start + rg_rows;
     let lo = delete_rows.partition_point(|&r| (r as usize) < rg_global_start);
     let hi = delete_rows.partition_point(|&r| (r as usize) < rg_end);
