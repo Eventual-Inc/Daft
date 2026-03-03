@@ -6,6 +6,8 @@ use daft_arrow::io::parquet::read::schema::{SchemaInferenceOptions, infer_schema
 use daft_core::prelude::SchemaRef;
 use snafu::Snafu;
 
+mod arrowrs_reader;
+mod async_reader;
 mod file;
 pub mod metadata;
 mod metadata_adapter;
@@ -13,11 +15,14 @@ pub use metadata_adapter::{DaftParquetMetadata, DaftRowGroupMetaData};
 #[cfg(feature = "python")]
 pub mod python;
 pub mod read;
-mod statistics;
-mod utils;
-pub use statistics::row_group_metadata_to_table_stats;
 mod read_planner;
+mod schema_inference;
+mod statistics;
+pub use statistics::{
+    arrowrs_row_group_metadata_to_table_stats, row_group_metadata_to_table_stats,
+};
 mod stream_reader;
+mod utils;
 
 #[cfg(feature = "python")]
 pub use python::register_modules;
@@ -28,7 +33,7 @@ const PARQUET_MORSEL_SIZE: usize = 128 * 1024;
 // This function determines the number of parallel deserialize tasks to use when reading parquet files
 // It is calculated by taking 2x the number of cores available (to ensure pipelining), and dividing
 // by the number of columns in the schema.
-fn determine_parquet_parallelism(daft_schema: &SchemaRef) -> usize {
+pub(crate) fn determine_parquet_parallelism(daft_schema: &SchemaRef) -> usize {
     (std::thread::available_parallelism()
         .unwrap_or(NonZeroUsize::new(2).unwrap())
         .checked_mul(2.try_into().unwrap())
