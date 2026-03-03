@@ -938,6 +938,7 @@ pub async fn local_parquet_stream_arrowrs(
     batch_size: Option<usize>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     delete_rows: Option<&[i64]>,
+    maintain_order: bool,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     // 1. Sync setup: read metadata, infer schemas, prune RGs, compute tasks.
     let setup = Arc::new(local_parquet_setup(
@@ -1011,7 +1012,11 @@ pub async fn local_parquet_stream_arrowrs(
     let stream_of_streams =
         futures::stream::iter(output_receivers.into_iter().map(ReceiverStream::new));
     let driver = driver.map(|x| x?);
-    let combined = combine_stream(stream_of_streams.flatten(), driver).boxed();
+    let combined = if maintain_order {
+        combine_stream(stream_of_streams.flatten(), driver).boxed()
+    } else {
+        combine_stream(stream_of_streams.flatten_unordered(None), driver).boxed()
+    };
 
     Ok(combined)
 }

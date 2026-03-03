@@ -191,7 +191,7 @@ async fn stream_parquet_single(
     // TODO(arrow-rs): wire metadata through to the arrowrs reader to skip redundant footer reads.
     _metadata: Option<Arc<DaftParquetMetadata>>,
     delete_rows: Option<Vec<i64>>,
-    _maintain_order: bool,
+    maintain_order: bool,
     chunk_size: Option<usize>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let columns_ref: Option<Vec<&str>> = columns
@@ -215,6 +215,7 @@ async fn stream_parquet_single(
                 chunk_size,
                 field_id_mapping.clone(),
                 delete_rows.as_deref(),
+                maintain_order,
             )
             .await?
         } else {
