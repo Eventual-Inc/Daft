@@ -1624,36 +1624,11 @@ mod tests {
         file_path.to_str().unwrap().to_string()
     }
 
-    /// Helper: read via arrowrs local path directly.
-    fn read_via_arrowrs_local(
-        uri: &str,
-        columns: Option<&[&str]>,
-        start_offset: Option<usize>,
-        num_rows: Option<usize>,
-        predicate: Option<ExprRef>,
-    ) -> RecordBatch {
-        local_parquet_read_arrowrs(
-            uri,
-            columns,
-            start_offset,
-            num_rows,
-            None,
-            predicate,
-            ParquetSchemaInferenceOptions::default(),
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-    }
-
-    /// Build a predicate: val > 3 (keep rows with val 4,5,6,7,8,9).
     fn val_gt_3_predicate() -> ExprRef {
         use daft_dsl::{lit, resolved_col};
         resolved_col("val").gt(lit(3i32))
     }
 
-    /// Extract the "val" column as a Vec<i32> for easy comparison.
     fn extract_val_column(batch: &RecordBatch) -> Vec<i32> {
         let idx = batch.schema.get_index("val").unwrap();
         let series = &batch.columns()[idx];
@@ -1661,24 +1636,25 @@ mod tests {
         (0..arr.len()).map(|i| arr.get(i).unwrap()).collect()
     }
 
-    // ---- Scenario 1: offset + predicate (no limit) ----
-    // File has val=0..10. Predicate: val > 3. Offset=3.
-    // Offset skips first 3 file rows → decode [3,4,5,6,7,8,9]
-    // → filter val>3 → [4,5,6,7,8,9]
-
     #[test]
     fn test_offset_with_predicate() {
         let dir = std::env::temp_dir().join("daft_test_offset_pred");
         std::fs::create_dir_all(&dir).unwrap();
         let uri = write_test_parquet(&dir, 10);
 
-        let result = read_via_arrowrs_local(
+        let result = local_parquet_read_arrowrs(
             &uri,
             Some(&["val"]),
             Some(3),
             None,
+            None,
             Some(val_gt_3_predicate()),
-        );
+            ParquetSchemaInferenceOptions::default(),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         let vals = extract_val_column(&result);
         assert_eq!(vals, vec![4, 5, 6, 7, 8, 9]);
@@ -1686,24 +1662,25 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ---- Scenario 2: offset + limit + predicate ----
-    // File has val=0..10. Predicate: val > 3. Offset=3, limit=2.
-    // Offset skips first 3 file rows → decode [3,4,5,6,7,8,9]
-    // → filter val>3 → [4,5,6,7,8,9] → limit 2 → [4,5]
-
     #[test]
     fn test_offset_limit_predicate() {
         let dir = std::env::temp_dir().join("daft_test_offset_limit_pred");
         std::fs::create_dir_all(&dir).unwrap();
         let uri = write_test_parquet(&dir, 10);
 
-        let result = read_via_arrowrs_local(
+        let result = local_parquet_read_arrowrs(
             &uri,
             Some(&["val"]),
             Some(3),
             Some(2),
+            None,
             Some(val_gt_3_predicate()),
-        );
+            ParquetSchemaInferenceOptions::default(),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         let vals = extract_val_column(&result);
         assert_eq!(vals, vec![4, 5]);
