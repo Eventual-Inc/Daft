@@ -6,7 +6,9 @@
 //! with `std::fs::File` for local reads (avoiding IOClient overhead).
 
 use std::{
+    borrow::Borrow,
     collections::{BTreeMap, HashSet},
+    hash::Hash,
     sync::Arc,
 };
 
@@ -50,35 +52,8 @@ fn parquet_err(e: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> common
 }
 
 /// Build a `ProjectionMask` from the given column names and arrow schema.
-fn build_projection_mask(
-    col_set: &std::collections::HashSet<&str>,
-    arrow_schema: &arrow::datatypes::Schema,
-    parquet_schema: &parquet::schema::types::SchemaDescriptor,
-) -> ProjectionMask {
-    ProjectionMask::roots(
-        parquet_schema,
-        arrow_schema
-            .fields()
-            .iter()
-            .enumerate()
-            .filter(|(_, f)| col_set.contains(f.name().as_str()))
-            .map(|(i, _)| i),
-    )
-}
-
-/// Project a Daft schema to only the columns in `col_set`.
-fn project_daft_schema(schema: &Schema, col_set: &HashSet<&str>) -> Schema {
-    Schema::new(
-        schema
-            .into_iter()
-            .filter(|f| col_set.contains(f.name.as_str()))
-            .cloned(),
-    )
-}
-
-/// Build a `ProjectionMask` from owned column names.
-fn build_projection_mask_owned(
-    col_set: &HashSet<String>,
+fn build_projection_mask<K: Borrow<str> + Eq + Hash>(
+    col_set: &HashSet<K>,
     arrow_schema: &arrow::datatypes::Schema,
     parquet_schema: &SchemaDescriptor,
 ) -> ProjectionMask {
@@ -93,12 +68,15 @@ fn build_projection_mask_owned(
     )
 }
 
-/// Project a Daft schema to only the columns in `col_set` (owned strings).
-fn project_daft_schema_owned(schema: &Schema, col_set: &HashSet<String>) -> Schema {
+/// Project a Daft schema to only the columns in `col_set`.
+fn project_daft_schema<K: Borrow<str> + Eq + Hash>(
+    schema: &Schema,
+    col_set: &HashSet<K>,
+) -> Schema {
     Schema::new(
         schema
             .into_iter()
-            .filter(|f| col_set.contains(&f.name))
+            .filter(|f| col_set.contains(f.name.as_str()))
             .cloned(),
     )
 }
@@ -677,12 +655,12 @@ pub(crate) fn local_parquet_setup(
     // 5. Compute schemas.
     let daft_schema_for_filter = Arc::new(daft_schema.clone());
     let read_daft_schema = if let Some(ref col_set) = read_col_set {
-        project_daft_schema_owned(&daft_schema, col_set)
+        project_daft_schema(&daft_schema, col_set)
     } else {
         daft_schema.clone()
     };
     let return_daft_schema = if let Some(ref col_set) = user_col_set {
-        project_daft_schema_owned(&daft_schema, col_set)
+        project_daft_schema(&daft_schema, col_set)
     } else {
         daft_schema
     };
@@ -811,8 +789,7 @@ pub(crate) fn decode_single_rg(
         (*setup.arrow_reader_metadata).clone(),
     );
     if let Some(ref col_set) = setup.read_col_set {
-        let mask =
-            build_projection_mask_owned(col_set, &setup.arrow_schema, builder.parquet_schema());
+        let mask = build_projection_mask(col_set, &setup.arrow_schema, builder.parquet_schema());
         builder = builder.with_projection(mask);
     }
     builder = builder
