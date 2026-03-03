@@ -33,6 +33,9 @@ snappy = ["snap"]
 bench = false
 name = "parquet2"
 
+[lints]
+workspace = true
+
 [package]
 authors = [
   "Jorge C. Leitao <jorgecarleitao@gmail.com",
