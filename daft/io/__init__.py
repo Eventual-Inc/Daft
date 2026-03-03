@@ -13,6 +13,7 @@ from daft.daft import (
     UnityConfig,
     HuggingFaceConfig,
 )
+from daft.lazy_import import LazyImport
 from daft.io._csv import read_csv
 from daft.io.delta_lake._deltalake import read_deltalake
 from daft.io.hudi._hudi import read_hudi
@@ -31,8 +32,6 @@ from daft.io.source import DataSource, DataSourceTask
 from daft.io.av import read_video_frames
 
 # Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.
-from daft.lazy_import import LazyImport
-
 _lance = LazyImport("daft.io.lance")
 
 
