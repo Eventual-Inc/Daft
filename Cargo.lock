@@ -2707,7 +2707,6 @@ dependencies = [
  "common-scan-info",
  "common-treenode",
  "daft-context",
- "daft-core",
  "daft-dsl",
  "daft-local-plan",
  "daft-logical-plan",

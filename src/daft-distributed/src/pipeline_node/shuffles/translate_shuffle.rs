@@ -43,7 +43,6 @@ impl LogicalPlanToPipelineNodeTranslator {
             let pre_merge_node = PreShuffleMergeFlightNode::new(
                 self.get_next_pipeline_node_id(),
                 &self.plan_config,
-                self.plan_config.config.pre_shuffle_merge_threshold,
                 schema.clone(),
                 shuffle_dirs.clone(),
                 None,

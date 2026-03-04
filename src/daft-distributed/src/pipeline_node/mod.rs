@@ -98,6 +98,7 @@ impl MaterializedOutput {
         }
     }
 
+    #[allow(dead_code)]
     pub fn partitions(&self) -> &[PartitionRef] {
         &self.partition
     }
