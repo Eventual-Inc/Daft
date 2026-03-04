@@ -877,3 +877,89 @@ def test_image_to_tensor_fixed_shape(input_mode):
     out = t.to_pylist()
     assert out[-1] is None
     np.testing.assert_equal(out[:-1], data[:-1])
+
+
+@pytest.mark.parametrize("fixed_shape", [True, False])
+@pytest.mark.parametrize("algorithm", ["ahash", "dhash", "phash", "whash"])
+def test_image_hash(fixed_shape, algorithm):
+    height = 16
+    width = 16
+    shape = (height, width, 3)
+    # Use gradient images that produce distinct hashes for all algorithms.
+    arr1 = np.zeros(shape, dtype=np.uint8)
+    for x in range(width):
+        arr1[:, x, :] = int(x * 255 / (width - 1))
+    arr2 = np.zeros(shape, dtype=np.uint8)
+    for x in range(width):
+        arr2[:, x, :] = int((width - 1 - x) * 255 / (width - 1))
+    data = [arr1, arr1, arr2, None]
+
+    s = Series.from_pylist(data, dtype=DataType.python())
+    if fixed_shape:
+        t = s.cast(DataType.image("RGB", height, width))
+    else:
+        t = s.cast(DataType.image("RGB"))
+
+    hashes = t.image.hash(algorithm)
+    result = hashes.to_pylist()
+
+    # Same images should produce the same hash.
+    assert result[0] == result[1]
+    # Null input should produce null output.
+    assert result[3] is None
+    # Hash should be 8 bytes.
+    assert len(result[0]) == 8
+    # Different images should produce different hashes.
+    assert result[0] != result[2]
+
+
+def test_image_crop_resistant_hash():
+    height = 16
+    width = 16
+    shape = (height, width, 3)
+    arr1 = np.zeros(shape, dtype=np.uint8)
+    arr1[height // 2 :, :, :] = 255
+    arr2 = np.zeros(shape, dtype=np.uint8)
+    arr2[:, width // 2 :, :] = 255
+    data = [arr1, arr1, arr2, None]
+
+    s = Series.from_pylist(data, dtype=DataType.python())
+    t = s.cast(DataType.image("RGB"))
+
+    hashes = t.image.crop_resistant_hash()
+    result = hashes.to_pylist()
+
+    # Same images should produce the same hash.
+    assert result[0] == result[1]
+    # Null input should produce null output.
+    assert result[3] is None
+    # Hash should be a multiple of 8 bytes (each segment hash is 8 bytes).
+    assert len(result[0]) % 8 == 0
+    assert len(result[0]) > 0
+
+
+def test_image_hash_deduplication():
+    """Test using hash for deduplication."""
+    height = 16
+    width = 16
+    shape = (height, width, 3)
+    # Use clearly distinct images with different gradient patterns.
+    img1 = np.zeros(shape, dtype=np.uint8)
+    for x in range(width):
+        img1[:, x, :] = int(x * 255 / (width - 1))
+    img2 = np.zeros(shape, dtype=np.uint8)
+    for x in range(width):
+        img2[:, x, :] = int((width - 1 - x) * 255 / (width - 1))
+    data = [img1, img1, img2, img1, img2]
+
+    s = Series.from_pylist(data, dtype=DataType.python())
+    t = s.cast(DataType.image("RGB"))
+
+    hashes = t.image.hash("dhash")
+    result = hashes.to_pylist()
+
+    # Same images produce same hashes.
+    assert result[0] == result[1] == result[3]
+    assert result[2] == result[4]
+    # Different images produce different hashes.
+    assert result[0] != result[2]

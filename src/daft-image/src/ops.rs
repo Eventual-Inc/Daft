@@ -19,6 +19,14 @@ use rayon::prelude::*;
 
 use crate::{CountingWriter, iters::ImageBufferIter};
 
+pub trait ImageHashOps {
+    fn average_hash(&self) -> DaftResult<FixedSizeBinaryArray>;
+    fn difference_hash(&self) -> DaftResult<FixedSizeBinaryArray>;
+    fn perceptual_hash(&self) -> DaftResult<FixedSizeBinaryArray>;
+    fn wavelet_hash(&self) -> DaftResult<FixedSizeBinaryArray>;
+    fn crop_resistant_hash(&self) -> DaftResult<BinaryArray>;
+}
+
 pub trait ImageOps {
     fn encode(&self, image_format: ImageFormat) -> DaftResult<BinaryArray>;
     fn resize(&self, w: u32, h: u32) -> DaftResult<Self>
@@ -199,6 +207,77 @@ impl ImageOps for FixedShapeImageArray {
                 &vec![(*self.image_mode() as u8) as u32; self.len()],
             )),
         }
+    }
+}
+
+fn compute_hash<Arr, F>(images: &Arr, hash_fn: F) -> FixedSizeBinaryArray
+where
+    Arr: AsImageObj,
+    F: for<'a> Fn(&CowImage<'a>) -> [u8; 8],
+{
+    let hashes: Vec<Option<[u8; 8]>> = ImageBufferIter::new(images)
+        .map(|img| img.as_ref().map(&hash_fn))
+        .collect();
+    FixedSizeBinaryArray::from_iter(images.name(), hashes.into_iter(), 8)
+}
+
+fn compute_crop_resistant_hash<Arr: AsImageObj>(images: &Arr) -> BinaryArray {
+    let hashes: Vec<Option<Vec<u8>>> = ImageBufferIter::new(images)
+        .map(|img| {
+            img.as_ref().map(|img| {
+                let segment_hashes = img.crop_resistant_hash();
+                let mut bytes = Vec::with_capacity(segment_hashes.len() * 8);
+                for h in &segment_hashes {
+                    bytes.extend_from_slice(h);
+                }
+                bytes
+            })
+        })
+        .collect();
+    BinaryArray::from_iter(images.name(), hashes.into_iter())
+}
+
+impl ImageHashOps for ImageArray {
+    fn average_hash(&self) -> DaftResult<FixedSizeBinaryArray> {
+        Ok(compute_hash(self, |img| img.average_hash()))
+    }
+
+    fn difference_hash(&self) -> DaftResult<FixedSizeBinaryArray> {
+        Ok(compute_hash(self, |img| img.difference_hash()))
+    }
+
+    fn perceptual_hash(&self) -> DaftResult<FixedSizeBinaryArray> {
+        Ok(compute_hash(self, |img| img.perceptual_hash()))
+    }
+
+    fn wavelet_hash(&self) -> DaftResult<FixedSizeBinaryArray> {
+        Ok(compute_hash(self, |img| img.wavelet_hash()))
+    }
+
+    fn crop_resistant_hash(&self) -> DaftResult<BinaryArray> {
+        Ok(compute_crop_resistant_hash(self))
+    }
+}
+
+impl ImageHashOps for FixedShapeImageArray {
+    fn average_hash(&self) -> DaftResult<FixedSizeBinaryArray> {
+        Ok(compute_hash(self, |img| img.average_hash()))
+    }
+
+    fn difference_hash(&self) -> DaftResult<FixedSizeBinaryArray> {
+        Ok(compute_hash(self, |img| img.difference_hash()))
+    }
+
+    fn perceptual_hash(&self) -> DaftResult<FixedSizeBinaryArray> {
+        Ok(compute_hash(self, |img| img.perceptual_hash()))
+    }
+
+    fn wavelet_hash(&self) -> DaftResult<FixedSizeBinaryArray> {
+        Ok(compute_hash(self, |img| img.wavelet_hash()))
+    }
+
+    fn crop_resistant_hash(&self) -> DaftResult<BinaryArray> {
+        Ok(compute_crop_resistant_hash(self))
     }
 }
 

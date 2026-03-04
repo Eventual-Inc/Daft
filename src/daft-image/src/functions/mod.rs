@@ -4,6 +4,7 @@ pub mod attribute;
 pub mod crop;
 pub mod decode;
 pub mod encode;
+pub mod hash;
 pub mod resize;
 pub mod to_mode;
 pub mod to_tensor;
@@ -19,5 +20,7 @@ impl FunctionModule for ImageFunctions {
         parent.add_fn(to_tensor::ImageToTensor);
         parent.add_fn(to_mode::ImageToMode);
         parent.add_fn(attribute::ImageAttribute);
+        parent.add_fn(hash::ImageHash);
+        parent.add_fn(hash::ImageCropResistantHash);
     }
 }
