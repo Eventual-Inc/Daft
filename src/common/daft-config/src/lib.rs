@@ -138,6 +138,7 @@ pub struct DaftExecutionConfig {
     pub enable_dynamic_batching: bool,
     pub dynamic_batching_strategy: String,
     pub flight_shuffle_dirs: Vec<String>,
+    pub enable_inline_agg: bool,
 }
 
 #[cfg(not(debug_assertions))]
@@ -181,6 +182,7 @@ impl Default for DaftExecutionConfig {
             enable_dynamic_batching: false,
             dynamic_batching_strategy: "auto".to_string(),
             flight_shuffle_dirs: vec!["/tmp".to_string()],
+            enable_inline_agg: true,
         }
     }
 }
@@ -195,6 +197,7 @@ impl DaftExecutionConfig {
     const ENV_CSV_INFLATION_FACTOR: &'static str = "DAFT_CSV_INFLATION_FACTOR";
     const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
     const ENV_DAFT_MAINTAIN_ORDER: &'static str = "DAFT_MAINTAIN_ORDER";
+    const ENV_DAFT_ENABLE_INLINE_AGG: &'static str = "DAFT_ENABLE_INLINE_AGG";
 
     #[must_use]
     pub fn from_env() -> Self {
@@ -252,6 +255,10 @@ impl DaftExecutionConfig {
             parse_number_from_env(Self::ENV_JSON_INFLATION_FACTOR, cfg.json_inflation_factor)
         {
             cfg.json_inflation_factor = val;
+        }
+
+        if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_ENABLE_INLINE_AGG) {
+            cfg.enable_inline_agg = val;
         }
 
         cfg

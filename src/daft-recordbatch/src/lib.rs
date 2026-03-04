@@ -597,7 +597,7 @@ impl RecordBatch {
     /// Evaluates an expression and broadcasts the result to match `self.len()` if needed.
     /// This is necessary for literal expressions which evaluate to a single-element Series,
     /// but aggregation functions expect the input to have as many elements as the RecordBatch.
-    fn eval_agg_child(&self, expr: &ExprRef) -> DaftResult<Series> {
+    pub(crate) fn eval_agg_child(&self, expr: &ExprRef) -> DaftResult<Series> {
         let result = self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))?;
         if result.len() != self.len() {
             result.broadcast(self.len())

@@ -5,6 +5,7 @@ arrow-array = {workspace = true}
 arrow-ipc = {workspace = true}
 comfy-table = {workspace = true}
 common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional = true}
+common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
@@ -14,6 +15,7 @@ daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-functions-list = {path = "../daft-functions-list", default-features = false}
 daft-image = {path = "../daft-image", default-features = false}
+fnv = "1.0.7"
 futures = {workspace = true}
 hashbrown = {workspace = true}
 html-escape = {workspace = true}
