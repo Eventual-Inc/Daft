@@ -1,3 +1,4 @@
+pub mod arrow;
 pub mod error;
 pub mod function;
 pub mod prelude;

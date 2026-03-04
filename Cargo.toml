@@ -230,6 +230,9 @@ members = [
   "src/parquet2",
   "src/daft-cli"
 ]
+exclude = [
+  "examples/hello"
+]
 
 [workspace.dependencies]
 arrow = "57.1.0"
@@ -273,9 +276,11 @@ daft-catalog = {path = "src/daft-catalog"}
 daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
-daft-ext-abi = {path = "src/daft-ext-abi", default-features = false}
-daft-ext-core = {path = "src/daft-ext-core", default-features = false}
-daft-ext-internal = {path = "src/daft-ext-internal", default-features = false}
+daft-ext-abi = {path = "src/daft-ext-abi"}
+daft-ext-core = {path = "src/daft-ext-core"}
+daft-ext-internal = {path = "src/daft-ext-internal"}
+daft-ext-macros = {path = "src/daft-ext-macros"}
+daft-ext = {path = "src/daft-ext"}
 daft-file = {path = "src/daft-file"}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-binary = {path = "src/daft-functions-binary"}

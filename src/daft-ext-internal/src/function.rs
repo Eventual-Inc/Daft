@@ -1,6 +1,5 @@
 use std::{
     ffi::{CStr, c_char},
-    mem::ManuallyDrop,
     sync::Arc,
 };
 
@@ -12,10 +11,7 @@ use daft_dsl::{
         BuiltinScalarFnVariant, FunctionArgs, ScalarFunctionFactory, ScalarUDF, scalar::EvalContext,
     },
 };
-use daft_ext_abi::{
-    FFI_ArrowArray, FFI_ArrowSchema, FFI_ScalarFunction,
-    ffi::arrow::{export_arrow_array, import_arrow_array},
-};
+use daft_ext_abi::{ArrowArray, ArrowSchema, FFI_ScalarFunction, ffi::arrow as ffi_arrow};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::module::ModuleHandle;
@@ -111,15 +107,16 @@ impl ScalarUDF for ScalarFunctionHandle {
             .map(|expr| expr.to_field(schema)?.to_arrow())
             .collect::<DaftResult<_>>()?;
 
-        let ffi_schemas: Vec<FFI_ArrowSchema> = arrow_fields
+        let ffi_schemas: Vec<ArrowSchema> = arrow_fields
             .iter()
             .map(|f| {
-                FFI_ArrowSchema::try_from(f)
-                    .map_err(|e| DaftError::InternalError(format!("schema export failed: {e}")))
+                let arrow_ffi = arrow::ffi::FFI_ArrowSchema::try_from(f)
+                    .map_err(|e| DaftError::InternalError(format!("schema export failed: {e}")))?;
+                Ok(unsafe { ffi_arrow::import_arrow_schema(arrow_ffi) })
             })
             .collect::<DaftResult<_>>()?;
 
-        let mut ret_schema = FFI_ArrowSchema::empty();
+        let mut ret_schema = ArrowSchema::empty();
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
         let rc = unsafe {
@@ -133,7 +130,9 @@ impl ScalarUDF for ScalarFunctionHandle {
         };
         inner.check(rc, errmsg, "unknown error in extension get_return_field")?;
 
-        let arrow_field = arrow_schema::Field::try_from(&ret_schema)
+        let arrow_ffi_schema: &arrow::ffi::FFI_ArrowSchema =
+            unsafe { ffi_arrow::borrow_arrow_schema(&ret_schema) };
+        let arrow_field = arrow_schema::Field::try_from(arrow_ffi_schema)
             .map_err(|e| DaftError::InternalError(format!("schema import failed: {e}")))?;
 
         Field::try_from(&arrow_field)
@@ -143,20 +142,21 @@ impl ScalarUDF for ScalarFunctionHandle {
         let inner = self.inner()?;
         let series_vec: Vec<Series> = args.into_inner();
 
-        let mut ffi_arrays: Vec<ManuallyDrop<FFI_ArrowArray>> =
-            Vec::with_capacity(series_vec.len());
-        let mut ffi_schemas: Vec<FFI_ArrowSchema> = Vec::with_capacity(series_vec.len());
+        let mut ffi_arrays: Vec<ArrowArray> = Vec::with_capacity(series_vec.len());
+        let mut ffi_schemas: Vec<ArrowSchema> = Vec::with_capacity(series_vec.len());
 
         for s in &series_vec {
             let arrow_arr = s.to_arrow()?;
-            let (arr, schema) = export_arrow_array(&arrow_arr).map_err(DaftError::InternalError)?;
-            ffi_arrays.push(ManuallyDrop::new(arr));
+            let (ffi_array, ffi_schema) = arrow::ffi::to_ffi(&arrow_arr.to_data())
+                .map_err(|e| DaftError::InternalError(format!("Arrow FFI export failed: {e}")))?;
+            let (arr, schema) = unsafe { ffi_arrow::import_ffi(ffi_array, ffi_schema) };
+            ffi_arrays.push(arr);
             ffi_schemas.push(schema);
         }
 
         // Get expected return field via get_return_field (the call FFI only
         // returns a bare array whose schema has an empty field name).
-        let mut ret_field_schema = FFI_ArrowSchema::empty();
+        let mut ret_field_schema = ArrowSchema::empty();
         let mut field_errmsg: *mut c_char = std::ptr::null_mut();
         let field_rc = unsafe {
             (inner.ffi.get_return_field)(
@@ -173,19 +173,21 @@ impl ScalarUDF for ScalarFunctionHandle {
             "error in extension get_return_field",
         )?;
 
-        let ret_arrow_field = arrow_schema::Field::try_from(&ret_field_schema)
+        let arrow_ffi_schema: &arrow::ffi::FFI_ArrowSchema =
+            unsafe { ffi_arrow::borrow_arrow_schema(&ret_field_schema) };
+        let ret_arrow_field = arrow_schema::Field::try_from(arrow_ffi_schema)
             .map_err(|e| DaftError::InternalError(format!("schema import failed: {e}")))?;
         let ret_daft_field = Field::try_from(&ret_arrow_field)?;
 
         // Execute the function.
-        let mut ret_array = FFI_ArrowArray::empty();
-        let mut ret_schema = FFI_ArrowSchema::empty();
+        let mut ret_array = ArrowArray::empty();
+        let mut ret_schema = ArrowSchema::empty();
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
         let rc = unsafe {
             (inner.ffi.call)(
                 inner.ffi.ctx,
-                ffi_arrays.as_ptr().cast(),
+                ffi_arrays.as_ptr(),
                 ffi_schemas.as_ptr(),
                 ffi_arrays.len(),
                 &raw mut ret_array,
@@ -195,8 +197,11 @@ impl ScalarUDF for ScalarFunctionHandle {
         };
         inner.check(rc, errmsg, "unknown error in extension call")?;
 
-        let result_arr = unsafe { import_arrow_array(ret_array, &ret_schema) }
-            .map_err(DaftError::InternalError)?;
+        let (ffi_array, ffi_schema): (arrow::ffi::FFI_ArrowArray, arrow::ffi::FFI_ArrowSchema) =
+            unsafe { ffi_arrow::export_ffi(ret_array, ret_schema) };
+        let arrow_data = unsafe { arrow::ffi::from_ffi(ffi_array, &ffi_schema) }
+            .map_err(|e| DaftError::InternalError(format!("Arrow FFI import failed: {e}")))?;
+        let result_arr = arrow_array::make_array(arrow_data);
 
         Series::from_arrow(ret_daft_field, result_arr)
     }
@@ -270,31 +275,37 @@ mod tests {
 
     unsafe extern "C" fn mock_get_return_field(
         _ctx: *const c_void,
-        _args: *const FFI_ArrowSchema,
+        _args: *const ArrowSchema,
         _args_count: usize,
-        ret: *mut FFI_ArrowSchema,
+        ret: *mut ArrowSchema,
         _errmsg: *mut *mut c_char,
     ) -> c_int {
         let field = arrow_schema::Field::new("result", arrow_schema::DataType::Int32, false);
-        let schema = FFI_ArrowSchema::try_from(&field).unwrap();
+        let arrow_ffi = arrow::ffi::FFI_ArrowSchema::try_from(&field).unwrap();
+        let schema = unsafe { ffi_arrow::import_arrow_schema(arrow_ffi) };
         unsafe { std::ptr::write(ret, schema) };
         0
     }
 
     unsafe extern "C" fn mock_call(
         _ctx: *const c_void,
-        args: *const FFI_ArrowArray,
-        args_schemas: *const FFI_ArrowSchema,
+        args: *const ArrowArray,
+        args_schemas: *const ArrowSchema,
         args_count: usize,
-        ret_array: *mut FFI_ArrowArray,
-        ret_schema: *mut FFI_ArrowSchema,
+        ret_array: *mut ArrowArray,
+        ret_schema: *mut ArrowSchema,
         _errmsg: *mut *mut c_char,
     ) -> c_int {
         assert_eq!(args_count, 1);
-        let ffi_array = unsafe { std::ptr::read(args) };
-        let ffi_schema = unsafe { &*args_schemas };
+        let abi_array = unsafe { std::ptr::read(args) };
+        let abi_schema = unsafe { &*args_schemas };
+        let ffi_array: arrow::ffi::FFI_ArrowArray =
+            unsafe { ffi_arrow::export_arrow_array(abi_array) };
+        let ffi_schema: &arrow::ffi::FFI_ArrowSchema =
+            unsafe { ffi_arrow::borrow_arrow_schema(abi_schema) };
         let data = unsafe { arrow::ffi::from_ffi(ffi_array, ffi_schema) }.unwrap();
-        let input = arrow_array::make_array(data)
+        let arr = arrow_array::make_array(data);
+        let input = arr
             .as_any()
             .downcast_ref::<Int32Array>()
             .expect("expected Int32Array")
@@ -302,7 +313,8 @@ mod tests {
 
         let output: Int32Array = input.iter().map(|v| v.map(|x| x + 1)).collect();
         let output_ref: arrow_array::ArrayRef = Arc::new(output);
-        let (out_array, out_schema) = arrow::ffi::to_ffi(&output_ref.to_data()).unwrap();
+        let (ffi_arr, ffi_sch) = arrow::ffi::to_ffi(&output_ref.to_data()).unwrap();
+        let (out_array, out_schema) = unsafe { ffi_arrow::import_ffi(ffi_arr, ffi_sch) };
         unsafe {
             std::ptr::write(ret_array, out_array);
             std::ptr::write(ret_schema, out_schema);

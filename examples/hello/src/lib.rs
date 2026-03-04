@@ -1,8 +1,12 @@
 use std::{ffi::CStr, sync::Arc};
 
-use arrow_array::{Array, ArrayRef, builder::StringBuilder, cast::AsArray};
-use arrow_schema::{DataType, Field};
+use arrow::{
+    array::{Array, builder::StringBuilder, cast::AsArray},
+    datatypes::{DataType, Field},
+};
 use daft_ext::prelude::*;
+
+daft_ext::define_arrow_helpers!();
 
 // ── Module ──────────────────────────────────────────────────────────
 
@@ -24,24 +28,27 @@ impl DaftScalarFunction for Greet {
         c"greet"
     }
 
-    fn return_field(&self, args: &[Field]) -> DaftResult<Field> {
+    fn return_field(&self, args: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
         if args.len() != 1 {
             return Err(DaftError::TypeError(format!(
                 "greet: expected 1 argument, got {}",
                 args.len()
             )));
         }
-        if *args[0].data_type() != DataType::Utf8 && *args[0].data_type() != DataType::LargeUtf8 {
+        let field = import_field(&args[0])?;
+        let dt = field.data_type();
+        if *dt != DataType::Utf8 && *dt != DataType::LargeUtf8 {
             return Err(DaftError::TypeError(format!(
                 "greet: expected string argument, got {:?}",
-                args[0].data_type()
+                dt
             )));
         }
-        Ok(Field::new("greet", DataType::Utf8, true))
+        Ok(export_field(&Field::new("greet", DataType::Utf8, true))?)
     }
 
-    fn call(&self, args: &[ArrayRef]) -> DaftResult<ArrayRef> {
-        let names = args[0].as_string::<i64>();
+    fn call(&self, args: &[ArrowData]) -> DaftResult<ArrowData> {
+        let input = import_array(unsafe { ArrowData::take_arg(args, 0) })?;
+        let names = input.as_string::<i64>();
         let mut builder = StringBuilder::with_capacity(names.len(), names.len() * 16);
         for i in 0..names.len() {
             if names.is_null(i) {
@@ -50,6 +57,6 @@ impl DaftScalarFunction for Greet {
                 builder.append_value(format!("Hello, {}!", names.value(i)));
             }
         }
-        Ok(Arc::new(builder.finish()))
+        Ok(export_array(&builder.finish())?)
     }
 }

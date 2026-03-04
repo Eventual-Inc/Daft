@@ -7,7 +7,11 @@
 > Please see the [prompt](#prompt) if you want help generating an extension.
 
 This document is a guide for authoring Daft native extensions in Rust.
-Daft supports native Rust extensions by leveraging a stable C ABI and Arrow FFI. Today we support authoring native
+Daft supports native Rust extensions by leveraging a stable C ABI based on the
+[Arrow C Data Interface](https://arrow.apache.org/docs/format/CDataInterface.html).
+Extensions are **not coupled** to any particular Arrow library version. The ABI boundary uses
+plain C structs (`ArrowSchema`, `ArrowArray`) so your extension can use any arrow-rs version
+(or even a different Arrow implementation entirely). Today we support authoring native
 scalar functions, but are actively working on additional native extension features.
 
 ## Example
@@ -93,16 +97,16 @@ crate-type = ["cdylib"]
 
 [dependencies]
 daft-ext = <version>
-arrow-array = "57.1.0"
-arrow-schema = "57.1.0"
+arrow = { version = "58", features = ["ffi"] }
 ```
 
-!!! tip "Arrow types"
+!!! tip "Arrow version freedom"
 
-    Use `arrow-array` builders and downcasting directly for working with data.
-    The `daft-ext` prelude re-exports common types like `ArrayRef` and `Field`.
-    Import `arrow_array::Array` for the `len()` and `is_null()` methods, and
-    `arrow_array::cast::AsArray` for downcasting (e.g., `as_string`).
+    The `daft-ext` ABI uses C Data Interface types — your extension is **not** pinned to
+    Daft's arrow-rs version. You can use any compatible `arrow-array` / `arrow-schema`
+    version. The `define_arrow_helpers!()` macro generates `import_array`, `export_array`,
+    `import_field`, `export_field`, `import_schema`, and `export_schema` helpers for
+    converting between arrow-rs types and the C ABI types.
 
 Then update the pyproject to use `setuptools-rust` as the build system.
 
@@ -164,14 +168,16 @@ cat src/lib.rs
 ```
 
 ```rust
-use std::ffi::CStr;
-use std::sync::Arc;
+use std::{ffi::CStr, sync::Arc};
 
-use arrow_array::{Array, ArrayRef};
-use arrow_array::builder::StringBuilder;
-use arrow_array::cast::AsArray;
-use arrow_schema::{DataType, Field};
+use arrow::{
+    array::{Array, builder::StringBuilder, cast::AsArray},
+    datatypes::{DataType, Field},
+};
 use daft_ext::prelude::*;
+
+// Generate import_array, export_array, import_field, export_field helpers.
+daft_ext::define_arrow_helpers!();
 
 // ── Module ──────────────────────────────────────────────────────────
 
@@ -181,7 +187,6 @@ use daft_ext::prelude::*;
 struct HelloExtension;
 
 impl DaftExtension for HelloExtension {
-
     /// This is the extension install hook for defining functions in the session.
     /// Called once when the extension is loaded into a session. Register each function here.
     fn install(session: &mut dyn DaftSession) {
@@ -202,25 +207,33 @@ impl DaftScalarFunction for Greet {
     }
 
     /// Type checking.
-    /// Given the input `Field` schemas, validate types and return the output `Field`.
-    fn return_field(&self, args: &[Field]) -> DaftResult<Field> {
+    /// Receives input fields as C Data Interface `ArrowSchema` types.
+    /// Use `import_field` to convert to arrow-rs types for validation,
+    /// then `export_field` to return the output field.
+    fn return_field(&self, args: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
         if args.len() != 1 {
-            return Err(DaftError::TypeError(
-                format!("greet: expected 1 argument, got {}", args.len()),
-            ));
+            return Err(DaftError::TypeError(format!(
+                "greet: expected 1 argument, got {}",
+                args.len()
+            )));
         }
-        if *args[0].data_type() != DataType::Utf8 && *args[0].data_type() != DataType::LargeUtf8 {
-            return Err(DaftError::TypeError(
-                format!("greet: expected string argument, got {:?}", args[0].data_type()),
-            ));
+        let field = import_field(&args[0])?;
+        let dt = field.data_type();
+        if *dt != DataType::Utf8 && *dt != DataType::LargeUtf8 {
+            return Err(DaftError::TypeError(format!(
+                "greet: expected string argument, got {:?}",
+                dt
+            )));
         }
-        Ok(Field::new("greet", DataType::Utf8, true))
+        Ok(export_field(&Field::new("greet", DataType::Utf8, true))?)
     }
 
-    /// Evaluation. Receives Arrow arrays, returns an Arrow array. Operates on entire columns at once.
+    /// Evaluation. Receives columns as C Data Interface `ArrowData` types.
+    /// Use `import_array` / `export_array` to convert to/from arrow-rs arrays.
     /// All data flows through Arrow arrays — no per-row Python overhead.
-    fn call(&self, args: &[ArrayRef]) -> DaftResult<ArrayRef> {
-        let names = args[0].as_string::<i64>();
+    fn call(&self, args: &[ArrowData]) -> DaftResult<ArrowData> {
+        let input = import_array(unsafe { ArrowData::take_arg(args, 0) })?;
+        let names = input.as_string::<i64>();
         let mut builder = StringBuilder::with_capacity(names.len(), names.len() * 16);
         for i in 0..names.len() {
             if names.is_null(i) {
@@ -229,10 +242,17 @@ impl DaftScalarFunction for Greet {
                 builder.append_value(format!("Hello, {}!", names.value(i)));
             }
         }
-        Ok(Arc::new(builder.finish()))
+        Ok(export_array(&builder.finish())?)
     }
 }
 ```
+
+!!! tip "ABI pattern"
+
+    The `DaftScalarFunction` trait uses C Data Interface types (`ArrowSchema`, `ArrowData`)
+    at the ABI boundary. Use the `import_*` / `export_*` helpers from the prelude to convert
+    to and from arrow-rs types inside your function bodies. This decoupling means your
+    extension is not tied to Daft's arrow-rs version.
 
 !!! tip "String types"
 
@@ -380,17 +400,18 @@ Follow the Daft extension authoring guide at docs/extensions/index.md. Here is a
 
 ## Rust conventions
 
-- Use `daft_ext::prelude::*` for all imports.
-- Import `arrow_array::Array` for `len()`/`is_null()` and `arrow_array::cast::AsArray` for downcasting.
+- Use `daft_ext::prelude::*` for all imports (provides `ArrowSchema`, `ArrowData`, errors, traits).
+- Call `daft_ext::define_arrow_helpers!()` to generate `import_array`, `export_array`, `import_field`, `export_field` helpers.
+- Import `arrow::array::Array` for `len()`/`is_null()` and `arrow::array::cast::AsArray` for downcasting.
 - Daft uses `LargeUtf8` (i64 offsets) for strings — downcast with `as_string::<i64>()`, never `i32`.
 - Apply `#[daft_extension]` to a struct implementing `DaftExtension`.
 - Register each function in `install()` via `session.define_function(Arc::new(MyFn))`.
 - Each function is a struct implementing `DaftScalarFunction` with:
   - `name(&self) -> &CStr` — use `c"<extension_name>_<fn_name>"` prefix to avoid collisions.
-  - `return_field(&self, args: &[Field]) -> DaftResult<Field>` — validate arg count and types,
-    return `Err(DaftError::TypeError(...))` for violations.
-  - `call(&self, args: &[ArrayRef]) -> DaftResult<ArrayRef>` — compute over Arrow arrays,
-    propagate nulls, return `Err(DaftError::RuntimeError(...))` for failures.
+  - `return_field(&self, args: &[ArrowSchema]) -> DaftResult<ArrowSchema>` — use `import_field` to
+    convert inputs, validate types, then `export_field` to return the output field.
+  - `call(&self, args: &[ArrowData]) -> DaftResult<ArrowData>` — use `ArrowData::take_arg` + `import_array`
+    to convert inputs to arrow-rs arrays, compute, then `export_array` to return the result.
 
 ## Python conventions
 

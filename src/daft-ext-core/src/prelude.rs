@@ -1,9 +1,9 @@
-pub use arrow_array::ArrayRef;
-pub use arrow_schema::Field;
+pub use daft_ext_abi::{
+    ArrowArray, ArrowArrayStream, ArrowData, ArrowSchema, ffi::strings::free_string,
+};
 
 pub use crate::{
     error::{DaftError, DaftResult},
-    ffi::strings::free_string,
     function::{DaftScalarFunction, DaftScalarFunctionRef},
     session::{DaftExtension, DaftSession, SessionContext},
 };

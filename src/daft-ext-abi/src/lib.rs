@@ -1,20 +1,22 @@
 //! Stable C ABI contract between Daft and extension cdylibs.
 //!
 //! This crate defines the `repr(C)` types that Daft and extension shared
-//! libraries use to communicate. It has zero Daft-internal dependencies.
+//! libraries use to communicate. It has zero Daft internal dependencies
+//! and zero Arrow implementation dependencies.
 //!
 //! Naming follows Postgres conventions:
 //! - "module" = the shared library at the ABI boundary
 //! - "extension" = the higher-level Python package wrapping a module
 
+pub mod arrow;
 pub mod ffi;
 
 use std::ffi::{c_char, c_int, c_void};
 
-pub use arrow::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
+pub use arrow::{ArrowArray, ArrowArrayStream, ArrowData, ArrowSchema};
 
 /// Modules built against a different ABI version are rejected at load time.
-pub const DAFT_ABI_VERSION: u32 = 1;
+pub const DAFT_ABI_VERSION: u32 = 3;
 
 /// Symbol that every Daft module cdylib must export.
 ///
@@ -78,9 +80,9 @@ pub struct FFI_ScalarFunction {
     /// Returns 0 on success, non-zero on error.
     pub get_return_field: unsafe extern "C" fn(
         ctx: *const c_void,
-        args: *const FFI_ArrowSchema,
+        args: *const ArrowSchema,
         args_count: usize,
-        ret: *mut FFI_ArrowSchema,
+        ret: *mut ArrowSchema,
         errmsg: *mut *mut c_char,
     ) -> c_int,
 
@@ -92,11 +94,11 @@ pub struct FFI_ScalarFunction {
     /// Returns 0 on success, non-zero on error.
     pub call: unsafe extern "C" fn(
         ctx: *const c_void,
-        args: *const FFI_ArrowArray,
-        args_schemas: *const FFI_ArrowSchema,
+        args: *const ArrowArray,
+        args_schemas: *const ArrowSchema,
         args_count: usize,
-        ret_array: *mut FFI_ArrowArray,
-        ret_schema: *mut FFI_ArrowSchema,
+        ret_array: *mut ArrowArray,
+        ret_schema: *mut ArrowSchema,
         errmsg: *mut *mut c_char,
     ) -> c_int,
 
@@ -111,7 +113,7 @@ unsafe impl Sync for FFI_ScalarFunction {}
 
 /// Host-side session context passed to a module's `init` function.
 ///
-/// The module calls `define_function` to register scalar functions.
+/// The module calls `define_function` to register extensions.
 #[repr(C)]
 pub struct FFI_SessionContext {
     /// Opaque host-side context pointer.
@@ -128,6 +130,87 @@ pub struct FFI_SessionContext {
 // SAFETY: Function pointer plus opaque host pointer.
 unsafe impl Send for FFI_SessionContext {}
 unsafe impl Sync for FFI_SessionContext {}
+
+/// Generate arrow-rs conversion helpers using the caller's own arrow version.
+///
+/// Invoke once in your extension crate to get free functions that convert
+/// between arrow-rs types (`ArrayRef`, `Schema`) and the version-agnostic
+/// ABI types (`ArrowData`, `ArrowSchema`).
+///
+/// ```ignore
+/// // Uses the `arrow` umbrella crate (most common):
+/// daft_ext::define_arrow_helpers!();
+///
+/// // Or with a custom crate name:
+/// daft_ext::define_arrow_helpers!(my_arrow);
+/// ```
+///
+/// Requires the caller to depend on the `arrow` crate (any version) with the
+/// `ffi` feature enabled.
+#[macro_export]
+macro_rules! define_arrow_helpers {
+    () => {
+        $crate::define_arrow_helpers!(arrow);
+    };
+    ($arrow_crate:ident) => {
+        pub(crate) fn export_array(
+            array: &dyn $arrow_crate::array::Array,
+        ) -> ::core::result::Result<$crate::ArrowData, ::std::string::String> {
+            let (ffi_array, ffi_schema) =
+                $arrow_crate::ffi::to_ffi(&array.to_data()).map_err(|e| e.to_string())?;
+            let (array, schema) = unsafe { $crate::ffi::arrow::import_ffi(ffi_array, ffi_schema) };
+            ::core::result::Result::Ok($crate::ArrowData { schema, array })
+        }
+
+        pub(crate) fn import_array(
+            data: $crate::ArrowData,
+        ) -> ::core::result::Result<$arrow_crate::array::ArrayRef, ::std::string::String> {
+            let (ffi_array, ffi_schema): (
+                $arrow_crate::ffi::FFI_ArrowArray,
+                $arrow_crate::ffi::FFI_ArrowSchema,
+            ) = unsafe { $crate::ffi::arrow::export_ffi(data.array, data.schema) };
+            let arrow_data = unsafe { $arrow_crate::ffi::from_ffi(ffi_array, &ffi_schema) }
+                .map_err(|e| e.to_string())?;
+            ::core::result::Result::Ok($arrow_crate::array::make_array(arrow_data))
+        }
+
+        pub(crate) fn export_schema(
+            schema: &$arrow_crate::datatypes::Schema,
+        ) -> ::core::result::Result<$crate::ArrowSchema, ::std::string::String> {
+            let ffi_schema =
+                $arrow_crate::ffi::FFI_ArrowSchema::try_from(schema).map_err(|e| e.to_string())?;
+            ::core::result::Result::Ok(unsafe {
+                $crate::ffi::arrow::import_arrow_schema(ffi_schema)
+            })
+        }
+
+        pub(crate) fn import_schema(
+            schema: &$crate::ArrowSchema,
+        ) -> ::core::result::Result<$arrow_crate::datatypes::Schema, ::std::string::String> {
+            let ffi_schema: &$arrow_crate::ffi::FFI_ArrowSchema =
+                unsafe { $crate::ffi::arrow::borrow_arrow_schema(schema) };
+            $arrow_crate::datatypes::Schema::try_from(ffi_schema).map_err(|e| e.to_string())
+        }
+
+        pub(crate) fn export_field(
+            field: &$arrow_crate::datatypes::Field,
+        ) -> ::core::result::Result<$crate::ArrowSchema, ::std::string::String> {
+            let schema = $arrow_crate::datatypes::Schema::new(vec![field.clone()]);
+            export_schema(&schema)
+        }
+
+        pub(crate) fn import_field(
+            schema: &$crate::ArrowSchema,
+        ) -> ::core::result::Result<$arrow_crate::datatypes::Field, ::std::string::String> {
+            let s = import_schema(schema)?;
+            s.fields()
+                .first()
+                .cloned()
+                .map(|f| (*f).clone())
+                .ok_or_else(|| "schema has no fields".to_string())
+        }
+    };
+}
 
 #[cfg(test)]
 mod tests {
@@ -162,7 +245,7 @@ mod tests {
 
     #[test]
     fn constants() {
-        assert_eq!(DAFT_ABI_VERSION, 1);
+        assert_eq!(DAFT_ABI_VERSION, 3);
         assert_eq!(DAFT_MODULE_MAGIC_SYMBOL, "daft_module_magic");
     }
 }

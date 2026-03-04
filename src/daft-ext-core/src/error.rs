@@ -23,6 +23,12 @@ impl fmt::Display for DaftError {
 
 impl std::error::Error for DaftError {}
 
+impl From<String> for DaftError {
+    fn from(msg: String) -> Self {
+        Self::RuntimeError(msg)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,4 +1,5 @@
 pub use daft_ext_abi as abi;
+pub use daft_ext_abi::define_arrow_helpers;
 pub use daft_ext_core::*;
 pub use daft_ext_macros::*;
 

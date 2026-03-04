@@ -2770,10 +2770,6 @@ dependencies = [
 [[package]]
 name = "daft-ext-abi"
 version = "0.3.0-dev0"
-dependencies = [
- "arrow",
- "arrow-array",
-]
 
 [[package]]
 name = "daft-ext-core"
