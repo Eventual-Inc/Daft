@@ -251,7 +251,7 @@ impl BuilderContext {
         NodeInfo {
             name,
             id,
-            node_plan_id,
+            node_origin_id: node_plan_id,
             node_type,
             node_category,
             node_phase,

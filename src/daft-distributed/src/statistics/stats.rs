@@ -69,7 +69,7 @@ impl RuntimeNodeManager {
 
                 for (node_info, snapshot) in &stats.nodes {
                     // Local nodes are associated to this node through the node_plan_id
-                    if self.node_info.node_plan_id == node_info.node_plan_id {
+                    if self.node_info.node_origin_id == node_info.node_origin_id {
                         self.runtime_stats
                             .handle_worker_node_stats(node_info, snapshot);
                     }

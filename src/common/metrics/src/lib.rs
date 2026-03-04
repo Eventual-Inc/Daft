@@ -136,7 +136,7 @@ pub const ATTR_EXECUTION_RUNNER: &str = "execution.runner";
 pub const ATTR_QUERY_ID: &str = "query.id";
 
 // Node attributes
-pub const ATTR_NODE_PLAN_ID: &str = "node.plan_id";
+pub const ATTR_NODE_ORIGIN_ID: &str = "node.origin_id";
 pub const ATTR_NODE_ID: &str = "node.id";
 pub const ATTR_NODE_TYPE: &str = "node.type";
 pub const ATTR_NODE_PHASE: &str = "node.phase";
