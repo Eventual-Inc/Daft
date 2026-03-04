@@ -120,6 +120,49 @@ def test_tensor_numpy_inference(dtype, fixed_shape):
     np.testing.assert_equal(out, arrs)
 
 
+@pytest.mark.skipif(
+    not pyarrow_supports_fixed_shape_tensor(),
+    reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
+)
+@pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES)
+def test_canonical_fixed_shape_tensor_from_arrow(dtype):
+    """Ingesting a native PyArrow fixed_shape_tensor should produce Daft's FixedShapeTensor logical type."""
+    np_dtype = dtype.to_pandas_dtype()
+    shape = (2, 3)
+    num_elements = 3
+    tensor_type = pa.fixed_shape_tensor(dtype, shape)
+    storage = pa.array(
+        [np.arange(i * 6, (i + 1) * 6, dtype=np_dtype).tolist() for i in range(num_elements)],
+        type=pa.list_(dtype, 6),
+    )
+    arr = pa.ExtensionArray.from_storage(tensor_type, storage)
+
+    s = Series.from_arrow(arr, name="tensor")
+    assert s.datatype() == DataType.tensor(DataType.from_arrow_type(dtype), shape)
+
+
+@pytest.mark.skipif(
+    not pyarrow_supports_fixed_shape_tensor(),
+    reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
+)
+@pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES)
+def test_canonical_fixed_shape_tensor_to_arrow(dtype):
+    """A Daft FixedShapeTensor Series should export as PyArrow's canonical fixed_shape_tensor."""
+    np_dtype = dtype.to_pandas_dtype()
+    shape = (2, 3)
+    data = [
+        np.arange(6, dtype=np_dtype).reshape(shape),
+        np.arange(6, 12, dtype=np_dtype).reshape(shape),
+        None,
+    ]
+    s = Series.from_pylist(data, pyobj="allow")
+    target_dtype = DataType.tensor(DataType.from_arrow_type(dtype), shape)
+    s = s.cast(target_dtype)
+
+    arrow_arr = s.to_arrow()
+    assert arrow_arr.type == pa.fixed_shape_tensor(dtype, shape)
+
+
 def test_tensor_repr():
     arr = np.arange(np.prod((2, 2)), dtype=np.int64).reshape((2, 2))
     arrs = [arr, arr, None]

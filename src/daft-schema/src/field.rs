@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::dtype::{DAFT_SUPER_EXTENSION_NAME, DataType};
 
+const ARROW_FIXED_SHAPE_TENSOR_KEY: &str = "arrow.fixed_shape_tensor";
+const ARROW_VARIABLE_SHAPE_TENSOR_KEY: &str = "arrow.variable_shape_tensor";
 /// Registry that maps extension type names to their original arrow-rs storage DataType
 /// (before Daft coercion, e.g. Binary instead of LargeBinary). This allows `to_arrow`
 /// to reverse the coercion so PyArrow sees the original storage type.
@@ -119,11 +121,33 @@ impl Field {
                 }
                 physical.with_metadata(metadata_map)
             }
+            DataType::Tensor(..) => {
+                let physical = Box::new(self.to_physical());
+                let mut metadata_map = HashMap::new();
+                metadata_map.insert(
+                    EXTENSION_TYPE_NAME_KEY.to_string(),
+                    ARROW_VARIABLE_SHAPE_TENSOR_KEY.into(),
+                );
+
+                physical.to_arrow()?.with_metadata(metadata_map)
+            }
+            DataType::FixedShapeTensor(_, shape) => {
+                let physical = Box::new(self.to_physical());
+                let mut metadata_map = HashMap::new();
+                metadata_map.insert(
+                    EXTENSION_TYPE_NAME_KEY.to_string(),
+                    ARROW_FIXED_SHAPE_TENSOR_KEY.into(),
+                );
+
+                let shape_json = serde_json::json!({ "shape": shape }).to_string();
+                metadata_map.insert(EXTENSION_TYPE_METADATA_KEY.to_string(), shape_json);
+
+                physical.to_arrow()?.with_metadata(metadata_map)
+            }
+
             dtype @ DataType::Embedding(..)
             | dtype @ DataType::Image(..)
             | dtype @ DataType::FixedShapeImage(..)
-            | dtype @ DataType::Tensor(..)
-            | dtype @ DataType::FixedShapeTensor(..)
             | dtype @ DataType::SparseTensor(..)
             | dtype @ DataType::FixedShapeSparseTensor(..)
             | dtype @ DataType::File(..) => {
@@ -246,6 +270,10 @@ impl TryFrom<&arrow_schema::Field> for Field {
                 dtype,
                 metadata: Arc::new(metadata.into_iter().collect()),
             })
+        } else if field.extension_type_name() == Some(ARROW_FIXED_SHAPE_TENSOR_KEY) {
+            arrow_fixed_shape_tensor_to_daft(field)
+        } else if field.extension_type_name() == Some(ARROW_VARIABLE_SHAPE_TENSOR_KEY) {
+            arrow_variable_shape_tensor_to_daft(field)
         } else if let Some(extension_name) = field.extension_type_name() {
             // Generic extension type (e.g. daft.uuid)
             let physical = DataType::try_from(field.data_type())?;
@@ -281,14 +309,96 @@ impl TryFrom<&arrow_schema::Field> for Field {
     }
 }
 
+fn arrow_fixed_shape_tensor_to_daft(field: &arrow_schema::Field) -> Result<Field, DaftError> {
+    // Arrow canonical fixed_shape_tensor:
+    //   storage = FixedSizeList<value_type>(product_of_shape)
+    //   metadata JSON = {"shape": [d0, d1, ...], ...}
+    let metadata = field
+        .extension_type_metadata()
+        .ok_or_else(|| DaftError::TypeError("arrow.fixed_shape_tensor missing metadata".into()))?;
+    let json: serde_json::Value = serde_json::from_str(metadata)
+        .map_err(|e| DaftError::TypeError(format!("invalid fixed_shape_tensor metadata: {e}")))?;
+    let shape: Vec<u64> = json
+        .get("shape")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| {
+            DaftError::TypeError("fixed_shape_tensor metadata missing 'shape' array".into())
+        })?
+        .iter()
+        .map(|v| {
+            v.as_u64()
+                .ok_or_else(|| DaftError::TypeError("shape element is not a u64".into()))
+        })
+        .collect::<DaftResult<_>>()?;
+
+    let value_type = match field.data_type() {
+        arrow_schema::DataType::FixedSizeList(inner, _) => DataType::try_from(inner.data_type())?,
+        other => {
+            return Err(DaftError::TypeError(format!(
+                "expected FixedSizeList storage for arrow.fixed_shape_tensor, got {other:?}"
+            )));
+        }
+    };
+
+    let mut field_metadata = field.metadata().clone();
+    field_metadata.remove(EXTENSION_TYPE_NAME_KEY);
+    field_metadata.remove(EXTENSION_TYPE_METADATA_KEY);
+
+    Ok(Field {
+        name: field.name().clone(),
+        dtype: DataType::FixedShapeTensor(Box::new(value_type), shape),
+        metadata: Arc::new(field_metadata.into_iter().collect()),
+    })
+}
+
+fn arrow_variable_shape_tensor_to_daft(field: &arrow_schema::Field) -> Result<Field, DaftError> {
+    // Arrow canonical variable_shape_tensor:
+    //   storage = Struct { data: List<value_type>, shape: FixedSizeList<Int32>(ndim) }
+    let value_type = match field.data_type() {
+        arrow_schema::DataType::Struct(fields) => {
+            let data_field = fields.iter().find(|f| f.name() == "data").ok_or_else(|| {
+                DaftError::TypeError("variable_shape_tensor struct missing 'data' field".into())
+            })?;
+            match data_field.data_type() {
+                arrow_schema::DataType::List(inner) | arrow_schema::DataType::LargeList(inner) => {
+                    DataType::try_from(inner.data_type())?
+                }
+                other => {
+                    return Err(DaftError::TypeError(format!(
+                        "expected List for variable_shape_tensor 'data' field, got {other:?}"
+                    )));
+                }
+            }
+        }
+        other => {
+            return Err(DaftError::TypeError(format!(
+                "expected Struct storage for arrow.variable_shape_tensor, got {other:?}"
+            )));
+        }
+    };
+
+    let mut field_metadata = field.metadata().clone();
+    field_metadata.remove(EXTENSION_TYPE_NAME_KEY);
+    field_metadata.remove(EXTENSION_TYPE_METADATA_KEY);
+
+    Ok(Field {
+        name: field.name().clone(),
+        dtype: DataType::Tensor(Box::new(value_type)),
+        metadata: Arc::new(field_metadata.into_iter().collect()),
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    use std::{collections::HashMap, sync::Arc};
+
+    use arrow_schema::extension::{EXTENSION_TYPE_METADATA_KEY, EXTENSION_TYPE_NAME_KEY};
     use common_error::DaftResult;
     use rstest::rstest;
 
     use crate::{
         dtype::{DAFT_SUPER_EXTENSION_NAME, DataType},
-        field::Field,
+        field::{ARROW_FIXED_SHAPE_TENSOR_KEY, ARROW_VARIABLE_SHAPE_TENSOR_KEY, Field},
         media_type::MediaType,
         prelude::{ImageMode, TimeUnit},
     };
@@ -381,5 +491,278 @@ mod tests {
         assert_eq!(dtype, round_trip_dtype);
 
         Ok(())
+    }
+
+    /// Helper to build an arrow_schema::Field with extension type metadata,
+    /// exactly as Arrow's canonical extension types are represented.
+    fn arrow_ext_field(
+        name: &str,
+        storage_type: arrow_schema::DataType,
+        ext_name: &str,
+        ext_metadata: Option<&str>,
+    ) -> arrow_schema::Field {
+        let mut metadata = HashMap::new();
+        metadata.insert(EXTENSION_TYPE_NAME_KEY.to_string(), ext_name.to_string());
+        if let Some(m) = ext_metadata {
+            metadata.insert(EXTENSION_TYPE_METADATA_KEY.to_string(), m.to_string());
+        }
+        arrow_schema::Field::new(name, storage_type, true).with_metadata(metadata)
+    }
+
+    /// Arrow canonical `arrow.fixed_shape_tensor` with Float32 elements and shape [3, 224, 224].
+    /// Storage type: FixedSizeList<Float32>(3 * 224 * 224 = 150528)
+    /// Metadata: {"shape": [3, 224, 224]}
+    #[test]
+    fn test_arrow_canonical_fixed_shape_tensor_to_daft() {
+        let storage = arrow_schema::DataType::FixedSizeList(
+            Arc::new(arrow_schema::Field::new(
+                "item",
+                arrow_schema::DataType::Float32,
+                true,
+            )),
+            3 * 224 * 224,
+        );
+        let arrow_field = arrow_ext_field(
+            "tensor_col",
+            storage,
+            ARROW_FIXED_SHAPE_TENSOR_KEY,
+            Some(r#"{"shape":[3,224,224]}"#),
+        );
+
+        let daft_field = Field::try_from(&arrow_field).unwrap();
+        assert_eq!(daft_field.name, "tensor_col");
+        assert_eq!(
+            daft_field.dtype,
+            DataType::FixedShapeTensor(Box::new(DataType::Float32), vec![3, 224, 224])
+        );
+    }
+
+    /// Arrow canonical `arrow.fixed_shape_tensor` with Int64 elements and shape [10, 10].
+    #[test]
+    fn test_arrow_canonical_fixed_shape_tensor_int64() {
+        let storage = arrow_schema::DataType::FixedSizeList(
+            Arc::new(arrow_schema::Field::new(
+                "item",
+                arrow_schema::DataType::Int64,
+                true,
+            )),
+            100,
+        );
+        let arrow_field = arrow_ext_field(
+            "tensor",
+            storage,
+            ARROW_FIXED_SHAPE_TENSOR_KEY,
+            Some(r#"{"shape":[10,10]}"#),
+        );
+
+        let daft_field = Field::try_from(&arrow_field).unwrap();
+        assert_eq!(
+            daft_field.dtype,
+            DataType::FixedShapeTensor(Box::new(DataType::Int64), vec![10, 10])
+        );
+    }
+
+    /// Arrow canonical `arrow.fixed_shape_tensor` with extra dim_names/permutation metadata.
+    /// Daft should still extract the shape and element type correctly.
+    #[test]
+    fn test_arrow_canonical_fixed_shape_tensor_with_dim_names() {
+        let storage = arrow_schema::DataType::FixedSizeList(
+            Arc::new(arrow_schema::Field::new(
+                "item",
+                arrow_schema::DataType::Float64,
+                true,
+            )),
+            100 * 200 * 3,
+        );
+        let arrow_field = arrow_ext_field(
+            "image_tensor",
+            storage,
+            ARROW_FIXED_SHAPE_TENSOR_KEY,
+            Some(r#"{"shape":[100,200,3],"dim_names":["H","W","C"]}"#),
+        );
+
+        let daft_field = Field::try_from(&arrow_field).unwrap();
+        assert_eq!(
+            daft_field.dtype,
+            DataType::FixedShapeTensor(Box::new(DataType::Float64), vec![100, 200, 3])
+        );
+    }
+
+    /// Arrow canonical `arrow.fixed_shape_tensor` with a 1-D shape.
+    #[test]
+    fn test_arrow_canonical_fixed_shape_tensor_1d() {
+        let storage = arrow_schema::DataType::FixedSizeList(
+            Arc::new(arrow_schema::Field::new(
+                "item",
+                arrow_schema::DataType::Float32,
+                true,
+            )),
+            512,
+        );
+        let arrow_field = arrow_ext_field(
+            "embedding",
+            storage,
+            ARROW_FIXED_SHAPE_TENSOR_KEY,
+            Some(r#"{"shape":[512]}"#),
+        );
+
+        let daft_field = Field::try_from(&arrow_field).unwrap();
+        assert_eq!(
+            daft_field.dtype,
+            DataType::FixedShapeTensor(Box::new(DataType::Float32), vec![512])
+        );
+    }
+
+    /// Arrow canonical `arrow.variable_shape_tensor` with Float32 elements, 3 dimensions.
+    /// Storage type: Struct { data: List<Float32>, shape: FixedSizeList<Int32>(3) }
+    #[test]
+    fn test_arrow_canonical_variable_shape_tensor_to_daft() {
+        let data_field = arrow_schema::Field::new(
+            "data",
+            arrow_schema::DataType::List(Arc::new(arrow_schema::Field::new(
+                "item",
+                arrow_schema::DataType::Float32,
+                true,
+            ))),
+            true,
+        );
+        let shape_field = arrow_schema::Field::new(
+            "shape",
+            arrow_schema::DataType::FixedSizeList(
+                Arc::new(arrow_schema::Field::new(
+                    "item",
+                    arrow_schema::DataType::Int32,
+                    true,
+                )),
+                3,
+            ),
+            true,
+        );
+        let storage = arrow_schema::DataType::Struct(vec![data_field, shape_field].into());
+
+        // Minimal metadata (empty string is valid per spec)
+        let arrow_field = arrow_ext_field(
+            "tensor_col",
+            storage,
+            ARROW_VARIABLE_SHAPE_TENSOR_KEY,
+            Some(""),
+        );
+
+        let daft_field = Field::try_from(&arrow_field).unwrap();
+        assert_eq!(daft_field.name, "tensor_col");
+        assert_eq!(
+            daft_field.dtype,
+            DataType::Tensor(Box::new(DataType::Float32))
+        );
+    }
+
+    /// Arrow canonical `arrow.variable_shape_tensor` with Int32 elements, 2 dimensions.
+    #[test]
+    fn test_arrow_canonical_variable_shape_tensor_int32() {
+        let data_field = arrow_schema::Field::new(
+            "data",
+            arrow_schema::DataType::List(Arc::new(arrow_schema::Field::new(
+                "item",
+                arrow_schema::DataType::Int32,
+                true,
+            ))),
+            true,
+        );
+        let shape_field = arrow_schema::Field::new(
+            "shape",
+            arrow_schema::DataType::FixedSizeList(
+                Arc::new(arrow_schema::Field::new(
+                    "item",
+                    arrow_schema::DataType::Int32,
+                    true,
+                )),
+                2,
+            ),
+            true,
+        );
+        let storage = arrow_schema::DataType::Struct(vec![data_field, shape_field].into());
+
+        let arrow_field = arrow_ext_field("matrix", storage, ARROW_VARIABLE_SHAPE_TENSOR_KEY, None);
+
+        let daft_field = Field::try_from(&arrow_field).unwrap();
+        assert_eq!(
+            daft_field.dtype,
+            DataType::Tensor(Box::new(DataType::Int32))
+        );
+    }
+
+    /// Arrow canonical `arrow.variable_shape_tensor` with dim_names metadata.
+    #[test]
+    fn test_arrow_canonical_variable_shape_tensor_with_dim_names() {
+        let data_field = arrow_schema::Field::new(
+            "data",
+            arrow_schema::DataType::List(Arc::new(arrow_schema::Field::new(
+                "item",
+                arrow_schema::DataType::Float64,
+                true,
+            ))),
+            true,
+        );
+        let shape_field = arrow_schema::Field::new(
+            "shape",
+            arrow_schema::DataType::FixedSizeList(
+                Arc::new(arrow_schema::Field::new(
+                    "item",
+                    arrow_schema::DataType::Int32,
+                    true,
+                )),
+                3,
+            ),
+            true,
+        );
+        let storage = arrow_schema::DataType::Struct(vec![data_field, shape_field].into());
+
+        let arrow_field = arrow_ext_field(
+            "video_frames",
+            storage,
+            ARROW_VARIABLE_SHAPE_TENSOR_KEY,
+            Some(r#"{"dim_names":["H","W","C"]}"#),
+        );
+
+        let daft_field = Field::try_from(&arrow_field).unwrap();
+        assert_eq!(
+            daft_field.dtype,
+            DataType::Tensor(Box::new(DataType::Float64))
+        );
+    }
+
+    /// A List of arrow.fixed_shape_tensor should become List<FixedShapeTensor>.
+    #[test]
+    fn test_arrow_canonical_list_of_fixed_shape_tensors() {
+        let inner_storage = arrow_schema::DataType::FixedSizeList(
+            Arc::new(arrow_schema::Field::new(
+                "item",
+                arrow_schema::DataType::Float32,
+                true,
+            )),
+            100,
+        );
+        let mut inner_metadata = HashMap::new();
+        inner_metadata.insert(
+            EXTENSION_TYPE_NAME_KEY.to_string(),
+            ARROW_FIXED_SHAPE_TENSOR_KEY.to_string(),
+        );
+        inner_metadata.insert(
+            EXTENSION_TYPE_METADATA_KEY.to_string(),
+            r#"{"shape":[10,10]}"#.to_string(),
+        );
+        let inner_field =
+            arrow_schema::Field::new("item", inner_storage, true).with_metadata(inner_metadata);
+        let list_type = arrow_schema::DataType::List(Arc::new(inner_field));
+        let arrow_field = arrow_schema::Field::new("tensor_list", list_type, true);
+
+        let daft_field = Field::try_from(&arrow_field).unwrap();
+        assert_eq!(
+            daft_field.dtype,
+            DataType::List(Box::new(DataType::FixedShapeTensor(
+                Box::new(DataType::Float32),
+                vec![10, 10]
+            )))
+        );
     }
 }
