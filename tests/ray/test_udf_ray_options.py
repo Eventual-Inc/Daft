@@ -14,7 +14,6 @@ from daft import DataType, col, get_or_infer_runner_type, udf
 ray = pytest.importorskip("ray")
 RAY_VERSION = getattr(ray, "__version__", "0.0.0")
 RAY_VERSION_TUPLE = tuple(map(int, RAY_VERSION.split(".")[:3]))
-PYTHON_MAJOR_MINOR = ".".join(platform.python_version().split(".")[:2])
 
 import daft
 
@@ -139,7 +138,6 @@ def test_udf_with_conda_inject_dependencies(input_df):
                         "name": "test",
                         "channels": ["conda-forge", "defaults"],
                         "dependencies": [
-                            f"python={PYTHON_MAJOR_MINOR}",
                             "pip",
                             {"pip": ["daft"]},
                         ],
@@ -159,7 +157,6 @@ def test_udf_with_conda_inject_dependencies(input_df):
                 "conda": {
                     "channels": ["conda-forge", "defaults"],
                     "dependencies": [
-                        f"python={PYTHON_MAJOR_MINOR}",
                         "pip",
                         {"pip": ["daft", "faker"]},
                     ],
@@ -194,7 +191,7 @@ def test_udf_with_prepared_conda_env(input_df):
             "conda-forge",
             "-c",
             "defaults",
-            f"python={PYTHON_MAJOR_MINOR}",
+            f"python={platform.python_version()}",
             "pip",
             "&&",
             "conda",
