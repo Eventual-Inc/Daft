@@ -1,8 +1,9 @@
 use std::{collections::HashSet, iter::repeat_n, path::Path, sync::Arc};
 
+use arrow::array::Array as _;
 use common_error::{DaftError, DaftResult, ensure};
 use common_runtime::get_io_runtime;
-use daft_core::prelude::*;
+use daft_core::{array::ops::as_arrow::AsArrow, prelude::*};
 use daft_dsl::{
     ExprRef,
     functions::{FunctionArgs, ScalarUDF},
@@ -10,6 +11,17 @@ use daft_dsl::{
 use daft_io::{IOConfig, IOStatsRef, SourceType, get_io_client};
 use futures::{StreamExt, TryStreamExt};
 use serde::Serialize;
+
+/// Wrapper around an arrow [`Buffer`](arrow::buffer::Buffer) that implements
+/// [`AsRef<[u8]>`], enabling zero-copy conversion to [`bytes::Bytes`] via
+/// [`bytes::Bytes::from_owner`].
+struct ArrowBuffer(arrow::buffer::Buffer);
+
+impl AsRef<[u8]> for ArrowBuffer {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 #[derive(Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub struct UrlUpload;
@@ -183,7 +195,7 @@ fn prepare_folder_paths(
 
 /// Uploads data from a Binary/FixedSizeBinary/Utf8 Series to the provided folder_path
 ///
-/// This performs an async upload of each row, and creates in-memory copies of the data that is currently in-flight.
+/// This performs an async upload of each row using zero-copy slices into the underlying arrow buffer.
 /// Memory consumption should be tunable by configuring `max_connections`, which tunes the number of in-flight tokio tasks.
 #[allow(clippy::too_many_arguments)]
 pub fn url_upload(
@@ -199,12 +211,6 @@ pub fn url_upload(
     #[allow(clippy::too_many_arguments)]
     fn upload_bytes_to_folder(
         folder_path_iter: Vec<String>,
-        // TODO: We can further optimize this for larger rows by using instead an Iterator<Item = bytes::Bytes>
-        // This would allow us to iteratively copy smaller chunks of data and feed it to the AWS SDKs, instead
-        // of materializing the entire row at once as a single bytes::Bytes.
-        //
-        // Alternatively, we can find a way of creating a `bytes::Bytes` that just references the underlying
-        // arrow2 buffer, without making a copy. This would be the ideal case.
         to_upload: Vec<Option<bytes::Bytes>>,
         max_connections: usize,
         raise_error_on_failure: bool,
@@ -271,12 +277,8 @@ pub fn url_upload(
     let folder_path_arr = prepare_folder_paths(folder_path_arr, series.len(), is_single_folder)?;
     let results = match series.data_type() {
         DataType::Binary => {
-            let bytes_array = series
-                .binary()
-                .unwrap()
-                .into_iter()
-                .map(|v| v.map(|b| bytes::Bytes::from(b.to_vec())))
-                .collect();
+            let arrow_array = series.binary().unwrap().as_arrow()?;
+            let bytes_array = binary_to_bytes(arrow_array);
             upload_bytes_to_folder(
                 folder_path_arr,
                 bytes_array,
@@ -289,12 +291,8 @@ pub fn url_upload(
             )
         }
         DataType::FixedSizeBinary(..) => {
-            let bytes_array = series
-                .fixed_size_binary()
-                .unwrap()
-                .into_iter()
-                .map(|v| v.map(|b| bytes::Bytes::from(b.to_vec())))
-                .collect();
+            let arrow_array = series.fixed_size_binary().unwrap().as_arrow()?;
+            let bytes_array = fixed_size_binary_to_bytes(arrow_array);
             upload_bytes_to_folder(
                 folder_path_arr,
                 bytes_array,
@@ -307,12 +305,8 @@ pub fn url_upload(
             )
         }
         DataType::Utf8 => {
-            let bytes_array = series
-                .utf8()
-                .unwrap()
-                .into_iter()
-                .map(|utf8_slice| utf8_slice.map(|s| bytes::Bytes::from(s.as_bytes().to_vec())))
-                .collect();
+            let arrow_array = series.utf8().unwrap().as_arrow()?;
+            let bytes_array = binary_to_bytes(arrow_array);
             upload_bytes_to_folder(
                 folder_path_arr,
                 bytes_array,
@@ -330,4 +324,49 @@ pub fn url_upload(
     }?;
 
     Ok(Utf8Array::from_iter(series.name(), results.into_iter()).into_series())
+}
+
+/// Creates zero-copy [`bytes::Bytes`] slices from a variable-length arrow byte array
+/// (`LargeBinaryArray` or `LargeStringArray`). Each element shares ownership of the
+/// underlying values buffer via [`bytes::Bytes::from_owner`] + [`bytes::Bytes::slice`],
+/// avoiding per-row memcpy.
+fn binary_to_bytes<T: arrow::datatypes::ByteArrayType<Offset = i64>>(
+    array: &arrow::array::GenericByteArray<T>,
+) -> Vec<Option<bytes::Bytes>> {
+    let values_buf = array.values().clone();
+    let offsets = array.value_offsets();
+    let full_bytes = bytes::Bytes::from_owner(ArrowBuffer(values_buf));
+
+    (0..array.len())
+        .map(|i| {
+            if array.is_valid(i) {
+                let start = offsets[i] as usize;
+                let end = offsets[i + 1] as usize;
+                Some(full_bytes.slice(start..end))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Creates zero-copy [`bytes::Bytes`] slices from a [`arrow::array::FixedSizeBinaryArray`].
+/// Same zero-copy strategy as [`binary_to_bytes`] but using fixed-size offsets.
+fn fixed_size_binary_to_bytes(
+    array: &arrow::array::FixedSizeBinaryArray,
+) -> Vec<Option<bytes::Bytes>> {
+    let values_buf = array.values().clone();
+    let elem_len = array.value_length() as usize;
+    let full_bytes = bytes::Bytes::from_owner(ArrowBuffer(values_buf));
+
+    (0..array.len())
+        .map(|i| {
+            if array.is_valid(i) {
+                let start = i * elem_len;
+                Some(full_bytes.slice(start..start + elem_len))
+            } else {
+                None
+            }
+        })
+        .collect()
 }

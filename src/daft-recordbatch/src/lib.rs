@@ -660,7 +660,7 @@ impl RecordBatch {
                 }
             }
             AggExpr::Mean(expr) => self.eval_agg_child(expr)?.mean(groups),
-            AggExpr::Stddev(expr) => self.eval_agg_child(expr)?.stddev(groups),
+            AggExpr::Stddev(expr, ddof) => self.eval_agg_child(expr)?.stddev(groups, *ddof),
             AggExpr::Var(expr, ddof) => self.eval_agg_child(expr)?.var(groups, *ddof),
             AggExpr::Min(expr) => self.eval_agg_child(expr)?.min(groups),
             AggExpr::Max(expr) => self.eval_agg_child(expr)?.max(groups),
@@ -1593,6 +1593,15 @@ impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
             .collect::<DaftResult<Vec<_>>>()?;
 
         Self::try_new(schema, columns).map_err(DaftError::ArrowRsError)
+    }
+}
+
+impl TryFrom<&arrow_array::RecordBatch> for RecordBatch {
+    type Error = DaftError;
+
+    fn try_from(arrow_rb: &arrow_array::RecordBatch) -> DaftResult<Self> {
+        let schema: Arc<Schema> = Arc::new(arrow_rb.schema().as_ref().try_into()?);
+        Self::from_arrow(schema, arrow_rb.columns().to_vec())
     }
 }
 

@@ -8,11 +8,12 @@ use daft_dsl::{
     Expr, ExprRef, WindowExpr, WindowSpec, binary_op,
     expr::window::{WindowBoundary, WindowFrame},
     functions::{
-        BuiltinScalarFn, BuiltinScalarFnVariant, FUNCTION_REGISTRY, FunctionArgs, ScalarUDF,
+        BuiltinScalarFn, BuiltinScalarFnVariant, FUNCTION_REGISTRY, FunctionArgs,
+        ScalarFunctionFactory, ScalarUDF,
     },
     unresolved_col,
 };
-use daft_session::Session;
+use daft_session::{ScalarFunction as SessionFunction, Session};
 use sqlparser::ast::{
     DuplicateTreatment, Function, FunctionArg, FunctionArgExpr, FunctionArgOperator,
     FunctionArguments, WindowType,
@@ -124,6 +125,19 @@ impl SQLFunction for BuiltinScalarFnVariant {
             inputs: daft_dsl::functions::FunctionArgs::try_new(inputs)?,
         }
         .into())
+    }
+}
+
+impl SQLFunction for Arc<dyn ScalarFunctionFactory> {
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        let inputs = inputs
+            .iter()
+            .map(|input| planner.plan_function_arg(input))
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
+        let inputs = daft_dsl::functions::FunctionArgs::try_new(inputs)?;
+        let schema = Schema::empty();
+        let func = self.get_function(inputs.clone(), &schema)?;
+        Ok(BuiltinScalarFn { func, inputs }.into())
     }
 }
 
@@ -392,9 +406,9 @@ impl SQLPlanner<'_> {
             name: impl AsRef<str>,
         ) -> SQLPlannerResult<Option<Arc<dyn SQLFunction>>> {
             let name = name.as_ref();
-
             match session.get_function(name)? {
-                Some(f) => Ok(Some(Arc::new(f))),
+                Some(SessionFunction::Python(udf)) => Ok(Some(Arc::new(udf))),
+                Some(SessionFunction::Native(factory)) => Ok(Some(Arc::new(factory))),
                 None => Ok(None),
             }
         }
