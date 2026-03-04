@@ -152,8 +152,16 @@ fn promote_to_large_offsets_datatype(dtype: &DataType) -> Option<DataType> {
         DataType::Utf8 => Some(DataType::LargeUtf8),
         DataType::Binary => Some(DataType::LargeBinary),
         DataType::List(inner) => {
+            // arrow-rs with_schema() can promote Utf8→LargeUtf8 and Binary→LargeBinary,
+            // but does NOT support List→LargeList coercion. So keep the outer List and
+            // only promote inner types. Daft's ListArray::from_arrow handles i32→i64
+            // offset widening transparently.
             let new_inner = promote_to_large_offsets_field(inner.as_ref());
-            Some(DataType::LargeList(new_inner.into()))
+            if &new_inner != inner.as_ref() {
+                Some(DataType::List(new_inner.into()))
+            } else {
+                None
+            }
         }
         DataType::LargeList(inner) => {
             let new_inner = promote_to_large_offsets_field(inner.as_ref());
