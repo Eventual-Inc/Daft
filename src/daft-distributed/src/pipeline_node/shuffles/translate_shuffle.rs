@@ -39,18 +39,27 @@ impl LogicalPlanToPipelineNodeTranslator {
         let use_pre_shuffle_merge = self.should_use_pre_shuffle_merge(&child, num_partitions)?;
 
         if is_flight_shuffle && use_pre_shuffle_merge {
-            // Single combined node: pre-shuffle merge + flight shuffle (flight-gather-write then read)
             let shuffle_dirs = self.plan_config.config.flight_shuffle_dirs.clone();
-            Ok(PreShuffleMergeFlightNode::new(
+            let pre_merge_node = PreShuffleMergeFlightNode::new(
                 self.get_next_pipeline_node_id(),
                 &self.plan_config,
                 self.plan_config.config.pre_shuffle_merge_threshold,
+                schema.clone(),
+                shuffle_dirs.clone(),
+                None,
+                child,
+            )
+            .into_node();
+
+            Ok(FlightShuffleNode::new(
+                self.get_next_pipeline_node_id(),
+                &self.plan_config,
                 repartition_spec,
                 schema,
                 num_partitions,
                 shuffle_dirs,
                 None,
-                child,
+                pre_merge_node,
             )
             .into_node())
         } else if is_flight_shuffle {

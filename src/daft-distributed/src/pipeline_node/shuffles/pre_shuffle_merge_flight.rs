@@ -2,8 +2,10 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
+use daft_core::prelude::AsArrow;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
+use daft_micropartition::MicroPartition;
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
 
@@ -30,8 +32,6 @@ pub(crate) struct PreShuffleMergeFlightNode {
     context: PipelineNodeContext,
     pre_shuffle_merge_threshold: usize,
     shuffle_id: u64,
-    _repartition_spec: RepartitionSpec,
-    num_partitions: usize,
     shuffle_dirs: Vec<String>,
     compression: Option<String>,
     child: DistributedPipelineNode,
@@ -45,9 +45,7 @@ impl PreShuffleMergeFlightNode {
         node_id: NodeID,
         plan_config: &PlanConfig,
         pre_shuffle_merge_threshold: usize,
-        repartition_spec: RepartitionSpec,
         schema: SchemaRef,
-        num_partitions: usize,
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
         child: DistributedPipelineNode,
@@ -64,9 +62,7 @@ impl PreShuffleMergeFlightNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            repartition_spec
-                .to_clustering_spec(child.config().clustering_spec.num_partitions())
-                .into(),
+            child.config().clustering_spec.clone(),
         );
 
         Self {
@@ -74,8 +70,6 @@ impl PreShuffleMergeFlightNode {
             context,
             pre_shuffle_merge_threshold,
             shuffle_id,
-            _repartition_spec: repartition_spec,
-            num_partitions,
             shuffle_dirs,
             compression,
             child,
@@ -104,7 +98,6 @@ impl PipelineNodeImpl for PreShuffleMergeFlightNode {
         vec![
             format!("Pre-Shuffle Merge Flight"),
             format!("Threshold: {}", self.pre_shuffle_merge_threshold),
-            format!("Partitions: {}", self.num_partitions),
         ]
     }
 
@@ -114,6 +107,7 @@ impl PipelineNodeImpl for PreShuffleMergeFlightNode {
     ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
+        // Register shuffle directories for cleanup
         let shuffle_dirs_to_register: Vec<String> = self
             .shuffle_dirs
             .iter()
@@ -121,108 +115,160 @@ impl PipelineNodeImpl for PreShuffleMergeFlightNode {
             .collect();
         plan_context.register_shuffle_dirs(shuffle_dirs_to_register);
 
-        let (write_tx, write_rx) = create_channel(256);
+        // Phase 1: Wrap child tasks with flight_gather_write
+        let self_for_instruction = self.clone();
+        let wrapped_input = input_node.pipeline_instruction(self.clone(), move |input| {
+            LocalPhysicalPlan::flight_gather_write(
+                input,
+                self_for_instruction.config.schema.clone(),
+                self_for_instruction.shuffle_id,
+                self_for_instruction.shuffle_dirs.clone(),
+                self_for_instruction.compression.clone(),
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(self_for_instruction.context.node_id as usize)),
+            )
+        });
+
+        let (merge_tx, merge_rx) = create_channel(256);
         let (result_tx, result_rx) = create_channel(1);
 
         let task_id_counter = plan_context.task_id_counter();
         let scheduler_handle = plan_context.scheduler_handle();
 
-        let task_id_counter_read = task_id_counter.clone();
-        let scheduler_handle_read = scheduler_handle.clone();
+        let task_id_counter_output = task_id_counter.clone();
+        let scheduler_handle_output = scheduler_handle.clone();
+        let result_tx_output = result_tx.clone();
 
+        // Phase 2: execute_merge — accumulate per worker, create merge tasks
         let self_merge = self.clone();
         let merge_execution = async move {
             self_merge
                 .execute_merge(
-                    input_node,
+                    wrapped_input,
                     task_id_counter,
-                    write_tx,
+                    merge_tx,
+                    result_tx,
                     scheduler_handle,
                 )
                 .await
         };
 
-        let self_read = self.clone();
-        let read_phase_execution = async move {
-            self_read
-                .execute_read_phase(
-                    write_rx,
-                    task_id_counter_read,
-                    result_tx,
-                    scheduler_handle_read,
+        // Phase 3: execute_output — materialize merge tasks, emit read tasks
+        let output_execution = async move {
+            self.clone()
+                .execute_output(
+                    merge_rx,
+                    task_id_counter_output,
+                    result_tx_output,
+                    scheduler_handle_output,
                 )
                 .await
         };
 
         plan_context.spawn(merge_execution);
-        plan_context.spawn(read_phase_execution);
+        plan_context.spawn(output_execution);
         TaskBuilderStream::from(result_rx)
     }
 }
 
+/// Per-worker accumulation bucket tracking cache entries and total bytes.
+struct WorkerBucket {
+    /// (cache_id, server_address) pairs for each flight_gather_write output
+    cache_entries: Vec<(TaskID, String)>,
+    total_bytes: usize,
+}
+
+impl WorkerBucket {
+    fn new() -> Self {
+        Self {
+            cache_entries: Vec::new(),
+            total_bytes: 0,
+        }
+    }
+
+    fn push(&mut self, task_id: TaskID, server_address: String, data_bytes: usize) {
+        self.cache_entries.push((task_id, server_address));
+        self.total_bytes += data_bytes;
+    }
+
+    fn into_server_cache_mapping(self) -> HashMap<String, Vec<TaskID>> {
+        let mut mapping: HashMap<String, Vec<TaskID>> = HashMap::new();
+        for (cache_id, server) in self.cache_entries {
+            mapping.entry(server).or_default().push(cache_id);
+        }
+        mapping
+    }
+}
+
+/// Extract the total data bytes from a flight_gather_write metadata output.
+///
+/// The output MicroPartition has schema {rows_per_partition: Int32, bytes_per_partition: Int32}
+/// with one row per partition (gather mode uses 1 partition).
+fn extract_data_bytes(output: &MaterializedOutput) -> usize {
+    let mut total_bytes = 0usize;
+    for partition in output.partitions() {
+        if let Some(mp) = partition.as_any().downcast_ref::<MicroPartition>() {
+            for rb in mp.record_batches() {
+                // bytes_per_partition is column index 1
+                let bytes_col = rb.get_column(1);
+                if let Ok(i32_arr) = bytes_col.i32()
+                    && let Ok(arrow_arr) = i32_arr.as_arrow()
+                {
+                    total_bytes += arrow_arr
+                        .values()
+                        .iter()
+                        .map(|v| *v as usize)
+                        .sum::<usize>();
+                }
+            }
+        }
+    }
+    total_bytes
+}
+
 impl PreShuffleMergeFlightNode {
+    /// Phase 2: Materialize wrapped child tasks (flight_gather_write), accumulate per worker,
+    /// create merge tasks when threshold exceeded, pass small buckets through directly.
     async fn execute_merge(
         self: Arc<Self>,
         input_stream: TaskBuilderStream,
         task_id_counter: TaskIDCounter,
-        write_tx: Sender<SwordfishTaskBuilder>,
+        merge_tx: Sender<SwordfishTaskBuilder>,
+        result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         let mut materialized_stream =
             input_stream.materialize(scheduler_handle, self.context.query_idx, task_id_counter);
 
-        let mut worker_buckets: HashMap<WorkerId, Vec<MaterializedOutput>> = HashMap::new();
+        let mut worker_buckets: HashMap<WorkerId, WorkerBucket> = HashMap::new();
 
         while let Some(output) = materialized_stream.try_next().await? {
             let worker_id = output.worker_id().clone();
-            let bucket = worker_buckets.entry(worker_id.clone()).or_default();
-            bucket.push(output);
+            let task_id = output.task_id();
+            let server_address = output.ip_address().clone();
+            let data_bytes = extract_data_bytes(&output);
 
-            if bucket
-                .iter()
-                .map(|output| output.size_bytes())
-                .sum::<usize>()
-                >= self.pre_shuffle_merge_threshold
+            let bucket = worker_buckets
+                .entry(worker_id.clone())
+                .or_insert_with(WorkerBucket::new);
+            bucket.push(task_id, server_address, data_bytes);
+
+            if bucket.total_bytes >= self.pre_shuffle_merge_threshold
+                && let Some(bucket) = worker_buckets.remove(&worker_id)
             {
-                if let Some(materialized_outputs) = worker_buckets.remove(&worker_id) {
-                    let (in_memory_scan, psets) =
-                        MaterializedOutput::into_in_memory_scan_with_psets(
-                            materialized_outputs,
-                            self.config.schema.clone(),
-                            self.node_id(),
-                        );
-                    let plan = LocalPhysicalPlan::flight_gather_write(
-                        in_memory_scan,
-                        self.config.schema.clone(),
-                        self.shuffle_id,
-                        self.shuffle_dirs.clone(),
-                        self.compression.clone(),
-                        StatsState::NotMaterialized,
-                        LocalNodeContext::new(Some(self.context.node_id as usize)),
-                    );
-                    let builder = SwordfishTaskBuilder::new(plan, self.as_ref())
-                        .with_psets(self.node_id(), psets)
-                        .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
-                            worker_id,
-                            soft: false,
-                        }));
+                let server_cache_mapping = bucket.into_server_cache_mapping();
 
-                    if write_tx.send(builder).await.is_err() {
-                        break;
-                    }
-                }
-            }
-        }
-
-        for (worker_id, materialized_outputs) in worker_buckets {
-            if !materialized_outputs.is_empty() {
-                let (in_memory_scan, psets) = MaterializedOutput::into_in_memory_scan_with_psets(
-                    materialized_outputs,
+                // Create merge task: flight_gather_write(flight_shuffle_read_with_cache_ids(...))
+                let read_plan = LocalPhysicalPlan::flight_shuffle_read_with_cache_ids(
+                    self.shuffle_id,
+                    0, // partition_idx=0 for gather mode
+                    server_cache_mapping,
                     self.config.schema.clone(),
-                    self.node_id(),
+                    StatsState::NotMaterialized,
+                    LocalNodeContext::new(Some(self.context.node_id as usize)),
                 );
-                let plan = LocalPhysicalPlan::flight_gather_write(
-                    in_memory_scan,
+                let merge_plan = LocalPhysicalPlan::flight_gather_write(
+                    read_plan,
                     self.config.schema.clone(),
                     self.shuffle_id,
                     self.shuffle_dirs.clone(),
@@ -230,14 +276,33 @@ impl PreShuffleMergeFlightNode {
                     StatsState::NotMaterialized,
                     LocalNodeContext::new(Some(self.context.node_id as usize)),
                 );
-                let builder = SwordfishTaskBuilder::new(plan, self.as_ref())
-                    .with_psets(self.node_id(), psets)
-                    .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
+                let builder = SwordfishTaskBuilder::new(merge_plan, self.as_ref()).with_strategy(
+                    Some(SchedulingStrategy::WorkerAffinity {
                         worker_id,
                         soft: false,
-                    }));
+                    }),
+                );
 
-                if write_tx.send(builder).await.is_err() {
+                if merge_tx.send(builder).await.is_err() {
+                    break;
+                }
+            }
+        }
+
+        // Flush remaining small buckets directly as flight_shuffle_read_with_cache_ids tasks
+        for (_worker_id, bucket) in worker_buckets {
+            if !bucket.cache_entries.is_empty() {
+                let server_cache_mapping = bucket.into_server_cache_mapping();
+                let read_plan = LocalPhysicalPlan::flight_shuffle_read_with_cache_ids(
+                    self.shuffle_id,
+                    0, // partition_idx=0 for gather mode
+                    server_cache_mapping,
+                    self.config.schema.clone(),
+                    StatsState::NotMaterialized,
+                    LocalNodeContext::new(Some(self.context.node_id as usize)),
+                );
+                let builder = SwordfishTaskBuilder::new(read_plan, self.as_ref());
+                if result_tx.send(builder).await.is_err() {
                     break;
                 }
             }
@@ -246,40 +311,38 @@ impl PreShuffleMergeFlightNode {
         Ok(())
     }
 
-    async fn execute_read_phase(
+    /// Phase 3: Materialize merge tasks, emit flight_shuffle_read_with_cache_ids for each merged cache.
+    async fn execute_output(
         self: Arc<Self>,
-        write_rx: Receiver<SwordfishTaskBuilder>,
+        merge_rx: Receiver<SwordfishTaskBuilder>,
         task_id_counter: TaskIDCounter,
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
-        let write_stream = TaskBuilderStream::from(write_rx);
-        let outputs = write_stream
-            .materialize(scheduler_handle, self.context.query_idx, task_id_counter)
-            .try_collect::<Vec<_>>()
-            .await?;
+        let merge_stream = TaskBuilderStream::from(merge_rx);
+        let mut materialized_merges =
+            merge_stream.materialize(scheduler_handle, self.context.query_idx, task_id_counter);
 
-        let mut server_cache_mapping: HashMap<String, Vec<TaskID>> = HashMap::new();
-        for output in &outputs {
+        while let Some(output) = materialized_merges.try_next().await? {
             let server_address = output.ip_address().clone();
-            let task_id = output.task_id();
+            let cache_id = output.task_id();
+
+            let mut server_cache_mapping: HashMap<String, Vec<TaskID>> = HashMap::new();
             server_cache_mapping
                 .entry(server_address)
                 .or_default()
-                .push(task_id);
-        }
+                .push(cache_id);
 
-        for partition_idx in 0..self.num_partitions {
-            let flight_shuffle_read_plan = LocalPhysicalPlan::flight_shuffle_read_with_cache_ids(
+            let read_plan = LocalPhysicalPlan::flight_shuffle_read_with_cache_ids(
                 self.shuffle_id,
-                partition_idx,
-                server_cache_mapping.clone(),
+                0, // partition_idx=0 for gather mode
+                server_cache_mapping,
                 self.config.schema.clone(),
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(self.context.node_id as usize)),
             );
-            let task = SwordfishTaskBuilder::new(flight_shuffle_read_plan, self.as_ref());
-            if result_tx.send(task).await.is_err() {
+            let builder = SwordfishTaskBuilder::new(read_plan, self.as_ref());
+            if result_tx.send(builder).await.is_err() {
                 break;
             }
         }
