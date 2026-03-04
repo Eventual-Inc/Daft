@@ -423,6 +423,15 @@ pub async fn read_parquet_single_arrowrs(
         return Ok(RecordBatch::empty(Some(Arc::new(return_daft_schema))));
     }
 
+    // Zero-column read (e.g. metadata-only query): no decoding needed.
+    if return_daft_schema.is_empty() {
+        let total: usize = rg_indices
+            .iter()
+            .map(|&i| parquet_metadata.row_group(i).num_rows() as usize)
+            .sum();
+        return Ok(row_count_batch(return_daft_schema, total, num_rows));
+    }
+
     // 7. Apply row groups, offset, batch size, RowFilter, RowSelection, and limit.
     let batch_size = batch_size.unwrap_or_else(|| {
         rg_indices
@@ -533,6 +542,15 @@ pub(crate) struct RgTask {
     pub rg_idx: usize,
     pub local_offset: usize,
     pub local_limit: Option<usize>,
+}
+
+/// Build a row-count-only RecordBatch (zero columns) from metadata.
+///
+/// Used for metadata-only queries (e.g. `file_path_column`) where no data columns
+/// need to be decoded from the parquet file.
+fn row_count_batch(schema: Schema, total_rows: usize, num_rows: Option<usize>) -> RecordBatch {
+    let capped = num_rows.map_or(total_rows, |limit| limit.min(total_rows));
+    RecordBatch::new_unchecked(Arc::new(schema), vec![], capped)
 }
 
 /// Setup state for local parquet reading, shared across row group decode tasks.
@@ -882,6 +900,16 @@ pub fn local_parquet_read_arrowrs(
         return Ok(RecordBatch::empty(Some(Arc::new(setup.return_daft_schema))));
     }
 
+    // Zero-column read (e.g. metadata-only query): no decoding needed.
+    if setup.return_daft_schema.is_empty() {
+        let total: usize = setup
+            .rg_tasks
+            .iter()
+            .map(|t| setup.parquet_metadata.row_group(t.rg_idx).num_rows() as usize)
+            .sum();
+        return Ok(row_count_batch(setup.return_daft_schema, total, num_rows));
+    }
+
     // Single-RG fast path: decode directly, with limit pushed to decoder.
     if setup.rg_tasks.len() == 1 {
         let mut table = decode_single_rg(
@@ -956,6 +984,17 @@ pub async fn local_parquet_stream_arrowrs(
 
     if setup.rg_tasks.is_empty() {
         return Ok(futures::stream::empty().boxed());
+    }
+
+    // Zero-column read (e.g. metadata-only query): emit a single row-count-only batch.
+    if setup.return_daft_schema.is_empty() {
+        let total: usize = setup
+            .rg_tasks
+            .iter()
+            .map(|t| setup.parquet_metadata.row_group(t.rg_idx).num_rows() as usize)
+            .sum();
+        let batch = row_count_batch(setup.return_daft_schema.clone(), total, num_rows);
+        return Ok(futures::stream::once(async move { Ok(batch) }).boxed());
     }
 
     // 2. Semaphore: limit concurrent RG decodes.
@@ -1110,6 +1149,16 @@ pub async fn stream_parquet_single_arrowrs(
 
     if rg_indices.is_empty() {
         return Ok(futures::stream::empty().boxed());
+    }
+
+    // Zero-column read (e.g. metadata-only query): emit a single row-count-only batch.
+    if return_daft_schema.is_empty() {
+        let total: usize = rg_indices
+            .iter()
+            .map(|&i| parquet_metadata.row_group(i).num_rows() as usize)
+            .sum();
+        let batch = row_count_batch(return_daft_schema, total, num_rows);
+        return Ok(futures::stream::once(async move { Ok(batch) }).boxed());
     }
 
     // 7. Apply row groups, offset, batch size, RowFilter, RowSelection, and limit.
