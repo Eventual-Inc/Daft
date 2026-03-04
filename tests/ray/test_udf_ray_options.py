@@ -99,6 +99,7 @@ def test_udf_with_conda_inject_dependencies(input_df):
                 "runtime_env": {
                     "conda": {
                         "name": "test",
+                        "channels": ["conda-forge", "defaults"],
                         "dependencies": [
                             f"python={PYTHON_MAJOR_MINOR}",
                             "pip",
@@ -118,6 +119,7 @@ def test_udf_with_conda_inject_dependencies(input_df):
         ray_options={
             "runtime_env": {
                 "conda": {
+                    "channels": ["conda-forge", "defaults"],
                     "dependencies": [
                         f"python={PYTHON_MAJOR_MINOR}",
                         "pip",
@@ -144,6 +146,10 @@ def test_udf_with_prepared_conda_env(input_df):
             "-n",
             conda_env_name,
             "-y",
+            "-c",
+            "conda-forge",
+            "-c",
+            "defaults",
             f"python={PYTHON_MAJOR_MINOR}",
             "pip",
             "&&",
