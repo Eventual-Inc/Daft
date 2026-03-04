@@ -174,6 +174,25 @@ fn build_offset_row_selection(offset: usize, total_rows: usize) -> RowSelection 
     }
 }
 
+/// Sort and deduplicate delete row positions.
+///
+/// Multiple Iceberg delete files may produce unsorted or duplicate positions.
+/// Returns the input unchanged (borrowed) if already sorted and unique.
+fn normalize_delete_rows(delete_rows: &[i64]) -> std::borrow::Cow<'_, [i64]> {
+    debug_assert!(
+        delete_rows.iter().all(|&r| r >= 0),
+        "delete_rows contains negative values"
+    );
+    if delete_rows.windows(2).any(|w| w[0] >= w[1]) {
+        let mut sorted = delete_rows.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        std::borrow::Cow::Owned(sorted)
+    } else {
+        std::borrow::Cow::Borrowed(delete_rows)
+    }
+}
+
 /// Build a `RowSelection` from Iceberg positional delete indices.
 ///
 /// Converts absolute file-level row indices into a selection relative to the
@@ -183,14 +202,8 @@ fn build_delete_row_selection(
     rg_indices: &[usize],
     parquet_metadata: &ParquetMetaData,
 ) -> RowSelection {
-    debug_assert!(
-        delete_rows.iter().all(|&r| r >= 0),
-        "delete_rows contains negative values"
-    );
-    debug_assert!(
-        delete_rows.windows(2).all(|w| w[0] <= w[1]),
-        "delete_rows must be sorted"
-    );
+    let delete_rows = normalize_delete_rows(delete_rows);
+    let delete_rows = &*delete_rows;
 
     // Compute the global row start for each row group in the file.
     let mut rg_global_starts = Vec::with_capacity(parquet_metadata.num_row_groups());
@@ -231,14 +244,8 @@ fn build_single_rg_delete_selection(
     rg_global_start: usize,
     rg_rows: usize,
 ) -> RowSelection {
-    debug_assert!(
-        delete_rows.iter().all(|&r| r >= 0),
-        "delete_rows contains negative values"
-    );
-    debug_assert!(
-        delete_rows.windows(2).all(|w| w[0] <= w[1]),
-        "delete_rows must be sorted"
-    );
+    let delete_rows = normalize_delete_rows(delete_rows);
+    let delete_rows = &*delete_rows;
 
     let rg_end = rg_global_start + rg_rows;
     let lo = delete_rows.partition_point(|&r| (r as usize) < rg_global_start);
@@ -301,6 +308,10 @@ fn deletes_to_row_selection(local_deletes: &[usize], total_rows: usize) -> RowSe
     let mut pos = 0usize;
 
     for &del in local_deletes {
+        // Skip duplicate positions (can happen with overlapping Iceberg delete files).
+        if del < pos {
+            continue;
+        }
         if del > pos {
             selectors.push(RowSelector::select(del - pos));
         }
