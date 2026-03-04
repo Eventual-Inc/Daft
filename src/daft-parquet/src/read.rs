@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{
-    DaftParquetMetadata, JoinSnafu, file::ParquetReaderBuilder, infer_arrow_schema_from_metadata,
+    DaftParquetMetadata, JoinSnafu, file::ParquetReaderBuilder, infer_schema_from_daft_metadata,
 };
 
 #[cfg(feature = "python")]
@@ -715,10 +715,9 @@ pub async fn read_parquet_schema_and_metadata(
         None,
     )
     .await?;
-    let arrow_schema =
-        infer_arrow_schema_from_metadata(&metadata, Some(schema_inference_options.into()))?;
-    let schema = arrow_schema.into();
-    Ok((schema, metadata.into()))
+    let adapter = DaftParquetMetadata::from_arrowrs(metadata);
+    let schema = infer_schema_from_daft_metadata(&adapter, schema_inference_options)?;
+    Ok((schema, adapter))
 }
 
 pub async fn read_parquet_metadata(
@@ -736,7 +735,7 @@ pub async fn read_parquet_metadata(
         None,
     )
     .await?;
-    Ok(metadata.into())
+    Ok(DaftParquetMetadata::from_arrowrs(metadata))
 }
 pub async fn read_parquet_metadata_bulk(
     uris: &[&str],
@@ -879,7 +878,7 @@ mod tests {
     use daft_arrow::{datatypes::DataType, io::parquet::read::schema::StringEncoding};
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
-    use parquet2::schema::types::{ParquetType, PrimitiveConvertedType, PrimitiveLogicalType};
+    use parquet::schema::types::Type as ParquetSchemaType;
 
     use super::*;
 
@@ -1002,23 +1001,28 @@ mod tests {
             })
             .flatten()
             .unwrap();
-        let primitive_type = match file_metadata.as_parquet2().schema_descr.fields() {
-            [parquet_type] => match parquet_type {
-                ParquetType::PrimitiveType(primitive_type) => primitive_type,
-                ParquetType::GroupType { .. } => {
-                    panic!("Parquet type should be primitive type, not group type")
-                }
-            },
-            _ => panic!("This test parquet file should have only 1 field"),
-        };
+        let schema_descr = file_metadata.schema_descriptor();
+        let fields = schema_descr.root_schema().get_fields();
         assert_eq!(
-            primitive_type.logical_type,
-            Some(PrimitiveLogicalType::String)
+            fields.len(),
+            1,
+            "This test parquet file should have only 1 field"
         );
-        assert_eq!(
-            primitive_type.converted_type,
-            Some(PrimitiveConvertedType::Utf8)
-        );
+        match fields[0].as_ref() {
+            ParquetSchemaType::PrimitiveType { basic_info, .. } => {
+                assert_eq!(
+                    basic_info.logical_type(),
+                    Some(parquet::basic::LogicalType::String),
+                );
+                assert_eq!(
+                    basic_info.converted_type(),
+                    parquet::basic::ConvertedType::UTF8,
+                );
+            }
+            ParquetSchemaType::GroupType { .. } => {
+                panic!("Parquet type should be primitive type, not group type")
+            }
+        }
         let (schema, _, _) = read_parquet_into_pyarrow(
             &parquet,
             None,

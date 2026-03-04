@@ -462,14 +462,22 @@ pub(crate) fn validate_footer_magic(uri: &str, buffer: &[u8]) -> super::Result<(
     Ok(())
 }
 
-pub(crate) async fn read_parquet_metadata(
+// ---------------------------------------------------------------------------
+// Shared footer I/O
+// ---------------------------------------------------------------------------
+
+/// Fetches raw parquet footer bytes from a URI, handling suffix range fallback
+/// and two-pass reads for large footers.
+///
+/// Returns `(footer_bytes, remaining_offset)` where `remaining_offset` is the
+/// byte offset within `footer_bytes` where the thrift metadata starts.
+async fn fetch_parquet_footer_bytes(
     uri: &str,
     file_size: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     default_footer_read_size: Option<usize>,
-) -> super::Result<FileMetaData> {
+) -> super::Result<(Bytes, usize)> {
     async fn fetch_data(
         io_client: Arc<IOClient>,
         uri: &str,
@@ -556,7 +564,84 @@ pub(crate) async fn read_parquet_metadata(
     let buffer = data.as_ref();
     validate_footer_magic(uri, buffer)?;
 
-    // use rayon here
+    Ok((data, remaining))
+}
+
+// ---------------------------------------------------------------------------
+// Arrow-rs metadata deserialization (new primary path)
+// ---------------------------------------------------------------------------
+
+/// Read parquet metadata using arrow-rs deserialization.
+///
+/// Returns `Arc<parquet::file::metadata::ParquetMetaData>`.
+pub(crate) async fn read_parquet_metadata(
+    uri: &str,
+    file_size: Option<usize>,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    default_footer_read_size: Option<usize>,
+) -> super::Result<Arc<parquet::file::metadata::ParquetMetaData>> {
+    let (data, remaining) = fetch_parquet_footer_bytes(
+        uri,
+        file_size,
+        io_client,
+        io_stats,
+        default_footer_read_size,
+    )
+    .await?;
+
+    let metadata = tokio::task::spawn_blocking(move || {
+        let thrift_bytes = &data.as_ref()[remaining..data.len() - FOOTER_SIZE];
+        parquet::file::metadata::ParquetMetaDataReader::decode_metadata(thrift_bytes)
+    })
+    .await
+    .context(JoinSnafu {
+        path: uri.to_string(),
+    })?
+    .map_err(|e| Error::UnableToParseMetadataArrowRs {
+        path: uri.to_string(),
+        source: e,
+    })?;
+
+    let metadata = Arc::new(metadata);
+
+    if let Some(field_id_mapping) = field_id_mapping {
+        apply_field_ids_to_arrowrs_parquet_metadata(metadata, field_id_mapping.as_ref()).map_err(
+            |e| Error::UnableToParseMetadataArrowRs {
+                path: uri.to_string(),
+                source: parquet::errors::ParquetError::External(e.into()),
+            },
+        )
+    } else {
+        Ok(metadata)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// parquet2 metadata deserialization (pyarrow/streaming path)
+// ---------------------------------------------------------------------------
+
+/// Read parquet metadata using parquet2 deserialization.
+///
+/// Used by the pyarrow streaming path (`file.rs`, `stream_reader.rs`).
+pub(crate) async fn read_parquet2_metadata(
+    uri: &str,
+    file_size: Option<usize>,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    default_footer_read_size: Option<usize>,
+) -> super::Result<FileMetaData> {
+    let (data, remaining) = fetch_parquet_footer_bytes(
+        uri,
+        file_size,
+        io_client,
+        io_stats,
+        default_footer_read_size,
+    )
+    .await?;
+
     let file_metadata = tokio::task::spawn_blocking(move || {
         let reader = &data.as_ref()[remaining..];
         let max_size = reader.len() * 2 + 1024;
@@ -597,28 +682,28 @@ mod tests {
         // Read metadata with actual file size.
         let metadata =
             read_parquet_metadata(file, Some(size), io_client.clone(), None, None, None).await?;
-        assert_eq!(metadata.num_rows, 100);
+        assert_eq!(metadata.file_metadata().num_rows(), 100);
 
         // Read metadata without a file size.
         let metadata =
             read_parquet_metadata(file, None, io_client.clone(), None, None, None).await?;
-        assert_eq!(metadata.num_rows, 100);
+        assert_eq!(metadata.file_metadata().num_rows(), 100);
 
         // Overwrite the default footer read size which less than footer length but without a file size.
         let metadata =
             read_parquet_metadata(file, None, io_client.clone(), None, None, Some(500)).await?;
-        assert_eq!(metadata.num_rows, 100);
+        assert_eq!(metadata.file_metadata().num_rows(), 100);
 
         // Overwrite the default footer read size which less than footer length and a file size.
         let metadata =
             read_parquet_metadata(file, Some(size), io_client.clone(), None, None, Some(500))
                 .await?;
-        assert_eq!(metadata.num_rows, 100);
+        assert_eq!(metadata.file_metadata().num_rows(), 100);
 
         // Overwrite the default footer read size less than 8 bytes.
         let metadata =
             read_parquet_metadata(file, None, io_client.clone(), None, None, Some(5)).await?;
-        assert_eq!(metadata.num_rows, 100);
+        assert_eq!(metadata.file_metadata().num_rows(), 100);
 
         // Test with invalid file size, assume file size is 10 bytes.
         let result =

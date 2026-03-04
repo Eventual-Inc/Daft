@@ -22,7 +22,7 @@ use crate::{
     UnableToConvertRowGroupMetadataToStatsSnafu, UnableToCreateParquetPageStreamSnafu,
     UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu,
     infer_arrow_schema_from_metadata,
-    metadata::read_parquet_metadata,
+    metadata::read_parquet2_metadata,
     read::ParquetSchemaInferenceOptions,
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
     statistics,
@@ -207,7 +207,7 @@ impl ParquetReaderBuilder {
         field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     ) -> super::Result<Self> {
         let metadata =
-            read_parquet_metadata(uri, None, io_client, io_stats, field_id_mapping, None).await?;
+            read_parquet2_metadata(uri, None, io_client, io_stats, field_id_mapping, None).await?;
         Ok(Self {
             uri: uri.into(),
             metadata,

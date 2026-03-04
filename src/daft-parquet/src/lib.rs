@@ -9,7 +9,7 @@ mod async_reader;
 mod file;
 pub mod metadata;
 mod metadata_adapter;
-pub use metadata_adapter::{DaftParquetMetadata, DaftRowGroupMetaData};
+pub use metadata_adapter::{DaftParquetMetadata, DaftRowGroupMetaData, RowGroupList};
 #[cfg(feature = "python")]
 pub mod python;
 pub mod read;
@@ -37,6 +37,21 @@ pub fn infer_arrow_schema_from_metadata(
     Ok(coerced_arrow_schema)
 }
 
+/// Infer a Daft `Schema` from arrow-rs-backed `DaftParquetMetadata`.
+pub fn infer_schema_from_daft_metadata(
+    metadata: &DaftParquetMetadata,
+    options: read::ParquetSchemaInferenceOptions,
+) -> common_error::DaftResult<daft_core::prelude::Schema> {
+    use daft_arrow::io::parquet::read::schema::StringEncoding;
+    let arrow_schema = schema_inference::infer_schema_from_parquet_metadata_arrowrs(
+        metadata.as_arrowrs(),
+        Some(options.coerce_int96_timestamp_unit),
+        options.string_encoding == StringEncoding::Raw,
+    )
+    .map_err(|e| common_error::DaftError::External(e.into()))?;
+    daft_core::prelude::Schema::try_from(&arrow_schema)
+}
+
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("{source}"))]
@@ -59,6 +74,15 @@ pub enum Error {
     UnableToParseMetadata {
         path: String,
         source: parquet2::error::Error,
+    },
+    #[snafu(display(
+        "Unable to parse parquet metadata (arrow-rs) for file {}: {}",
+        path,
+        source
+    ))]
+    UnableToParseMetadataArrowRs {
+        path: String,
+        source: parquet::errors::ParquetError,
     },
     #[snafu(display("Unable to parse parquet metadata for file {}: {}", path, source))]
     UnableToParseMetadataFromLocalFile {

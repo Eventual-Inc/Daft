@@ -3361,7 +3361,6 @@ dependencies = [
  "futures",
  "indexmap 2.13.0",
  "itertools 0.14.0",
- "parquet2",
  "pyo3",
  "serde",
  "snafu",
