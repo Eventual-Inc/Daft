@@ -946,7 +946,7 @@ pub fn local_parquet_read_arrowrs(
     let rg_results: Vec<DaftResult<RecordBatch>> = setup
         .rg_tasks
         .par_iter()
-        .map(|task| decode_single_rg(path, &setup, task, predicate.as_ref(), None))
+        .map(|task| decode_single_rg(path, &setup, task, predicate.as_ref(), num_rows))
         .collect();
 
     let batches: Vec<RecordBatch> = rg_results.into_iter().collect::<DaftResult<Vec<_>>>()?;
