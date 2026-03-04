@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use crate::dtype::{DAFT_SUPER_EXTENSION_NAME, DataType};
 
 const ARROW_FIXED_SHAPE_TENSOR_KEY: &str = "arrow.fixed_shape_tensor";
-const ARROW_VARIABLE_SHAPE_TENSOR_KEY: &str = "arrow.variable_shape_tensor";
 /// Registry that maps extension type names to their original arrow-rs storage DataType
 /// (before Daft coercion, e.g. Binary instead of LargeBinary). This allows `to_arrow`
 /// to reverse the coercion so PyArrow sees the original storage type.
@@ -121,16 +120,6 @@ impl Field {
                 }
                 physical.with_metadata(metadata_map)
             }
-            DataType::Tensor(..) => {
-                let physical = Box::new(self.to_physical());
-                let mut metadata_map = HashMap::new();
-                metadata_map.insert(
-                    EXTENSION_TYPE_NAME_KEY.to_string(),
-                    ARROW_VARIABLE_SHAPE_TENSOR_KEY.into(),
-                );
-
-                physical.to_arrow()?.with_metadata(metadata_map)
-            }
             DataType::FixedShapeTensor(_, shape) => {
                 let physical = Box::new(self.to_physical());
                 let mut metadata_map = HashMap::new();
@@ -145,7 +134,8 @@ impl Field {
                 physical.to_arrow()?.with_metadata(metadata_map)
             }
 
-            dtype @ DataType::Embedding(..)
+            dtype @ DataType::Tensor(..)
+            | dtype @ DataType::Embedding(..)
             | dtype @ DataType::Image(..)
             | dtype @ DataType::FixedShapeImage(..)
             | dtype @ DataType::SparseTensor(..)
@@ -272,8 +262,6 @@ impl TryFrom<&arrow_schema::Field> for Field {
             })
         } else if field.extension_type_name() == Some(ARROW_FIXED_SHAPE_TENSOR_KEY) {
             arrow_fixed_shape_tensor_to_daft(field)
-        } else if field.extension_type_name() == Some(ARROW_VARIABLE_SHAPE_TENSOR_KEY) {
-            arrow_variable_shape_tensor_to_daft(field)
         } else if let Some(extension_name) = field.extension_type_name() {
             // Generic extension type (e.g. daft.uuid)
             let physical = DataType::try_from(field.data_type())?;
@@ -351,43 +339,6 @@ fn arrow_fixed_shape_tensor_to_daft(field: &arrow_schema::Field) -> Result<Field
     })
 }
 
-fn arrow_variable_shape_tensor_to_daft(field: &arrow_schema::Field) -> Result<Field, DaftError> {
-    // Arrow canonical variable_shape_tensor:
-    //   storage = Struct { data: List<value_type>, shape: FixedSizeList<Int32>(ndim) }
-    let value_type = match field.data_type() {
-        arrow_schema::DataType::Struct(fields) => {
-            let data_field = fields.iter().find(|f| f.name() == "data").ok_or_else(|| {
-                DaftError::TypeError("variable_shape_tensor struct missing 'data' field".into())
-            })?;
-            match data_field.data_type() {
-                arrow_schema::DataType::List(inner) | arrow_schema::DataType::LargeList(inner) => {
-                    DataType::try_from(inner.data_type())?
-                }
-                other => {
-                    return Err(DaftError::TypeError(format!(
-                        "expected List for variable_shape_tensor 'data' field, got {other:?}"
-                    )));
-                }
-            }
-        }
-        other => {
-            return Err(DaftError::TypeError(format!(
-                "expected Struct storage for arrow.variable_shape_tensor, got {other:?}"
-            )));
-        }
-    };
-
-    let mut field_metadata = field.metadata().clone();
-    field_metadata.remove(EXTENSION_TYPE_NAME_KEY);
-    field_metadata.remove(EXTENSION_TYPE_METADATA_KEY);
-
-    Ok(Field {
-        name: field.name().clone(),
-        dtype: DataType::Tensor(Box::new(value_type)),
-        metadata: Arc::new(field_metadata.into_iter().collect()),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use std::{collections::HashMap, sync::Arc};
@@ -398,7 +349,7 @@ mod tests {
 
     use crate::{
         dtype::{DAFT_SUPER_EXTENSION_NAME, DataType},
-        field::{ARROW_FIXED_SHAPE_TENSOR_KEY, ARROW_VARIABLE_SHAPE_TENSOR_KEY, Field},
+        field::{ARROW_FIXED_SHAPE_TENSOR_KEY, Field},
         media_type::MediaType,
         prelude::{ImageMode, TimeUnit},
     };
@@ -610,124 +561,6 @@ mod tests {
         assert_eq!(
             daft_field.dtype,
             DataType::FixedShapeTensor(Box::new(DataType::Float32), vec![512])
-        );
-    }
-
-    /// Arrow canonical `arrow.variable_shape_tensor` with Float32 elements, 3 dimensions.
-    /// Storage type: Struct { data: List<Float32>, shape: FixedSizeList<Int32>(3) }
-    #[test]
-    fn test_arrow_canonical_variable_shape_tensor_to_daft() {
-        let data_field = arrow_schema::Field::new(
-            "data",
-            arrow_schema::DataType::List(Arc::new(arrow_schema::Field::new(
-                "item",
-                arrow_schema::DataType::Float32,
-                true,
-            ))),
-            true,
-        );
-        let shape_field = arrow_schema::Field::new(
-            "shape",
-            arrow_schema::DataType::FixedSizeList(
-                Arc::new(arrow_schema::Field::new(
-                    "item",
-                    arrow_schema::DataType::Int32,
-                    true,
-                )),
-                3,
-            ),
-            true,
-        );
-        let storage = arrow_schema::DataType::Struct(vec![data_field, shape_field].into());
-
-        // Minimal metadata (empty string is valid per spec)
-        let arrow_field = arrow_ext_field(
-            "tensor_col",
-            storage,
-            ARROW_VARIABLE_SHAPE_TENSOR_KEY,
-            Some(""),
-        );
-
-        let daft_field = Field::try_from(&arrow_field).unwrap();
-        assert_eq!(daft_field.name, "tensor_col");
-        assert_eq!(
-            daft_field.dtype,
-            DataType::Tensor(Box::new(DataType::Float32))
-        );
-    }
-
-    /// Arrow canonical `arrow.variable_shape_tensor` with Int32 elements, 2 dimensions.
-    #[test]
-    fn test_arrow_canonical_variable_shape_tensor_int32() {
-        let data_field = arrow_schema::Field::new(
-            "data",
-            arrow_schema::DataType::List(Arc::new(arrow_schema::Field::new(
-                "item",
-                arrow_schema::DataType::Int32,
-                true,
-            ))),
-            true,
-        );
-        let shape_field = arrow_schema::Field::new(
-            "shape",
-            arrow_schema::DataType::FixedSizeList(
-                Arc::new(arrow_schema::Field::new(
-                    "item",
-                    arrow_schema::DataType::Int32,
-                    true,
-                )),
-                2,
-            ),
-            true,
-        );
-        let storage = arrow_schema::DataType::Struct(vec![data_field, shape_field].into());
-
-        let arrow_field = arrow_ext_field("matrix", storage, ARROW_VARIABLE_SHAPE_TENSOR_KEY, None);
-
-        let daft_field = Field::try_from(&arrow_field).unwrap();
-        assert_eq!(
-            daft_field.dtype,
-            DataType::Tensor(Box::new(DataType::Int32))
-        );
-    }
-
-    /// Arrow canonical `arrow.variable_shape_tensor` with dim_names metadata.
-    #[test]
-    fn test_arrow_canonical_variable_shape_tensor_with_dim_names() {
-        let data_field = arrow_schema::Field::new(
-            "data",
-            arrow_schema::DataType::List(Arc::new(arrow_schema::Field::new(
-                "item",
-                arrow_schema::DataType::Float64,
-                true,
-            ))),
-            true,
-        );
-        let shape_field = arrow_schema::Field::new(
-            "shape",
-            arrow_schema::DataType::FixedSizeList(
-                Arc::new(arrow_schema::Field::new(
-                    "item",
-                    arrow_schema::DataType::Int32,
-                    true,
-                )),
-                3,
-            ),
-            true,
-        );
-        let storage = arrow_schema::DataType::Struct(vec![data_field, shape_field].into());
-
-        let arrow_field = arrow_ext_field(
-            "video_frames",
-            storage,
-            ARROW_VARIABLE_SHAPE_TENSOR_KEY,
-            Some(r#"{"dim_names":["H","W","C"]}"#),
-        );
-
-        let daft_field = Field::try_from(&arrow_field).unwrap();
-        assert_eq!(
-            daft_field.dtype,
-            DataType::Tensor(Box::new(DataType::Float64))
         );
     }
 
