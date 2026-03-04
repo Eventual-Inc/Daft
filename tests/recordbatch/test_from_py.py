@@ -117,19 +117,19 @@ ARROW_TYPE_ARRAYS = {
         ),
     ),
     "null": pa.array(PYTHON_TYPE_ARRAYS["null"], pa.null()),
-    "tensor": pa.ExtensionArray.from_storage(
-        ROUNDTRIP_TYPES["tensor"],
-        pa.array(
-            [
-                {"data": PYTHON_TYPE_ARRAYS["tensor"][0].ravel(), "shape": [2, 2]},
-                {"data": PYTHON_TYPE_ARRAYS["tensor"][1].ravel(), "shape": [3, 3]},
-            ],
-            pa.struct(
-                {
-                    "data": pa.large_list(pa.field("item", pa.int64())),
-                    "shape": pa.large_list(pa.field("item", pa.uint64())),
-                }
-            ),
+    # Variable-shape tensor: PyArrow has no VariableShapeTensorArray class,
+    # so the storage is a plain struct array. Extension metadata lives at the
+    # field/schema level, not the array level.
+    "tensor": pa.array(
+        [
+            {"data": PYTHON_TYPE_ARRAYS["tensor"][0].ravel(), "shape": [2, 2]},
+            {"data": PYTHON_TYPE_ARRAYS["tensor"][1].ravel(), "shape": [3, 3]},
+        ],
+        pa.struct(
+            {
+                "data": pa.large_list(pa.field("item", pa.int64())),
+                "shape": pa.large_list(pa.field("item", pa.uint64())),
+            }
         ),
     ),
     # The following types are not natively supported and will be cast to Python object types.
