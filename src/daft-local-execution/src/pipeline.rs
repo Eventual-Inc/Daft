@@ -244,14 +244,14 @@ impl BuilderContext {
 
         let id = self.next_id();
         // Keep a unique local runtime node id (`id`), but preserve the originating
-        // distributed plan node id (`node_plan_id`) when available so metrics/stats
+        // distributed plan node id (`node_origin_id`) when available so metrics/stats
         // from local execution can be attributed back to the distributed node.
-        let node_plan_id = node_context.origin_node_id.unwrap_or(id);
+        let node_origin_id = node_context.origin_node_id.unwrap_or(id);
 
         NodeInfo {
             name,
             id,
-            node_origin_id: node_plan_id,
+            node_origin_id,
             node_type,
             node_category,
             node_phase,

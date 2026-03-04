@@ -68,7 +68,7 @@ impl RuntimeNodeManager {
                 self.completed_tasks.add(1, self.node_kv.as_slice());
 
                 for (node_info, snapshot) in &stats.nodes {
-                    // Local nodes are associated to this node through the node_plan_id
+                    // Local nodes are associated to this node through the node_origin_id
                     if self.node_info.node_origin_id == node_info.node_origin_id {
                         self.runtime_stats
                             .handle_worker_node_stats(node_info, snapshot);
