@@ -110,6 +110,7 @@ impl BlockingSink for FlightGatherWriteSink {
                         vec![rows_per_partition, bytes_per_partition],
                         1,
                     )?;
+                    eprintln!("result:\n{}", result);
                     let result_mp =
                         MicroPartition::new_loaded(schema.into(), Arc::new(vec![result]), None);
 
