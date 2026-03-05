@@ -139,6 +139,15 @@ class NativeRunner(Runner[MicroPartition]):
                 except Exception:
                     pass
                 yield result
+        except GeneratorExit:
+            # Generator was abandoned (e.g., .show() breaking out early after collecting
+            # enough rows). Notify subscribers so the dashboard transitions out of Finalizing.
+            try:
+                query_result = PyQueryResult(QueryEndState.Finished, "Query finished")
+                ctx._notify_query_end(query_id, query_result)
+            except Exception as e:
+                logger.warning("Failed to send query end notification: %s", e)
+            return  # type: ignore[return-value]
         except StopIteration as e:
             query_result = PyQueryResult(QueryEndState.Finished, "Query finished")
             ctx._notify_query_end(query_id, query_result)
