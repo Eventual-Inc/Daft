@@ -128,7 +128,7 @@ def test_explain_with_cross_join(small_df, large_df):
         df = small_df.join(other=large_df, how="cross")
         expected = """
         * CrossJoin
-        |   Left: Node name = ScanSource
+        |   Left: Node name = ScanTaskSource
         |   Right: Node name = Project
             """
         assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
@@ -136,7 +136,7 @@ def test_explain_with_cross_join(small_df, large_df):
         df = large_df.join(other=small_df, how="cross")
         expected = """
         * CrossJoin
-        |   Left: Node name = ScanSource
+        |   Left: Node name = ScanTaskSource
         |   Right: Node name = Project
             """
         assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
