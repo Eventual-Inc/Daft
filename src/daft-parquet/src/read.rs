@@ -70,7 +70,7 @@ impl TryFrom<ParquetSchemaInferenceOptionsBuilder> for ParquetSchemaInferenceOpt
             value
                 .string_encoding
                 .parse()
-                .map_err(|e: common_error::DaftError| crate::Error::Arrow2Error {
+                .map_err(|e: common_error::DaftError| crate::Error::ArrowError {
                     source: daft_arrow::error::Error::InvalidArgumentError(e.to_string()),
                 })?;
         Ok(Self {

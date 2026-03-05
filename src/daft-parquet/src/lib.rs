@@ -35,7 +35,7 @@ pub fn infer_schema_from_daft_metadata(
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("{source}"))]
-    Arrow2Error { source: daft_arrow::error::Error },
+    ArrowError { source: daft_arrow::error::Error },
 
     #[snafu(display("{source}"))]
     DaftIOError { source: daft_io::Error },
