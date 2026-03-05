@@ -14,7 +14,7 @@ use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
 use futures::{
-    StreamExt, TryStreamExt,
+    StreamExt, TryFutureExt, TryStreamExt,
     future::{join_all, try_join_all},
     stream::BoxStream,
 };
@@ -261,24 +261,45 @@ async fn read_parquet_single_into_arrow(
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<ParquetPyarrowChunk> {
-    let rb = read_parquet_single(
+    // Read data and metadata concurrently.
+    // The metadata read is needed to recover schema-level key-value metadata
+    // (e.g. custom metadata like {"str": "foo"}) that Daft's RecordBatch doesn't carry.
+    let data_fut = read_parquet_single(
         uri,
         columns,
         start_offset,
         num_rows,
         row_groups,
         None, // predicate (pyarrow API doesn't expose it)
-        io_client,
-        io_stats,
+        io_client.clone(),
+        io_stats.clone(),
         schema_infer_options,
         field_id_mapping,
         None, // metadata
         None, // delete_rows
         None, // chunk_size
-    )
-    .await?;
+    );
+    let metadata_fut =
+        crate::metadata::read_parquet_metadata(uri, None, io_client, io_stats, None, None);
 
+    let (rb, parquet_metadata) =
+        futures::future::try_join(data_fut, metadata_fut.err_into()).await?;
     let num_rows_read = rb.len();
+
+    // Extract schema-level key-value metadata via arrow-rs schema inference,
+    // which handles the ARROW:schema key the same way as pyarrow.
+    let schema_metadata: std::collections::BTreeMap<String, String> =
+        parquet::arrow::parquet_to_arrow_schema(
+            parquet_metadata.file_metadata().schema_descr(),
+            parquet_metadata.file_metadata().key_value_metadata(),
+        )
+        .map(|s| {
+            s.metadata()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
 
     // Convert each Daft Series → FFI-compatible arrays for the pyarrow bridge.
     // Return in COLUMN-MAJOR layout: all_arrays[col_idx] = [chunks_for_that_column].
@@ -298,10 +319,10 @@ async fn read_parquet_single_into_arrow(
         all_arrays.push(vec![ffi_array]);
     }
 
-    let ffi_schema: daft_arrow::datatypes::SchemaRef =
-        Arc::new(daft_arrow::datatypes::Schema::from(ffi_fields));
+    let mut ffi_schema = daft_arrow::datatypes::Schema::from(ffi_fields);
+    ffi_schema.metadata = schema_metadata;
 
-    Ok((ffi_schema, all_arrays, num_rows_read))
+    Ok((Arc::new(ffi_schema), all_arrays, num_rows_read))
 }
 
 #[allow(clippy::too_many_arguments)]
