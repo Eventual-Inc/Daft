@@ -7,6 +7,30 @@ use daft_ext_abi::{ArrowArray, ArrowData, ArrowSchema, FFI_ScalarFunction};
 
 use crate::{error::DaftResult, ffi::trampoline::trampoline};
 
+/// RAII guard that releases any unconsumed `ArrowData` slots on drop.
+///
+/// `ArrowArray` and `ArrowSchema` intentionally have no `Drop` impl, so when
+/// the trampoline copies host arrays via `ptr::read`, the release callbacks
+/// must be invoked manually. On the success path, `ArrowData::take_arg` zeros
+/// consumed slots (setting `release` to `None`), so the guard is a no-op for
+/// those. On error or panic, the guard releases any remaining live slots.
+struct ArrowArgsGuard(Vec<ArrowData>);
+
+impl Drop for ArrowArgsGuard {
+    fn drop(&mut self) {
+        for slot in &self.0 {
+            unsafe {
+                if let Some(release) = slot.array.release {
+                    release((&raw const slot.array).cast_mut());
+                }
+                if let Some(release) = slot.schema.release {
+                    release((&raw const slot.schema).cast_mut());
+                }
+            }
+        }
+    }
+}
+
 /// Trait that extension authors implement to define a scalar function.
 pub trait DaftScalarFunction {
     fn name(&self) -> &CStr;
@@ -75,13 +99,15 @@ unsafe extern "C" fn ffi_call(
     unsafe { trampoline(errmsg, "panic in call", || {
         let ctx = &*ctx.cast::<DaftScalarFunctionRef>();
         // Build ArrowData slices from the raw pointers.
-        let mut arrow_args = Vec::with_capacity(args_count);
+        // The guard ensures release callbacks are invoked for any slots
+        // not consumed via `take_arg` (error path, panic, or partial consumption).
+        let mut guard = ArrowArgsGuard(Vec::with_capacity(args_count));
         for i in 0..args_count {
             let array = std::ptr::read(args.add(i));
             let schema = std::ptr::read(args_schemas.add(i));
-            arrow_args.push(ArrowData { schema, array });
+            guard.0.push(ArrowData { schema, array });
         }
-        let result = ctx.call(&arrow_args)?;
+        let result = ctx.call(&guard.0)?;
         std::ptr::write(ret_array, result.array);
         std::ptr::write(ret_schema, result.schema);
         Ok(())

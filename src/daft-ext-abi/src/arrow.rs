@@ -226,6 +226,7 @@ mod tests {
         assert_send::<ArrowArrayStream>();
     }
 
+    #[cfg(target_pointer_width = "64")]
     #[test]
     fn layout_sizes() {
         let ptr = std::mem::size_of::<usize>();

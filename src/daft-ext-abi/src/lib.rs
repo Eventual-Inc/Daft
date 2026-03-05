@@ -16,7 +16,7 @@ use std::ffi::{c_char, c_int, c_void};
 pub use arrow::{ArrowArray, ArrowArrayStream, ArrowData, ArrowSchema};
 
 /// Modules built against a different ABI version are rejected at load time.
-pub const DAFT_ABI_VERSION: u32 = 3;
+pub const DAFT_ABI_VERSION: u32 = 1;
 
 /// Symbol that every Daft module cdylib must export.
 ///
