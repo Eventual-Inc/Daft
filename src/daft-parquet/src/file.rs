@@ -1,36 +1,31 @@
 use std::{
-    cmp::{max, min},
     collections::{BTreeMap, HashSet},
     sync::Arc,
 };
 
 use common_error::DaftResult;
-use common_runtime::{combine_stream, get_io_runtime};
 use daft_arrow::io::parquet::read::column_iter_to_arrays;
 use daft_core::prelude::*;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_io::{IOClient, IOStatsRef};
-use daft_recordbatch::RecordBatch;
 use daft_stats::TruthValue;
-use futures::{FutureExt, StreamExt, future::try_join_all, stream::BoxStream};
+use futures::{StreamExt, future::try_join_all};
 use parquet2::{
     FallibleStreamingIterator,
     page::{CompressedPage, Page},
     read::get_owned_page_stream_from_column_start,
 };
 use snafu::ResultExt;
-use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
     JoinSnafu, OneShotRecvSnafu, PARQUET_MORSEL_SIZE, UnableToBindExpressionSnafu,
     UnableToConvertRowGroupMetadataToStatsSnafu, UnableToCreateParquetPageStreamSnafu,
     UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu,
-    determine_parquet_parallelism, infer_arrow_schema_from_metadata,
+    infer_arrow_schema_from_metadata,
     metadata::read_parquet_metadata,
     read::ParquetSchemaInferenceOptions,
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
     statistics,
-    stream_reader::spawn_column_iters_to_table_task,
 };
 
 pub struct ParquetReaderBuilder {
@@ -256,17 +251,6 @@ impl ParquetReaderBuilder {
         self
     }
 
-    pub fn set_filter(mut self, predicate: ExprRef) -> Self {
-        assert_eq!(self.limit, None);
-        self.predicate = Some(predicate);
-        self
-    }
-
-    pub fn set_chunk_size(mut self, chunk_size: Option<usize>) -> Self {
-        self.chunk_size = chunk_size;
-        self
-    }
-
     pub fn build(self) -> super::Result<ParquetFileReader> {
         let options = self.schema_inference_options.into();
         let mut arrow_schema = infer_arrow_schema_from_metadata(&self.metadata, Some(options))
@@ -317,7 +301,6 @@ pub struct ParquetFileReader {
 }
 
 impl ParquetFileReader {
-    const DEFAULT_CHUNK_SIZE: usize = 128 * 1024;
     // Set to 2GB because that's the maximum size of strings allowable by Parquet (using i32 offsets).
     // See issue: https://github.com/Eventual-Inc/Daft/issues/3007
     const MAX_PAGE_SIZE: usize = 2 * 1024 * 1024 * 1024;
@@ -393,346 +376,6 @@ impl ParquetFileReader {
 
         read_planner.run_passes()?;
         read_planner.collect(io_client, io_stats)
-    }
-
-    pub async fn read_from_ranges_into_table_stream(
-        self,
-        ranges: Arc<RangesContainer>,
-        maintain_order: bool,
-        predicate: Option<ExprRef>,
-        original_columns: Option<Vec<String>>,
-        original_num_rows: Option<usize>,
-        delete_rows: Option<Vec<i64>>,
-    ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-        let daft_schema = Arc::new(self.arrow_schema.as_ref().into());
-
-        let num_parallel_tasks = determine_parquet_parallelism(&daft_schema);
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(num_parallel_tasks));
-
-        let (senders, receivers): (Vec<_>, Vec<_>) = self
-            .row_ranges
-            .iter()
-            .map(|_| tokio::sync::mpsc::channel(1))
-            .unzip();
-
-        let uri = self.uri.clone();
-        let chunk_size = self.chunk_size.unwrap_or(Self::DEFAULT_CHUNK_SIZE);
-        let chunk_iter_handles = <Vec<RowGroupRange> as Clone>::clone(&self.row_ranges)
-            .into_iter()
-            .map(move |row_range| {
-                let metadata = self.metadata.clone();
-                let arrow_schema = self.arrow_schema.clone();
-                let ranges = ranges.clone();
-                let uri = uri.clone();
-
-                let chunk_iter_task = tokio::task::spawn(async move {
-                    let arr_iter_handles = arrow_schema.fields.iter().map(|field| {
-                        let rt_handle = tokio::runtime::Handle::current();
-                        let ranges = ranges.clone();
-                        let uri = uri.clone();
-                        let field = field.clone();
-                        let metadata = metadata.clone();
-
-                        tokio::task::spawn(async move {
-                            let rg = metadata
-                                .row_groups
-                                .get(&row_range.row_group_index)
-                                .expect("Row Group index should be in bounds");
-                            let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
-                            let filtered_columns = rg
-                                .columns()
-                                .iter()
-                                .filter(|x| x.descriptor().path_in_schema[0] == field.name)
-                                .collect::<Vec<_>>();
-                            let mut decompressed_iters = Vec::with_capacity(filtered_columns.len());
-                            let mut ptypes = Vec::with_capacity(filtered_columns.len());
-                            let mut num_values = Vec::with_capacity(filtered_columns.len());
-                            for col in filtered_columns {
-                                num_values.push(col.metadata().num_values as usize);
-                                ptypes.push(col.descriptor().descriptor.primitive_type.clone());
-
-                                let byte_range = {
-                                    let (start, len) = col.byte_range();
-                                    let end: u64 = start + len;
-                                    start as usize..end as usize
-                                };
-                                let range_reader =
-                                    Box::pin(ranges.clone().get_range_reader(byte_range).await?);
-                                let compressed_page_stream =
-                                    get_owned_page_stream_from_column_start(
-                                        col,
-                                        range_reader,
-                                        vec![],
-                                        Arc::new(|_, _| true),
-                                        Self::MAX_PAGE_SIZE,
-                                    )
-                                    .with_context(|_| {
-                                        UnableToCreateParquetPageStreamSnafu::<String> {
-                                            path: uri.clone(),
-                                        }
-                                    })?;
-                                let page_stream = streaming_decompression(compressed_page_stream);
-                                let pinned_stream = Box::pin(page_stream);
-                                decompressed_iters
-                                    .push(StreamIterator::new(pinned_stream, rt_handle.clone()));
-                            }
-                            let arr_iter = column_iter_to_arrays(
-                                decompressed_iters,
-                                ptypes.iter().collect(),
-                                field,
-                                Some(chunk_size),
-                                num_rows,
-                                num_values,
-                            )?;
-                            Ok(arr_iter)
-                        })
-                    });
-
-                    let arr_iters = try_join_all(arr_iter_handles)
-                        .await
-                        .context(JoinSnafu { path: uri.clone() })?
-                        .into_iter()
-                        .collect::<DaftResult<Vec<_>>>()?;
-
-                    DaftResult::Ok(arr_iters)
-                });
-                (row_range, chunk_iter_task)
-            });
-
-        let io_runtime = get_io_runtime(true);
-        let uri = self.uri.clone();
-        let parquet_task = io_runtime.spawn(async move {
-            let mut table_tasks = Vec::with_capacity(chunk_iter_handles.len());
-            for ((row_range, chunk_iter_handle), output_sender) in chunk_iter_handles.zip(senders) {
-                // We want to ensure that the channel capacity can hold one morsel worth of data for better deserialization performance.
-                let channel_size = {
-                    let chunks_per_morsel = max(PARQUET_MORSEL_SIZE / chunk_size, 1);
-                    let max_num_chunks = max(row_range.num_rows / chunk_size, 1);
-                    min(chunks_per_morsel, max_num_chunks)
-                };
-
-                let chunk_iter = chunk_iter_handle
-                    .await
-                    .context(JoinSnafu { path: uri.clone() })??;
-
-                let permit = semaphore.clone().acquire_owned().await.unwrap();
-                let table_task = spawn_column_iters_to_table_task(
-                    chunk_iter,
-                    row_range,
-                    daft_schema.clone(),
-                    uri.clone(),
-                    predicate.clone(),
-                    original_columns.clone(),
-                    original_num_rows,
-                    delete_rows.clone(),
-                    output_sender,
-                    permit,
-                    channel_size,
-                );
-                table_tasks.push(table_task);
-            }
-
-            try_join_all(table_tasks)
-                .await?
-                .into_iter()
-                .collect::<DaftResult<()>>()?;
-            DaftResult::Ok(())
-        });
-
-        let stream_of_streams =
-            futures::stream::iter(receivers.into_iter().map(ReceiverStream::new));
-        let parquet_task = parquet_task.map(|x| x?);
-        match maintain_order {
-            true => Ok(combine_stream(stream_of_streams.flatten(), parquet_task).boxed()),
-            false => {
-                Ok(combine_stream(stream_of_streams.flatten_unordered(None), parquet_task).boxed())
-            }
-        }
-    }
-
-    pub async fn read_from_ranges_into_table(
-        self,
-        ranges: Arc<RangesContainer>,
-    ) -> DaftResult<RecordBatch> {
-        let metadata = self.metadata;
-        let all_handles = self
-            .arrow_schema
-            .fields
-            .iter()
-            .map(|field| {
-                let owned_row_ranges = self.row_ranges.clone();
-
-                let field_handles = owned_row_ranges
-                    .iter()
-                    .map(|row_range| {
-                        let row_range = *row_range;
-                        let rt_handle = tokio::runtime::Handle::current();
-                        let field = field.clone();
-                        let owned_uri = self.uri.clone();
-                        let rg = metadata
-                            .row_groups
-                            .get(&row_range.row_group_index)
-                            .expect("Row Group index should be in bounds");
-                        let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
-                        let chunk_size = self.chunk_size.unwrap_or(Self::DEFAULT_CHUNK_SIZE);
-                        let columns = rg.columns();
-                        let field_name = &field.name;
-                        let filtered_cols_idx = columns
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, x)| &x.descriptor().path_in_schema[0] == field_name)
-                            .map(|(i, _)| i)
-                            .collect::<Vec<_>>();
-
-                        let metadata = metadata.clone();
-
-                        let needed_byte_ranges = filtered_cols_idx
-                            .iter()
-                            .map(|i| {
-                                let c = columns.get(*i).unwrap();
-                                let (start, len) = c.byte_range();
-                                let end: u64 = start + len;
-                                start as usize..end as usize
-                            })
-                            .collect::<Vec<_>>();
-
-                        let ranges = ranges.clone();
-
-                        let handle = tokio::task::spawn(async move {
-                            let mut range_readers = Vec::with_capacity(filtered_cols_idx.len());
-
-                            for range in needed_byte_ranges {
-                                let range_reader = ranges.clone().get_range_reader(range).await?;
-                                range_readers.push(Box::pin(range_reader));
-                            }
-
-                            let mut decompressed_iters =
-                                Vec::with_capacity(filtered_cols_idx.len());
-                            let mut ptypes = Vec::with_capacity(filtered_cols_idx.len());
-                            let mut num_values = Vec::with_capacity(filtered_cols_idx.len());
-                            for (col_idx, range_reader) in
-                                filtered_cols_idx.into_iter().zip(range_readers)
-                            {
-                                let col = metadata
-                                    .row_groups
-                                    .get(&row_range.row_group_index)
-                                    .expect("Row Group index should be in bounds")
-                                    .columns()
-                                    .get(col_idx)
-                                    .expect("Column index should be in bounds");
-                                ptypes.push(col.descriptor().descriptor.primitive_type.clone());
-                                num_values.push(col.metadata().num_values as usize);
-
-                                let compressed_page_stream =
-                                    get_owned_page_stream_from_column_start(
-                                        col,
-                                        range_reader,
-                                        vec![],
-                                        Arc::new(|_, _| true),
-                                        Self::MAX_PAGE_SIZE,
-                                    )
-                                    .with_context(|_| {
-                                        UnableToCreateParquetPageStreamSnafu::<String> {
-                                            path: owned_uri.clone(),
-                                        }
-                                    })?;
-                                let page_stream = streaming_decompression(compressed_page_stream);
-                                let pinned_stream = Box::pin(page_stream);
-                                decompressed_iters
-                                    .push(StreamIterator::new(pinned_stream, rt_handle.clone()));
-                            }
-
-                            let (send, recv) = tokio::sync::oneshot::channel();
-                            rayon::spawn(move || {
-                                let arr_iter = column_iter_to_arrays(
-                                    decompressed_iters,
-                                    ptypes.iter().collect(),
-                                    field.clone(),
-                                    Some(chunk_size),
-                                    num_rows,
-                                    num_values,
-                                );
-
-                                let series = (|| {
-                                    let mut all_arrays = vec![];
-                                    let mut curr_index = 0;
-
-                                    for arr in arr_iter? {
-                                        let arr = arr?;
-                                        if (curr_index + arr.len()) < row_range.start {
-                                            // throw arrays less than what we need
-                                            curr_index += arr.len();
-                                        } else if curr_index < row_range.start {
-                                            let offset = row_range.start.saturating_sub(curr_index);
-                                            all_arrays.push(arr.sliced(offset, arr.len() - offset));
-                                            curr_index += arr.len();
-                                        } else {
-                                            curr_index += arr.len();
-                                            all_arrays.push(arr);
-                                        }
-                                    }
-                                    all_arrays
-                                        .into_iter()
-                                        .map(|a| {
-                                            let series_field = Arc::new(Field::new(
-                                                field.name.as_str(),
-                                                DataType::from(a.data_type()),
-                                            ));
-                                            Series::from_arrow(series_field, a.into())
-                                        })
-                                        .collect::<DaftResult<Vec<Series>>>()
-                                })();
-
-                                let _ = send.send(series);
-                            });
-                            recv.await.context(OneShotRecvSnafu {})?
-                        });
-                        Ok(handle)
-                    })
-                    .collect::<DaftResult<Vec<_>>>()?;
-                let owned_uri = self.uri.clone();
-                let owned_field = field.clone();
-                let concated_handle = tokio::task::spawn(async move {
-                    let series_to_concat =
-                        try_join_all(field_handles).await.context(JoinSnafu {
-                            path: owned_uri.clone(),
-                        })?;
-                    let series_to_concat = series_to_concat
-                        .into_iter()
-                        .collect::<DaftResult<Vec<_>>>()?;
-
-                    let (send, recv) = tokio::sync::oneshot::channel();
-                    rayon::spawn(move || {
-                        let concated = if series_to_concat.is_empty() {
-                            Ok(Series::empty(
-                                owned_field.name.as_str(),
-                                &owned_field.data_type().into(),
-                            ))
-                        } else {
-                            Series::concat(&series_to_concat.iter().flatten().collect::<Vec<_>>())
-                        };
-                        drop(series_to_concat);
-                        let _ = send.send(concated);
-                    });
-                    recv.await.context(OneShotRecvSnafu {})?
-                });
-                Ok(concated_handle)
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-
-        let all_series = try_join_all(all_handles)
-            .await
-            .context(JoinSnafu {
-                path: self.uri.clone(),
-            })?
-            .into_iter()
-            .collect::<DaftResult<Vec<_>>>()?;
-
-        RecordBatch::new_with_size(
-            Schema::new(all_series.iter().map(|s| s.field().clone())),
-            all_series,
-            self.row_ranges.as_ref().iter().map(|rr| rr.num_rows).sum(),
-        )
     }
 
     pub async fn read_from_ranges_into_arrow_arrays(

@@ -174,6 +174,25 @@ fn build_offset_row_selection(offset: usize, total_rows: usize) -> RowSelection 
     }
 }
 
+/// Sort and deduplicate delete row positions.
+///
+/// Multiple Iceberg delete files may produce unsorted or duplicate positions.
+/// Returns the input unchanged (borrowed) if already sorted and unique.
+fn normalize_delete_rows(delete_rows: &[i64]) -> std::borrow::Cow<'_, [i64]> {
+    debug_assert!(
+        delete_rows.iter().all(|&r| r >= 0),
+        "delete_rows contains negative values"
+    );
+    if delete_rows.windows(2).any(|w| w[0] >= w[1]) {
+        let mut sorted = delete_rows.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        std::borrow::Cow::Owned(sorted)
+    } else {
+        std::borrow::Cow::Borrowed(delete_rows)
+    }
+}
+
 /// Build a `RowSelection` from Iceberg positional delete indices.
 ///
 /// Converts absolute file-level row indices into a selection relative to the
@@ -183,14 +202,8 @@ fn build_delete_row_selection(
     rg_indices: &[usize],
     parquet_metadata: &ParquetMetaData,
 ) -> RowSelection {
-    debug_assert!(
-        delete_rows.iter().all(|&r| r >= 0),
-        "delete_rows contains negative values"
-    );
-    debug_assert!(
-        delete_rows.windows(2).all(|w| w[0] <= w[1]),
-        "delete_rows must be sorted"
-    );
+    let delete_rows = normalize_delete_rows(delete_rows);
+    let delete_rows = &*delete_rows;
 
     // Compute the global row start for each row group in the file.
     let mut rg_global_starts = Vec::with_capacity(parquet_metadata.num_row_groups());
@@ -231,14 +244,8 @@ fn build_single_rg_delete_selection(
     rg_global_start: usize,
     rg_rows: usize,
 ) -> RowSelection {
-    debug_assert!(
-        delete_rows.iter().all(|&r| r >= 0),
-        "delete_rows contains negative values"
-    );
-    debug_assert!(
-        delete_rows.windows(2).all(|w| w[0] <= w[1]),
-        "delete_rows must be sorted"
-    );
+    let delete_rows = normalize_delete_rows(delete_rows);
+    let delete_rows = &*delete_rows;
 
     let rg_end = rg_global_start + rg_rows;
     let lo = delete_rows.partition_point(|&r| (r as usize) < rg_global_start);
@@ -301,6 +308,10 @@ fn deletes_to_row_selection(local_deletes: &[usize], total_rows: usize) -> RowSe
     let mut pos = 0usize;
 
     for &del in local_deletes {
+        // Skip duplicate positions (can happen with overlapping Iceberg delete files).
+        if del < pos {
+            continue;
+        }
         if del > pos {
             selectors.push(RowSelector::select(del - pos));
         }
@@ -423,6 +434,15 @@ pub async fn read_parquet_single_arrowrs(
         return Ok(RecordBatch::empty(Some(Arc::new(return_daft_schema))));
     }
 
+    // Zero-column read (e.g. metadata-only query): no decoding needed.
+    if return_daft_schema.is_empty() {
+        let total: usize = rg_indices
+            .iter()
+            .map(|&i| parquet_metadata.row_group(i).num_rows() as usize)
+            .sum();
+        return Ok(row_count_batch(return_daft_schema, total, num_rows));
+    }
+
     // 7. Apply row groups, offset, batch size, RowFilter, RowSelection, and limit.
     let batch_size = batch_size.unwrap_or_else(|| {
         rg_indices
@@ -533,6 +553,15 @@ pub(crate) struct RgTask {
     pub rg_idx: usize,
     pub local_offset: usize,
     pub local_limit: Option<usize>,
+}
+
+/// Build a row-count-only RecordBatch (zero columns) from metadata.
+///
+/// Used for metadata-only queries (e.g. `file_path_column`) where no data columns
+/// need to be decoded from the parquet file.
+fn row_count_batch(schema: Schema, total_rows: usize, num_rows: Option<usize>) -> RecordBatch {
+    let capped = num_rows.map_or(total_rows, |limit| limit.min(total_rows));
+    RecordBatch::new_unchecked(Arc::new(schema), vec![], capped)
 }
 
 /// Setup state for local parquet reading, shared across row group decode tasks.
@@ -882,6 +911,16 @@ pub fn local_parquet_read_arrowrs(
         return Ok(RecordBatch::empty(Some(Arc::new(setup.return_daft_schema))));
     }
 
+    // Zero-column read (e.g. metadata-only query): no decoding needed.
+    if setup.return_daft_schema.is_empty() {
+        let total: usize = setup
+            .rg_tasks
+            .iter()
+            .map(|t| setup.parquet_metadata.row_group(t.rg_idx).num_rows() as usize)
+            .sum();
+        return Ok(row_count_batch(setup.return_daft_schema, total, num_rows));
+    }
+
     // Single-RG fast path: decode directly, with limit pushed to decoder.
     if setup.rg_tasks.len() == 1 {
         let mut table = decode_single_rg(
@@ -907,7 +946,7 @@ pub fn local_parquet_read_arrowrs(
     let rg_results: Vec<DaftResult<RecordBatch>> = setup
         .rg_tasks
         .par_iter()
-        .map(|task| decode_single_rg(path, &setup, task, predicate.as_ref(), None))
+        .map(|task| decode_single_rg(path, &setup, task, predicate.as_ref(), num_rows))
         .collect();
 
     let batches: Vec<RecordBatch> = rg_results.into_iter().collect::<DaftResult<Vec<_>>>()?;
@@ -938,6 +977,7 @@ pub async fn local_parquet_stream_arrowrs(
     batch_size: Option<usize>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     delete_rows: Option<&[i64]>,
+    maintain_order: bool,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     // 1. Sync setup: read metadata, infer schemas, prune RGs, compute tasks.
     let setup = Arc::new(local_parquet_setup(
@@ -955,6 +995,17 @@ pub async fn local_parquet_stream_arrowrs(
 
     if setup.rg_tasks.is_empty() {
         return Ok(futures::stream::empty().boxed());
+    }
+
+    // Zero-column read (e.g. metadata-only query): emit a single row-count-only batch.
+    if setup.return_daft_schema.is_empty() {
+        let total: usize = setup
+            .rg_tasks
+            .iter()
+            .map(|t| setup.parquet_metadata.row_group(t.rg_idx).num_rows() as usize)
+            .sum();
+        let batch = row_count_batch(setup.return_daft_schema.clone(), total, num_rows);
+        return Ok(futures::stream::once(async move { Ok(batch) }).boxed());
     }
 
     // 2. Semaphore: limit concurrent RG decodes.
@@ -1011,7 +1062,11 @@ pub async fn local_parquet_stream_arrowrs(
     let stream_of_streams =
         futures::stream::iter(output_receivers.into_iter().map(ReceiverStream::new));
     let driver = driver.map(|x| x?);
-    let combined = combine_stream(stream_of_streams.flatten(), driver).boxed();
+    let combined = if maintain_order {
+        combine_stream(stream_of_streams.flatten(), driver).boxed()
+    } else {
+        combine_stream(stream_of_streams.flatten_unordered(None), driver).boxed()
+    };
 
     Ok(combined)
 }
@@ -1105,6 +1160,16 @@ pub async fn stream_parquet_single_arrowrs(
 
     if rg_indices.is_empty() {
         return Ok(futures::stream::empty().boxed());
+    }
+
+    // Zero-column read (e.g. metadata-only query): emit a single row-count-only batch.
+    if return_daft_schema.is_empty() {
+        let total: usize = rg_indices
+            .iter()
+            .map(|&i| parquet_metadata.row_group(i).num_rows() as usize)
+            .sum();
+        let batch = row_count_batch(return_daft_schema, total, num_rows);
+        return Ok(futures::stream::once(async move { Ok(batch) }).boxed());
     }
 
     // 7. Apply row groups, offset, batch size, RowFilter, RowSelection, and limit.
