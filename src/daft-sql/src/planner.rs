@@ -252,9 +252,12 @@ impl SQLPlanner<'_> {
             let plan = self.new_with_context().plan_query(&cte.query)?;
 
             let plan = apply_table_alias(plan, &cte.alias)?;
-            self.context_mut()
-                .bound_ctes
-                .insert(cte.alias.name.value.clone(), plan);
+            let cte_name = cte.alias.name.value.clone();
+            let mut ctx = self.context_mut();
+            if ctx.bound_ctes.get(&cte_name).is_some() {
+                invalid_operation_err!("Duplicate CTE name: '{cte_name}'");
+            }
+            ctx.bound_ctes.insert(cte_name, plan);
         }
         Ok(())
     }
