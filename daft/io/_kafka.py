@@ -91,6 +91,9 @@ def _normalize_bound(
     if isinstance(bound, datetime):
         return (_KIND_TIMESTAMP_MS, _to_timestamp_ms(bound), None)
 
+    if isinstance(bound, bool):
+        raise TypeError("[read_kafka] bool is not a valid bound type; expected str, int, datetime, or dict")
+
     if isinstance(bound, int):
         return (_KIND_TIMESTAMP_MS, bound, None)
 
@@ -179,7 +182,9 @@ def _make_consumer_config(
             if isinstance(v, (str, int, bool, float)) or v is None:
                 cfg[key] = v
             else:
-                cfg[key] = str(v)
+                raise TypeError(
+                    f"[read_kafka] kafka_client_config value for key {key!r} must be a scalar (str, int, bool, float, or None), got {type(v).__name__}"
+                )
     return cfg
 
 
@@ -234,7 +239,18 @@ def _resolve_bound(
             raise ValueError(f"[read_kafka] missing offset for partition {partition} of topic {topic!r}")
         if configured < 0:
             raise ValueError("[read_kafka] partition offsets must be >= 0")
-        return max(low, min(high, configured))
+        clamped = max(low, min(high, configured))
+        if clamped != configured:
+            logger.warning(
+                "read_kafka: user-provided offset %s for topic=%s partition=%s is outside the current watermark range [%s, %s]; clamped to %s",
+                configured,
+                topic,
+                partition,
+                low,
+                high,
+                clamped,
+            )
+        return clamped
     raise ValueError(f"[read_kafka] unsupported bound kind: {kind}")
 
 
@@ -311,7 +327,35 @@ class KafkaSource(DataSource):
                 if topic_metadata is None or topic_metadata.error is not None:
                     raise ValueError(f"[read_kafka] topic not found: {topic}")
 
-                for partition_id in topic_metadata.partitions.keys():
+                partitions_in_topic = set(topic_metadata.partitions.keys())
+
+                if partition_filter is not None:
+                    missing_partitions = set(partition_filter) - partitions_in_topic
+                    if missing_partitions:
+                        raise ValueError(f"[read_kafka] partitions not found for topic={topic}: {missing_partitions}")
+
+                if (
+                    self._start_kind == _KIND_TOPIC_PARTITION_OFFSETS
+                    and self._start_topic_partition_offsets is not None
+                ):
+                    start_per_topic = self._start_topic_partition_offsets.get(topic)
+                    if start_per_topic is not None:
+                        extra = set(start_per_topic.keys()) - partitions_in_topic
+                        if extra:
+                            raise ValueError(
+                                f"[read_kafka] start offset map contains unknown partitions for topic={topic}: {extra}"
+                            )
+
+                if self._end_kind == _KIND_TOPIC_PARTITION_OFFSETS and self._end_topic_partition_offsets is not None:
+                    end_per_topic = self._end_topic_partition_offsets.get(topic)
+                    if end_per_topic is not None:
+                        extra = set(end_per_topic.keys()) - partitions_in_topic
+                        if extra:
+                            raise ValueError(
+                                f"[read_kafka] end offset map contains unknown partitions for topic={topic}: {extra}"
+                            )
+
+                for partition_id in partitions_in_topic:
                     if partition_filter is not None and partition_id not in partition_filter:
                         continue
 
