@@ -2,27 +2,27 @@ use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
+    StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
-    snapshot::DefaultSnapshot,
 };
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::metrics::Meter;
 
 use super::{DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{
-        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, metrics::key_values_from_context,
-    },
+    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
-    statistics::{RuntimeStats, stats::RuntimeStatsRef},
+    statistics::{
+        RuntimeStats,
+        stats::{BaseCounters, RuntimeStatsRef},
+    },
     utils::channel::{Sender, create_channel},
 };
 
@@ -30,31 +30,14 @@ const FIRST_LIMIT_PHASE: &str = "local-limit";
 const SECOND_LIMIT_PHASE: &str = "post-limit";
 
 pub struct LimitStats {
-    duration_us: Counter,
-    rows_in: Counter,
-    rows_out: Counter,
-    node_kv: Vec<KeyValue>,
+    base: BaseCounters,
 }
 
 impl LimitStats {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
-        let node_kv = key_values_from_context(context);
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
-            node_kv,
+            base: BaseCounters::new(meter, context),
         }
-    }
-
-    fn add_cpu_us(&self, cpu_us: u64) {
-        self.duration_us.add(cpu_us, self.node_kv.as_slice());
-    }
-    fn add_rows_in(&self, rows: u64) {
-        self.rows_in.add(rows, self.node_kv.as_slice());
-    }
-    fn add_rows_out(&self, rows: u64) {
-        self.rows_out.add(rows, self.node_kv.as_slice());
     }
 }
 
@@ -62,22 +45,22 @@ impl RuntimeStats for LimitStats {
     fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot) {
         match snapshot {
             StatSnapshot::Default(snapshot) => {
-                self.add_cpu_us(snapshot.cpu_us);
+                self.base.add_duration_us(snapshot.cpu_us);
                 if let Some(phase) = &node_info.node_phase {
                     // The first limit is used for pruning, the second limit is for the final output
                     if phase == FIRST_LIMIT_PHASE {
-                        self.add_rows_in(snapshot.rows_in);
+                        self.base.add_rows_in(snapshot.rows_in);
                     } else if phase == SECOND_LIMIT_PHASE {
-                        self.add_rows_out(snapshot.rows_out);
+                        self.base.add_rows_out(snapshot.rows_out);
                     }
                 }
             }
             StatSnapshot::Source(snapshot) => {
-                self.add_cpu_us(snapshot.cpu_us);
+                self.base.add_duration_us(snapshot.cpu_us);
                 if let Some(phase) = &node_info.node_phase
                     && phase == SECOND_LIMIT_PHASE
                 {
-                    self.add_rows_out(snapshot.rows_out);
+                    self.base.add_rows_out(snapshot.rows_out);
                 }
             }
             _ => {} // Limit don't receive stats from other Swordfish nodes
@@ -85,11 +68,7 @@ impl RuntimeStats for LimitStats {
     }
 
     fn export_snapshot(&self) -> StatSnapshot {
-        StatSnapshot::Default(DefaultSnapshot {
-            cpu_us: self.duration_us.load(std::sync::atomic::Ordering::SeqCst),
-            rows_in: self.rows_in.load(std::sync::atomic::Ordering::SeqCst),
-            rows_out: self.rows_out.load(std::sync::atomic::Ordering::SeqCst),
-        })
+        self.base.export_default_snapshot()
     }
 }
 
