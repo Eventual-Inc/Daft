@@ -221,12 +221,21 @@ class Series:
 
         dtype = self.datatype()
 
-        # Special-case for PyArrow FixedShapeTensor if it is supported by the version of PyArrow
-        # TODO: Push this down into self._series.to_arrow()?
-        if dtype.is_fixed_shape_tensor() and pyarrow_supports_fixed_shape_tensor():
-            pyarrow_dtype = dtype.to_arrow_dtype()
+        if dtype.is_fixed_shape_tensor():
             arrow_series = self._series.to_arrow()
-            return pa.ExtensionArray.from_storage(pyarrow_dtype, arrow_series.storage)
+            if pyarrow_supports_fixed_shape_tensor():
+                # New PyArrow recognizes arrow.fixed_shape_tensor from FFI,
+                # but the storage array needs wrapping with the canonical type.
+                pyarrow_dtype = dtype.to_arrow_dtype()
+                return pa.ExtensionArray.from_storage(pyarrow_dtype, arrow_series.storage)
+            else:
+                # Old PyArrow doesn't have FixedShapeTensorType, so wrap with
+                # our DaftExtension to preserve the type through Arrow.
+                from daft.datatype import get_super_ext_type
+
+                DaftExtension = get_super_ext_type()
+                ext_type = DaftExtension(arrow_series.type, dtype._dtype.to_json().encode())  # type: ignore[attr-defined]
+                return pa.ExtensionArray.from_storage(ext_type, arrow_series)
         else:
             return self._series.to_arrow()
 
