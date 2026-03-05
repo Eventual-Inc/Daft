@@ -45,15 +45,15 @@ pub enum CatalogError {
 
 impl CatalogError {
     #[inline]
-    pub fn unsupported<S: Into<String>>(message: S) -> CatalogError {
-        CatalogError::Unsupported {
+    pub fn unsupported<S: Into<String>>(message: S) -> Self {
+        Self::Unsupported {
             message: message.into(),
         }
     }
 
     #[inline]
-    pub fn obj_already_exists<S: Into<String>>(type_: S, ident: &Identifier) -> CatalogError {
-        CatalogError::ObjectAlreadyExists {
+    pub fn obj_already_exists<S: Into<String>>(type_: S, ident: &Identifier) -> Self {
+        Self::ObjectAlreadyExists {
             type_: type_.into(),
             ident: ident.to_string(),
         }
@@ -61,8 +61,8 @@ impl CatalogError {
 
     // Consider typed arguments vs strings for consistent formatting.
     #[inline]
-    pub fn obj_not_found<S: Into<String>>(typ_: S, ident: &Identifier) -> CatalogError {
-        CatalogError::ObjectNotFound {
+    pub fn obj_not_found<S: Into<String>>(typ_: S, ident: &Identifier) -> Self {
+        Self::ObjectNotFound {
             type_: typ_.into(),
             ident: ident.to_string(),
         }
@@ -73,7 +73,7 @@ impl CatalogError {
         O: IntoIterator<Item = I>,
         I: Into<String>,
     {
-        CatalogError::AmbiguousIdentifier {
+        Self::AmbiguousIdentifier {
             input: input.into(),
             options: options
                 .into_iter()
@@ -84,8 +84,8 @@ impl CatalogError {
     }
 
     #[inline]
-    pub fn invalid_identifier<S: Into<String>>(input: S) -> CatalogError {
-        CatalogError::InvalidIdentifier {
+    pub fn invalid_identifier<S: Into<String>>(input: S) -> Self {
+        Self::InvalidIdentifier {
             input: input.into(),
         }
     }
@@ -95,14 +95,14 @@ impl From<CatalogError> for DaftError {
     fn from(err: CatalogError) -> Self {
         match err {
             CatalogError::DaftError { error } => error,
-            _ => DaftError::CatalogError(err.to_string()),
+            _ => Self::CatalogError(err.to_string()),
         }
     }
 }
 
 impl From<DaftError> for CatalogError {
     fn from(value: DaftError) -> Self {
-        CatalogError::DaftError { error: value }
+        Self::DaftError { error: value }
     }
 }
 
@@ -120,6 +120,6 @@ impl From<CatalogError> for PyErr {
 #[cfg(feature = "python")]
 impl From<PyErr> for CatalogError {
     fn from(value: PyErr) -> Self {
-        CatalogError::PythonError { source: value }
+        Self::PythonError { source: value }
     }
 }

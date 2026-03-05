@@ -168,12 +168,12 @@ pub struct PyIdentifier(Identifier);
 #[pymethods]
 impl PyIdentifier {
     #[new]
-    pub fn new(parts: Vec<String>) -> PyIdentifier {
+    pub fn new(parts: Vec<String>) -> Self {
         Identifier::new(parts).into()
     }
 
     #[staticmethod]
-    pub fn from_sql(input: &str, normalize: bool) -> PyResult<PyIdentifier> {
+    pub fn from_sql(input: &str, normalize: bool) -> PyResult<Self> {
         Ok(Identifier::from_sql(input, normalize)?.into())
     }
 
@@ -252,12 +252,12 @@ impl AsRef<TableSource> for PyTableSource {
 #[pymethods]
 impl PyTableSource {
     #[staticmethod]
-    pub fn from_pyschema(schema: PySchema) -> PyTableSource {
+    pub fn from_pyschema(schema: PySchema) -> Self {
         Self(TableSource::Schema(schema.schema))
     }
 
     #[staticmethod]
-    pub fn from_pybuilder(view: &PyLogicalPlanBuilder) -> PyTableSource {
+    pub fn from_pybuilder(view: &PyLogicalPlanBuilder) -> Self {
         Self(TableSource::View(view.builder.build()))
     }
 }
