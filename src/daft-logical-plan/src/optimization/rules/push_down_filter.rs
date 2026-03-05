@@ -303,7 +303,10 @@ impl PushDownFilter {
                     post_projection_filter.into()
                 }
             }
-            LogicalPlan::Sort(_) | LogicalPlan::Repartition(_) | LogicalPlan::IntoBatches(_) => {
+            LogicalPlan::Sort(_)
+            | LogicalPlan::Repartition(_)
+            | LogicalPlan::IntoBatches(_)
+            | LogicalPlan::IntoPartitions(_) => {
                 // Naive commuting with unary ops.
                 let new_filter = plan
                     .with_new_children(&[child_plan.arc_children()[0].clone()])

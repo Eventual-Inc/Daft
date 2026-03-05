@@ -169,9 +169,6 @@ impl PipelineNodeImpl for FlightShuffleNode {
             RepartitionSpec::Range(_) => {
                 unreachable!("Range repartition is not supported for flight shuffle")
             }
-            RepartitionSpec::IntoPartitions(_) => {
-                unreachable!("IntoPartitions repartition is not supported for flight shuffle")
-            }
         };
         let local_flight_shuffle_write_node =
             input_node.pipeline_instruction(self.clone(), move |input| {

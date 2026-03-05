@@ -497,9 +497,15 @@ fn translate_helper(
         }
         LogicalPlan::Repartition(repartition) => {
             log::warn!(
-                "Repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner instead if you need to repartition"
+                "Repartition not supported on the NativeRunner. This will be a no-op. Please use the Ray Runner instead if you need to repartition"
             );
             translate_helper(&repartition.input, source_counter, psets)
+        }
+        LogicalPlan::IntoPartitions(into_partitions) => {
+            log::warn!(
+                "IntoPartitions not supported on the NativeRunner. This will be a no-op. Please use the Ray Runner instead if you need to repartition"
+            );
+            translate_helper(&into_partitions.input, source_counter, psets)
         }
         LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
             let (input_plan, inputs) =

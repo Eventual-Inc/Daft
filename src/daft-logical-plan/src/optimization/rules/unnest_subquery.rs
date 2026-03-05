@@ -523,6 +523,7 @@ fn pull_up_correlated_cols(
         LogicalPlan::Distinct(..)
         | LogicalPlan::MonotonicallyIncreasingId(..)
         | LogicalPlan::Repartition(..)
+        | LogicalPlan::IntoPartitions(..)
         | LogicalPlan::IntoBatches(..)
         | LogicalPlan::Union(..)
         | LogicalPlan::Intersect(..)
