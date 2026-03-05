@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::File, pin::Pin, sync::Arc};
+use std::{collections::HashMap, pin::Pin, sync::Arc};
 
 use arrow_flight::{
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
@@ -9,7 +9,10 @@ use arrow_ipc::writer::IpcWriteOptions;
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
 use futures::{Stream, StreamExt, TryStreamExt};
-use tokio::sync::{Mutex, OnceCell};
+use tokio::{
+    io::BufReader,
+    sync::{Mutex, OnceCell},
+};
 use tonic::{Request, Response, Status, transport::Server};
 
 use super::stream::FlightDataStreamReader;
@@ -190,16 +193,20 @@ impl FlightService for ShuffleFlightServer {
 
         let file_path_stream = futures::stream::iter(file_paths);
         let flight_data_stream = file_path_stream
-            .map(|file_path| {
-                let reader = File::open(file_path)
+            .then(|file_path| async move {
+                let file = tokio::fs::File::open(file_path)
+                    .await
                     .map_err(|e| Status::internal(format!("Error opening file: {}", e)))?;
-                let iter = FlightDataStreamReader::try_new(reader).map_err(|e| {
-                    Status::internal(format!("Error creating flight data reader: {}", e))
-                })?;
-                let stream =
-                    futures::stream::iter(iter).map_err(|e| Status::internal(e.to_string()));
-
-                Ok::<_, Status>(stream)
+                let reader = FlightDataStreamReader::try_new(BufReader::new(file))
+                    .await
+                    .map_err(|e| {
+                        Status::internal(format!("Error creating flight data reader: {}", e))
+                    })?;
+                Ok::<_, Status>(
+                    reader
+                        .into_stream()
+                        .map_err(|e| Status::internal(e.to_string())),
+                )
             })
             .try_flatten();
 

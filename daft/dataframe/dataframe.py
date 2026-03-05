@@ -766,7 +766,7 @@ class DataFrame:
 
     @classmethod
     def _from_schema(cls, schema: Schema) -> "DataFrame":
-        """Creates a Daft DataFrom from a Schema.
+        """Creates a Daft DataFrame from a Schema.
 
         Args:
             schema: The Schema to convert into a DataFrame.
