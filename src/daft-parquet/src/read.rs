@@ -308,13 +308,16 @@ async fn read_parquet_single_into_arrow(
         futures::future::try_join(data_fut, metadata_fut.err_into()).await?;
     let num_rows_read = rb.len();
 
-    // Extract schema-level key-value metadata via arrow-rs schema inference,
-    // which handles the ARROW:schema key the same way as pyarrow.
-    let schema_metadata: std::collections::BTreeMap<String, String> =
-        parquet::arrow::parquet_to_arrow_schema(
-            parquet_metadata.file_metadata().schema_descr(),
-            parquet_metadata.file_metadata().key_value_metadata(),
-        )
+    // Infer the Arrow schema from parquet metadata. This gives us:
+    // - schema-level key-value metadata (handled the same way as pyarrow)
+    // - per-field nullability from the parquet schema
+    let arrow_schema = parquet::arrow::parquet_to_arrow_schema(
+        parquet_metadata.file_metadata().schema_descr(),
+        parquet_metadata.file_metadata().key_value_metadata(),
+    )
+    .ok();
+    let schema_metadata: std::collections::BTreeMap<String, String> = arrow_schema
+        .as_ref()
         .map(|s| {
             s.metadata()
                 .iter()
@@ -333,10 +336,14 @@ async fn read_parquet_single_into_arrow(
     for (col, daft_field) in rb.columns().iter().zip(rb.schema.fields()) {
         let arrow_array = col.to_arrow()?;
         let ffi_array = Box::<dyn daft_arrow::array::Array>::from(arrow_array);
+        let nullable = arrow_schema
+            .as_ref()
+            .and_then(|s| s.field_with_name(&daft_field.name).ok())
+            .is_none_or(|f| f.is_nullable());
         ffi_fields.push(daft_arrow::datatypes::Field::new(
             &daft_field.name,
             ffi_array.data_type().clone(),
-            true,
+            nullable,
         ));
         all_arrays.push(vec![ffi_array]);
     }
