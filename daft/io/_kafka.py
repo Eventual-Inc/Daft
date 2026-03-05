@@ -159,6 +159,12 @@ def _make_consumer_config(
     group_id: str,
     kafka_client_config: Mapping[str, object] | None,
 ) -> dict[str, object]:
+    protected_keys = {
+        "bootstrap.servers",
+        "group.id",
+        "enable.auto.commit",
+        "enable.auto.offset.store",
+    }
     cfg: dict[str, object] = {
         "bootstrap.servers": bootstrap_servers,
         "group.id": group_id,
@@ -168,6 +174,8 @@ def _make_consumer_config(
     if kafka_client_config is not None:
         for k, v in kafka_client_config.items():
             key = str(k)
+            if key in protected_keys:
+                raise ValueError(f"[read_kafka] kafka_client_config must not override managed key: {key!r}")
             if isinstance(v, (str, int, bool, float)) or v is None:
                 cfg[key] = v
             else:
@@ -421,6 +429,26 @@ class KafkaSourceTask(DataSourceTask):
                         # Avoid spinning indefinitely when no messages are returned: flush the current chunk (if any),
                         # otherwise terminate this KafkaSourceTask generator (no more MicroPartitions will be yielded
                         # for this partition).
+                        last_offset = offsets[-1] if offsets else None
+                        if last_offset is None:
+                            logger.warning(
+                                "read_kafka: consume() returned no messages; terminating task early (read 0 rows for this range). topic=%s partition=%s start_offset=%s end_offset=%s timeout_ms=%s",
+                                self._topic,
+                                self._partition,
+                                self._start_offset,
+                                self._end_offset,
+                                self._timeout_ms,
+                            )
+                        else:
+                            logger.warning(
+                                "read_kafka: consume() returned no messages; terminating task early. topic=%s partition=%s start_offset=%s end_offset=%s last_offset=%s timeout_ms=%s",
+                                self._topic,
+                                self._partition,
+                                self._start_offset,
+                                self._end_offset,
+                                last_offset,
+                                self._timeout_ms,
+                            )
                         break
 
                     for msg in msgs:
@@ -590,6 +618,7 @@ def read_kafka(
         topics = [topics]
     else:
         topics = list(topics)
+    topics = list(dict.fromkeys(topics))
 
     if not topics:
         raise ValueError("[read_kafka] topics must be non-empty")
