@@ -1,16 +1,24 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, atomic::Ordering},
+};
 
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::PreShuffleMergeFlightSnapshot,
+};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
+use opentelemetry::{KeyValue, metrics::Meter};
 
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, TaskBuilderStream,
+        PipelineNodeImpl, TaskBuilderStream, metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -18,11 +26,82 @@ use crate::{
         task::{SchedulingStrategy, SwordfishTask, SwordfishTaskBuilder, TaskID},
         worker::WorkerId,
     },
+    statistics::{RuntimeStats, stats::RuntimeStatsRef},
     utils::channel::{Sender, create_channel},
 };
 
 fn make_shuffle_id(context: &PipelineNodeContext) -> u64 {
     ((context.query_idx as u64) << 32) | (context.node_id as u64)
+}
+pub struct PreShuffleMergeFlightStats {
+    duration_us: Counter,
+    write_duration_us: Counter,
+    read_duration_us: Counter,
+    rows_in: Counter,
+    rows_out: Counter,
+    node_kv: Vec<KeyValue>,
+}
+
+impl PreShuffleMergeFlightStats {
+    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        let node_kv = key_values_from_context(context);
+        Self {
+            write_duration_us: Counter::new(
+                meter,
+                "write_duration_us",
+                None,
+                Some(UNIT_MICROSECONDS.into()),
+            ),
+            read_duration_us: Counter::new(
+                meter,
+                "read_duration_us",
+                None,
+                Some(UNIT_MICROSECONDS.into()),
+            ),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
+            node_kv,
+        }
+    }
+}
+
+impl RuntimeStats for PreShuffleMergeFlightStats {
+    fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
+        match snapshot {
+            StatSnapshot::Source(snapshot) => {
+                self.duration_us
+                    .add(snapshot.cpu_us, self.node_kv.as_slice());
+                self.read_duration_us
+                    .add(snapshot.cpu_us, self.node_kv.as_slice());
+                self.rows_out
+                    .add(snapshot.rows_out, self.node_kv.as_slice());
+            }
+            StatSnapshot::Default(snapshot) => {
+                self.duration_us
+                    .add(snapshot.cpu_us, self.node_kv.as_slice());
+                self.write_duration_us
+                    .add(snapshot.cpu_us, self.node_kv.as_slice());
+                self.rows_in.add(snapshot.rows_in, self.node_kv.as_slice());
+            }
+            _ => panic!("Unexpected snapshot type: {:?}", snapshot),
+        }
+    }
+
+    fn export_snapshot(&self) -> StatSnapshot {
+        let duration_us = self.duration_us.load(Ordering::SeqCst);
+        let write_duration_us = self.write_duration_us.load(Ordering::SeqCst);
+        let read_duration_us = self.read_duration_us.load(Ordering::SeqCst);
+        let rows_in = self.rows_in.load(Ordering::SeqCst);
+        let rows_out = self.rows_out.load(Ordering::SeqCst);
+        StatSnapshot::PreShuffleMergeFlight(PreShuffleMergeFlightSnapshot {
+            duration_us,
+            write_duration_us,
+            read_duration_us,
+            rows_in,
+            rows_out,
+        })
+    }
 }
 
 pub(crate) struct PreShuffleMergeFlightNode {
@@ -97,6 +176,10 @@ impl PipelineNodeImpl for PreShuffleMergeFlightNode {
             format!("Pre-Shuffle Merge Flight"),
             format!("Threshold: {}", self.pre_shuffle_merge_threshold),
         ]
+    }
+
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(PreShuffleMergeFlightStats::new(meter, &self.context))
     }
 
     fn produce_tasks(

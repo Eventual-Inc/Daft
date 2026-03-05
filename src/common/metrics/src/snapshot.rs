@@ -226,6 +226,35 @@ impl StatSnapshotImpl for WriteSnapshot {
     }
 }
 
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
+pub struct PreShuffleMergeFlightSnapshot {
+    pub duration_us: u64,
+    pub write_duration_us: u64,
+    pub read_duration_us: u64,
+    pub rows_in: u64,
+    pub rows_out: u64,
+}
+
+impl StatSnapshotImpl for PreShuffleMergeFlightSnapshot {
+    fn to_stats(&self) -> Stats {
+        stats![
+            DURATION_KEY; Stat::Duration(Duration::from_micros(self.duration_us)),
+            "write_duration_us"; Stat::Duration(Duration::from_micros(self.write_duration_us)),
+            "read_duration_us"; Stat::Duration(Duration::from_micros(self.read_duration_us)),
+            ROWS_IN_KEY; Stat::Count(self.rows_in),
+            ROWS_OUT_KEY; Stat::Count(self.rows_out),
+        ]
+    }
+
+    fn to_message(&self) -> String {
+        format!(
+            "{} rows in, {} rows out",
+            HumanCount(self.rows_in),
+            HumanCount(self.rows_out)
+        )
+    }
+}
+
 #[enum_dispatch(StatSnapshotImpl)]
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub enum StatSnapshot {
@@ -236,4 +265,5 @@ pub enum StatSnapshot {
     Udf(UdfSnapshot),
     HashJoinBuild(HashJoinBuildSnapshot),
     Write(WriteSnapshot),
+    PreShuffleMergeFlight(PreShuffleMergeFlightSnapshot),
 }
