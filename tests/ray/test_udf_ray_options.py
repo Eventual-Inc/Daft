@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import platform
 import subprocess
 import sys
@@ -15,6 +16,37 @@ RAY_VERSION = getattr(ray, "__version__", "0.0.0")
 RAY_VERSION_TUPLE = tuple(map(int, RAY_VERSION.split(".")[:3]))
 
 import daft
+
+
+def _conda_has_current_python() -> bool:
+    py_ver = platform.python_version()  # e.g. 3.10.20
+    try:
+        result = subprocess.run(
+            [
+                "conda",
+                "search",
+                "--json",
+                "--override-channels",
+                "-c",
+                "conda-forge",
+                "-c",
+                "defaults",
+                f"python={py_ver}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        if result.returncode != 0:
+            return False
+        payload = json.loads(result.stdout or "{}")
+        return bool(payload.get("python"))
+    except Exception:
+        return False
+
+
+HAS_CONDA_CURRENT_PY = _conda_has_current_python()
 
 
 @pytest.fixture
@@ -87,8 +119,14 @@ def gen_email(names):
 
 
 @pytest.mark.skipif(
-    get_or_infer_runner_type() == "native" or sys.version_info[:2] not in ray_constants.RUNTIME_ENV_CONDA_PY_VERSIONS,
-    reason=f"Native runner or Python version is {sys.version_info}",
+    get_or_infer_runner_type() == "native"
+    or sys.version_info[:2] not in ray_constants.RUNTIME_ENV_CONDA_PY_VERSIONS
+    or not HAS_CONDA_CURRENT_PY,
+    reason=(
+        f"Native runner, unsupported Python version {sys.version_info}, "
+        f"or conda cannot resolve python={platform.python_version()} "
+        "required by Ray runtime_env conda pinning"
+    ),
 )
 def test_udf_with_conda_inject_dependencies(input_df):
     # missing required modules
@@ -98,6 +136,7 @@ def test_udf_with_conda_inject_dependencies(input_df):
                 "runtime_env": {
                     "conda": {
                         "name": "test",
+                        "channels": ["conda-forge", "defaults"],
                         "dependencies": [
                             "pip",
                             {"pip": ["daft"]},
@@ -116,6 +155,7 @@ def test_udf_with_conda_inject_dependencies(input_df):
         ray_options={
             "runtime_env": {
                 "conda": {
+                    "channels": ["conda-forge", "defaults"],
                     "dependencies": [
                         "pip",
                         {"pip": ["daft", "faker"]},
@@ -129,8 +169,14 @@ def test_udf_with_conda_inject_dependencies(input_df):
 
 
 @pytest.mark.skipif(
-    get_or_infer_runner_type() == "native" or sys.version_info[:2] not in ray_constants.RUNTIME_ENV_CONDA_PY_VERSIONS,
-    reason=f"Native runner or Python version is {sys.version_info}",
+    get_or_infer_runner_type() == "native"
+    or sys.version_info[:2] not in ray_constants.RUNTIME_ENV_CONDA_PY_VERSIONS
+    or not HAS_CONDA_CURRENT_PY,
+    reason=(
+        f"Native runner, unsupported Python version {sys.version_info}, "
+        f"or conda cannot resolve python={platform.python_version()} "
+        "required by Ray runtime_env conda pinning"
+    ),
 )
 def test_udf_with_prepared_conda_env(input_df):
     conda_env_name = f"test_udf_with_prepared_conda_env_{int(time.time())}"
@@ -141,6 +187,10 @@ def test_udf_with_prepared_conda_env(input_df):
             "-n",
             conda_env_name,
             "-y",
+            "-c",
+            "conda-forge",
+            "-c",
+            "defaults",
             f"python={platform.python_version()}",
             "pip",
             "&&",
