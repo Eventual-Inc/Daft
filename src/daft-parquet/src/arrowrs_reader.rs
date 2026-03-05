@@ -38,7 +38,7 @@ use crate::{
     metadata::{
         apply_field_ids_to_arrowrs_parquet_metadata, strip_string_types_from_parquet_metadata,
     },
-    read::ParquetSchemaInferenceOptions,
+    read::{ParquetSchemaInferenceOptions, StringEncoding},
     schema_inference::{arrow_schema_to_daft_schema, infer_schema_from_parquet_metadata_arrowrs},
     statistics::row_group_metadata_to_table_stats,
 };
@@ -89,8 +89,7 @@ fn infer_schemas(
     let arrow_schema = infer_schema_from_parquet_metadata_arrowrs(
         parquet_metadata,
         Some(schema_infer_options.coerce_int96_timestamp_unit),
-        schema_infer_options.string_encoding
-            == daft_arrow::io::parquet::read::schema::StringEncoding::Raw,
+        schema_infer_options.string_encoding == StringEncoding::Raw,
     )
     .map_err(parquet_err)?;
     let daft_schema = arrow_schema_to_daft_schema(&arrow_schema)?;
@@ -371,9 +370,7 @@ pub async fn read_parquet_single_arrowrs(
     // 1c. For StringEncoding::Raw, strip STRING/UTF8 logical types from the parquet
     // metadata so arrow-rs infers Binary instead of Utf8. This avoids UTF-8
     // validation during decode, allowing files with invalid UTF-8 to be read.
-    if schema_infer_options.string_encoding
-        == daft_arrow::io::parquet::read::schema::StringEncoding::Raw
-    {
+    if schema_infer_options.string_encoding == StringEncoding::Raw {
         parquet_metadata = strip_string_types_from_parquet_metadata(parquet_metadata)?;
     }
 
@@ -681,9 +678,7 @@ pub(crate) fn local_parquet_setup(
 
     // 1c. For StringEncoding::Raw, strip STRING/UTF8 logical types so arrow-rs
     // reads BYTE_ARRAY as Binary (no UTF-8 validation).
-    if schema_infer_options.string_encoding
-        == daft_arrow::io::parquet::read::schema::StringEncoding::Raw
-    {
+    if schema_infer_options.string_encoding == StringEncoding::Raw {
         parquet_metadata = strip_string_types_from_parquet_metadata(parquet_metadata)?;
     }
 
@@ -1115,9 +1110,7 @@ pub async fn stream_parquet_single_arrowrs(
 
     // 1c. For StringEncoding::Raw, strip STRING/UTF8 logical types so arrow-rs
     // reads BYTE_ARRAY as Binary (no UTF-8 validation).
-    if schema_infer_options.string_encoding
-        == daft_arrow::io::parquet::read::schema::StringEncoding::Raw
-    {
+    if schema_infer_options.string_encoding == StringEncoding::Raw {
         parquet_metadata = strip_string_types_from_parquet_metadata(parquet_metadata)?;
     }
 

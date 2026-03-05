@@ -6,7 +6,6 @@ use std::{
 
 use common_error::DaftResult;
 use common_runtime::get_io_runtime;
-use daft_arrow::io::parquet::read::schema::{SchemaInferenceOptions, StringEncoding};
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
 use daft_core::python::PyTimeUnit;
@@ -22,6 +21,31 @@ use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{DaftParquetMetadata, JoinSnafu, infer_schema_from_daft_metadata};
+
+/// How to decode Parquet BYTE_ARRAY columns annotated as strings.
+///
+/// - `Utf8` (default): arrow-rs decodes as Utf8/LargeUtf8 with UTF-8 validation.
+/// - `Raw`: strip the STRING logical type so arrow-rs decodes as Binary (no validation).
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StringEncoding {
+    Raw,
+    #[default]
+    Utf8,
+}
+
+impl std::str::FromStr for StringEncoding {
+    type Err = common_error::DaftError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "utf-8" => Ok(Self::Utf8),
+            "raw" => Ok(Self::Raw),
+            other => Err(common_error::DaftError::ValueError(format!(
+                "Unrecognized string encoding: {other}"
+            ))),
+        }
+    }
+}
 
 #[cfg(feature = "python")]
 #[derive(Clone)]
@@ -42,11 +66,18 @@ impl TryFrom<ParquetSchemaInferenceOptionsBuilder> for ParquetSchemaInferenceOpt
     type Error = crate::Error;
 
     fn try_from(value: ParquetSchemaInferenceOptionsBuilder) -> crate::Result<Self> {
+        let string_encoding: StringEncoding =
+            value
+                .string_encoding
+                .parse()
+                .map_err(|e: common_error::DaftError| crate::Error::Arrow2Error {
+                    source: daft_arrow::error::Error::InvalidArgumentError(e.to_string()),
+                })?;
         Ok(Self {
             coerce_int96_timestamp_unit: value
                 .coerce_int96_timestamp_unit
                 .map_or(TimeUnit::Nanoseconds, From::from),
-            string_encoding: value.string_encoding.parse().context(crate::Arrow2Snafu)?,
+            string_encoding,
         })
     }
 }
@@ -84,15 +115,6 @@ impl Default for ParquetSchemaInferenceOptions {
         Self {
             coerce_int96_timestamp_unit: TimeUnit::Nanoseconds,
             string_encoding: StringEncoding::Utf8,
-        }
-    }
-}
-
-impl From<ParquetSchemaInferenceOptions> for SchemaInferenceOptions {
-    fn from(value: ParquetSchemaInferenceOptions) -> Self {
-        Self {
-            int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow2(),
-            string_encoding: value.string_encoding,
         }
     }
 }
@@ -798,7 +820,7 @@ mod tests {
     use std::{path::PathBuf, sync::Arc};
 
     use common_error::DaftResult;
-    use daft_arrow::{datatypes::DataType, io::parquet::read::schema::StringEncoding};
+    use daft_arrow::datatypes::DataType;
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
     use parquet::schema::types::Type as ParquetSchemaType;
