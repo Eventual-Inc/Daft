@@ -71,24 +71,6 @@ impl DaftParquetMetadata {
             .map(|(&idx, rg)| (idx, DaftRowGroupMetaData::from_arrowrs(rg.clone())))
     }
 
-    /// Get a specific row group by its original index.
-    pub fn get_row_group(&self, index: usize) -> Option<DaftRowGroupMetaData> {
-        self.original_indices
-            .iter()
-            .position(|&i| i == index)
-            .map(|pos| DaftRowGroupMetaData::from_arrowrs(self.inner.row_groups()[pos].clone()))
-    }
-
-    /// Check if a row group index exists.
-    pub fn contains_row_group(&self, index: usize) -> bool {
-        self.original_indices.contains(&index)
-    }
-
-    /// Get the set of row group indices.
-    pub fn row_group_indices(&self) -> impl Iterator<Item = usize> + '_ {
-        self.original_indices.iter().copied()
-    }
-
     /// Clone this metadata with a different set of row groups.
     pub fn clone_with_row_groups(&self, num_rows: usize, row_groups: RowGroupList) -> Self {
         let (indices, rgs): (Vec<usize>, Vec<ArrowrsRowGroupMetaData>) = row_groups
