@@ -3,7 +3,6 @@ use std::{fmt::Display, ops::Range, sync::Arc};
 use bytes::{Bytes, BytesMut};
 use common_error::DaftResult;
 use daft_io::{IOClient, IOStatsRef, range::GetRange};
-use futures::{StreamExt, TryStreamExt};
 use tokio::task::JoinHandle;
 
 type RangeList = Vec<Range<usize>>;
@@ -202,87 +201,6 @@ pub struct RangesContainer {
 }
 
 impl RangesContainer {
-    pub async fn get_range_reader(
-        self: Arc<Self>,
-        range: Range<usize>,
-    ) -> DaftResult<impl futures::AsyncRead> {
-        let mut current_pos = range.start;
-        let mut curr_index;
-        let start_point = self.ranges.binary_search_by_key(&current_pos, |e| e.start);
-
-        let mut needed_entries = vec![];
-        let mut ranges_to_slice = vec![];
-        match start_point {
-            Ok(index) => {
-                let entry = self.ranges[index].clone();
-                let len = entry.end - entry.start;
-                assert_eq!(entry.start, current_pos);
-                let start_offset = 0;
-                let end_offset = len.min(range.end - current_pos);
-
-                needed_entries.push(entry);
-                ranges_to_slice.push(start_offset..end_offset);
-
-                current_pos += end_offset - start_offset;
-                curr_index = index + 1;
-            }
-            Err(index) => {
-                assert!(
-                    index > 0,
-                    "range: {range:?}, start: {}, end: {}",
-                    &self.ranges[index].start,
-                    &self.ranges[index].end
-                );
-                let index = index - 1;
-                let entry = self.ranges[index].clone();
-                let start = entry.start;
-                let end = entry.end;
-                let len = end - start;
-                assert!(
-                    current_pos >= start && current_pos < end,
-                    "range: {range:?}, current_pos: {current_pos}, bytes_start: {start}, end: {end}"
-                );
-                let start_offset = current_pos - start;
-                let end_offset = len.min(range.end - start);
-                needed_entries.push(entry);
-                ranges_to_slice.push(start_offset..end_offset);
-                current_pos += end_offset - start_offset;
-                curr_index = index + 1;
-            }
-        }
-        while current_pos < range.end && curr_index < self.ranges.len() {
-            let entry = self.ranges[curr_index].clone();
-            let start = entry.start;
-            let end = entry.end;
-            let len = end - start;
-            assert_eq!(start, current_pos);
-            let start_offset = 0;
-            let end_offset = len.min(range.end - start);
-            needed_entries.push(entry);
-            ranges_to_slice.push(start_offset..end_offset);
-            current_pos += end_offset - start_offset;
-            curr_index += 1;
-        }
-
-        assert_eq!(current_pos, range.end);
-
-        // We block on the first entry so we can surface up the error. This shouldn't cause any performance issues since we have to wait for this to complete anyways
-        if let Some(entry) = needed_entries.first()
-            && let Some(range) = ranges_to_slice.first()
-        {
-            entry.get_or_wait(range.clone()).await?;
-        }
-
-        let bytes_iter = tokio_stream::iter(needed_entries.into_iter().zip(ranges_to_slice))
-            .then(|(e, r)| async move { e.get_or_wait(r).await })
-            .inspect_err(|e| log::warn!("Encountered error while streaming bytes into parquet reader. This may show up as a Thrift Error Downstream: {}", e));
-
-        let stream_reader = tokio_util::io::StreamReader::new(bytes_iter);
-        let convert = async_compat::Compat::new(stream_reader);
-
-        Ok(convert)
-    }
-
     /// Retrieve the bytes for a given range as a single contiguous `Bytes` buffer.
     ///
     /// This resolves all underlying cache entries that overlap the requested range

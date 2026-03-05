@@ -37,10 +37,12 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
     async_reader::DaftAsyncFileReader,
-    metadata::apply_field_ids_to_arrowrs_parquet_metadata,
+    metadata::{
+        apply_field_ids_to_arrowrs_parquet_metadata, strip_string_types_from_parquet_metadata,
+    },
     read::ParquetSchemaInferenceOptions,
     schema_inference::{arrow_schema_to_daft_schema, infer_schema_from_parquet_metadata_arrowrs},
-    statistics::arrowrs_row_group_metadata_to_table_stats,
+    statistics::row_group_metadata_to_table_stats,
 };
 
 /// Default batch size for the arrow-rs reader (number of rows per batch).
@@ -370,6 +372,15 @@ pub async fn read_parquet_single_arrowrs(
         parquet_metadata = apply_field_ids_to_arrowrs_parquet_metadata(parquet_metadata, mapping)?;
     }
 
+    // 1c. For StringEncoding::Raw, strip STRING/UTF8 logical types from the parquet
+    // metadata so arrow-rs infers Binary instead of Utf8. This avoids UTF-8
+    // validation during decode, allowing files with invalid UTF-8 to be read.
+    if schema_infer_options.string_encoding
+        == daft_arrow::io::parquet::read::schema::StringEncoding::Raw
+    {
+        parquet_metadata = strip_string_types_from_parquet_metadata(parquet_metadata)?;
+    }
+
     // 2. Infer schema with Daft options (INT96 coercion, string encoding).
     let (arrow_schema, daft_schema) = infer_schemas(&parquet_metadata, &schema_infer_options)?;
 
@@ -670,6 +681,14 @@ pub(crate) fn local_parquet_setup(
     // 1b. Apply field ID mapping (Iceberg schema evolution) if provided.
     if let Some(ref mapping) = field_id_mapping {
         parquet_metadata = apply_field_ids_to_arrowrs_parquet_metadata(parquet_metadata, mapping)?;
+    }
+
+    // 1c. For StringEncoding::Raw, strip STRING/UTF8 logical types so arrow-rs
+    // reads BYTE_ARRAY as Binary (no UTF-8 validation).
+    if schema_infer_options.string_encoding
+        == daft_arrow::io::parquet::read::schema::StringEncoding::Raw
+    {
+        parquet_metadata = strip_string_types_from_parquet_metadata(parquet_metadata)?;
     }
 
     // 2. Infer schema with Daft options.
@@ -1101,6 +1120,14 @@ pub async fn stream_parquet_single_arrowrs(
         parquet_metadata = apply_field_ids_to_arrowrs_parquet_metadata(parquet_metadata, mapping)?;
     }
 
+    // 1c. For StringEncoding::Raw, strip STRING/UTF8 logical types so arrow-rs
+    // reads BYTE_ARRAY as Binary (no UTF-8 validation).
+    if schema_infer_options.string_encoding
+        == daft_arrow::io::parquet::read::schema::StringEncoding::Raw
+    {
+        parquet_metadata = strip_string_types_from_parquet_metadata(parquet_metadata)?;
+    }
+
     // 2. Infer schema with Daft options.
     let (arrow_schema, daft_schema) = infer_schemas(&parquet_metadata, &schema_infer_options)?;
 
@@ -1296,7 +1323,7 @@ fn prune_row_groups(
     let mut result = Vec::with_capacity(candidates.len());
     for rg_idx in candidates {
         let rg_meta = metadata.row_group(rg_idx);
-        match arrowrs_row_group_metadata_to_table_stats(rg_meta, schema) {
+        match row_group_metadata_to_table_stats(rg_meta, schema) {
             Ok(stats) => {
                 let evaled = stats.eval_expression(&bound_pred)?;
                 if evaled.to_truth_value() != TruthValue::False {

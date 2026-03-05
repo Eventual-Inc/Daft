@@ -18,13 +18,10 @@ use futures::{
     future::{join_all, try_join_all},
     stream::BoxStream,
 };
-use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
-use crate::{
-    DaftParquetMetadata, JoinSnafu, file::ParquetReaderBuilder, infer_schema_from_daft_metadata,
-};
+use crate::{DaftParquetMetadata, JoinSnafu, infer_schema_from_daft_metadata};
 
 #[cfg(feature = "python")]
 #[derive(Clone)]
@@ -263,141 +260,48 @@ async fn read_parquet_single_into_arrow(
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-    metadata: Option<Arc<FileMetaData>>,
 ) -> DaftResult<ParquetPyarrowChunk> {
-    let field_id_mapping_provided = field_id_mapping.is_some();
-    let (source_type, fixed_uri) = parse_url(uri)?;
-    let (metadata, schema, all_arrays, num_rows_read) = if matches!(source_type, SourceType::File) {
-        let (metadata, schema, all_arrays, num_rows_read) =
-            crate::stream_reader::local_parquet_read_into_arrow_async(
-                fixed_uri.as_ref(),
-                columns.clone(),
-                start_offset,
-                num_rows,
-                row_groups.clone(),
-                None,
-                schema_infer_options,
-                metadata,
-                None,
-            )
-            .await?;
-        (metadata, Arc::new(schema), all_arrays, num_rows_read)
-    } else {
-        let builder = ParquetReaderBuilder::from_uri(
-            uri,
-            io_client.clone(),
-            io_stats.clone(),
-            field_id_mapping,
-        )
-        .await?;
-        let builder = builder.set_infer_schema_options(schema_infer_options);
+    let rb = read_parquet_single(
+        uri,
+        columns,
+        start_offset,
+        num_rows,
+        row_groups,
+        None, // predicate (pyarrow API doesn't expose it)
+        io_client,
+        io_stats,
+        schema_infer_options,
+        field_id_mapping,
+        None, // metadata
+        None, // delete_rows
+        None, // chunk_size
+    )
+    .await?;
 
-        let builder = if let Some(columns) = &columns {
-            builder.prune_columns(columns)?
-        } else {
-            builder
-        };
+    let num_rows_read = rb.len();
 
-        if row_groups.is_some() && (num_rows.is_some() || start_offset.is_some()) {
-            return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.".to_string()));
-        }
-        let builder = builder.limit(start_offset, num_rows)?;
-        let metadata = builder.metadata().clone();
-
-        let builder = if let Some(ref row_groups) = row_groups {
-            builder.set_row_groups(row_groups)?
-        } else {
-            builder
-        };
-
-        let parquet_reader = builder.build()?;
-
-        let schema = parquet_reader.arrow_schema().clone();
-        let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
-        let (all_arrays, num_rows_read) = parquet_reader
-            .read_from_ranges_into_arrow_arrays(ranges)
-            .await?;
-        (Arc::new(metadata), schema, all_arrays, num_rows_read)
-    };
-
-    let rows_per_row_groups = metadata
-        .row_groups
-        .values()
-        .map(parquet2::metadata::RowGroupMetaData::num_rows)
-        .collect::<Vec<_>>();
-
-    let metadata_num_rows = metadata.num_rows;
-    let metadata_num_columns = metadata.schema().fields().len();
-
-    let len_per_col = all_arrays
+    // Convert each Daft Series → arrow-rs ArrayRef → arrow2 Box<dyn Array>
+    let arrow2_arrays: ArrowChunk = rb
+        .columns()
         .iter()
-        .map(|v| v.iter().map(|a| a.len()).sum::<usize>())
-        .collect::<Vec<_>>();
-    let all_same_size = len_per_col.windows(2).all(|w| w[0] == w[1]);
-    if !all_same_size {
-        return Err(super::Error::ParquetColumnsDontHaveEqualRows { path: uri.into() }.into());
-    }
+        .map(|col| -> DaftResult<Box<dyn daft_arrow::array::Array>> {
+            let arrow_array = col.to_arrow()?;
+            Ok(Box::<dyn daft_arrow::array::Array>::from(arrow_array))
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
 
-    let table_len = num_rows_read;
-    let table_ncol = all_arrays.len();
+    // Build arrow2 schema from the converted arrays and Daft field names
+    let arrow2_fields: Vec<daft_arrow::datatypes::Field> = arrow2_arrays
+        .iter()
+        .zip(rb.schema.fields())
+        .map(|(arr, daft_field)| {
+            daft_arrow::datatypes::Field::new(&daft_field.name, arr.data_type().clone(), true)
+        })
+        .collect();
+    let arrow2_schema: daft_arrow::datatypes::SchemaRef =
+        Arc::new(daft_arrow::datatypes::Schema::from(arrow2_fields));
 
-    if let Some(row_groups) = &row_groups {
-        let expected_rows: usize = row_groups
-            .iter()
-            .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
-            .sum();
-        if expected_rows != table_len {
-            return Err(super::Error::ParquetNumRowMismatch {
-                path: uri.into(),
-                expected_rows,
-                read_rows: table_len,
-            }
-            .into());
-        }
-    } else {
-        match (start_offset, num_rows) {
-            (None, None) if metadata_num_rows != table_len => {
-                Err(super::Error::ParquetNumRowMismatch {
-                    path: uri.into(),
-                    expected_rows: metadata_num_rows,
-                    read_rows: table_len,
-                })
-            }
-            (Some(s), None) if metadata_num_rows.saturating_sub(s) != table_len => {
-                Err(super::Error::ParquetNumRowMismatch {
-                    path: uri.into(),
-                    expected_rows: metadata_num_rows.saturating_sub(s),
-                    read_rows: table_len,
-                })
-            }
-            (_, Some(n)) if n < table_len => Err(super::Error::ParquetNumRowMismatch {
-                path: uri.into(),
-                expected_rows: n.min(metadata_num_rows),
-                read_rows: table_len,
-            }),
-            _ => Ok(()),
-        }?;
-    }
-
-    let expected_num_columns = if let Some(columns) = &columns {
-        columns.len()
-    } else {
-        metadata_num_columns
-    };
-
-    if (!field_id_mapping_provided && columns.is_none() && table_ncol != expected_num_columns)
-        || (field_id_mapping_provided && table_ncol > expected_num_columns)
-        || (columns.is_some() && table_ncol > expected_num_columns)
-    {
-        return Err(super::Error::ParquetNumColumnMismatch {
-            path: uri.into(),
-            metadata_num_columns: expected_num_columns,
-            read_columns: table_ncol,
-        }
-        .into());
-    }
-
-    Ok((schema, all_arrays, table_len))
+    Ok((arrow2_schema, vec![arrow2_arrays], num_rows_read))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -468,7 +372,6 @@ pub fn read_parquet_into_pyarrow(
             io_client,
             io_stats,
             schema_infer_options,
-            None,
             None,
         );
         if let Some(timeout) = file_timeout_ms {
@@ -682,7 +585,6 @@ pub fn read_parquet_into_pyarrow_bulk<T: AsRef<str>>(
                             io_client,
                             io_stats,
                             schema_infer_options,
-                            None,
                             None,
                         )
                         .await?,

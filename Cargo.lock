@@ -3260,8 +3260,6 @@ name = "daft-parquet"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow",
- "async-compat",
- "async-stream",
  "bincode",
  "bytes",
  "common-error",
@@ -3275,10 +3273,8 @@ dependencies = [
  "fastrand 2.3.0",
  "futures",
  "indexmap 2.13.0",
- "itertools 0.14.0",
  "log",
  "parquet",
- "parquet2",
  "path_macro",
  "pyo3",
  "rayon",

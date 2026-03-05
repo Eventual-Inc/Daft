@@ -1,12 +1,10 @@
 #![allow(deprecated, reason = "arrow2 migration")]
 
 use common_error::DaftError;
-use daft_arrow::io::parquet::read::schema::{SchemaInferenceOptions, infer_schema_with_options};
 use snafu::Snafu;
 
 mod arrowrs_reader;
 mod async_reader;
-mod file;
 pub mod metadata;
 mod metadata_adapter;
 pub use metadata_adapter::{DaftParquetMetadata, DaftRowGroupMetaData, RowGroupList};
@@ -16,26 +14,9 @@ pub mod read;
 mod read_planner;
 mod schema_inference;
 mod statistics;
-pub use statistics::{
-    arrowrs_row_group_metadata_to_table_stats, row_group_metadata_to_table_stats,
-};
-mod stream_reader;
-mod utils;
-
 #[cfg(feature = "python")]
 pub use python::register_modules;
-
-// This is the default size of an emitted morsel from the parquet reader
-const PARQUET_MORSEL_SIZE: usize = 128 * 1024;
-
-pub fn infer_arrow_schema_from_metadata(
-    metadata: &parquet2::metadata::FileMetaData,
-    options: Option<SchemaInferenceOptions>,
-) -> daft_arrow::error::Result<daft_arrow::datatypes::Schema> {
-    let arrow_schema = infer_schema_with_options(metadata, options)?;
-    let coerced_arrow_schema = utils::coerce_to_daft_compatible_schema(arrow_schema);
-    Ok(coerced_arrow_schema)
-}
+pub use statistics::row_group_metadata_to_table_stats;
 
 /// Infer a Daft `Schema` from arrow-rs-backed `DaftParquetMetadata`.
 pub fn infer_schema_from_daft_metadata(
@@ -70,11 +51,6 @@ pub enum Error {
         source: std::io::Error,
     },
 
-    #[snafu(display("Unable to parse parquet metadata for file {}: {}", path, source))]
-    UnableToParseMetadata {
-        path: String,
-        source: parquet2::error::Error,
-    },
     #[snafu(display(
         "Unable to parse parquet metadata (arrow-rs) for file {}: {}",
         path,
@@ -96,29 +72,6 @@ pub enum Error {
         source: daft_arrow::error::Error,
     },
 
-    #[snafu(display("Unable to create page stream for parquet file {}: {}", path, source))]
-    UnableToCreateParquetPageStream {
-        path: String,
-        source: parquet2::error::Error,
-    },
-    #[snafu(display(
-        "Unable to create arrow chunk from streaming file reader{}: {}",
-        path,
-        source
-    ))]
-    UnableToCreateChunkFromStreamingFileReader {
-        path: String,
-        source: daft_arrow::error::Error,
-    },
-    #[snafu(display(
-        "Unable to parse parquet metadata to arrow schema for file {}: {}",
-        path,
-        source
-    ))]
-    UnableToParseSchemaFromMetadata {
-        path: String,
-        source: daft_arrow::error::Error,
-    },
     #[snafu(display(
         "Unable to create table from arrow chunk for file {}: {}",
         path,
@@ -149,18 +102,6 @@ pub enum Error {
         path: String,
         footer_size: usize,
         file_size: usize,
-    },
-
-    #[snafu(display(
-        "File: {} had a total of: {} row groups but requested index {}",
-        path,
-        total_row_groups,
-        row_group
-    ))]
-    ParquetRowGroupOutOfIndex {
-        path: String,
-        row_group: i64,
-        total_row_groups: i64,
     },
 
     #[snafu(display(
