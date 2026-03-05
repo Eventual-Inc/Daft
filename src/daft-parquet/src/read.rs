@@ -280,28 +280,28 @@ async fn read_parquet_single_into_arrow(
 
     let num_rows_read = rb.len();
 
-    // Convert each Daft Series → arrow-rs ArrayRef → arrow2 Box<dyn Array>
-    let arrow2_arrays: ArrowChunk = rb
-        .columns()
-        .iter()
-        .map(|col| -> DaftResult<Box<dyn daft_arrow::array::Array>> {
-            let arrow_array = col.to_arrow()?;
-            Ok(Box::<dyn daft_arrow::array::Array>::from(arrow_array))
-        })
-        .collect::<DaftResult<Vec<_>>>()?;
+    // Convert each Daft Series → FFI-compatible arrays for the pyarrow bridge.
+    // Return in COLUMN-MAJOR layout: all_arrays[col_idx] = [chunks_for_that_column].
+    // The Python side (recordbatch.py) zips schema fields with this outer list,
+    // so each entry must be the list of chunks for one column.
+    let mut ffi_fields = Vec::with_capacity(rb.schema.fields().len());
+    let mut all_arrays: Vec<ArrowChunk> = Vec::with_capacity(rb.schema.fields().len());
 
-    // Build arrow2 schema from the converted arrays and Daft field names
-    let arrow2_fields: Vec<daft_arrow::datatypes::Field> = arrow2_arrays
-        .iter()
-        .zip(rb.schema.fields())
-        .map(|(arr, daft_field)| {
-            daft_arrow::datatypes::Field::new(&daft_field.name, arr.data_type().clone(), true)
-        })
-        .collect();
-    let arrow2_schema: daft_arrow::datatypes::SchemaRef =
-        Arc::new(daft_arrow::datatypes::Schema::from(arrow2_fields));
+    for (col, daft_field) in rb.columns().iter().zip(rb.schema.fields()) {
+        let arrow_array = col.to_arrow()?;
+        let ffi_array = Box::<dyn daft_arrow::array::Array>::from(arrow_array);
+        ffi_fields.push(daft_arrow::datatypes::Field::new(
+            &daft_field.name,
+            ffi_array.data_type().clone(),
+            true,
+        ));
+        all_arrays.push(vec![ffi_array]);
+    }
 
-    Ok((arrow2_schema, vec![arrow2_arrays], num_rows_read))
+    let ffi_schema: daft_arrow::datatypes::SchemaRef =
+        Arc::new(daft_arrow::datatypes::Schema::from(ffi_fields));
+
+    Ok((ffi_schema, all_arrays, num_rows_read))
 }
 
 #[allow(clippy::too_many_arguments)]

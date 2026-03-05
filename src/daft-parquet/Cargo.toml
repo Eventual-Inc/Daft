@@ -15,7 +15,6 @@ daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-stats = {path = "../daft-stats", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
-log = {workspace = true}
 parquet = {workspace = true, features = ["async"]}
 pyo3 = {workspace = true, optional = true}
 rayon = {workspace = true}
@@ -23,7 +22,6 @@ serde = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
-tokio-util = {workspace = true}
 
 [dev-dependencies]
 bincode = {workspace = true}
