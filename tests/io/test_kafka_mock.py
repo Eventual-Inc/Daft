@@ -201,6 +201,7 @@ def test_make_consumer_config_preserves_value_types() -> None:
 
 
 def test_kafka_source_task_terminates_on_empty_consume(monkeypatch: pytest.MonkeyPatch) -> None:
+    from daft.dependencies import confluent_kafka as lazy_confluent_kafka
     from daft.io import _kafka
 
     # Broker-free simulation:
@@ -232,6 +233,7 @@ def test_kafka_source_task_terminates_on_empty_consume(monkeypatch: pytest.Monke
         Consumer=_Consumer,
         TopicPartition=lambda topic, partition, offset=None: (topic, partition, offset),
     )
+    monkeypatch.setattr(lazy_confluent_kafka, "_module", None)
     monkeypatch.setitem(__import__("sys").modules, "confluent_kafka", stub)
 
     task = _kafka.KafkaSourceTask(
@@ -252,6 +254,7 @@ def test_kafka_source_task_terminates_on_empty_consume(monkeypatch: pytest.Monke
 
 
 def test_kafka_source_task_ignores_partition_eof(monkeypatch: pytest.MonkeyPatch) -> None:
+    from daft.dependencies import confluent_kafka as lazy_confluent_kafka
     from daft.io import _kafka
 
     # Broker-free simulation:
@@ -299,6 +302,7 @@ def test_kafka_source_task_ignores_partition_eof(monkeypatch: pytest.MonkeyPatch
         KafkaException=Exception,
         TIMESTAMP_NOT_AVAILABLE=0,
     )
+    monkeypatch.setattr(lazy_confluent_kafka, "_module", None)
     monkeypatch.setitem(__import__("sys").modules, "confluent_kafka", stub)
 
     task = _kafka.KafkaSourceTask(
@@ -315,3 +319,75 @@ def test_kafka_source_task_ignores_partition_eof(monkeypatch: pytest.MonkeyPatch
     )
 
     assert list(task.get_micro_partitions()) == []
+
+
+def test_kafka_source_task_respects_chunk_size(monkeypatch: pytest.MonkeyPatch) -> None:
+    from daft.dependencies import confluent_kafka as lazy_confluent_kafka
+    from daft.io import _kafka
+
+    class _Msg:
+        def __init__(self, offset: int) -> None:
+            self._offset = offset
+
+        def error(self) -> None:
+            return None
+
+        def offset(self) -> int:
+            return self._offset
+
+        def timestamp(self) -> tuple[int, int]:
+            return (1, 0)
+
+        def key(self) -> bytes:
+            return b"k"
+
+        def value(self) -> bytes:
+            return b"v"
+
+    class _Consumer:
+        def __init__(self, cfg: object) -> None:
+            self.calls = 0
+
+        def get_watermark_offsets(self, tp: object, *, timeout: float, cached: bool) -> tuple[int, int]:
+            return (0, 10)
+
+        def assign(self, tps: list[object]) -> None:
+            return None
+
+        def consume(self, num_messages: int, *, timeout: float) -> list[_Msg]:
+            self.calls += 1
+            if self.calls == 1:
+                return [_Msg(0)]
+            if self.calls == 2:
+                return [_Msg(1)]
+            if self.calls == 3:
+                return [_Msg(2)]
+            return []
+
+        def close(self) -> None:
+            return None
+
+    stub = SimpleNamespace(
+        Consumer=_Consumer,
+        TopicPartition=lambda topic, partition, offset=None: (topic, partition, offset),
+        TIMESTAMP_NOT_AVAILABLE=0,
+    )
+    monkeypatch.setattr(lazy_confluent_kafka, "_module", None)
+    monkeypatch.setitem(__import__("sys").modules, "confluent_kafka", stub)
+
+    task = _kafka.KafkaSourceTask(
+        _bootstrap_servers="localhost:9092",
+        _group_id="gid",
+        _topic="t",
+        _partition=0,
+        _start_offset=0,
+        _end_offset=3,
+        _kafka_client_config=None,
+        _timeout_ms=1,
+        _chunk_size=1,
+        _limit=None,
+    )
+
+    micro_partitions = list(task.get_micro_partitions())
+    assert len(micro_partitions) == 3
+    assert [rows[0]["offset"] for rows in (mp.to_pylist() for mp in micro_partitions)] == [0, 1, 2]

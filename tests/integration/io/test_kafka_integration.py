@@ -228,6 +228,51 @@ def test_read_kafka_timestamp_start(kafka_context: dict[str, object]) -> None:
 
 
 @pytest.mark.integration()
+def test_read_kafka_timestamp_start_after_last_message_returns_empty(kafka_context: dict[str, object]) -> None:
+    bootstrap = str(kafka_context["bootstrap"])
+    topic = str(kafka_context["topic"])
+    batch2_ts = int(kafka_context["batch2_ts"])
+
+    late_dt = datetime.fromtimestamp((batch2_ts + 3_600_000) / 1000, tz=timezone.utc)
+
+    df = daft.read_kafka(
+        bootstrap_servers=bootstrap,
+        topics=topic,
+        group_id="daft-kafka-integration",
+        timeout_ms=20_000,
+        start=late_dt,
+        end="latest",
+        partitions=[0],
+    ).collect()
+    decoded = _decode_rows(df.to_pylist())
+    assert decoded == []
+
+
+@pytest.mark.integration()
+def test_read_kafka_timestamp_end_after_last_message_reads_all(kafka_context: dict[str, object]) -> None:
+    bootstrap = str(kafka_context["bootstrap"])
+    topic = str(kafka_context["topic"])
+    batch2_ts = int(kafka_context["batch2_ts"])
+
+    late_dt = datetime.fromtimestamp((batch2_ts + 3_600_000) / 1000, tz=timezone.utc)
+
+    df = daft.read_kafka(
+        bootstrap_servers=bootstrap,
+        topics=topic,
+        group_id="daft-kafka-integration",
+        timeout_ms=20_000,
+        start="earliest",
+        end=late_dt,
+        partitions=[0],
+    ).collect()
+    decoded = _decode_rows(df.to_pylist())
+    assert len(decoded) == 20
+    assert {r["topic"] for r in decoded} == {topic}
+    assert {r["partition"] for r in decoded} == {0}
+    assert {r["value"]["id"] for r in decoded} == set(range(20))
+
+
+@pytest.mark.integration()
 def test_read_kafka_offset_range(kafka_context: dict[str, object]) -> None:
     bootstrap = str(kafka_context["bootstrap"])
     topic = str(kafka_context["topic"])

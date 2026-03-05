@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -7,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from daft import DataType
 from daft.api_annotations import PublicAPI
+from daft.dependencies import confluent_kafka
 from daft.io.source import DataSource, DataSourceTask
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema
@@ -14,6 +16,9 @@ from daft.schema import Schema
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
     from daft.io.pushdowns import Pushdowns
+
+
+logger = logging.getLogger(__name__)
 
 
 _KAFKA_SCHEMA = Schema.from_pydict(
@@ -183,8 +188,6 @@ def _resolve_bound(
     timeout_s: float,
 ) -> int:
     """Resolve a normalized bound into a concrete Kafka offset, clamped to [low, high]."""
-    import confluent_kafka
-
     if kind == _KIND_EARLIEST:
         return low
     if kind == _KIND_LATEST:
@@ -194,11 +197,21 @@ def _resolve_bound(
             raise ValueError("[read_kafka] internal error: timestamp_ms is required to resolve a timestamp bound")
         tp = confluent_kafka.TopicPartition(topic, partition, timestamp_ms)
         [resolved] = consumer.offsets_for_times([tp], timeout=timeout_s)
-        if resolved is None or resolved.offset is None or resolved.offset < 0:
+        if resolved is None or resolved.offset is None:
             raise ValueError(
                 "[read_kafka] failed to resolve timestamp to offset; "
                 f"topic={topic}, partition={partition}, timestamp_ms={timestamp_ms}"
             )
+        if resolved.offset < 0:
+            # offsets_for_times returns -1 when the timestamp is after the last message in the partition; fall back to `high`.
+            logger.warning(
+                "read_kafka: offsets_for_times returned invalid offset (-1) for timestamp_ms=%s; falling back to end-of-partition (high=%s). topic=%s partition=%s",
+                timestamp_ms,
+                high,
+                topic,
+                partition,
+            )
+            return high
         return max(low, min(high, resolved.offset))
     if kind == _KIND_TOPIC_PARTITION_OFFSETS:
         if offsets_by_topic is None:
@@ -272,8 +285,6 @@ class KafkaSource(DataSource):
         return _KAFKA_SCHEMA
 
     def get_tasks(self, pushdowns: Pushdowns) -> Iterator[KafkaSourceTask]:
-        import confluent_kafka
-
         timeout_s = self._timeout_ms / 1000.0
 
         cfg = _make_consumer_config(
@@ -367,8 +378,6 @@ class KafkaSourceTask(DataSourceTask):
         return _KAFKA_SCHEMA
 
     def get_micro_partitions(self) -> Iterator[MicroPartition]:
-        import confluent_kafka
-
         timeout_s = self._timeout_ms / 1000.0
 
         cfg = _make_consumer_config(
@@ -379,17 +388,10 @@ class KafkaSourceTask(DataSourceTask):
         consumer = confluent_kafka.Consumer(cfg)
 
         try:
-            low, high = consumer.get_watermark_offsets(
-                confluent_kafka.TopicPartition(self._topic, self._partition),
-                timeout=timeout_s,
-                cached=False,
-            )
-            clamped_start = max(low, self._start_offset)
-            clamped_end = min(high, self._end_offset)
-            if clamped_start >= clamped_end:
+            if self._start_offset >= self._end_offset:
                 return
 
-            topic_partition = confluent_kafka.TopicPartition(self._topic, self._partition, clamped_start)
+            topic_partition = confluent_kafka.TopicPartition(self._topic, self._partition, self._start_offset)
             consumer.assign([topic_partition])
 
             remaining = self._limit
@@ -430,7 +432,7 @@ class KafkaSourceTask(DataSourceTask):
                             raise confluent_kafka.KafkaException(err)
 
                         offset = msg.offset()
-                        if offset >= clamped_end:
+                        if offset >= self._end_offset:
                             # Stop once we hit the bounded end offset for this task.
                             stop = True
                             break
@@ -454,7 +456,7 @@ class KafkaSourceTask(DataSourceTask):
                                 stop = True
                                 break
 
-                        if offset == clamped_end - 1:
+                        if offset == self._end_offset - 1:
                             # Early exit: this is the last offset in range, skip one more consume() round-trip.
                             stop = True
                             break
@@ -496,6 +498,89 @@ def read_kafka(
     kafka_client_config: Mapping[str, object] | None = None,
     timeout_ms: int = 10_000,
 ) -> DataFrame:
+    """Creates a DataFrame by reading messages from Kafka topic(s).
+
+    This function reads bounded ranges of messages from one or more Kafka topics. It supports
+    multiple ways to specify the start and end bounds: earliest/latest, timestamp, or explicit
+    partition offsets.
+
+    Args:
+        bootstrap_servers (str | Sequence[str]): Kafka bootstrap server(s) to connect to.
+            Can be a single server string (e.g., "localhost:9092") or a sequence of servers.
+        topics (str | Sequence[str]): Kafka topic(s) to read from. Can be a single topic string
+            or a sequence of topics.
+        start (object): The start bound for reading messages. Defaults to "earliest".
+            Supported values:
+            - "earliest": Start from the earliest available offset for each partition.
+            - "latest": Start from the latest offset for each partition.
+            - int: Timestamp in milliseconds since epoch.
+            - datetime: A timezone-aware or naive datetime (naive datetimes are assumed UTC).
+            - str: An ISO-8601 timestamp string (e.g., "2024-01-01T00:00:00Z").
+            - dict: For single topic: ``{partition: offset}``. For multiple topics: ``{topic: {partition: offset}}``.
+        end (object): The end bound for reading messages. Defaults to "latest".
+            Supports the same value types as ``start``. The end offset is exclusive.
+        group_id (str): Consumer group ID used for the Kafka consumer. Defaults to
+            "daft-bounded-kafka-reader".
+        partitions (Sequence[int] | None): Optional sequence of partition IDs to read from.
+            If None, reads from all partitions of the specified topic(s). Defaults to None.
+        chunk_size (int): Maximum number of messages per MicroPartition. Defaults to 1024.
+        kafka_client_config (Mapping[str, object] | None): Optional additional configuration
+            options passed directly to the underlying Kafka consumer. These are merged with
+            the default configuration. Defaults to None.
+        timeout_ms (int): Timeout in milliseconds for Kafka operations (metadata queries,
+            message consumption, etc.). Defaults to 10_000 (10 seconds).
+
+    Returns:
+        DataFrame: A DataFrame with the following schema:
+            - topic (string): The topic the message was read from.
+            - partition (int32): The partition ID within the topic.
+            - offset (int64): The offset of the message within the partition.
+            - timestamp_ms (int64): The timestamp of the message in milliseconds since epoch,
+              or null if not available.
+            - key (binary): The message key as raw bytes, or null if not present.
+            - value (binary): The message value as raw bytes.
+
+    Examples:
+        Read from a single topic with default bounds (earliest to latest):
+        >>> df = daft.read_kafka("localhost:9092", "my-topic")
+
+        Read from multiple topics:
+        >>> df = daft.read_kafka("localhost:9092", ["topic-a", "topic-b"])
+
+        Read from specific partitions:
+        >>> df = daft.read_kafka("localhost:9092", "my-topic", partitions=[0, 1])
+
+        Read from a timestamp range:
+        >>> from datetime import datetime, timezone
+        >>> start_dt = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        >>> end_dt = datetime(2024, 1, 2, tzinfo=timezone.utc)
+        >>> df = daft.read_kafka("localhost:9092", "my-topic", start=start_dt, end=end_dt)
+
+        Read from specific partition offsets:
+        >>> df = daft.read_kafka("localhost:9092", "my-topic", start={0: 100, 1: 200})
+
+        Read from multiple topics with per-topic offsets:
+        >>> df = daft.read_kafka(
+        ...     "localhost:9092",
+        ...     ["topic-a", "topic-b"],
+        ...     start={"topic-a": {0: 100}, "topic-b": {0: 50}},
+        ... )
+
+        Configure Kafka client options:
+        >>> df = daft.read_kafka(
+        ...     "localhost:9092",
+        ...     "my-topic",
+        ...     kafka_client_config={"enable.partition.eof": True, "session.timeout.ms": 30000},
+        ... )
+
+    Note:
+        This function requires the ``confluent-kafka`` package. Install it with:
+        ``pip install confluent-kafka``
+
+        Timestamp bounds use Kafka message timestamps. If your cluster uses CreateTime, producers can publish
+        late/out-of-order timestamps; timestamp bounds are not a safe exactly-once checkpoint. Prefer offset-based
+        checkpoints (e.g., partition offset maps or committed consumer offsets)
+    """
     if isinstance(bootstrap_servers, str):
         bootstrap_servers_str = bootstrap_servers
     else:
