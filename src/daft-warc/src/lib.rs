@@ -678,12 +678,11 @@ mod tests {
         )?;
 
         let warc_file_size = std::fs::metadata(&warc_file)?.len() as usize;
-        let warc_gz_file_size = std::fs::metadata(&warc_gz_file)?.len() as usize;
         let bytes_read = io_stats.load_bytes_read();
         assert_eq!(
             bytes_read,
-            warc_file_size + warc_gz_file_size,
-            "IO stats should record the bytes read correctly"
+            warc_file_size * 2,
+            "IO stats should record the bytes read correctly (post-gzip inflation)"
         );
         Ok(())
     }
