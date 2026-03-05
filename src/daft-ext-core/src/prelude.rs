@@ -6,4 +6,5 @@ pub use crate::{
     error::{DaftError, DaftResult},
     function::{DaftScalarFunction, DaftScalarFunctionRef},
     session::{DaftExtension, DaftSession, SessionContext},
+    source::{DaftSource, DaftSourceRef, DaftSourceTask, ScanPushdowns},
 };

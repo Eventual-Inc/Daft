@@ -2448,6 +2448,9 @@ dependencies = [
  "daft-dashboard",
  "daft-distributed",
  "daft-dsl",
+ "daft-ext-abi",
+ "daft-ext-core",
+ "daft-ext-internal",
  "daft-file",
  "daft-functions",
  "daft-functions-binary",
@@ -3107,6 +3110,7 @@ dependencies = [
  "daft-core",
  "daft-csv",
  "daft-dsl",
+ "daft-ext-internal",
  "daft-functions-list",
  "daft-functions-uri",
  "daft-io",
@@ -3117,6 +3121,7 @@ dependencies = [
  "daft-parquet",
  "daft-recordbatch",
  "daft-scan",
+ "daft-schema",
  "daft-shuffles",
  "daft-warc",
  "daft-writers",
@@ -3401,6 +3406,7 @@ name = "daft-session"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-scan-info",
  "daft-ai",
  "daft-catalog",
  "daft-core",
@@ -3408,6 +3414,8 @@ dependencies = [
  "daft-ext-abi",
  "daft-ext-internal",
  "daft-logical-plan",
+ "daft-scan",
+ "daft-schema",
  "pyo3",
  "uuid 1.19.0",
 ]

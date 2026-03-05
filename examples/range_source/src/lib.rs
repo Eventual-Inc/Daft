@@ -4,6 +4,9 @@ use arrow_array::{Int64Array, RecordBatch};
 use arrow_schema::{DataType, Field, Schema};
 use daft_ext::prelude::*;
 
+// Generate arrow-rs ↔ ABI conversion helpers using our arrow version.
+daft_ext::define_arrow_helpers!();
+
 // ── Module ──────────────────────────────────────────────────────────
 
 #[daft_extension]
@@ -34,7 +37,7 @@ impl DaftSource for RangeSource {
 
     fn schema(&self, _options: &str) -> DaftResult<ArrowSchema> {
         let schema = Schema::new(vec![Field::new("value", DataType::Int64, false)]);
-        export_schema(&schema)
+        Ok(export_schema(&schema)?)
     }
 
     fn num_tasks(&self, options: &str) -> u32 {
@@ -98,7 +101,7 @@ impl DaftSourceTask for RangeTask {
         self.current += batch_size as u64;
         self.emitted += batch_size;
 
-        let batch = RecordBatch::try_new(
+        let struct_array: arrow_array::StructArray = RecordBatch::try_new(
             Arc::new(Schema::new(vec![Field::new(
                 "value",
                 DataType::Int64,
@@ -106,8 +109,9 @@ impl DaftSourceTask for RangeTask {
             )])),
             vec![Arc::new(values)],
         )
-        .map_err(|e| DaftError::RuntimeError(e.to_string()))?;
+        .map_err(|e| DaftError::RuntimeError(e.to_string()))?
+        .into();
 
-        Ok(Some(export_batch(&batch)?))
+        Ok(Some(export_array(&struct_array)?))
     }
 }
