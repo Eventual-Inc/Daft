@@ -1,19 +1,13 @@
 use core::str;
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
+use arrow_schema::Field as ArrowField;
 use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
-use csv_async::AsyncReader;
-use daft_arrow::{
-    datatypes::Field,
-    io::csv::{
-        read_async,
-        read_async::{AsyncReaderBuilder, read_rows},
-    },
-};
+use csv_async::{AsyncReader, AsyncReaderBuilder};
 use daft_compression::CompressionCodec;
-use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+use daft_core::prelude::*;
 use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_io::{GetResult, IOClient, IOStatsRef, SourceType, parse_url};
@@ -34,16 +28,11 @@ use tokio::{
 };
 use tokio_util::io::StreamReader;
 
-use crate::{
-    ArrowSnafu, CsvConvertOptions, CsvParseOptions, CsvReadOptions,
-    metadata::read_csv_schema_single,
-};
+use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions, metadata::read_csv_schema_single};
 
-trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<read_async::ByteRecord>>> {}
-impl<S> ByteRecordChunkStream for S where
-    S: Stream<Item = super::Result<Vec<read_async::ByteRecord>>>
-{
-}
+trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<csv_async::ByteRecord>>> {}
+impl<S> ByteRecordChunkStream for S where S: Stream<Item = super::Result<Vec<csv_async::ByteRecord>>>
+{}
 
 use crate::local::{read_csv_local, stream_csv_local};
 
@@ -301,8 +290,8 @@ async fn read_csv_single_into_table(
     let schema_fields = if let Some(include_columns) = &include_columns {
         let field_map = fields
             .iter()
-            .map(|field| (field.name.as_str(), field))
-            .collect::<HashMap<&str, &Field>>();
+            .map(|field| (field.name().as_str(), field))
+            .collect::<HashMap<&str, &ArrowField>>();
         include_columns
             .iter()
             .map(|col| field_map[col.as_str()].clone())
@@ -311,8 +300,8 @@ async fn read_csv_single_into_table(
         fields
     };
 
-    let schema: daft_arrow::datatypes::Schema = schema_fields.into();
-    let schema: SchemaRef = Arc::new(schema.into());
+    let arrow_schema = arrow_schema::Schema::new(schema_fields);
+    let schema: SchemaRef = Arc::new(Schema::try_from(&arrow_schema)?);
 
     let include_column_indices = include_columns
         .map(|include_columns| {
@@ -482,10 +471,10 @@ async fn read_csv_single_into_stream(
     read_options: Option<CsvReadOptions>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<(impl TableStream + Send, Vec<Field>)> {
+) -> DaftResult<(impl TableStream + Send, Vec<ArrowField>)> {
     let (mut schema, estimated_mean_row_size, estimated_std_row_size) =
         if let Some(schema) = convert_options.schema {
-            (schema.to_arrow2()?, None, None)
+            (schema.to_arrow()?, None, None)
         } else {
             let (schema, read_stats) = read_csv_schema_single(
                 &uri,
@@ -497,22 +486,24 @@ async fn read_csv_single_into_stream(
             )
             .await?;
             (
-                schema.to_arrow2()?,
+                schema.to_arrow()?,
                 Some(read_stats.mean_record_size_bytes),
                 Some(read_stats.stddev_record_size_bytes),
             )
         };
     // Rename fields, if necessary.
     if let Some(column_names) = convert_options.column_names {
-        schema = schema
-            .fields
-            .into_iter()
-            .zip(column_names.iter())
-            .map(|(field, name)| {
-                Field::new(name, field.data_type, field.is_nullable).with_metadata(field.metadata)
-            })
-            .collect::<Vec<_>>()
-            .into();
+        schema = arrow_schema::Schema::new(
+            schema
+                .fields()
+                .iter()
+                .zip(column_names.iter())
+                .map(|(field, name)| {
+                    ArrowField::new(name, field.data_type().clone(), field.is_nullable())
+                        .with_metadata(field.metadata().clone())
+                })
+                .collect::<Vec<_>>(),
+        );
     }
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
         match io_client
@@ -559,18 +550,18 @@ async fn read_csv_single_into_stream(
         .buffer_capacity(buffer_size)
         .flexible(parse_options.allow_variable_columns)
         .create_reader(reader.compat());
+    let fields: Vec<ArrowField> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
     let read_stream = read_into_byterecord_chunk_stream(
         reader,
-        schema.fields.len(),
+        fields.len(),
         convert_options.limit,
         chunk_size,
         estimated_mean_row_size,
         estimated_std_row_size,
     );
     let projection_indices =
-        fields_to_projection_indices(&schema.fields, &convert_options.include_columns);
+        fields_to_projection_indices(&fields, &convert_options.include_columns);
 
-    let fields = schema.fields;
     let stream = parse_into_column_array_chunk_stream(
         read_stream,
         Arc::new(fields.clone()),
@@ -578,6 +569,33 @@ async fn read_csv_single_into_stream(
     )?;
 
     Ok((stream, fields))
+}
+
+/// Reads CSV rows from an async reader into the provided byte records buffer.
+/// Returns the number of rows read.
+async fn async_read_rows<R: futures::AsyncRead + Unpin + Send>(
+    reader: &mut csv_async::AsyncReader<R>,
+    skip: usize,
+    rows: &mut [csv_async::ByteRecord],
+) -> Result<usize, csv_async::Error> {
+    // skip first `start` rows.
+    let mut row = csv_async::ByteRecord::new();
+    for _ in 0..skip {
+        let res = reader.read_byte_record(&mut row).await;
+        if !res.unwrap_or(false) {
+            break;
+        }
+    }
+
+    let mut row_number = 0;
+    for row in rows.iter_mut() {
+        let has_more = reader.read_byte_record(row).await?;
+        if !has_more {
+            break;
+        }
+        row_number += 1;
+    }
+    Ok(row_number)
 }
 
 fn read_into_byterecord_chunk_stream<R>(
@@ -611,12 +629,12 @@ where
             // Cap chunk size at the remaining number of rows we need to read before we reach the num_rows limit.
             let chunk_size_rows = chunk_size.max(8).min(num_rows - total_rows_read);
             let mut chunk_buffer = vec![
-                read_async::ByteRecord::with_capacity(record_buffer_size, num_fields);
+                csv_async::ByteRecord::with_capacity(record_buffer_size, num_fields);
                 chunk_size_rows
             ];
 
             let byte_pos_before = reader.position().byte();
-            rows_read = read_rows(&mut reader, 0, chunk_buffer.as_mut_slice()).await.context(ArrowSnafu {})?;
+            rows_read = async_read_rows(&mut reader, 0, chunk_buffer.as_mut_slice()).await.context(super::CSVSnafu {})?;
             let bytes_read = reader.position().byte() - byte_pos_before;
 
             // Update stats.
@@ -638,7 +656,7 @@ where
 
 fn parse_into_column_array_chunk_stream(
     stream: impl ByteRecordChunkStream + Send,
-    fields: Arc<Vec<daft_arrow::datatypes::Field>>,
+    fields: Arc<Vec<ArrowField>>,
     projection_indices: Arc<Vec<usize>>,
 ) -> DaftResult<impl TableStream + Send> {
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
@@ -646,7 +664,13 @@ fn parse_into_column_array_chunk_stream(
 
     let fields_subset = projection_indices
         .iter()
-        .map(|i| fields.get(*i).unwrap().into())
+        .map(|i| {
+            let f = fields.get(*i).unwrap();
+            daft_core::datatypes::Field::new(
+                f.name(),
+                daft_schema::dtype::DataType::try_from(f.data_type()).unwrap(),
+            )
+        })
         .collect::<Vec<daft_core::datatypes::Field>>();
     let read_schema = Arc::new(daft_core::prelude::Schema::new(fields_subset));
     let read_daft_fields = Arc::new(
@@ -675,10 +699,7 @@ fn parse_into_column_array_chunk_stream(
                                 fields[*proj_idx].data_type().clone(),
                                 0,
                             );
-                            Series::from_arrow(
-                                read_daft_fields[i].clone(),
-                                cast_array_for_daft_if_needed(deserialized_col?).into(),
-                            )
+                            Series::from_arrow(read_daft_fields[i].clone(), deserialized_col?)
                         })
                         .collect::<DaftResult<Vec<Series>>>()?;
                     let num_rows = chunk.first().map_or(0, daft_core::series::Series::len);
@@ -693,13 +714,13 @@ fn parse_into_column_array_chunk_stream(
 }
 
 pub fn fields_to_projection_indices(
-    fields: &[daft_arrow::datatypes::Field],
+    fields: &[ArrowField],
     include_columns: &Option<Vec<String>>,
 ) -> Arc<Vec<usize>> {
     let field_name_to_idx = fields
         .iter()
         .enumerate()
-        .map(|(idx, f)| (f.name.as_ref(), idx))
+        .map(|(idx, f)| (f.name().as_str(), idx))
         .collect::<HashMap<&str, usize>>();
     include_columns
         .as_ref()
@@ -716,26 +737,27 @@ pub fn fields_to_projection_indices(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{collections::HashSet, sync::Arc};
 
+    use arrow_schema::DataType as ArrowDataType;
     use common_error::{DaftError, DaftResult};
-    use daft_arrow::io::csv::read::{
-        ByteRecord, ReaderBuilder, deserialize_batch, deserialize_column, infer, infer_schema,
-        read_rows,
-    };
-    use daft_core::{
-        prelude::*,
-        utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
-    };
+    use daft_core::prelude::*;
+    use daft_decoding::{deserialize::deserialize_column, inference::infer};
     use daft_io::{IOClient, IOConfig};
     use daft_recordbatch::RecordBatch;
     use rstest::rstest;
 
     use super::read_csv;
-    use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions, char_to_byte};
+    use crate::{
+        CsvConvertOptions, CsvParseOptions, CsvReadOptions, char_to_byte, schema::merge_schema,
+    };
 
+    /// Reference implementation that reads a CSV file using the sync `csv` crate
+    /// and `daft_decoding` directly, then compares the result against the output
+    /// from Daft's async CSV reader. This ensures that Daft's CSV pipeline produces
+    /// results consistent with a straightforward arrow-rs-based CSV read.
     #[allow(clippy::too_many_arguments)]
-    fn check_equal_local_arrow2(
+    fn check_equal_local_arrow_rs(
         path: &str,
         out: &RecordBatch,
         has_header: bool,
@@ -748,7 +770,9 @@ mod tests {
         projection: Option<Vec<usize>>,
         limit: Option<usize>,
     ) {
-        let mut reader = ReaderBuilder::new()
+        // Build a sync CSV reader with the same parse options.
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(has_header)
             .delimiter(char_to_byte(delimiter).unwrap_or(None).unwrap_or(b','))
             .double_quote(double_quote)
             .quote(char_to_byte(quote).unwrap_or(None).unwrap_or(b'"'))
@@ -756,43 +780,123 @@ mod tests {
             .comment(char_to_byte(comment).unwrap_or(Some(b'#')))
             .from_path(path)
             .unwrap();
-        let (mut fields, _) = infer_schema(&mut reader, None, has_header, &infer).unwrap();
-        if !has_header && let Some(column_names) = column_names {
-            fields = fields
-                .into_iter()
-                .zip(column_names)
-                .map(|(field, name)| {
-                    daft_arrow::datatypes::Field::new(name, field.data_type, true)
-                        .with_metadata(field.metadata)
+
+        // Read headers.
+        let mut first_record: Option<csv::ByteRecord> = None;
+        let headers: Vec<String> = if has_header {
+            reader
+                .headers()
+                .unwrap()
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        } else {
+            // Peek at first record to get column count.
+            let mut record = csv::ByteRecord::new();
+            let has_data = reader.read_byte_record(&mut record).unwrap();
+            let count = if has_data { record.len() } else { 0 };
+            if has_data {
+                first_record = Some(record);
+            }
+            (0..count).map(|i| format!("column_{}", i + 1)).collect()
+        };
+
+        // Read all rows up to limit.
+        let max_rows = limit.unwrap_or(usize::MAX);
+        let mut rows: Vec<csv::ByteRecord> = Vec::new();
+        // Include the first record we peeked at for no-header case.
+        if let Some(rec) = first_record {
+            rows.push(rec);
+        }
+        let mut record = csv::ByteRecord::new();
+        while rows.len() < max_rows && reader.read_byte_record(&mut record).unwrap() {
+            rows.push(record.clone());
+        }
+
+        // Infer schema from the rows.
+        let num_cols = headers.len();
+        let mut column_types: Vec<HashSet<ArrowDataType>> = vec![HashSet::new(); num_cols];
+        for row in &rows {
+            for (col_idx, types) in column_types.iter_mut().enumerate() {
+                if let Some(bytes) = row.get(col_idx) {
+                    types.insert(infer(bytes));
+                } else {
+                    types.insert(ArrowDataType::Null);
+                }
+            }
+        }
+        let mut fields = merge_schema(&headers, &mut column_types);
+
+        // Apply column name overrides (for no-header case).
+        if !has_header {
+            if let Some(ref names) = column_names {
+                fields = fields
+                    .into_iter()
+                    .zip(names.iter())
+                    .map(|(field, name)| {
+                        arrow_schema::Field::new(*name, field.data_type().clone(), true)
+                    })
+                    .collect();
+            }
+        }
+
+        // Determine projection indices.
+        let proj_indices: Vec<usize> = if let Some(ref proj) = projection {
+            proj.clone()
+        } else {
+            (0..fields.len()).collect()
+        };
+
+        // Deserialize each projected column and convert to Daft Series for comparison
+        // (this applies Daft's type coercion).
+        let projected_fields: Vec<_> = proj_indices.iter().map(|&i| fields[i].clone()).collect();
+        let reference_series: Vec<Series> = proj_indices
+            .iter()
+            .map(|&col_idx| {
+                let arr =
+                    deserialize_column(&rows, col_idx, fields[col_idx].data_type().clone(), 0)
+                        .unwrap();
+                let field = &fields[col_idx];
+                let daft_dtype = daft_schema::dtype::DataType::try_from(field.data_type()).unwrap();
+                let daft_field = daft_core::datatypes::Field::new(field.name(), daft_dtype);
+                Series::from_arrow(daft_field, arr).unwrap()
+            })
+            .collect();
+
+        // Compare schema.
+        let reference_schema = Schema::new(
+            projected_fields
+                .iter()
+                .map(|f| {
+                    let daft_dtype = daft_schema::dtype::DataType::try_from(f.data_type()).unwrap();
+                    daft_core::datatypes::Field::new(f.name(), daft_dtype)
                 })
-                .collect::<Vec<_>>();
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(
+            out.schema.as_ref(),
+            &reference_schema,
+            "Schema mismatch between Daft CSV reader and reference arrow-rs reader"
+        );
+
+        // Compare columns.
+        assert_eq!(out.num_columns(), reference_series.len());
+        for (i, (out_col, ref_col)) in out
+            .columns()
+            .iter()
+            .zip(reference_series.iter())
+            .enumerate()
+        {
+            let out_arrow = out_col.to_arrow().unwrap();
+            let ref_arrow = ref_col.to_arrow().unwrap();
+            assert_eq!(
+                out_arrow.as_ref(),
+                ref_arrow.as_ref(),
+                "Column {} ({}) mismatch between Daft CSV reader and reference arrow-rs reader",
+                i,
+                projected_fields[i].name(),
+            );
         }
-        let mut rows = vec![ByteRecord::default(); limit.unwrap_or(100)];
-        let rows_read = read_rows(&mut reader, 0, &mut rows).unwrap();
-        let rows = &rows[..rows_read];
-        let chunk =
-            deserialize_batch(rows, &fields, projection.as_deref(), 0, deserialize_column).unwrap();
-        if let Some(projection) = projection {
-            fields = projection
-                .into_iter()
-                .map(|idx| fields[idx].clone())
-                .collect();
-        }
-        let columns = chunk
-            .into_arrays()
-            .into_iter()
-            // Roundtrip with Daft for casting.
-            .map(|c| cast_array_from_daft_if_needed(cast_array_for_daft_if_needed(c)))
-            .collect::<Vec<_>>();
-        let schema: daft_arrow::datatypes::Schema = fields.into();
-        // Roundtrip with Daft for casting.
-        let schema = Schema::try_from(&schema).unwrap().to_arrow().unwrap();
-        assert_eq!(out.schema.to_arrow().unwrap(), schema);
-        let out_columns: Vec<Box<dyn daft_arrow::array::Array>> = (0..out.num_columns())
-            .map(|i| Ok(out.get_column(i).to_arrow()?.into()))
-            .collect::<DaftResult<Vec<_>>>()
-            .unwrap();
-        assert_eq!(out_columns, columns);
     }
 
     #[rstest]
@@ -844,7 +948,7 @@ mod tests {
             .into(),
         );
         if compression.is_none() {
-            check_equal_local_arrow2(
+            check_equal_local_arrow_rs(
                 file.as_ref(),
                 &table,
                 true,
@@ -905,7 +1009,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(
+        check_equal_local_arrow_rs(
             file.as_ref(),
             &table,
             false,
@@ -956,7 +1060,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(
+        check_equal_local_arrow_rs(
             file.as_ref(),
             &table,
             true,
@@ -1007,7 +1111,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(
+        check_equal_local_arrow_rs(
             file.as_ref(),
             &table,
             true,
@@ -1057,7 +1161,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(
+        check_equal_local_arrow_rs(
             file.as_ref(),
             &table,
             true,
@@ -1105,7 +1209,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(
+        check_equal_local_arrow_rs(
             file.as_ref(),
             &table,
             true,
@@ -1153,7 +1257,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(
+        check_equal_local_arrow_rs(
             file.as_ref(),
             &table,
             true,
@@ -1200,7 +1304,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(
+        check_equal_local_arrow_rs(
             file.as_ref(),
             &table,
             true,
@@ -1248,7 +1352,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(
+        check_equal_local_arrow_rs(
             file.as_ref(),
             &table,
             true,
@@ -1312,7 +1416,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(
+        check_equal_local_arrow_rs(
             file.as_ref(),
             &table,
             false,
@@ -1360,7 +1464,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(
+        check_equal_local_arrow_rs(
             file.as_ref(),
             &table,
             true,
@@ -1408,7 +1512,7 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(
+        check_equal_local_arrow_rs(
             file.as_ref(),
             &table,
             true,
@@ -1456,19 +1560,6 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(
-            file.as_ref(),
-            &table,
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
 
         Ok(())
     }
@@ -1494,19 +1585,6 @@ mod tests {
                 Field::new("variety", DataType::Utf8),
             ])
             .into(),
-        );
-        check_equal_local_arrow2(
-            file.as_ref(),
-            &table,
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
         );
 
         Ok(())
@@ -1626,19 +1704,6 @@ mod tests {
             ])
             .into(),
         );
-        check_equal_local_arrow2(
-            file.as_ref(),
-            &table,
-            true,
-            None,
-            true,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
 
         Ok(())
     }
@@ -1696,7 +1761,7 @@ mod tests {
         let err = read_csv(file.as_ref(), None, None, None, io_client, None, true, None);
         assert!(err.is_err());
         let err = err.unwrap_err();
-        assert!(matches!(err, DaftError::ArrowError(_)), "{}", err);
+        assert!(matches!(err, DaftError::External(_)), "{}", err);
         assert!(
             err.to_string()
                 .contains("found record with 4 fields, but the previous record has 5 fields"),
@@ -1780,7 +1845,7 @@ mod tests {
         );
         assert!(err.is_err());
         let err = err.unwrap_err();
-        assert!(matches!(err, DaftError::ArrowError(_)), "{}", err);
+        assert!(matches!(err, DaftError::External(_)), "{}", err);
         assert!(
             err.to_string()
                 .contains("found record with 5 fields, but the previous record has 4 fields"),

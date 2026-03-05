@@ -460,7 +460,7 @@ where
                     }
                     PhysicalType::FixedLenByteArray(n) => {
                         return Err(Error::InvalidArgumentError(format!(
-                            "Can't decode Decimal256 type from from `FixedLenByteArray` of len {n}"
+                            "Can't decode Decimal256 type from `FixedLenByteArray` of len {n}"
                         )))
                     }
                     _ => {

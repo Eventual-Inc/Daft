@@ -1,0 +1,21 @@
+[dependencies]
+arrow = {workspace = true, features = ["ffi"]}
+arrow-array = {workspace = true}
+arrow-schema = {workspace = true}
+common-error = {workspace = true}
+daft-core = {workspace = true}
+daft-dsl = {workspace = true}
+daft-ext-abi = {workspace = true}
+libloading = {workspace = true}
+serde = {workspace = true}
+serde_json = {workspace = true}
+typetag = {workspace = true}
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-ext-internal"
+description = "Internal bridge for loading Daft extension modules"
+edition.workspace = true
+version.workspace = true

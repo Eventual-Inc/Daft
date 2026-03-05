@@ -79,7 +79,7 @@ jobs:
         maturin develop --uv
         mkdocs build
     - name: Upload built docs
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: html-docs
         path: site

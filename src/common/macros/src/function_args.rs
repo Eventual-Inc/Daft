@@ -303,7 +303,7 @@ fn get_attrs(fields: &FieldsNamed) -> Vec<ParsedAttribute> {
                     });
 
                     if let Err(e) = result {
-                        emit_error!(a.span(), "error parsing attribute: {}", e)
+                        emit_error!(a.span(), "error parsing attribute: {}", e);
                     }
                 }
             }
@@ -325,7 +325,7 @@ fn get_arg_names(field_names: &[&Ident], attrs: &[ParsedAttribute]) -> Vec<Strin
     field_names
         .iter()
         .zip(attrs)
-        .map(|(n, a)| a.name_override.clone().unwrap_or(n.to_string()))
+        .map(|(n, a)| a.name_override.clone().unwrap_or_else(|| n.to_string()))
         .collect()
 }
 
