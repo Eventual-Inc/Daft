@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import warnings
+
 import pytest
+
+# This module tests legacy @daft.udf features (ray_options, override_options) with no new-API equivalent.
+warnings.filterwarnings("ignore", category=DeprecationWarning, message=r".*@daft\.udf.*")
+pytestmark = pytest.mark.filterwarnings(r"ignore:.*@daft\.udf.*:DeprecationWarning")
 
 import daft
 from daft import col, get_or_infer_runner_type, udf
