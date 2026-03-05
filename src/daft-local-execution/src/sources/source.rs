@@ -1,4 +1,7 @@
-use std::sync::{Arc, atomic::Ordering};
+use std::{
+    sync::{Arc, atomic::Ordering},
+    time::Instant,
+};
 
 use async_trait::async_trait;
 use capitalize::Capitalize;
@@ -233,14 +236,24 @@ impl PipelineNode for SourceNode {
                 let mut has_data = false;
                 stats_manager.activate_node(node_id);
 
-                while let Some(part) = source_stream.next().await {
-                    has_data = true;
-                    let part = part?;
-                    runtime_stats.add_rows_out(part.len() as u64);
-                    if destination_sender.send(part).await.is_err() {
+                loop {
+                    let start = Instant::now();
+                    let next = source_stream.next().await;
+                    let elapsed_us = start.elapsed().as_micros() as u64;
+                    runtime_stats.add_cpu_us(elapsed_us);
+
+                    if let Some(next) = next {
+                        has_data = true;
+                        let part = next?;
+                        runtime_stats.add_rows_out(part.len() as u64);
+                        if destination_sender.send(part).await.is_err() {
+                            break;
+                        }
+                    } else {
                         break;
                     }
                 }
+
                 if !has_data {
                     let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
                     let _ = destination_sender.send(empty).await;
