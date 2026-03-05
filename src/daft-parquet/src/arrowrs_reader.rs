@@ -1,9 +1,7 @@
-//! Arrow-rs based parquet reader.
+//! Parquet reader built on the arrow-rs `parquet` crate.
 //!
-//! This module provides a parquet reader built on the arrow-rs `parquet` crate,
-//! replacing the parquet2/arrow2 decode pipeline. It uses [`DaftAsyncFileReader`]
-//! as the IO bridge for remote reads, and the sync `ParquetRecordBatchReaderBuilder`
-//! with `std::fs::File` for local reads (avoiding IOClient overhead).
+//! Uses [`DaftAsyncFileReader`] as the IO bridge for remote reads, and the sync
+//! `ParquetRecordBatchReaderBuilder` with `std::fs::File` for local reads.
 
 use std::{
     borrow::Borrow,
@@ -327,9 +325,8 @@ fn deletes_to_row_selection(local_deletes: &[usize], total_rows: usize) -> RowSe
     selectors.into()
 }
 
-/// Read a single parquet file into a Daft [`RecordBatch`] using the arrow-rs reader.
+/// Read a single parquet file into a Daft [`RecordBatch`].
 ///
-/// This is the arrow-rs equivalent of the parquet2-based `read_parquet_single`.
 /// When `predicate` and/or `delete_rows` are provided, the reader handles them
 /// internally using arrow-rs `RowFilter` and `RowSelection` for late materialization.
 ///
@@ -341,10 +338,9 @@ fn deletes_to_row_selection(local_deletes: &[usize], total_rows: usize) -> RowSe
 ///   offset (skip file rows) → predicate filter → limit
 ///
 /// Note: `start_offset > 0` is rejected by the micropartition reader and never used
-/// in production (the streaming scan path doesn't even accept the parameter). The
-/// parquet2 reader has latent bugs for this case — both its local and remote paths
-/// produce RecordBatch size mismatches when `start_offset > 0`. Our implementation
-/// follows the intended semantics based on the code structure and the `apply_delete_rows`
+/// in production (the streaming scan path doesn't even accept the parameter). Our
+/// implementation follows the intended semantics based on the code structure and the
+/// `apply_delete_rows`
 /// docstring in `read.rs`, but there is no working reference implementation to compare
 /// against.
 #[allow(clippy::too_many_arguments)]
@@ -895,8 +891,7 @@ pub(crate) fn decode_single_rg(
 ///
 /// This avoids the overhead of `DaftAsyncFileReader` + `IOClient` for local files
 /// by using `std::fs::File` directly with `ParquetRecordBatchReaderBuilder`.
-/// Row groups are decoded in parallel using rayon, matching the parquet2 reader's
-/// parallelism strategy. Supports late materialization via `RowFilter` and
+/// Row groups are decoded in parallel using rayon. Supports late materialization via `RowFilter` and
 /// positional delete skipping via `RowSelection`.
 ///
 /// See [`read_parquet_single_arrowrs`] for `start_offset` semantics.
@@ -983,8 +978,8 @@ pub fn local_parquet_read_arrowrs(
 /// Stream a local parquet file as Daft [`RecordBatch`]es using the sync arrow-rs reader,
 /// dispatching per-row-group decode as async tasks on the compute runtime.
 ///
-/// Matches parquet2's `local_parquet_stream` pattern: sync metadata read, then
-/// per-RG tasks on the DAFTCPU pool with semaphore-gated parallelism.
+/// Performs sync metadata read, then per-RG tasks on the DAFTCPU pool with
+/// semaphore-gated parallelism.
 #[allow(clippy::too_many_arguments)]
 pub async fn local_parquet_stream_arrowrs(
     path: &str,
@@ -1028,8 +1023,7 @@ pub async fn local_parquet_stream_arrowrs(
     }
 
     // 2. Semaphore: limit concurrent RG decodes.
-    // Unlike parquet2 (which spawns per-column tasks and divides by num_columns),
-    // arrowrs decodes all columns in a single block_in_place call per RG,
+    // All columns are decoded in a single block_in_place call per RG,
     // so concurrency is limited only by available CPUs.
     let num_cpus = std::thread::available_parallelism()
         .map(|n| n.get())
@@ -1092,7 +1086,6 @@ pub async fn local_parquet_stream_arrowrs(
 
 /// Stream a single parquet file as Daft [`RecordBatch`]es using the arrow-rs reader.
 ///
-/// This is the arrow-rs equivalent of the parquet2-based `stream_parquet_single`.
 /// Supports late materialization via `RowFilter` and positional delete skipping
 /// via `RowSelection`.
 #[allow(clippy::too_many_arguments)]

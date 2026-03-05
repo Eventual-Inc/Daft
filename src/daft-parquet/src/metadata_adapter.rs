@@ -1,7 +1,7 @@
-//! Daft-owned parquet metadata types that decouple consuming crates from parquet2.
+//! Daft-owned parquet metadata types wrapping arrow-rs `ParquetMetaData`.
 //!
-//! These adapter types wrap arrow-rs `parquet::file::metadata::ParquetMetaData` and
-//! provide a stable API that consuming crates (daft-scan, daft-micropartition) depend on.
+//! These adapter types provide a stable API with serde support and row group index
+//! tracking that consuming crates (daft-scan, daft-micropartition) depend on.
 
 use std::sync::Arc;
 

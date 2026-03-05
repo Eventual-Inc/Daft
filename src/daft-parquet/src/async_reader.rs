@@ -11,8 +11,7 @@ use parquet::{
 
 use crate::read_planner::{CoalescePass, ReadPlanner, SplitLargeRequestPass};
 
-// IO coalescing/splitting constants — these match the parquet2 reader in file.rs:384-391
-// so both paths have identical IO behavior.
+// IO coalescing/splitting constants for the read planner.
 
 /// Maximum hole size for the coalesce pass (1 MB).
 /// Two byte ranges within this distance are merged into a single request,
