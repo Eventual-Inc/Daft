@@ -614,6 +614,10 @@ impl PyDataType {
         }
     }
 
+    pub fn to_json(&self) -> PyResult<String> {
+        Ok(self.dtype.to_json()?)
+    }
+
     #[staticmethod]
     pub fn from_json(serialized: &str) -> PyResult<Self> {
         Ok(DataType::from_json(serialized)?.into())

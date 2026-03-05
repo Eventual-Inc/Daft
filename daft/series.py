@@ -234,7 +234,7 @@ class Series:
                 from daft.datatype import get_super_ext_type
 
                 DaftExtension = get_super_ext_type()
-                ext_type = DaftExtension(arrow_series.type, dtype._dtype.to_json().encode())  # type: ignore[attr-defined]
+                ext_type = DaftExtension(arrow_series.type, dtype._dtype.to_json().encode())
                 return pa.ExtensionArray.from_storage(ext_type, arrow_series)
         else:
             return self._series.to_arrow()
