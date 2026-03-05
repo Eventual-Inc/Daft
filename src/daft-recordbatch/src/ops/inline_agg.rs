@@ -5,7 +5,7 @@ use std::{
 
 use common_error::DaftResult;
 use daft_core::{
-    array::ops::{IntoGroups, arrow::comparison::build_multi_array_is_equal},
+    array::ops::arrow::comparison::build_multi_array_is_equal,
     count_mode::CountMode,
     datatypes::*,
     series::{IntoSeries, Series},
@@ -19,6 +19,13 @@ use fnv::FnvHashMap;
 use hashbrown::{HashMap, hash_map::RawEntryMut};
 
 use crate::RecordBatch;
+
+/// Result from the grouping phase: group key indices, per-row group IDs, and per-group sizes.
+struct GroupingResult {
+    groupkey_indices: Vec<u64>,
+    group_ids: Vec<u32>,
+    group_sizes: Vec<u64>,
+}
 
 // ---------------------------------------------------------------------------
 // Accumulator structs
@@ -41,59 +48,52 @@ impl CountAccum {
         }
     }
 
-    #[inline]
-    fn update(&mut self, group_id: u32, row_idx: usize) {
-        let gid = group_id as usize;
+    /// Use pre-computed group sizes when no per-row null checking is needed.
+    /// Returns true if the optimization was applied, false if caller must use update_batch.
+    fn try_use_group_sizes(&mut self, group_sizes: &[u64]) -> bool {
         if self.is_null_type {
             match self.mode {
-                CountMode::All | CountMode::Null => self.counts[gid] += 1,
-                CountMode::Valid => {}
+                CountMode::All | CountMode::Null => {
+                    self.counts = group_sizes.to_vec();
+                    return true;
+                }
+                CountMode::Valid => {
+                    // Null type + Valid mode = always 0
+                    // counts already zeroed from init_groups
+                    return true;
+                }
             }
-            return;
         }
         match self.mode {
-            CountMode::All => self.counts[gid] += 1,
-            CountMode::Valid => {
-                let valid = self.nulls.as_ref().is_none_or(|n| n.is_valid(row_idx));
-                self.counts[gid] += valid as u64;
+            CountMode::All => {
+                self.counts = group_sizes.to_vec();
+                true
             }
-            CountMode::Null => {
-                let is_null = self.nulls.as_ref().is_some_and(|n| !n.is_valid(row_idx));
-                self.counts[gid] += is_null as u64;
+            CountMode::Valid if self.nulls.is_none() => {
+                // No nulls → every row is valid → count = group size
+                self.counts = group_sizes.to_vec();
+                true
             }
+            CountMode::Null if self.nulls.is_none() => {
+                // No nulls → null count is 0 for all groups
+                // counts already zeroed from init_groups
+                true
+            }
+            _ => false, // Has nulls — need per-row scatter loop
         }
     }
 
     /// Vectorized batch update: process all rows given a pre-computed group_ids array.
     fn update_batch(&mut self, group_ids: &[u32]) {
         let counts = &mut self.counts;
-        if self.is_null_type {
-            match self.mode {
-                CountMode::All | CountMode::Null => {
-                    for &gid in group_ids {
-                        counts[gid as usize] += 1;
-                    }
-                }
-                CountMode::Valid => {}
-            }
-            return;
-        }
         match self.mode {
-            CountMode::All => {
-                for &gid in group_ids {
-                    counts[gid as usize] += 1;
-                }
-            }
             CountMode::Valid => {
                 if let Some(ref nulls) = self.nulls {
                     for (row_idx, &gid) in group_ids.iter().enumerate() {
                         counts[gid as usize] += nulls.is_valid(row_idx) as u64;
                     }
-                } else {
-                    for &gid in group_ids {
-                        counts[gid as usize] += 1;
-                    }
                 }
+                // else case handled by try_use_group_sizes
             }
             CountMode::Null => {
                 if let Some(ref nulls) = self.nulls {
@@ -101,7 +101,13 @@ impl CountAccum {
                         counts[gid as usize] += !nulls.is_valid(row_idx) as u64;
                     }
                 }
-                // else: no nulls → null count stays 0
+                // else case handled by try_use_group_sizes
+            }
+            CountMode::All => {
+                // Should have been handled by try_use_group_sizes
+                for &gid in group_ids {
+                    counts[gid as usize] += 1;
+                }
             }
         }
     }
@@ -123,17 +129,6 @@ macro_rules! define_sum_accum {
                 Self {
                     accumulators: Vec::new(),
                     source,
-                }
-            }
-
-            #[inline]
-            fn update(&mut self, group_id: u32, row_idx: usize) {
-                if let Some(val) = self.source.get(row_idx) {
-                    let gid = group_id as usize;
-                    self.accumulators[gid] = Some(match self.accumulators[gid] {
-                        Some(acc) => acc + val,
-                        None => val,
-                    });
                 }
             }
 
@@ -203,29 +198,7 @@ enum AggAccumulator {
 }
 
 impl AggAccumulator {
-    #[inline]
-    fn new_group(&mut self) {
-        match self {
-            Self::Count(s) => s.counts.push(0),
-            Self::SumI64(s) => s.accumulators.push(None),
-            Self::SumU64(s) => s.accumulators.push(None),
-            Self::SumF32(s) => s.accumulators.push(None),
-            Self::SumF64(s) => s.accumulators.push(None),
-        }
-    }
-
-    #[inline]
-    fn update(&mut self, group_id: u32, row_idx: usize) {
-        match self {
-            Self::Count(s) => s.update(group_id, row_idx),
-            Self::SumI64(s) => s.update(group_id, row_idx),
-            Self::SumU64(s) => s.update(group_id, row_idx),
-            Self::SumF32(s) => s.update(group_id, row_idx),
-            Self::SumF64(s) => s.update(group_id, row_idx),
-        }
-    }
-
-    /// Pre-initialize storage for `n` groups (used by vectorized path).
+    /// Pre-initialize storage for `n` groups.
     fn init_groups(&mut self, n: u32) {
         let n = n as usize;
         match self {
@@ -234,6 +207,15 @@ impl AggAccumulator {
             Self::SumU64(s) => s.accumulators.resize(n, None),
             Self::SumF32(s) => s.accumulators.resize(n, None),
             Self::SumF64(s) => s.accumulators.resize(n, None),
+        }
+    }
+
+    /// Try to use pre-computed group sizes for O(groups) count instead of O(rows).
+    /// Returns true if the accumulator was fully updated (no scatter loop needed).
+    fn try_use_group_sizes(&mut self, group_sizes: &[u64]) -> bool {
+        match self {
+            Self::Count(s) => s.try_use_group_sizes(group_sizes),
+            _ => false,
         }
     }
 
@@ -322,25 +304,75 @@ fn try_create_accumulator(
 // ---------------------------------------------------------------------------
 
 /// Returns true if all agg expressions can be handled by the inline path.
-pub(super) fn can_inline_agg(to_agg: &[BoundAggExpr]) -> bool {
-    to_agg
+///
+/// Requirements:
+/// 1. All agg expressions are Count or Sum (the only supported accumulator types).
+/// 2. For Sum, the value column dtype must be a supported numeric type.
+///
+/// Uses schema-level type inference (`to_field`) instead of expression evaluation
+/// to avoid materializing computed columns just for a dtype check.
+pub(super) fn can_inline_agg(to_agg: &[BoundAggExpr], source: &RecordBatch) -> bool {
+    // Quick check: bail immediately if any agg type isn't Count or Sum.
+    if !to_agg
         .iter()
         .all(|e| matches!(e.as_ref(), AggExpr::Count(..) | AggExpr::Sum(..)))
+    {
+        return false;
+    }
+    // Check Sum value column dtypes via schema type inference (no data materialized).
+    to_agg.iter().all(|e| match e.as_ref() {
+        AggExpr::Count(..) => true,
+        AggExpr::Sum(expr) => {
+            if let Ok(field) = expr.to_field(&source.schema) {
+                matches!(
+                    field.dtype,
+                    DataType::Int8
+                        | DataType::Int16
+                        | DataType::Int32
+                        | DataType::Int64
+                        | DataType::UInt8
+                        | DataType::UInt16
+                        | DataType::UInt32
+                        | DataType::UInt64
+                        | DataType::Float32
+                        | DataType::Float64
+                )
+            } else {
+                false
+            }
+        }
+        _ => unreachable!("pre-check ensures only Count/Sum reach here"),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: Accumulation using group_ids and group_sizes
+// ---------------------------------------------------------------------------
+
+/// Accumulate all accumulators using the grouping result.
+///
+/// For Count accumulators that don't need per-row null checks, uses pre-computed
+/// group_sizes in O(groups) instead of scatter-looping in O(rows). This matches
+/// the fallback path's efficiency for Count(All) and Count(Valid, no nulls).
+fn accumulate(accumulators: &mut [AggAccumulator], result: &GroupingResult) {
+    let num_groups = result.group_sizes.len() as u32;
+    for acc in accumulators.iter_mut() {
+        acc.init_groups(num_groups);
+        // Try O(groups) path first; fall back to O(rows) scatter loop.
+        if !acc.try_use_group_sizes(&result.group_sizes) {
+            acc.update_batch(&result.group_ids);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Single-column integer fast path (FNV hash, no comparator closure)
 // ---------------------------------------------------------------------------
 
-/// Vectorized inline aggregation on a single integer groupby column.
-///
-/// Two-phase approach (inspired by DuckDB's vectorized execution):
-///   Phase 1: Hash probe → build dense `group_ids: Vec<u32>` (hash-only loop)
-///   Phase 2: For each accumulator, run a tight specialized scatter loop
-///
-/// This avoids interleaving hash lookups with accumulator dispatch, giving
-/// each phase better cache locality and letting the compiler optimize each loop.
-fn agg_single_col_int<T>(keys: &DataArray<T>, accumulators: &mut [AggAccumulator]) -> Vec<u64>
+fn agg_single_col_int<T>(
+    keys: &DataArray<T>,
+    accumulators: &mut [AggAccumulator],
+) -> DaftResult<Vec<u64>>
 where
     T: DaftIntegerType,
     T::Native: Hash + Eq + Ord,
@@ -350,9 +382,9 @@ where
     let mut groupkey_indices: Vec<u64> = Vec::with_capacity(initial_capacity);
     let mut num_groups: u32 = 0;
     let mut group_ids: Vec<u32> = Vec::with_capacity(len);
+    let mut group_sizes: Vec<u64> = Vec::with_capacity(initial_capacity);
 
     if keys.null_count() == 0 {
-        // Phase 1: Hash probe only — tight loop producing group_ids.
         let mut group_map = FnvHashMap::<T::Native, u32>::with_capacity_and_hasher(
             initial_capacity,
             BuildHasherDefault::default(),
@@ -361,17 +393,25 @@ where
             let gid = match group_map.entry(*val) {
                 Vacant(e) => {
                     let gid = num_groups;
-                    num_groups += 1;
+                    num_groups = num_groups.checked_add(1).ok_or_else(|| {
+                        common_error::DaftError::ComputeError(
+                            "Number of groups exceeds u32::MAX in inline aggregation".into(),
+                        )
+                    })?;
                     e.insert(gid);
                     groupkey_indices.push(row_idx as u64);
+                    group_sizes.push(1);
                     gid
                 }
-                Occupied(e) => *e.get(),
+                Occupied(e) => {
+                    let gid = *e.get();
+                    group_sizes[gid as usize] += 1;
+                    gid
+                }
             };
             group_ids.push(gid);
         }
     } else {
-        // Phase 1 (nullable): hash probe with Option<T::Native> keys.
         let mut group_map = FnvHashMap::<Option<T::Native>, u32>::with_capacity_and_hasher(
             initial_capacity,
             BuildHasherDefault::default(),
@@ -380,24 +420,33 @@ where
             let gid = match group_map.entry(val) {
                 Vacant(e) => {
                     let gid = num_groups;
-                    num_groups += 1;
+                    num_groups = num_groups.checked_add(1).ok_or_else(|| {
+                        common_error::DaftError::ComputeError(
+                            "Number of groups exceeds u32::MAX in inline aggregation".into(),
+                        )
+                    })?;
                     e.insert(gid);
                     groupkey_indices.push(row_idx as u64);
+                    group_sizes.push(1);
                     gid
                 }
-                Occupied(e) => *e.get(),
+                Occupied(e) => {
+                    let gid = *e.get();
+                    group_sizes[gid as usize] += 1;
+                    gid
+                }
             };
             group_ids.push(gid);
         }
     }
 
-    // Phase 2: Vectorized accumulation — each accumulator gets its own tight loop.
-    for acc in accumulators.iter_mut() {
-        acc.init_groups(num_groups);
-        acc.update_batch(&group_ids);
-    }
-
-    groupkey_indices
+    let result = GroupingResult {
+        groupkey_indices,
+        group_ids,
+        group_sizes,
+    };
+    accumulate(accumulators, &result);
+    Ok(result.groupkey_indices)
 }
 
 // ---------------------------------------------------------------------------
@@ -410,8 +459,9 @@ fn agg_generic_hash_path(
     groupby_physical: &RecordBatch,
     accumulators: &mut [AggAccumulator],
 ) -> DaftResult<Vec<u64>> {
+    let num_rows = groupby_physical.len();
     let hashes = groupby_physical.hash_rows()?;
-    let initial_capacity = std::cmp::min(groupby_physical.len(), 1024).max(1);
+    let initial_capacity = std::cmp::min(num_rows, 1024).max(1);
     let comparator = build_multi_array_is_equal(
         groupby_physical.columns.as_slice(),
         groupby_physical.columns.as_slice(),
@@ -426,7 +476,10 @@ fn agg_generic_hash_path(
 
     let mut groupkey_indices: Vec<u64> = Vec::with_capacity(initial_capacity);
     let mut num_groups: u32 = 0;
+    let mut group_ids: Vec<u32> = Vec::with_capacity(num_rows);
+    let mut group_sizes: Vec<u64> = Vec::with_capacity(initial_capacity);
 
+    // Phase 1: Hash probe — build dense group_ids and track group_sizes.
     for (row_idx, h) in hashes.values().iter().enumerate() {
         let entry = group_table.raw_entry_mut().from_hash(*h, |other| {
             (*h == other.hash) && {
@@ -438,7 +491,11 @@ fn agg_generic_hash_path(
         let group_id = match entry {
             RawEntryMut::Vacant(entry) => {
                 let gid = num_groups;
-                num_groups += 1;
+                num_groups = num_groups.checked_add(1).ok_or_else(|| {
+                    common_error::DaftError::ComputeError(
+                        "Number of groups exceeds u32::MAX in inline aggregation".into(),
+                    )
+                })?;
                 entry.insert_hashed_nocheck(
                     *h,
                     IndexHash {
@@ -448,21 +505,27 @@ fn agg_generic_hash_path(
                     gid,
                 );
                 groupkey_indices.push(row_idx as u64);
-
-                for acc in accumulators.iter_mut() {
-                    acc.new_group();
-                }
+                group_sizes.push(1);
                 gid
             }
-            RawEntryMut::Occupied(entry) => *entry.get(),
+            RawEntryMut::Occupied(entry) => {
+                let gid = *entry.get();
+                group_sizes[gid as usize] += 1;
+                gid
+            }
         };
 
-        for acc in accumulators.iter_mut() {
-            acc.update(group_id, row_idx);
-        }
+        group_ids.push(group_id);
     }
 
-    Ok(groupkey_indices)
+    // Phase 2: Accumulation with O(groups) count optimization.
+    let result = GroupingResult {
+        groupkey_indices,
+        group_ids,
+        group_sizes,
+    };
+    accumulate(accumulators, &result);
+    Ok(result.groupkey_indices)
 }
 
 // ---------------------------------------------------------------------------
@@ -473,7 +536,7 @@ fn agg_generic_hash_path(
 macro_rules! dispatch_single_col_int {
     ($col:expr, $accumulators:expr, $($dtype:ident => $downcast:ident),+ $(,)?) => {
         match $col.data_type() {
-            $(DataType::$dtype => Some(agg_single_col_int($col.$downcast()?, $accumulators)),)+
+            $(DataType::$dtype => Some(agg_single_col_int($col.$downcast()?, $accumulators)?),)+
             _ => None,
         }
     };
@@ -494,15 +557,10 @@ impl RecordBatch {
         let mut output_names: Vec<String> = Vec::with_capacity(to_agg.len());
 
         for agg_expr in to_agg {
-            match try_create_accumulator(agg_expr, self)? {
-                Some((acc, name)) => {
-                    accumulators.push(acc);
-                    output_names.push(name);
-                }
-                None => {
-                    return self.agg_groupby_fallback(to_agg, group_by);
-                }
-            }
+            let (acc, name) = try_create_accumulator(agg_expr, self)?
+                .expect("can_inline_agg check should prevent unsupported agg types");
+            accumulators.push(acc);
+            output_names.push(name);
         }
 
         // 3. Dispatch: single-column integer → FNV fast path, otherwise generic.
@@ -536,12 +594,14 @@ impl RecordBatch {
         Self::from_nonempty_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
     }
 
-    /// Fallback to the existing groupby path.
+    /// Fallback to the existing groupby path (used by benchmarks).
+    #[cfg(test)]
     pub(crate) fn agg_groupby_fallback(
         &self,
         to_agg: &[BoundAggExpr],
         group_by: &[BoundExpr],
     ) -> DaftResult<Self> {
+        use daft_core::array::ops::IntoGroups;
         let groupby_table = self.eval_expression_list(group_by)?;
 
         let (groupkey_indices, groupvals_indices) = groupby_table.make_groups()?;
@@ -660,7 +720,6 @@ mod tests {
         if a.len() != b.len() || a.data_type() != b.data_type() {
             return false;
         }
-        // Use to_arrow and compare the underlying Arrow arrays structurally.
         let a_arr = a.to_arrow().unwrap();
         let b_arr = b.to_arrow().unwrap();
         a_arr == b_arr

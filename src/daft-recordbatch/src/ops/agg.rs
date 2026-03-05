@@ -52,7 +52,7 @@ impl RecordBatch {
         }
 
         // Fast path: inline aggregation for supported agg types (count, sum).
-        if can_inline_agg(to_agg) && DaftExecutionConfig::from_env().enable_inline_agg {
+        if can_inline_agg(to_agg, self) && DaftExecutionConfig::from_env().enable_inline_agg {
             return self.agg_groupby_inline(to_agg, group_by);
         }
 

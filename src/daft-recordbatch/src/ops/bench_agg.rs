@@ -101,4 +101,100 @@ mod bench {
             run_bench(5_000_000, num_groups);
         }
     }
+
+    /// Q1-like benchmark: 2 string groupby columns, float64 sum + count aggs.
+    /// This exercises the generic hash path (multi-column, non-integer keys).
+    fn make_q1_like_batch(num_rows: usize) -> (RecordBatch, Vec<BoundExpr>, Vec<BoundAggExpr>) {
+        use std::sync::Arc;
+
+        // 2 low-cardinality string columns → ~6 groups
+        let flags: Vec<&str> = (0..num_rows)
+            .map(|i| match i % 3 {
+                0 => "A",
+                1 => "N",
+                _ => "R",
+            })
+            .collect();
+        let statuses: Vec<&str> = (0..num_rows)
+            .map(|i| match i % 2 {
+                0 => "F",
+                _ => "O",
+            })
+            .collect();
+        let quantities: Vec<f64> = (0..num_rows).map(|i| (i % 50) as f64 + 1.0).collect();
+        let prices: Vec<f64> = (0..num_rows).map(|i| (i % 10000) as f64 + 100.0).collect();
+
+        let flag_series = Series::from_arrow(
+            Arc::new(Field::new("flag", DataType::Utf8)),
+            Arc::new(arrow::array::LargeStringArray::from(flags)),
+        )
+        .unwrap();
+        let status_series = Series::from_arrow(
+            Arc::new(Field::new("status", DataType::Utf8)),
+            Arc::new(arrow::array::LargeStringArray::from(statuses)),
+        )
+        .unwrap();
+        let qty_series = Float64Array::from_vec("qty", quantities).into_series();
+        let price_series = Float64Array::from_vec("price", prices).into_series();
+
+        let schema = Schema::new(vec![
+            Field::new("flag", DataType::Utf8),
+            Field::new("status", DataType::Utf8),
+            Field::new("qty", DataType::Float64),
+            Field::new("price", DataType::Float64),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![
+            flag_series,
+            status_series,
+            qty_series,
+            price_series,
+        ])
+        .unwrap();
+
+        let group_by = vec![
+            BoundExpr::try_new(resolved_col("flag"), &schema).unwrap(),
+            BoundExpr::try_new(resolved_col("status"), &schema).unwrap(),
+        ];
+
+        // Mimic Q1's decomposed aggs: sum(qty), sum(price), count(qty), count(price)
+        let aggs = vec![
+            BoundAggExpr::try_new(AggExpr::Sum(resolved_col("qty")), &schema).unwrap(),
+            BoundAggExpr::try_new(AggExpr::Sum(resolved_col("price")), &schema).unwrap(),
+            BoundAggExpr::try_new(
+                AggExpr::Count(resolved_col("qty"), CountMode::Valid),
+                &schema,
+            )
+            .unwrap(),
+            BoundAggExpr::try_new(
+                AggExpr::Count(resolved_col("price"), CountMode::Valid),
+                &schema,
+            )
+            .unwrap(),
+        ];
+
+        (rb, group_by, aggs)
+    }
+
+    #[test]
+    #[ignore]
+    fn bench_q1_like() {
+        eprintln!("\nQ1-like benchmark: 2 string keys, 6 groups, float64 sum+count");
+        eprintln!("warmup={WARMUP} iters={ITERS}");
+
+        for &num_rows in &[1_200_000, 5_000_000] {
+            let (rb, group_by, aggs) = make_q1_like_batch(num_rows);
+            eprintln!("\n  rows={num_rows:>10}  groups=6 (2 string cols)");
+
+            let inline_ms = bench_fn("inline", WARMUP, ITERS, || {
+                rb.agg_groupby_inline(&aggs, &group_by).unwrap();
+            });
+            let fallback_ms = bench_fn("fallback", WARMUP, ITERS, || {
+                rb.agg_groupby_fallback(&aggs, &group_by).unwrap();
+            });
+            let speedup = fallback_ms / inline_ms;
+            eprintln!(
+                "  inline: {inline_ms:.2}ms  fallback: {fallback_ms:.2}ms  speedup: {speedup:.2}x"
+            );
+        }
+    }
 }
