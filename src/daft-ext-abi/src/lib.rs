@@ -245,7 +245,9 @@ mod tests {
 
     #[test]
     fn constants() {
-        assert_eq!(DAFT_ABI_VERSION, 3);
+        // !! THIS TEST EXISTS SO THAT THESE ARE NOT CHANGED BY ACCIDENT
+        // IT MEANS WE HAVE TO MANUALLY UPDATE IN TWO PLACES !!
+        assert_eq!(DAFT_ABI_VERSION, 1);
         assert_eq!(DAFT_MODULE_MAGIC_SYMBOL, "daft_module_magic");
     }
 }
