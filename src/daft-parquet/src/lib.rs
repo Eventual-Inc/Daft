@@ -1,9 +1,7 @@
 #![allow(deprecated, reason = "arrow2 migration")]
-use std::{cmp::max, num::NonZeroUsize};
 
 use common_error::DaftError;
 use daft_arrow::io::parquet::read::schema::{SchemaInferenceOptions, infer_schema_with_options};
-use daft_core::prelude::SchemaRef;
 use snafu::Snafu;
 
 mod arrowrs_reader;
@@ -29,19 +27,6 @@ pub use python::register_modules;
 
 // This is the default size of an emitted morsel from the parquet reader
 const PARQUET_MORSEL_SIZE: usize = 128 * 1024;
-
-// This function determines the number of parallel deserialize tasks to use when reading parquet files
-// It is calculated by taking 2x the number of cores available (to ensure pipelining), and dividing
-// by the number of columns in the schema.
-pub(crate) fn determine_parquet_parallelism(daft_schema: &SchemaRef) -> usize {
-    (std::thread::available_parallelism()
-        .unwrap_or(NonZeroUsize::new(2).unwrap())
-        .checked_mul(2.try_into().unwrap())
-        .unwrap()
-        .get() as f64
-        / max(daft_schema.len(), 1) as f64)
-        .ceil() as usize
-}
 
 pub fn infer_arrow_schema_from_metadata(
     metadata: &parquet2::metadata::FileMetaData,
@@ -81,16 +66,6 @@ pub enum Error {
         source: daft_arrow::error::Error,
     },
 
-    #[snafu(display(
-        "Unable to create arrow arrays from parquet pages {}: {}",
-        path,
-        source
-    ))]
-    UnableToConvertParquetPagesToArrow {
-        path: String,
-        source: daft_arrow::error::Error,
-    },
-
     #[snafu(display("Unable to read parquet row group for file {}: {}", path, source))]
     UnableToReadParquetRowGroup {
         path: String,
@@ -126,13 +101,6 @@ pub enum Error {
         source
     ))]
     UnableToCreateTableFromChunk { path: String, source: DaftError },
-    #[snafu(display(
-        "Unable to convert arrow schema to daft schema for file {}: {}",
-        path,
-        source
-    ))]
-    UnableToConvertSchemaToDaft { path: String, source: DaftError },
-
     #[snafu(display(
         "File: {} is not a valid parquet file. Has incorrect footer: {:?}",
         path,
@@ -199,18 +167,6 @@ pub enum Error {
         path: String,
         metadata_num_columns: usize,
         read_columns: usize,
-    },
-
-    #[snafu(display(
-        "Parquet file: {} attempted to delete row at position {} but only read {} rows",
-        path,
-        row,
-        read_rows
-    ))]
-    ParquetDeleteRowOutOfIndex {
-        path: String,
-        row: usize,
-        read_rows: usize,
     },
 
     #[snafu(display(

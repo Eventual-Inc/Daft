@@ -225,6 +225,35 @@ fn get_field_id(info: &parquet::schema::types::BasicTypeInfo) -> Option<i32> {
     info.has_id().then(|| info.id())
 }
 
+/// Rewrite children of a group type per the field_id_mapping.
+///
+/// When the parent has a logical type (LIST/MAP), intermediate children without
+/// a field ID are preserved (with their own children recursed). Otherwise
+/// (plain struct), unmapped children are dropped.
+fn rewrite_children(
+    fields: &[std::sync::Arc<parquet::schema::types::Type>],
+    has_logical_type: bool,
+    field_id_mapping: &BTreeMap<i32, Field>,
+) -> Vec<std::sync::Arc<parquet::schema::types::Type>> {
+    fields
+        .iter()
+        .filter_map(|child| {
+            if has_logical_type {
+                // LIST/MAP intermediate nodes may lack field IDs but still
+                // contain mapped descendants (e.g. struct fields inside a list).
+                Some(std::sync::Arc::new(
+                    rewrite_arrowrs_type_with_field_ids(child, field_id_mapping)
+                        .unwrap_or_else(|| recurse_children_only(child, field_id_mapping)),
+                ))
+            } else {
+                // Plain struct: drop children not in mapping.
+                rewrite_arrowrs_type_with_field_ids(child, field_id_mapping)
+                    .map(std::sync::Arc::new)
+            }
+        })
+        .collect()
+}
+
 /// Recursively rewrite an arrow-rs `Type`, renaming fields per the mapping and
 /// dropping unmapped struct children.  Returns `None` if this field should be
 /// dropped entirely (no field ID, or ID not in the mapping).
@@ -235,17 +264,15 @@ fn rewrite_arrowrs_type_with_field_ids(
     use parquet::schema::types::Type;
 
     let info = tp.get_basic_info();
-
-    // If this node has no field ID or its ID isn't in the mapping, drop it.
     let mapped_field = get_field_id(info).and_then(|fid| field_id_mapping.get(&fid))?;
 
     match tp {
         Type::PrimitiveType {
-            basic_info: _,
             physical_type,
             type_length,
             scale,
             precision,
+            ..
         } => {
             let new_type = Type::primitive_type_builder(&mapped_field.name, *physical_type)
                 .with_repetition(info.repetition())
@@ -260,23 +287,8 @@ fn rewrite_arrowrs_type_with_field_ids(
             Some(new_type)
         }
         Type::GroupType { fields, .. } => {
-            let has_logical_type = info.logical_type_ref().is_some();
-            let new_children: Vec<_> = fields
-                .iter()
-                .filter_map(|child| {
-                    if has_logical_type {
-                        // List/Map intermediate nodes: always recurse (they may lack field IDs)
-                        Some(std::sync::Arc::new(
-                            rewrite_arrowrs_type_with_field_ids(child, field_id_mapping)
-                                .unwrap_or_else(|| child.as_ref().clone()),
-                        ))
-                    } else {
-                        // Plain struct: drop children not in mapping
-                        rewrite_arrowrs_type_with_field_ids(child, field_id_mapping)
-                            .map(std::sync::Arc::new)
-                    }
-                })
-                .collect();
+            let new_children =
+                rewrite_children(fields, info.logical_type_ref().is_some(), field_id_mapping);
             let new_type = Type::group_type_builder(&mapped_field.name)
                 .with_repetition(info.repetition())
                 .with_converted_type(info.converted_type())
@@ -286,6 +298,32 @@ fn rewrite_arrowrs_type_with_field_ids(
                 .build()
                 .expect("rebuilding group type with same attributes should not fail");
             Some(new_type)
+        }
+    }
+}
+
+/// Rebuild a group node preserving its original name/attributes, but still
+/// recursing into its children to rename/filter them per the field_id_mapping.
+/// For primitive nodes, returns an unchanged clone.
+fn recurse_children_only(
+    tp: &parquet::schema::types::Type,
+    field_id_mapping: &BTreeMap<i32, Field>,
+) -> parquet::schema::types::Type {
+    use parquet::schema::types::Type;
+    match tp {
+        Type::PrimitiveType { .. } => tp.clone(),
+        Type::GroupType { fields, .. } => {
+            let info = tp.get_basic_info();
+            let new_children =
+                rewrite_children(fields, info.logical_type_ref().is_some(), field_id_mapping);
+            Type::group_type_builder(info.name())
+                .with_repetition(info.repetition())
+                .with_converted_type(info.converted_type())
+                .with_logical_type(info.logical_type_ref().cloned())
+                .with_fields(new_children)
+                .with_id(get_field_id(info))
+                .build()
+                .expect("rebuilding group type with same attributes should not fail")
         }
     }
 }
