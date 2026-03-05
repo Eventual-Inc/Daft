@@ -55,9 +55,18 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
                     }
                 }
             }
-            TaskEvent::Completed { stats, .. } => {
+            TaskEvent::Completed {
+                stats,
+                context: task_ctx,
+            } => {
                 let mut accumulated = self.operator_stats.lock().unwrap();
                 let mut started = self.started_operators.lock().unwrap();
+
+                tracing::info!(
+                    "DashboardStatisticsSubscriber: task completed with {} stat nodes, task node_ids={:?}",
+                    stats.nodes.len(),
+                    task_ctx.node_ids,
+                );
 
                 for (node_info, task_stats) in &stats.nodes {
                     let node_id = node_info.id;
@@ -67,6 +76,19 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
 
                     let entry = accumulated.entry(node_id).or_default();
                     let task_stats = task_stats.to_stats();
+
+                    tracing::info!(
+                        "DashboardStatisticsSubscriber: node_id={}, node_name={}, stats=[{}]",
+                        node_id,
+                        node_info.name,
+                        task_stats
+                            .0
+                            .iter()
+                            .map(|(k, v)| format!("{}={:?}", k, v))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    );
+
                     for (key, stat) in &task_stats.0 {
                         let mapped_key = match key.as_ref() {
                             "rows_in" => ROWS_IN_KEY,
@@ -90,6 +112,19 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
                             }
                         }
                     }
+                }
+
+                // Log accumulated state after processing
+                for (node_id, stats) in accumulated.iter() {
+                    let stats_str: Vec<String> = stats
+                        .iter()
+                        .map(|(k, v)| format!("{}={:?}", k, v))
+                        .collect();
+                    tracing::info!(
+                        "DashboardStatisticsSubscriber: accumulated[{}] = [{}]",
+                        node_id,
+                        stats_str.join(", "),
+                    );
                 }
             }
             _ => {

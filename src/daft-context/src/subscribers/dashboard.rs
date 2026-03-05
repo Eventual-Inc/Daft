@@ -321,6 +321,24 @@ impl Subscriber for DashboardSubscriber {
         execution_id: &str,
         stats: Arc<Vec<(NodeID, Stats)>>,
     ) -> DaftResult<()> {
+        log::info!(
+            "DashboardSubscriber::on_exec_emit_stats_with_id: query_id={}, execution_id={}, num_nodes={}",
+            query_id,
+            execution_id,
+            stats.len(),
+        );
+        for (node_id, node_stats) in stats.iter() {
+            let stats_str: Vec<String> = node_stats
+                .0
+                .iter()
+                .map(|(k, v)| format!("{}={:?}", k, v))
+                .collect();
+            log::info!(
+                "DashboardSubscriber::on_exec_emit_stats_with_id: node_id={}, stats=[{}]",
+                node_id,
+                stats_str.join(", "),
+            );
+        }
         Self::handle_request(
             self.client
                 .post(format!(
@@ -354,16 +372,32 @@ impl Subscriber for DashboardSubscriber {
         stats: Arc<Vec<(NodeID, Stats)>>,
     ) -> DaftResult<()> {
         if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+            log::info!(
+                "DashboardSubscriber::on_exec_emit_stats: SKIPPING on worker (DAFT_FLOTILLA_WORKER is set), query_id={}",
+                query_id,
+            );
             return Ok(());
         }
 
         let source_id = if let Some(worker_id) = &self.worker_id {
+            log::info!(
+                "DashboardSubscriber::on_exec_emit_stats: using worker_id={} as source_id, query_id={}",
+                worker_id,
+                query_id,
+            );
             worker_id.clone()
         } else {
-            self.execution_ids
+            let id = self
+                .execution_ids
                 .get(&query_id)
                 .map(|id| id.clone())
-                .unwrap_or_else(|| "unknown".to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            log::info!(
+                "DashboardSubscriber::on_exec_emit_stats: using execution_id={} as source_id, query_id={}",
+                id,
+                query_id,
+            );
+            id
         };
         self.on_exec_emit_stats_with_id(query_id, &source_id, stats)
             .await
