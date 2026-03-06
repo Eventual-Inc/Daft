@@ -204,48 +204,31 @@ def image_mode(image: Expression) -> Expression:
 
 def image_hash(
     image: Expression,
-    algorithm: Literal["ahash", "dhash", "phash", "whash"] = "dhash",
+    algorithm: Literal["average", "difference", "perceptual", "wavelet", "crop_resistant"] = "difference",
 ) -> Expression:
     """Computes a perceptual hash of an image for deduplication.
 
     Args:
         image (Image Expression): Image to hash.
         algorithm: Hash algorithm to use:
-            - "ahash": Average hash - fast, good for exact duplicates
-            - "dhash": Difference hash - fast, robust to minor changes (default)
-            - "phash": Perceptual hash - slower, best quality for near-duplicates
-            - "whash": Wavelet hash - good balance of speed and quality
+            - "average": Average hash - fast, good for exact duplicates
+            - "difference": Difference hash - fast, robust to minor changes (default)
+            - "perceptual": Perceptual hash - slower, best quality for near-duplicates
+            - "wavelet": Wavelet hash - good balance of speed and quality
+            - "crop_resistant": Crop-resistant hash - robust to cropping, returns variable-length binary
 
     Returns:
-        Expression (FixedSizeBinary Expression): 8-byte hash value.
+        Expression: UInt64 hash for average/difference/perceptual/wavelet;
+                    Binary hash for crop_resistant.
 
     Example:
         >>> import daft
         >>> from daft.functions import image_hash
         >>> # Create a dataframe with an image column
         >>> df = ...  # doctest: +SKIP
-        >>> df = df.with_column("hash", image_hash(df["image"], "phash"))  # doctest: +SKIP
+        >>> df = df.with_column("hash", image_hash(df["image"], "perceptual"))  # doctest: +SKIP
     """
-    valid_algorithms = ("ahash", "dhash", "phash", "whash")
+    valid_algorithms = ("average", "difference", "perceptual", "wavelet", "crop_resistant")
     if algorithm not in valid_algorithms:
         raise ValueError(f"algorithm must be one of {valid_algorithms}, got: {algorithm}")
     return Expression._call_builtin_scalar_fn("image_hash", image, algorithm=algorithm)
-
-
-def image_crop_resistant_hash(image: Expression) -> Expression:
-    """Computes a crop-resistant hash of an image for deduplication.
-
-    Args:
-        image (Image Expression): Image to hash.
-
-    Returns:
-        Expression (Binary Expression): Concatenated segment hash bytes (variable length).
-
-    Example:
-        >>> import daft
-        >>> from daft.functions import image_crop_resistant_hash
-        >>> # Create a dataframe with an image column
-        >>> df = ...  # doctest: +SKIP
-        >>> df = df.with_column("hashes", image_crop_resistant_hash(df["image"]))  # doctest: +SKIP
-    """
-    return Expression._call_builtin_scalar_fn("image_crop_resistant_hash", image)

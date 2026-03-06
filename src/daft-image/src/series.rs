@@ -260,7 +260,7 @@ pub(crate) fn infer_to_tensor_dtype(dtype: &DataType) -> DaftResult<DataType> {
 /// * `s` - Input Series containing image data
 ///
 /// # Returns
-/// A DaftResult containing a Series of 8-byte fixed-size binary hashes
+/// A DaftResult containing a Series of UInt64 hashes
 pub fn average_hash(s: &Series) -> DaftResult<Series> {
     match s.data_type() {
         DataType::Image(_) => Ok(s.downcast::<ImageArray>()?.average_hash()?.into_series()),
@@ -281,7 +281,7 @@ pub fn average_hash(s: &Series) -> DaftResult<Series> {
 /// * `s` - Input Series containing image data
 ///
 /// # Returns
-/// A DaftResult containing a Series of 8-byte fixed-size binary hashes
+/// A DaftResult containing a Series of UInt64 hashes
 pub fn difference_hash(s: &Series) -> DaftResult<Series> {
     match s.data_type() {
         DataType::Image(_) => Ok(s.downcast::<ImageArray>()?.difference_hash()?.into_series()),
@@ -302,7 +302,7 @@ pub fn difference_hash(s: &Series) -> DaftResult<Series> {
 /// * `s` - Input Series containing image data
 ///
 /// # Returns
-/// A DaftResult containing a Series of 8-byte fixed-size binary hashes
+/// A DaftResult containing a Series of UInt64 hashes
 pub fn perceptual_hash(s: &Series) -> DaftResult<Series> {
     match s.data_type() {
         DataType::Image(_) => Ok(s.downcast::<ImageArray>()?.perceptual_hash()?.into_series()),
@@ -323,7 +323,7 @@ pub fn perceptual_hash(s: &Series) -> DaftResult<Series> {
 /// * `s` - Input Series containing image data
 ///
 /// # Returns
-/// A DaftResult containing a Series of 8-byte fixed-size binary hashes
+/// A DaftResult containing a Series of UInt64 hashes
 pub fn wavelet_hash(s: &Series) -> DaftResult<Series> {
     match s.data_type() {
         DataType::Image(_) => Ok(s.downcast::<ImageArray>()?.wavelet_hash()?.into_series()),

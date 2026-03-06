@@ -1175,8 +1175,8 @@ class SeriesImageNamespace(SeriesNamespace):
     def to_tensor(self) -> Series:
         return self._eval_expressions("to_tensor")
 
-    def hash(self, algorithm: str = "dhash") -> Series:
+    def hash(self, algorithm: str = "difference") -> Series:
         return self._eval_expressions("image_hash", algorithm=algorithm)
 
     def crop_resistant_hash(self) -> Series:
-        return self._eval_expressions("image_crop_resistant_hash")
+        return self._eval_expressions("image_hash", algorithm="crop_resistant")

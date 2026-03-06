@@ -21,6 +21,5 @@ impl FunctionModule for ImageFunctions {
         parent.add_fn(to_mode::ImageToMode);
         parent.add_fn(attribute::ImageAttribute);
         parent.add_fn(hash::ImageHash);
-        parent.add_fn(hash::ImageCropResistantHash);
     }
 }

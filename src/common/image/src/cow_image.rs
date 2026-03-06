@@ -11,7 +11,7 @@ use image::{ColorType, DynamicImage, ImageBuffer, Luma, LumaA, Rgb, Rgba};
 use crate::BBox;
 
 #[allow(clippy::upper_case_acronyms, dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CowImage<'a> {
     L(ImageBuffer<Luma<u8>, Cow<'a, [u8]>>),
     LA(ImageBuffer<LumaA<u8>, Cow<'a, [u8]>>),
@@ -219,122 +219,166 @@ impl<'a> CowImage<'a> {
     }
 
     fn to_grayscale_resized(&self, w: u32, h: u32) -> ImageBuffer<Luma<u8>, Vec<u8>> {
-        let dyn_img: DynamicImage = self.clone_to_dynamic_image();
-        let gray = dyn_img.into_luma8();
-        image::imageops::resize(&gray, w, h, image::imageops::FilterType::Nearest)
+        let dyn_img: DynamicImage = self.clone().into();
+        let rgb = dyn_img.into_rgb8();
+        let (iw, ih) = (rgb.width(), rgb.height());
+        let gray_pixels: Vec<u8> = rgb
+            .pixels()
+            .map(|p| {
+                let r = p.0[0] as f64;
+                let g = p.0[1] as f64;
+                let b = p.0[2] as f64;
+                (0.299f64.mul_add(r, 0.587f64.mul_add(g, 0.114 * b)) + 0.5) as u8
+            })
+            .collect();
+        let gray: ImageBuffer<Luma<u8>, Vec<u8>> =
+            ImageBuffer::from_raw(iw, ih, gray_pixels).unwrap();
+        image::imageops::resize(&gray, w, h, image::imageops::FilterType::Lanczos3)
     }
 
-    fn clone_to_dynamic_image(&self) -> DynamicImage {
-        match self {
-            CowImage::L(buf) => image_buffer_cow_to_vec(buf.clone()).into(),
-            CowImage::LA(buf) => image_buffer_cow_to_vec(buf.clone()).into(),
-            CowImage::RGB(buf) => image_buffer_cow_to_vec(buf.clone()).into(),
-            CowImage::RGBA(buf) => image_buffer_cow_to_vec(buf.clone()).into(),
-            CowImage::L16(buf) => image_buffer_cow_to_vec(buf.clone()).into(),
-            CowImage::LA16(buf) => image_buffer_cow_to_vec(buf.clone()).into(),
-            CowImage::RGB16(buf) => image_buffer_cow_to_vec(buf.clone()).into(),
-            CowImage::RGBA16(buf) => image_buffer_cow_to_vec(buf.clone()).into(),
-            CowImage::RGB32F(buf) => image_buffer_cow_to_vec(buf.clone()).into(),
-            CowImage::RGBA32F(buf) => image_buffer_cow_to_vec(buf.clone()).into(),
-        }
-    }
-
-    pub fn average_hash(&self) -> [u8; 8] {
+    pub fn average_hash(&self) -> u64 {
         let resized = self.to_grayscale_resized(8, 8);
         let pixels: Vec<u8> = resized.pixels().map(|p| p.0[0]).collect();
-        let mean: u64 = pixels.iter().map(|&p| p as u64).sum::<u64>() / 64;
-        let mut hash = [0u8; 8];
+        let mean: f64 = pixels.iter().map(|&p| p as f64).sum::<f64>() / 64.0;
+        let mut hash: u64 = 0;
         for (i, &pixel) in pixels.iter().enumerate() {
-            if pixel as u64 >= mean {
-                hash[i / 8] |= 1 << (7 - (i % 8));
+            if pixel as f64 > mean {
+                hash |= 1u64 << (63 - i);
             }
         }
         hash
     }
 
-    pub fn difference_hash(&self) -> [u8; 8] {
+    pub fn difference_hash(&self) -> u64 {
         let resized = self.to_grayscale_resized(9, 8);
-        let mut hash = [0u8; 8];
+        let mut hash: u64 = 0;
         for y in 0..8u32 {
             for x in 0..8u32 {
                 let left = resized.get_pixel(x, y).0[0];
                 let right = resized.get_pixel(x + 1, y).0[0];
-                if left > right {
+                if right > left {
                     let bit_idx = (y * 8 + x) as usize;
-                    hash[bit_idx / 8] |= 1 << (7 - (bit_idx % 8));
+                    hash |= 1u64 << (63 - bit_idx);
                 }
             }
         }
         hash
     }
 
-    pub fn perceptual_hash(&self) -> [u8; 8] {
+    pub fn perceptual_hash(&self) -> u64 {
         let resized = self.to_grayscale_resized(32, 32);
         let pixels: Vec<f64> = resized.pixels().map(|p| p.0[0] as f64).collect();
 
         // Compute 2D DCT-II on the 32x32 image.
         let dct = dct2d_32x32(&pixels);
 
-        // Extract the top-left 8x8 block (excluding DC at [0][0]).
         let mut low_freq = Vec::with_capacity(64);
         for row in 0..8usize {
             for col in 0..8usize {
-                if row == 0 && col == 0 {
-                    continue;
-                }
                 low_freq.push(dct[row * 32 + col]);
             }
         }
 
-        // Compute median of the 63 low-frequency coefficients.
-        let mut sorted = low_freq.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let median = sorted[sorted.len() / 2];
+        let median = compute_median_f64(&low_freq);
 
-        // Generate hash: compare each of the 64 coefficients (including DC) to median.
-        let mut hash = [0u8; 8];
-        for row in 0..8usize {
-            for col in 0..8usize {
-                let idx = row * 8 + col;
-                if dct[row * 32 + col] > median {
-                    hash[idx / 8] |= 1 << (7 - (idx % 8));
-                }
-            }
-        }
-        hash
-    }
-
-    pub fn wavelet_hash(&self) -> [u8; 8] {
-        let resized = self.to_grayscale_resized(8, 8);
-        let mut data: Vec<f64> = resized.pixels().map(|p| p.0[0] as f64).collect();
-
-        // Apply 2D Haar wavelet transform (one level).
-        haar_2d(&mut data, 8);
-
-        // Compute median of the wavelet coefficients.
-        let mut sorted = data.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let median = sorted[sorted.len() / 2];
-
-        // Generate hash.
-        let mut hash = [0u8; 8];
-        for (i, &val) in data.iter().enumerate() {
+        let mut hash: u64 = 0;
+        for (i, &val) in low_freq.iter().enumerate() {
             if val > median {
-                hash[i / 8] |= 1 << (7 - (i % 8));
+                hash |= 1u64 << (63 - i);
             }
         }
         hash
     }
 
-    pub fn crop_resistant_hash(&self) -> Vec<[u8; 8]> {
-        let dyn_img = self.clone_to_dynamic_image();
+    pub fn wavelet_hash(&self) -> u64 {
+        let dyn_img: DynamicImage = self.clone().into();
+        let min_dim = dyn_img.width().min(dyn_img.height());
+        let image_natural_scale = if min_dim > 0 {
+            1u32 << (min_dim as f64).log2().floor() as u32
+        } else {
+            8
+        };
+        let image_scale = image_natural_scale.max(8);
+
+        let hash_size: u32 = 8;
+        let ll_max_level = (image_scale as f64).log2() as u32;
+        let level = (hash_size as f64).log2() as u32;
+        let dwt_level = ll_max_level - level;
+
+        // Resize to image_scale x image_scale with BT.601 grayscale + Lanczos.
+        let rgb = dyn_img.into_rgb8();
+        let (iw, ih) = (rgb.width(), rgb.height());
+        let gray_pixels: Vec<u8> = rgb
+            .pixels()
+            .map(|p| {
+                let r = p.0[0] as f64;
+                let g = p.0[1] as f64;
+                let b = p.0[2] as f64;
+                (0.299f64.mul_add(r, 0.587f64.mul_add(g, 0.114 * b)) + 0.5) as u8
+            })
+            .collect();
+        let gray: ImageBuffer<Luma<u8>, Vec<u8>> =
+            ImageBuffer::from_raw(iw, ih, gray_pixels).unwrap();
+        let resized = image::imageops::resize(
+            &gray,
+            image_scale,
+            image_scale,
+            image::imageops::FilterType::Lanczos3,
+        );
+
+        let mut data: Vec<f64> = resized.pixels().map(|p| p.0[0] as f64 / 255.0).collect();
+        let mut n = image_scale as usize;
+
+        // remove_max_haar_ll: decompose fully with Haar, zero out LL, reconstruct.
+        let full_levels = ll_max_level as usize;
+        for _ in 0..full_levels {
+            haar_2d_forward(&mut data, n);
+            n /= 2;
+        }
+        // Zero out the LL band (top-left 1x1 after full decomposition).
+        data[0] = 0.0;
+        // Inverse wavelet transform to reconstruct.
+        for _ in 0..full_levels {
+            n *= 2;
+            haar_2d_inverse(&mut data, n);
+        }
+
+        // Now perform the actual wavelet decomposition to dwt_level.
+        n = image_scale as usize;
+        for _ in 0..dwt_level as usize {
+            haar_2d_forward(&mut data, n);
+            n /= 2;
+        }
+
+        // Extract the LL subband (top-left hash_size x hash_size).
+        let hs = hash_size as usize;
+        let full_n = image_scale as usize;
+        let mut ll_coeffs = Vec::with_capacity(hs * hs);
+        for row in 0..hs {
+            for col in 0..hs {
+                ll_coeffs.push(data[row * full_n + col]);
+            }
+        }
+
+        // Compute median and generate hash.
+        let median = compute_median_f64(&ll_coeffs);
+        let mut hash: u64 = 0;
+        for (i, &val) in ll_coeffs.iter().enumerate() {
+            if val > median {
+                hash |= 1u64 << (63 - i);
+            }
+        }
+        hash
+    }
+
+    pub fn crop_resistant_hash(&self) -> Vec<u64> {
+        let dyn_img: DynamicImage = self.clone().into();
         let (w, h) = (dyn_img.width(), dyn_img.height());
 
         let seg_w = w / 2;
         let seg_h = h / 2;
 
         if seg_w == 0 || seg_h == 0 {
-            // Image too small to segment; return a single dHash.
             return vec![self.difference_hash()];
         }
 
@@ -540,37 +584,93 @@ fn dct2d_32x32(input: &[f64]) -> Vec<f64> {
     result
 }
 
-fn haar_2d(data: &mut [f64], n: usize) {
-    assert!(data.len() == n * n);
+/// Compute median of a slice of f64 values.
+fn compute_median_f64(values: &[f64]) -> f64 {
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let len = sorted.len();
+    if len.is_multiple_of(2) {
+        f64::midpoint(sorted[len / 2 - 1], sorted[len / 2])
+    } else {
+        sorted[len / 2]
+    }
+}
+
+/// Forward 2D Haar wavelet transform (one level) on the top-left n×n region of data.
+/// Data is stored in a flat array with stride equal to the full width of the original image.
+/// After the transform, the top-left n×n is split into four (n/2)×(n/2) quadrants:
+///   LL (top-left), LH (top-right), HL (bottom-left), HH (bottom-right).
+///
+/// Uses pywt-compatible Haar coefficients: (a+b)/sqrt(2) and (a-b)/sqrt(2).
+fn haar_2d_forward(data: &mut [f64], n: usize) {
+    let stride = (data.len() as f64).sqrt() as usize;
+    let half = n / 2;
+    let sqrt2 = std::f64::consts::SQRT_2;
     let mut temp = vec![0.0f64; n];
 
     // Transform rows.
     for row in 0..n {
-        let half = n / 2;
+        let offset = row * stride;
         for i in 0..half {
-            let a = data[row * n + 2 * i];
-            let b = data[row * n + 2 * i + 1];
-            temp[i] = f64::midpoint(a, b);
-            temp[half + i] = (a - b) / 2.0;
+            let a = data[offset + 2 * i];
+            let b = data[offset + 2 * i + 1];
+            temp[i] = (a + b) / sqrt2;
+            temp[half + i] = (a - b) / sqrt2;
         }
-        data[row * n..row * n + n].copy_from_slice(&temp[..n]);
+        data[offset..offset + n].copy_from_slice(&temp[..n]);
     }
 
     // Transform columns.
     let mut col_data = vec![0.0f64; n];
     for col in 0..n {
         for row in 0..n {
-            col_data[row] = data[row * n + col];
+            col_data[row] = data[row * stride + col];
         }
-        let half = n / 2;
         for i in 0..half {
             let a = col_data[2 * i];
             let b = col_data[2 * i + 1];
-            temp[i] = f64::midpoint(a, b);
-            temp[half + i] = (a - b) / 2.0;
+            temp[i] = (a + b) / sqrt2;
+            temp[half + i] = (a - b) / sqrt2;
         }
         for row in 0..n {
-            data[row * n + col] = temp[row];
+            data[row * stride + col] = temp[row];
         }
+    }
+}
+
+/// Inverse 2D Haar wavelet transform (one level) on the top-left n×n region of data.
+fn haar_2d_inverse(data: &mut [f64], n: usize) {
+    let stride = (data.len() as f64).sqrt() as usize;
+    let half = n / 2;
+    let sqrt2 = std::f64::consts::SQRT_2;
+    let mut temp = vec![0.0f64; n];
+
+    // Inverse columns first.
+    let mut col_data = vec![0.0f64; n];
+    for col in 0..n {
+        for row in 0..n {
+            col_data[row] = data[row * stride + col];
+        }
+        for i in 0..half {
+            let lo = col_data[i];
+            let hi = col_data[half + i];
+            temp[2 * i] = (lo + hi) / sqrt2;
+            temp[2 * i + 1] = (lo - hi) / sqrt2;
+        }
+        for row in 0..n {
+            data[row * stride + col] = temp[row];
+        }
+    }
+
+    // Inverse rows.
+    for row in 0..n {
+        let offset = row * stride;
+        for i in 0..half {
+            let lo = data[offset + i];
+            let hi = data[offset + half + i];
+            temp[2 * i] = (lo + hi) / sqrt2;
+            temp[2 * i + 1] = (lo - hi) / sqrt2;
+        }
+        data[offset..offset + n].copy_from_slice(&temp[..n]);
     }
 }
