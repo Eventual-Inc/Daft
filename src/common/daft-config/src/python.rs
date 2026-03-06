@@ -119,6 +119,7 @@ impl PyDaftExecutionConfig {
         enable_dynamic_batching=None,
         dynamic_batching_strategy=None,
         flight_shuffle_dirs=None,
+        enable_inline_agg=None,
     ))]
     fn with_config_values(
         &self,
@@ -152,6 +153,7 @@ impl PyDaftExecutionConfig {
         enable_dynamic_batching: Option<bool>,
         dynamic_batching_strategy: Option<&str>,
         flight_shuffle_dirs: Option<Vec<String>>,
+        enable_inline_agg: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -276,6 +278,10 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.flight_shuffle_dirs = flight_shuffle_dirs;
+        }
+
+        if let Some(enable_inline_agg) = enable_inline_agg {
+            config.enable_inline_agg = enable_inline_agg;
         }
 
         Ok(Self {
@@ -416,6 +422,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn dynamic_batching_strategy(&self) -> PyResult<&str> {
         Ok(self.config.dynamic_batching_strategy.as_str())
+    }
+
+    #[getter]
+    fn enable_inline_agg(&self) -> PyResult<bool> {
+        Ok(self.config.enable_inline_agg)
     }
 }
 

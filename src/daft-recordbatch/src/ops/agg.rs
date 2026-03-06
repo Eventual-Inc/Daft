@@ -1,3 +1,4 @@
+use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::{IntoGroups, IntoUniqueIdxs},
@@ -13,6 +14,7 @@ use daft_dsl::{
     python_udf::PyScalarFn,
 };
 
+use super::inline_agg::can_inline_agg;
 use crate::RecordBatch;
 
 impl RecordBatch {
@@ -47,6 +49,11 @@ impl RecordBatch {
                     .collect::<Vec<_>>(),
                 group_by,
             );
+        }
+
+        // Fast path: inline aggregation for supported agg types (count, sum).
+        if can_inline_agg(to_agg, self) && DaftExecutionConfig::from_env().enable_inline_agg {
+            return self.agg_groupby_inline(to_agg, group_by);
         }
 
         // Table with just the groupby columns.
