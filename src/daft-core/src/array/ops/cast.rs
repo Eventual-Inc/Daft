@@ -327,31 +327,26 @@ impl TimestampArray {
                 let DataType::Timestamp(unit, timezone) = self.data_type() else {
                     panic!("Wrong dtype for TimestampArray: {}", self.data_type())
                 };
+                let tz_parsed = timezone.as_ref().map(|tz| {
+                    daft_schema::time_unit::parse_timezone(tz)
+                        .unwrap_or_else(|_| panic!("Unable to parse timezone string {tz}"))
+                });
+                let str_array = Utf8Array::from_iter(
+                    self.name(),
+                    self.physical.into_iter().map(|val| {
+                        val.map(|val| match &tz_parsed {
+                            Some(daft_schema::time_unit::ParsedTimezone::Fixed(offset)) => {
+                                timestamp_to_str_offset(val, unit, offset)
+                            }
+                            Some(daft_schema::time_unit::ParsedTimezone::Tz(tz)) => {
+                                timestamp_to_str_tz(val, unit, tz)
+                            }
+                            None => timestamp_to_str_naive(val, unit),
+                        })
+                    }),
+                );
 
-                let str_iter: Box<dyn Iterator<Item = Option<String>>> = match timezone.as_ref() {
-                    None => Box::new(
-                        self.physical
-                            .into_iter()
-                            .map(|val| val.map(|val| timestamp_to_str_naive(val, unit))),
-                    ),
-                    Some(timezone) => {
-                        if let Ok(offset) = daft_schema::time_unit::parse_offset(timezone) {
-                            Box::new(self.physical.into_iter().map(move |val| {
-                                val.map(|val| timestamp_to_str_offset(val, unit, &offset))
-                            }))
-                        } else if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(timezone) {
-                            Box::new(
-                                self.physical.into_iter().map(move |val| {
-                                    val.map(|val| timestamp_to_str_tz(val, unit, &tz))
-                                }),
-                            )
-                        } else {
-                            panic!("Unable to parse timezone string {}", timezone)
-                        }
-                    }
-                };
-
-                Ok(Utf8Array::from_iter(self.name(), str_iter).into_series())
+                Ok(str_array.into_series())
             }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
