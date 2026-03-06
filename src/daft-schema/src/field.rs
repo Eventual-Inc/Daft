@@ -6,7 +6,6 @@ use std::{
 
 use arrow_schema::extension::{EXTENSION_TYPE_METADATA_KEY, EXTENSION_TYPE_NAME_KEY};
 use common_error::{DaftError, DaftResult};
-use daft_arrow::datatypes::Field as ArrowField;
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
@@ -92,13 +91,6 @@ impl Field {
         }
     }
 
-    #[deprecated(note = "use .to_arrow")]
-    pub fn to_arrow2(&self) -> DaftResult<ArrowField> {
-        Ok(
-            ArrowField::new(self.name.clone(), self.dtype.to_arrow2()?, true)
-                .with_metadata(self.metadata.as_ref().clone()),
-        )
-    }
     pub fn to_arrow(&self) -> DaftResult<arrow_schema::Field> {
         let field = match &self.dtype {
             DataType::Extension(name, dtype, metadata) => {
@@ -214,16 +206,6 @@ impl Field {
                 "Column \"{}\" with dtype {} cannot be exploded, must be a List or FixedSizeList column.",
                 self.name, self.dtype,
             ))),
-        }
-    }
-}
-
-impl From<&ArrowField> for Field {
-    fn from(af: &ArrowField) -> Self {
-        Self {
-            name: af.name.clone(),
-            dtype: af.data_type().into(),
-            metadata: af.metadata.clone().into(),
         }
     }
 }

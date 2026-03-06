@@ -164,6 +164,8 @@ pub enum Error {
     OneShotRecvError {
         source: tokio::sync::oneshot::error::RecvError,
     },
+    #[snafu(display("Parse error: {}", message))]
+    ParseError { message: String },
 }
 
 impl From<Error> for DaftError {
