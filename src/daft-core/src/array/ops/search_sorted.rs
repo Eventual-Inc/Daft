@@ -20,7 +20,7 @@ where
         )?;
 
         DataArray::from_arrow(
-            Field::new(self.field.name.as_str(), DataType::UInt64),
+            Field::new(self.field.name.as_ref(), DataType::UInt64),
             Arc::new(array),
         )
     }

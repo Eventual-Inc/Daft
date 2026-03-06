@@ -194,7 +194,7 @@ pub(crate) async fn finalize_outer(
             .right_schema
             .fields()
             .iter()
-            .filter(|f| !params.common_join_cols.contains(&f.name))
+            .filter(|f| !params.common_join_cols.contains(&*f.name))
             .cloned(),
     ));
 
@@ -256,7 +256,7 @@ pub(crate) async fn finalize_outer(
                     .left_schema
                     .fields()
                     .iter()
-                    .filter(|f| !params.common_join_cols.contains(&f.name))
+                    .filter(|f| !params.common_join_cols.contains(&*f.name))
                     .cloned(),
             ));
             let columns = left_non_join_schema

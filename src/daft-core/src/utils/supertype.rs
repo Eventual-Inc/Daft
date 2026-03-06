@@ -198,7 +198,7 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
                     let left_dtype = supertype_fields.get(&f.name).cloned().unwrap_or(DataType::Null);
                     supertype_fields.insert(&f.name, get_supertype(&left_dtype, &f.dtype)?);
                 }
-                let supertype_fields = supertype_fields.into_iter().map(|(k, v)| Field::new(k, v)).collect();
+                let supertype_fields = supertype_fields.into_iter().map(|(k, v)| Field::new(k.clone(), v)).collect();
                 Some(DataType::Struct(supertype_fields))
             }
             (DataType::Decimal128(left_prec, left_scale), DataType::Decimal128(right_prec, right_scale)) => {

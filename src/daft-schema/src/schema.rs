@@ -24,7 +24,7 @@ pub struct Schema {
 
     #[educe(Hash(ignore))]
     #[educe(PartialEq(ignore))]
-    name_to_indices: HashMap<String, Vec<usize>>,
+    name_to_indices: HashMap<Arc<str>, Vec<usize>>,
 }
 
 impl std::fmt::Display for Schema {
@@ -39,7 +39,7 @@ impl Schema {
         I: IntoIterator<Item = F>,
         F: Into<Field>,
     {
-        let mut name_to_indices = HashMap::<String, Vec<usize>>::new();
+        let mut name_to_indices = HashMap::<Arc<str>, Vec<usize>>::new();
 
         let field_vec = fields
             .into_iter()
@@ -79,7 +79,7 @@ impl Schema {
     }
 
     pub fn field_names(&self) -> impl Iterator<Item = &str> {
-        self.fields.iter().map(|f| f.name.as_str())
+        self.fields.iter().map(|f| &*f.name)
     }
 
     pub fn len(&self) -> usize {
@@ -118,7 +118,7 @@ impl Schema {
         let fields = self
             .fields
             .iter()
-            .filter(|field| !names.contains(field.name.as_str()))
+            .filter(|field| !names.contains(&*field.name))
             .cloned()
             .collect::<Vec<_>>();
 
@@ -170,7 +170,7 @@ impl Schema {
 
     #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn names(&self) -> Vec<String> {
-        self.fields.iter().map(|f| &f.name).cloned().collect()
+        self.fields.iter().map(|f| f.name.to_string()).collect()
     }
 
     /// Takes the disjoint union over the `self` and `other` schemas, throwing an error if the
@@ -398,7 +398,11 @@ impl Schema {
             } else {
                 String::new()
             };
-            (field.name.clone(), field.dtype.to_string(), metadata_str)
+            (
+                field.name.to_string(),
+                field.dtype.to_string(),
+                metadata_str,
+            )
         }))
         .to_string()
     }
@@ -410,7 +414,7 @@ impl Schema {
                 field
                     .dtype
                     .estimate_size_bytes()
-                    .map(|size| (size, field.name.as_str()))
+                    .map(|size| (size, &*field.name))
             })
             .min_by(|(size_a, _), (size_b, _)| {
                 size_a

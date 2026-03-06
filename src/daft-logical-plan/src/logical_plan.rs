@@ -294,13 +294,13 @@ impl LogicalPlan {
                                 Field { name, .. },
                                 JoinSide::Left,
                             ))) => {
-                                left.insert(name.clone());
+                                left.insert(name.to_string());
                             }
                             Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
                                 Field { name, .. },
                                 JoinSide::Right,
                             ))) => {
-                                right.insert(name.clone());
+                                right.insert(name.to_string());
                             }
                             _ => {}
                         }

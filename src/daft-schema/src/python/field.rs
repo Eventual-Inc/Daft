@@ -36,7 +36,7 @@ impl PyField {
     }
 
     pub fn name(&self) -> PyResult<String> {
-        Ok(self.field.name.clone())
+        Ok(self.field.name.to_string())
     }
 
     pub fn dtype(&self) -> PyResult<PyDataType> {

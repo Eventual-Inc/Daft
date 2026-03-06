@@ -49,7 +49,7 @@ impl StructArray {
                         dtype_field
                     );
                     assert!(
-                        dtype_field.name == series.name(),
+                        *dtype_field.name == *series.name(),
                         "StructArray::new received a series with name: {} but expected name: {}",
                         series.name(),
                         &dtype_field.name

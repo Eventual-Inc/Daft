@@ -76,7 +76,7 @@ fn project_daft_schema<K: Borrow<str> + Eq + Hash>(
     Schema::new(
         schema
             .into_iter()
-            .filter(|f| col_set.contains(f.name.as_str()))
+            .filter(|f| col_set.contains(f.name.as_ref()))
             .cloned(),
     )
 }
@@ -1460,8 +1460,8 @@ mod tests {
         assert_eq!(result.num_columns(), 2);
 
         // Verify column names.
-        assert_eq!(result.schema.fields()[0].name, "x");
-        assert_eq!(result.schema.fields()[1].name, "y");
+        assert_eq!(&*result.schema.fields()[0].name, "x");
+        assert_eq!(&*result.schema.fields()[1].name, "y");
 
         // Clean up.
         let _ = std::fs::remove_dir_all(&dir);
@@ -1523,8 +1523,8 @@ mod tests {
 
         assert_eq!(result.len(), 5);
         assert_eq!(result.num_columns(), 2);
-        assert_eq!(result.schema.fields()[0].name, "x");
-        assert_eq!(result.schema.fields()[1].name, "z");
+        assert_eq!(&*result.schema.fields()[0].name, "x");
+        assert_eq!(&*result.schema.fields()[1].name, "z");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

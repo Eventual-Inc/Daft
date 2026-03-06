@@ -341,7 +341,7 @@ async fn read_parquet_single_into_arrow(
             .and_then(|s| s.field_with_name(&daft_field.name).ok())
             .is_none_or(|f| f.is_nullable());
         ffi_fields.push(daft_arrow::datatypes::Field::new(
-            &daft_field.name,
+            daft_field.name.to_string(),
             ffi_array.data_type().clone(),
             nullable,
         ));

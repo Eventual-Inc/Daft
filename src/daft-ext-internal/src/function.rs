@@ -365,7 +365,7 @@ mod tests {
         let args = FunctionArgs::new_unnamed(vec![daft_dsl::resolved_col("x")]);
 
         let field = udf.get_return_field(args, &schema).unwrap();
-        assert_eq!(field.name.as_str(), "result");
+        assert_eq!(field.name.as_ref(), "result");
         assert_eq!(field.dtype, DataType::Int32);
     }
 
