@@ -34,12 +34,13 @@ def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> I
                 nonlocal any_props_set
                 any_props_set = True
                 return value, None
-        prefix = f"{base_key}."
-        for key, value in props.items():
-            if key.startswith(prefix) and value:
-                any_props_set = True
-                account_name = key[len(prefix) :].split(".")[0]
-                return value, account_name
+        for candidate_key in (base_key, *alternate_keys):
+            prefix = f"{candidate_key}."
+            for key, value in props.items():
+                if key.startswith(prefix) and value:
+                    any_props_set = True
+                    account_name = key[len(prefix) :].split(".")[0]
+                    return value, account_name
         return None, None
 
     sas_token, scoped_account = get_adls_property_value("adls.sas-token", "adlfs.sas-token")

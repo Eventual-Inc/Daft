@@ -70,6 +70,17 @@ def test_explicit_account_name_not_overridden_by_scoped():
     assert azure.sas_token == "scoped-token"
 
 
+def test_scoped_adlfs_alternate_key_prefix():
+    props = {
+        "adlfs.sas-token.myaccount.dfs.core.windows.net": "adlfs-scoped-token",
+    }
+    io_config = _convert_iceberg_file_io_properties_to_io_config(props)
+    assert io_config is not None
+    azure = io_config.azure
+    assert azure.sas_token == "adlfs-scoped-token"
+    assert azure.storage_account == "myaccount"
+
+
 def test_empty_props_returns_none():
     io_config = _convert_iceberg_file_io_properties_to_io_config({})
     assert io_config is None
