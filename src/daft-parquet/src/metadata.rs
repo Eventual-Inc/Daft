@@ -315,7 +315,7 @@ fn strip_string_type(tp: &parquet::schema::types::Type) -> parquet::schema::type
             ..
         } => {
             let info = tp.get_basic_info();
-            let is_string = matches!(info.logical_type(), Some(LogicalType::String))
+            let is_string = matches!(info.logical_type_ref(), Some(LogicalType::String))
                 || info.converted_type() == ConvertedType::UTF8;
 
             if is_string {

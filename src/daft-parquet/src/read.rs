@@ -963,8 +963,8 @@ mod tests {
         match fields[0].as_ref() {
             ParquetSchemaType::PrimitiveType { basic_info, .. } => {
                 assert_eq!(
-                    basic_info.logical_type(),
-                    Some(parquet::basic::LogicalType::String),
+                    basic_info.logical_type_ref(),
+                    Some(&parquet::basic::LogicalType::String),
                 );
                 assert_eq!(
                     basic_info.converted_type(),
