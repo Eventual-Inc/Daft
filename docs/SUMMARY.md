@@ -32,6 +32,7 @@
     * Data Connectors
         * [Connectors](connectors/index.md)
         * [Custom Connectors](connectors/custom.md)
+        * [Custom Catalogs](connectors/custom-catalogs.md)
         * [AWS Glue](connectors/glue.md)
         * [AWS S3 Tables](connectors/s3tables.md)
         * [Apache Gravitino](connectors/gravitino.md)
