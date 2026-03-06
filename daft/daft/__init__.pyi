@@ -995,6 +995,7 @@ class IOConfig:
     gravitino: GravitinoConfig
     cos: CosConfig
     opendal_backends: dict[str, dict[str, str]]
+    protocol_aliases: dict[str, str]
 
     def __init__(
         self,
@@ -1009,6 +1010,7 @@ class IOConfig:
         gravitino: GravitinoConfig | None = None,
         cos: CosConfig | None = None,
         opendal_backends: dict[str, dict[str, str]] | None = None,
+        protocol_aliases: dict[str, str] | None = None,
     ): ...
     def replace(
         self,
@@ -1023,6 +1025,7 @@ class IOConfig:
         gravitino: GravitinoConfig | None = None,
         cos: CosConfig | None = None,
         opendal_backends: dict[str, dict[str, str]] | None = None,
+        protocol_aliases: dict[str, str] | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
         ...
