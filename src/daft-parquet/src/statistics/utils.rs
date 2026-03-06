@@ -64,17 +64,8 @@ pub fn convert_i96_to_i64_timestamp(value: [u32; 3], tu: TimeUnit) -> i64 {
     }
 }
 
-/// Convert parquet2 TimeUnit to Daft TimeUnit.
-pub fn pq2_timeunit_to_daft(unit: parquet2::schema::types::TimeUnit) -> TimeUnit {
-    match unit {
-        parquet2::schema::types::TimeUnit::Nanoseconds => TimeUnit::Nanoseconds,
-        parquet2::schema::types::TimeUnit::Microseconds => TimeUnit::Microseconds,
-        parquet2::schema::types::TimeUnit::Milliseconds => TimeUnit::Milliseconds,
-    }
-}
-
 /// Convert arrow-rs parquet TimeUnit to Daft TimeUnit.
-pub fn arrowrs_timeunit_to_daft(unit: parquet::basic::TimeUnit) -> TimeUnit {
+pub fn timeunit_to_daft(unit: parquet::basic::TimeUnit) -> TimeUnit {
     match unit {
         parquet::basic::TimeUnit::MILLIS => TimeUnit::Milliseconds,
         parquet::basic::TimeUnit::MICROS => TimeUnit::Microseconds,

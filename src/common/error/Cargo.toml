@@ -7,9 +7,6 @@ serde_json = {workspace = true}
 thiserror = {workspace = true}
 tokio = {workspace = true}
 
-[dev-dependencies]
-parquet2 = {workspace = true}
-
 [features]
 python = ["dep:pyo3"]
 

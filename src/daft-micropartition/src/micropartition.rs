@@ -15,7 +15,7 @@ use daft_dsl::{AggExpr, Expr, ExprRef};
 use daft_io::{IOClient, IOConfig, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::{
-    DaftParquetMetadata, infer_arrow_schema_from_metadata,
+    DaftParquetMetadata,
     read::{ParquetSchemaInferenceOptions, read_parquet_bulk, read_parquet_metadata_bulk},
 };
 use daft_recordbatch::RecordBatch;
@@ -641,11 +641,8 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema = infer_arrow_schema_from_metadata(
-                    m.as_parquet2(),
-                    Some((*schema_infer_options).into()),
-                )?;
-                let daft_schema = Schema::from(schema);
+                let daft_schema =
+                    daft_parquet::infer_schema_from_daft_metadata(m, *schema_infer_options)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;
@@ -668,11 +665,8 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema = infer_arrow_schema_from_metadata(
-                    m.as_parquet2(),
-                    Some((*schema_infer_options).into()),
-                )?;
-                let daft_schema = schema.into();
+                let daft_schema =
+                    daft_parquet::infer_schema_from_daft_metadata(m, *schema_infer_options)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;
