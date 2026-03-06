@@ -395,7 +395,15 @@ impl DataType {
     #[inline]
     /// Is this DataType convertible to Arrow?
     pub fn is_arrow(&self) -> bool {
-        self.to_arrow().is_ok()
+        match self {
+            // Extension types can not be converted to arrow via .to_arrow().
+            // but they are arrow backed.
+            // as the metadata is stored in the arrow Field.
+            // So Field(extension) -> ArrowField(storage, extension_metadata) is valid,
+            // but DataType::Extension -> ArrowDataType is not.
+            Self::Extension(_, storage, _) => storage.to_arrow().is_ok(),
+            _ => self.to_arrow().is_ok(),
+        }
     }
 
     #[inline]
