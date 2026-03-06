@@ -1,7 +1,10 @@
 use std::{future, sync::Arc};
 
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    StatSnapshot,
+    ops::{NodeCategory, NodeInfo, NodeType},
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, SamplingMethod};
 use daft_logical_plan::{
@@ -11,6 +14,7 @@ use daft_logical_plan::{
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::{Schema, SchemaRef};
 use futures::{TryStreamExt, future::try_join_all};
+use opentelemetry::metrics::Meter;
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
@@ -23,11 +27,57 @@ use crate::{
         scheduler::{SchedulerHandle, SubmittedTask},
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
+    statistics::{
+        RuntimeStats,
+        stats::{BaseCounters, RuntimeStatsRef},
+    },
     utils::{
         channel::{Sender, create_channel},
         transpose::transpose_materialized_outputs_from_vec,
     },
 };
+
+const SAMPLE_PHASE: &str = "sample";
+const REPARTITION_PHASE: &str = "repartition";
+const FINAL_SORT_PHASE: &str = "final-sort";
+
+pub struct SortStats {
+    base: BaseCounters,
+}
+
+impl SortStats {
+    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        Self {
+            base: BaseCounters::new(meter, context),
+        }
+    }
+}
+
+impl RuntimeStats for SortStats {
+    fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot) {
+        match snapshot {
+            StatSnapshot::Source(snapshot) => {
+                // InMemorySource nodes only contribute duration
+                self.base.add_duration_us(snapshot.cpu_us);
+            }
+            StatSnapshot::Default(snapshot) => {
+                self.base.add_duration_us(snapshot.cpu_us);
+                if let Some(phase) = &node_info.node_phase
+                    && phase == FINAL_SORT_PHASE
+                {
+                    // Only the final sort phase contributes row counts
+                    self.base.add_rows_in(snapshot.rows_in);
+                    self.base.add_rows_out(snapshot.rows_out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn export_snapshot(&self) -> StatSnapshot {
+        self.base.export_default_snapshot()
+    }
+}
 
 /// Computes partition boundaries from sampled data for range partitioning.
 /// Takes already-sampled materialized outputs and computes boundaries that divide the data
@@ -127,25 +177,29 @@ pub(crate) fn create_sample_tasks(
     materialized_outputs
         .into_iter()
         .map(|mo| {
-            let (in_memory_scan, psets) = MaterializedOutput::into_in_memory_scan_with_psets(
-                vec![mo],
-                input_schema.clone(),
-                pipeline_node.node_id(),
-            );
+            let (in_memory_scan, psets) =
+                MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
+                    vec![mo],
+                    input_schema.clone(),
+                    pipeline_node.node_id(),
+                    SAMPLE_PHASE,
+                );
             let sample = LocalPhysicalPlan::sample(
                 in_memory_scan,
                 SamplingMethod::Size(sample_size),
                 true,
                 None,
                 StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(pipeline_node.node_id() as usize)),
+                LocalNodeContext::new(Some(pipeline_node.node_id() as usize))
+                    .with_phase(SAMPLE_PHASE),
             );
             let plan = LocalPhysicalPlan::project(
                 sample,
                 sample_by.clone(),
                 sample_schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(pipeline_node.node_id() as usize)),
+                LocalNodeContext::new(Some(pipeline_node.node_id() as usize))
+                    .with_phase(SAMPLE_PHASE),
             );
             let builder = SwordfishTaskBuilder::new(plan, pipeline_node)
                 .with_psets(pipeline_node.node_id(), psets);
@@ -180,7 +234,7 @@ pub(crate) fn create_range_repartition_tasks(
                 input_schema.clone(),
                 mo.size_bytes(),
                 StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(node_id as usize)),
+                LocalNodeContext::new(Some(node_id as usize)).with_phase(REPARTITION_PHASE),
             );
             let plan = LocalPhysicalPlan::repartition(
                 in_memory_source_plan,
@@ -193,7 +247,7 @@ pub(crate) fn create_range_repartition_tasks(
                 num_partitions,
                 input_schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(node_id as usize)),
+                LocalNodeContext::new(Some(node_id as usize)).with_phase(REPARTITION_PHASE),
             );
             let builder = SwordfishTaskBuilder::new(plan, pipeline_node)
                 .with_psets(node_id, mo.into_inner().0);
@@ -277,18 +331,20 @@ impl SortNode {
         }
 
         if materialized_outputs.len() == 1 {
-            let (in_memory_scan, psets) = MaterializedOutput::into_in_memory_scan_with_psets(
-                materialized_outputs,
-                self.config.schema.clone(),
-                self.node_id(),
-            );
+            let (in_memory_scan, psets) =
+                MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
+                    materialized_outputs,
+                    self.config.schema.clone(),
+                    self.node_id(),
+                    FINAL_SORT_PHASE,
+                );
             let plan = LocalPhysicalPlan::sort(
                 in_memory_scan,
                 self.sort_by.clone(),
                 self.descending.clone(),
                 self.nulls_first.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(self.node_id() as usize)),
+                LocalNodeContext::new(Some(self.node_id() as usize)).with_phase(FINAL_SORT_PHASE),
             );
             let task =
                 SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
@@ -346,18 +402,20 @@ impl SortNode {
             transpose_materialized_outputs_from_vec(partitioned_outputs, num_partitions);
 
         for partition_group in transposed_outputs {
-            let (in_memory_source_plan, psets) = MaterializedOutput::into_in_memory_scan_with_psets(
-                partition_group,
-                self.config.schema.clone(),
-                self.node_id(),
-            );
+            let (in_memory_source_plan, psets) =
+                MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
+                    partition_group,
+                    self.config.schema.clone(),
+                    self.node_id(),
+                    FINAL_SORT_PHASE,
+                );
             let plan = LocalPhysicalPlan::sort(
                 in_memory_source_plan,
                 self.sort_by.clone(),
                 self.descending.clone(),
                 self.nulls_first.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(self.node_id() as usize)),
+                LocalNodeContext::new(Some(self.node_id() as usize)).with_phase(FINAL_SORT_PHASE),
             );
             let task =
                 SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
@@ -378,6 +436,10 @@ impl PipelineNodeImpl for SortNode {
 
     fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
+    }
+
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(SortStats::new(meter, self.context()))
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
