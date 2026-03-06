@@ -15,8 +15,6 @@ pub enum DaftError {
     TypeError(String),
     #[error("DaftError::ComputeError {0}")]
     ComputeError(String),
-    #[error("DaftError::ArrowError {0}")]
-    ArrowError(daft_arrow::error::Error),
     #[error("DaftError::ArrowRsError {0}")]
     ArrowRsError(#[from] arrow_schema::ArrowError),
     // TODO(desmond): We can't currently implement this as a From<parquet::errors::ParquetError>
@@ -62,6 +60,8 @@ pub enum DaftError {
     CatalogError(String),
     #[error("DaftError::JoinError {0}")]
     JoinError(#[from] tokio::task::JoinError),
+    #[error("DaftError::InvalidArgumentError {0}")]
+    InvalidArgumentError(String),
 }
 
 impl DaftError {
@@ -94,54 +94,9 @@ macro_rules! value_err {
     };
 }
 
-impl From<daft_arrow::error::Error> for DaftError {
-    fn from(error: daft_arrow::error::Error) -> Self {
-        match error {
-            daft_arrow::error::Error::Io(_) => Self::ByteStreamError(error.into()),
-            _ => Self::ArrowError(error),
-        }
-    }
-}
-
 #[cfg(feature = "python")]
 impl<'py> From<pyo3::pyclass::PyClassGuardError<'_, 'py>> for DaftError {
     fn from(error: pyo3::pyclass::PyClassGuardError<'_, 'py>) -> Self {
         Self::PyO3Error(error.into())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_arrow_io_error_conversion() {
-        // Ensure that arrow2 IO errors get converted into transient Byte Stream errors.
-        let error_message = "IO error occurred";
-        let arrow_io_error = daft_arrow::error::Error::Io(std::io::Error::other(error_message));
-        let daft_error: DaftError = arrow_io_error.into();
-        match daft_error {
-            DaftError::ByteStreamError(e) => {
-                assert_eq!(e.to_string(), format!("Io error: {error_message}"));
-            }
-            _ => panic!("Expected ByteStreamError"),
-        }
-    }
-
-    #[test]
-    fn test_parquet_io_error_conversion() {
-        // Ensure that parquet2 IO errors get converted into transient Byte Stream errors.
-        let error_message = "IO error occurred";
-        let parquet_io_error =
-            parquet2::error::Error::IoError(std::io::Error::other(error_message));
-        let arrow_error: daft_arrow::error::Error = parquet_io_error.into();
-        //let arrow_error = daft_arrow::error::Error::from(parquet_io_error);
-        let daft_error: DaftError = arrow_error.into();
-        match daft_error {
-            DaftError::ByteStreamError(e) => {
-                assert_eq!(e.to_string(), format!("Io error: {error_message}"));
-            }
-            _ => panic!("Expected ByteStreamError"),
-        }
     }
 }

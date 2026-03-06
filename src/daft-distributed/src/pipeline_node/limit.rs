@@ -13,7 +13,7 @@ use opentelemetry::metrics::Meter;
 
 use super::{DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SchedulerHandle,
@@ -127,7 +127,7 @@ pub(crate) struct LimitNode {
 }
 
 impl LimitNode {
-    const NODE_NAME: NodeName = "Limit";
+    const NODE_NAME: &'static str = "Limit";
 
     pub fn new(
         node_id: NodeID,
@@ -141,7 +141,7 @@ impl LimitNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Limit,
             NodeCategory::StreamingSink,
         );
@@ -328,7 +328,10 @@ impl LimitNode {
 
             // Update max_concurrent_tasks based on actual output
             // Only update if we have remaining limit, and we did get some output
-            if !limit_state.is_take_done() && total_num_rows > 0 && num_local_limits > 0 {
+            if limit_state.is_take_done() {
+                // Drop the input channel to cancel any input tasks
+                break;
+            } else if total_num_rows > 0 && num_local_limits > 0 {
                 let rows_per_task = total_num_rows.div_ceil(num_local_limits);
                 max_concurrent_tasks = limit_state.remaining_take().div_ceil(rows_per_task);
             }

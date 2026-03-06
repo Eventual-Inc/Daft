@@ -4,9 +4,9 @@ use std::{
     time::Duration,
 };
 
+use arrow::array::ArrayRef;
 use common_error::DaftResult;
 use common_runtime::get_io_runtime;
-use daft_arrow::io::parquet::read::schema::{SchemaInferenceOptions, StringEncoding};
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
 use daft_core::python::PyTimeUnit;
@@ -14,17 +14,39 @@ use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
 use futures::{
-    StreamExt, TryStreamExt,
+    StreamExt, TryFutureExt, TryStreamExt,
     future::{join_all, try_join_all},
     stream::BoxStream,
 };
-use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
-use crate::{
-    DaftParquetMetadata, JoinSnafu, file::ParquetReaderBuilder, infer_arrow_schema_from_metadata,
-};
+use crate::{DaftParquetMetadata, JoinSnafu, infer_schema_from_daft_metadata};
+
+/// How to decode Parquet BYTE_ARRAY columns annotated as strings.
+///
+/// - `Utf8` (default): arrow-rs decodes as Utf8/LargeUtf8 with UTF-8 validation.
+/// - `Raw`: strip the STRING logical type so arrow-rs decodes as Binary (no validation).
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StringEncoding {
+    Raw,
+    #[default]
+    Utf8,
+}
+
+impl std::str::FromStr for StringEncoding {
+    type Err = common_error::DaftError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "utf-8" => Ok(Self::Utf8),
+            "raw" => Ok(Self::Raw),
+            other => Err(common_error::DaftError::ValueError(format!(
+                "Unrecognized string encoding: {other}"
+            ))),
+        }
+    }
+}
 
 #[cfg(feature = "python")]
 #[derive(Clone)]
@@ -45,11 +67,18 @@ impl TryFrom<ParquetSchemaInferenceOptionsBuilder> for ParquetSchemaInferenceOpt
     type Error = crate::Error;
 
     fn try_from(value: ParquetSchemaInferenceOptionsBuilder) -> crate::Result<Self> {
+        let string_encoding: StringEncoding =
+            value
+                .string_encoding
+                .parse()
+                .map_err(|e: common_error::DaftError| crate::Error::ArrowError {
+                    source: arrow::error::ArrowError::InvalidArgumentError(e.to_string()),
+                })?;
         Ok(Self {
             coerce_int96_timestamp_unit: value
                 .coerce_int96_timestamp_unit
                 .map_or(TimeUnit::Nanoseconds, From::from),
-            string_encoding: value.string_encoding.parse().context(crate::Arrow2Snafu)?,
+            string_encoding,
         })
     }
 }
@@ -87,15 +116,6 @@ impl Default for ParquetSchemaInferenceOptions {
         Self {
             coerce_int96_timestamp_unit: TimeUnit::Nanoseconds,
             string_encoding: StringEncoding::Utf8,
-        }
-    }
-}
-
-impl From<ParquetSchemaInferenceOptions> for SchemaInferenceOptions {
-    fn from(value: ParquetSchemaInferenceOptions) -> Self {
-        Self {
-            int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow2(),
-            string_encoding: value.string_encoding,
         }
     }
 }
@@ -263,141 +283,76 @@ async fn read_parquet_single_into_arrow(
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-    metadata: Option<Arc<FileMetaData>>,
 ) -> DaftResult<ParquetPyarrowChunk> {
-    let field_id_mapping_provided = field_id_mapping.is_some();
-    let (source_type, fixed_uri) = parse_url(uri)?;
-    let (metadata, schema, all_arrays, num_rows_read) = if matches!(source_type, SourceType::File) {
-        let (metadata, schema, all_arrays, num_rows_read) =
-            crate::stream_reader::local_parquet_read_into_arrow_async(
-                fixed_uri.as_ref(),
-                columns.clone(),
-                start_offset,
-                num_rows,
-                row_groups.clone(),
-                None,
-                schema_infer_options,
-                metadata,
-                None,
-            )
-            .await?;
-        (metadata, Arc::new(schema), all_arrays, num_rows_read)
-    } else {
-        let builder = ParquetReaderBuilder::from_uri(
-            uri,
-            io_client.clone(),
-            io_stats.clone(),
-            field_id_mapping,
-        )
-        .await?;
-        let builder = builder.set_infer_schema_options(schema_infer_options);
+    // Read data and metadata concurrently.
+    // The metadata read is needed to recover schema-level key-value metadata
+    // (e.g. custom metadata like {"str": "foo"}) that Daft's RecordBatch doesn't carry.
+    let data_fut = read_parquet_single(
+        uri,
+        columns,
+        start_offset,
+        num_rows,
+        row_groups,
+        None, // predicate (pyarrow API doesn't expose it)
+        io_client.clone(),
+        io_stats.clone(),
+        schema_infer_options,
+        field_id_mapping,
+        None, // metadata
+        None, // delete_rows
+        None, // chunk_size
+    );
+    let metadata_fut =
+        crate::metadata::read_parquet_metadata(uri, None, io_client, io_stats, None, None);
 
-        let builder = if let Some(columns) = &columns {
-            builder.prune_columns(columns)?
-        } else {
-            builder
-        };
+    let (rb, parquet_metadata) =
+        futures::future::try_join(data_fut, metadata_fut.err_into()).await?;
+    let num_rows_read = rb.len();
 
-        if row_groups.is_some() && (num_rows.is_some() || start_offset.is_some()) {
-            return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.".to_string()));
-        }
-        let builder = builder.limit(start_offset, num_rows)?;
-        let metadata = builder.metadata().clone();
+    // Infer the Arrow schema from parquet metadata. This gives us:
+    // - schema-level key-value metadata (handled the same way as pyarrow)
+    // - per-field nullability from the parquet schema
+    let arrow_schema = parquet::arrow::parquet_to_arrow_schema(
+        parquet_metadata.file_metadata().schema_descr(),
+        parquet_metadata.file_metadata().key_value_metadata(),
+    )
+    .ok();
+    let schema_metadata: std::collections::HashMap<String, String> = arrow_schema
+        .as_ref()
+        .map(|s| {
+            s.metadata()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
 
-        let builder = if let Some(ref row_groups) = row_groups {
-            builder.set_row_groups(row_groups)?
-        } else {
-            builder
-        };
+    // Convert each Daft Series → FFI-compatible arrays for the pyarrow bridge.
+    // Return in COLUMN-MAJOR layout: all_arrays[col_idx] = [chunks_for_that_column].
+    // The Python side (recordbatch.py) zips schema fields with this outer list,
+    // so each entry must be the list of chunks for one column.
+    let mut ffi_fields = Vec::with_capacity(rb.schema.fields().len());
+    let mut all_arrays: Vec<ArrowChunk> = Vec::with_capacity(rb.schema.fields().len());
 
-        let parquet_reader = builder.build()?;
+    for (col, daft_field) in rb.columns().iter().zip(rb.schema.fields()) {
+        let arrow_array = col.to_arrow()?;
 
-        let schema = parquet_reader.arrow_schema().clone();
-        let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
-        let (all_arrays, num_rows_read) = parquet_reader
-            .read_from_ranges_into_arrow_arrays(ranges)
-            .await?;
-        (Arc::new(metadata), schema, all_arrays, num_rows_read)
-    };
-
-    let rows_per_row_groups = metadata
-        .row_groups
-        .values()
-        .map(parquet2::metadata::RowGroupMetaData::num_rows)
-        .collect::<Vec<_>>();
-
-    let metadata_num_rows = metadata.num_rows;
-    let metadata_num_columns = metadata.schema().fields().len();
-
-    let len_per_col = all_arrays
-        .iter()
-        .map(|v| v.iter().map(|a| a.len()).sum::<usize>())
-        .collect::<Vec<_>>();
-    let all_same_size = len_per_col.windows(2).all(|w| w[0] == w[1]);
-    if !all_same_size {
-        return Err(super::Error::ParquetColumnsDontHaveEqualRows { path: uri.into() }.into());
+        let nullable = arrow_schema
+            .as_ref()
+            .and_then(|s| s.field_with_name(&daft_field.name).ok())
+            .is_none_or(|f| f.is_nullable());
+        ffi_fields.push(arrow::datatypes::Field::new(
+            &daft_field.name,
+            arrow_array.data_type().clone(),
+            nullable,
+        ));
+        all_arrays.push(vec![arrow_array]);
     }
 
-    let table_len = num_rows_read;
-    let table_ncol = all_arrays.len();
+    let mut ffi_schema = arrow::datatypes::Schema::new(ffi_fields);
+    ffi_schema.metadata = schema_metadata;
 
-    if let Some(row_groups) = &row_groups {
-        let expected_rows: usize = row_groups
-            .iter()
-            .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
-            .sum();
-        if expected_rows != table_len {
-            return Err(super::Error::ParquetNumRowMismatch {
-                path: uri.into(),
-                expected_rows,
-                read_rows: table_len,
-            }
-            .into());
-        }
-    } else {
-        match (start_offset, num_rows) {
-            (None, None) if metadata_num_rows != table_len => {
-                Err(super::Error::ParquetNumRowMismatch {
-                    path: uri.into(),
-                    expected_rows: metadata_num_rows,
-                    read_rows: table_len,
-                })
-            }
-            (Some(s), None) if metadata_num_rows.saturating_sub(s) != table_len => {
-                Err(super::Error::ParquetNumRowMismatch {
-                    path: uri.into(),
-                    expected_rows: metadata_num_rows.saturating_sub(s),
-                    read_rows: table_len,
-                })
-            }
-            (_, Some(n)) if n < table_len => Err(super::Error::ParquetNumRowMismatch {
-                path: uri.into(),
-                expected_rows: n.min(metadata_num_rows),
-                read_rows: table_len,
-            }),
-            _ => Ok(()),
-        }?;
-    }
-
-    let expected_num_columns = if let Some(columns) = &columns {
-        columns.len()
-    } else {
-        metadata_num_columns
-    };
-
-    if (!field_id_mapping_provided && columns.is_none() && table_ncol != expected_num_columns)
-        || (field_id_mapping_provided && table_ncol > expected_num_columns)
-        || (columns.is_some() && table_ncol > expected_num_columns)
-    {
-        return Err(super::Error::ParquetNumColumnMismatch {
-            path: uri.into(),
-            metadata_num_columns: expected_num_columns,
-            read_columns: table_ncol,
-        }
-        .into());
-    }
-
-    Ok((schema, all_arrays, table_len))
+    Ok((Arc::new(ffi_schema), all_arrays, num_rows_read))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -435,15 +390,11 @@ pub fn read_parquet(
         .await
     })
 }
-pub type ArrowChunk = Vec<Box<dyn daft_arrow::array::Array>>;
-pub type ArrowChunkIters = Vec<
-    Box<
-        dyn Iterator<Item = daft_arrow::error::Result<Box<dyn daft_arrow::array::Array>>>
-            + Send
-            + Sync,
-    >,
->;
-pub type ParquetPyarrowChunk = (daft_arrow::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
+pub type ArrowChunk = Vec<ArrayRef>;
+pub type ArrowChunkIters =
+    Vec<Box<dyn Iterator<Item = arrow::error::Result<ArrayRef>> + Send + Sync>>;
+pub type ParquetPyarrowChunk = (arrow::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
+
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow(
     uri: &str,
@@ -468,7 +419,6 @@ pub fn read_parquet_into_pyarrow(
             io_client,
             io_stats,
             schema_infer_options,
-            None,
             None,
         );
         if let Some(timeout) = file_timeout_ms {
@@ -683,7 +633,6 @@ pub fn read_parquet_into_pyarrow_bulk<T: AsRef<str>>(
                             io_stats,
                             schema_infer_options,
                             None,
-                            None,
                         )
                         .await?,
                     ))
@@ -715,10 +664,9 @@ pub async fn read_parquet_schema_and_metadata(
         None,
     )
     .await?;
-    let arrow_schema =
-        infer_arrow_schema_from_metadata(&metadata, Some(schema_inference_options.into()))?;
-    let schema = arrow_schema.into();
-    Ok((schema, metadata.into()))
+    let adapter = DaftParquetMetadata::from_arrowrs(metadata);
+    let schema = infer_schema_from_daft_metadata(&adapter, schema_inference_options)?;
+    Ok((schema, adapter))
 }
 
 pub async fn read_parquet_metadata(
@@ -736,7 +684,7 @@ pub async fn read_parquet_metadata(
         None,
     )
     .await?;
-    Ok(metadata.into())
+    Ok(DaftParquetMetadata::from_arrowrs(metadata))
 }
 pub async fn read_parquet_metadata_bulk(
     uris: &[&str],
@@ -873,13 +821,13 @@ pub fn read_parquet_statistics(
 
 #[cfg(test)]
 mod tests {
-    use std::{path::PathBuf, sync::Arc};
+    use std::{ops::Deref, path::PathBuf, sync::Arc};
 
+    use arrow::datatypes::DataType;
     use common_error::DaftResult;
-    use daft_arrow::{datatypes::DataType, io::parquet::read::schema::StringEncoding};
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
-    use parquet2::schema::types::{ParquetType, PrimitiveConvertedType, PrimitiveLogicalType};
+    use parquet::schema::types::Type as ParquetSchemaType;
 
     use super::*;
 
@@ -1002,23 +950,28 @@ mod tests {
             })
             .flatten()
             .unwrap();
-        let primitive_type = match file_metadata.as_parquet2().schema_descr.fields() {
-            [parquet_type] => match parquet_type {
-                ParquetType::PrimitiveType(primitive_type) => primitive_type,
-                ParquetType::GroupType { .. } => {
-                    panic!("Parquet type should be primitive type, not group type")
-                }
-            },
-            _ => panic!("This test parquet file should have only 1 field"),
-        };
+        let schema_descr = file_metadata.schema_descriptor();
+        let fields = schema_descr.root_schema().get_fields();
         assert_eq!(
-            primitive_type.logical_type,
-            Some(PrimitiveLogicalType::String)
+            fields.len(),
+            1,
+            "This test parquet file should have only 1 field"
         );
-        assert_eq!(
-            primitive_type.converted_type,
-            Some(PrimitiveConvertedType::Utf8)
-        );
+        match fields[0].as_ref() {
+            ParquetSchemaType::PrimitiveType { basic_info, .. } => {
+                assert_eq!(
+                    basic_info.logical_type_ref(),
+                    Some(&parquet::basic::LogicalType::String),
+                );
+                assert_eq!(
+                    basic_info.converted_type(),
+                    parquet::basic::ConvertedType::UTF8,
+                );
+            }
+            ParquetSchemaType::GroupType { .. } => {
+                panic!("Parquet type should be primitive type, not group type")
+            }
+        }
         let (schema, _, _) = read_parquet_into_pyarrow(
             &parquet,
             None,
@@ -1035,8 +988,8 @@ mod tests {
             None,
         )
         .unwrap();
-        match schema.fields.as_slice() {
-            [field] => assert_eq!(field.data_type, DataType::LargeBinary),
+        match schema.fields().deref() {
+            [field] => assert_eq!(field.data_type(), &DataType::LargeBinary),
             _ => panic!("There should only be one field in the schema"),
         };
     }

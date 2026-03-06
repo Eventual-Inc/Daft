@@ -8,7 +8,7 @@ use daft_schema::schema::SchemaRef;
 
 use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
 };
 
@@ -20,7 +20,7 @@ pub(crate) struct DistinctNode {
 }
 
 impl DistinctNode {
-    const NODE_NAME: NodeName = "Distinct";
+    const NODE_NAME: &'static str = "Dedup";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -34,7 +34,7 @@ impl DistinctNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Dedup,
             NodeCategory::BlockingSink,
         );

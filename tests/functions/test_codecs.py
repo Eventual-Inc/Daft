@@ -245,7 +245,7 @@ def test_try_decode_utf8():
 def test_try_decode_utf8_perf():
     from daft import DataType as dt
 
-    @daft.udf(return_dtype=dt.string())
+    @daft.func.batch(return_dtype=dt.string())
     def try_decode_utf8_udf(binary_series):
         strings = []
         for binary in binary_series:

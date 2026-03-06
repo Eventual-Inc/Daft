@@ -1,3 +1,7 @@
+[[bench]]
+harness = false
+name = "image_ops"
+
 [dependencies]
 arrow = {workspace = true}
 base64 = {workspace = true}
@@ -9,6 +13,10 @@ daft-schema = {path = "../daft-schema", default-features = false}
 log = {workspace = true}
 serde = {workspace = true}
 typetag = {workspace = true}
+rayon.workspace = true
+
+[dev-dependencies]
+criterion = {workspace = true}
 
 [features]
 python = ["common-error/python", "common-image/python"]
