@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ops::ControlFlow, sync::Arc};
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
@@ -9,12 +9,12 @@ use common_metrics::{
 };
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
-use daft_micropartition::MicroPartition;
 
 use crate::{
-    ExecutionRuntimeContext, OperatorControlFlow,
+    ExecutionRuntimeContext,
     channel::{Receiver, Sender, create_channel},
     pipeline::{BuilderContext, MorselSizeRequirement, PipelineNode},
+    pipeline_message::PipelineMessage,
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 
@@ -57,25 +57,52 @@ impl ConcatNode {
 
     async fn process_child(
         node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
-        sender: Sender<Arc<MicroPartition>>,
+        mut receiver: Receiver<PipelineMessage>,
+        sender: Sender<PipelineMessage>,
         runtime_stats: Arc<dyn RuntimeStats>,
         stats_manager: &RuntimeStatsManagerHandle,
         node_initialized: &mut bool,
-    ) -> DaftResult<OperatorControlFlow> {
-        while let Some(mp) = receiver.recv().await {
+    ) -> DaftResult<ControlFlow<()>> {
+        while let Some(msg) = receiver.recv().await {
             if !*node_initialized {
                 stats_manager.activate_node(node_id);
                 *node_initialized = true;
             }
-            runtime_stats.add_rows_in(mp.len() as u64);
-            runtime_stats.add_rows_out(mp.len() as u64);
-            if sender.send(mp).await.is_err() {
-                return Ok(OperatorControlFlow::Break);
+            match msg {
+                PipelineMessage::Morsel {
+                    partition,
+                    input_id,
+                } => {
+                    assert_eq!(
+                        input_id, 0,
+                        "Concat only supports input_id = 0, got input_id = {}",
+                        input_id
+                    );
+                    runtime_stats.add_rows_in(partition.len() as u64);
+                    runtime_stats.add_rows_out(partition.len() as u64);
+                    if sender
+                        .send(PipelineMessage::Morsel {
+                            partition,
+                            input_id: 0,
+                        })
+                        .await
+                        .is_err()
+                    {
+                        return Ok(ControlFlow::Break(()));
+                    }
+                }
+                PipelineMessage::Flush(input_id) => {
+                    assert_eq!(
+                        input_id, 0,
+                        "Concat only supports input_id = 0, got input_id = {}",
+                        input_id
+                    );
+                    break;
+                }
             }
         }
 
-        Ok(OperatorControlFlow::Continue)
+        Ok(ControlFlow::Continue(()))
     }
 }
 
@@ -163,7 +190,7 @@ impl PipelineNode for ConcatNode {
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<Receiver<PipelineMessage>> {
         let left_receiver = self.left.start(maintain_order, runtime_handle)?;
         let right_receiver = self.right.start(maintain_order, runtime_handle)?;
 
@@ -172,8 +199,6 @@ impl PipelineNode for ConcatNode {
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
         let runtime_stats = self.runtime_stats.clone();
-        let left_sender = destination_sender.clone();
-        let right_sender = destination_sender;
 
         runtime_handle.spawn(
             async move {
@@ -183,13 +208,13 @@ impl PipelineNode for ConcatNode {
                 let control = Self::process_child(
                     node_id,
                     left_receiver,
-                    left_sender,
+                    destination_sender.clone(),
                     runtime_stats.clone(),
                     &stats_manager,
                     &mut node_initialized,
                 )
                 .await?;
-                if !control.should_continue() {
+                if control.is_break() {
                     stats_manager.finalize_node(node_id);
                     return Ok(());
                 }
@@ -197,16 +222,17 @@ impl PipelineNode for ConcatNode {
                 let control = Self::process_child(
                     node_id,
                     right_receiver,
-                    right_sender,
+                    destination_sender.clone(),
                     runtime_stats.clone(),
                     &stats_manager,
                     &mut node_initialized,
                 )
                 .await?;
-                if !control.should_continue() {
+                if control.is_break() {
                     stats_manager.finalize_node(node_id);
                     return Ok(());
                 }
+                let _ = destination_sender.send(PipelineMessage::Flush(0)).await;
 
                 stats_manager.finalize_node(node_id);
                 Ok(())

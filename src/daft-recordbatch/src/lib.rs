@@ -1585,12 +1585,13 @@ impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
     type Error = DaftError;
 
     fn try_from(record_batch: RecordBatch) -> DaftResult<Self> {
-        let schema = Arc::new(record_batch.schema.to_arrow2()?.into());
+        let schema = Arc::new(record_batch.schema.to_arrow()?);
         let columns = record_batch
             .columns
             .iter()
-            .map(|s| s.to_arrow2().into())
-            .collect::<Vec<_>>();
+            .map(|s| s.to_arrow())
+            .collect::<DaftResult<Vec<_>>>()?;
+
         Self::try_new(schema, columns).map_err(DaftError::ArrowRsError)
     }
 }
