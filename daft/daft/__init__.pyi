@@ -324,10 +324,18 @@ class TextSourceConfig:
 
     encoding: str
     skip_blank_lines: bool
+    whole_text: bool
     buffer_size: int | None
     chunk_size: int | None
 
-    def __init__(self, encoding: str, skip_blank_lines: bool, buffer_size: int | None, chunk_size: int | None): ...
+    def __init__(
+        self,
+        encoding: str,
+        skip_blank_lines: bool,
+        whole_text: bool,
+        buffer_size: int | None,
+        chunk_size: int | None,
+    ): ...
 
 class FileFormatConfig:
     """Configuration for parsing a particular file format (Parquet, CSV, JSON)."""

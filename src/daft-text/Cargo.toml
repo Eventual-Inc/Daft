@@ -11,6 +11,9 @@ tokio = {workspace = true}
 tokio-stream = {workspace = true, features = ["io-util"]}
 tokio-util = {workspace = true}
 
+[dev-dependencies]
+flate2 = {version = "1.1", features = ["zlib-rs"], default-features = false}
+
 [features]
 python = [
   "common-error/python",
