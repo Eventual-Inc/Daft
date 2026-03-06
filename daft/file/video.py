@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from daft.datatype import MediaType
-from daft.dependencies import av
+from daft.dependencies import av, pil_image
 from daft.file import File
 from daft.file.typing import VideoMetadata
 
@@ -97,6 +97,10 @@ class VideoFile(File):
 
     def keyframes(self, start_time: float = 0, end_time: float | None = None) -> Iterator[PIL.Image.Image]:
         """Lazy iterator of keyframes as PIL Images within time range."""
+        if not pil_image.module_available():
+            raise ImportError(
+                "The 'pillow' module is required for keyframes. Install it with `pip install daft[video]`."
+            )
         with self.open() as f:
             with av.open(f) as container:
                 video = next(
