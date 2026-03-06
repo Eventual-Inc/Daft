@@ -26,7 +26,6 @@ pyo3 = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
 snafu = {workspace = true}
 tokio = {workspace = true}
-typed-builder = {workspace = true}
 serde_json.workspace = true
 uuid.workspace = true
 
