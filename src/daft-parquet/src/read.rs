@@ -4,6 +4,7 @@ use std::{
     time::Duration,
 };
 
+use arrow::array::ArrayRef;
 use common_error::DaftResult;
 use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
@@ -71,7 +72,7 @@ impl TryFrom<ParquetSchemaInferenceOptionsBuilder> for ParquetSchemaInferenceOpt
                 .string_encoding
                 .parse()
                 .map_err(|e: common_error::DaftError| crate::Error::ArrowError {
-                    source: daft_arrow::error::Error::InvalidArgumentError(e.to_string()),
+                    source: arrow::error::ArrowError::InvalidArgumentError(e.to_string()),
                 })?;
         Ok(Self {
             coerce_int96_timestamp_unit: value
@@ -316,7 +317,7 @@ async fn read_parquet_single_into_arrow(
         parquet_metadata.file_metadata().key_value_metadata(),
     )
     .ok();
-    let schema_metadata: std::collections::BTreeMap<String, String> = arrow_schema
+    let schema_metadata: std::collections::HashMap<String, String> = arrow_schema
         .as_ref()
         .map(|s| {
             s.metadata()
@@ -335,20 +336,20 @@ async fn read_parquet_single_into_arrow(
 
     for (col, daft_field) in rb.columns().iter().zip(rb.schema.fields()) {
         let arrow_array = col.to_arrow()?;
-        let ffi_array = Box::<dyn daft_arrow::array::Array>::from(arrow_array);
+
         let nullable = arrow_schema
             .as_ref()
             .and_then(|s| s.field_with_name(&daft_field.name).ok())
             .is_none_or(|f| f.is_nullable());
-        ffi_fields.push(daft_arrow::datatypes::Field::new(
+        ffi_fields.push(arrow::datatypes::Field::new(
             &daft_field.name,
-            ffi_array.data_type().clone(),
+            arrow_array.data_type().clone(),
             nullable,
         ));
-        all_arrays.push(vec![ffi_array]);
+        all_arrays.push(vec![arrow_array]);
     }
 
-    let mut ffi_schema = daft_arrow::datatypes::Schema::from(ffi_fields);
+    let mut ffi_schema = arrow::datatypes::Schema::new(ffi_fields);
     ffi_schema.metadata = schema_metadata;
 
     Ok((Arc::new(ffi_schema), all_arrays, num_rows_read))
@@ -389,15 +390,11 @@ pub fn read_parquet(
         .await
     })
 }
-pub type ArrowChunk = Vec<Box<dyn daft_arrow::array::Array>>;
-pub type ArrowChunkIters = Vec<
-    Box<
-        dyn Iterator<Item = daft_arrow::error::Result<Box<dyn daft_arrow::array::Array>>>
-            + Send
-            + Sync,
-    >,
->;
-pub type ParquetPyarrowChunk = (daft_arrow::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
+pub type ArrowChunk = Vec<ArrayRef>;
+pub type ArrowChunkIters =
+    Vec<Box<dyn Iterator<Item = arrow::error::Result<ArrayRef>> + Send + Sync>>;
+pub type ParquetPyarrowChunk = (arrow::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
+
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow(
     uri: &str,
@@ -824,10 +821,10 @@ pub fn read_parquet_statistics(
 
 #[cfg(test)]
 mod tests {
-    use std::{path::PathBuf, sync::Arc};
+    use std::{ops::Deref, path::PathBuf, sync::Arc};
 
+    use arrow::datatypes::DataType;
     use common_error::DaftResult;
-    use daft_arrow::datatypes::DataType;
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
     use parquet::schema::types::Type as ParquetSchemaType;
@@ -991,8 +988,8 @@ mod tests {
             None,
         )
         .unwrap();
-        match schema.fields.as_slice() {
-            [field] => assert_eq!(field.data_type, DataType::LargeBinary),
+        match schema.fields().deref() {
+            [field] => assert_eq!(field.data_type(), &DataType::LargeBinary),
             _ => panic!("There should only be one field in the schema"),
         };
     }
