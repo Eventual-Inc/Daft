@@ -46,9 +46,7 @@ use crate::{
         join::{JoinOptions, JoinPredicate},
     },
     optimization::{OptimizerBuilder, OptimizerConfig},
-    partitioning::{
-        HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
-    },
+    partitioning::{HashRepartitionConfig, RandomShuffleConfig, RepartitionSpec},
     sink_info::{FormatSinkOption, OutputFileInfo, SinkInfo},
     source_info::{GlobScanInfo, InMemoryInfo, SourceInfo},
 };
@@ -462,11 +460,8 @@ impl LogicalPlanBuilder {
     }
 
     pub fn into_partitions(&self, num_partitions: usize) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Repartition::new(
-            self.plan.clone(),
-            RepartitionSpec::IntoPartitions(IntoPartitionsConfig::new(num_partitions)),
-        )
-        .into();
+        let logical_plan: LogicalPlan =
+            ops::IntoPartitions::new(self.plan.clone(), num_partitions).into();
         Ok(self.with_new_plan(logical_plan))
     }
 

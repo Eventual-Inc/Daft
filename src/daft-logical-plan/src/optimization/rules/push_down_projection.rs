@@ -270,6 +270,7 @@ impl PushDownProjection {
             LogicalPlan::Sort(..)
             | LogicalPlan::Shard(..)
             | LogicalPlan::Repartition(..)
+            | LogicalPlan::IntoPartitions(..)
             | LogicalPlan::IntoBatches(..)
             | LogicalPlan::Limit(..)
             | LogicalPlan::Offset(..)

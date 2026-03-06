@@ -313,15 +313,15 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         child,
                     )?
                 }
-                RepartitionSpec::IntoPartitions(into_partitions_spec) => IntoPartitionsNode::new(
-                    self.get_next_pipeline_node_id(),
-                    &self.plan_config,
-                    into_partitions_spec.num_partitions,
-                    node.schema(),
-                    self.curr_node.pop().unwrap(),
-                )
-                .into_node(),
             },
+            LogicalPlan::IntoPartitions(into_partitions) => IntoPartitionsNode::new(
+                self.get_next_pipeline_node_id(),
+                &self.plan_config,
+                into_partitions.num_partitions,
+                node.schema(),
+                self.curr_node.pop().unwrap(),
+            )
+            .into_node(),
             LogicalPlan::Aggregate(aggregate) => {
                 let input_schema = aggregate.input.schema();
                 let group_by = BoundExpr::bind_all(&aggregate.groupby, &input_schema)?;
