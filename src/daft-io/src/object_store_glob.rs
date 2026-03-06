@@ -394,7 +394,7 @@ pub async fn glob(
 ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
     // Expand numeric ranges like {0..10} to {0,1,2,...,10} before processing
     let expanded_glob = expand_numeric_ranges(glob)?;
-    let glob = expanded_glob.as_str();
+    let glob = &*expanded_glob;
 
     // If no special characters, we fall back to ls behavior
     let full_fragment = GlobFragment::new(glob);

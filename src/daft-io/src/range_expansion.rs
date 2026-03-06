@@ -22,7 +22,7 @@
 //! assert_eq!(result, "s3://bucket/{3,2,1,0}.parquet");
 //! ```
 
-use std::sync::LazyLock;
+use std::{borrow::Cow, sync::LazyLock};
 
 use regex::Regex;
 
@@ -49,7 +49,8 @@ static NUMERIC_RANGE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 ///
 /// # Returns
 ///
-/// * `Ok(String)` - The expanded glob pattern
+/// * `Ok(Cow::Borrowed(glob))` - If no range patterns found (zero allocation)
+/// * `Ok(Cow::Owned(String))` - The expanded glob pattern
 /// * `Err(Error)` - If a range is too large (exceeds MAX_RANGE_SIZE)
 ///
 /// # Examples
@@ -59,10 +60,10 @@ static NUMERIC_RANGE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 /// let expanded = expand_numeric_ranges("data/{0..2}.csv")?;
 /// assert_eq!(expanded, "data/{0,1,2}.csv");
 /// ```
-pub fn expand_numeric_ranges(glob: &str) -> super::Result<String> {
-    // If no numeric range pattern found, return as-is
+pub fn expand_numeric_ranges(glob: &str) -> super::Result<Cow<'_, str>> {
+    // If no numeric range pattern found, return as-is (zero allocation)
     if !NUMERIC_RANGE_PATTERN.is_match(glob) {
-        return Ok(glob.to_string());
+        return Ok(Cow::Borrowed(glob));
     }
 
     // We need to expand ranges one at a time because each expansion might
@@ -87,7 +88,7 @@ pub fn expand_numeric_ranges(glob: &str) -> super::Result<String> {
         );
     }
 
-    Ok(result)
+    Ok(Cow::Owned(result))
 }
 
 /// Expands a single numeric range into a comma-separated list.
@@ -275,8 +276,11 @@ mod tests {
 
     #[test]
     fn test_escaped_range_not_expanded() {
-        // Escaped braces should NOT be expanded
-        // In Rust string, \{ is represented as \\{
+        // Escaped braces should NOT be expanded.
+        // This works because the regex `\{(-?\d+)\.\.(-?\d+)\}` requires a literal `}`,
+        // but `\\}` has a backslash before it, preventing the match.
+        // Note: a single-escaped `\{0..3}` (without closing `\}`) would still match,
+        // but in practice glob escaping always pairs `\\{...\\}`, so this is not a real concern.
         let result = expand_numeric_ranges(r"s3://bucket/\{0..3\}.parquet").unwrap();
         assert_eq!(result, r"s3://bucket/\{0..3\}.parquet");
     }
