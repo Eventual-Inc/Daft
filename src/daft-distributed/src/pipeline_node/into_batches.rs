@@ -1,16 +1,20 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    StatSnapshot,
+    ops::{NodeCategory, NodeInfo, NodeType},
+};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
+use opentelemetry::metrics::Meter;
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -18,11 +22,47 @@ use crate::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
+    statistics::{
+        RuntimeStats,
+        stats::{BaseCounters, RuntimeStatsRef},
+    },
     utils::channel::{Sender, create_channel},
 };
 
 const INITIAL_BATCH_PHASE: &str = "local";
 const REBATCH_PHASE: &str = "rebatch";
+
+pub struct IntoBatchesStats {
+    base: BaseCounters,
+}
+
+impl IntoBatchesStats {
+    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        Self {
+            base: BaseCounters::new(meter, context),
+        }
+    }
+}
+
+impl RuntimeStats for IntoBatchesStats {
+    fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot) {
+        if let StatSnapshot::Default(snapshot) = snapshot {
+            self.base.add_duration_us(snapshot.cpu_us);
+            if let Some(phase) = &node_info.node_phase {
+                // Track input rows for the initial local batching pass and output rows for the rebatch pass.
+                if phase == INITIAL_BATCH_PHASE {
+                    self.base.add_rows_in(snapshot.rows_in);
+                } else if phase == REBATCH_PHASE {
+                    self.base.add_rows_out(snapshot.rows_out);
+                }
+            }
+        }
+    }
+
+    fn export_snapshot(&self) -> StatSnapshot {
+        self.base.export_default_snapshot()
+    }
+}
 
 pub(crate) struct IntoBatchesNode {
     config: PipelineNodeConfig,
@@ -40,7 +80,7 @@ pub(crate) struct IntoBatchesNode {
 const BATCH_SIZE_THRESHOLD: f64 = 0.8;
 
 impl IntoBatchesNode {
-    const NODE_NAME: NodeName = "IntoBatches";
+    const NODE_NAME: &'static str = "IntoBatches";
 
     pub fn new(
         node_id: NodeID,
@@ -53,7 +93,7 @@ impl IntoBatchesNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::IntoBatches,
             NodeCategory::StreamingSink,
         );
@@ -160,6 +200,10 @@ impl PipelineNodeImpl for IntoBatchesNode {
 
     fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
+    }
+
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(IntoBatchesStats::new(meter, self.context()))
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {

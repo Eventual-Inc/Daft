@@ -8,6 +8,9 @@ syn = "2.0"
 [lib]
 proc-macro = true
 
+[lints]
+workspace = true
+
 [package]
 edition = {workspace = true}
 name = "common-macros"

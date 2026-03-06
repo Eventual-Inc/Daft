@@ -127,21 +127,4 @@ mod tests {
             _ => panic!("Expected ByteStreamError"),
         }
     }
-
-    #[test]
-    fn test_parquet_io_error_conversion() {
-        // Ensure that parquet2 IO errors get converted into transient Byte Stream errors.
-        let error_message = "IO error occurred";
-        let parquet_io_error =
-            parquet2::error::Error::IoError(std::io::Error::other(error_message));
-        let arrow_error: daft_arrow::error::Error = parquet_io_error.into();
-        //let arrow_error = daft_arrow::error::Error::from(parquet_io_error);
-        let daft_error: DaftError = arrow_error.into();
-        match daft_error {
-            DaftError::ByteStreamError(e) => {
-                assert_eq!(e.to_string(), format!("Io error: {error_message}"));
-            }
-            _ => panic!("Expected ByteStreamError"),
-        }
-    }
 }

@@ -123,6 +123,7 @@ pub struct DaftExecutionConfig {
     pub csv_inflation_factor: f64,
     pub json_target_filesize: usize,
     pub json_inflation_factor: f64,
+    pub text_inflation_factor: f64,
     pub shuffle_aggregation_default_partitions: usize,
     pub partial_aggregation_threshold: usize,
     pub high_cardinality_aggregation_threshold: f64,
@@ -166,6 +167,7 @@ impl Default for DaftExecutionConfig {
             csv_inflation_factor: 0.5,
             json_target_filesize: 512 * 1024 * 1024, // 512MB
             json_inflation_factor: 0.25,
+            text_inflation_factor: 1.0,
             shuffle_aggregation_default_partitions: 200,
             partial_aggregation_threshold: 10000,
             high_cardinality_aggregation_threshold: 0.8,
@@ -194,6 +196,7 @@ impl DaftExecutionConfig {
     const ENV_PARQUET_INFLATION_FACTOR: &'static str = "DAFT_PARQUET_INFLATION_FACTOR";
     const ENV_CSV_INFLATION_FACTOR: &'static str = "DAFT_CSV_INFLATION_FACTOR";
     const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
+    const ENV_TEXT_INFLATION_FACTOR: &'static str = "DAFT_TEXT_INFLATION_FACTOR";
     const ENV_DAFT_MAINTAIN_ORDER: &'static str = "DAFT_MAINTAIN_ORDER";
 
     #[must_use]
@@ -252,6 +255,12 @@ impl DaftExecutionConfig {
             parse_number_from_env(Self::ENV_JSON_INFLATION_FACTOR, cfg.json_inflation_factor)
         {
             cfg.json_inflation_factor = val;
+        }
+
+        if let Some(val) =
+            parse_number_from_env(Self::ENV_TEXT_INFLATION_FACTOR, cfg.text_inflation_factor)
+        {
+            cfg.text_inflation_factor = val;
         }
 
         cfg

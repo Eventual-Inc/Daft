@@ -15,9 +15,7 @@ use futures::StreamExt;
 use opentelemetry::metrics::Meter;
 use pyo3::{Py, PyAny, Python, types::PyAnyMethods};
 
-use super::{
-    NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, udf::UdfStats,
-};
+use super::{NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, udf::UdfStats};
 use crate::{
     pipeline_node::{DistributedPipelineNode, TaskBuilderStream},
     plan::{PlanConfig, PlanExecutionContext},
@@ -128,7 +126,7 @@ pub(crate) struct ActorUDF {
 }
 
 impl ActorUDF {
-    const NODE_NAME: NodeName = "ActorUDF";
+    const NODE_NAME: &'static str = "ActorUDF";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -144,7 +142,7 @@ impl ActorUDF {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::DistributedActorPoolProject,
             NodeCategory::Intermediate,
         );

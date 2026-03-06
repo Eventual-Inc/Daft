@@ -1,204 +1,253 @@
-//! Daft-owned parquet metadata types that decouple consuming crates from parquet2.
+//! Daft-owned parquet metadata types wrapping arrow-rs `ParquetMetaData`.
 //!
-//! These adapter types wrap `parquet2::metadata::*` today and will be extended
-//! with an `ArrowRs` variant when the core read pipeline migrates to arrow-rs.
+//! These adapter types provide a stable API with serde support and row group index
+//! tracking that consuming crates (daft-scan, daft-micropartition) depend on.
+
+use std::sync::Arc;
 
 use indexmap::IndexMap;
-use parquet2::metadata::{
-    ColumnChunkMetaData as Pq2ColumnChunkMetaData, FileMetaData as Pq2FileMetaData,
-    RowGroupMetaData as Pq2RowGroupMetaData,
+use parquet::file::metadata::{
+    FileMetaData as ArrowrsFileMetaData, ParquetMetaData,
+    RowGroupMetaData as ArrowrsRowGroupMetaData,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::Deserializer, ser::Serializer};
 
 /// Row group list preserving original indices through filter/split operations.
 pub type RowGroupList = IndexMap<usize, DaftRowGroupMetaData>;
 
 /// Daft-owned parquet file metadata.
 ///
-/// Wraps the underlying parquet library's metadata and provides a stable API
-/// that consuming crates (daft-scan, daft-micropartition) depend on.
-///
-/// Currently backed by `parquet2::metadata::FileMetaData`. When the arrow-rs
-/// migration completes, an `ArrowRs` variant will be added.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(transparent)]
+/// Wraps arrow-rs `ParquetMetaData` and tracks original row group indices
+/// so that downstream code can correctly reference row groups after filtering.
+#[derive(Debug, Clone)]
 pub struct DaftParquetMetadata {
-    inner: Pq2FileMetaData,
+    inner: Arc<ParquetMetaData>,
+    /// Maps position `i` in `inner.row_groups()` → original row group index in the file.
+    original_indices: Vec<usize>,
 }
 
 impl DaftParquetMetadata {
+    /// Construct from arrow-rs metadata, with sequential indices 0..N.
+    pub fn from_arrowrs(metadata: Arc<ParquetMetaData>) -> Self {
+        let n = metadata.row_groups().len();
+        Self {
+            inner: metadata,
+            original_indices: (0..n).collect(),
+        }
+    }
+
+    /// Construct from arrow-rs metadata with explicit original indices.
+    pub fn from_arrowrs_with_indices(
+        metadata: Arc<ParquetMetaData>,
+        original_indices: Vec<usize>,
+    ) -> Self {
+        debug_assert_eq!(metadata.row_groups().len(), original_indices.len());
+        Self {
+            inner: metadata,
+            original_indices,
+        }
+    }
+
     /// Total number of rows across all row groups.
     pub fn num_rows(&self) -> usize {
-        self.inner.num_rows
+        self.inner.file_metadata().num_rows() as usize
     }
 
     /// Number of row groups in this file.
     pub fn num_row_groups(&self) -> usize {
-        self.inner.row_groups.len()
+        self.inner.row_groups().len()
     }
 
     /// Parquet file version.
     pub fn version(&self) -> i32 {
-        self.inner.version
+        self.inner.file_metadata().version()
     }
 
-    /// Iterate over (index, row_group_metadata) pairs, preserving original indices.
+    /// Iterate over (original_index, row_group_metadata) pairs.
     pub fn row_groups(&self) -> impl Iterator<Item = (usize, DaftRowGroupMetaData)> + '_ {
-        self.inner
-            .row_groups
+        self.original_indices
             .iter()
-            .map(|(&idx, rg)| (idx, DaftRowGroupMetaData::from_parquet2(rg.clone())))
-    }
-
-    /// Iterate over (index, row_group_metadata) pairs without cloning.
-    #[allow(dead_code)]
-    pub(crate) fn row_groups_ref(
-        &self,
-    ) -> impl Iterator<Item = (usize, &Pq2RowGroupMetaData)> + '_ {
-        self.inner.row_groups.iter().map(|(&idx, rg)| (idx, rg))
-    }
-
-    /// Get a specific row group by its original index.
-    pub fn get_row_group(&self, index: usize) -> Option<DaftRowGroupMetaData> {
-        self.inner
-            .row_groups
-            .get(&index)
-            .map(|rg| DaftRowGroupMetaData::from_parquet2(rg.clone()))
-    }
-
-    /// Get a specific row group by its original index without cloning.
-    pub(crate) fn get_row_group_ref(&self, index: usize) -> Option<&Pq2RowGroupMetaData> {
-        self.inner.row_groups.get(&index)
-    }
-
-    /// Check if a row group index exists.
-    pub fn contains_row_group(&self, index: usize) -> bool {
-        self.inner.row_groups.contains_key(&index)
-    }
-
-    /// Get the set of row group indices.
-    pub fn row_group_indices(&self) -> impl Iterator<Item = usize> + '_ {
-        self.inner.row_groups.keys().copied()
+            .zip(self.inner.row_groups().iter())
+            .map(|(&idx, rg)| (idx, DaftRowGroupMetaData::from_arrowrs(rg.clone())))
     }
 
     /// Clone this metadata with a different set of row groups.
     pub fn clone_with_row_groups(&self, num_rows: usize, row_groups: RowGroupList) -> Self {
-        let pq2_row_groups: indexmap::IndexMap<usize, Pq2RowGroupMetaData> = row_groups
+        let (indices, rgs): (Vec<usize>, Vec<ArrowrsRowGroupMetaData>) = row_groups
             .into_iter()
-            .map(|(idx, rg)| (idx, rg.into_parquet2()))
-            .collect();
+            .map(|(idx, drg)| (idx, drg.into_inner()))
+            .unzip();
+
+        let fm = self.inner.file_metadata();
+        let new_file_metadata = ArrowrsFileMetaData::new(
+            fm.version(),
+            num_rows as i64,
+            fm.created_by().map(|s| s.to_string()),
+            fm.key_value_metadata().cloned(),
+            fm.schema_descr_ptr(),
+            fm.column_orders().cloned(),
+        );
+
         Self {
-            inner: self.inner.clone_with_row_groups(num_rows, pq2_row_groups),
+            inner: Arc::new(ParquetMetaData::new(new_file_metadata, rgs)),
+            original_indices: indices,
         }
     }
 
-    /// Access the underlying parquet2 FileMetaData.
-    ///
-    /// This is a transitional API. Consuming code should prefer the adapter methods
-    /// above. This will be removed once the arrow-rs migration is complete.
-    pub fn as_parquet2(&self) -> &Pq2FileMetaData {
+    /// Access the underlying arrow-rs `ParquetMetaData`.
+    pub fn as_arrowrs(&self) -> &Arc<ParquetMetaData> {
         &self.inner
     }
 
-    /// Consume and return the underlying parquet2 FileMetaData.
-    pub fn into_parquet2(self) -> Pq2FileMetaData {
-        self.inner
+    /// Convenience accessor for the parquet schema descriptor.
+    pub fn schema_descriptor(&self) -> &parquet::schema::types::SchemaDescriptor {
+        self.inner.file_metadata().schema_descr()
     }
 }
 
-impl From<Pq2FileMetaData> for DaftParquetMetadata {
-    fn from(inner: Pq2FileMetaData) -> Self {
-        Self { inner }
+// Custom Serialize: write footer thrift bytes + original_indices + num_rows
+impl Serialize for DaftParquetMetadata {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeTuple;
+
+        // Write the full parquet footer via ParquetMetaDataWriter
+        let mut buf = Vec::new();
+        parquet::file::metadata::ParquetMetaDataWriter::new(&mut buf, &self.inner)
+            .finish()
+            .map_err(serde::ser::Error::custom)?;
+
+        // Store num_rows separately because ParquetMetaDataWriter recalculates it
+        // from row groups, which can differ from our FileMetaData.num_rows()
+        // (e.g. after clone_with_row_groups with a subset).
+        let num_rows = self.inner.file_metadata().num_rows();
+
+        // Serialize as (footer_bytes, original_indices, num_rows)
+        let mut tup = serializer.serialize_tuple(3)?;
+        tup.serialize_element(&buf)?;
+        tup.serialize_element(&self.original_indices)?;
+        tup.serialize_element(&num_rows)?;
+        tup.end()
     }
 }
 
-impl From<DaftParquetMetadata> for Pq2FileMetaData {
-    fn from(adapter: DaftParquetMetadata) -> Self {
-        adapter.inner
+// Custom Deserialize: parse footer bytes → ParquetMetaData
+impl<'de> Deserialize<'de> for DaftParquetMetadata {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let (footer_bytes, original_indices, num_rows): (Vec<u8>, Vec<usize>, i64) =
+            Deserialize::deserialize(deserializer)?;
+
+        // The footer format written by ParquetMetaDataWriter is:
+        //   [optional col/offset indexes] [thrift FileMetaData] [4-byte LE metadata length] [PAR1]
+        // We extract thrift bytes using the metadata length stored at the end.
+        let len = footer_bytes.len();
+        if len < 8 {
+            return Err(serde::de::Error::custom(
+                "footer bytes too short for parquet footer",
+            ));
+        }
+        let metadata_len = i32::from_le_bytes(
+            footer_bytes[len - 8..len - 4]
+                .try_into()
+                .map_err(serde::de::Error::custom)?,
+        ) as usize;
+        if len < 8 + metadata_len {
+            return Err(serde::de::Error::custom(
+                "footer bytes shorter than declared metadata length",
+            ));
+        }
+        let thrift_bytes = &footer_bytes[len - 8 - metadata_len..len - 8];
+
+        let decoded = parquet::file::metadata::ParquetMetaDataReader::decode_metadata(thrift_bytes)
+            .map_err(serde::de::Error::custom)?;
+
+        // Restore the correct num_rows (may differ from sum of row groups)
+        let fm = decoded.file_metadata();
+        let corrected_fm = parquet::file::metadata::FileMetaData::new(
+            fm.version(),
+            num_rows,
+            fm.created_by().map(|s| s.to_string()),
+            fm.key_value_metadata().cloned(),
+            fm.schema_descr_ptr(),
+            fm.column_orders().cloned(),
+        );
+        let metadata = ParquetMetaData::new(corrected_fm, decoded.row_groups().to_vec());
+
+        Ok(Self {
+            inner: Arc::new(metadata),
+            original_indices,
+        })
+    }
+}
+
+// Structural equality based on key fields (not deep byte-level comparison).
+impl PartialEq for DaftParquetMetadata {
+    fn eq(&self, other: &Self) -> bool {
+        self.num_rows() == other.num_rows()
+            && self.version() == other.version()
+            && self.num_row_groups() == other.num_row_groups()
+            && self.original_indices == other.original_indices
     }
 }
 
 /// Daft-owned row group metadata.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(transparent)]
+#[derive(Debug, Clone)]
 pub struct DaftRowGroupMetaData {
-    inner: Pq2RowGroupMetaData,
+    inner: ArrowrsRowGroupMetaData,
 }
 
 impl DaftRowGroupMetaData {
-    fn from_parquet2(inner: Pq2RowGroupMetaData) -> Self {
+    pub(crate) fn from_arrowrs(inner: ArrowrsRowGroupMetaData) -> Self {
         Self { inner }
     }
 
-    fn into_parquet2(self) -> Pq2RowGroupMetaData {
+    pub(crate) fn into_inner(self) -> ArrowrsRowGroupMetaData {
         self.inner
     }
 
     /// Number of rows in this row group.
     pub fn num_rows(&self) -> usize {
-        self.inner.num_rows()
+        self.inner.num_rows() as usize
     }
 
     /// Total compressed size of this row group in bytes.
     pub fn compressed_size(&self) -> usize {
-        self.inner.compressed_size()
-    }
-
-    /// Column chunk metadata for this row group.
-    #[allow(dead_code)]
-    pub(crate) fn columns(&self) -> &[Pq2ColumnChunkMetaData] {
-        self.inner.columns()
-    }
-
-    /// Access the underlying parquet2 RowGroupMetaData.
-    pub fn as_parquet2(&self) -> &Pq2RowGroupMetaData {
-        &self.inner
-    }
-}
-
-impl From<Pq2RowGroupMetaData> for DaftRowGroupMetaData {
-    fn from(inner: Pq2RowGroupMetaData) -> Self {
-        Self { inner }
-    }
-}
-
-impl From<DaftRowGroupMetaData> for Pq2RowGroupMetaData {
-    fn from(adapter: DaftRowGroupMetaData) -> Self {
-        adapter.inner
+        self.inner.compressed_size() as usize
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use parquet2::metadata::SchemaDescriptor;
+    use std::sync::Arc;
+
+    use parquet::{
+        file::metadata::{FileMetaData, ParquetMetaData},
+        schema::types::Type,
+    };
 
     use super::*;
 
-    fn make_test_schema(name: &str) -> SchemaDescriptor {
-        SchemaDescriptor::new(name.to_string(), vec![])
+    fn make_test_metadata(num_rows: i64) -> Arc<ParquetMetaData> {
+        let schema = Arc::new(Type::group_type_builder("schema").build().unwrap());
+        let schema_descr = Arc::new(parquet::schema::types::SchemaDescriptor::new(schema));
+        let file_metadata = FileMetaData::new(
+            2,
+            num_rows,
+            Some("test".to_string()),
+            None,
+            schema_descr,
+            None,
+        );
+        Arc::new(ParquetMetaData::new(file_metadata, vec![]))
     }
 
     #[test]
     fn test_daft_metadata_serde_roundtrip() {
-        let file_meta = Pq2FileMetaData {
-            version: 2,
-            num_rows: 1000,
-            created_by: Some("test".to_string()),
-            row_groups: IndexMap::new(),
-            key_value_metadata: None,
-            schema_descr: make_test_schema("test"),
-            column_orders: None,
-        };
+        let metadata = make_test_metadata(1000);
+        let adapter = DaftParquetMetadata::from_arrowrs(metadata);
 
-        let adapter = DaftParquetMetadata::from(file_meta.clone());
-
-        // Serialize both and compare (bincode v2 API)
         let config = bincode::config::legacy();
         let adapter_bytes = bincode::serde::encode_to_vec(&adapter, config).unwrap();
-        let file_meta_bytes = bincode::serde::encode_to_vec(&file_meta, config).unwrap();
-        assert_eq!(adapter_bytes, file_meta_bytes);
 
-        // Deserialize back
         let (roundtripped, _): (DaftParquetMetadata, _) =
             bincode::serde::decode_from_slice(&adapter_bytes, config).unwrap();
         assert_eq!(roundtripped.num_rows(), 1000);
@@ -206,20 +255,12 @@ mod tests {
     }
 
     #[test]
-    fn test_as_parquet2_file_metadata() {
-        let file_meta = Pq2FileMetaData {
-            version: 2,
-            num_rows: 500,
-            created_by: None,
-            row_groups: IndexMap::new(),
-            key_value_metadata: None,
-            schema_descr: make_test_schema("test"),
-            column_orders: None,
-        };
+    fn test_partial_eq() {
+        let m1 = DaftParquetMetadata::from_arrowrs(make_test_metadata(500));
+        let m2 = DaftParquetMetadata::from_arrowrs(make_test_metadata(500));
+        assert_eq!(m1, m2);
 
-        let adapter = DaftParquetMetadata::from(file_meta);
-        let pq2 = adapter.as_parquet2();
-        assert_eq!(pq2.num_rows, 500);
-        assert_eq!(pq2.schema().name(), "test");
+        let m3 = DaftParquetMetadata::from_arrowrs(make_test_metadata(1000));
+        assert_ne!(m1, m3);
     }
 }
