@@ -305,7 +305,6 @@ impl<'a> ExprResolver<'a> {
     }
 }
 
-#[allow(dead_code)]
 impl<'a> ExprResolverBuilder<'a> {
     pub fn allow_actor_pool_udf(mut self, v: bool) -> Self {
         self.inner.allow_actor_pool_udf = v;
