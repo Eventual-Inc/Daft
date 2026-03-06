@@ -223,7 +223,7 @@ impl LogicalPlanBuilder {
         {
             let pruned_upstream_schema = schema_with_generated_fields
                 .into_iter()
-                .filter(|field| columns.iter().any(|c| *c == *field.name))
+                .filter(|field| columns.iter().any(|c| c.as_str() == &*field.name))
                 .cloned()
                 .collect::<Vec<_>>();
             Arc::new(Schema::new(pruned_upstream_schema))
