@@ -6,8 +6,6 @@ use arrow::{
 };
 use daft_ext::prelude::*;
 
-daft_ext::define_arrow_helpers!();
-
 // ── Module ──────────────────────────────────────────────────────────
 
 #[daft_extension]
@@ -35,7 +33,7 @@ impl DaftScalarFunction for Greet {
                 args.len()
             )));
         }
-        let field = import_field(&args[0])?;
+        let field = Field::try_from(&args[0])?;
         let dt = field.data_type();
         if *dt != DataType::Utf8 && *dt != DataType::LargeUtf8 {
             return Err(DaftError::TypeError(format!(
@@ -43,11 +41,19 @@ impl DaftScalarFunction for Greet {
                 dt
             )));
         }
-        Ok(export_field(&Field::new("greet", DataType::Utf8, true))?)
+        Ok(ArrowSchema::try_from(&Field::new(
+            "greet",
+            DataType::Utf8,
+            true,
+        ))?)
     }
 
-    fn call(&self, args: &[ArrowData]) -> DaftResult<ArrowData> {
-        let input = import_array(unsafe { ArrowData::take_arg(args, 0) })?;
+    fn call(&self, args: Vec<ArrowData>) -> DaftResult<ArrowData> {
+        let data = args.into_iter().next().unwrap();
+        let ffi_array: arrow::ffi::FFI_ArrowArray = data.array.into();
+        let ffi_schema: arrow::ffi::FFI_ArrowSchema = data.schema.into();
+        let arrow_data = unsafe { arrow::ffi::from_ffi(ffi_array, &ffi_schema) }?;
+        let input = arrow::array::make_array(arrow_data);
         let names = input.as_string::<i64>();
         let mut builder = StringBuilder::with_capacity(names.len(), names.len() * 16);
         for i in 0..names.len() {
@@ -57,6 +63,11 @@ impl DaftScalarFunction for Greet {
                 builder.append_value(format!("Hello, {}!", names.value(i)));
             }
         }
-        Ok(export_array(&builder.finish())?)
+        let output = builder.finish();
+        let (out_arr, out_sch) = arrow::ffi::to_ffi(&output.to_data())?;
+        Ok(ArrowData {
+            array: out_arr.into(),
+            schema: out_sch.into(),
+        })
     }
 }

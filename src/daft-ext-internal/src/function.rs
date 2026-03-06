@@ -11,7 +11,7 @@ use daft_dsl::{
         BuiltinScalarFnVariant, FunctionArgs, ScalarFunctionFactory, ScalarUDF, scalar::EvalContext,
     },
 };
-use daft_ext_abi::{ArrowArray, ArrowSchema, FFI_ScalarFunction, ffi::arrow as ffi_arrow};
+use daft_ext_abi::{ArrowArray, ArrowSchema, FFI_ScalarFunction};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::module::ModuleHandle;
@@ -110,9 +110,9 @@ impl ScalarUDF for ScalarFunctionHandle {
         let ffi_schemas: Vec<ArrowSchema> = arrow_fields
             .iter()
             .map(|f| {
-                let arrow_ffi = arrow::ffi::FFI_ArrowSchema::try_from(f)
+                let ffi = arrow::ffi::FFI_ArrowSchema::try_from(f)
                     .map_err(|e| DaftError::InternalError(format!("schema export failed: {e}")))?;
-                Ok(unsafe { ffi_arrow::import_arrow_schema(arrow_ffi) })
+                Ok(unsafe { ArrowSchema::from_owned(ffi) })
             })
             .collect::<DaftResult<_>>()?;
 
@@ -130,9 +130,8 @@ impl ScalarUDF for ScalarFunctionHandle {
         };
         inner.check(rc, errmsg, "unknown error in extension get_return_field")?;
 
-        let arrow_ffi_schema: &arrow::ffi::FFI_ArrowSchema =
-            unsafe { ffi_arrow::borrow_arrow_schema(&ret_schema) };
-        let arrow_field = arrow_schema::Field::try_from(arrow_ffi_schema)
+        let ffi_schema: arrow::ffi::FFI_ArrowSchema = unsafe { ret_schema.into_owned() };
+        let arrow_field = arrow_schema::Field::try_from(&ffi_schema)
             .map_err(|e| DaftError::InternalError(format!("schema import failed: {e}")))?;
 
         Field::try_from(&arrow_field)
@@ -149,9 +148,8 @@ impl ScalarUDF for ScalarFunctionHandle {
             let arrow_arr = s.to_arrow()?;
             let (ffi_array, ffi_schema) = arrow::ffi::to_ffi(&arrow_arr.to_data())
                 .map_err(|e| DaftError::InternalError(format!("Arrow FFI export failed: {e}")))?;
-            let (arr, schema) = unsafe { ffi_arrow::import_ffi(ffi_array, ffi_schema) };
-            ffi_arrays.push(arr);
-            ffi_schemas.push(schema);
+            ffi_arrays.push(unsafe { ArrowArray::from_owned(ffi_array) });
+            ffi_schemas.push(unsafe { ArrowSchema::from_owned(ffi_schema) });
         }
 
         // Get expected return field via get_return_field (the call FFI only
@@ -173,9 +171,9 @@ impl ScalarUDF for ScalarFunctionHandle {
             "error in extension get_return_field",
         )?;
 
-        let arrow_ffi_schema: &arrow::ffi::FFI_ArrowSchema =
-            unsafe { ffi_arrow::borrow_arrow_schema(&ret_field_schema) };
-        let ret_arrow_field = arrow_schema::Field::try_from(arrow_ffi_schema)
+        let ffi_field_schema: arrow::ffi::FFI_ArrowSchema =
+            unsafe { ret_field_schema.into_owned() };
+        let ret_arrow_field = arrow_schema::Field::try_from(&ffi_field_schema)
             .map_err(|e| DaftError::InternalError(format!("schema import failed: {e}")))?;
         let ret_daft_field = Field::try_from(&ret_arrow_field)?;
 
@@ -197,8 +195,8 @@ impl ScalarUDF for ScalarFunctionHandle {
         };
         inner.check(rc, errmsg, "unknown error in extension call")?;
 
-        let (ffi_array, ffi_schema): (arrow::ffi::FFI_ArrowArray, arrow::ffi::FFI_ArrowSchema) =
-            unsafe { ffi_arrow::export_ffi(ret_array, ret_schema) };
+        let ffi_array: arrow::ffi::FFI_ArrowArray = unsafe { ret_array.into_owned() };
+        let ffi_schema: arrow::ffi::FFI_ArrowSchema = unsafe { ret_schema.into_owned() };
         let arrow_data = unsafe { arrow::ffi::from_ffi(ffi_array, &ffi_schema) }
             .map_err(|e| DaftError::InternalError(format!("Arrow FFI import failed: {e}")))?;
         let result_arr = arrow_array::make_array(arrow_data);
@@ -281,8 +279,9 @@ mod tests {
         _errmsg: *mut *mut c_char,
     ) -> c_int {
         let field = arrow_schema::Field::new("result", arrow_schema::DataType::Int32, false);
-        let arrow_ffi = arrow::ffi::FFI_ArrowSchema::try_from(&field).unwrap();
-        let schema = unsafe { ffi_arrow::import_arrow_schema(arrow_ffi) };
+        let schema: ArrowSchema = unsafe {
+            ArrowSchema::from_owned(arrow::ffi::FFI_ArrowSchema::try_from(&field).unwrap())
+        };
         unsafe { std::ptr::write(ret, schema) };
         0
     }
@@ -298,12 +297,10 @@ mod tests {
     ) -> c_int {
         assert_eq!(args_count, 1);
         let abi_array = unsafe { std::ptr::read(args) };
-        let abi_schema = unsafe { &*args_schemas };
-        let ffi_array: arrow::ffi::FFI_ArrowArray =
-            unsafe { ffi_arrow::export_arrow_array(abi_array) };
-        let ffi_schema: &arrow::ffi::FFI_ArrowSchema =
-            unsafe { ffi_arrow::borrow_arrow_schema(abi_schema) };
-        let data = unsafe { arrow::ffi::from_ffi(ffi_array, ffi_schema) }.unwrap();
+        let abi_schema = unsafe { std::ptr::read(args_schemas) };
+        let ffi_array: arrow::ffi::FFI_ArrowArray = unsafe { abi_array.into_owned() };
+        let ffi_schema: arrow::ffi::FFI_ArrowSchema = unsafe { abi_schema.into_owned() };
+        let data = unsafe { arrow::ffi::from_ffi(ffi_array, &ffi_schema) }.unwrap();
         let arr = arrow_array::make_array(data);
         let input = arr
             .as_any()
@@ -314,7 +311,8 @@ mod tests {
         let output: Int32Array = input.iter().map(|v| v.map(|x| x + 1)).collect();
         let output_ref: arrow_array::ArrayRef = Arc::new(output);
         let (ffi_arr, ffi_sch) = arrow::ffi::to_ffi(&output_ref.to_data()).unwrap();
-        let (out_array, out_schema) = unsafe { ffi_arrow::import_ffi(ffi_arr, ffi_sch) };
+        let out_array: ArrowArray = unsafe { ArrowArray::from_owned(ffi_arr) };
+        let out_schema: ArrowSchema = unsafe { ArrowSchema::from_owned(ffi_sch) };
         unsafe {
             std::ptr::write(ret_array, out_array);
             std::ptr::write(ret_schema, out_schema);

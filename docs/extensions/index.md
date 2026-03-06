@@ -97,16 +97,18 @@ crate-type = ["cdylib"]
 
 [dependencies]
 daft-ext = <version>
+daft-ext-abi = { version = <version>, features = ["arrow-58"] }
 arrow = { version = "58", features = ["ffi"] }
 ```
 
 !!! tip "Arrow version freedom"
 
     The `daft-ext` ABI uses C Data Interface types — your extension is **not** pinned to
-    Daft's arrow-rs version. You can use any compatible `arrow-array` / `arrow-schema`
-    version. The `define_arrow_helpers!()` macro generates `import_array`, `export_array`,
-    `import_field`, `export_field`, `import_schema`, and `export_schema` helpers for
-    converting between arrow-rs types and the C ABI types.
+    Daft's arrow-rs version. Enable a feature flag on `daft-ext-abi` matching your arrow-rs
+    version (`arrow-56`, `arrow-57`, or `arrow-58`) to get safe `.into()` conversions
+    between arrow-rs FFI types and the ABI types. For unsupported versions, use the
+    `from_owned`/`into_owned`/`from_raw`/`as_raw` escape hatches on `ArrowArray`
+    and `ArrowSchema`.
 
 Then update the pyproject to use `setuptools-rust` as the build system.
 
@@ -172,12 +174,11 @@ use std::{ffi::CStr, sync::Arc};
 
 use arrow::{
     array::{Array, builder::StringBuilder, cast::AsArray},
-    datatypes::{DataType, Field},
+    datatypes::{DataType, Field, Schema},
+    ffi::FFI_ArrowSchema,
 };
 use daft_ext::prelude::*;
-
-// Generate import_array, export_array, import_field, export_field helpers.
-daft_ext::define_arrow_helpers!();
+use daft_ext_abi::{ArrowData, ArrowSchema};
 
 // ── Module ──────────────────────────────────────────────────────────
 
@@ -208,8 +209,7 @@ impl DaftScalarFunction for Greet {
 
     /// Type checking.
     /// Receives input fields as C Data Interface `ArrowSchema` types.
-    /// Use `import_field` to convert to arrow-rs types for validation,
-    /// then `export_field` to return the output field.
+    /// Use `.as_raw()` / `.into()` to convert between arrow-rs and ABI types.
     fn return_field(&self, args: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
         if args.len() != 1 {
             return Err(DaftError::TypeError(format!(
@@ -217,7 +217,9 @@ impl DaftScalarFunction for Greet {
                 args.len()
             )));
         }
-        let field = import_field(&args[0])?;
+        let ffi_schema: &FFI_ArrowSchema = unsafe { args[0].as_raw() };
+        let field = Field::try_from(ffi_schema)
+            .map_err(|e| DaftError::TypeError(e.to_string()))?;
         let dt = field.data_type();
         if *dt != DataType::Utf8 && *dt != DataType::LargeUtf8 {
             return Err(DaftError::TypeError(format!(
@@ -225,14 +227,22 @@ impl DaftScalarFunction for Greet {
                 dt
             )));
         }
-        Ok(export_field(&Field::new("greet", DataType::Utf8, true))?)
+        let out_schema = Schema::new(vec![Field::new("greet", DataType::Utf8, true)]);
+        let ffi = FFI_ArrowSchema::try_from(&out_schema)
+            .map_err(|e| DaftError::TypeError(e.to_string()))?;
+        Ok(ffi.into())
     }
 
     /// Evaluation. Receives columns as C Data Interface `ArrowData` types.
-    /// Use `import_array` / `export_array` to convert to/from arrow-rs arrays.
+    /// Use `.into()` to convert to/from arrow-rs FFI types.
     /// All data flows through Arrow arrays — no per-row Python overhead.
     fn call(&self, args: &[ArrowData]) -> DaftResult<ArrowData> {
-        let input = import_array(unsafe { ArrowData::take_arg(args, 0) })?;
+        let data = unsafe { ArrowData::take_arg(args, 0) };
+        let ffi_array: arrow::ffi::FFI_ArrowArray = data.array.into();
+        let ffi_schema: arrow::ffi::FFI_ArrowSchema = data.schema.into();
+        let arrow_data = unsafe { arrow::ffi::from_ffi(ffi_array, &ffi_schema) }
+            .map_err(|e| DaftError::RuntimeError(e.to_string()))?;
+        let input = arrow::array::make_array(arrow_data);
         let names = input.as_string::<i64>();
         let mut builder = StringBuilder::with_capacity(names.len(), names.len() * 16);
         for i in 0..names.len() {
@@ -242,7 +252,13 @@ impl DaftScalarFunction for Greet {
                 builder.append_value(format!("Hello, {}!", names.value(i)));
             }
         }
-        Ok(export_array(&builder.finish())?)
+        let output = builder.finish();
+        let (out_arr, out_sch) = arrow::ffi::to_ffi(&output.to_data())
+            .map_err(|e| DaftError::RuntimeError(e.to_string()))?;
+        Ok(ArrowData {
+            array: out_arr.into(),
+            schema: out_sch.into(),
+        })
     }
 }
 ```
@@ -250,9 +266,10 @@ impl DaftScalarFunction for Greet {
 !!! tip "ABI pattern"
 
     The `DaftScalarFunction` trait uses C Data Interface types (`ArrowSchema`, `ArrowData`)
-    at the ABI boundary. Use the `import_*` / `export_*` helpers from the prelude to convert
-    to and from arrow-rs types inside your function bodies. This decoupling means your
-    extension is not tied to Daft's arrow-rs version.
+    at the ABI boundary. Enable a `daft-ext-abi` feature flag (`arrow-56`, `arrow-57`, or
+    `arrow-58`) matching your arrow-rs version to get `.into()` conversions. Use `.as_raw()`
+    for zero-copy borrows. This decoupling means your extension is not tied to Daft's
+    arrow-rs version.
 
 !!! tip "String types"
 
@@ -401,17 +418,17 @@ Follow the Daft extension authoring guide at docs/extensions/index.md. Here is a
 ## Rust conventions
 
 - Use `daft_ext::prelude::*` for all imports (provides `ArrowSchema`, `ArrowData`, errors, traits).
-- Call `daft_ext::define_arrow_helpers!()` to generate `import_array`, `export_array`, `import_field`, `export_field` helpers.
+- Add `daft-ext-abi` with a feature flag matching your arrow version (`arrow-56`, `arrow-57`, or `arrow-58`) for `.into()` conversions.
 - Import `arrow::array::Array` for `len()`/`is_null()` and `arrow::array::cast::AsArray` for downcasting.
 - Daft uses `LargeUtf8` (i64 offsets) for strings — downcast with `as_string::<i64>()`, never `i32`.
 - Apply `#[daft_extension]` to a struct implementing `DaftExtension`.
 - Register each function in `install()` via `session.define_function(Arc::new(MyFn))`.
 - Each function is a struct implementing `DaftScalarFunction` with:
   - `name(&self) -> &CStr` — use `c"<extension_name>_<fn_name>"` prefix to avoid collisions.
-  - `return_field(&self, args: &[ArrowSchema]) -> DaftResult<ArrowSchema>` — use `import_field` to
-    convert inputs, validate types, then `export_field` to return the output field.
-  - `call(&self, args: &[ArrowData]) -> DaftResult<ArrowData>` — use `ArrowData::take_arg` + `import_array`
-    to convert inputs to arrow-rs arrays, compute, then `export_array` to return the result.
+  - `return_field(&self, args: &[ArrowSchema]) -> DaftResult<ArrowSchema>` — use `.as_raw()` to
+    borrow as arrow-rs `FFI_ArrowSchema` for type checking, then `.into()` to return output.
+  - `call(&self, args: &[ArrowData]) -> DaftResult<ArrowData>` — use `ArrowData::take_arg` then
+    `.into()` to convert to arrow-rs FFI types, compute, then `.into()` to return the result.
 
 ## Python conventions
 

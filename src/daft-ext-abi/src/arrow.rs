@@ -18,25 +18,6 @@ pub struct ArrowData {
     pub array: ArrowArray,
 }
 
-impl ArrowData {
-    /// Take an `ArrowData` from a `&[ArrowData]` slice by index, zeroing the
-    /// source slot so the original cannot be accidentally reused.
-    ///
-    /// This is the safe way to consume arguments in `DaftScalarFunction::call`
-    /// instead of raw `std::ptr::read`.
-    ///
-    /// # Safety
-    ///
-    /// - `index` must be in bounds.
-    /// - Each index must be taken at most once (the slot is zeroed after taking).
-    pub unsafe fn take_arg(args: &[Self], index: usize) -> Self {
-        let ptr = unsafe { args.as_ptr().add(index).cast_mut() };
-        let data = unsafe { std::ptr::read(ptr) };
-        unsafe { std::ptr::write_bytes(ptr, 0, 1) };
-        data
-    }
-}
-
 /// ArrowSchema C Data Interface.
 ///
 /// See: <https://arrow.apache.org/docs/format/CDataInterface.html#the-arrowschema-structure>
@@ -76,6 +57,105 @@ impl ArrowSchema {
     /// Whether this schema has been released (release callback is None).
     pub fn is_released(&self) -> bool {
         self.release.is_none()
+    }
+
+    /// Borrow a foreign C Data Interface schema as ours (zero-copy).
+    ///
+    /// # Safety
+    ///
+    /// `T` must have the Arrow C Data Interface `ArrowSchema` memory layout.
+    pub unsafe fn from_raw<T>(ptr: &T) -> &Self {
+        assert_eq!(
+            std::mem::size_of::<T>(),
+            std::mem::size_of::<Self>(),
+            "ArrowSchema size mismatch"
+        );
+        assert_eq!(
+            std::mem::align_of::<T>(),
+            std::mem::align_of::<Self>(),
+            "ArrowSchema align mismatch"
+        );
+        unsafe { &*std::ptr::from_ref(ptr).cast::<Self>() }
+    }
+
+    /// Mutably borrow a foreign C Data Interface schema as ours (zero-copy).
+    ///
+    /// # Safety
+    ///
+    /// `T` must have the Arrow C Data Interface `ArrowSchema` memory layout.
+    pub unsafe fn from_raw_mut<T>(ptr: &mut T) -> &mut Self {
+        assert_eq!(
+            std::mem::size_of::<T>(),
+            std::mem::size_of::<Self>(),
+            "ArrowSchema size mismatch"
+        );
+        assert_eq!(
+            std::mem::align_of::<T>(),
+            std::mem::align_of::<Self>(),
+            "ArrowSchema align mismatch"
+        );
+        unsafe { &mut *std::ptr::from_mut(ptr).cast::<Self>() }
+    }
+
+    /// Borrow ours as a foreign C Data Interface schema type (zero-copy).
+    ///
+    /// # Safety
+    ///
+    /// `T` must have the Arrow C Data Interface `ArrowSchema` memory layout.
+    pub unsafe fn as_raw<T>(&self) -> &T {
+        assert_eq!(
+            std::mem::size_of::<T>(),
+            std::mem::size_of::<Self>(),
+            "ArrowSchema size mismatch"
+        );
+        assert_eq!(
+            std::mem::align_of::<T>(),
+            std::mem::align_of::<Self>(),
+            "ArrowSchema align mismatch"
+        );
+        unsafe { &*std::ptr::from_ref(self).cast::<T>() }
+    }
+
+    /// Take ownership of a foreign C Data Interface schema.
+    ///
+    /// # Safety
+    ///
+    /// - `T` must have the Arrow C Data Interface `ArrowSchema` memory layout.
+    /// - Ownership transfers — the caller must not use or drop the original.
+    pub unsafe fn from_owned<T>(val: T) -> Self {
+        assert_eq!(
+            std::mem::size_of::<T>(),
+            std::mem::size_of::<Self>(),
+            "ArrowSchema size mismatch"
+        );
+        assert_eq!(
+            std::mem::align_of::<T>(),
+            std::mem::align_of::<Self>(),
+            "ArrowSchema align mismatch"
+        );
+        let val = std::mem::ManuallyDrop::new(val);
+        unsafe { std::ptr::read((&raw const *val).cast::<Self>()) }
+    }
+
+    /// Convert into a foreign C Data Interface schema type.
+    ///
+    /// # Safety
+    ///
+    /// - `T` must have the Arrow C Data Interface `ArrowSchema` memory layout.
+    /// - Ownership transfers — the caller must not use or drop the original.
+    pub unsafe fn into_owned<T>(self) -> T {
+        assert_eq!(
+            std::mem::size_of::<T>(),
+            std::mem::size_of::<Self>(),
+            "ArrowSchema size mismatch"
+        );
+        assert_eq!(
+            std::mem::align_of::<T>(),
+            std::mem::align_of::<Self>(),
+            "ArrowSchema align mismatch"
+        );
+        let val = std::mem::ManuallyDrop::new(self);
+        unsafe { std::ptr::read((&raw const *val).cast::<T>()) }
     }
 }
 
@@ -124,6 +204,105 @@ impl ArrowArray {
     /// Whether this array has been released (release callback is None).
     pub fn is_released(&self) -> bool {
         self.release.is_none()
+    }
+
+    /// Borrow a foreign C Data Interface array as ours (zero-copy).
+    ///
+    /// # Safety
+    ///
+    /// `T` must have the Arrow C Data Interface `ArrowArray` memory layout.
+    pub unsafe fn from_raw<T>(ptr: &T) -> &Self {
+        assert_eq!(
+            std::mem::size_of::<T>(),
+            std::mem::size_of::<Self>(),
+            "ArrowArray size mismatch"
+        );
+        assert_eq!(
+            std::mem::align_of::<T>(),
+            std::mem::align_of::<Self>(),
+            "ArrowArray align mismatch"
+        );
+        unsafe { &*std::ptr::from_ref(ptr).cast::<Self>() }
+    }
+
+    /// Mutably borrow a foreign C Data Interface array as ours (zero-copy).
+    ///
+    /// # Safety
+    ///
+    /// `T` must have the Arrow C Data Interface `ArrowArray` memory layout.
+    pub unsafe fn from_raw_mut<T>(ptr: &mut T) -> &mut Self {
+        assert_eq!(
+            std::mem::size_of::<T>(),
+            std::mem::size_of::<Self>(),
+            "ArrowArray size mismatch"
+        );
+        assert_eq!(
+            std::mem::align_of::<T>(),
+            std::mem::align_of::<Self>(),
+            "ArrowArray align mismatch"
+        );
+        unsafe { &mut *std::ptr::from_mut(ptr).cast::<Self>() }
+    }
+
+    /// Borrow ours as a foreign C Data Interface array type (zero-copy).
+    ///
+    /// # Safety
+    ///
+    /// `T` must have the Arrow C Data Interface `ArrowArray` memory layout.
+    pub unsafe fn as_raw<T>(&self) -> &T {
+        assert_eq!(
+            std::mem::size_of::<T>(),
+            std::mem::size_of::<Self>(),
+            "ArrowArray size mismatch"
+        );
+        assert_eq!(
+            std::mem::align_of::<T>(),
+            std::mem::align_of::<Self>(),
+            "ArrowArray align mismatch"
+        );
+        unsafe { &*std::ptr::from_ref(self).cast::<T>() }
+    }
+
+    /// Take ownership of a foreign C Data Interface array.
+    ///
+    /// # Safety
+    ///
+    /// - `T` must have the Arrow C Data Interface `ArrowArray` memory layout.
+    /// - Ownership transfers — the caller must not use or drop the original.
+    pub unsafe fn from_owned<T>(val: T) -> Self {
+        assert_eq!(
+            std::mem::size_of::<T>(),
+            std::mem::size_of::<Self>(),
+            "ArrowArray size mismatch"
+        );
+        assert_eq!(
+            std::mem::align_of::<T>(),
+            std::mem::align_of::<Self>(),
+            "ArrowArray align mismatch"
+        );
+        let val = std::mem::ManuallyDrop::new(val);
+        unsafe { std::ptr::read((&raw const *val).cast::<Self>()) }
+    }
+
+    /// Convert into a foreign C Data Interface array type.
+    ///
+    /// # Safety
+    ///
+    /// - `T` must have the Arrow C Data Interface `ArrowArray` memory layout.
+    /// - Ownership transfers — the caller must not use or drop the original.
+    pub unsafe fn into_owned<T>(self) -> T {
+        assert_eq!(
+            std::mem::size_of::<T>(),
+            std::mem::size_of::<Self>(),
+            "ArrowArray size mismatch"
+        );
+        assert_eq!(
+            std::mem::align_of::<T>(),
+            std::mem::align_of::<Self>(),
+            "ArrowArray align mismatch"
+        );
+        let val = std::mem::ManuallyDrop::new(self);
+        unsafe { std::ptr::read((&raw const *val).cast::<T>()) }
     }
 }
 
@@ -196,6 +375,35 @@ unsafe impl Send for ArrowArrayStream {}
 mod tests {
     use super::*;
 
+    /// A mock "foreign" ArrowSchema with identical C layout.
+    #[repr(C)]
+    struct FakeSchema {
+        format: *const c_char,
+        name: *const c_char,
+        metadata: *const c_char,
+        flags: i64,
+        n_children: i64,
+        children: *mut *mut FakeSchema,
+        dictionary: *mut FakeSchema,
+        release: Option<unsafe extern "C" fn(schema: *mut FakeSchema)>,
+        private_data: *mut c_void,
+    }
+
+    /// A mock "foreign" ArrowArray with identical C layout.
+    #[repr(C)]
+    struct FakeArray {
+        length: i64,
+        null_count: i64,
+        offset: i64,
+        n_buffers: i64,
+        n_children: i64,
+        buffers: *mut *const c_void,
+        children: *mut *mut FakeArray,
+        dictionary: *mut FakeArray,
+        release: Option<unsafe extern "C" fn(array: *mut FakeArray)>,
+        private_data: *mut c_void,
+    }
+
     #[test]
     fn arrow_schema_empty() {
         let s = ArrowSchema::empty();
@@ -230,19 +438,82 @@ mod tests {
     #[test]
     fn layout_sizes() {
         let ptr = std::mem::size_of::<usize>();
-
-        // ArrowSchema: 9 fields (format, name, metadata: *const; flags: i64;
-        // n_children: i64; children, dictionary: *mut; release: Option<fn>;
-        // private_data: *mut) = 9 pointer-sized on 64-bit
         assert_eq!(std::mem::size_of::<ArrowSchema>(), 9 * ptr);
-
-        // ArrowArray: 10 fields (length, null_count, offset: i64;
-        // n_buffers, n_children: i64; buffers, children, dictionary: *mut;
-        // release: Option<fn>; private_data: *mut) = 10 pointer-sized on 64-bit
         assert_eq!(std::mem::size_of::<ArrowArray>(), 10 * ptr);
-
-        // ArrowArrayStream: 5 fields (get_schema, get_next, get_last_error,
-        // release: Option<fn>; private_data: *mut) = 5 pointer-sized
         assert_eq!(std::mem::size_of::<ArrowArrayStream>(), 5 * ptr);
+    }
+
+    #[test]
+    fn from_raw_schema() {
+        let schema = ArrowSchema::empty();
+        let borrowed: &FakeSchema = unsafe { schema.as_raw() };
+        assert!(borrowed.release.is_none());
+
+        let fake = FakeSchema {
+            format: std::ptr::null(),
+            name: std::ptr::null(),
+            metadata: std::ptr::null(),
+            flags: 42,
+            n_children: 0,
+            children: std::ptr::null_mut(),
+            dictionary: std::ptr::null_mut(),
+            release: None,
+            private_data: std::ptr::null_mut(),
+        };
+        let borrowed: &ArrowSchema = unsafe { ArrowSchema::from_raw(&fake) };
+        assert_eq!(borrowed.flags, 42);
+    }
+
+    #[test]
+    fn from_raw_array() {
+        let array = ArrowArray::empty();
+        let borrowed: &FakeArray = unsafe { array.as_raw() };
+        assert!(borrowed.release.is_none());
+
+        let fake = FakeArray {
+            length: 50,
+            null_count: 3,
+            offset: 0,
+            n_buffers: 1,
+            n_children: 0,
+            buffers: std::ptr::null_mut(),
+            children: std::ptr::null_mut(),
+            dictionary: std::ptr::null_mut(),
+            release: None,
+            private_data: std::ptr::null_mut(),
+        };
+        let borrowed: &ArrowArray = unsafe { ArrowArray::from_raw(&fake) };
+        assert_eq!(borrowed.length, 50);
+        assert_eq!(borrowed.null_count, 3);
+    }
+
+    #[test]
+    fn owned_roundtrip_schema() {
+        let original = ArrowSchema::empty();
+        let foreign: FakeSchema = unsafe { original.into_owned() };
+        let back: ArrowSchema = unsafe { ArrowSchema::from_owned(foreign) };
+        assert!(back.is_released());
+    }
+
+    #[test]
+    fn owned_roundtrip_array() {
+        let original = ArrowArray {
+            length: 100,
+            null_count: 5,
+            offset: 10,
+            n_buffers: 2,
+            n_children: 0,
+            buffers: std::ptr::null_mut(),
+            children: std::ptr::null_mut(),
+            dictionary: std::ptr::null_mut(),
+            release: None,
+            private_data: std::ptr::null_mut(),
+        };
+        let foreign: FakeArray = unsafe { original.into_owned() };
+        assert_eq!(foreign.length, 100);
+        assert_eq!(foreign.null_count, 5);
+        let back: ArrowArray = unsafe { ArrowArray::from_owned(foreign) };
+        assert_eq!(back.length, 100);
+        assert_eq!(back.null_count, 5);
     }
 }
