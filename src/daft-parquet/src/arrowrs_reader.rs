@@ -504,7 +504,7 @@ fn compute_root_indices(
 /// Decode predicate columns for a single RG, evaluate predicate, return filtered
 /// predicate batch and the refined RowSelection for data columns.
 fn decode_rg_predicate_phase(
-    path: &str,
+    file_bytes: &bytes::Bytes,
     setup: &LocalParquetSetup,
     task: &RgTask,
     predicate: &ExprRef,
@@ -512,10 +512,8 @@ fn decode_rg_predicate_phase(
 ) -> DaftResult<(arrow::array::RecordBatch, RowSelection)> {
     let rg_rows = setup.parquet_metadata.row_group(task.rg_idx).num_rows() as usize;
 
-    let file = std::fs::File::open(path)
-        .map_err(|e| parquet_err(format!("Failed to open '{}': {}", path, e)))?;
     let mut builder = ParquetRecordBatchReaderBuilder::new_with_metadata(
-        file,
+        file_bytes.clone(),
         (*setup.arrow_reader_metadata).clone(),
     );
 
@@ -602,16 +600,14 @@ fn decode_rg_predicate_phase(
 
 /// Decode a single column from a single RG with the given RowSelection.
 fn decode_rg_column(
-    path: &str,
+    file_bytes: &bytes::Bytes,
     setup: &LocalParquetSetup,
     task: &RgTask,
     col_root_index: usize,
     row_selection: Option<&RowSelection>,
 ) -> DaftResult<arrow::array::RecordBatch> {
-    let file = std::fs::File::open(path)
-        .map_err(|e| parquet_err(format!("Failed to open '{}': {}", path, e)))?;
     let mut builder = ParquetRecordBatchReaderBuilder::new_with_metadata(
-        file,
+        file_bytes.clone(),
         (*setup.arrow_reader_metadata).clone(),
     );
 
@@ -660,6 +656,12 @@ fn decode_single_rg_col_parallel(
         return decode_single_rg(path, setup, task, predicate, None);
     }
 
+    // Read file into memory once; column tasks share the buffer via cheap Bytes::clone().
+    let file_bytes = bytes::Bytes::from(
+        std::fs::read(path)
+            .map_err(|e| parquet_err(format!("Failed to read '{}': {}", path, e)))?,
+    );
+
     if setup.predicate_pushed {
         let pred = predicate.unwrap();
         let pred_cols = setup.predicate_columns.as_ref().unwrap();
@@ -672,7 +674,7 @@ fn decode_single_rg_col_parallel(
 
         // Phase 1: decode predicate columns.
         let (pred_batch, final_selection) =
-            decode_rg_predicate_phase(path, setup, task, pred, &pred_col_indices)?;
+            decode_rg_predicate_phase(&file_bytes, setup, task, pred, &pred_col_indices)?;
 
         if data_col_indices.is_empty() {
             let daft_batch = RecordBatch::try_from(&pred_batch)?;
@@ -688,7 +690,9 @@ fn decode_single_rg_col_parallel(
         // Phase 2: decode data columns in parallel.
         let col_results: Vec<DaftResult<arrow::array::RecordBatch>> = data_col_indices
             .par_iter()
-            .map(|&col_idx| decode_rg_column(path, setup, task, col_idx, Some(&final_selection)))
+            .map(|&col_idx| {
+                decode_rg_column(&file_bytes, setup, task, col_idx, Some(&final_selection))
+            })
             .collect();
         let col_batches: Vec<arrow::array::RecordBatch> =
             col_results.into_iter().collect::<DaftResult<Vec<_>>>()?;
@@ -714,7 +718,7 @@ fn decode_single_rg_col_parallel(
 
         let col_results: Vec<DaftResult<arrow::array::RecordBatch>> = all_col_indices
             .par_iter()
-            .map(|&col_idx| decode_rg_column(path, setup, task, col_idx, base_sel.as_ref()))
+            .map(|&col_idx| decode_rg_column(&file_bytes, setup, task, col_idx, base_sel.as_ref()))
             .collect();
         let col_batches: Vec<arrow::array::RecordBatch> =
             col_results.into_iter().collect::<DaftResult<Vec<_>>>()?;
@@ -1754,6 +1758,12 @@ pub fn local_parquet_read_arrowrs(
 
     let has_predicate = predicate.is_some();
 
+    // Read file into memory once; column tasks share the buffer via cheap Bytes::clone().
+    let file_bytes = bytes::Bytes::from(
+        std::fs::read(path)
+            .map_err(|e| parquet_err(format!("Failed to read '{}': {}", path, e)))?,
+    );
+
     if setup.predicate_pushed {
         // Two-phase decode: predicate columns first (serial per RG), then data columns parallel.
         let pred_cols = setup.predicate_columns.as_ref().unwrap();
@@ -1770,7 +1780,7 @@ pub fn local_parquet_read_arrowrs(
             .par_iter()
             .map(|task| {
                 decode_rg_predicate_phase(
-                    path,
+                    &file_bytes,
                     &setup,
                     task,
                     predicate.as_ref().unwrap(),
@@ -1813,7 +1823,7 @@ pub fn local_parquet_read_arrowrs(
             .map(|&(task_idx, col_idx)| {
                 let (_, ref selection) = phase1[task_idx];
                 let batch = decode_rg_column(
-                    path,
+                    &file_bytes,
                     &setup,
                     &setup.rg_tasks[task_idx],
                     col_idx,
@@ -1882,7 +1892,7 @@ pub fn local_parquet_read_arrowrs(
             .par_iter()
             .map(|&(task_idx, col_idx)| {
                 let batch = decode_rg_column(
-                    path,
+                    &file_bytes,
                     &setup,
                     &setup.rg_tasks[task_idx],
                     col_idx,
