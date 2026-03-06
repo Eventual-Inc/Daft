@@ -112,7 +112,7 @@ impl StatisticsManager {
         let mut runtime_node_managers = HashMap::new();
         pipeline_node.apply(|node| {
             let node_info = Arc::new(NodeInfo {
-                name: node.name().to_string().into(),
+                name: node.name(),
                 id: node.node_id() as usize,
                 node_origin_id: node.node_id() as usize,
                 node_type: node.context().node_type.clone(),

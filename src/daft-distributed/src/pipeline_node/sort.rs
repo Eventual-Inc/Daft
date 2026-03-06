@@ -15,7 +15,7 @@ use futures::{TryStreamExt, future::try_join_all};
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -215,7 +215,7 @@ pub(crate) struct SortNode {
 }
 
 impl SortNode {
-    const NODE_NAME: NodeName = "Sort";
+    const NODE_NAME: &'static str = "Sort";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -231,7 +231,7 @@ impl SortNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Sort,
             NodeCategory::BlockingSink,
         );

@@ -13,7 +13,7 @@ use opentelemetry::metrics::Meter;
 
 use super::{DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SchedulerHandle,
@@ -127,7 +127,7 @@ pub(crate) struct LimitNode {
 }
 
 impl LimitNode {
-    const NODE_NAME: NodeName = "Limit";
+    const NODE_NAME: &'static str = "Limit";
 
     pub fn new(
         node_id: NodeID,
@@ -141,7 +141,7 @@ impl LimitNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Limit,
             NodeCategory::StreamingSink,
         );
