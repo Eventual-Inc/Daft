@@ -155,18 +155,32 @@ impl PyDistributedPhysicalPlan {
         ))
     }
 
-    fn repr_json(&self) -> PyResult<String> {
+    #[pyo3(signature = (psets=None))]
+    fn repr_json(&self, psets: Option<HashMap<String, Vec<RayPartitionRef>>>) -> PyResult<String> {
         let plan_config = PlanConfig::new(
             self.plan.idx(),
             self.plan.query_id(),
             self.plan.execution_config().clone(),
         );
-        let pipeline_node = logical_plan_to_pipeline_node(
-            plan_config,
-            self.plan.logical_plan().clone(),
-            Arc::new(HashMap::new()), // No psets needed for repr_json
-        )
-        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let psets = match psets {
+            Some(psets) => Arc::new(
+                psets
+                    .into_iter()
+                    .map(|(k, v)| {
+                        (
+                            k,
+                            v.into_iter()
+                                .map(|v| Arc::new(v) as Arc<dyn Partition>)
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            ),
+            None => Arc::new(HashMap::new()),
+        };
+        let pipeline_node =
+            logical_plan_to_pipeline_node(plan_config, self.plan.logical_plan().clone(), psets)
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
         Ok(serde_json::to_string(&pipeline_node.repr_json()).unwrap())
     }
