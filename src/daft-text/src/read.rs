@@ -52,8 +52,7 @@ pub async fn stream_text(
             return Ok(RecordBatch::empty(Some(schema.clone())));
         }
 
-        let values: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
-        let array = Utf8Array::from_slice("text", values.as_slice());
+        let array = Utf8Array::from_values("text", lines.iter().map(|s| s.as_str()));
         let series = array.into_series();
         RecordBatch::new_with_size(schema.clone(), vec![series], row_count)
     });
@@ -121,7 +120,7 @@ async fn read_into_line_chunk_stream(
                     remaining -= 1;
                     chunk.push(line);
                     if chunk.len() >= chunk_size {
-                        let to_yield = std::mem::take(&mut chunk);
+                        let to_yield = std::mem::replace(&mut chunk, Vec::with_capacity(chunk_size));
                         yield to_yield;
                     }
                 }
