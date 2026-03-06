@@ -334,6 +334,9 @@ impl GlobScanOperator {
                         "Cannot glob a PythonFunction source".to_string(),
                     ));
                 }
+                FileFormatConfig::Text(..) => {
+                    return Err(DaftError::ValueError("Text schema is fixed".to_string()));
+                }
             };
 
             let schema = match user_provided_schema {

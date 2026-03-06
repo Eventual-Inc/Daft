@@ -17,6 +17,7 @@ from daft.daft import (
 )
 from daft.lazy_import import LazyImport
 from daft.io._csv import read_csv
+from daft.io._text import read_text
 from daft.io.delta_lake._deltalake import read_deltalake
 from daft.io.hudi._hudi import read_hudi
 from daft.io.iceberg._iceberg import read_iceberg
@@ -75,6 +76,7 @@ __all__ = [
     "read_mcap",
     "read_parquet",
     "read_sql",
+    "read_text",
     "read_video_frames",
     "read_warc",
 ]

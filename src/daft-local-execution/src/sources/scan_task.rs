@@ -20,6 +20,7 @@ use daft_local_plan::InputId;
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
 use daft_scan::{ChunkSpec, ScanTask};
+use daft_text::{TextConvertOptions, TextReadOptions};
 use daft_warc::WarcConvertOptions;
 use futures::{FutureExt, Stream, StreamExt};
 use snafu::ResultExt;
@@ -238,6 +239,7 @@ impl Source for ScanTaskSource {
                         "Read Python".into()
                     }
                 }
+                FileFormatConfig::Text(_) => "Read Text".into(),
             }
         } else {
             "Empty (Scan Task)".into()
@@ -490,7 +492,7 @@ async fn stream_scan_task(
     };
 
     if scan_task.sources.len() != 1 {
-        return Err(common_error::DaftError::TypeError(
+        return Err(DaftError::TypeError(
             "Streaming reads only supported for single source ScanTasks".to_string(),
         ));
     }
@@ -670,6 +672,26 @@ async fn stream_scan_task(
             let iter = daft_micropartition::python::read_pyfunc_into_table_iter(scan_task.clone())?;
             let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
             Box::pin(stream)
+        }
+        FileFormatConfig::Text(cfg) => {
+            let schema_of_file = scan_task.schema.clone();
+            let convert_options = TextConvertOptions::new(
+                &cfg.encoding,
+                cfg.skip_blank_lines,
+                Some(schema_of_file),
+                scan_task.pushdowns.limit,
+            );
+            let text_chunk_size = cfg.chunk_size.or(Some(chunk_size));
+            let read_options = TextReadOptions::new(cfg.buffer_size, text_chunk_size);
+            daft_text::read::stream_text(
+                url.to_string(),
+                convert_options,
+                read_options,
+                io_client,
+                Some(io_stats),
+                // maintain_order, TODO: Implement maintain_order for Text
+            )
+            .await?
         }
     };
 
