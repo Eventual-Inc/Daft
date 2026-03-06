@@ -33,6 +33,7 @@ use crate::{
 
 pub struct ScanTaskSource {
     receiver: Option<UnboundedReceiver<(InputId, Vec<ScanTaskLikeRef>)>>,
+    file_format_config: Option<Arc<FileFormatConfig>>,
     pushdowns: Pushdowns,
     schema: SchemaRef,
     num_parallel_tasks: usize,
@@ -41,6 +42,7 @@ pub struct ScanTaskSource {
 impl ScanTaskSource {
     pub fn new(
         receiver: UnboundedReceiver<(InputId, Vec<ScanTaskLikeRef>)>,
+        file_format_config: Option<Arc<FileFormatConfig>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
@@ -53,6 +55,7 @@ impl ScanTaskSource {
         };
         Self {
             receiver: Some(receiver),
+            file_format_config,
             pushdowns,
             schema,
             num_parallel_tasks,
@@ -219,9 +222,26 @@ impl Source for ScanTaskSource {
     }
 
     fn name(&self) -> NodeName {
-        // We can't access scan_tasks here anymore, so use a generic name
-        // The actual format will be determined when we receive the tasks
-        "ScanTaskSource".into()
+        if let Some(file_format_config) = &self.file_format_config {
+            match file_format_config.as_ref() {
+                FileFormatConfig::Parquet(_) => "Read Parquet".into(),
+                FileFormatConfig::Csv(_) => "Read CSV".into(),
+                FileFormatConfig::Json(_) => "Read JSON".into(),
+                FileFormatConfig::Warc(_) => "Read WARC".into(),
+                #[cfg(feature = "python")]
+                FileFormatConfig::Database(_) => "Read Database".into(),
+                #[cfg(feature = "python")]
+                FileFormatConfig::PythonFunction { source_name, .. } => {
+                    if let Some(source_name) = source_name {
+                        format!("Read {source_name} (Python)").into()
+                    } else {
+                        "Read Python".into()
+                    }
+                }
+            }
+        } else {
+            "Empty (Scan Task)".into()
+        }
     }
 
     fn op_type(&self) -> NodeType {
@@ -614,7 +634,7 @@ async fn stream_scan_task(
                 schema: scan_task.schema.clone(),
                 predicate: scan_task.pushdowns.filters.clone(),
             };
-            daft_warc::stream_warc(url, io_client, Some(io_stats), convert_options, None).await?
+            daft_warc::stream_warc(url, io_client, io_stats, convert_options, None).await?
         }
         #[cfg(feature = "python")]
         FileFormatConfig::Database(common_file_formats::DatabaseSourceConfig { sql, conn }) => {

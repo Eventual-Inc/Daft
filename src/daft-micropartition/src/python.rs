@@ -843,7 +843,7 @@ impl PyMicroPartition {
                 schema.into(),
                 io_config.unwrap_or_default().config.into(),
                 multithreaded_io.unwrap_or(true),
-                None,
+                IOStatsContext::new("read_warc"),
             )
         })?;
         Ok(mp.into())
