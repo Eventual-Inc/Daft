@@ -181,7 +181,7 @@ impl TableStatistics {
         let exprs: Vec<_> = schema
             .into_iter()
             .map(|field| {
-                if current_col_names.contains(field.name.as_str()) {
+                if current_col_names.contains(field.name.as_ref()) {
                     // For any fields already in the table, perform a cast
                     resolved_col(field.name.clone()).cast(&field.dtype)
                 } else {
@@ -189,7 +189,7 @@ impl TableStatistics {
                     // If no entry for column name, fall back to null literal (i.e.s create a null array for that column).
                     fill_map
                         .as_ref()
-                        .and_then(|m| m.get(field.name.as_str()))
+                        .and_then(|m| m.get(field.name.as_ref()))
                         .unwrap_or(&null_lit)
                         .clone()
                         .alias(field.name.clone())

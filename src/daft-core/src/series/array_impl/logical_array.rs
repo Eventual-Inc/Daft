@@ -103,7 +103,7 @@ macro_rules! impl_series_like_for_logical_array {
             }
 
             fn name(&self) -> &str {
-                self.0.field.name.as_str()
+                self.0.field.name.as_ref()
             }
 
             fn rename(&self, name: &str) -> Series {
@@ -263,7 +263,7 @@ where
         self.0.physical.size_bytes()
     }
     fn name(&self) -> &str {
-        self.0.field.name.as_str()
+        self.0.field.name.as_ref()
     }
     fn rename(&self, name: &str) -> Series {
         let new_array = self.0.physical.rename(name);

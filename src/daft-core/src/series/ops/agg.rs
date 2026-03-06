@@ -399,7 +399,7 @@ impl Series {
             DataType::Null => {
                 // Return a single null value for null type
                 Ok(Self::full_null(
-                    self.field().name.as_str(),
+                    self.field().name.as_ref(),
                     &DataType::Boolean,
                     1,
                 ))
@@ -425,7 +425,7 @@ impl Series {
             DataType::Null => {
                 // Return a single null value for null type
                 Ok(Self::full_null(
-                    self.field().name.as_str(),
+                    self.field().name.as_ref(),
                     &DataType::Boolean,
                     1,
                 ))

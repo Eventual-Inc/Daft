@@ -667,7 +667,7 @@ fn parse_into_column_array_chunk_stream(
         .map(|i| {
             let f = fields.get(*i).unwrap();
             daft_core::datatypes::Field::new(
-                f.name(),
+                f.name().as_str(),
                 daft_schema::dtype::DataType::try_from(f.data_type()).unwrap(),
             )
         })
@@ -858,7 +858,8 @@ mod tests {
                         .unwrap();
                 let field = &fields[col_idx];
                 let daft_dtype = daft_schema::dtype::DataType::try_from(field.data_type()).unwrap();
-                let daft_field = daft_core::datatypes::Field::new(field.name(), daft_dtype);
+                let daft_field =
+                    daft_core::datatypes::Field::new(field.name().as_str(), daft_dtype);
                 Series::from_arrow(daft_field, arr).unwrap()
             })
             .collect();
@@ -869,7 +870,7 @@ mod tests {
                 .iter()
                 .map(|f| {
                     let daft_dtype = daft_schema::dtype::DataType::try_from(f.data_type()).unwrap();
-                    daft_core::datatypes::Field::new(f.name(), daft_dtype)
+                    daft_core::datatypes::Field::new(f.name().as_str(), daft_dtype)
                 })
                 .collect::<Vec<_>>(),
         );

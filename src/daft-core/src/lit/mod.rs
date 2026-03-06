@@ -326,7 +326,7 @@ impl Literal {
             Self::Struct(entries) => DataType::Struct(
                 entries
                     .iter()
-                    .map(|(k, v)| Field::new(k, v.get_type()))
+                    .map(|(k, v)| Field::new(k.as_str(), v.get_type()))
                     .collect(),
             ),
             Self::File(f) => DataType::File(f.media_type),

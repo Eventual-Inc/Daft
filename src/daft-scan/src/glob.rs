@@ -385,7 +385,7 @@ impl GlobScanOperator {
         };
         // If file path column is set, extend the partition fields.
         if let Some(fp_col) = &file_path_column {
-            let fp_field = Field::new(fp_col, DataType::Utf8);
+            let fp_field = Field::new(fp_col.as_str(), DataType::Utf8);
             partition_fields.push(fp_field);
         }
         let (partitioning_keys, generated_fields) = if partition_fields.is_empty() {

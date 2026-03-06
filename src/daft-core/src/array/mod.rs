@@ -241,7 +241,7 @@ impl<T> DataArray<T> {
     }
 
     pub fn name(&self) -> &str {
-        self.field.name.as_str()
+        self.field.name.as_ref()
     }
 
     pub fn rename(&self, name: &str) -> Self {

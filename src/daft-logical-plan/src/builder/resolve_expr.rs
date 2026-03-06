@@ -83,7 +83,7 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
                     )));
                 };
 
-                set_wildcard_expansion(&mut wildcard_expansion, &expr, struct_fields.iter().map(|f| f.name.as_str()))?;
+                set_wildcard_expansion(&mut wildcard_expansion, &expr, struct_fields.iter().map(|f| f.name.as_ref()))?;
             }
             _ => {}
         }

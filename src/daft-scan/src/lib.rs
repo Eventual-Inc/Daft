@@ -712,7 +712,7 @@ impl ScanTask {
                     schema_with_generated_fields
                         .fields()
                         .iter()
-                        .filter(|field| columns.contains(&field.name))
+                        .filter(|field| columns.iter().any(|c| c.as_str() == &*field.name))
                         .cloned()
                         .collect()
                 } else {

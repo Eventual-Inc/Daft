@@ -155,7 +155,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                                     JoinSide::Left,
                                 ))) = e.as_ref()
                                 {
-                                    match trivial_projections_map.get(&field.name) {
+                                    match trivial_projections_map.get(&*field.name) {
                                         Some(Some(original_name)) => {
                                             renaming_map.insert(field.name.clone(), original_name);
                                         }

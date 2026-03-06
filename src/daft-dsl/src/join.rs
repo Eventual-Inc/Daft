@@ -48,7 +48,7 @@ pub fn infer_join_schema(
                     .into_iter()
                     .chain(right_schema.fields())
                     .filter_map(|field| {
-                        if common_cols.contains(field.name.as_str()) {
+                        if common_cols.contains(field.name.as_ref()) {
                             None
                         } else {
                             Some(field.clone())

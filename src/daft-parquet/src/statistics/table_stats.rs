@@ -36,7 +36,7 @@ pub fn row_group_metadata_to_table_stats(
         .map(|field| {
             Ok(if ColumnRangeStatistics::supports_dtype(&field.dtype) {
                 parquet_column_metadata
-                    .swap_remove(field.name.as_str())
+                    .swap_remove(field.name.as_ref())
                     .and_then(|(stats_opt, col_descr)| {
                         stats_opt.and_then(|stats| {
                             parquet_statistics_to_column_range_statistics(
