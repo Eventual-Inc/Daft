@@ -4,20 +4,40 @@ use common_error::{DaftError, DaftResult};
 use common_system_info::SystemInfo;
 use tokio::sync::Notify;
 
-pub(crate) static MEMORY_MANAGER: OnceLock<Arc<MemoryManager>> = OnceLock::new();
+use crate::spill::SpillManager;
 
-fn custom_memory_limit() -> Option<u64> {
-    let memory_limit_var_name = "DAFT_MEMORY_LIMIT";
-    if let Ok(val) = std::env::var(memory_limit_var_name)
-        && let Ok(val) = val.parse::<u64>()
-    {
-        return Some(val);
-    }
-    None
-}
+pub(crate) static MEMORY_MANAGER: OnceLock<Arc<MemoryManager>> = OnceLock::new();
+pub(crate) static SPILL_MANAGER: OnceLock<Arc<SpillManager>> = OnceLock::new();
 
 pub(crate) fn get_or_init_memory_manager() -> &'static Arc<MemoryManager> {
     MEMORY_MANAGER.get_or_init(|| Arc::new(MemoryManager::new()))
+}
+
+pub(crate) fn get_or_init_spill_manager(
+    config_intermediate_spill_dir: Option<&str>,
+) -> &'static Arc<SpillManager> {
+    SPILL_MANAGER.get_or_init(|| {
+        let spill_dir = if let Some(dir) = config_intermediate_spill_dir {
+            dir.to_string()
+        } else {
+            std::env::var("DAFT_MAP_REDUCE_SHUFFLE_SPILL_DIR").unwrap_or_else(|_| {
+                std::env::temp_dir()
+                    .join("daft_spills")
+                    .to_str()
+                    .unwrap()
+                    .to_string()
+            })
+        };
+        Arc::new(SpillManager::new(spill_dir).unwrap())
+    })
+}
+
+/// Resolve the effective memory limit in bytes.
+/// If `config_limit` is Some, use that; otherwise fall back to the global MemoryManager.
+pub(crate) fn resolve_memory_limit(config_limit: Option<usize>) -> u64 {
+    config_limit
+        .map(|v| v as u64)
+        .unwrap_or_else(|| get_or_init_memory_manager().total_bytes())
 }
 
 pub(crate) struct MemoryPermit<'a> {
@@ -61,6 +81,16 @@ impl Default for MemoryManager {
     }
 }
 
+fn custom_memory_limit() -> Option<u64> {
+    let memory_limit_var_name = "DAFT_MEMORY_LIMIT";
+    if let Ok(val) = std::env::var(memory_limit_var_name)
+        && let Ok(val) = val.parse::<u64>()
+    {
+        return Some(val);
+    }
+    None
+}
+
 impl MemoryManager {
     pub fn new() -> Self {
         if let Some(custom_limit) = custom_memory_limit() {
@@ -74,6 +104,10 @@ impl MemoryManager {
         } else {
             Self::default()
         }
+    }
+
+    pub fn total_bytes(&self) -> u64 {
+        self.total_bytes
     }
 
     pub async fn request_bytes(&self, bytes: u64) -> DaftResult<MemoryPermit<'_>> {
@@ -246,5 +280,34 @@ mod tests {
         }
 
         task_set.join_all().await;
+    }
+
+    #[test]
+    fn test_resolve_memory_limit_with_config() {
+        // Exact value passed through
+        assert_eq!(resolve_memory_limit(Some(1024)), 1024);
+        // Zero is a valid config value
+        assert_eq!(resolve_memory_limit(Some(0)), 0);
+        // Large value
+        assert_eq!(resolve_memory_limit(Some(usize::MAX)), usize::MAX as u64);
+    }
+
+    #[test]
+    fn test_resolve_memory_limit_without_config() {
+        let result = resolve_memory_limit(None);
+        assert_eq!(result, get_or_init_memory_manager().total_bytes());
+    }
+
+    #[test]
+    fn test_spill_manager_new() {
+        let dir = tempfile::tempdir().unwrap();
+        let sm = SpillManager::new(dir.path()).unwrap();
+
+        // get_temp_spill_file produces unique paths
+        let p1 = sm.get_temp_spill_file();
+        let p2 = sm.get_temp_spill_file();
+        assert_ne!(p1, p2);
+        assert!(p1.starts_with(dir.path()));
+        assert!(p2.starts_with(dir.path()));
     }
 }

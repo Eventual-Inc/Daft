@@ -6,7 +6,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
 use common_error::DaftResult;
-use common_metrics::{QueryEndState, QueryPlan};
+use common_metrics::QueryPlan;
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
@@ -33,7 +33,7 @@ use crate::{
         BuilderContext, translate_physical_plan_to_pipeline, viz_pipeline_ascii,
         viz_pipeline_mermaid,
     },
-    resource_manager::get_or_init_memory_manager,
+    resource_manager::{get_or_init_memory_manager, get_or_init_spill_manager},
     runtime_stats::RuntimeStatsManager,
 };
 
@@ -179,10 +179,15 @@ impl NativeExecutor {
             .into();
 
         let ctx = BuilderContext::new_with_context(query_id.clone(), additional_context);
+
+        // Eagerly initialize the spill manager with config-specified map_reduce_shuffle_spill_dir (if any).
+        // Must be done BEFORE translate_physical_plan_to_pipeline so that SortSink::new()
+        // and other operators inherit the correct directory instead of the default.
+        get_or_init_spill_manager(exec_cfg.map_reduce_shuffle_spill_dir.as_deref());
+
         let (pipeline, input_senders) =
             translate_physical_plan_to_pipeline(local_physical_plan.as_ref(), &exec_cfg, &ctx)?;
         let plan_json = pipeline.repr_json();
-
         let (tx, rx) = create_channel(1);
 
         // Spawn execution on the global runtime - returns immediately
@@ -222,17 +227,17 @@ impl NativeExecutor {
                 biased;
                 () = cancel.cancelled() => {
                     log::info!("Execution engine cancelled");
-                    (Ok(()), QueryEndState::Canceled)
+                    (Ok(()), common_metrics::QueryEndState::Canceled)
                 }
                 _ = tokio::signal::ctrl_c() => {
                     log::info!("Received Ctrl-C, shutting down execution engine");
-                    (Ok(()), QueryEndState::Canceled)
+                    (Ok(()), common_metrics::QueryEndState::Canceled)
                 }
                 result = execution_task => {
                     let status = if result.is_err() {
-                        QueryEndState::Failed
+                        common_metrics::QueryEndState::Failed
                     } else {
-                        QueryEndState::Finished
+                        common_metrics::QueryEndState::Finished
                     };
                     (result, status)
                 },

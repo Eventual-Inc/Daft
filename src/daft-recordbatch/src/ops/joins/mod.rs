@@ -119,6 +119,7 @@ impl RecordBatch {
         right: &Self,
         left_on: &[BoundExpr],
         right_on: &[BoundExpr],
+        how: JoinType,
         is_sorted: bool,
     ) -> DaftResult<Self> {
         // sort first and then call join recursively
@@ -152,15 +153,27 @@ impl RecordBatch {
                     .as_slice(),
             )?;
 
-            return left.sort_merge_join(&right, left_on, right_on, true);
+            return left.sort_merge_join(&right, left_on, right_on, how, true);
         }
 
-        let join_schema = infer_join_schema(&self.schema, &right.schema, JoinType::Inner)?;
+        let join_schema = infer_join_schema(&self.schema, &right.schema, how)?;
         let ltable = self.eval_expression_list(left_on)?;
         let rtable = right.eval_expression_list(right_on)?;
 
         let (ltable, rtable) = match_types_for_tables(&ltable, &rtable)?;
-        let (lidx, ridx) = merge_join::merge_inner_join(&ltable, &rtable)?;
+
+        let (lidx, ridx) = match how {
+            JoinType::Inner => merge_join::merge_inner_join(&ltable, &rtable)?,
+            JoinType::Left => merge_join::merge_left_join(&ltable, &rtable)?,
+            JoinType::Right => merge_join::merge_right_join(&ltable, &rtable)?,
+            JoinType::Outer => merge_join::merge_full_join(&ltable, &rtable)?,
+            JoinType::Semi => merge_join::merge_semi_join(&ltable, &rtable)?,
+            JoinType::Anti => merge_join::merge_anti_join(&ltable, &rtable)?,
+        };
+
+        if matches!(how, JoinType::Semi | JoinType::Anti) {
+            return self.take(&lidx);
+        }
 
         let mut join_series = get_common_join_cols(&self.schema, &right.schema)
             .map(|name| {

@@ -13,6 +13,7 @@ use common_metrics::{
     ATTR_QUERY_ID, QueryID,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
+use common_partitioning::PartitionRef;
 use common_scan_info::ScanTaskLikeRef;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
@@ -25,7 +26,7 @@ use daft_local_plan::{
     WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
-use daft_micropartition::{MicroPartition, MicroPartitionRef};
+use daft_micropartition::MicroPartition;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
 use opentelemetry::{InstrumentationScope, KeyValue, global, metrics::Meter};
@@ -42,7 +43,9 @@ use crate::{
         into_batches::IntoBatchesOperator, project::ProjectOperator, udf::UdfOperator,
         unpivot::UnpivotOperator,
     },
-    join::{CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator},
+    join::{
+        CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator, SortMergeJoinParams,
+    },
     runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
@@ -337,7 +340,7 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<MicroPartitionRef>)>();
+            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<PartitionRef>)>();
             input_senders.insert(*source_id, InputSender::InMemory(tx));
 
             let in_memory_source = InMemorySource::new(rx, schema.clone(), *size_bytes);
@@ -841,9 +844,17 @@ fn physical_plan_to_pipeline(
             nulls_first,
             stats_state,
             context,
+            schema,
             ..
         }) => {
-            let sort_sink = SortSink::new(sort_by.clone(), descending.clone(), nulls_first.clone());
+            let sort_sink = SortSink::new(
+                sort_by.clone(),
+                descending.clone(),
+                nulls_first.clone(),
+                schema.clone(),
+                cfg.map_reduce_shuffle_spill_memory_limit_bytes,
+                cfg.map_reduce_shuffle_spill_batch_size,
+            );
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             BlockingSinkNode::new(
                 Arc::new(sort_sink),
@@ -1139,20 +1150,23 @@ fn physical_plan_to_pipeline(
             left_on,
             right_on,
             join_type,
+            schema,
             stats_state,
             context,
-            ..
         }) => {
             let left_node = physical_plan_to_pipeline(left, cfg, ctx, input_senders)?;
             let right_node = physical_plan_to_pipeline(right, cfg, ctx, input_senders)?;
 
-            let sort_merge_join_op = SortMergeJoinOperator::new(
-                left_on.clone(),
-                right_on.clone(),
-                left.schema().clone(),
-                right.schema().clone(),
-                *join_type,
-            );
+            let sort_merge_join_op = SortMergeJoinOperator::new(SortMergeJoinParams {
+                left_on: left_on.clone(),
+                right_on: right_on.clone(),
+                left_schema: left.schema().clone(),
+                right_schema: right.schema().clone(),
+                output_schema: schema.clone(),
+                join_type: *join_type,
+                memory_limit_bytes: cfg.map_reduce_shuffle_spill_memory_limit_bytes,
+                spill_batch_size: cfg.map_reduce_shuffle_spill_batch_size,
+            });
 
             JoinNode::new(
                 Arc::new(sort_merge_join_op),
@@ -1334,10 +1348,16 @@ fn physical_plan_to_pipeline(
             stats_state,
             schema,
             context,
+            target_block_size,
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let repartition_op =
-                RepartitionSink::new(repartition_spec.clone(), *num_partitions, schema.clone());
+            let repartition_op = RepartitionSink::new(
+                repartition_spec.clone(),
+                *num_partitions,
+                schema.clone(),
+                *target_block_size,
+                cfg.map_reduce_shuffle_spill_memory_limit_bytes,
+            );
             BlockingSinkNode::new(
                 Arc::new(repartition_op),
                 child_node,

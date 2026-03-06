@@ -13,3 +13,4 @@ pub use cross_join::CrossJoinOperator;
 pub use hash_join::HashJoinOperator;
 pub use join_node::JoinNode;
 pub use sort_merge_join::SortMergeJoinOperator;
+pub(crate) use sort_merge_join::SortMergeJoinParams;

@@ -351,6 +351,7 @@ impl PyMicroPartition {
         right: &Self,
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
+        how: JoinType,
         is_sorted: bool,
     ) -> PyResult<Self> {
         let left_exprs = BoundExpr::bind_all(&left_on, &self.inner.schema)?;
@@ -362,7 +363,7 @@ impl PyMicroPartition {
                     &right.inner,
                     left_exprs.as_slice(),
                     right_exprs.as_slice(),
-                    JoinType::Inner, // TODO: Expose other join types
+                    how,
                     is_sorted,
                 )?
                 .into())
@@ -564,7 +565,7 @@ impl PyMicroPartition {
     ) -> PyResult<(Vec<Self>, Self)> {
         let exprs = BoundExpr::bind_all(&partition_keys, &self.inner.schema)?;
         py.detach(|| {
-            let (mps, values) = self.inner.partition_by_value(exprs.as_slice())?;
+            let (mps, values) = self.inner.as_ref().partition_by_value(exprs.as_slice())?;
             let mps = mps
                 .into_iter()
                 .map(std::convert::Into::into)

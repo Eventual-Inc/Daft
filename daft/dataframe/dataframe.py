@@ -3145,9 +3145,7 @@ class DataFrame:
         join_type = JoinType.from_join_type_str(how)
         join_strategy = JoinStrategy.from_join_strategy_str(strategy) if strategy is not None else None
 
-        if join_strategy == JoinStrategy.SortMerge and join_type != JoinType.Inner:
-            raise ValueError("Sort merge join only supports inner joins")
-        elif join_strategy == JoinStrategy.Broadcast and join_type == JoinType.Outer:
+        if join_strategy == JoinStrategy.Broadcast and join_type == JoinType.Outer:
             raise ValueError("Broadcast join does not support outer joins")
 
         left_exprs = column_inputs_to_expressions(tuple(left_on) if isinstance(left_on, list) else (left_on,))

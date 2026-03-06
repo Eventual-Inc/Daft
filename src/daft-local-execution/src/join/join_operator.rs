@@ -8,6 +8,7 @@ use opentelemetry::metrics::Meter;
 
 use crate::{
     ExecutionTaskSpawner, OperatorOutput,
+    channel::Sender,
     pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::RuntimeStats,
 };
@@ -25,7 +26,7 @@ pub(crate) type BuildStateResult<Op> = OperatorOutput<DaftResult<<Op as JoinOper
 pub(crate) type FinalizeBuildResult<Op> = DaftResult<<Op as JoinOperator>::FinalizedBuildState>;
 pub(crate) type ProbeResult<Op> =
     OperatorOutput<DaftResult<(<Op as JoinOperator>::ProbeState, ProbeOutput)>>;
-pub(crate) type ProbeFinalizeResult = OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
+pub(crate) type ProbeFinalizeResult = OperatorOutput<DaftResult<()>>;
 
 pub(crate) trait JoinOperator: Send + Sync {
     /// State used during the build phase
@@ -71,11 +72,15 @@ pub(crate) trait JoinOperator: Send + Sync {
     where
         Self: Sized;
 
-    /// Finalize the probe phase (for joins that need finalization like outer joins)
+    /// Finalize the probe phase (for joins that need finalization like outer joins).
+    /// Streams results directly to the output sender to avoid holding all finalized
+    /// blocks in memory at once (prevents OOM for large build-side data).
     fn finalize_probe(
         &self,
         states: Vec<Self::ProbeState>,
         spawner: &ExecutionTaskSpawner,
+        sender: Sender<Arc<MicroPartition>>,
+        runtime_stats: Arc<dyn RuntimeStats>,
     ) -> ProbeFinalizeResult;
 
     /// Name of the operator

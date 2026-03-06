@@ -937,6 +937,7 @@ impl LocalPhysicalPlan {
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
+        target_block_size: Option<usize>,
     ) -> LocalPhysicalPlanRef {
         Self::Repartition(Repartition {
             input,
@@ -945,6 +946,7 @@ impl LocalPhysicalPlan {
             schema,
             stats_state,
             context,
+            target_block_size,
         })
         .arced()
     }
@@ -1617,6 +1619,7 @@ impl LocalPhysicalPlan {
                     num_partitions,
                     schema,
                     context,
+                    target_block_size,
                     ..
                 }) => Self::repartition(
                     new_child.clone(),
@@ -1625,6 +1628,7 @@ impl LocalPhysicalPlan {
                     schema.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
+                    *target_block_size,
                 ),
                 Self::IntoPartitions(IntoPartitions {
                     num_partitions,
@@ -2212,6 +2216,7 @@ pub struct Repartition {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
+    pub target_block_size: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize)]

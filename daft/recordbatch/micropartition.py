@@ -348,7 +348,7 @@ class MicroPartition:
 
         return MicroPartition._from_pymicropartition(
             self._micropartition.sort_merge_join(
-                right._micropartition, left_on=left_exprs, right_on=right_exprs, is_sorted=is_sorted
+                right._micropartition, left_on=left_exprs, right_on=right_exprs, how=how, is_sorted=is_sorted
             )
         )
 

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use common_error::{DaftError, DaftResult};
+use common_partitioning::PartitionRef;
 use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::{
@@ -37,6 +38,8 @@ fn translate_helper(
                 SourceInfo::InMemory(info) => {
                     let source_id = source_counter.next();
                     if let Some(partitions) = psets.get(&info.cache_key).cloned() {
+                        let partitions: Vec<PartitionRef> =
+                            partitions.into_iter().map(|p| p as PartitionRef).collect();
                         inputs.insert(source_id, Input::InMemory(partitions));
                     }
 
@@ -394,20 +397,10 @@ fn translate_helper(
             ))
         }
         LogicalPlan::Join(join) => {
-            if let Some(strategy) = join.join_strategy {
-                match strategy {
-                    JoinStrategy::Broadcast => {
-                        log::warn!(
-                            "Broadcast join is not supported on the native runner, falling back to hash join. Please use the ray runner, daft.set_runner_ray(), if you require broadcast joins."
-                        );
-                    }
-                    JoinStrategy::SortMerge => {
-                        log::warn!(
-                            "Sort merge join is not supported on the native runner, falling back to hash join."
-                        );
-                    }
-                    _ => {}
-                }
+            if join.join_strategy == Some(JoinStrategy::Broadcast) {
+                log::warn!(
+                    "Broadcast join is not supported on the native runner, falling back to hash join. Please use the ray runner, daft.set_runner_ray(), if you require broadcast joins."
+                );
             }
             let (left_plan, mut left_inputs) = translate_helper(&join.left, source_counter, psets)?;
             let (right_plan, right_inputs) = translate_helper(&join.right, source_counter, psets)?;
@@ -429,6 +422,32 @@ fn translate_helper(
                     LocalPhysicalPlan::cross_join(
                         left_plan,
                         right_plan,
+                        join.output_schema.clone(),
+                        join.stats_state.clone(),
+                        LocalNodeContext::default(),
+                    ),
+                    left_inputs,
+                ))
+            } else if join.join_strategy == Some(JoinStrategy::SortMerge) {
+                let left_on = BoundExpr::bind_all(&left_on, left_plan.schema())?;
+                let right_on = BoundExpr::bind_all(&right_on, right_plan.schema())?;
+
+                let right_plan = LocalPhysicalPlan::sort(
+                    right_plan,
+                    right_on.clone(),
+                    vec![false; right_on.len()],
+                    vec![false; right_on.len()], // nulls_first
+                    join.stats_state.clone(),
+                    LocalNodeContext::default(),
+                );
+
+                Ok((
+                    LocalPhysicalPlan::sort_merge_join(
+                        left_plan,
+                        right_plan,
+                        left_on,
+                        right_on,
+                        join.join_type,
                         join.output_schema.clone(),
                         join.stats_state.clone(),
                         LocalNodeContext::default(),

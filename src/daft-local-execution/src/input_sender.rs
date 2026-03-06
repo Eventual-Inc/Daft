@@ -1,7 +1,7 @@
 use common_error::{DaftError, DaftResult};
+use common_partitioning::PartitionRef;
 use common_scan_info::ScanTaskLikeRef;
 use daft_local_plan::{Input, InputId};
-use daft_micropartition::MicroPartitionRef;
 
 use crate::channel::UnboundedSender;
 
@@ -9,7 +9,7 @@ use crate::channel::UnboundedSender;
 #[derive(Clone)]
 pub(crate) enum InputSender {
     ScanTasks(UnboundedSender<(InputId, Vec<ScanTaskLikeRef>)>),
-    InMemory(UnboundedSender<(InputId, Vec<MicroPartitionRef>)>),
+    InMemory(UnboundedSender<(InputId, Vec<PartitionRef>)>),
     GlobPaths(UnboundedSender<(InputId, Vec<String>)>),
 }
 

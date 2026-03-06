@@ -119,6 +119,10 @@ impl PyDaftExecutionConfig {
         enable_dynamic_batching=None,
         dynamic_batching_strategy=None,
         flight_shuffle_dirs=None,
+        map_reduce_shuffle_spill_memory_limit_bytes=None,
+        map_reduce_shuffle_target_block_size=None,
+        map_reduce_shuffle_spill_dir=None,
+        map_reduce_shuffle_spill_batch_size=None,
     ))]
     fn with_config_values(
         &self,
@@ -152,6 +156,10 @@ impl PyDaftExecutionConfig {
         enable_dynamic_batching: Option<bool>,
         dynamic_batching_strategy: Option<&str>,
         flight_shuffle_dirs: Option<Vec<String>>,
+        map_reduce_shuffle_spill_memory_limit_bytes: Option<usize>,
+        map_reduce_shuffle_target_block_size: Option<usize>,
+        map_reduce_shuffle_spill_dir: Option<String>,
+        map_reduce_shuffle_spill_batch_size: Option<usize>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -276,6 +284,31 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.flight_shuffle_dirs = flight_shuffle_dirs;
+        }
+        if let Some(map_reduce_shuffle_spill_memory_limit_bytes) =
+            map_reduce_shuffle_spill_memory_limit_bytes
+        {
+            // A value of 0 means "no limit" (use total system RAM).
+            config.map_reduce_shuffle_spill_memory_limit_bytes =
+                if map_reduce_shuffle_spill_memory_limit_bytes == 0 {
+                    None
+                } else {
+                    Some(map_reduce_shuffle_spill_memory_limit_bytes)
+                };
+        }
+        if let Some(map_reduce_shuffle_target_block_size) = map_reduce_shuffle_target_block_size {
+            config.map_reduce_shuffle_target_block_size = map_reduce_shuffle_target_block_size;
+        }
+        if let Some(map_reduce_shuffle_spill_dir) = map_reduce_shuffle_spill_dir {
+            config.map_reduce_shuffle_spill_dir = Some(map_reduce_shuffle_spill_dir);
+        }
+        if let Some(map_reduce_shuffle_spill_batch_size) = map_reduce_shuffle_spill_batch_size {
+            if map_reduce_shuffle_spill_batch_size == 0 {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "map_reduce_shuffle_spill_batch_size must be a positive integer (> 0)",
+                ));
+            }
+            config.map_reduce_shuffle_spill_batch_size = map_reduce_shuffle_spill_batch_size;
         }
 
         Ok(Self {
@@ -416,6 +449,22 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn dynamic_batching_strategy(&self) -> PyResult<&str> {
         Ok(self.config.dynamic_batching_strategy.as_str())
+    }
+    #[getter]
+    fn map_reduce_shuffle_spill_memory_limit_bytes(&self) -> PyResult<Option<usize>> {
+        Ok(self.config.map_reduce_shuffle_spill_memory_limit_bytes)
+    }
+    #[getter]
+    fn map_reduce_shuffle_target_block_size(&self) -> PyResult<usize> {
+        Ok(self.config.map_reduce_shuffle_target_block_size)
+    }
+    #[getter]
+    fn map_reduce_shuffle_spill_dir(&self) -> PyResult<Option<String>> {
+        Ok(self.config.map_reduce_shuffle_spill_dir.clone())
+    }
+    #[getter]
+    fn map_reduce_shuffle_spill_batch_size(&self) -> PyResult<usize> {
+        Ok(self.config.map_reduce_shuffle_spill_batch_size)
     }
 }
 

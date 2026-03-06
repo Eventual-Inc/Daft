@@ -5,7 +5,6 @@ use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{JoinType, stats::StatsState};
-use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
 use futures::{TryStreamExt, future::try_join_all};
 
@@ -28,6 +27,16 @@ use crate::{
         transpose::transpose_materialized_outputs_from_vec,
     },
 };
+
+/// Returns true if the join can skip producing output given empty left/right inputs.
+pub(crate) fn should_skip_join(join_type: JoinType, left_empty: bool, right_empty: bool) -> bool {
+    match join_type {
+        JoinType::Inner | JoinType::Semi => true,
+        JoinType::Left | JoinType::Anti => left_empty,
+        JoinType::Right => right_empty,
+        JoinType::Outer => left_empty && right_empty,
+    }
+}
 
 pub(crate) struct SortMergeJoinNode {
     // Node properties
@@ -126,10 +135,20 @@ impl SortMergeJoinNode {
                 self.right.node_id(),
             );
 
+        // Sort the right side (Probe side) locally, as SortMergeJoinOperator expects it to be sorted.
+        let right_sorted_plan = LocalPhysicalPlan::sort(
+            right_in_memory_source_plan,
+            self.right_on.clone(),
+            vec![false; self.right_on.len()],
+            vec![false; self.right_on.len()],
+            StatsState::NotMaterialized,
+            LocalNodeContext::new(Some(self.node_id() as usize)),
+        );
+
         // Build the join plan
         let plan = LocalPhysicalPlan::sort_merge_join(
             left_in_memory_source_plan,
-            right_in_memory_source_plan,
+            right_sorted_plan,
             self.left_on.clone(),
             self.right_on.clone(),
             self.join_type,
@@ -172,28 +191,28 @@ impl SortMergeJoinNode {
             scheduler_handle,
         )?;
 
-        let left_boundary_key_names = self
-            .left_on
-            .iter()
-            .map(|expr| {
-                expr.inner()
-                    .to_field(&self.left.config().schema)
-                    .map(|f| f.name)
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-
-        let right_sample_by_aliased = self
+        // Alias right_on columns to left_on names.
+        // This is needed for sampling so left/right samples can be concatenated with
+        // matching column names. The same aliased names are also used for right-side
+        // range repartitioning, since the boundaries are computed using left_on names.
+        let right_on_aliased_to_left: Vec<BoundExpr> = self
             .right_on
             .iter()
-            .zip(left_boundary_key_names.into_iter())
-            .map(|(expr, key_name)| BoundExpr::new_unchecked(expr.inner().alias(key_name)))
-            .collect::<Vec<_>>();
-
+            .zip(self.left_on.iter())
+            .map(|(right_expr, left_expr)| {
+                let left_name = left_expr
+                    .inner()
+                    .to_field(&self.left.config().schema)
+                    .expect("Left join key not found in left schema")
+                    .name;
+                BoundExpr::new_unchecked(right_expr.inner().alias(left_name))
+            })
+            .collect();
         // Sample right side
         let right_sample_tasks = create_sample_tasks(
             right_materialized.clone(),
             self.right.config().schema.clone(),
-            right_sample_by_aliased,
+            right_on_aliased_to_left.clone(),
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
@@ -234,33 +253,16 @@ impl SortMergeJoinNode {
             scheduler_handle,
         )?;
 
-        let right_boundary_names = self
-            .right_on
-            .iter()
-            .map(|expr| {
-                expr.inner()
-                    .to_field(&self.right.config().schema)
-                    .map(|f| f.name)
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-
-        let right_partition_boundaries = RecordBatch::from_nonempty_columns(
-            left_partition_boundaries
-                .columns()
-                .iter()
-                .zip(right_boundary_names)
-                .map(|(series, name)| series.clone().rename(name))
-                .collect::<Vec<_>>(),
-        )?;
-
         // Range repartition right side
+        // Use left_partition_boundaries directly (column names are left_on names),
+        // paired with right_on_aliased_to_left which also evaluates to left_on names.
         let right_schema = self.right.config().schema.clone();
         let right_partition_tasks = create_range_repartition_tasks(
             right_materialized,
             right_schema,
-            self.right_on.clone(),
+            right_on_aliased_to_left,
             descending,
-            right_partition_boundaries,
+            left_partition_boundaries,
             num_partitions,
             self.as_ref(),
             task_id_counter,
@@ -333,9 +335,23 @@ impl SortMergeJoinNode {
             .try_collect::<Vec<_>>()
             .await?;
 
-        // Handle empty inputs
+        // Handle empty inputs based on join type.
+        // For inner/semi joins, either side empty means result is empty.
+        // For other join types, we may still need to emit rows from the non-empty side.
         if left_materialized.is_empty() || right_materialized.is_empty() {
-            return Ok(());
+            let can_skip = should_skip_join(
+                self.join_type,
+                left_materialized.is_empty(),
+                right_materialized.is_empty(),
+            );
+            if can_skip {
+                return Ok(());
+            }
+            // For non-skippable cases, submit a join task with the available data.
+            // The local join operator handles empty inputs correctly.
+            return self
+                .create_and_submit_join_task(left_materialized, right_materialized, &result_tx)
+                .await;
         }
 
         // Special case: if both sides have only 1 partition, just do a direct join
@@ -388,5 +404,40 @@ impl PipelineNodeImpl for SortMergeJoinNode {
             plan_context.scheduler_handle(),
         ));
         TaskBuilderStream::from(result_rx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_logical_plan::JoinType;
+
+    #[test]
+    fn test_can_skip_inner_left_empty() {
+        assert!(super::should_skip_join(JoinType::Inner, true, false));
+    }
+
+    #[test]
+    fn test_can_skip_inner_right_empty() {
+        assert!(super::should_skip_join(JoinType::Inner, false, true));
+    }
+
+    #[test]
+    fn test_can_skip_left_left_empty() {
+        assert!(super::should_skip_join(JoinType::Left, true, false));
+    }
+
+    #[test]
+    fn test_can_skip_left_right_empty() {
+        assert!(!super::should_skip_join(JoinType::Left, false, true));
+    }
+
+    #[test]
+    fn test_can_skip_right_left_empty() {
+        assert!(!super::should_skip_join(JoinType::Right, true, false));
+    }
+
+    #[test]
+    fn test_can_skip_outer_one_empty() {
+        assert!(!super::should_skip_join(JoinType::Outer, true, false));
     }
 }
