@@ -77,6 +77,10 @@ impl From<(TaskContext, &DaftResult<TaskStatus>)> for TaskEvent {
                     context,
                     reason: "Worker unavailable".to_string(),
                 },
+                TaskStatus::InputMissing => Self::Failed {
+                    context,
+                    reason: "Input missing".to_string(),
+                },
             },
             Err(error) => Self::Failed {
                 context,

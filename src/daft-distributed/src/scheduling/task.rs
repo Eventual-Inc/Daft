@@ -437,8 +437,12 @@ pub(crate) enum TaskStatus {
         error: DaftError,
     },
     Cancelled,
+    /// Worker that was running the task died
     WorkerDied,
+    /// Worker that was running the task is unavailable
     WorkerUnavailable,
+    /// Task failed because an input partition is unavailable
+    InputMissing,
 }
 
 pub(crate) trait TaskResultHandle: Send + Sync {

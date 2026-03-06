@@ -109,10 +109,12 @@ class RaySwordfishActor:
         self.server = start_flight_server(self.ip)
         self.port = self.server.port()
 
+    @ray.method(num_returns=1)  # type: ignore[untyped-decorator]
     def get_address(self) -> str:
         return f"grpc://{self.ip}:{self.port}"
 
-    async def run_plan(
+    @ray.method(num_returns="streaming")  # type: ignore[untyped-decorator]
+    async def run_task(
         self,
         plan: LocalPhysicalPlan,
         exec_cfg: PyDaftExecutionConfig,
@@ -130,8 +132,16 @@ class RaySwordfishActor:
             resolved_inputs: dict[int, Input | list[PyMicroPartition]] = {}
             list_items = [(source_id, part) for source_id, part in inputs.items() if isinstance(part, list)]
             non_list_items = [(source_id, part) for source_id, part in inputs.items() if not isinstance(part, list)]
+
             if list_items:
-                list_results = await asyncio.gather(*[asyncio.gather(*part) for _, part in list_items])
+                try:
+                    list_results: list[list[MicroPartition]] = await asyncio.gather(
+                        *[asyncio.gather(*part) for _, part in list_items]
+                    )
+                except ray.exceptions.ObjectLostError:
+                    logger.error("Failed to get input partitions for task")
+                    raise
+
                 for (source_id, _), mps in zip(list_items, list_results):
                     resolved_inputs[int(source_id)] = [mp._micropartition for mp in mps]
 
@@ -223,6 +233,8 @@ class RaySwordfishTaskHandle:
             return RayTaskResult.worker_died()
         except ray.exceptions.ActorUnavailableError:
             return RayTaskResult.worker_unavailable()
+        except ray.exceptions.ObjectLostError:
+            return RayTaskResult.input_missing()
         except Exception as e:
             raise e
 
@@ -254,7 +266,7 @@ class RaySwordfishActorHandle:
             inputs[str(source_id)] = py_input
         for source_id, refs in task.psets().items():
             inputs[str(source_id)] = [ref.object_ref for ref in refs]
-        result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
+        result_handle = self.actor_handle.run_task.options(name=task.name()).remote(
             task.plan(),
             task.config(),
             task.context(),

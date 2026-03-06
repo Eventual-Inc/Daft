@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_runtime::{JoinSet, JoinSetId};
 
 use super::{
@@ -129,6 +129,16 @@ impl<W: Worker> Dispatcher<W> {
                         TaskStatus::WorkerUnavailable => {
                             let schedulable_task = PendingTask::new(task, result_tx, canc);
                             failed_tasks.push(schedulable_task);
+                        }
+                        // Task failed because an input was missing, add the task to the failed tasks
+                        TaskStatus::InputMissing => {
+                            // TODO: Add proper handling for missing inputs
+                            if result_tx
+                                .send(Err(DaftError::InternalError("Input missing".to_string())))
+                                .is_err()
+                            {
+                                tracing::error!(target: DISPATCHER_LOG_TARGET, error = "Failed to send error of task to result_tx", task_context = ?task.task_context());
+                            }
                         }
                     },
                     // Task failed because of panic in joinset, send the error to the result_tx
