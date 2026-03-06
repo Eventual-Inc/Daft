@@ -117,6 +117,10 @@ mod tests {
     // Mock RuntimeStats for testing
     pub(crate) struct MockRuntimeStats;
     impl RuntimeStats for MockRuntimeStats {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
         fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
             unimplemented!()
         }
