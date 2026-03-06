@@ -76,6 +76,7 @@ impl RuntimeStats for LimitStats {
 ///
 /// Skip is the number of rows to skip if there is an offset.
 /// Take is the number of rows to take for the limit.
+#[derive(Debug)]
 struct LimitState {
     remaining_skip: usize,
     remaining_take: usize,
@@ -328,7 +329,9 @@ impl LimitNode {
 
             // Update max_concurrent_tasks based on actual output
             // Only update if we have remaining limit, and we did get some output
-            if !limit_state.is_take_done() && total_num_rows > 0 && num_local_limits > 0 {
+            if limit_state.is_take_done() {
+                break;
+            } else if total_num_rows > 0 && num_local_limits > 0 {
                 let rows_per_task = total_num_rows.div_ceil(num_local_limits);
                 max_concurrent_tasks = limit_state.remaining_take().div_ceil(rows_per_task);
             }
