@@ -464,6 +464,7 @@ impl_bincode_py_state_serialization!(WarcSourceConfig);
 pub struct TextSourceConfig {
     pub encoding: String,
     pub skip_blank_lines: bool,
+    pub whole_text: bool,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
 }
@@ -477,18 +478,21 @@ impl TextSourceConfig {
     #[pyo3(signature = (
         encoding,
         skip_blank_lines,
+        whole_text=false,
         buffer_size=None,
-        chunk_size=None
+        chunk_size=None,
     ))]
     fn new(
         encoding: String,
         skip_blank_lines: bool,
+        whole_text: bool,
         buffer_size: Option<usize>,
         chunk_size: Option<usize>,
     ) -> PyResult<Self> {
         Ok(Self {
             encoding,
             skip_blank_lines,
+            whole_text,
             buffer_size,
             chunk_size,
         })
@@ -501,6 +505,7 @@ impl TextSourceConfig {
         let mut res = vec![];
         res.push(format!("Encoding = {}", self.encoding));
         res.push(format!("Skip blank lines = {}", self.skip_blank_lines));
+        res.push(format!("Whole text = {}", self.whole_text));
         if let Some(buffer_size) = self.buffer_size {
             res.push(format!("Buffer size = {buffer_size}"));
         }
@@ -508,6 +513,18 @@ impl TextSourceConfig {
             res.push(format!("Chunk size = {chunk_size}"));
         }
         res
+    }
+}
+
+impl Default for TextSourceConfig {
+    fn default() -> Self {
+        Self {
+            encoding: "utf-8".to_string(),
+            skip_blank_lines: true,
+            whole_text: false,
+            buffer_size: None,
+            chunk_size: None,
+        }
     }
 }
 
