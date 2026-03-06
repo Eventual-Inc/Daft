@@ -1792,6 +1792,7 @@ class PyRecordBatch:
         right: PyRecordBatch,
         left_on: list[PyExpr],
         right_on: list[PyExpr],
+        how: JoinType,
         is_sorted: bool,
     ) -> PyRecordBatch: ...
     def explode(self, to_explode: list[PyExpr], index_column: str | None = None) -> PyRecordBatch: ...
@@ -1884,6 +1885,7 @@ class PyMicroPartition:
         right: PyMicroPartition,
         left_on: list[PyExpr],
         right_on: list[PyExpr],
+        how: JoinType,
         is_sorted: bool,
     ) -> PyMicroPartition: ...
     def cross_join(
@@ -2242,6 +2244,10 @@ class PyDaftExecutionConfig:
         enable_dynamic_batching: bool | None = None,
         dynamic_batching_strategy: str | None = None,
         flight_shuffle_dirs: list[str] | None = None,
+        map_reduce_shuffle_spill_memory_limit_bytes: int | None = None,
+        map_reduce_shuffle_target_block_size: int | None = None,
+        map_reduce_shuffle_spill_dir: str | None = None,
+        map_reduce_shuffle_spill_batch_size: int | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def enable_scan_task_split_and_merge(self) -> bool: ...
@@ -2299,6 +2305,14 @@ class PyDaftExecutionConfig:
     def dynamic_batching_strategy(self) -> str: ...
     @property
     def flight_shuffle_dirs(self) -> list[str]: ...
+    @property
+    def map_reduce_shuffle_spill_memory_limit_bytes(self) -> int | None: ...
+    @property
+    def map_reduce_shuffle_target_block_size(self) -> int: ...
+    @property
+    def map_reduce_shuffle_spill_dir(self) -> str | None: ...
+    @property
+    def map_reduce_shuffle_spill_batch_size(self) -> int: ...
 
 class PyDaftPlanningConfig:
     @staticmethod

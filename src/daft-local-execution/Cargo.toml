@@ -7,6 +7,7 @@ common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
+common-partitioning = {path = "../common/partitioning", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
 common-logging = {path = "../common/logging", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}
@@ -51,6 +52,11 @@ tokio-util = {workspace = true}
 tracing = {workspace = true}
 serde_json = {workspace = true}
 opentelemetry = {workspace = true}
+uuid = {workspace = true}
+arrow-ipc = {workspace = true}
+arrow-array = {workspace = true}
+arrow-schema = {workspace = true}
+arrow-row = {workspace = true}
 
 [features]
 python = [
@@ -59,6 +65,7 @@ python = [
   "common-daft-config/python",
   "common-display/python",
   "common-error/python",
+  "common-partitioning/python",
   "common-file-formats/python",
   "common-py-serde/python",
   "common-runtime/python",
@@ -83,3 +90,6 @@ workspace = true
 edition = {workspace = true}
 name = "daft-local-execution"
 version = {workspace = true}
+
+[dev-dependencies]
+tempfile = "3.23.0"

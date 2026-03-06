@@ -10,7 +10,9 @@ mod resource_manager;
 mod run;
 mod runtime_stats;
 mod sinks;
+mod sorter;
 mod sources;
+mod spill;
 mod streaming_sink;
 use std::{
     future::Future,

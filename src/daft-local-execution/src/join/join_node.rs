@@ -561,13 +561,13 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
                         .map(|(_, state)| state)
                         .collect();
 
-                    let finalized_output = op
-                        .finalize_probe(finished_states, &finalize_spawner)
-                        .await??;
-                    if let Some(mp) = finalized_output {
-                        probe_ctx.runtime_stats.add_rows_out(mp.len() as u64);
-                        let _ = probe_ctx.output_sender.send(mp).await;
-                    }
+                    op.finalize_probe(
+                        finished_states,
+                        &finalize_spawner,
+                        probe_ctx.output_sender.clone(),
+                        probe_ctx.runtime_stats.clone(),
+                    )
+                    .await??;
                 }
 
                 stats_manager.finalize_node(node_id);

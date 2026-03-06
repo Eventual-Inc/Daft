@@ -6,8 +6,59 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
-    pyo3::{Py, PyAny},
+    pyo3::{IntoPyObject, Py, PyAny, PyResult, Python, pyclass},
 };
+
+#[cfg(feature = "python")]
+#[pyclass(module = "daft.daft", name = "RayPartitionRef", frozen)]
+#[derive(Debug, Clone)]
+pub struct RayPartitionRef {
+    pub object_ref: Arc<Py<PyAny>>,
+    pub num_rows: usize,
+    pub size_bytes: usize,
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl RayPartitionRef {
+    #[new]
+    pub fn new(object_ref: Py<PyAny>, num_rows: usize, size_bytes: usize) -> Self {
+        Self {
+            object_ref: Arc::new(object_ref),
+            num_rows,
+            size_bytes,
+        }
+    }
+
+    #[getter]
+    pub fn get_object_ref(&self, py: Python) -> Py<PyAny> {
+        self.object_ref.clone_ref(py)
+    }
+
+    #[getter]
+    pub fn get_num_rows(&self) -> usize {
+        self.num_rows
+    }
+
+    #[getter]
+    pub fn get_size_bytes(&self) -> usize {
+        self.size_bytes
+    }
+
+    pub fn __reduce__(&self, py: Python) -> PyResult<(Py<PyAny>, Py<PyAny>)> {
+        use pyo3::types::PyAnyMethods;
+        let cls = py
+            .import(pyo3::intern!(py, "daft.daft"))?
+            .getattr(pyo3::intern!(py, "RayPartitionRef"))?;
+        let args = (
+            self.object_ref.clone_ref(py),
+            self.num_rows,
+            self.size_bytes,
+        )
+            .into_pyobject(py)?;
+        Ok((cls.into(), args.into()))
+    }
+}
 
 /// Common trait interface for dataset partitioning, defined in this shared crate to avoid circular dependencies.
 ///
@@ -16,6 +67,9 @@ pub trait Partition: std::fmt::Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn size_bytes(&self) -> usize;
     fn num_rows(&self) -> usize;
+    fn fetch_native(
+        &self,
+    ) -> futures::future::BoxFuture<'static, DaftResult<Arc<dyn Any + Send + Sync>>>;
 }
 
 impl<T> Partition for Arc<T>
@@ -31,6 +85,12 @@ where
 
     fn num_rows(&self) -> usize {
         (**self).num_rows()
+    }
+
+    fn fetch_native(
+        &self,
+    ) -> futures::future::BoxFuture<'static, DaftResult<Arc<dyn Any + Send + Sync>>> {
+        (**self).fetch_native()
     }
 }
 
