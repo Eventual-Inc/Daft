@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 #![feature(iterator_try_collect)]
 
 use std::{
