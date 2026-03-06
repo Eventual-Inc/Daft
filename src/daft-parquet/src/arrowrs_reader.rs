@@ -46,6 +46,11 @@ use crate::{
 /// Default batch size for the arrow-rs reader (number of rows per batch).
 const DEFAULT_BATCH_SIZE: usize = 8192;
 
+/// Minimum uncompressed row group byte size to enable intra-RG column parallelism.
+/// Below this threshold, the overhead of per-column readers (metadata clones, buffer
+/// setup, hconcat) exceeds the benefit of parallel decode.
+const MIN_RG_BYTES_FOR_COL_PARALLELISM: i64 = 16 * 1024 * 1024; // 16 MiB
+
 /// Convert a parquet error to a DaftError.
 fn parquet_err(e: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> common_error::DaftError {
     common_error::DaftError::External(e.into())
@@ -651,8 +656,12 @@ fn decode_single_rg_col_parallel(
     let all_col_indices =
         compute_root_indices(&setup.arrow_schema, setup.read_col_set.as_ref(), None);
 
-    // Fallback for single column.
-    if all_col_indices.len() <= 1 {
+    // Fallback: single column or small row group where parallel overhead exceeds benefit.
+    let rg_byte_size = setup
+        .parquet_metadata
+        .row_group(task.rg_idx)
+        .total_byte_size();
+    if all_col_indices.len() <= 1 || rg_byte_size < MIN_RG_BYTES_FOR_COL_PARALLELISM {
         return decode_single_rg(path, setup, task, predicate, None);
     }
 
@@ -1722,8 +1731,14 @@ pub fn local_parquet_read_arrowrs(
     let all_col_indices =
         compute_root_indices(&setup.arrow_schema, setup.read_col_set.as_ref(), None);
 
-    // Fallback: single column or single RG without predicate -> use decode_single_rg.
-    if all_col_indices.len() <= 1 {
+    // Check if any row group is large enough to benefit from column parallelism.
+    let any_rg_large = setup.rg_tasks.iter().any(|t| {
+        setup.parquet_metadata.row_group(t.rg_idx).total_byte_size()
+            >= MIN_RG_BYTES_FOR_COL_PARALLELISM
+    });
+
+    // Fallback: single column or all RGs too small -> use decode_single_rg per RG.
+    if all_col_indices.len() <= 1 || !any_rg_large {
         // Single-column: no benefit from column splitting.
         if setup.rg_tasks.len() == 1 {
             let mut table = decode_single_rg(
