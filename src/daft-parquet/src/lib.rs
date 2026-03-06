@@ -1,5 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
-
 use common_error::DaftError;
 use snafu::Snafu;
 
@@ -35,7 +33,7 @@ pub fn infer_schema_from_daft_metadata(
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("{source}"))]
-    ArrowError { source: daft_arrow::error::Error },
+    ArrowError { source: arrow::error::ArrowError },
 
     #[snafu(display("{source}"))]
     DaftIOError { source: daft_io::Error },
@@ -62,13 +60,13 @@ pub enum Error {
     #[snafu(display("Unable to parse parquet metadata for file {}: {}", path, source))]
     UnableToParseMetadataFromLocalFile {
         path: String,
-        source: daft_arrow::error::Error,
+        source: arrow::error::ArrowError,
     },
 
     #[snafu(display("Unable to read parquet row group for file {}: {}", path, source))]
     UnableToReadParquetRowGroup {
         path: String,
-        source: daft_arrow::error::Error,
+        source: arrow::error::ArrowError,
     },
 
     #[snafu(display(
@@ -166,6 +164,8 @@ pub enum Error {
     OneShotRecvError {
         source: tokio::sync::oneshot::error::RecvError,
     },
+    #[snafu(display("Parse error: {}", message))]
+    ParseError { message: String },
 }
 
 impl From<Error> for DaftError {
