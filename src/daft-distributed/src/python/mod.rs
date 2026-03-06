@@ -23,7 +23,7 @@ use crate::{
         viz_distributed_pipeline_mermaid,
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
-    python::ray::{RayPartitionRef, RayTaskResult},
+    python::ray::{DistributedRayPartition, RayPartitionRef, RayTaskResult},
     statistics::{StatisticsManagerRef, StatisticsSubscriber},
 };
 
@@ -52,8 +52,9 @@ impl PythonPartitionRefStream {
                     let result = result?;
                     let ray_part_ref = result
                         .as_any()
-                        .downcast_ref::<RayPartitionRef>()
-                        .expect("Failed to downcast to RayPartitionRef")
+                        .downcast_ref::<DistributedRayPartition>()
+                        .expect("Failed to downcast to DistributedRayPartition")
+                        .0
                         .clone();
                     Some(ray_part_ref)
                 }
@@ -200,7 +201,7 @@ impl PyDistributedPhysicalPlanRunner {
                 (
                     k,
                     v.into_iter()
-                        .map(|v| Arc::new(v) as Arc<dyn Partition>)
+                        .map(|v| Arc::new(DistributedRayPartition(v)) as Arc<dyn Partition>)
                         .collect(),
                 )
             })

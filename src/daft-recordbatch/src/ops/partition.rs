@@ -8,7 +8,7 @@ use rand::SeedableRng;
 use crate::RecordBatch;
 
 impl RecordBatch {
-    fn partition_by_index(
+    pub fn partition_by_index(
         &self,
         targets: &UInt64Array,
         num_partitions: usize,

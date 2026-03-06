@@ -188,6 +188,10 @@ def set_execution_config(
     enable_dynamic_batching: bool | None = None,
     dynamic_batching_strategy: str | None = None,
     flight_shuffle_dirs: list[str] | None = None,
+    map_reduce_shuffle_spill_memory_limit_bytes: int | None = None,
+    map_reduce_shuffle_target_block_size: int | None = None,
+    map_reduce_shuffle_spill_dir: str | None = None,
+    map_reduce_shuffle_spill_batch_size: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -232,7 +236,12 @@ def set_execution_config(
         maintain_order: Whether to maintain order during execution. Defaults to True. Some blocking sink operators (e.g. write_parquet) won't respect this flag and will always keep maintain_order as false, and propagate to child operators. It's useful to set this to False for running df.collect() when no ordering is required.
         enable_dynamic_batching: Whether to enable dynamic batching. Defaults to False.
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
-        flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to ["/tmp"]. Must not be empty.
+        flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to None.
+        map_reduce_shuffle_target_block_size: Target block size in bytes for shuffle map output. Defaults to 64MB.
+        map_reduce_shuffle_spill_memory_limit_bytes: Memory limit in bytes for map-reduce shuffle spill operations. Defaults to 512MB (536870912).
+        map_reduce_shuffle_spill_dir: Directory to use for spilling intermediate data to disk. Priority: this config value > DAFT_MAP_REDUCE_SHUFFLE_SPILL_DIR env var > system temp dir. Defaults to None.
+        map_reduce_shuffle_spill_batch_size: Number of rows per IPC batch when writing spill files. Controls the granularity of
+            data written to and read from disk during external sort. It must be positive and the defaults to 8192 rows.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -271,6 +280,10 @@ def set_execution_config(
             enable_dynamic_batching=enable_dynamic_batching,
             dynamic_batching_strategy=dynamic_batching_strategy,
             flight_shuffle_dirs=flight_shuffle_dirs,
+            map_reduce_shuffle_spill_memory_limit_bytes=map_reduce_shuffle_spill_memory_limit_bytes,
+            map_reduce_shuffle_target_block_size=map_reduce_shuffle_target_block_size,
+            map_reduce_shuffle_spill_dir=map_reduce_shuffle_spill_dir,
+            map_reduce_shuffle_spill_batch_size=map_reduce_shuffle_spill_batch_size,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

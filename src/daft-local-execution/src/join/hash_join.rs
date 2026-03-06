@@ -255,6 +255,8 @@ impl JoinOperator for HashJoinOperator {
         &self,
         states: Vec<Self::ProbeState>,
         spawner: &ExecutionTaskSpawner,
+        sender: crate::channel::Sender<Arc<MicroPartition>>,
+        runtime_stats: Arc<dyn crate::runtime_stats::RuntimeStats>,
     ) -> ProbeFinalizeResult {
         debug_assert!(
             self.needs_bitmap(),
@@ -271,7 +273,11 @@ impl JoinOperator for HashJoinOperator {
                 .spawn(
                     async move {
                         let output = finalize_outer(states, &params).await?;
-                        Ok(output)
+                        if let Some(mp) = output {
+                            runtime_stats.add_rows_out(mp.len() as u64);
+                            let _ = sender.send(mp).await;
+                        }
+                        Ok(())
                     },
                     Span::current(),
                 )
@@ -285,7 +291,11 @@ impl JoinOperator for HashJoinOperator {
                     .spawn(
                         async move {
                             let output = finalize_left(states, &params).await?;
-                            Ok(output)
+                            if let Some(mp) = output {
+                                runtime_stats.add_rows_out(mp.len() as u64);
+                                let _ = sender.send(mp).await;
+                            }
+                            Ok(())
                         },
                         Span::current(),
                     )
@@ -300,7 +310,11 @@ impl JoinOperator for HashJoinOperator {
                     .spawn(
                         async move {
                             let output = finalize_right(states, &params).await?;
-                            Ok(output)
+                            if let Some(mp) = output {
+                                runtime_stats.add_rows_out(mp.len() as u64);
+                                let _ = sender.send(mp).await;
+                            }
+                            Ok(())
                         },
                         Span::current(),
                     )
@@ -316,7 +330,11 @@ impl JoinOperator for HashJoinOperator {
                     .spawn(
                         async move {
                             let output = finalize_anti_semi(states, is_semi).await?;
-                            Ok(output)
+                            if let Some(mp) = output {
+                                runtime_stats.add_rows_out(mp.len() as u64);
+                                let _ = sender.send(mp).await;
+                            }
+                            Ok(())
                         },
                         Span::current(),
                     )

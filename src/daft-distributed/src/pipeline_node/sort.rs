@@ -47,14 +47,16 @@ pub(crate) async fn get_partition_boundaries_from_samples(
         .into_iter()
         .flat_map(|mo| mo.into_inner().0)
         .map(|pr| {
-            use crate::python::ray::RayPartitionRef;
+            use crate::python::ray::DistributedRayPartition;
 
-            let ray_partition_ref = pr.as_any().downcast_ref::<RayPartitionRef>().ok_or(
-                common_error::DaftError::InternalError(
+            let ray_partition_ref = pr
+                .as_any()
+                .downcast_ref::<DistributedRayPartition>()
+                .map(|drp| drp.0.clone())
+                .ok_or(common_error::DaftError::InternalError(
                     "Failed to downcast partition ref".to_string(),
-                ),
-            )?;
-            Ok(ray_partition_ref.clone())
+                ))?;
+            Ok(ray_partition_ref)
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
@@ -194,6 +196,12 @@ pub(crate) fn create_range_repartition_tasks(
                 input_schema.clone(),
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(node_id as usize)),
+                Some(
+                    pipeline_node
+                        .config()
+                        .execution_config
+                        .map_reduce_shuffle_target_block_size,
+                ),
             );
             let builder = SwordfishTaskBuilder::new(plan, pipeline_node)
                 .with_psets(node_id, mo.into_inner().0);

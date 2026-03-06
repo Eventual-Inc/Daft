@@ -22,6 +22,13 @@ impl Partition for MicroPartition {
     fn num_rows(&self) -> usize {
         self.len()
     }
+    fn fetch_native(
+        &self,
+    ) -> futures::future::BoxFuture<'static, DaftResult<Arc<dyn Any + Send + Sync>>> {
+        use futures::FutureExt;
+        let mp = self.clone();
+        async move { Ok(Arc::new(mp) as Arc<dyn Any + Send + Sync>) }.boxed()
+    }
 }
 
 // An in memory partition set

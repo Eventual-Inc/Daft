@@ -133,6 +133,10 @@ impl PipelineNodeImpl for RepartitionNode {
 
         // First pipeline the local repartition op
         let self_clone = self.clone();
+        let target_block_size = self
+            .config
+            .execution_config
+            .map_reduce_shuffle_target_block_size;
         let local_repartition_node = input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::repartition(
                 input,
@@ -141,6 +145,7 @@ impl PipelineNodeImpl for RepartitionNode {
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(self_clone.node_id() as usize)),
+                Some(target_block_size),
             )
         });
 

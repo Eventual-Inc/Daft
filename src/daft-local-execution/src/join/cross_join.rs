@@ -148,8 +148,10 @@ impl JoinOperator for CrossJoinOperator {
         &self,
         _states: Vec<Self::ProbeState>,
         _spawner: &ExecutionTaskSpawner,
+        _sender: crate::channel::Sender<Arc<MicroPartition>>,
+        _runtime_stats: Arc<dyn crate::runtime_stats::RuntimeStats>,
     ) -> ProbeFinalizeResult {
-        Ok(None).into()
+        Ok(()).into()
     }
 
     fn name(&self) -> NodeName {

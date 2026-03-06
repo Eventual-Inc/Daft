@@ -1,8 +1,12 @@
 use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
+use common_error::DaftResult;
+pub(crate) use common_partitioning::RayPartitionRef;
 use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::{ExecutionStats, PyLocalPhysicalPlan, SourceId, python::PyInput};
+use daft_micropartition::python::PyMicroPartition;
+use futures::FutureExt;
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
@@ -12,6 +16,35 @@ use crate::{
         worker::WorkerId,
     },
 };
+
+#[derive(Debug, Clone)]
+pub(crate) struct DistributedRayPartition(pub(crate) RayPartitionRef);
+
+impl Partition for DistributedRayPartition {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn size_bytes(&self) -> usize {
+        self.0.size_bytes
+    }
+    fn num_rows(&self) -> usize {
+        self.0.num_rows
+    }
+    fn fetch_native(
+        &self,
+    ) -> futures::future::BoxFuture<'static, DaftResult<Arc<dyn Any + Send + Sync>>> {
+        let object_ref = self.0.object_ref.clone();
+        async move {
+            let py_mp: PyMicroPartition = common_runtime::python::execute_python_coroutine::<
+                _,
+                PyMicroPartition,
+            >(move |py| Ok(object_ref.bind(py).clone()))
+            .await?;
+            Ok(py_mp.inner as Arc<dyn Any + Send + Sync>)
+        }
+        .boxed()
+    }
+}
 
 #[pyclass(module = "daft.daft", name = "RayTaskResult")]
 #[derive(Clone)]
@@ -97,7 +130,9 @@ impl TaskResultHandle for RayTaskResultHandle {
                     let materialized_output = MaterializedOutput::new(
                         ray_part_refs
                             .into_iter()
-                            .map(|ray_part_ref| Arc::new(ray_part_ref) as PartitionRef)
+                            .map(|ray_part_ref| {
+                                Arc::new(DistributedRayPartition(ray_part_ref)) as PartitionRef
+                            })
                             .collect(),
                         worker_id.clone(),
                         ip_address.clone(),
@@ -122,53 +157,6 @@ impl TaskResultHandle for RayTaskResultHandle {
                 .call_method0(py, "cancel")
                 .expect("Failed to cancel task");
         });
-    }
-}
-
-#[pyclass(module = "daft.daft", name = "RayPartitionRef", frozen)]
-#[derive(Debug, Clone)]
-pub(crate) struct RayPartitionRef {
-    pub object_ref: Arc<Py<PyAny>>,
-    pub num_rows: usize,
-    pub size_bytes: usize,
-}
-
-#[pymethods]
-impl RayPartitionRef {
-    #[new]
-    pub fn new(object_ref: Py<PyAny>, num_rows: usize, size_bytes: usize) -> Self {
-        Self {
-            object_ref: Arc::new(object_ref),
-            num_rows,
-            size_bytes,
-        }
-    }
-
-    #[getter]
-    pub fn get_object_ref(&self, py: Python) -> Py<PyAny> {
-        self.object_ref.clone_ref(py)
-    }
-
-    #[getter]
-    pub fn get_num_rows(&self) -> usize {
-        self.num_rows
-    }
-
-    #[getter]
-    pub fn get_size_bytes(&self) -> usize {
-        self.size_bytes
-    }
-}
-
-impl Partition for RayPartitionRef {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn size_bytes(&self) -> usize {
-        self.size_bytes
-    }
-    fn num_rows(&self) -> usize {
-        self.num_rows
     }
 }
 
@@ -223,13 +211,9 @@ impl RaySwordfishTask {
                         .map(|v| {
                             let v = v
                                 .as_any()
-                                .downcast_ref::<RayPartitionRef>()
-                                .expect("Failed to downcast to RayPartitionRef");
-                            RayPartitionRef {
-                                object_ref: v.object_ref.clone(),
-                                num_rows: v.num_rows,
-                                size_bytes: v.size_bytes,
-                            }
+                                .downcast_ref::<DistributedRayPartition>()
+                                .expect("Failed to downcast to DistributedRayPartition");
+                            v.0.clone()
                         })
                         .collect(),
                 )

@@ -325,6 +325,14 @@ pub(crate) fn make_daft_comparator(
     match left.data_type() {
         DataType::Float32 => downcast_float!(Float32Type),
         DataType::Float64 => downcast_float!(Float64Type),
+        // Null arrays have no meaningful ordering — all values are null and compare as equal.
+        // Arrow-rs's make_comparator does not handle DataType::Null, so we handle it here.
+        DataType::Null => {
+            Ok(Box::new(move |_i: usize, _j: usize| -> Ordering {
+                // Both values are always null; null-vs-null is Equal regardless of sort options.
+                Ordering::Equal
+            }))
+        }
         _ => Ok(make_comparator(left, right, sort_options)?),
     }
 }
@@ -337,6 +345,17 @@ pub fn build_partial_compare_with_nulls(
     right: &dyn Array,
     reversed: bool,
 ) -> DaftResult<DynPartialComparator> {
+    // Special case: DataType::Null arrays are logically all-null, but arrow-rs NullArray
+    // has no null buffer, so is_valid() returns true. We must handle this explicitly:
+    // if either array is Null-typed, every comparison yields None (both-null / incomparable).
+    let left_is_null_type = *left.data_type() == DataType::Null;
+    let right_is_null_type = *right.data_type() == DataType::Null;
+    if left_is_null_type || right_is_null_type {
+        return Ok(Box::new(move |_i: usize, _j: usize| -> Option<Ordering> {
+            None
+        }));
+    }
+
     // `reversed` is ambiguous, but based on historical behaviour, the default is to sort in ascending order and nulls last.
     let comparator = make_daft_comparator(
         left,
@@ -847,5 +866,49 @@ mod tests {
 
         // NaN should sort after 0.0 but before null
         assert_eq!(result.value(0), 1);
+    }
+
+    #[test]
+    fn test_make_daft_comparator_null_type() {
+        use std::cmp::Ordering;
+
+        use arrow::array::NullArray;
+
+        let left = NullArray::new(3);
+        let right = NullArray::new(5);
+        let comparator = make_daft_comparator(&left, &right, SortOptions::default()).unwrap();
+        assert_eq!(comparator(0, 0), Ordering::Equal);
+        assert_eq!(comparator(2, 4), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_build_partial_compare_with_nulls_both_null_type() {
+        use arrow::array::NullArray;
+
+        let left = NullArray::new(3);
+        let right = NullArray::new(2);
+        let comparator = build_partial_compare_with_nulls(&left, &right, false).unwrap();
+        assert_eq!(comparator(0, 0), None);
+        assert_eq!(comparator(2, 1), None);
+    }
+
+    #[test]
+    fn test_build_partial_compare_with_nulls_left_null_type() {
+        use arrow::array::NullArray;
+
+        let left = NullArray::new(3);
+        let right = Int32Array::from(vec![1, 2, 3]);
+        let comparator = build_partial_compare_with_nulls(&left, &right, false).unwrap();
+        assert_eq!(comparator(0, 0), None);
+    }
+
+    #[test]
+    fn test_build_partial_compare_with_nulls_right_null_type() {
+        use arrow::array::NullArray;
+
+        let left = Int32Array::from(vec![1, 2, 3]);
+        let right = NullArray::new(3);
+        let comparator = build_partial_compare_with_nulls(&left, &right, false).unwrap();
+        assert_eq!(comparator(0, 0), None);
     }
 }

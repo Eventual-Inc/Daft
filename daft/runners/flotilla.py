@@ -6,7 +6,7 @@ import os
 import shutil
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from daft.daft import (
     DistributedPhysicalPlan,
@@ -117,25 +117,15 @@ class RaySwordfishActor:
         plan: LocalPhysicalPlan,
         exec_cfg: PyDaftExecutionConfig,
         context: dict[str, str] | None,
-        **inputs: (
-            Input | list[ray.ObjectRef]
-        ),  # PyMicroPartitions are separated from Inputs because they are Ray ObjectRefs, which will be resolved by Ray.
+        **inputs: (Input | list[RayPartitionRef]),
     ) -> AsyncGenerator[MicroPartition | SwordfishTaskMetadata, None]:
         """Run a plan on swordfish and yield partitions."""
         # We import PyDaftContext inside the function because PyDaftContext is not serializable.
         from daft.daft import PyDaftContext
 
         with profile():
-            # create the resolved inputs from the micropartitions and the other inputs
-            resolved_inputs: dict[int, Input | list[PyMicroPartition]] = {}
-            list_items = [(source_id, part) for source_id, part in inputs.items() if isinstance(part, list)]
-            non_list_items = [(source_id, part) for source_id, part in inputs.items() if not isinstance(part, list)]
-            if list_items:
-                list_results = await asyncio.gather(*[asyncio.gather(*part) for _, part in list_items])
-                for (source_id, _), mps in zip(list_items, list_results):
-                    resolved_inputs[int(source_id)] = [mp._micropartition for mp in mps]
-
-            for source_id, part in non_list_items:
+            resolved_inputs: dict[int, Any] = {}
+            for source_id, part in inputs.items():
                 resolved_inputs[int(source_id)] = part
 
             ctx = PyDaftContext()
@@ -249,11 +239,11 @@ class RaySwordfishActorHandle:
         self.actor_handle = actor_handle
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
-        inputs: dict[str, Input | list[ray.ObjectRef]] = {}
+        inputs: dict[str, Input | list[RayPartitionRef]] = {}
         for source_id, py_input in task.inputs().items():
             inputs[str(source_id)] = py_input
         for source_id, refs in task.psets().items():
-            inputs[str(source_id)] = [ref.object_ref for ref in refs]
+            inputs[str(source_id)] = list(refs)
         result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
             task.plan(),
             task.config(),

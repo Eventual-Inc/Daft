@@ -683,4 +683,37 @@ mod tests {
         // Should not request autoscaling
         assert!(scheduler.get_autoscaling_request().is_none());
     }
+
+    #[test]
+    fn test_min_cpu_per_task_affects_scheduling() {
+        let worker_1: WorkerId = Arc::from("worker1");
+
+        // Worker with 4 CPUs
+        let workers = setup_workers(&[
+            (worker_1.clone(), 4), // 4 CPUs available
+        ]);
+
+        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
+
+        // Create 4 tasks with min_cpu_per_task=2.0 (default resource request has no explicit CPUs,
+        // so base=1.0, but min_cpu_per_task=2.0 raises effective to 2.0)
+        // Worker has 4 CPUs, so only 2 tasks should fit (4/2 = 2)
+        let tasks: Vec<_> = (0..4)
+            .map(|i| {
+                create_schedulable_task(
+                    MockTaskBuilder::default()
+                        .with_task_id(i)
+                        .with_resource_request_and_min_cpu(ResourceRequest::default(), 2.0)
+                        .build(),
+                )
+            })
+            .collect();
+
+        scheduler.enqueue_tasks(tasks);
+        let result = scheduler.schedule_tasks();
+
+        // Only 2 tasks should fit on worker with 4 CPUs when min_cpu_per_task=2.0
+        assert_eq!(result.len(), 2);
+        assert_eq!(scheduler.num_pending_tasks(), 2);
+    }
 }
