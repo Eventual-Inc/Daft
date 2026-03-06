@@ -106,7 +106,7 @@ class IcebergCatalog(Catalog):
             return False
 
     def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
-        prefix = () if pattern is None else tuple(pattern)
+        prefix = () if pattern is None else pattern
         return [Identifier(*tup) for tup in self._inner.list_namespaces(prefix)]
 
     def _create_namespace(self, identifier: Identifier) -> None:
@@ -143,6 +143,8 @@ class IcebergTable(Table):
         return self._inner.name()[-1]
 
     def schema(self) -> Schema:
+        # Iceberg derives schema from the lazy read plan here, but if your
+        # backend exposes schema metadata directly, prefer that instead.
         return self.read().schema()
 
     def read(self, **options) -> DataFrame:
