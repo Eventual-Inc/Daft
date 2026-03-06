@@ -859,7 +859,7 @@ class DataType:
             # TODO(Clark): Add a native cross-lang extension type representation for PyExtensionTypes.
             raise ValueError(
                 "pyarrow extension types that subclass pa.PyExtensionType can't be used in Daft, since they can't be "
-                f"used in non-Python Arrow implementations and Daft uses the Rust Arrow2 implementation: {arrow_type}"
+                f"used in non-Python Arrow implementations and Daft uses the Rust Arrow implementation: {arrow_type}"
             )
         elif isinstance(arrow_type, pa.BaseExtensionType):
             name = arrow_type.extension_name

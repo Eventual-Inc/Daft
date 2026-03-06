@@ -161,7 +161,7 @@ pub fn serialize(input: Series) -> DaftResult<Utf8Array> {
 
 /// Serializes each input value as a JSON string, inserting null on any failures.
 pub fn try_serialize(_: Series) -> DaftResult<Utf8Array> {
-    // try_serialize will require deeper arrow2 json work, and it is not immediately obvious if it's even useful, so punting here.
+    // try_serialize will require deeper arrow json work, and it is not immediately obvious if it's even useful, so punting here.
     Err(DaftError::ComputeError(
         "try_serialize with json is not currently supported.".to_string(),
     ))
