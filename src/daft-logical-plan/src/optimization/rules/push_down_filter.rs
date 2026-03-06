@@ -94,7 +94,10 @@ impl PushDownFilter {
                     // Pushdown filter into the Source node
                     SourceInfo::Physical(external_info) => {
                         // If the scan is materialized, we don't pushdown the filter.
-                        if matches!(external_info.scan_state, ScanState::Tasks(_)) {
+                        if matches!(
+                            external_info.scan_state,
+                            ScanState::Tasks(_) | ScanState::LazyTasks(_)
+                        ) {
                             return Ok(Transformed::no(plan));
                         }
                         let predicate = &filter.predicate;

@@ -45,22 +45,22 @@ impl Source {
         self
     }
 
-    // Helper method that converts the ScanOperatorRef inside a Source node's PhysicalScanInfo into scan tasks.
+    // Helper method that converts the ScanOperatorRef inside a Source node's PhysicalScanInfo into lazy scan tasks.
     // Should only be called if a Source node's source info contains PhysicalScanInfo. The PhysicalScanInfo
-    // should also hold a ScanState::Operator and not a ScanState::Tasks (which would indicate that we're
+    // should also hold a ScanState::Operator and not a ScanState::Tasks/LazyTasks (which would indicate that we're
     // materializing this physical scan node multiple times).
     pub(crate) fn build_materialized_scan_source(mut self) -> DaftResult<Self> {
         let new_physical_scan_info = match Arc::unwrap_or_clone(self.source_info) {
             SourceInfo::Physical(mut physical_scan_info) => {
-                let scan_tasks = match &physical_scan_info.scan_state {
+                let lazy_producer = match &physical_scan_info.scan_state {
                     ScanState::Operator(scan_op) => scan_op
                         .0
-                        .to_scan_tasks(physical_scan_info.pushdowns.clone())?,
-                    ScanState::Tasks(_) => {
+                        .to_lazy_scan_tasks(physical_scan_info.pushdowns.clone())?,
+                    ScanState::Tasks(_) | ScanState::LazyTasks(_) => {
                         panic!("Physical scan nodes are being materialized more than once");
                     }
                 };
-                physical_scan_info.scan_state = ScanState::Tasks(Arc::new(scan_tasks));
+                physical_scan_info.scan_state = ScanState::LazyTasks(Arc::new(lazy_producer));
                 physical_scan_info
             }
             _ => panic!("Only unmaterialized physical scan nodes can be materialized"),
@@ -95,6 +95,18 @@ impl Source {
                         approx_stats.size_bytes +=
                             st.estimate_in_memory_size_bytes(Some(cfg)).unwrap_or(0);
                     }
+                    approx_stats.acc_selectivity = physical_scan_info
+                        .pushdowns
+                        .estimated_selectivity(self.output_schema.as_ref());
+                    approx_stats
+                }
+                ScanState::LazyTasks(producer) => {
+                    let stats = &producer.estimated_stats;
+                    let mut approx_stats = ApproxStats {
+                        num_rows: stats.estimated_total_rows,
+                        size_bytes: stats.estimated_total_bytes,
+                        acc_selectivity: 1.0,
+                    };
                     approx_stats.acc_selectivity = physical_scan_info
                         .pushdowns
                         .estimated_selectivity(self.output_schema.as_ref());

@@ -49,22 +49,19 @@ fn translate_helper(
                     )
                 }
                 SourceInfo::Physical(info) => {
-                    let scan_tasks = match &info.scan_state {
+                    let input = match &info.scan_state {
                         ScanState::Operator(scan_op) => {
-                            scan_op.0.to_scan_tasks(info.pushdowns.clone())?
+                            Input::ScanTasks(scan_op.0.to_scan_tasks(info.pushdowns.clone())?)
                         }
-                        ScanState::Tasks(scan_tasks) => (**scan_tasks).clone(),
+                        ScanState::Tasks(scan_tasks) => Input::ScanTasks((**scan_tasks).clone()),
+                        ScanState::LazyTasks(producer) => Input::LazyScanTasks(producer.clone()),
                     };
-
-                    let format_config = scan_tasks
-                        .first()
-                        .map(|scan_task| scan_task.file_format_config());
                     let source_id = source_counter.next();
-                    inputs.insert(source_id, Input::ScanTasks(scan_tasks));
+                    inputs.insert(source_id, input);
 
                     LocalPhysicalPlan::physical_scan(
                         source_id,
-                        format_config,
+                        info.scan_state.file_format_config(),
                         info.pushdowns.clone(),
                         source.output_schema.clone(),
                         source.stats_state.clone(),

@@ -1,20 +1,19 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_display::{DisplayAs, DisplayLevel};
-#[cfg(feature = "python")]
-use common_file_formats::FileFormatConfig;
 use common_metrics::{
     BYTES_READ_KEY, Counter, DURATION_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_BYTES,
     UNIT_MICROSECONDS, UNIT_ROWS,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::SourceSnapshot,
 };
-use common_scan_info::{Pushdowns, ScanTaskLikeRef};
+use common_scan_info::{LazyTaskProducer, Pushdowns};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
 use opentelemetry::{KeyValue, metrics::Meter};
+use tokio_stream::wrappers::ReceiverStream;
 
 use super::{PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
@@ -69,17 +68,17 @@ pub(crate) struct ScanSourceNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     pushdowns: Pushdowns,
-    scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+    lazy_producer: Arc<LazyTaskProducer>,
 }
 
 impl ScanSourceNode {
-    const NODE_NAME: &'static str = "ScanTaskSource";
+    const NODE_NAME: &'static str = "ScanSource";
 
     pub fn new(
         node_id: NodeID,
         plan_config: &PlanConfig,
         pushdowns: Pushdowns,
-        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+        lazy_producer: Arc<LazyTaskProducer>,
         schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -94,14 +93,14 @@ impl ScanSourceNode {
             schema,
             plan_config.config.clone(),
             Arc::new(ClusteringSpec::unknown_with_num_partitions(
-                scan_tasks.len(),
+                lazy_producer.estimated_stats.estimated_num_tasks,
             )),
         );
         Self {
             config,
             context,
             pushdowns,
-            scan_tasks,
+            lazy_producer,
         }
     }
 
@@ -109,7 +108,10 @@ impl ScanSourceNode {
         DistributedPipelineNode::new(Arc::new(self))
     }
 
-    fn make_source_task(self: &Arc<Self>, scan_task: ScanTaskLikeRef) -> SwordfishTaskBuilder {
+    fn make_source_task(
+        self: &Arc<Self>,
+        scan_task: common_scan_info::ScanTaskLikeRef,
+    ) -> SwordfishTaskBuilder {
         let physical_scan = LocalPhysicalPlan::physical_scan(
             self.node_id(),
             Some(scan_task.file_format_config()),
@@ -140,51 +142,17 @@ impl PipelineNodeImpl for ScanSourceNode {
     fn multiline_display(&self, verbose: bool) -> Vec<String> {
         let mut res = vec!["ScanTaskSource:".to_string()];
 
-        let num_scan_tasks = self.scan_tasks.len();
-        let total_bytes: usize = self
-            .scan_tasks
-            .iter()
-            .map(|st| {
-                st.estimate_in_memory_size_bytes(Some(self.config.execution_config.as_ref()))
-                    .or_else(|| st.size_bytes_on_disk())
-                    .unwrap_or(0)
-            })
-            .sum();
-        res.push(format!("Num Scan Tasks = {num_scan_tasks}"));
-        res.push(format!("Estimated Scan Bytes = {total_bytes}"));
+        let stats = &self.lazy_producer.estimated_stats;
+        res.push(format!(
+            "Num Scan Tasks = ~{} (estimated)",
+            stats.estimated_num_tasks
+        ));
+        res.push(format!(
+            "Estimated Scan Bytes = {}",
+            stats.estimated_total_bytes
+        ));
 
-        if let Some(ffc) = self
-            .scan_tasks
-            .first()
-            .map(|s| s.file_format_config())
-            .as_deref()
-        {
-            match ffc {
-                #[cfg(feature = "python")]
-                FileFormatConfig::Database(config) => {
-                    if num_scan_tasks == 1 {
-                        res.push(format!("SQL Query = {}", &config.sql));
-                    } else {
-                        res.push(format!("SQL Queries = [{},..]", &config.sql));
-                    }
-                }
-                #[cfg(feature = "python")]
-                FileFormatConfig::PythonFunction { source_name, .. } => {
-                    res.push(format!(
-                        "Source = {}",
-                        source_name.clone().unwrap_or_else(|| "None".to_string())
-                    ));
-                }
-                _ => {}
-            }
-        }
-
-        if verbose {
-            res.push("Scan Tasks: [".to_string());
-            for st in self.scan_tasks.iter() {
-                res.push(st.as_ref().display_as(DisplayLevel::Verbose));
-            }
-        } else {
+        if !verbose {
             let pushdown = &self.pushdowns;
             if !pushdown.is_empty() {
                 res.push(pushdown.display_as(DisplayLevel::Compact));
@@ -195,19 +163,8 @@ impl PipelineNodeImpl for ScanSourceNode {
                 "Schema: {{{}}}",
                 schema.display_as(DisplayLevel::Compact)
             ));
-
-            res.push("Scan Tasks: [".to_string());
-            let tasks = self.scan_tasks.iter();
-            for (i, st) in tasks.enumerate() {
-                if i < 3 || i >= self.scan_tasks.len() - 3 {
-                    res.push(st.as_ref().display_as(DisplayLevel::Compact));
-                } else if i == 3 {
-                    res.push("...".to_string());
-                }
-            }
         }
 
-        res.push("]".to_string());
         res
     }
 
@@ -219,7 +176,7 @@ impl PipelineNodeImpl for ScanSourceNode {
         self: Arc<Self>,
         _plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
-        if self.scan_tasks.is_empty() {
+        if self.lazy_producer.estimated_stats.estimated_num_tasks == 0 {
             let transformed_plan = LocalPhysicalPlan::empty_scan(
                 self.config.schema.clone(),
                 LocalNodeContext::new(Some(self.node_id() as usize)),
@@ -227,10 +184,37 @@ impl PipelineNodeImpl for ScanSourceNode {
             let empty_scan_task = SwordfishTaskBuilder::new(transformed_plan, self.as_ref());
             TaskBuilderStream::new(stream::iter(std::iter::once(empty_scan_task)).boxed())
         } else {
-            let slf = self.clone();
-            let builders_iter = (0..self.scan_tasks.len())
-                .map(move |i| slf.make_source_task(slf.scan_tasks[i].clone()));
-            TaskBuilderStream::new(stream::iter(builders_iter).boxed())
+            let slf = self;
+            let (tx, rx) = tokio::sync::mpsc::channel(64);
+
+            // Spawn a blocking thread to iterate the lazy producer and send tasks
+            // through the channel. When the pipeline shuts down (e.g. limit satisfied),
+            // the receiver drops, tx.blocking_send() returns Err, and iteration stops.
+            std::thread::spawn(move || {
+                let iter = match slf.lazy_producer.produce() {
+                    Ok(iter) => iter,
+                    Err(e) => {
+                        tracing::error!("Error producing lazy scan tasks: {e}");
+                        return;
+                    }
+                };
+                for task_result in iter {
+                    match task_result {
+                        Ok(task) => {
+                            let builder = slf.make_source_task(task);
+                            if tx.blocking_send(builder).is_err() {
+                                break; // Pipeline closed
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Error in lazy scan task iteration: {e}");
+                            break;
+                        }
+                    }
+                }
+            });
+
+            TaskBuilderStream::new(ReceiverStream::new(rx).boxed())
         }
     }
 }

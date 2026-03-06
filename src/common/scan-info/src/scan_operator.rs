@@ -7,7 +7,9 @@ use std::{
 use common_error::DaftResult;
 use daft_schema::schema::SchemaRef;
 
-use crate::{PartitionField, Pushdowns, ScanTaskLikeRef, SupportsPushdownFilters};
+use crate::{
+    LazyTaskProducer, PartitionField, Pushdowns, ScanTaskLikeRef, SupportsPushdownFilters,
+};
 
 pub trait ScanOperator: Send + Sync + Debug {
     fn name(&self) -> &str;
@@ -44,6 +46,14 @@ pub trait ScanOperator: Send + Sync + Debug {
     /// If cfg provided, `to_scan_tasks` should apply the appropriate transformations
     /// (merging, splitting) to the outputted scan tasks
     fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>>;
+
+    /// Returns a lazy producer of scan tasks. Default implementation eagerly
+    /// materializes via `to_scan_tasks` and wraps in a factory. Scan operators
+    /// that support lazy iteration (e.g. GlobScanOperator) should override.
+    fn to_lazy_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<LazyTaskProducer> {
+        let tasks = self.to_scan_tasks(pushdowns)?;
+        Ok(LazyTaskProducer::from_vec(tasks))
+    }
 
     fn as_pushdown_filter(&self) -> Option<&dyn SupportsPushdownFilters> {
         None
