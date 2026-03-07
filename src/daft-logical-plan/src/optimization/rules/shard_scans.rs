@@ -43,6 +43,24 @@ impl ShardScans {
                         }
                         None => Ok(Transformed::no(plan)),
                     },
+                    ScanState::LazyTasks(producer) => {
+                        match &physical_scan_info.pushdowns.sharder {
+                            Some(sharder) => {
+                                // Sharding requires sorting, so we need to collect all tasks.
+                                let scan_tasks = Arc::new(producer.collect_tasks()?);
+                                let new_scan_tasks = sharder.shard_scan_tasks(&scan_tasks)?;
+                                let new_scan_state = ScanState::Tasks(Arc::new(new_scan_tasks));
+                                let new_physical_scan_info =
+                                    physical_scan_info.with_scan_state(new_scan_state);
+                                let new_source = Source::new(
+                                    source.output_schema.clone(),
+                                    SourceInfo::Physical(new_physical_scan_info).into(),
+                                );
+                                Ok(Transformed::yes(LogicalPlan::Source(new_source).into()))
+                            }
+                            None => Ok(Transformed::no(plan)),
+                        }
+                    }
                     ScanState::Operator(_) => Ok(Transformed::no(plan)),
                 },
                 _ => Ok(Transformed::no(plan)),

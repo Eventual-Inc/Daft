@@ -200,13 +200,51 @@ impl NativeExecutor {
                 let mut receiver = pipeline.start(true, &mut runtime_handle)?;
 
                 if let Some(message) = enqueue_input_rx.recv().await {
+                    let mut lazy_handles = Vec::new();
                     for (key, plan_input) in message.inputs {
                         if let Some(sender) = input_senders.get(&key) {
-                            let _ = sender.send(message.input_id, plan_input);
+                            match plan_input {
+                                Input::LazyScanTasks(producer) => {
+                                    let sender = sender.clone();
+                                    let input_id = message.input_id;
+                                    // Iterate the lazy producer on a blocking thread,
+                                    // sending each task individually through the channel.
+                                    // When downstream (e.g. LimitSink) is satisfied, the
+                                    // channel drops, send() returns Err, and we stop iterating.
+                                    let handle = tokio::task::spawn_blocking(move || {
+                                        let iter = producer.produce()?;
+                                        for task in iter {
+                                            let task = task?;
+                                            if sender
+                                                .send(input_id, Input::ScanTasks(vec![task]))
+                                                .is_err()
+                                            {
+                                                break;
+                                            }
+                                        }
+                                        DaftResult::Ok(())
+                                    });
+                                    lazy_handles.push(handle);
+                                }
+                                other => {
+                                    let _ = sender.send(message.input_id, other);
+                                }
+                            }
                         }
                     }
+                    // Drop non-lazy senders so that channels close once lazy feeding finishes.
+                    // The lazy tasks hold cloned senders that keep their channels open.
+                    drop(input_senders);
+
+                    // Await all lazy feeding tasks to propagate errors.
+                    for handle in lazy_handles {
+                        if let Ok(Err(e)) = handle.await {
+                            log::error!("Error during lazy scan task production: {e}");
+                        }
+                    }
+                } else {
+                    drop(input_senders);
                 }
-                drop(input_senders);
 
                 while let Some(val) = receiver.recv().await {
                     if tx.send(val).await.is_err() {
