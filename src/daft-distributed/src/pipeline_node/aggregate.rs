@@ -311,7 +311,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                         .map(|e| e.into())
                         .collect(),
                 )),
-                split_details.second_stage_schema.clone(),
+                split_details.first_stage_schema.clone(),
                 initial_agg,
             )?
         };
