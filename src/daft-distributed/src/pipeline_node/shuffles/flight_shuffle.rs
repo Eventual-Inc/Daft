@@ -174,8 +174,8 @@ impl PipelineNodeImpl for FlightShuffleNode {
             input_node.pipeline_instruction(self.clone(), move |input| {
                 LocalPhysicalPlan::flight_shuffle_write(
                     input,
-                    partition_by.clone(),
                     self.num_partitions,
+                    partition_by.clone(),
                     self.config.schema.clone(),
                     self.shuffle_id,
                     self.shuffle_dirs.clone(),

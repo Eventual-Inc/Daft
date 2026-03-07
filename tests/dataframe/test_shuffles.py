@@ -63,6 +63,23 @@ def flight_shuffle_ctx():
     return _ctx
 
 
+@pytest.fixture(scope="function")
+def flight_shuffle_pre_shuffle_merge_ctx():
+    """Fixture for flight shuffle with pre-shuffle merge (combined PreShuffleMergeFlight node)."""
+
+    @contextmanager
+    def _ctx(threshold: int | None = None):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with daft.execution_config_ctx(
+                shuffle_algorithm="flight_shuffle_pre_shuffle_merge",
+                flight_shuffle_dirs=[temp_dir],
+                pre_shuffle_merge_threshold=threshold,
+            ) as ctx:
+                yield ctx
+
+    return _ctx
+
+
 @pytest.mark.skipif(
     get_tests_daft_runner_name() != "ray",
     reason="shuffle tests are meant for the ray runner",
@@ -190,6 +207,40 @@ def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions)
         return 200
 
     with flight_shuffle_ctx():
+        df = (
+            read_generator(
+                generator(input_partitions, num_rows_fn, bytes_per_row_fn),
+                schema=daft.Schema._from_field_name_and_types(
+                    [
+                        ("ints", daft.DataType.uint64()),
+                        ("bytes", daft.DataType.fixed_size_binary(200)),
+                    ]
+                ),
+            )
+            .repartition(output_partitions, "ints")
+            .collect()
+        )
+        assert len(df) == input_partitions * output_partitions
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+@pytest.mark.parametrize(
+    "input_partitions, output_partitions",
+    [(100, 100), (100, 1), (100, 50), (100, 200)],
+)
+def test_flight_shuffle_pre_shuffle_merge(flight_shuffle_pre_shuffle_merge_ctx, input_partitions, output_partitions):
+    """Test flight shuffle with pre-shuffle merge (PreShuffleMergeFlightNode + FlightGatherWrite)."""
+
+    def num_rows_fn():
+        return output_partitions
+
+    def bytes_per_row_fn():
+        return 200
+
+    with flight_shuffle_pre_shuffle_merge_ctx(threshold=1):
         df = (
             read_generator(
                 generator(input_partitions, num_rows_fn, bytes_per_row_fn),

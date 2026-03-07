@@ -107,7 +107,6 @@ impl MaterializedOutput {
         &self.worker_id
     }
 
-    #[allow(dead_code)]
     pub fn ip_address(&self) -> &String {
         &self.ip_address
     }
