@@ -706,6 +706,7 @@ impl LogicalPlanBuilder {
         &self,
         root_dir: &str,
         write_mode: WriteMode,
+        write_success_file: bool,
         file_format: FileFormat,
         format_option: Option<FormatSinkOption>,
         partition_cols: Option<Vec<ExprRef>>,
@@ -726,6 +727,7 @@ impl LogicalPlanBuilder {
             partition_cols,
             compression,
             io_config,
+            write_success_file,
         ));
 
         let logical_plan: LogicalPlan =
@@ -1382,6 +1384,7 @@ impl PyLogicalPlanBuilder {
     #[pyo3(signature = (
         root_dir,
         write_mode,
+        write_success_file,
         file_format,
         format_option=None,
         partition_cols=None,
@@ -1392,6 +1395,7 @@ impl PyLogicalPlanBuilder {
         &self,
         root_dir: &str,
         write_mode: WriteMode,
+        write_success_file: bool,
         file_format: FileFormat,
         format_option: Option<PyFormatSinkOption>,
         partition_cols: Option<Vec<PyExpr>>,
@@ -1403,6 +1407,7 @@ impl PyLogicalPlanBuilder {
             .table_write(
                 root_dir,
                 write_mode,
+                write_success_file,
                 file_format,
                 format_option.map(|p| p.inner),
                 partition_cols.map(pyexprs_to_exprs),

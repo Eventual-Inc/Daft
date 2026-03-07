@@ -32,6 +32,7 @@ pub struct OutputFileInfo<E = ExprRef> {
     pub partition_cols: Option<Vec<E>>,
     pub compression: Option<String>,
     pub io_config: Option<IOConfig>,
+    pub write_success_file: bool,
 }
 
 #[cfg(feature = "python")]
@@ -185,6 +186,7 @@ impl<E> OutputFileInfo<E>
 where
     E: ToString,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         root_dir: String,
         write_mode: WriteMode,
@@ -193,6 +195,7 @@ where
         partition_cols: Option<Vec<E>>,
         compression: Option<String>,
         io_config: Option<IOConfig>,
+        write_success_file: bool,
     ) -> Self {
         Self {
             root_dir,
@@ -202,6 +205,7 @@ where
             partition_cols,
             compression,
             io_config,
+            write_success_file,
         }
     }
 
@@ -256,6 +260,7 @@ impl OutputFileInfo {
                 .transpose()?,
             compression: self.compression,
             io_config: self.io_config,
+            write_success_file: self.write_success_file,
         })
     }
 }

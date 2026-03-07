@@ -468,3 +468,62 @@ def test_write_and_read_empty_parquet(tmp_path_factory):
     df.write_parquet(empty_parquet_files, write_mode="overwrite")
 
     assert daft.read_parquet(empty_parquet_files).to_pydict() == {"a": []}
+
+
+def test_write_parquet_success_file(tmp_path_factory):
+    import os
+
+    # Test with write_success_file=True
+    output_dir = str(tmp_path_factory.mktemp("parquet_success_file_true"))
+    df = daft.from_pydict({"a": [1, 2, 3]})
+    df.write_parquet(output_dir, write_mode="overwrite", write_success_file=True)
+
+    success_file_path = os.path.join(output_dir, "_SUCCESS")
+    assert os.path.exists(success_file_path), f"_SUCCESS file not found at {success_file_path}"
+    assert os.path.getsize(success_file_path) == 0, (
+        f"_SUCCESS file should be empty, but has size {os.path.getsize(success_file_path)}"
+    )
+
+    # Test with write_success_file=False (default)
+    output_dir = str(tmp_path_factory.mktemp("parquet_success_file_false"))
+    df = daft.from_pydict({"a": [1, 2, 3]})
+    df.write_parquet(output_dir, write_mode="overwrite", write_success_file=False)
+
+    success_file_path = os.path.join(output_dir, "_SUCCESS")
+    assert not os.path.exists(success_file_path), f"_SUCCESS file should not exist at {success_file_path}"
+
+    # Test with append mode
+    output_dir = str(tmp_path_factory.mktemp("parquet_success_file_append"))
+    df = daft.from_pydict({"a": [1, 2, 3]})
+    df.write_parquet(output_dir, write_mode="append", write_success_file=True)
+
+    success_file_path = os.path.join(output_dir, "_SUCCESS")
+    assert os.path.exists(success_file_path), f"_SUCCESS file not found at {success_file_path}"
+
+    # Test with overwrite-partitions mode
+    output_dir = str(tmp_path_factory.mktemp("parquet_success_file_overwrite_partitions"))
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    df.write_parquet(output_dir, write_mode="overwrite-partitions", write_success_file=True, partition_cols=["b"])
+
+    success_file_path = os.path.join(output_dir, "_SUCCESS")
+    assert os.path.exists(success_file_path), f"_SUCCESS file not found at {success_file_path}"
+    assert os.path.getsize(success_file_path) == 0, (
+        f"_SUCCESS file should be empty, but has size {os.path.getsize(success_file_path)}"
+    )
+
+    assert os.path.exists(os.path.join(output_dir, "b=x")), "Partition directory b=x not found"
+    assert os.path.exists(os.path.join(output_dir, "b=y")), "Partition directory b=y not found"
+
+    # Test with partition columns
+    output_dir = str(tmp_path_factory.mktemp("parquet_success_file_partitioned"))
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    df.write_parquet(output_dir, write_mode="overwrite", write_success_file=True, partition_cols=["b"])
+
+    success_file_path = os.path.join(output_dir, "_SUCCESS")
+    assert os.path.exists(success_file_path), f"_SUCCESS file not found at {success_file_path}"
+    assert os.path.getsize(success_file_path) == 0, (
+        f"_SUCCESS file should be empty, but has size {os.path.getsize(success_file_path)}"
+    )
+
+    assert os.path.exists(os.path.join(output_dir, "b=x")), "Partition directory b=x not found"
+    assert os.path.exists(os.path.join(output_dir, "b=y")), "Partition directory b=y not found"
