@@ -58,6 +58,7 @@
     * Optimization
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
+        * [Join Strategies](optimization/join-strategies.md)
     * Observability
         * [Progress Indicators](observability/progress-indicators.md)
         * [Logging](observability/logging.md)
