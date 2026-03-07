@@ -62,12 +62,10 @@ npx skills add Eventual-Inc/Daft --skill daft-udf-tuning
 
 This creates symlinks so the skills are available in any project.
 
-### Claude Code plugin (coming soon)
+### Claude Code plugin
 
-Daft will also be available as a Claude Code plugin, which can bundle MCP servers and hooks alongside skills.
+Daft is also available as a Claude Code plugin, which can bundle MCP servers and hooks alongside skills.
 
 ```bash
 claude plugin add Eventual-Inc/Daft
 ```
-
-This will be submitted to the [Anthropic plugin directory](https://github.com/anthropics/claude-plugins-official) for marketplace visibility.
