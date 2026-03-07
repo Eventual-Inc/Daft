@@ -4,7 +4,7 @@ Daft ships with built-in skills that help AI coding agents work effectively with
 
 ## Available skills
 
-### daft-udf-tuning
+### [daft-udf-tuning](https://github.com/Eventual-Inc/Daft/blob/main/.claude/skills/daft-udf-tuning/SKILL.md)
 
 Optimize User-Defined Functions for performance.
 
@@ -17,7 +17,7 @@ Optimize User-Defined Functions for performance.
 - GPU batch inference with PyTorch/model loading via `@daft.cls(gpus=N)`
 - Tuning `max_concurrency`, `batch_size`, `gpus`, and `into_batches(N)`
 
-### daft-distributed-scaling
+### [daft-distributed-scaling](https://github.com/Eventual-Inc/Daft/blob/main/.claude/skills/daft-distributed-scaling/SKILL.md)
 
 Scale single-node workflows to distributed execution.
 
@@ -30,7 +30,7 @@ Scale single-node workflows to distributed execution.
 - Avoiding OOM errors with heavy data (images, tensors)
 - Advanced tuning formulas for repartitioning and streaming
 
-### daft-docs-navigation
+### [daft-docs-navigation](https://github.com/Eventual-Inc/Daft/blob/main/.claude/skills/daft-docs-navigation/SKILL.md)
 
 Navigate Daft's documentation for APIs, concepts, and examples.
 
