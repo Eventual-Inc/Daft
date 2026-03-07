@@ -155,7 +155,9 @@ dev = [
   "mcap-ros2-support==0.5.7",
   "mcap-protobuf-support==0.5.4",
   # BigTable
-  "google-cloud-bigtable==2.35.0"
+  "google-cloud-bigtable==2.35.0",
+  # confluent-Kafka
+  "confluent-kafka==2.6.1"
 ]
 docs = [
   "markdown-exec==1.12.1",
