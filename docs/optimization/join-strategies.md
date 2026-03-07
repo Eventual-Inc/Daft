@@ -71,7 +71,7 @@ Broadcast joins do not support outer joins.
 
 ### Sort-Merge Join
 
-Both sides are sorted on the join key, then merged in a single linear pass. Useful when data is already sorted or when the join key has high cardinality.
+Both sides are sorted on the join key, then merged in a single linear pass. Useful when data is already sorted on the join key or when memory pressure makes the shuffle in a hash join too costly.
 
 ```python
 df.join(other, on="key", strategy="sort_merge")
@@ -87,9 +87,9 @@ For most workloads, leaving `strategy=None` and letting the optimizer decide is 
 - **Both tables are large and you're hitting memory limits**: consider whether you can restructure as a semi or anti join (which discard unneeded columns early), increase partitions via [df.repartition()][daft.DataFrame.repartition], or enable disk spilling with `DAFT_SHUFFLE_ALGORITHM=flight_shuffle`.
 - **Data is pre-sorted on the join key**: `strategy="sort_merge"` can skip the partitioning step entirely for inner joins.
 
-## Distributed Joins on Ray
+## Distributed Joins
 
-When running on [Ray](../distributed/ray.md), joins that shuffle data are subject to the Ray object store's memory limits. If your join columns don't fit in distributed memory:
+When running on [Ray](../distributed/ray.md), joins that shuffle data are subject to the object store's memory limits. If your join columns don't fit in distributed memory:
 
 1. **Try broadcast first** if one side is small enough. This avoids the shuffle entirely.
 2. **Enable flight shuffle** for large-to-large joins: set `DAFT_SHUFFLE_ALGORITHM=flight_shuffle` and point it at a local volume for spilling:
