@@ -25,10 +25,13 @@ class _FuncDecorator:
         *,
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
+        cpus: float | None = None,
+        gpus: float = 0,
         use_process: bool | None = None,
         max_concurrency: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
+        ray_options: dict[str, Any] | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]]: ...
     @overload
     def __call__(
@@ -37,6 +40,7 @@ class _FuncDecorator:
         *,
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
+        gpus: float = 0,
         use_process: bool | None = None,
         max_concurrency: int | None = None,
         max_retries: int | None = None,
@@ -49,10 +53,13 @@ class _FuncDecorator:
         *,
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
+        cpus: float | None = None,
+        gpus: float = 0,
         use_process: bool | None = None,
         max_concurrency: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
+        ray_options: dict[str, Any] | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]] | Func[P, T, None]:
         """Decorator to convert a Python function into a Daft user-defined function.
 
@@ -228,12 +235,15 @@ class _FuncDecorator:
                 fn,
                 return_dtype,
                 unnest,
+                cpus,
+                gpus,
                 use_process,
                 False,
                 None,
                 max_concurrency=max_concurrency,
                 max_retries=max_retries,
                 on_error=on_error,
+                ray_options=ray_options,
             )
 
         return partial_func if fn is None else partial_func(fn)
@@ -243,11 +253,14 @@ class _FuncDecorator:
         *,
         return_dtype: DataTypeLike,
         unnest: bool = False,
+        cpus: float | None = None,
+        gpus: float = 0,
         use_process: bool | None = None,
         max_concurrency: int | None = None,
         batch_size: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
+        ray_options: dict[str, Any] | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]]:
         """Decorator to convert a Python function into a Daft user-defined batch function.
 
@@ -325,12 +338,15 @@ class _FuncDecorator:
                 fn,
                 return_dtype,
                 unnest,
+                cpus,
+                gpus,
                 use_process,
                 True,
                 batch_size,
                 max_concurrency=max_concurrency,
                 max_retries=max_retries,
                 on_error=on_error,
+                ray_options=ray_options,
             )
 
         return partial_func
@@ -342,43 +358,51 @@ func = _FuncDecorator()
 @overload
 def cls(
     *,
+    cpus: float | None = None,
     gpus: float = 0,
     use_process: bool | None = None,
     max_concurrency: int | None = None,
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
     name_override: str | None = None,
+    ray_options: dict[str, Any] | None = None,
 ) -> Callable[[type], type]: ...
 @overload
 def cls(
     class_: type,
     *,
+    cpus: float | None = None,
     gpus: float = 0,
     use_process: bool | None = None,
     max_concurrency: int | None = None,
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
     name_override: str | None = None,
+    ray_options: dict[str, Any] | None = None,
 ) -> type: ...
 def cls(
     class_: type | None = None,
     *,
+    cpus: float | None = None,
     gpus: float = 0,
     use_process: bool | None = None,
     max_concurrency: int | None = None,
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
     name_override: str | None = None,
+    ray_options: dict[str, Any] | None = None,
 ) -> type | Callable[[type], type]:
     """Decorator to convert a Python class into a Daft user-defined class.
 
     Args:
+        cpus: The number of CPUs each instance of the class requires. Defaults to None (let Ray decide).
         gpus: The number of GPUs each instance of the class requires. Defaults to 0.
               Fractional values between 0 and 1.0, such as 0.5, are supported. This can be useful when running multiple small models on the same GPU.
               However, fractional values greater than 1.0, such as 1.5 or 2.5, are not supported.
         use_process: Whether to run each instance of the class in a separate process. If unset, Daft will automatically choose based on runtime performance.
         max_concurrency: The maximum number of concurrent invocations. For sync methods, this controls the number of actor pool processes. For async methods, this controls the number of concurrent coroutines.
         name_override: The name to display for the UDF class in the plan and progress bars.
+        ray_options: Options to pass to the Ray executor (e.g. {"num_cpus": 1, "num_gpus": 1}).
 
     Daft classes allow you to initialize a class instance once, and then reuse it for multiple rows of data.
     This is useful for expensive initializations that need to be amortized across multiple rows of data, such as loading a model or establishing a network connection.
@@ -444,6 +468,9 @@ def cls(
         ...     }
         ... )
     """
+    if cpus is not None and cpus < 0:
+        raise ValueError(f"num_cpus must be non-negative, got {cpus}")
+
     # Validate GPU resource request early: allow fractional values up to 1.0; values > 1.0 must be integers.
     if gpus < 0:
         raise ValueError(f"num_gpus must be non-negative, got {gpus}")
@@ -451,7 +478,9 @@ def cls(
         raise ValueError(f"ResourceRequest num_gpus greater than 1 must be an integer, got {gpus}")
 
     def partial_cls(c: type) -> type:
-        return wrap_cls(c, gpus, use_process, max_concurrency, max_retries, on_error, name_override)
+        return wrap_cls(
+            c, cpus, gpus, use_process, max_concurrency, max_retries, on_error, name_override, ray_options=ray_options
+        )
 
     return partial_cls if class_ is None else partial_cls(class_)
 
