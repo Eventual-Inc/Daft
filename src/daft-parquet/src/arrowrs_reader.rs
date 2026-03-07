@@ -46,6 +46,11 @@ use crate::{
 /// Default batch size for the arrow-rs reader (number of rows per batch).
 const DEFAULT_BATCH_SIZE: usize = 8192;
 
+/// Minimum uncompressed row group byte size to enable intra-RG column parallelism.
+/// Below this threshold, the overhead of per-column readers (metadata clones, buffer
+/// setup, hconcat) exceeds the benefit of parallel decode.
+const MIN_RG_BYTES_FOR_COL_PARALLELISM: i64 = 16 * 1024 * 1024; // 16 MiB
+
 /// Convert a parquet error to a DaftError.
 fn parquet_err(e: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> common_error::DaftError {
     common_error::DaftError::External(e.into())
@@ -324,6 +329,562 @@ fn deletes_to_row_selection(local_deletes: &[usize], total_rows: usize) -> RowSe
     selectors.into()
 }
 
+// ---------------------------------------------------------------------------
+// Shared helpers for intra-RG column parallelism
+// ---------------------------------------------------------------------------
+
+/// RLE-encode a boolean mask into a `RowSelection`.
+fn bool_array_to_row_selection(mask: &arrow::array::BooleanArray) -> RowSelection {
+    use arrow::array::Array;
+    let mut selectors = Vec::new();
+    let mut current_select = false;
+    let mut current_count = 0usize;
+
+    for i in 0..mask.len() {
+        let val = mask.is_valid(i) && mask.value(i);
+        if val == current_select {
+            current_count += 1;
+        } else {
+            if current_count > 0 {
+                selectors.push(if current_select {
+                    RowSelector::select(current_count)
+                } else {
+                    RowSelector::skip(current_count)
+                });
+            }
+            current_select = val;
+            current_count = 1;
+        }
+    }
+    if current_count > 0 {
+        selectors.push(if current_select {
+            RowSelector::select(current_count)
+        } else {
+            RowSelector::skip(current_count)
+        });
+    }
+
+    selectors.into()
+}
+
+/// Compose a base selection (relative to full RG) with a predicate selection
+/// (relative to base-selected rows) into a final selection (relative to full RG).
+///
+/// For each base selector: if skip(n), emit skip(n). If select(n), consume n rows
+/// from predicate_sel, mapping their select/skip back to base coordinates.
+fn refine_selection(base: &RowSelection, predicate_sel: &RowSelection) -> RowSelection {
+    let base_selectors: Vec<RowSelector> = base.iter().copied().collect();
+    let pred_selectors: Vec<RowSelector> = predicate_sel.iter().copied().collect();
+
+    let mut result = Vec::new();
+    let mut pred_idx = 0usize;
+    let mut pred_remaining = if !pred_selectors.is_empty() {
+        pred_selectors[0].row_count
+    } else {
+        0
+    };
+
+    for base_sel in &base_selectors {
+        if base_sel.skip {
+            result.push(RowSelector::skip(base_sel.row_count));
+        } else {
+            // This base selector selects `base_sel.row_count` rows.
+            // Consume that many rows from predicate_sel.
+            let mut remaining = base_sel.row_count;
+            while remaining > 0 && pred_idx < pred_selectors.len() {
+                let consume = remaining.min(pred_remaining);
+                if pred_selectors[pred_idx].skip {
+                    result.push(RowSelector::skip(consume));
+                } else {
+                    result.push(RowSelector::select(consume));
+                }
+                remaining -= consume;
+                pred_remaining -= consume;
+                if pred_remaining == 0 {
+                    pred_idx += 1;
+                    if pred_idx < pred_selectors.len() {
+                        pred_remaining = pred_selectors[pred_idx].row_count;
+                    }
+                }
+            }
+            // If predicate_sel is exhausted but base still has rows, skip them.
+            if remaining > 0 {
+                result.push(RowSelector::skip(remaining));
+            }
+        }
+    }
+
+    result.into()
+}
+
+/// Merge columns from multiple arrow RecordBatches into one.
+/// All batches must have the same row count.
+fn hconcat_record_batches(
+    batches: &[arrow::array::RecordBatch],
+) -> DaftResult<arrow::array::RecordBatch> {
+    if batches.is_empty() {
+        return Err(common_error::DaftError::ValueError(
+            "hconcat_record_batches: empty input".to_string(),
+        ));
+    }
+    if batches.len() == 1 {
+        return Ok(batches[0].clone());
+    }
+
+    let num_rows = batches[0].num_rows();
+    let mut fields = Vec::new();
+    let mut columns: Vec<Arc<dyn arrow::array::Array>> = Vec::new();
+
+    for batch in batches {
+        debug_assert_eq!(
+            batch.num_rows(),
+            num_rows,
+            "hconcat: row count mismatch ({} vs {})",
+            batch.num_rows(),
+            num_rows
+        );
+        for (i, field) in batch.schema().fields().iter().enumerate() {
+            fields.push(field.clone());
+            columns.push(batch.column(i).clone());
+        }
+    }
+
+    let schema = Arc::new(arrow::datatypes::Schema::new(fields));
+    arrow::array::RecordBatch::try_new(schema, columns).map_err(|e| parquet_err(e).into())
+}
+
+/// Build the base RowSelection (offset + delete) for a single RG.
+/// Returns None if no selection is needed.
+fn build_base_row_selection(
+    setup: &LocalParquetSetup,
+    task: &RgTask,
+    rg_rows: usize,
+) -> Option<RowSelection> {
+    let offset_selection = if setup.predicate_pushed && task.local_offset > 0 {
+        Some(build_offset_row_selection(task.local_offset, rg_rows))
+    } else {
+        None
+    };
+
+    let delete_selection = if let Some(ref deletes) = setup.delete_rows
+        && !deletes.is_empty()
+    {
+        Some(build_single_rg_delete_selection(
+            deletes,
+            setup.rg_global_starts[task.rg_idx],
+            rg_rows,
+        ))
+    } else {
+        None
+    };
+
+    combine_selections(offset_selection, delete_selection)
+}
+
+/// Compute root column indices from the arrow schema, optionally filtering
+/// to `read_col_set` and excluding `exclude` columns.
+fn compute_root_indices(
+    arrow_schema: &arrow::datatypes::Schema,
+    read_col_set: Option<&HashSet<String>>,
+    exclude: Option<&HashSet<String>>,
+) -> Vec<usize> {
+    arrow_schema
+        .fields()
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| {
+            let name = f.name().as_str();
+            let in_read = read_col_set.is_none() || read_col_set.unwrap().contains(name);
+            let not_excluded = exclude.is_none() || !exclude.unwrap().contains(name);
+            in_read && not_excluded
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Sync column-parallel decode helpers (Paths 1, 2)
+// ---------------------------------------------------------------------------
+
+/// Decode predicate columns for a single RG, evaluate predicate, return filtered
+/// predicate batch and the refined RowSelection for data columns.
+fn decode_rg_predicate_phase(
+    file_bytes: &bytes::Bytes,
+    setup: &LocalParquetSetup,
+    task: &RgTask,
+    predicate: &ExprRef,
+    pred_col_indices: &[usize],
+) -> DaftResult<(arrow::array::RecordBatch, RowSelection)> {
+    let rg_rows = setup.parquet_metadata.row_group(task.rg_idx).num_rows() as usize;
+
+    let mut builder = ParquetRecordBatchReaderBuilder::new_with_metadata(
+        file_bytes.clone(),
+        (*setup.arrow_reader_metadata).clone(),
+    );
+
+    // Project to predicate columns only.
+    let mask = ProjectionMask::roots(builder.parquet_schema(), pred_col_indices.iter().copied());
+    builder = builder
+        .with_projection(mask)
+        .with_row_groups(vec![task.rg_idx])
+        .with_batch_size(setup.batch_size);
+
+    // Apply base row selection (offset + deletes).
+    let base_selection = build_base_row_selection(setup, task, rg_rows);
+    if let Some(ref sel) = base_selection {
+        builder = builder.with_row_selection(sel.clone());
+    }
+
+    // Non-pushed offset for predicate phase.
+    if !setup.predicate_pushed {
+        builder = builder.with_offset(task.local_offset);
+    }
+
+    let reader = builder.build().map_err(parquet_err)?;
+    let arrow_batches: Vec<arrow::array::RecordBatch> =
+        reader.collect::<Result<Vec<_>, _>>().map_err(parquet_err)?;
+
+    // Concat predicate batches into one.
+    let pred_batch = if arrow_batches.is_empty() {
+        // Empty RG: return empty batch with predicate schema.
+        let pred_col_names: HashSet<&str> = setup
+            .predicate_columns
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+        let fields: Vec<arrow::datatypes::FieldRef> = setup
+            .arrow_schema
+            .fields()
+            .iter()
+            .filter(|f| pred_col_names.contains(f.name().as_str()))
+            .cloned()
+            .collect();
+        let schema = Arc::new(arrow::datatypes::Schema::new(fields));
+        arrow::array::RecordBatch::new_empty(schema)
+    } else if arrow_batches.len() == 1 {
+        arrow_batches.into_iter().next().unwrap()
+    } else {
+        arrow::compute::concat_batches(&arrow_batches[0].schema(), &arrow_batches)
+            .map_err(parquet_err)?
+    };
+
+    // Evaluate predicate on pred_batch.
+    let daft_pred_batch = RecordBatch::try_from(&pred_batch)?;
+    let bound = BoundExpr::try_new(predicate.clone(), &daft_pred_batch.schema)
+        .map_err(|e| parquet_err(format!("Failed to bind predicate: {}", e)))?;
+    let result = daft_pred_batch
+        .eval_expression(&bound)
+        .map_err(|e| parquet_err(format!("Failed to eval predicate: {}", e)))?;
+    let bool_arr = result
+        .bool()
+        .map_err(|e| parquet_err(format!("Predicate did not produce boolean: {}", e)))?;
+    let arrow_bool = bool_arr
+        .as_arrow()
+        .map_err(|e| parquet_err(format!("Failed to convert to arrow bool: {}", e)))?;
+
+    // Convert predicate result to RowSelection.
+    let predicate_sel = bool_array_to_row_selection(arrow_bool);
+
+    // Compute final selection = refine(base, predicate).
+    let final_selection = if let Some(ref base) = base_selection {
+        refine_selection(base, &predicate_sel)
+    } else {
+        // No base selection: predicate_sel is relative to full RG.
+        predicate_sel
+    };
+
+    // Filter the predicate batch to only keep matching rows.
+    let filter_arr = arrow_bool;
+    let filtered_pred_batch =
+        arrow::compute::filter_record_batch(&pred_batch, filter_arr).map_err(parquet_err)?;
+
+    Ok((filtered_pred_batch, final_selection))
+}
+
+/// Decode a single column from a single RG with the given RowSelection.
+fn decode_rg_column(
+    file_bytes: &bytes::Bytes,
+    setup: &LocalParquetSetup,
+    task: &RgTask,
+    col_root_index: usize,
+    row_selection: Option<&RowSelection>,
+) -> DaftResult<arrow::array::RecordBatch> {
+    let mut builder = ParquetRecordBatchReaderBuilder::new_with_metadata(
+        file_bytes.clone(),
+        (*setup.arrow_reader_metadata).clone(),
+    );
+
+    let mask = ProjectionMask::roots(builder.parquet_schema(), std::iter::once(col_root_index));
+    builder = builder
+        .with_projection(mask)
+        .with_row_groups(vec![task.rg_idx])
+        .with_batch_size(setup.batch_size);
+
+    if let Some(sel) = row_selection {
+        builder = builder.with_row_selection(sel.clone());
+    }
+
+    let reader = builder.build().map_err(parquet_err)?;
+    let arrow_batches: Vec<arrow::array::RecordBatch> =
+        reader.collect::<Result<Vec<_>, _>>().map_err(parquet_err)?;
+
+    if arrow_batches.is_empty() {
+        let field = setup.arrow_schema.field(col_root_index).clone();
+        let schema = Arc::new(arrow::datatypes::Schema::new(vec![field]));
+        Ok(arrow::array::RecordBatch::new_empty(schema))
+    } else if arrow_batches.len() == 1 {
+        Ok(arrow_batches.into_iter().next().unwrap())
+    } else {
+        arrow::compute::concat_batches(&arrow_batches[0].schema(), &arrow_batches)
+            .map_err(|e| parquet_err(e).into())
+    }
+}
+
+/// Decode a single RG with intra-RG column parallelism (rayon).
+/// Used by the streaming local path (Path 2).
+fn decode_single_rg_col_parallel(
+    path: &str,
+    setup: &LocalParquetSetup,
+    task_idx: usize,
+    predicate: Option<&ExprRef>,
+) -> DaftResult<RecordBatch> {
+    let task = &setup.rg_tasks[task_idx];
+    let rg_rows = setup.parquet_metadata.row_group(task.rg_idx).num_rows() as usize;
+
+    let all_col_indices =
+        compute_root_indices(&setup.arrow_schema, setup.read_col_set.as_ref(), None);
+
+    // Fallback: single column or small row group where parallel overhead exceeds benefit.
+    let rg_byte_size = setup
+        .parquet_metadata
+        .row_group(task.rg_idx)
+        .total_byte_size();
+    if all_col_indices.len() <= 1 || rg_byte_size < MIN_RG_BYTES_FOR_COL_PARALLELISM {
+        return decode_single_rg(path, setup, task, predicate, None);
+    }
+
+    // Read file into memory once; column tasks share the buffer via cheap Bytes::clone().
+    let file_bytes = bytes::Bytes::from(
+        std::fs::read(path)
+            .map_err(|e| parquet_err(format!("Failed to read '{}': {}", path, e)))?,
+    );
+
+    if setup.predicate_pushed {
+        let pred = predicate.unwrap();
+        let pred_cols = setup.predicate_columns.as_ref().unwrap();
+        let pred_col_indices = compute_root_indices(&setup.arrow_schema, Some(pred_cols), None);
+        let data_col_indices = compute_root_indices(
+            &setup.arrow_schema,
+            setup.read_col_set.as_ref(),
+            Some(pred_cols),
+        );
+
+        // Phase 1: decode predicate columns.
+        let (pred_batch, final_selection) =
+            decode_rg_predicate_phase(&file_bytes, setup, task, pred, &pred_col_indices)?;
+
+        if data_col_indices.is_empty() {
+            let daft_batch = RecordBatch::try_from(&pred_batch)?;
+            return finalize_batch(
+                daft_batch,
+                None,
+                true,
+                &setup.read_daft_schema,
+                &setup.return_daft_schema,
+            );
+        }
+
+        // Phase 2: decode data columns in parallel.
+        let col_results: Vec<DaftResult<arrow::array::RecordBatch>> = data_col_indices
+            .par_iter()
+            .map(|&col_idx| {
+                decode_rg_column(&file_bytes, setup, task, col_idx, Some(&final_selection))
+            })
+            .collect();
+        let col_batches: Vec<arrow::array::RecordBatch> =
+            col_results.into_iter().collect::<DaftResult<Vec<_>>>()?;
+
+        let mut all_batches = vec![pred_batch];
+        all_batches.extend(col_batches);
+        let merged = hconcat_record_batches(&all_batches)?;
+        let daft_batch = RecordBatch::try_from(&merged)?;
+        finalize_batch(
+            daft_batch,
+            None,
+            true,
+            &setup.read_daft_schema,
+            &setup.return_daft_schema,
+        )
+    } else {
+        // No predicate: decode all columns in parallel.
+        let mut base_sel = build_base_row_selection(setup, task, rg_rows);
+        if task.local_offset > 0 {
+            let offset_sel = build_offset_row_selection(task.local_offset, rg_rows);
+            base_sel = combine_selections(base_sel, Some(offset_sel));
+        }
+
+        let col_results: Vec<DaftResult<arrow::array::RecordBatch>> = all_col_indices
+            .par_iter()
+            .map(|&col_idx| decode_rg_column(&file_bytes, setup, task, col_idx, base_sel.as_ref()))
+            .collect();
+        let col_batches: Vec<arrow::array::RecordBatch> =
+            col_results.into_iter().collect::<DaftResult<Vec<_>>>()?;
+
+        let merged = hconcat_record_batches(&col_batches)?;
+        let daft_batch = RecordBatch::try_from(&merged)?;
+        finalize_batch(
+            daft_batch,
+            predicate,
+            false,
+            &setup.read_daft_schema,
+            &setup.return_daft_schema,
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Async column-parallel decode helpers (Paths 3, 4)
+// ---------------------------------------------------------------------------
+
+/// Async version of `decode_rg_predicate_phase` for remote reads.
+#[allow(clippy::too_many_arguments, clippy::ref_option)]
+async fn decode_rg_predicate_phase_async(
+    uri: &str,
+    io_client: &Arc<IOClient>,
+    io_stats: &Option<IOStatsRef>,
+    parquet_metadata: &Arc<ParquetMetaData>,
+    arrow_schema: &Arc<arrow::datatypes::Schema>,
+    predicate: &ExprRef,
+    pred_col_indices: &[usize],
+    rg_idx: usize,
+    base_selection: Option<RowSelection>,
+    predicate_columns: &HashSet<String>,
+) -> DaftResult<(arrow::array::RecordBatch, RowSelection)> {
+    let reader = DaftAsyncFileReader::new(
+        uri.to_string(),
+        io_client.clone(),
+        io_stats.clone(),
+        Some(parquet_metadata.clone()),
+        None,
+    );
+    let options = ArrowReaderOptions::new().with_schema(arrow_schema.clone());
+    let arrow_reader_metadata =
+        ArrowReaderMetadata::try_new(parquet_metadata.clone(), options).map_err(parquet_err)?;
+    let mut builder =
+        ParquetRecordBatchStreamBuilder::new_with_metadata(reader, arrow_reader_metadata);
+
+    let mask = ProjectionMask::roots(builder.parquet_schema(), pred_col_indices.iter().copied());
+    builder = builder
+        .with_projection(mask)
+        .with_row_groups(vec![rg_idx])
+        .with_batch_size(DEFAULT_BATCH_SIZE);
+
+    if let Some(ref sel) = base_selection {
+        builder = builder.with_row_selection(sel.clone());
+    }
+
+    let stream = builder.build().map_err(parquet_err)?;
+    let arrow_batches: Vec<arrow::array::RecordBatch> =
+        stream.try_collect().await.map_err(parquet_err)?;
+
+    let pred_batch = if arrow_batches.is_empty() {
+        let pred_col_names: HashSet<&str> = predicate_columns.iter().map(|s| s.as_str()).collect();
+        let fields: Vec<arrow::datatypes::FieldRef> = arrow_schema
+            .fields()
+            .iter()
+            .filter(|f| pred_col_names.contains(f.name().as_str()))
+            .cloned()
+            .collect();
+        let schema = Arc::new(arrow::datatypes::Schema::new(fields));
+        arrow::array::RecordBatch::new_empty(schema)
+    } else if arrow_batches.len() == 1 {
+        arrow_batches.into_iter().next().unwrap()
+    } else {
+        arrow::compute::concat_batches(&arrow_batches[0].schema(), &arrow_batches)
+            .map_err(parquet_err)?
+    };
+
+    // Evaluate predicate.
+    let daft_pred_batch = RecordBatch::try_from(&pred_batch)?;
+    let bound = BoundExpr::try_new(predicate.clone(), &daft_pred_batch.schema)
+        .map_err(|e| parquet_err(format!("Failed to bind predicate: {}", e)))?;
+    let result = daft_pred_batch
+        .eval_expression(&bound)
+        .map_err(|e| parquet_err(format!("Failed to eval predicate: {}", e)))?;
+    let bool_arr = result
+        .bool()
+        .map_err(|e| parquet_err(format!("Predicate did not produce boolean: {}", e)))?;
+    let arrow_bool = bool_arr
+        .as_arrow()
+        .map_err(|e| parquet_err(format!("Failed to convert to arrow bool: {}", e)))?;
+
+    let predicate_sel = bool_array_to_row_selection(arrow_bool);
+
+    let final_selection = if let Some(ref base) = base_selection {
+        refine_selection(base, &predicate_sel)
+    } else {
+        predicate_sel
+    };
+
+    let filtered_pred_batch =
+        arrow::compute::filter_record_batch(&pred_batch, arrow_bool).map_err(parquet_err)?;
+
+    Ok((filtered_pred_batch, final_selection))
+}
+
+/// Async version of `decode_rg_column` for remote reads.
+#[allow(clippy::too_many_arguments, clippy::ref_option)]
+async fn decode_rg_column_async(
+    uri: &str,
+    io_client: &Arc<IOClient>,
+    io_stats: &Option<IOStatsRef>,
+    parquet_metadata: &Arc<ParquetMetaData>,
+    arrow_schema: &Arc<arrow::datatypes::Schema>,
+    col_root_index: usize,
+    rg_idx: usize,
+    row_selection: Option<RowSelection>,
+) -> DaftResult<arrow::array::RecordBatch> {
+    let reader = DaftAsyncFileReader::new(
+        uri.to_string(),
+        io_client.clone(),
+        io_stats.clone(),
+        Some(parquet_metadata.clone()),
+        None,
+    );
+    let options = ArrowReaderOptions::new().with_schema(arrow_schema.clone());
+    let arrow_reader_metadata =
+        ArrowReaderMetadata::try_new(parquet_metadata.clone(), options).map_err(parquet_err)?;
+    let mut builder =
+        ParquetRecordBatchStreamBuilder::new_with_metadata(reader, arrow_reader_metadata);
+
+    let mask = ProjectionMask::roots(builder.parquet_schema(), std::iter::once(col_root_index));
+    builder = builder
+        .with_projection(mask)
+        .with_row_groups(vec![rg_idx])
+        .with_batch_size(DEFAULT_BATCH_SIZE);
+
+    if let Some(sel) = row_selection {
+        builder = builder.with_row_selection(sel);
+    }
+
+    let stream = builder.build().map_err(parquet_err)?;
+    let arrow_batches: Vec<arrow::array::RecordBatch> =
+        stream.try_collect().await.map_err(parquet_err)?;
+
+    if arrow_batches.is_empty() {
+        let field = arrow_schema.field(col_root_index).clone();
+        let schema = Arc::new(arrow::datatypes::Schema::new(vec![field]));
+        Ok(arrow::array::RecordBatch::new_empty(schema))
+    } else if arrow_batches.len() == 1 {
+        Ok(arrow_batches.into_iter().next().unwrap())
+    } else {
+        arrow::compute::concat_batches(&arrow_batches[0].schema(), &arrow_batches)
+            .map_err(|e| parquet_err(e).into())
+    }
+}
+
 /// Read a single parquet file into a Daft [`RecordBatch`].
 ///
 /// When `predicate` and/or `delete_rows` are provided, the reader handles them
@@ -359,6 +920,8 @@ pub async fn read_parquet_single_arrowrs(
     delete_rows: Option<&[i64]>,
 ) -> DaftResult<RecordBatch> {
     // 1. Create the async file reader and fetch metadata.
+    let io_client_saved = io_client.clone();
+    let io_stats_saved = io_stats.clone();
     let mut reader = DaftAsyncFileReader::new(uri.to_string(), io_client, io_stats, metadata, None);
     let mut parquet_metadata = reader.get_metadata(None).await.map_err(parquet_err)?;
 
@@ -401,21 +964,11 @@ pub async fn read_parquet_single_arrowrs(
         }
     }
 
-    // 4. Build the stream builder with our custom schema.
-    let options = ArrowReaderOptions::new().with_schema(Arc::new(arrow_schema.clone()));
-    let arrow_reader_metadata =
-        ArrowReaderMetadata::try_new(parquet_metadata.clone(), options).map_err(parquet_err)?;
-    let builder = ParquetRecordBatchStreamBuilder::new_with_metadata(reader, arrow_reader_metadata);
-
-    // 5. Apply column projection (expanded to include predicate columns).
-    let (read_daft_schema, builder) = if let Some(ref col_set) = read_col_set {
-        let mask = build_projection_mask(col_set, &arrow_schema, builder.parquet_schema());
-        (
-            project_daft_schema(&daft_schema, col_set),
-            builder.with_projection(mask),
-        )
+    // 4. Compute schemas.
+    let read_daft_schema = if let Some(ref col_set) = read_col_set {
+        project_daft_schema(&daft_schema, col_set)
     } else {
-        (daft_schema.clone(), builder)
+        daft_schema.clone()
     };
 
     // The schema to return to the caller (user-requested columns only).
@@ -447,105 +1000,346 @@ pub async fn read_parquet_single_arrowrs(
         return Ok(row_count_batch(return_daft_schema, total, num_rows));
     }
 
-    // 7. Apply row groups, offset, batch size, RowFilter, RowSelection, and limit.
-    let batch_size = batch_size.unwrap_or_else(|| {
+    // 7. Compute column indices and per-RG selections for column-parallel decode.
+    let predicate_columns: Option<HashSet<String>> =
+        row_filter_result.as_ref().map(|(_, cols)| cols.clone());
+    let read_col_set_owned: Option<HashSet<String>> = read_col_set
+        .as_ref()
+        .map(|s| s.iter().map(|x| (*x).to_string()).collect());
+    let arrow_schema_arc = Arc::new(arrow_schema.clone());
+    let all_col_indices = compute_root_indices(&arrow_schema, read_col_set_owned.as_ref(), None);
+
+    // Compute per-RG base selections (offset + deletes).
+    let use_offset_selection = predicate_pushed && start_offset.is_some_and(|o| o > 0);
+    let mut rg_global_starts = Vec::with_capacity(parquet_metadata.num_row_groups());
+    let mut cumulative = 0usize;
+    for i in 0..parquet_metadata.num_row_groups() {
+        rg_global_starts.push(cumulative);
+        cumulative += parquet_metadata.row_group(i).num_rows() as usize;
+    }
+
+    // Compute per-RG offset within the concatenated selected RGs (for start_offset).
+    let global_start = start_offset.unwrap_or(0);
+    let per_rg_selections: Vec<Option<RowSelection>> = {
+        let mut cumulative_rows = 0usize;
         rg_indices
             .iter()
-            .map(|&idx| parquet_metadata.row_group(idx).num_rows() as usize)
-            .max()
-            .unwrap_or(DEFAULT_BATCH_SIZE)
-    });
-    let mut builder = builder.with_row_groups(rg_indices.clone());
+            .map(|&rg_idx| {
+                let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
+                let rg_start_in_stream = cumulative_rows;
+                cumulative_rows += rg_rows;
 
-    // Offset handling: arrow-rs `with_offset` is applied post-RowFilter, but Daft's
-    // start_offset is a file-level skip (pre-filter). When a predicate is pushed,
-    // convert offset to a RowSelection (applied pre-RowFilter) instead.
-    let use_offset_selection = predicate_pushed && start_offset.is_some_and(|o| o > 0);
-    if !use_offset_selection && let Some(offset) = start_offset {
-        builder = builder.with_offset(offset);
-    }
+                let offset_sel = if use_offset_selection || (!predicate_pushed && global_start > 0)
+                {
+                    let local_offset = global_start.saturating_sub(rg_start_in_stream);
+                    if local_offset > 0 {
+                        Some(build_offset_row_selection(local_offset, rg_rows))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
 
-    // Wire RowSelection for offset and/or delete_rows (applied before RowFilter).
-    {
-        let total_selected_rows: usize = rg_indices
-            .iter()
-            .map(|&idx| parquet_metadata.row_group(idx).num_rows() as usize)
-            .sum();
+                let delete_sel = if let Some(deletes) = delete_rows
+                    && !deletes.is_empty()
+                {
+                    Some(build_single_rg_delete_selection(
+                        deletes,
+                        rg_global_starts[rg_idx],
+                        rg_rows,
+                    ))
+                } else {
+                    None
+                };
 
-        let offset_selection = if use_offset_selection {
-            Some(build_offset_row_selection(
-                start_offset.unwrap(),
-                total_selected_rows,
-            ))
-        } else {
-            None
-        };
+                combine_selections(offset_sel, delete_sel)
+            })
+            .collect()
+    };
 
-        let delete_selection = if let Some(delete_rows) = delete_rows
-            && !delete_rows.is_empty()
-        {
-            Some(build_delete_row_selection(
-                delete_rows,
-                &rg_indices,
-                &parquet_metadata,
-            ))
-        } else {
-            None
-        };
-
-        if let Some(selection) = combine_selections(offset_selection, delete_selection) {
-            builder = builder.with_row_selection(selection);
+    // Fallback: single column -> use original single-stream approach.
+    if all_col_indices.len() <= 1 {
+        // Rebuild single stream (original code path).
+        let reader2 = DaftAsyncFileReader::new(
+            uri.to_string(),
+            io_client_saved.clone(),
+            io_stats_saved.clone(),
+            Some(parquet_metadata.clone()),
+            None,
+        );
+        let options2 = ArrowReaderOptions::new().with_schema(arrow_schema_arc.clone());
+        let arm2 = ArrowReaderMetadata::try_new(parquet_metadata.clone(), options2)
+            .map_err(parquet_err)?;
+        let mut builder2 = ParquetRecordBatchStreamBuilder::new_with_metadata(reader2, arm2);
+        if let Some(ref col_set) = read_col_set {
+            let mask = build_projection_mask(col_set, &arrow_schema, builder2.parquet_schema());
+            builder2 = builder2.with_projection(mask);
         }
+        builder2 = builder2.with_row_groups(rg_indices.clone());
+        if !use_offset_selection && let Some(offset) = start_offset {
+            builder2 = builder2.with_offset(offset);
+        }
+        {
+            let total_selected_rows: usize = rg_indices
+                .iter()
+                .map(|&idx| parquet_metadata.row_group(idx).num_rows() as usize)
+                .sum();
+            let offset_selection = if use_offset_selection {
+                Some(build_offset_row_selection(
+                    start_offset.unwrap(),
+                    total_selected_rows,
+                ))
+            } else {
+                None
+            };
+            let delete_selection = if let Some(deletes) = delete_rows
+                && !deletes.is_empty()
+            {
+                Some(build_delete_row_selection(
+                    deletes,
+                    &rg_indices,
+                    &parquet_metadata,
+                ))
+            } else {
+                None
+            };
+            if let Some(selection) = combine_selections(offset_selection, delete_selection) {
+                builder2 = builder2.with_row_selection(selection);
+            }
+        }
+        if let Some((row_filter, _)) = row_filter_result {
+            builder2 = builder2.with_row_filter(row_filter);
+        }
+        if (predicate_pushed || predicate.is_none())
+            && let Some(limit) = num_rows
+        {
+            builder2 = builder2.with_limit(limit);
+        }
+        let batch_size = batch_size.unwrap_or(DEFAULT_BATCH_SIZE);
+        builder2 = builder2.with_batch_size(batch_size);
+        let stream = builder2.build().map_err(parquet_err)?;
+        let arrow_batches: Vec<arrow::array::RecordBatch> =
+            stream.try_collect().await.map_err(parquet_err)?;
+        let daft_batches: Vec<RecordBatch> = arrow_batches
+            .iter()
+            .map(RecordBatch::try_from)
+            .collect::<DaftResult<Vec<_>>>()?;
+        let daft_refs: Vec<&RecordBatch> = daft_batches.iter().collect();
+        let mut table =
+            RecordBatch::concat_or_empty(&daft_refs, Some(Arc::new(read_daft_schema.clone())))?;
+        table = finalize_batch(
+            table,
+            predicate.as_ref(),
+            predicate_pushed,
+            &read_daft_schema,
+            &return_daft_schema,
+        )?;
+        if predicate.is_some()
+            && !predicate_pushed
+            && let Some(limit) = num_rows
+        {
+            table = table.head(limit)?;
+        }
+        return Ok(table);
     }
 
-    // Wire RowFilter for predicate pushdown (late materialization).
-    if let Some((row_filter, _)) = row_filter_result {
-        builder = builder.with_row_filter(row_filter);
+    // Column-parallel async decode with concurrency limiter.
+    let num_cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(2);
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(num_cpus * 2));
+
+    if predicate_pushed {
+        let pred_cols = predicate_columns.as_ref().unwrap();
+        let pred_col_indices = compute_root_indices(&arrow_schema, Some(pred_cols), None);
+        let data_col_indices =
+            compute_root_indices(&arrow_schema, read_col_set_owned.as_ref(), Some(pred_cols));
+
+        // Phase 1: decode predicate columns per RG (concurrent).
+        let phase1_futures: Vec<_> = rg_indices
+            .iter()
+            .enumerate()
+            .map(|(ri, &rg_idx)| {
+                let uri = uri.to_string();
+                let io_client = io_client_saved.clone();
+                let io_stats = io_stats_saved.clone();
+                let pm = parquet_metadata.clone();
+                let as_arc = arrow_schema_arc.clone();
+                let pred = predicate.clone().unwrap();
+                let pci = pred_col_indices.clone();
+                let base_sel = per_rg_selections[ri].clone();
+                let pc = pred_cols.clone();
+                let sem = semaphore.clone();
+                async move {
+                    let _permit = sem.acquire().await.unwrap();
+                    decode_rg_predicate_phase_async(
+                        &uri, &io_client, &io_stats, &pm, &as_arc, &pred, &pci, rg_idx, base_sel,
+                        &pc,
+                    )
+                    .await
+                }
+            })
+            .collect();
+        let phase1: Vec<(arrow::array::RecordBatch, RowSelection)> =
+            futures::future::try_join_all(phase1_futures).await?;
+
+        if data_col_indices.is_empty() {
+            let mut rg_batches = Vec::with_capacity(phase1.len());
+            for (pred_batch, _) in &phase1 {
+                let daft_batch = RecordBatch::try_from(pred_batch)?;
+                let table = finalize_batch(
+                    daft_batch,
+                    None,
+                    true,
+                    &read_daft_schema,
+                    &return_daft_schema,
+                )?;
+                rg_batches.push(table);
+            }
+            let mut table = RecordBatch::concat(rg_batches.as_slice())?;
+            if let Some(limit) = num_rows {
+                table = table.head(limit)?;
+            }
+            return Ok(table);
+        }
+
+        // Phase 2: decode data columns per (RG, col) pair (concurrent).
+        let col_futures: Vec<_> = rg_indices
+            .iter()
+            .enumerate()
+            .flat_map(|(ri, &rg_idx)| {
+                let phase1_sel = phase1[ri].1.clone();
+                let io_client = io_client_saved.clone();
+                let io_stats = io_stats_saved.clone();
+                let pm = parquet_metadata.clone();
+                let as_arc = arrow_schema_arc.clone();
+                let sem = semaphore.clone();
+                data_col_indices.iter().map(move |&col_idx| {
+                    let uri = uri.to_string();
+                    let io_client = io_client.clone();
+                    let io_stats = io_stats.clone();
+                    let pm = pm.clone();
+                    let as_arc = as_arc.clone();
+                    let sel = phase1_sel.clone();
+                    let sem = sem.clone();
+                    async move {
+                        let _permit = sem.acquire().await.unwrap();
+                        let batch = decode_rg_column_async(
+                            &uri,
+                            &io_client,
+                            &io_stats,
+                            &pm,
+                            &as_arc,
+                            col_idx,
+                            rg_idx,
+                            Some(sel),
+                        )
+                        .await?;
+                        Ok::<_, common_error::DaftError>((ri, batch))
+                    }
+                })
+            })
+            .collect();
+        let col_results: Vec<(usize, arrow::array::RecordBatch)> =
+            futures::future::try_join_all(col_futures).await?;
+
+        // Group by RG index, hconcat.
+        let num_rgs = rg_indices.len();
+        let mut grouped: Vec<Vec<arrow::array::RecordBatch>> = vec![Vec::new(); num_rgs];
+        for (ri, batch) in col_results {
+            grouped[ri].push(batch);
+        }
+
+        let mut rg_batches = Vec::with_capacity(num_rgs);
+        for (ri, data_batches) in grouped.into_iter().enumerate() {
+            let (ref pred_batch, _) = phase1[ri];
+            let mut all = vec![pred_batch.clone()];
+            all.extend(data_batches);
+            let merged = hconcat_record_batches(&all)?;
+            let daft_batch = RecordBatch::try_from(&merged)?;
+            let table = finalize_batch(
+                daft_batch,
+                None,
+                true,
+                &read_daft_schema,
+                &return_daft_schema,
+            )?;
+            rg_batches.push(table);
+        }
+
+        let mut table = RecordBatch::concat(rg_batches.as_slice())?;
+        if let Some(limit) = num_rows {
+            table = table.head(limit)?;
+        }
+        Ok(table)
+    } else {
+        // No predicate pushed: decode all columns per (RG, col) pair.
+        let col_futures: Vec<_> = rg_indices
+            .iter()
+            .enumerate()
+            .flat_map(|(ri, &rg_idx)| {
+                let base_sel = per_rg_selections[ri].clone();
+                let io_client = io_client_saved.clone();
+                let io_stats = io_stats_saved.clone();
+                let pm = parquet_metadata.clone();
+                let as_arc = arrow_schema_arc.clone();
+                let sem = semaphore.clone();
+                all_col_indices.iter().map(move |&col_idx| {
+                    let uri = uri.to_string();
+                    let io_client = io_client.clone();
+                    let io_stats = io_stats.clone();
+                    let pm = pm.clone();
+                    let as_arc = as_arc.clone();
+                    let sel = base_sel.clone();
+                    let sem = sem.clone();
+                    async move {
+                        let _permit = sem.acquire().await.unwrap();
+                        let batch = decode_rg_column_async(
+                            &uri, &io_client, &io_stats, &pm, &as_arc, col_idx, rg_idx, sel,
+                        )
+                        .await?;
+                        Ok::<_, common_error::DaftError>((ri, batch))
+                    }
+                })
+            })
+            .collect();
+        let col_results: Vec<(usize, arrow::array::RecordBatch)> =
+            futures::future::try_join_all(col_futures).await?;
+
+        let num_rgs = rg_indices.len();
+        let mut grouped: Vec<Vec<arrow::array::RecordBatch>> = vec![Vec::new(); num_rgs];
+        for (ri, batch) in col_results {
+            grouped[ri].push(batch);
+        }
+
+        let mut rg_batches = Vec::with_capacity(num_rgs);
+        for data_batches in grouped {
+            let merged = hconcat_record_batches(&data_batches)?;
+            let daft_batch = RecordBatch::try_from(&merged)?;
+            let table = finalize_batch(
+                daft_batch,
+                predicate.as_ref(),
+                false,
+                &read_daft_schema,
+                &return_daft_schema,
+            )?;
+            rg_batches.push(table);
+        }
+
+        let mut table = RecordBatch::concat(rg_batches.as_slice())?;
+        if predicate.is_some()
+            && let Some(limit) = num_rows
+        {
+            table = table.head(limit)?;
+        }
+        if predicate.is_none()
+            && let Some(limit) = num_rows
+        {
+            table = table.head(limit)?;
+        }
+        Ok(table)
     }
-
-    // Limit: if predicate was pushed down, arrow-rs applies limit post-filter.
-    // If no predicate at all, apply limit at decoder level.
-    // If predicate was NOT pushed down, limit is applied post-read.
-    if (predicate_pushed || predicate.is_none())
-        && let Some(limit) = num_rows
-    {
-        builder = builder.with_limit(limit);
-    }
-
-    builder = builder.with_batch_size(batch_size);
-
-    // 8. Build the stream and collect all batches.
-    let stream = builder.build().map_err(parquet_err)?;
-    let arrow_batches: Vec<arrow::array::RecordBatch> =
-        stream.try_collect().await.map_err(parquet_err)?;
-
-    // 9. Convert to Daft RecordBatch.
-    let daft_batches: Vec<RecordBatch> = arrow_batches
-        .iter()
-        .map(RecordBatch::try_from)
-        .collect::<DaftResult<Vec<_>>>()?;
-    let daft_refs: Vec<&RecordBatch> = daft_batches.iter().collect();
-    let mut table =
-        RecordBatch::concat_or_empty(&daft_refs, Some(Arc::new(read_daft_schema.clone())))?;
-
-    // 10. Post-read finalize: predicate fallback + column strip.
-    table = finalize_batch(
-        table,
-        predicate.as_ref(),
-        predicate_pushed,
-        &read_daft_schema,
-        &return_daft_schema,
-    )?;
-
-    // 11. Limit after non-pushed predicate.
-    if predicate.is_some()
-        && !predicate_pushed
-        && let Some(limit) = num_rows
-    {
-        table = table.head(limit)?;
-    }
-
-    Ok(table)
 }
 
 // ---------------------------------------------------------------------------
@@ -578,6 +1372,7 @@ pub(crate) struct LocalParquetSetup {
     pub read_daft_schema: Schema,
     pub return_daft_schema: Schema,
     pub read_col_set: Option<HashSet<String>>,
+    pub predicate_columns: Option<HashSet<String>>,
     pub rg_tasks: Vec<RgTask>,
     pub rg_global_starts: Vec<usize>,
     pub batch_size: usize,
@@ -744,6 +1539,7 @@ pub(crate) fn local_parquet_setup(
             read_daft_schema,
             return_daft_schema,
             read_col_set,
+            predicate_columns: row_filter_data,
             rg_tasks: Vec::new(),
             rg_global_starts: Vec::new(),
             batch_size: batch_size.unwrap_or(256 * 1024),
@@ -815,6 +1611,7 @@ pub(crate) fn local_parquet_setup(
         read_daft_schema,
         return_daft_schema,
         read_col_set,
+        predicate_columns: row_filter_data,
         rg_tasks,
         rg_global_starts,
         batch_size,
@@ -930,44 +1727,232 @@ pub fn local_parquet_read_arrowrs(
         return Ok(row_count_batch(setup.return_daft_schema, total, num_rows));
     }
 
-    // Single-RG fast path: decode directly, with limit pushed to decoder.
-    if setup.rg_tasks.len() == 1 {
-        let mut table = decode_single_rg(
-            path,
-            &setup,
-            &setup.rg_tasks[0],
-            predicate.as_ref(),
-            num_rows,
-        )?;
-        // For single-RG with non-pushed predicate, decode_single_rg applies
-        // the filter but not the limit. Apply it here.
-        if predicate.is_some()
-            && !setup.predicate_pushed
-            && let Some(limit) = num_rows
-        {
+    // Compute column indices for parallel decode.
+    let all_col_indices =
+        compute_root_indices(&setup.arrow_schema, setup.read_col_set.as_ref(), None);
+
+    // Check if any row group is large enough to benefit from column parallelism.
+    let any_rg_large = setup.rg_tasks.iter().any(|t| {
+        setup.parquet_metadata.row_group(t.rg_idx).total_byte_size()
+            >= MIN_RG_BYTES_FOR_COL_PARALLELISM
+    });
+
+    // Fallback: single column or all RGs too small -> use decode_single_rg per RG.
+    if all_col_indices.len() <= 1 || !any_rg_large {
+        // Single-column: no benefit from column splitting.
+        if setup.rg_tasks.len() == 1 {
+            let mut table = decode_single_rg(
+                path,
+                &setup,
+                &setup.rg_tasks[0],
+                predicate.as_ref(),
+                num_rows,
+            )?;
+            if predicate.is_some()
+                && !setup.predicate_pushed
+                && let Some(limit) = num_rows
+            {
+                table = table.head(limit)?;
+            }
+            return Ok(table);
+        }
+
+        let has_predicate = predicate.is_some();
+        let rg_results: Vec<DaftResult<RecordBatch>> = setup
+            .rg_tasks
+            .par_iter()
+            .map(|task| decode_single_rg(path, &setup, task, predicate.as_ref(), num_rows))
+            .collect();
+        let batches: Vec<RecordBatch> = rg_results.into_iter().collect::<DaftResult<Vec<_>>>()?;
+        let mut table = RecordBatch::concat(batches.as_slice())?;
+        if has_predicate && let Some(limit) = num_rows {
             table = table.head(limit)?;
         }
         return Ok(table);
     }
 
-    // Multi-RG: decode in parallel using rayon, then concat.
     let has_predicate = predicate.is_some();
-    let rg_results: Vec<DaftResult<RecordBatch>> = setup
-        .rg_tasks
-        .par_iter()
-        .map(|task| decode_single_rg(path, &setup, task, predicate.as_ref(), num_rows))
-        .collect();
 
-    let batches: Vec<RecordBatch> = rg_results.into_iter().collect::<DaftResult<Vec<_>>>()?;
+    // Read file into memory once; column tasks share the buffer via cheap Bytes::clone().
+    let file_bytes = bytes::Bytes::from(
+        std::fs::read(path)
+            .map_err(|e| parquet_err(format!("Failed to read '{}': {}", path, e)))?,
+    );
 
-    let mut table = RecordBatch::concat(batches.as_slice())?;
+    if setup.predicate_pushed {
+        // Two-phase decode: predicate columns first (serial per RG), then data columns parallel.
+        let pred_cols = setup.predicate_columns.as_ref().unwrap();
+        let pred_col_indices = compute_root_indices(&setup.arrow_schema, Some(pred_cols), None);
+        let data_col_indices = compute_root_indices(
+            &setup.arrow_schema,
+            setup.read_col_set.as_ref(),
+            Some(pred_cols),
+        );
 
-    // Apply limit post-concat for predicate path.
-    if has_predicate && let Some(limit) = num_rows {
-        table = table.head(limit)?;
+        // Phase 1: decode predicate columns per RG (parallel over RGs).
+        let phase1_results: Vec<DaftResult<(arrow::array::RecordBatch, RowSelection)>> = setup
+            .rg_tasks
+            .par_iter()
+            .map(|task| {
+                decode_rg_predicate_phase(
+                    &file_bytes,
+                    &setup,
+                    task,
+                    predicate.as_ref().unwrap(),
+                    &pred_col_indices,
+                )
+            })
+            .collect();
+        let phase1: Vec<(arrow::array::RecordBatch, RowSelection)> =
+            phase1_results.into_iter().collect::<DaftResult<Vec<_>>>()?;
+
+        // Phase 2: decode data columns in parallel across (RG, col) pairs.
+        if data_col_indices.is_empty() {
+            // All read columns are predicate columns; just convert and finalize.
+            let mut rg_batches = Vec::with_capacity(phase1.len());
+            for (pred_batch, _) in &phase1 {
+                let daft_batch = RecordBatch::try_from(pred_batch)?;
+                let table = finalize_batch(
+                    daft_batch,
+                    None, // predicate already applied
+                    true,
+                    &setup.read_daft_schema,
+                    &setup.return_daft_schema,
+                )?;
+                rg_batches.push(table);
+            }
+            let mut table = RecordBatch::concat(rg_batches.as_slice())?;
+            if let Some(limit) = num_rows {
+                table = table.head(limit)?;
+            }
+            return Ok(table);
+        }
+
+        // Build flat (task_idx, col_idx) pairs for data columns.
+        let col_tasks: Vec<(usize, usize)> = (0..setup.rg_tasks.len())
+            .flat_map(|ti| data_col_indices.iter().map(move |&ci| (ti, ci)))
+            .collect();
+
+        let col_results: Vec<DaftResult<(usize, arrow::array::RecordBatch)>> = col_tasks
+            .par_iter()
+            .map(|&(task_idx, col_idx)| {
+                let (_, ref selection) = phase1[task_idx];
+                let batch = decode_rg_column(
+                    &file_bytes,
+                    &setup,
+                    &setup.rg_tasks[task_idx],
+                    col_idx,
+                    Some(selection),
+                )?;
+                Ok((task_idx, batch))
+            })
+            .collect();
+        let col_results: Vec<(usize, arrow::array::RecordBatch)> =
+            col_results.into_iter().collect::<DaftResult<Vec<_>>>()?;
+
+        // Group by task_idx, hconcat pred + data batches.
+        let num_tasks = setup.rg_tasks.len();
+        let mut grouped: Vec<Vec<arrow::array::RecordBatch>> = vec![Vec::new(); num_tasks];
+        for (ti, batch) in col_results {
+            grouped[ti].push(batch);
+        }
+
+        let mut rg_batches = Vec::with_capacity(num_tasks);
+        for (ti, data_batches) in grouped.into_iter().enumerate() {
+            let (ref pred_batch, _) = phase1[ti];
+            let mut all_batches = vec![pred_batch.clone()];
+            all_batches.extend(data_batches);
+            let merged = hconcat_record_batches(&all_batches)?;
+            let daft_batch = RecordBatch::try_from(&merged)?;
+            let table = finalize_batch(
+                daft_batch,
+                None, // predicate already applied
+                true,
+                &setup.read_daft_schema,
+                &setup.return_daft_schema,
+            )?;
+            rg_batches.push(table);
+        }
+
+        let mut table = RecordBatch::concat(rg_batches.as_slice())?;
+        if let Some(limit) = num_rows {
+            table = table.head(limit)?;
+        }
+        Ok(table)
+    } else {
+        // No predicate pushed: split all columns across (RG, col) pairs.
+        let col_tasks: Vec<(usize, usize)> = (0..setup.rg_tasks.len())
+            .flat_map(|ti| all_col_indices.iter().map(move |&ci| (ti, ci)))
+            .collect();
+
+        // Compute base selection per RG once.
+        let base_selections: Vec<Option<RowSelection>> = setup
+            .rg_tasks
+            .iter()
+            .map(|task| {
+                let rg_rows = setup.parquet_metadata.row_group(task.rg_idx).num_rows() as usize;
+                let mut sel = build_base_row_selection(&setup, task, rg_rows);
+                // For non-pushed predicate path, offset is handled via RowSelection
+                // only when there's no predicate. With predicate, offset is in base_selection.
+                if !setup.predicate_pushed && task.local_offset > 0 {
+                    let rg_rows = setup.parquet_metadata.row_group(task.rg_idx).num_rows() as usize;
+                    let offset_sel = build_offset_row_selection(task.local_offset, rg_rows);
+                    sel = combine_selections(sel, Some(offset_sel));
+                }
+                sel
+            })
+            .collect();
+
+        let col_results: Vec<DaftResult<(usize, arrow::array::RecordBatch)>> = col_tasks
+            .par_iter()
+            .map(|&(task_idx, col_idx)| {
+                let batch = decode_rg_column(
+                    &file_bytes,
+                    &setup,
+                    &setup.rg_tasks[task_idx],
+                    col_idx,
+                    base_selections[task_idx].as_ref(),
+                )?;
+                Ok((task_idx, batch))
+            })
+            .collect();
+        let col_results: Vec<(usize, arrow::array::RecordBatch)> =
+            col_results.into_iter().collect::<DaftResult<Vec<_>>>()?;
+
+        // Group by task_idx, hconcat.
+        let num_tasks = setup.rg_tasks.len();
+        let mut grouped: Vec<Vec<arrow::array::RecordBatch>> = vec![Vec::new(); num_tasks];
+        for (ti, batch) in col_results {
+            grouped[ti].push(batch);
+        }
+
+        let mut rg_batches = Vec::with_capacity(num_tasks);
+        for data_batches in grouped {
+            let merged = hconcat_record_batches(&data_batches)?;
+            let daft_batch = RecordBatch::try_from(&merged)?;
+            let table = finalize_batch(
+                daft_batch,
+                predicate.as_ref(),
+                false,
+                &setup.read_daft_schema,
+                &setup.return_daft_schema,
+            )?;
+            rg_batches.push(table);
+        }
+
+        let mut table = RecordBatch::concat(rg_batches.as_slice())?;
+        // Apply limit: for no-predicate, local_limit per RG handles most cases,
+        // but with predicate (non-pushed), we need post-concat limit.
+        if has_predicate && let Some(limit) = num_rows {
+            table = table.head(limit)?;
+        }
+        // For non-predicate with limit, tasks already have local_limit, but
+        // concat may overshoot by up to 1 RG. Apply final limit.
+        if !has_predicate && let Some(limit) = num_rows {
+            table = table.head(limit)?;
+        }
+        Ok(table)
     }
-
-    Ok(table)
 }
 
 /// Stream a local parquet file as Daft [`RecordBatch`]es using the sync arrow-rs reader,
@@ -1047,13 +2032,7 @@ pub async fn local_parquet_stream_arrowrs(
 
             let handle = inner_runtime.spawn(async move {
                 let result = tokio::task::block_in_place(|| {
-                    decode_single_rg(
-                        &path,
-                        &setup,
-                        &setup.rg_tasks[task_idx],
-                        pred.as_ref(),
-                        None,
-                    )
+                    decode_single_rg_col_parallel(&path, &setup, task_idx, pred.as_ref())
                 });
                 let _ = sender.send(result).await;
                 drop(permit);
@@ -1100,6 +2079,8 @@ pub async fn stream_parquet_single_arrowrs(
     delete_rows: Option<&[i64]>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     // 1. Create the async file reader and fetch metadata.
+    let io_client_saved = io_client.clone();
+    let io_stats_saved = io_stats.clone();
     let mut reader = DaftAsyncFileReader::new(uri.to_string(), io_client, io_stats, metadata, None);
     let mut parquet_metadata = reader.get_metadata(None).await.map_err(parquet_err)?;
 
@@ -1139,30 +2120,19 @@ pub async fn stream_parquet_single_arrowrs(
         }
     }
 
-    // 4. Build the stream builder with our custom schema.
-    let options = ArrowReaderOptions::new().with_schema(Arc::new(arrow_schema.clone()));
-    let arrow_reader_metadata =
-        ArrowReaderMetadata::try_new(parquet_metadata.clone(), options).map_err(parquet_err)?;
-    let builder = ParquetRecordBatchStreamBuilder::new_with_metadata(reader, arrow_reader_metadata);
-
-    // 5. Apply column projection (expanded for predicate columns).
-    let (read_daft_schema, builder) = if let Some(ref col_set) = read_col_set {
-        let mask = build_projection_mask(col_set, &arrow_schema, builder.parquet_schema());
-        (
-            project_daft_schema(&daft_schema, col_set),
-            builder.with_projection(mask),
-        )
+    // 4. Compute schemas.
+    let read_daft_schema = if let Some(ref col_set) = read_col_set {
+        project_daft_schema(&daft_schema, col_set)
     } else {
-        (daft_schema.clone(), builder)
+        daft_schema.clone()
     };
-
     let return_daft_schema = if let Some(ref col_set) = user_col_set {
         project_daft_schema(&daft_schema, col_set)
     } else {
         daft_schema
     };
 
-    // 6. Row group pruning.
+    // 5. Row group pruning.
     let rg_indices = prune_row_groups(
         &parquet_metadata,
         row_groups,
@@ -1175,7 +2145,7 @@ pub async fn stream_parquet_single_arrowrs(
         return Ok(futures::stream::empty().boxed());
     }
 
-    // Zero-column read (e.g. metadata-only query): emit a single row-count-only batch.
+    // Zero-column read.
     if return_daft_schema.is_empty() {
         let total: usize = rg_indices
             .iter()
@@ -1185,78 +2155,301 @@ pub async fn stream_parquet_single_arrowrs(
         return Ok(futures::stream::once(async move { Ok(batch) }).boxed());
     }
 
-    // 7. Apply row groups, offset, batch size, RowFilter, RowSelection, and limit.
-    let mut builder = builder.with_row_groups(rg_indices.clone());
+    // 6. Compute column indices and per-RG selections.
+    let predicate_columns: Option<HashSet<String>> =
+        row_filter_result.as_ref().map(|(_, cols)| cols.clone());
+    let read_col_set_owned: Option<HashSet<String>> = read_col_set
+        .as_ref()
+        .map(|s| s.iter().map(|x| (*x).to_string()).collect());
+    let arrow_schema_arc = Arc::new(arrow_schema.clone());
+    let all_col_indices = compute_root_indices(&arrow_schema, read_col_set_owned.as_ref(), None);
 
-    // Offset: arrow-rs with_offset is post-RowFilter, but Daft offset is file-level.
     let use_offset_selection = predicate_pushed && start_offset.is_some_and(|o| o > 0);
-    if !use_offset_selection && let Some(offset) = start_offset {
-        builder = builder.with_offset(offset);
+    let mut rg_global_starts = Vec::with_capacity(parquet_metadata.num_row_groups());
+    let mut cumulative = 0usize;
+    for i in 0..parquet_metadata.num_row_groups() {
+        rg_global_starts.push(cumulative);
+        cumulative += parquet_metadata.row_group(i).num_rows() as usize;
     }
 
-    // Wire RowSelection for offset and/or delete_rows (applied before RowFilter).
-    {
-        let total_selected_rows: usize = rg_indices
+    let global_start = start_offset.unwrap_or(0);
+    let per_rg_selections: Vec<Option<RowSelection>> = {
+        let mut cumulative_rows = 0usize;
+        rg_indices
             .iter()
-            .map(|&idx| parquet_metadata.row_group(idx).num_rows() as usize)
-            .sum();
+            .map(|&rg_idx| {
+                let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
+                let rg_start_in_stream = cumulative_rows;
+                cumulative_rows += rg_rows;
 
-        let offset_selection = if use_offset_selection {
-            Some(build_offset_row_selection(
-                start_offset.unwrap(),
-                total_selected_rows,
-            ))
-        } else {
-            None
-        };
+                let offset_sel = if use_offset_selection || (!predicate_pushed && global_start > 0)
+                {
+                    let local_offset = global_start.saturating_sub(rg_start_in_stream);
+                    if local_offset > 0 {
+                        Some(build_offset_row_selection(local_offset, rg_rows))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
 
-        let delete_selection = if let Some(delete_rows) = delete_rows
-            && !delete_rows.is_empty()
-        {
-            Some(build_delete_row_selection(
-                delete_rows,
-                &rg_indices,
-                &parquet_metadata,
-            ))
-        } else {
-            None
-        };
+                let delete_sel = if let Some(deletes) = delete_rows
+                    && !deletes.is_empty()
+                {
+                    Some(build_single_rg_delete_selection(
+                        deletes,
+                        rg_global_starts[rg_idx],
+                        rg_rows,
+                    ))
+                } else {
+                    None
+                };
 
-        if let Some(selection) = combine_selections(offset_selection, delete_selection) {
-            builder = builder.with_row_selection(selection);
+                combine_selections(offset_sel, delete_sel)
+            })
+            .collect()
+    };
+
+    // Fallback: single column -> use original single-stream approach.
+    if all_col_indices.len() <= 1 {
+        let reader2 = DaftAsyncFileReader::new(
+            uri.to_string(),
+            io_client_saved,
+            io_stats_saved,
+            Some(parquet_metadata.clone()),
+            None,
+        );
+        let options2 = ArrowReaderOptions::new().with_schema(arrow_schema_arc);
+        let arm2 = ArrowReaderMetadata::try_new(parquet_metadata.clone(), options2)
+            .map_err(parquet_err)?;
+        let mut builder2 = ParquetRecordBatchStreamBuilder::new_with_metadata(reader2, arm2);
+        if let Some(ref col_set) = read_col_set {
+            let mask = build_projection_mask(col_set, &arrow_schema, builder2.parquet_schema());
+            builder2 = builder2.with_projection(mask);
         }
+        builder2 = builder2.with_row_groups(rg_indices.clone());
+        if !use_offset_selection && let Some(offset) = start_offset {
+            builder2 = builder2.with_offset(offset);
+        }
+        {
+            let total_selected_rows: usize = rg_indices
+                .iter()
+                .map(|&idx| parquet_metadata.row_group(idx).num_rows() as usize)
+                .sum();
+            let offset_selection = if use_offset_selection {
+                Some(build_offset_row_selection(
+                    start_offset.unwrap(),
+                    total_selected_rows,
+                ))
+            } else {
+                None
+            };
+            let delete_selection = if let Some(deletes) = delete_rows
+                && !deletes.is_empty()
+            {
+                Some(build_delete_row_selection(
+                    deletes,
+                    &rg_indices,
+                    &parquet_metadata,
+                ))
+            } else {
+                None
+            };
+            if let Some(selection) = combine_selections(offset_selection, delete_selection) {
+                builder2 = builder2.with_row_selection(selection);
+            }
+        }
+        if let Some((row_filter, _)) = row_filter_result {
+            builder2 = builder2.with_row_filter(row_filter);
+        }
+        if (predicate_pushed || predicate.is_none())
+            && let Some(limit) = num_rows
+        {
+            builder2 = builder2.with_limit(limit);
+        }
+        builder2 = builder2.with_batch_size(batch_size.unwrap_or(DEFAULT_BATCH_SIZE));
+        let stream = builder2.build().map_err(parquet_err)?;
+        let mapped = stream.map(move |result| {
+            let arrow_batch = result.map_err(parquet_err)?;
+            let table = RecordBatch::try_from(&arrow_batch)?;
+            finalize_batch(
+                table,
+                predicate.as_ref(),
+                predicate_pushed,
+                &read_daft_schema,
+                &return_daft_schema,
+            )
+        });
+        return Ok(mapped.boxed());
     }
 
-    // Wire RowFilter for predicate pushdown.
-    if let Some((row_filter, _)) = row_filter_result {
-        builder = builder.with_row_filter(row_filter);
-    }
+    // 7. Per-RG column-parallel streaming.
+    let num_cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(2);
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(num_cpus * 2));
 
-    // Limit: if predicate was pushed down, arrow-rs applies limit post-filter.
-    if (predicate_pushed || predicate.is_none())
-        && let Some(limit) = num_rows
-    {
-        builder = builder.with_limit(limit);
-    }
+    let uri_owned = uri.to_string();
+    let rg_indices_owned = rg_indices;
+    let per_rg_selections_owned = per_rg_selections;
+    let limit = num_rows;
 
-    builder = builder.with_batch_size(batch_size.unwrap_or(DEFAULT_BATCH_SIZE));
+    let stream = futures::stream::iter(0..rg_indices_owned.len()).then(move |ri| {
+        let rg_idx = rg_indices_owned[ri];
+        let base_sel = per_rg_selections_owned[ri].clone();
+        let uri = uri_owned.clone();
+        let io_client = io_client_saved.clone();
+        let io_stats = io_stats_saved.clone();
+        let pm = parquet_metadata.clone();
+        let as_arc = arrow_schema_arc.clone();
+        let sem = semaphore.clone();
+        let pred = predicate.clone();
+        let pred_cols = predicate_columns.clone();
+        let read_col_set_owned = read_col_set_owned.clone();
+        let all_col_indices = all_col_indices.clone();
+        let read_daft_schema = read_daft_schema.clone();
+        let return_daft_schema = return_daft_schema.clone();
 
-    // 8. Build the stream.
-    let stream = builder.build().map_err(parquet_err)?;
+        async move {
+            if predicate_pushed {
+                let pred_cols = pred_cols.as_ref().unwrap();
+                let pred_col_indices = compute_root_indices(&as_arc, Some(pred_cols), None);
+                let data_col_indices =
+                    compute_root_indices(&as_arc, read_col_set_owned.as_ref(), Some(pred_cols));
 
-    let mapped = stream.map(move |result| {
-        let arrow_batch = result.map_err(parquet_err)?;
-        let table = RecordBatch::try_from(&arrow_batch)?;
-        finalize_batch(
-            table,
-            predicate.as_ref(),
-            predicate_pushed,
-            &read_daft_schema,
-            &return_daft_schema,
-        )
+                // Phase 1: predicate columns.
+                let (pred_batch, final_selection) = {
+                    let _permit = sem.acquire().await.unwrap();
+                    decode_rg_predicate_phase_async(
+                        &uri,
+                        &io_client,
+                        &io_stats,
+                        &pm,
+                        &as_arc,
+                        pred.as_ref().unwrap(),
+                        &pred_col_indices,
+                        rg_idx,
+                        base_sel,
+                        pred_cols,
+                    )
+                    .await?
+                };
+
+                if data_col_indices.is_empty() {
+                    let daft_batch = RecordBatch::try_from(&pred_batch)?;
+                    return finalize_batch(
+                        daft_batch,
+                        None,
+                        true,
+                        &read_daft_schema,
+                        &return_daft_schema,
+                    );
+                }
+
+                // Phase 2: data columns concurrent.
+                let col_futs: Vec<_> = data_col_indices
+                    .iter()
+                    .map(|&col_idx| {
+                        let uri = uri.clone();
+                        let ic = io_client.clone();
+                        let is = io_stats.clone();
+                        let pm = pm.clone();
+                        let as_arc = as_arc.clone();
+                        let sel = final_selection.clone();
+                        let sem = sem.clone();
+                        async move {
+                            let _permit = sem.acquire().await.unwrap();
+                            decode_rg_column_async(
+                                &uri,
+                                &ic,
+                                &is,
+                                &pm,
+                                &as_arc,
+                                col_idx,
+                                rg_idx,
+                                Some(sel),
+                            )
+                            .await
+                        }
+                    })
+                    .collect();
+                let col_batches: Vec<arrow::array::RecordBatch> =
+                    futures::future::try_join_all(col_futs).await?;
+
+                let mut all = vec![pred_batch];
+                all.extend(col_batches);
+                let merged = hconcat_record_batches(&all)?;
+                let daft_batch = RecordBatch::try_from(&merged)?;
+                finalize_batch(
+                    daft_batch,
+                    None,
+                    true,
+                    &read_daft_schema,
+                    &return_daft_schema,
+                )
+            } else {
+                // No predicate: decode all columns concurrent.
+                let col_futs: Vec<_> = all_col_indices
+                    .iter()
+                    .map(|&col_idx| {
+                        let uri = uri.clone();
+                        let ic = io_client.clone();
+                        let is = io_stats.clone();
+                        let pm = pm.clone();
+                        let as_arc = as_arc.clone();
+                        let sel = base_sel.clone();
+                        let sem = sem.clone();
+                        async move {
+                            let _permit = sem.acquire().await.unwrap();
+                            decode_rg_column_async(
+                                &uri, &ic, &is, &pm, &as_arc, col_idx, rg_idx, sel,
+                            )
+                            .await
+                        }
+                    })
+                    .collect();
+                let col_batches: Vec<arrow::array::RecordBatch> =
+                    futures::future::try_join_all(col_futs).await?;
+
+                let merged = hconcat_record_batches(&col_batches)?;
+                let daft_batch = RecordBatch::try_from(&merged)?;
+                finalize_batch(
+                    daft_batch,
+                    pred.as_ref(),
+                    false,
+                    &read_daft_schema,
+                    &return_daft_schema,
+                )
+            }
+        }
     });
 
-    Ok(mapped.boxed())
+    // Apply limit across emitted batches.
+    if let Some(limit) = limit {
+        let limited = stream.scan(0usize, move |emitted, result| {
+            let remaining = limit.saturating_sub(*emitted);
+            if remaining == 0 {
+                return futures::future::ready(None);
+            }
+            match result {
+                Ok(batch) => {
+                    let batch_len = batch.len();
+                    if batch_len <= remaining {
+                        *emitted += batch_len;
+                        futures::future::ready(Some(Ok(batch)))
+                    } else {
+                        *emitted += remaining;
+                        futures::future::ready(Some(batch.head(remaining)))
+                    }
+                }
+                Err(e) => futures::future::ready(Some(Err(e))),
+            }
+        });
+        Ok(limited.boxed())
+    } else {
+        Ok(stream.boxed())
+    }
 }
 
 /// Determine which row groups to read, applying predicate-based pruning.
