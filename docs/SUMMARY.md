@@ -115,7 +115,7 @@
     * [Overview](contributing/overview.md)
     * [Development Guide](contributing/development.md)
     * [Contributing AI Functions](contributing/contributing-ai-functions.md)
-* [Daft Cloud](https://www.daft.ai/cloud)
+* [Daft Skills](skills.md)
 
 <!--
 TODO

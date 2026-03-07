@@ -34,7 +34,7 @@ df = df.read_parquet("heavy_data").into_batches(64)
 df = df.with_column("embed", model.predict(df["img"]))
 ```
 
-## Advanced Tuning: The ByteDance Formula
+## Advanced Tuning
 
 Target: Keep all actors busy without OOM or scheduling bottlenecks.
 
