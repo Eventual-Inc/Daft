@@ -79,6 +79,7 @@ export default function ProgressTable({
                       DURATION_US_STAT_KEY,
                     ].includes(key)
                 )
+                .sort(([a], [b]) => a.localeCompare(b))
                 .map(
                   ([key, stat]) =>
                     `${key.charAt(0).toUpperCase() + key.slice(1)}: ${formatStatValue(stat)}`

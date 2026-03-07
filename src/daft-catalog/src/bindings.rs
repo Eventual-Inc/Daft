@@ -77,7 +77,7 @@ impl<T> Bindings<T> {
             .unwrap_or_default()
     }
 
-    /// Lookup all matching bindings using the the case-normalized alias.
+    /// Lookup all matching bindings using the case-normalized alias.
     fn lookup_bindings_by_alias(&self, name: &str) -> Vec<&T> {
         self.aliases
             .get(&alias(name))

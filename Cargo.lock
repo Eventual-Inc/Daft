@@ -2759,6 +2759,59 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-ext"
+version = "0.3.0-dev0"
+dependencies = [
+ "daft-ext-abi",
+ "daft-ext-core",
+ "daft-ext-macros",
+]
+
+[[package]]
+name = "daft-ext-abi"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow",
+ "arrow-array",
+]
+
+[[package]]
+name = "daft-ext-core"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
+ "daft-ext-abi",
+]
+
+[[package]]
+name = "daft-ext-internal"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "daft-ext-abi",
+ "libloading 0.9.0",
+ "serde",
+ "serde_json",
+ "typetag",
+]
+
+[[package]]
+name = "daft-ext-macros"
+version = "0.3.0-dev0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
+]
+
+[[package]]
 name = "daft-file"
 version = "0.3.0-dev0"
 dependencies = [
@@ -3348,10 +3401,13 @@ dependencies = [
 name = "daft-session"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-error",
  "daft-ai",
  "daft-catalog",
  "daft-core",
  "daft-dsl",
+ "daft-ext-abi",
+ "daft-ext-internal",
  "daft-logical-plan",
  "pyo3",
  "uuid 1.19.0",
@@ -5427,6 +5483,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "libloading"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "754ca22de805bb5744484a5b151a9e1a8e837d5dc232c2d7d8c2e3492edc8b60"
+dependencies = [
+ "cfg-if",
+ "windows-link 0.2.1",
+]
+
+[[package]]
 name = "libm"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6145,6 +6211,7 @@ dependencies = [
  "bytes",
  "chrono",
  "flate2",
+ "futures",
  "half",
  "hashbrown 0.16.1",
  "lz4_flex 0.12.0",
@@ -6156,6 +6223,7 @@ dependencies = [
  "simdutf8",
  "snap 1.1.1",
  "thrift",
+ "tokio",
  "twox-hash",
  "zstd",
 ]
@@ -8151,7 +8219,7 @@ dependencies = [
  "colorz",
  "glob-match",
  "goblin",
- "libloading",
+ "libloading 0.8.9",
  "log",
  "num-traits",
  "rand 0.8.5",

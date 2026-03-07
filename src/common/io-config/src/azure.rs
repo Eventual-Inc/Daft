@@ -17,6 +17,7 @@ pub struct AzureConfig {
     pub anonymous: bool,
     pub endpoint_url: Option<String>,
     pub use_ssl: bool,
+    pub max_connections_per_io_thread: u32,
 }
 
 impl Default for AzureConfig {
@@ -33,6 +34,7 @@ impl Default for AzureConfig {
             anonymous: false,
             endpoint_url: None,
             use_ssl: true,
+            max_connections_per_io_thread: 8,
         }
     }
 }
@@ -71,6 +73,10 @@ impl AzureConfig {
             res.push(format!("Endpoint URL = {endpoint_url}"));
         }
         res.push(format!("Use SSL = {}", self.use_ssl));
+        res.push(format!(
+            "Max connections = {}",
+            self.max_connections_per_io_thread
+        ));
         res
     }
 }
@@ -90,7 +96,8 @@ impl Display for AzureConfig {
     use_fabric_endpoint: {:?}
     anonymous: {:?}
     endpoint_url: {:?}
-    use_ssl: {:?}",
+    use_ssl: {:?}
+    max_connections_per_io_thread: {:?}",
             self.storage_account,
             self.access_key,
             self.sas_token,
@@ -101,7 +108,8 @@ impl Display for AzureConfig {
             self.use_fabric_endpoint,
             self.anonymous,
             self.endpoint_url,
-            self.use_ssl
+            self.use_ssl,
+            self.max_connections_per_io_thread
         )
     }
 }

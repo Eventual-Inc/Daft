@@ -54,7 +54,7 @@ def read_json(
         >>> df.show()
     """
     if isinstance(path, list) and len(path) == 0:
-        raise ValueError("Cannot read DataFrame from from empty list of JSON filepaths")
+        raise ValueError("Cannot read DataFrame from empty list of JSON filepaths")
 
     if not infer_schema and schema is None:
         raise ValueError(
