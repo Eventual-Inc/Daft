@@ -84,6 +84,7 @@ from .image import (
     image_height,
     image_channel,
     image_mode,
+    image_hash,
 )
 from .list import (
     value_counts,
@@ -320,6 +321,7 @@ __all__ = [
     "ilike",
     "image_attribute",
     "image_channel",
+    "image_hash",
     "image_height",
     "image_mode",
     "image_to_tensor",
