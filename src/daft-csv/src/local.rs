@@ -237,7 +237,7 @@ pub async fn stream_csv_local(
         .map(|i| {
             let f = fields.get(*i).unwrap();
             daft_core::datatypes::Field::new(
-                f.name(),
+                f.name().as_str(),
                 daft_schema::dtype::DataType::try_from(f.data_type()).unwrap(),
             )
         })

@@ -14,9 +14,7 @@ use itertools::Itertools;
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-    },
+    pipeline_node::{DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
 };
 
@@ -233,7 +231,7 @@ pub(crate) enum WindowNode {
 }
 
 impl WindowNode {
-    const NODE_NAME: NodeName = "Window";
+    const NODE_NAME: &'static str = "Window";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -254,7 +252,7 @@ impl WindowNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Window,
             NodeCategory::Intermediate,
         );

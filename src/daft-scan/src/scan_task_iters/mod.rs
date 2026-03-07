@@ -7,8 +7,8 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_scan_info::{SPLIT_AND_MERGE_PASS, ScanTaskLike, ScanTaskLikeRef};
 use daft_io::IOStatsContext;
-use daft_parquet::{DaftParquetMetadata, read::read_parquet_metadata};
-use parquet2::metadata::RowGroupList;
+use daft_parquet::{RowGroupList, read::read_parquet_metadata};
+use indexmap::IndexMap;
 
 use crate::{ChunkSpec, DataSource, Pushdowns, ScanTask, ScanTaskRef};
 
@@ -240,31 +240,29 @@ fn split_by_row_groups(
                         let io_stats =
                             IOStatsContext::new(format!("split_by_row_groups for {path:#?}"));
 
-                        let mut file = io_runtime
+                        let file_metadata = io_runtime
                             .block_on_current_thread(read_parquet_metadata(
                                 path,
                                 io_client,
                                 Some(io_stats),
                                 field_id_mapping.clone(),
-                            ))?
-                            .into_parquet2();
+                            ))?;
 
                         let mut new_tasks: Vec<DaftResult<ScanTaskRef>> = Vec::new();
                         let mut curr_row_group_indices = Vec::new();
-                        let mut curr_row_groups = Vec::new();
-                        let mut curr_size_bytes = 0;
-                        let mut curr_num_rows = 0;
+                        let mut curr_row_groups: RowGroupList = IndexMap::new();
+                        let mut curr_size_bytes: usize = 0;
+                        let mut curr_num_rows: usize = 0;
 
-                        let row_groups = std::mem::take(&mut file.row_groups);
-                        let num_row_groups = row_groups.len();
-                        for (i, rg) in row_groups {
-                            curr_row_groups.push((i, rg));
-                            let rg = &curr_row_groups.last().unwrap().1;
+                        let all_row_groups: Vec<_> = file_metadata.row_groups().collect();
+                        let last_original_index = all_row_groups.last().map(|(i, _)| *i);
+                        for (i, rg) in all_row_groups {
                             curr_row_group_indices.push(i as i64);
                             curr_size_bytes += rg.compressed_size();
                             curr_num_rows += rg.num_rows();
+                            curr_row_groups.insert(i, rg);
 
-                            if curr_size_bytes >= min_size_bytes || i == num_row_groups - 1 {
+                            if curr_size_bytes >= min_size_bytes || Some(i) == last_original_index {
                                 let mut new_source = source.clone();
 
                                 if let DataSource::File {
@@ -275,9 +273,8 @@ fn split_by_row_groups(
                                 } = &mut new_source
                                 {
                                     // only keep relevant row groups in the metadata
-                                    let row_group_list = RowGroupList::from_iter(curr_row_groups.into_iter());
-                                    let new_metadata = file.clone_with_row_groups(curr_num_rows, row_group_list);
-                                    *parquet_metadata = Some(Arc::new(DaftParquetMetadata::from(new_metadata)));
+                                    let new_metadata = file_metadata.clone_with_row_groups(curr_num_rows, curr_row_groups);
+                                    *parquet_metadata = Some(Arc::new(new_metadata));
 
                                     *chunk_spec = Some(ChunkSpec::Parquet(curr_row_group_indices));
                                     *size_bytes = Some(curr_size_bytes as u64);
@@ -294,7 +291,7 @@ fn split_by_row_groups(
                                 }
 
                                 // Reset accumulators
-                                curr_row_groups = Vec::new();
+                                curr_row_groups = IndexMap::new();
                                 curr_row_group_indices = Vec::new();
                                 curr_size_bytes = 0;
                                 curr_num_rows = 0;

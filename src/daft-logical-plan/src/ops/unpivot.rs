@@ -80,8 +80,8 @@ impl Unpivot {
             .reduce(|a, b| try_get_supertype(&a?, &b?))
             .unwrap()?;
 
-        let variable_field = Field::new(&variable_name, DataType::Utf8);
-        let value_field = Field::new(&value_name, value_dtype);
+        let variable_field = Field::new(variable_name.as_str(), DataType::Utf8);
+        let value_field = Field::new(value_name.as_str(), value_dtype);
 
         let output_fields = ids
             .iter()

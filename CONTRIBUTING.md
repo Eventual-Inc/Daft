@@ -34,10 +34,11 @@ When proposing features, please include:
 All **non-trivial** PRs are required to be linked to an issue that has been **approved by a maintainer**.
 
 ### Contribution bar (non-trivial PRs):
-	1.	Link an approved issue (Fixes #…).
-	2.	Include tests or explain why not.
-	3.	Keep PRs small; large changes require a plan/design note and should be split.
-	4.	Disclose material AI usage and what you verified.
+
+    1.	Link an approved issue (Fixes #…).
+    2.	Include tests or explain why not.
+    3.	Keep PRs small; large changes require a plan/design note and should be split.
+    4.	Disclose material AI usage and what you verified.
 
 Non-trivial PRs that do not meet these requirements **may be closed without review**.
 
@@ -48,10 +49,10 @@ Trivial PRs (docs, typos, small test fixes, clearly scoped bugfixes) may bypass 
 #### What counts as non-trivial
 
 A PR is considered non-trivial if it:
-	•	Changes behavior, APIs, or performance
-	•	Touches core execution/planning logic
-	•	Adds dependencies or new features
-	•	Is large in scope (e.g. > ~300 LOC or many files)
+• Changes behavior, APIs, or performance
+• Touches core execution/planning logic
+• Adds dependencies or new features
+• Is large in scope (e.g. > ~300 LOC or many files)
 
 When in doubt, open an issue first.
 
@@ -70,48 +71,48 @@ A Maintainer is a recognized Contributor who has demonstrated sustained, meaning
 
 **Maintainers/Review:**
 
-| GitHub | Affiliation | Focus Areas |
-|--------|-------------|-------------|
-| [@conceptofmind](https://github.com/conceptofmind) | Teraflop AI | Performance and UDF bug reports |
-| [@everySympathy](https://github.com/everySympathy) | ByteDance | Series slicing, partition optimization |
-| [@gweaverbiodev](https://github.com/gweaverbiodev) | CloudKitchens | pyiceberg support, UDF improvements |
-| [@kevinzwang](https://github.com/kevinzwang) | SkyPilot | Core refactoring (arrow2 migration), UDF system, vLLM, type conversions |
-| [@pdames](https://github.com/pdames) | Nvidia | Catalog support and improvements |
-| [@VOID001](https://github.com/VOID001) | ByteDance | Dashboard features, SQL error handling |
-| [@caican00](https://github.com/caican00) | Xiaomi ||
+| GitHub                                             | Affiliation   | Focus Areas                                                             |
+| -------------------------------------------------- | ------------- | ----------------------------------------------------------------------- |
+| [@conceptofmind](https://github.com/conceptofmind) | Teraflop AI   | Performance and UDF bug reports                                         |
+| [@everySympathy](https://github.com/everySympathy) | ByteDance     | Series slicing, partition optimization                                  |
+| [@gweaverbiodev](https://github.com/gweaverbiodev) | CloudKitchens | pyiceberg support, UDF improvements                                     |
+| [@kevinzwang](https://github.com/kevinzwang)       | SkyPilot      | Core refactoring (arrow2 migration), UDF system, vLLM, type conversions |
+| [@pdames](https://github.com/pdames)               | Nvidia        | Catalog support and improvements                                        |
+| [@VOID001](https://github.com/VOID001)             | ByteDance     | Dashboard features, SQL error handling                                  |
+| [@caican00](https://github.com/caican00)           | Xiaomi        |                                                                         |
 
 **Maintainers/Merge:**
 
 Maintainers who additionally have merge access to the repository.
 
-| Name | GitHub | Affiliation |
-|------|--------|-------------|
-| Chris Kellogg | [@cckellogg](https://github.com/cckellogg) | Eventual |
-| Colin Ho | [@colin-ho](https://github.com/colin-ho) | Eventual |
-| Cory Grinstead | [@universalmind303](https://github.com/universalmind303) | Eventual |
-| Desmond Cheong | [@desmondcheongzx](https://github.com/desmondcheongzx) | Eventual |
-| Everett Kleven | [@everettVT](https://github.com/everettVT) | Eventual |
-| Jay Chia | [@jaychia](https://github.com/jaychia) | Eventual |
-| Jeev Balakrishnan | [@jeevb](https://github.com/jeevb) | Eventual |
-| Oliver Huang | [@ohbh](https://github.com/ohbh) | Eventual |
-| R. C. Howell | [@rchowell](https://github.com/rchowell) | Eventual |
-| Rohit Kulshreshtha | [@rohitkulshreshtha](https://github.com/rohitkulshreshtha) | Eventual |
-| Sam Stokes | [@samstokes](https://github.com/samstokes) | Eventual |
-| Sammy Sidhu | [@samster25](https://github.com/samster25) | Eventual |
-| Srinivas Lade | [@srilman](https://github.com/srilman) | Eventual |
-| Varun Madan | [@madvart](https://github.com/madvart) | Eventual |
-| YK | [@ykdojo](https://github.com/ykdojo) | Eventual |
-| Kejian Ju | [@Jay-ju](https://github.com/Jay-ju) | Bytedance |
-| Leilei Hu | [@huleilei](https://github.com/huleilei) | Bytedance |
-| Zhenchao Wang | [@plotor](https://github.com/plotor) | Bytedance |
-| Zhiping Wu | [@stayrascal](https://github.com/stayrascal) | Bytedance |
+| Name               | GitHub                                                     | Affiliation |
+| ------------------ | ---------------------------------------------------------- | ----------- |
+| Chris Kellogg      | [@cckellogg](https://github.com/cckellogg)                 | Eventual    |
+| Colin Ho           | [@colin-ho](https://github.com/colin-ho)                   | Eventual    |
+| Cory Grinstead     | [@universalmind303](https://github.com/universalmind303)   | Eventual    |
+| Desmond Cheong     | [@desmondcheongzx](https://github.com/desmondcheongzx)     | Eventual    |
+| Everett Kleven     | [@everettVT](https://github.com/everettVT)                 | Eventual    |
+| Jay Chia           | [@jaychia](https://github.com/jaychia)                     | Eventual    |
+| Jeev Balakrishnan  | [@jeevb](https://github.com/jeevb)                         | Eventual    |
+| Oliver Huang       | [@ohbh](https://github.com/ohbh)                           | Eventual    |
+| R. C. Howell       | [@rchowell](https://github.com/rchowell)                   | Eventual    |
+| Rohit Kulshreshtha | [@rohitkulshreshtha](https://github.com/rohitkulshreshtha) | Eventual    |
+| Sam Stokes         | [@samstokes](https://github.com/samstokes)                 | Eventual    |
+| Sammy Sidhu        | [@samster25](https://github.com/samster25)                 | Eventual    |
+| Srinivas Lade      | [@srilman](https://github.com/srilman)                     | Eventual    |
+| Varun Madan        | [@madvart](https://github.com/madvart)                     | Eventual    |
+| YK                 | [@ykdojo](https://github.com/ykdojo)                       | Eventual    |
+| Kejian Ju          | [@Jay-ju](https://github.com/Jay-ju)                       | Bytedance   |
+| Leilei Hu          | [@huleilei](https://github.com/huleilei)                   | Bytedance   |
+| Zhenchao Wang      | [@plotor](https://github.com/plotor)                       | Bytedance   |
+| Zhiping Wu         | [@stayrascal](https://github.com/stayrascal)               | Bytedance   |
 
 ### Project Management Committee (PMC)
 
 The PMC provides oversight and governance for the Daft project. PMC members have voting rights on community decisions, including approving new Maintainers and setting the strategic direction of the project.
 
-| Name | GitHub |
-|------|--------|
-| Jay Chia | [@jaychia](https://github.com/jaychia) |
+| Name        | GitHub                                     |
+| ----------- | ------------------------------------------ |
+| Jay Chia    | [@jaychia](https://github.com/jaychia)     |
 | Sammy Sidhu | [@samster25](https://github.com/samster25) |
-| Varun Madan | [@madvart](https://github.com/madvart) |
+| Varun Madan | [@madvart](https://github.com/madvart)     |

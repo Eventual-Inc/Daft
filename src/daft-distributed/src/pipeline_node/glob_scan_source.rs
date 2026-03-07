@@ -10,8 +10,7 @@ use futures::{StreamExt, stream};
 use opentelemetry::metrics::Meter;
 
 use super::{
-    DistributedPipelineNode, NodeName, PipelineNodeConfig, PipelineNodeContext,
-    scan_source::SourceStats,
+    DistributedPipelineNode, PipelineNodeConfig, PipelineNodeContext, scan_source::SourceStats,
 };
 use crate::{
     pipeline_node::{NodeID, PipelineNodeImpl, TaskBuilderStream},
@@ -29,7 +28,7 @@ pub struct GlobScanSourceNode {
 }
 
 impl GlobScanSourceNode {
-    const NODE_NAME: NodeName = "GlobScanSource";
+    const NODE_NAME: &'static str = "GlobScanSource";
 
     pub fn new(
         node_id: NodeID,
@@ -43,7 +42,7 @@ impl GlobScanSourceNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::GlobScan,
             NodeCategory::Source,
         );

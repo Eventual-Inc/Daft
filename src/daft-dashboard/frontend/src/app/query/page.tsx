@@ -18,6 +18,7 @@ import { Status } from "./status";
 import { ExecutingState, OperatorInfo, QueryInfo } from "./types";
 import PhysicalPlanTree from "./physical-plan-tree";
 import PlanVisualizer from "./plan-visualizer";
+import ResultPreview from "./result-preview";
 
 /**
  * Query detail page component
@@ -46,32 +47,18 @@ function QueryPageInner() {
       const data: QueryInfo = JSON.parse(event.data);
       setQuery(data);
     });
-    // Merges with existing info
+    // Merges with existing info, preserving the current status
     es.addEventListener("operator_info", event => {
       setQuery(prev => {
         if (!prev) return prev;
+        if (!("exec_info" in prev.state)) return prev;
 
-        const plan_info =
-          "plan_info" in prev.state ? prev.state.plan_info : undefined;
-        const old_exec_info =
-          "exec_info" in prev.state ? prev.state.exec_info : undefined;
         const data: Record<number, OperatorInfo> = JSON.parse(event.data);
-
-        if (
-          plan_info &&
-          old_exec_info &&
-          old_exec_info.exec_start_sec !== undefined
-        ) {
-          const new_exec_info = { ...old_exec_info, operators: data };
-          const new_state = {
-            status: "Executing" as const,
-            plan_info: plan_info,
-            exec_info: new_exec_info,
-          };
-          return { ...prev, state: new_state };
-        }
-
-        return prev;
+        const new_exec_info = { ...prev.state.exec_info, operators: data };
+        return {
+          ...prev,
+          state: { ...prev.state, exec_info: new_exec_info } as typeof prev.state,
+        };
       });
     });
     return () => {
@@ -219,6 +206,12 @@ function QueryPageInner() {
               Optimized Plan
             </TabsTrigger>
             <TabsTrigger value="unoptimized-plan">Unoptimized Plan</TabsTrigger>
+            <TabsTrigger
+              value="results"
+              disabled={query.state.status !== "Finished"}
+            >
+              Results
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent
@@ -265,6 +258,15 @@ function QueryPageInner() {
             className="mt-4 flex-1 overflow-auto"
           >
             <PlanVisualizer planJson={query.unoptimized_plan} />
+          </TabsContent>
+
+          <TabsContent
+            value="results"
+            className="mt-4 flex-1 overflow-auto"
+          >
+            <div className="bg-zinc-900 h-full">
+              {queryId && <ResultPreview queryId={queryId} />}
+            </div>
           </TabsContent>
         </Tabs>
       </div>

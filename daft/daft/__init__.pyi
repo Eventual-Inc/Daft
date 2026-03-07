@@ -319,6 +319,16 @@ class DatabaseSourceConfig:
 
     def __init__(self, sql: str, conn_factory: SQLConnection): ...
 
+class TextSourceConfig:
+    """Configuration of a text data source."""
+
+    encoding: str
+    skip_blank_lines: bool
+    buffer_size: int | None
+    chunk_size: int | None
+
+    def __init__(self, encoding: str, skip_blank_lines: bool, buffer_size: int | None, chunk_size: int | None): ...
+
 class FileFormatConfig:
     """Configuration for parsing a particular file format (Parquet, CSV, JSON)."""
 
@@ -347,6 +357,11 @@ class FileFormatConfig:
     @staticmethod
     def from_database_config(config: DatabaseSourceConfig) -> FileFormatConfig:
         """Create a database file format config."""
+        ...
+
+    @staticmethod
+    def from_text_config(config: TextSourceConfig) -> FileFormatConfig:
+        """Create a Text file format config."""
         ...
 
     def file_format(self) -> FileFormat:
@@ -640,6 +655,7 @@ class AzureConfig:
     anonymous: bool | None
     endpoint_url: str | None = None
     use_ssl: bool | None = None
+    max_connections: int
 
     def __init__(
         self,
@@ -654,6 +670,7 @@ class AzureConfig:
         anonymous: bool | None = None,
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
+        max_connections: int | None = None,
     ): ...
     def replace(
         self,
@@ -668,6 +685,7 @@ class AzureConfig:
         anonymous: bool | None = None,
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
+        max_connections: int | None = None,
     ) -> AzureConfig:
         """Replaces values if provided, returning a new AzureConfig."""
         ...
@@ -880,6 +898,7 @@ class TosConfig:
     ) -> TosConfig:
         """Replaces values if provided, returning a new TosConfig."""
         ...
+
     @staticmethod
     def from_env() -> TosConfig:
         """Creates a TosConfig, retrieving credentials and configurations from the current environment.
@@ -967,6 +986,7 @@ class CosConfig:
     ) -> CosConfig:
         """Replaces values if provided, returning a new CosConfig."""
         ...
+
     @staticmethod
     def from_env() -> CosConfig:
         """Creates a CosConfig, retrieving credentials and configurations from the current environment.
@@ -992,6 +1012,7 @@ class IOConfig:
     gravitino: GravitinoConfig
     cos: CosConfig
     opendal_backends: dict[str, dict[str, str]]
+    protocol_aliases: dict[str, str]
 
     def __init__(
         self,
@@ -1006,6 +1027,7 @@ class IOConfig:
         gravitino: GravitinoConfig | None = None,
         cos: CosConfig | None = None,
         opendal_backends: dict[str, dict[str, str]] | None = None,
+        protocol_aliases: dict[str, str] | None = None,
     ): ...
     def replace(
         self,
@@ -1020,6 +1042,7 @@ class IOConfig:
         gravitino: GravitinoConfig | None = None,
         cos: CosConfig | None = None,
         opendal_backends: dict[str, dict[str, str]] | None = None,
+        protocol_aliases: dict[str, str] | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
         ...
@@ -2221,6 +2244,7 @@ class PyDaftExecutionConfig:
         csv_target_filesize: int | None = None,
         csv_inflation_factor: float | None = None,
         json_inflation_factor: float | None = None,
+        text_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
         partial_aggregation_threshold: int | None = None,
         high_cardinality_aggregation_threshold: float | None = None,
@@ -2267,6 +2291,8 @@ class PyDaftExecutionConfig:
     def csv_inflation_factor(self) -> float: ...
     @property
     def json_inflation_factor(self) -> float: ...
+    @property
+    def text_inflation_factor(self) -> float: ...
     @property
     def shuffle_aggregation_default_partitions(self) -> int: ...
     @property
@@ -2465,6 +2491,8 @@ class PySession:
     def detach_catalog(self, alias: str) -> None: ...
     def detach_function(self, alias: str) -> None: ...
     def detach_provider(self, alias: str) -> None: ...
+    def load_extension(self, path: str) -> None: ...
+    def get_function(self, name: str, *args: PyExpr) -> PyExpr: ...
     def detach_table(self, alias: str) -> None: ...
     def create_temp_table(self, ident: str, source: PyTableSource, replace: bool) -> Table: ...
     def current_catalog(self) -> Catalog | None: ...

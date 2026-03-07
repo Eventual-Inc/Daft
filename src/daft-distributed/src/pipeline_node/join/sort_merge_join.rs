@@ -11,7 +11,7 @@ use futures::{TryStreamExt, future::try_join_all};
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
         sort::{
             create_range_repartition_tasks, create_sample_tasks,
@@ -46,7 +46,7 @@ pub(crate) struct SortMergeJoinNode {
 }
 
 impl SortMergeJoinNode {
-    const NODE_NAME: NodeName = "SortMergeJoin";
+    const NODE_NAME: &'static str = "SortMergeJoin";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -64,7 +64,7 @@ impl SortMergeJoinNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::SortMergeJoin,
             NodeCategory::StreamingSink,
         );

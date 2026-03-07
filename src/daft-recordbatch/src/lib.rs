@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 #![feature(iterator_try_collect)]
 
 use std::{
@@ -1445,7 +1444,7 @@ impl RecordBatch {
         let exprs: Vec<_> = schema
             .into_iter()
             .map(|field| {
-                if current_col_names.contains(field.name.as_str()) {
+                if current_col_names.contains(field.name.as_ref()) {
                     // For any fields already in the table, perform a cast
                     resolved_col(field.name.clone()).cast(&field.dtype)
                 } else {
@@ -1453,7 +1452,7 @@ impl RecordBatch {
                     // If no entry for column name, fall back to null literal (i.e. create a null array for that column).
                     fill_map
                         .as_ref()
-                        .and_then(|m| m.get(field.name.as_str()))
+                        .and_then(|m| m.get(field.name.as_ref()))
                         .unwrap_or(&null_lit)
                         .clone()
                         .alias(field.name.clone())
@@ -1593,6 +1592,15 @@ impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
             .collect::<DaftResult<Vec<_>>>()?;
 
         Self::try_new(schema, columns).map_err(DaftError::ArrowRsError)
+    }
+}
+
+impl TryFrom<&arrow_array::RecordBatch> for RecordBatch {
+    type Error = DaftError;
+
+    fn try_from(arrow_rb: &arrow_array::RecordBatch) -> DaftResult<Self> {
+        let schema: Arc<Schema> = Arc::new(arrow_rb.schema().as_ref().try_into()?);
+        Self::from_arrow(schema, arrow_rb.columns().to_vec())
     }
 }
 

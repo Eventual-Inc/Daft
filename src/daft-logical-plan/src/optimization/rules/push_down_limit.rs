@@ -59,7 +59,9 @@ impl PushDownLimit {
                     // Naive commuting with unary ops.
                     //
                     // Limit-UnaryOp -> UnaryOp-Limit
-                    LogicalPlan::Repartition(_) | LogicalPlan::IntoBatches(_) => {
+                    LogicalPlan::Repartition(_)
+                    | LogicalPlan::IntoBatches(_)
+                    | LogicalPlan::IntoPartitions(_) => {
                         let new_limit = plan
                             .with_new_children(&[input.arc_children()[0].clone()])
                             .into();

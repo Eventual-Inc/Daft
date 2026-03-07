@@ -1651,14 +1651,14 @@ impl StructArray {
                     self_fields
                         .iter()
                         .enumerate()
-                        .map(|(i, f)| (f.name.as_str(), i)),
+                        .map(|(i, f)| (f.name.as_ref(), i)),
                 );
                 let casted_series = other_fields
                     .iter()
                     .map(
-                        |field| match self_field_names_to_idx.get(field.name.as_str()) {
+                        |field| match self_field_names_to_idx.get(field.name.as_ref()) {
                             None => Ok(Series::full_null(
-                                field.name.as_str(),
+                                field.name.as_ref(),
                                 &field.dtype,
                                 self.len(),
                             )),

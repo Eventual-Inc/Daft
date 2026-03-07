@@ -145,7 +145,7 @@ impl PushDownProjection {
                         if required_columns.len() < upstream_schema.names().len() {
                             let pruned_upstream_schema = upstream_schema
                                 .into_iter()
-                                .filter(|field| required_columns.contains(&field.name))
+                                .filter(|field| required_columns.contains(&*field.name))
                                 .cloned()
                                 .collect::<Vec<_>>();
                             let schema = Schema::new(pruned_upstream_schema);
@@ -270,6 +270,7 @@ impl PushDownProjection {
             LogicalPlan::Sort(..)
             | LogicalPlan::Shard(..)
             | LogicalPlan::Repartition(..)
+            | LogicalPlan::IntoPartitions(..)
             | LogicalPlan::IntoBatches(..)
             | LogicalPlan::Limit(..)
             | LogicalPlan::Offset(..)

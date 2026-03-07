@@ -25,6 +25,7 @@ daft-functions-list = {path = "../daft-functions-list", default-features = false
 daft-functions-uri = {workspace = true}
 daft-io = {path = "../daft-io", default-features = false}
 daft-json = {path = "../daft-json", default-features = false}
+daft-text = {path = "../daft-text", default-features = false}
 daft-local-plan = {path = "../daft-local-plan", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
@@ -73,7 +74,8 @@ python = [
   "daft-logical-plan/python",
   "daft-micropartition/python",
   "daft-scan/python",
-  "daft-writers/python"
+  "daft-writers/python",
+  "daft-text/python"
 ]
 
 [lints]

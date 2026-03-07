@@ -37,7 +37,7 @@ impl ScalarUDF for ListBoolAnd {
         let input = inputs.required((0, "input"))?.to_field(schema)?;
         let inner_field = input.to_exploded_field()?;
 
-        Ok(Field::new(inner_field.name.as_str(), DataType::Boolean))
+        Ok(Field::new(inner_field.name.as_ref(), DataType::Boolean))
     }
 }
 

@@ -55,11 +55,16 @@ fn translate_helper(
                         }
                         ScanState::Tasks(scan_tasks) => (**scan_tasks).clone(),
                     };
+
+                    let format_config = scan_tasks
+                        .first()
+                        .map(|scan_task| scan_task.file_format_config());
                     let source_id = source_counter.next();
                     inputs.insert(source_id, Input::ScanTasks(scan_tasks));
 
                     LocalPhysicalPlan::physical_scan(
                         source_id,
+                        format_config,
                         info.pushdowns.clone(),
                         source.output_schema.clone(),
                         source.stats_state.clone(),
@@ -497,9 +502,15 @@ fn translate_helper(
         }
         LogicalPlan::Repartition(repartition) => {
             log::warn!(
-                "Repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner instead if you need to repartition"
+                "Repartition not supported on the NativeRunner. This will be a no-op. Please use the Ray Runner instead if you need to repartition"
             );
             translate_helper(&repartition.input, source_counter, psets)
+        }
+        LogicalPlan::IntoPartitions(into_partitions) => {
+            log::warn!(
+                "IntoPartitions not supported on the NativeRunner. This will be a no-op. Please use the Ray Runner instead if you need to repartition"
+            );
+            translate_helper(&into_partitions.input, source_counter, psets)
         }
         LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
             let (input_plan, inputs) =
