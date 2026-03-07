@@ -151,35 +151,6 @@ fn run_glob_parallel(
     Ok(iterator)
 }
 
-/// Count the number of files matching the glob patterns without reading metadata.
-/// This is a lightweight pass used to estimate task counts for lazy scan operators.
-fn count_glob_files(
-    glob_paths: &[String],
-    io_client: Arc<IOClient>,
-    runtime: RuntimeRef,
-    io_stats: Option<IOStatsRef>,
-    file_format: FileFormat,
-    skip_glob: bool,
-) -> DaftResult<usize> {
-    if skip_glob {
-        return Ok(glob_paths.len());
-    }
-    let iter = run_glob_parallel(
-        glob_paths.to_vec(),
-        io_client,
-        runtime,
-        io_stats,
-        file_format,
-    )?;
-    // Only count — don't collect metadata.
-    let mut count = 0usize;
-    for item in iter {
-        item?; // propagate errors
-        count += 1;
-    }
-    Ok(count)
-}
-
 #[allow(clippy::too_many_arguments)]
 impl GlobScanOperator {
     pub async fn try_new(
@@ -538,28 +509,19 @@ impl ScanOperator for GlobScanOperator {
             None
         };
 
-        // Run a lightweight count-only glob to get an accurate file count for stats estimation.
-        // This only lists files (no metadata reads) so it's cheap relative to full task production.
-        let (io_runtime, io_client) = storage_config.get_io_client_and_runtime()?;
-        let file_format = file_format_config.file_format();
-        let file_count = count_glob_files(
-            &glob_paths,
-            io_client,
-            io_runtime,
-            None,
-            file_format,
-            skip_glob,
-        )?;
+        // Use glob_paths.len() as a cheap estimate for file count.
+        // This avoids a redundant listing pass — the actual glob runs lazily during task production.
+        let file_count_estimate = glob_paths.len();
 
         let estimated_stats = if let Some((_path, meta)) = &self.first_metadata {
             LazyTaskStats {
-                estimated_num_tasks: file_count,
+                estimated_num_tasks: file_count_estimate,
                 estimated_total_bytes: 0,
-                estimated_total_rows: meta.length * file_count,
+                estimated_total_rows: meta.length * file_count_estimate,
             }
         } else {
             LazyTaskStats {
-                estimated_num_tasks: file_count,
+                estimated_num_tasks: file_count_estimate,
                 estimated_total_bytes: 0,
                 estimated_total_rows: 0,
             }
