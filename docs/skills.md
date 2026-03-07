@@ -50,7 +50,7 @@ If you're working inside a Daft clone, the skills are already available. No setu
 
 ### Install globally with `npx skills add`
 
-To use Daft skills outside the repo (across 30+ agents including Claude Code, Cursor, Codex, Gemini CLI, Copilot, and more):
+To use these Daft skills outside the repo (across many agents including Claude Code, Cursor, Codex, Gemini CLI, Copilot, and more):
 
 ```bash
 # Install all skills
@@ -64,7 +64,7 @@ This creates symlinks so the skills are available in any project.
 
 ### Claude Code plugin
 
-Daft is also available as a Claude Code plugin, which can bundle MCP servers and hooks alongside skills.
+These Daft skills are also available as a Claude Code plugin.
 
 ```bash
 claude plugin add Eventual-Inc/Daft
