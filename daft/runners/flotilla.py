@@ -90,6 +90,14 @@ async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str]) -> Non
     )
 
 
+class RayObjectMissingError(Exception):
+    """Exception raised when an object is missing."""
+
+    def __init__(self, missing_inputs: list[str]) -> None:
+        self.missing_inputs = missing_inputs
+        super().__init__(f"Missing inputs: {missing_inputs}")
+
+
 @ray.remote
 class RaySwordfishActor:
     """RaySwordfishActor is a ray actor that runs local physical plans on swordfish.
@@ -134,16 +142,23 @@ class RaySwordfishActor:
             non_list_items = [(source_id, part) for source_id, part in inputs.items() if not isinstance(part, list)]
 
             if list_items:
-                try:
-                    list_results: list[list[MicroPartition]] = await asyncio.gather(
-                        *[asyncio.gather(*part) for _, part in list_items]
-                    )
-                except ray.exceptions.ObjectLostError:
-                    logger.error("Failed to get input partitions for task")
-                    raise
+                list_results: list[list[MicroPartition | Exception]] = await asyncio.gather(  # type: ignore[assignment]
+                    *[asyncio.gather(*part, return_exceptions=True) for _, part in list_items],
+                )
 
+                missing_inputs = set()
                 for (source_id, _), mps in zip(list_items, list_results):
-                    resolved_inputs[int(source_id)] = [mp._micropartition for mp in mps]
+                    successful_mps: list[MicroPartition] = []
+                    for mp in mps:
+                        if isinstance(mp, MicroPartition):
+                            successful_mps.append(mp)
+                        else:
+                            missing_inputs.add(source_id)
+                    if len(successful_mps) == len(mps):
+                        resolved_inputs[int(source_id)] = [mp._micropartition for mp in successful_mps]
+
+                if missing_inputs:
+                    raise RayObjectMissingError(list(missing_inputs))
 
             for source_id, part in non_list_items:
                 resolved_inputs[int(source_id)] = part
@@ -233,8 +248,8 @@ class RaySwordfishTaskHandle:
             return RayTaskResult.worker_died()
         except ray.exceptions.ActorUnavailableError:
             return RayTaskResult.worker_unavailable()
-        except ray.exceptions.ObjectLostError:
-            return RayTaskResult.input_missing()
+        except RayObjectMissingError as e:
+            return RayTaskResult.input_missing(e.missing_inputs)
         except Exception as e:
             raise e
 

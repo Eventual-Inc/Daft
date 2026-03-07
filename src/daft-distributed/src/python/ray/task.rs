@@ -19,7 +19,7 @@ pub(crate) enum RayTaskResult {
     Success(Vec<RayPartitionRef>, Vec<u8>),
     WorkerDied(),
     WorkerUnavailable(),
-    InputMissing(),
+    InputMissing(Vec<String>),
 }
 
 #[pymethods]
@@ -40,8 +40,8 @@ impl RayTaskResult {
     }
 
     #[staticmethod]
-    fn input_missing() -> Self {
-        Self::InputMissing()
+    fn input_missing(missing_input_ids: Vec<String>) -> Self {
+        Self::InputMissing(missing_input_ids)
     }
 }
 
@@ -117,7 +117,11 @@ impl TaskResultHandle for RayTaskResultHandle {
                 }
                 Ok(RayTaskResult::WorkerDied()) => TaskStatus::WorkerDied,
                 Ok(RayTaskResult::WorkerUnavailable()) => TaskStatus::WorkerUnavailable,
-                Ok(RayTaskResult::InputMissing()) => TaskStatus::InputMissing,
+                Ok(RayTaskResult::InputMissing(missing_partition_ids)) => {
+                    TaskStatus::InputMissing {
+                        missing_partition_ids,
+                    }
+                }
                 Err(e) => TaskStatus::Failed { error: e.into() },
             }
         }

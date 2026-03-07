@@ -442,7 +442,9 @@ pub(crate) enum TaskStatus {
     /// Worker that was running the task is unavailable
     WorkerUnavailable,
     /// Task failed because an input partition is unavailable
-    InputMissing,
+    InputMissing {
+        missing_partition_ids: Vec<String>,
+    },
 }
 
 pub(crate) trait TaskResultHandle: Send + Sync {
@@ -547,6 +549,7 @@ pub(super) mod tests {
         Panic(String),
         WorkerDied,
         WorkerUnavailable,
+        InputMissing(Vec<String>),
     }
 
     /// A builder pattern implementation for creating MockTask instances
@@ -705,6 +708,11 @@ pub(super) mod tests {
                         }
                         MockTaskFailure::WorkerUnavailable => {
                             return TaskStatus::WorkerUnavailable;
+                        }
+                        MockTaskFailure::InputMissing(missing_inputs) => {
+                            return TaskStatus::InputMissing {
+                                missing_partition_ids: missing_inputs,
+                            };
                         }
                     }
                 }

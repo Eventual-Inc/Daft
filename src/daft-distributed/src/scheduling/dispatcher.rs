@@ -131,13 +131,30 @@ impl<W: Worker> Dispatcher<W> {
                             failed_tasks.push(schedulable_task);
                         }
                         // Task failed because an input was missing, add the task to the failed tasks
-                        TaskStatus::InputMissing => {
-                            // TODO: Add proper handling for missing inputs
-                            if result_tx
-                                .send(Err(DaftError::InternalError("Input missing".to_string())))
-                                .is_err()
-                            {
-                                tracing::error!(target: DISPATCHER_LOG_TARGET, error = "Failed to send error of task to result_tx", task_context = ?task.task_context());
+                        TaskStatus::InputMissing {
+                            missing_partition_ids,
+                        } => {
+                            if missing_partition_ids.is_empty() {
+                                if result_tx
+                                    .send(Err(DaftError::InternalError(
+                                        "Task reported missing inputs but none were specified"
+                                            .to_string(),
+                                    )))
+                                    .is_err()
+                                {
+                                    tracing::error!(target: DISPATCHER_LOG_TARGET, error = "Failed to send error of task to result_tx", task_context = ?task.task_context());
+                                }
+                            } else {
+                                let task_context = task.task_context();
+                                tracing::warn!(
+                                    target: DISPATCHER_LOG_TARGET,
+                                    missing_inputs = ?missing_partition_ids,
+                                    worker_id = %worker_id,
+                                    task_context = ?task_context,
+                                    "Task reported missing input partitions; rescheduling"
+                                );
+                                let schedulable_task = PendingTask::new(task, result_tx, canc);
+                                failed_tasks.push(schedulable_task);
                             }
                         }
                     },
@@ -447,6 +464,37 @@ mod tests {
             "Worker should still be present when unavailable"
         );
         assert_eq!(worker_snapshots[0].worker_id(), &worker_id);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_task_missing_inputs_rescheduled() -> DaftResult<()> {
+        let worker_id: WorkerId = Arc::from("worker1");
+        let (mut dispatcher, worker_manager) =
+            setup_dispatcher_test_context(&[(worker_id.clone(), 1)]);
+
+        let task = MockTaskBuilder::new(create_mock_partition_ref(100, 1024))
+            .with_failure(MockTaskFailure::InputMissing(vec!["42".to_string()]))
+            .build();
+        let submittable_task = SubmittableTask::task_only(task);
+        let (schedulable_task, submitted_task) =
+            SchedulerHandle::prepare_task_for_submission(submittable_task);
+
+        let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id.clone())];
+        dispatcher.dispatch_tasks(scheduled_tasks, &worker_manager)?;
+
+        let failed_tasks = dispatcher
+            .await_completed_tasks(&worker_manager, &StatisticsManagerRef::default())
+            .await?;
+        assert_eq!(failed_tasks.len(), 1);
+        assert_eq!(failed_tasks[0].task_context().task_id, 0);
+
+        let worker_snapshots = worker_manager.worker_snapshots()?;
+        assert_eq!(worker_snapshots.len(), 1);
+        assert_eq!(worker_snapshots[0].worker_id(), &worker_id);
+
+        drop(submitted_task);
 
         Ok(())
     }
