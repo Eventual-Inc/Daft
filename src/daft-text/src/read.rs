@@ -9,7 +9,7 @@ use daft_recordbatch::RecordBatch;
 use futures::{Stream, StreamExt, stream::BoxStream};
 use tokio::{
     fs::File,
-    io::{AsyncBufRead, AsyncBufReadExt, BufReader},
+    io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader},
 };
 use tokio_util::io::StreamReader;
 
@@ -40,6 +40,19 @@ pub async fn stream_text(
         .clone()
         .unwrap_or_else(|| Arc::new(Schema::new(vec![Field::new("text", DataType::Utf8)])));
 
+    // Check if we're reading the whole file as a single row
+    if convert_options.whole_text {
+        let whole_text_stream =
+            read_into_whole_text_stream(uri, convert_options, read_options, io_client, io_stats)
+                .await?;
+        return Ok(Box::pin(whole_text_stream.map(move |content_res| {
+            let content = content_res?;
+            let array = Utf8Array::from_values("text", std::iter::once(content.as_str()));
+            let series = array.into_series();
+            RecordBatch::new_with_size(schema.clone(), vec![series], 1)
+        })));
+    }
+
     // Build a stream of line chunks
     let line_chunk_stream =
         read_into_line_chunk_stream(uri, convert_options, read_options, io_client, io_stats)
@@ -58,6 +71,56 @@ pub async fn stream_text(
     });
 
     Ok(Box::pin(table_stream))
+}
+
+async fn read_into_whole_text_stream(
+    uri: String,
+    convert_options: TextConvertOptions,
+    read_options: TextReadOptions,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+) -> DaftResult<impl Stream<Item = DaftResult<String>> + Send> {
+    let buffer_size = read_options.buffer_size.unwrap_or(8 * 1024 * 1024);
+
+    let reader: Box<dyn AsyncBufRead + Unpin + Send> = match io_client
+        .single_url_get(uri.clone(), None, io_stats)
+        .await?
+    {
+        GetResult::File(file) => Box::new(BufReader::with_capacity(
+            buffer_size,
+            File::open(file.path).await?,
+        )),
+        GetResult::Stream(stream, ..) => Box::new(BufReader::with_capacity(
+            buffer_size,
+            StreamReader::new(stream),
+        )),
+    };
+
+    // If file is compressed, wrap stream in decoding stream.
+    let mut reader: Box<dyn AsyncBufRead + Unpin + Send> = match CompressionCodec::from_uri(&uri) {
+        Some(compression) => Box::new(BufReader::with_capacity(
+            buffer_size,
+            compression.to_decoder(reader),
+        )),
+        None => reader,
+    };
+
+    Ok(try_stream! {
+        // Check limit first - if limit is 0, don't read the file at all
+        if convert_options.limit == Some(0) {
+            return;
+        }
+
+        let mut content = String::new();
+        reader.read_to_string(&mut content).await?;
+
+        // Apply skip_blank_lines if needed (for whole file, this means skip if entire content is blank)
+        if convert_options.skip_blank_lines && content.trim().is_empty() {
+            return;
+        }
+
+        yield content;
+    })
 }
 
 async fn read_into_line_chunk_stream(
