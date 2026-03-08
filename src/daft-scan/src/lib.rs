@@ -1,5 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
-
 use std::{
     any::Any,
     borrow::Cow,
@@ -714,7 +712,7 @@ impl ScanTask {
                     schema_with_generated_fields
                         .fields()
                         .iter()
-                        .filter(|field| columns.contains(&field.name))
+                        .filter(|field| columns.iter().any(|c| c.as_str() == &*field.name))
                         .cloned()
                         .collect()
                 } else {

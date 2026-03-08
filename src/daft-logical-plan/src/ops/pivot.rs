@@ -46,7 +46,9 @@ impl Pivot {
 
         let output_schema = {
             let agg_dtype = agg_expr.to_field(&input.schema())?.dtype;
-            let pivot_value_fields = names.iter().map(|f| Field::new(f, agg_dtype.clone()));
+            let pivot_value_fields = names
+                .iter()
+                .map(|f| Field::new(f.as_str(), agg_dtype.clone()));
 
             let group_by_fields = group_by
                 .iter()

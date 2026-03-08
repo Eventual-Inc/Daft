@@ -21,7 +21,14 @@ impl fmt::Display for DaftError {
     }
 }
 
-impl std::error::Error for DaftError {}
+// Blanket impl: any `std::error::Error` can be converted to a `DaftError` via `?`.
+// Note: DaftError intentionally does NOT implement `std::error::Error` to avoid
+// coherence conflicts with this blanket impl (`From<T> for T`).
+impl<E: std::error::Error> From<E> for DaftError {
+    fn from(e: E) -> Self {
+        Self::RuntimeError(e.to_string())
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -40,9 +47,10 @@ mod tests {
     }
 
     #[test]
-    fn error_is_std_error() {
-        let err: Box<dyn std::error::Error> = Box::new(DaftError::TypeError("test".into()));
-        assert!(err.to_string().contains("TypeError"));
+    fn from_std_io_error() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file missing");
+        let daft_err: DaftError = io_err.into();
+        assert!(daft_err.to_string().contains("file missing"));
     }
 
     #[test]

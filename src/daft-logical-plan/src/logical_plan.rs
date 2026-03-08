@@ -41,6 +41,7 @@ pub enum LogicalPlan {
     Unpivot(Unpivot),
     Sort(Sort),
     Repartition(Repartition),
+    IntoPartitions(IntoPartitions),
     Distinct(Distinct),
     Aggregate(Aggregate),
     Pivot(Pivot),
@@ -162,6 +163,7 @@ impl LogicalPlan {
             Self::Unpivot(Unpivot { output_schema, .. }) => output_schema.clone(),
             Self::Sort(Sort { input, .. }) => input.schema(),
             Self::Repartition(Repartition { input, .. }) => input.schema(),
+            Self::IntoPartitions(IntoPartitions { input, .. }) => input.schema(),
             Self::Distinct(Distinct { input, .. }) => input.schema(),
             Self::Aggregate(Aggregate { output_schema, .. }) => output_schema.clone(),
             Self::Pivot(Pivot { output_schema, .. }) => output_schema.clone(),
@@ -187,6 +189,7 @@ impl LogicalPlan {
             Self::Shard(..)
             | Self::Limit(..)
             | Self::IntoBatches(..)
+            | Self::IntoPartitions(..)
             | Self::Offset(..)
             | Self::Sample(..)
             | Self::MonotonicallyIncreasingId(..) => RequiredCols::new(IndexSet::new(), None),
@@ -294,13 +297,13 @@ impl LogicalPlan {
                                 Field { name, .. },
                                 JoinSide::Left,
                             ))) => {
-                                left.insert(name.clone());
+                                left.insert(name.to_string());
                             }
                             Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
                                 Field { name, .. },
                                 JoinSide::Right,
                             ))) => {
-                                right.insert(name.clone());
+                                right.insert(name.to_string());
                             }
                             _ => {}
                         }
@@ -355,6 +358,7 @@ impl LogicalPlan {
             Self::Unpivot(..) => "Unpivot",
             Self::Sort(..) => "Sort",
             Self::Repartition(..) => "Repartition",
+            Self::IntoPartitions(..) => "IntoPartitions",
             Self::Distinct(..) => "Distinct",
             Self::Aggregate(..) => "Aggregate",
             Self::Pivot(..) => "Pivot",
@@ -386,6 +390,7 @@ impl LogicalPlan {
             | Self::Unpivot(Unpivot { stats_state, .. })
             | Self::Sort(Sort { stats_state, .. })
             | Self::Repartition(Repartition { stats_state, .. })
+            | Self::IntoPartitions(IntoPartitions { stats_state, .. })
             | Self::Distinct(Distinct { stats_state, .. })
             | Self::Aggregate(Aggregate { stats_state, .. })
             | Self::Pivot(Pivot { stats_state, .. })
@@ -426,6 +431,7 @@ impl LogicalPlan {
             Self::Unpivot(plan) => Self::Unpivot(plan.with_materialized_stats()),
             Self::Sort(plan) => Self::Sort(plan.with_materialized_stats()),
             Self::Repartition(plan) => Self::Repartition(plan.with_materialized_stats()),
+            Self::IntoPartitions(plan) => Self::IntoPartitions(plan.with_materialized_stats()),
             Self::Distinct(plan) => Self::Distinct(plan.with_materialized_stats()),
             Self::Aggregate(plan) => Self::Aggregate(plan.with_materialized_stats()),
             Self::Pivot(plan) => Self::Pivot(plan.with_materialized_stats()),
@@ -462,6 +468,7 @@ impl LogicalPlan {
             Self::Unpivot(unpivot) => unpivot.multiline_display(),
             Self::Sort(sort) => sort.multiline_display(),
             Self::Repartition(repartition) => repartition.multiline_display(),
+            Self::IntoPartitions(into_partitions) => into_partitions.multiline_display(),
             Self::Distinct(distinct) => distinct.multiline_display(),
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
             Self::Pivot(pivot) => pivot.multiline_display(),
@@ -495,6 +502,7 @@ impl LogicalPlan {
             Self::Unpivot(Unpivot { input, .. }) => vec![input],
             Self::Sort(Sort { input, .. }) => vec![input],
             Self::Repartition(Repartition { input, .. }) => vec![input],
+            Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input],
             Self::Distinct(Distinct { input, .. }) => vec![input],
             Self::Aggregate(Aggregate { input, .. }) => vec![input],
             Self::Pivot(Pivot { input, .. }) => vec![input],
@@ -583,6 +591,9 @@ impl LogicalPlan {
                 }) => Self::Repartition(Repartition::new(input.clone(), scheme_config.clone())),
                 Self::Distinct(distinct) => {
                     Self::Distinct(Distinct::new(input.clone(), distinct.columns.clone()))
+                }
+                Self::IntoPartitions(IntoPartitions { num_partitions, .. }) => {
+                    Self::IntoPartitions(IntoPartitions::new(input.clone(), *num_partitions))
                 }
                 Self::Aggregate(Aggregate {
                     aggregations,
@@ -887,6 +898,7 @@ impl LogicalPlan {
             | Self::Unpivot(Unpivot { plan_id, .. })
             | Self::Sort(Sort { plan_id, .. })
             | Self::Repartition(Repartition { plan_id, .. })
+            | Self::IntoPartitions(IntoPartitions { plan_id, .. })
             | Self::Distinct(Distinct { plan_id, .. })
             | Self::Aggregate(Aggregate { plan_id, .. })
             | Self::Pivot(Pivot { plan_id, .. })
@@ -918,6 +930,7 @@ impl LogicalPlan {
             | Self::Unpivot(Unpivot { node_id, .. })
             | Self::Sort(Sort { node_id, .. })
             | Self::Repartition(Repartition { node_id, .. })
+            | Self::IntoPartitions(IntoPartitions { node_id, .. })
             | Self::Distinct(Distinct { node_id, .. })
             | Self::Aggregate(Aggregate { node_id, .. })
             | Self::Pivot(Pivot { node_id, .. })
@@ -952,6 +965,9 @@ impl LogicalPlan {
             Self::Unpivot(unpivot) => Self::Unpivot(unpivot.with_plan_id(plan_id)),
             Self::Sort(sort) => Self::Sort(sort.with_plan_id(plan_id)),
             Self::Repartition(repartition) => Self::Repartition(repartition.with_plan_id(plan_id)),
+            Self::IntoPartitions(into_partitions) => {
+                Self::IntoPartitions(into_partitions.with_plan_id(plan_id))
+            }
             Self::Distinct(distinct) => Self::Distinct(distinct.with_plan_id(plan_id)),
             Self::Aggregate(aggregate) => Self::Aggregate(aggregate.with_plan_id(plan_id)),
             Self::Pivot(pivot) => Self::Pivot(pivot.with_plan_id(plan_id)),
@@ -990,6 +1006,9 @@ impl LogicalPlan {
             Self::Unpivot(unpivot) => Self::Unpivot(unpivot.with_node_id(node_id)),
             Self::Sort(sort) => Self::Sort(sort.with_node_id(node_id)),
             Self::Repartition(repartition) => Self::Repartition(repartition.with_node_id(node_id)),
+            Self::IntoPartitions(into_partitions) => {
+                Self::IntoPartitions(into_partitions.with_node_id(node_id))
+            }
             Self::Distinct(distinct) => Self::Distinct(distinct.with_node_id(node_id)),
             Self::Aggregate(aggregate) => Self::Aggregate(aggregate.with_node_id(node_id)),
             Self::Pivot(pivot) => Self::Pivot(pivot.with_node_id(node_id)),
@@ -1104,6 +1123,7 @@ impl_from_data_struct_for_logical_plan!(Explode);
 impl_from_data_struct_for_logical_plan!(Unpivot);
 impl_from_data_struct_for_logical_plan!(Sort);
 impl_from_data_struct_for_logical_plan!(Repartition);
+impl_from_data_struct_for_logical_plan!(IntoPartitions);
 impl_from_data_struct_for_logical_plan!(Distinct);
 impl_from_data_struct_for_logical_plan!(Aggregate);
 impl_from_data_struct_for_logical_plan!(Pivot);

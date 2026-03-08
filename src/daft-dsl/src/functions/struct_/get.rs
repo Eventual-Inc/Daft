@@ -29,8 +29,8 @@ impl FunctionEvaluator for GetEvaluator {
                         };
 
                         for f in &fields {
-                            if f.name == *name {
-                                return Ok(Field::new(name, f.dtype.clone()));
+                            if *f.name == **name {
+                                return Ok(Field::new(name.as_str(), f.dtype.clone()));
                             }
                         }
 
@@ -39,7 +39,7 @@ impl FunctionEvaluator for GetEvaluator {
                             name,
                             fields
                                 .iter()
-                                .map(|f| f.name.clone())
+                                .map(|f| f.name.to_string())
                                 .collect::<Vec<String>>()
                         )))
                     }

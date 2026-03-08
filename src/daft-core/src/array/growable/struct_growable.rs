@@ -29,7 +29,7 @@ impl<'a> StructGrowable<'a> {
                     .enumerate()
                     .map(|(i, f)| {
                         make_growable(
-                            f.name.as_str(),
+                            f.name.as_ref(),
                             &f.dtype,
                             arrays
                                 .iter()

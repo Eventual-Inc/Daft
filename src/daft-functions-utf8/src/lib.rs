@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 mod capitalize;
 mod case;
 mod contains;

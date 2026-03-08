@@ -149,3 +149,38 @@
 .terminal-text::before {
     content: var(--text, "{");
 }
+
+/* ############################################################## */
+/* ######################  R E S U L T - P R E V I E W . T S X    */
+/* ############################################################## */
+
+.result-preview-table table {
+  border-collapse: collapse;
+  width: 100%;
+  background: transparent;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+.result-preview-table th {
+  color: #a1a1aa;
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 2px solid #3f3f46;
+  white-space: nowrap;
+}
+.result-preview-table td {
+  color: #d4d4d8;
+  padding: 6px 12px;
+  border-bottom: 1px solid #3f3f46;
+  max-width: 400px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.result-preview-table tr:hover td {
+  background: rgba(39, 39, 42, 0.5);
+}
+.result-preview-table img {
+  max-height: 100px;
+  max-width: 200px;
+}

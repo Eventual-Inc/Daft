@@ -60,6 +60,8 @@ if TYPE_CHECKING:
 __all__ = [
     "Catalog",
     "Identifier",
+    "NotFoundError",
+    "Properties",
     "Schema",
     "Table",
 ]
