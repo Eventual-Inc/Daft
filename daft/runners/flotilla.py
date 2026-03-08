@@ -150,26 +150,94 @@ class RaySwordfishActor:
             yield SwordfishTaskMetadata(partition_metadatas=metas, stats=stats.encode())
 
 
-@ray.remote  # type: ignore[untyped-decorator]
-def get_boundaries_remote(
+def get_head_node_id() -> str | None:
+    """Return the Ray NodeID of the head node, or None if not detectable."""
+    for node in ray.nodes():
+        if (
+            "Resources" in node
+            and "node:__internal_head__" in node["Resources"]
+            and node["Resources"]["node:__internal_head__"] == 1
+        ):
+            return node["NodeID"]
+    return None
+
+
+# ---------------------------------------------------------------------------
+# BoundaryComputeActor – head-node actor for sort boundary computation
+# ---------------------------------------------------------------------------
+
+_BOUNDARY_ACTOR_NAME = "daft-boundary-compute-actor"
+_BOUNDARY_ACTOR_NAMESPACE = "daft"
+_boundary_actor: ray.actor.ActorHandle | None = None
+
+
+def _compute_boundaries_from_resolved(
+    resolved: list[MicroPartition],
     sort_by: list[Expression],
     descending: list[bool],
     nulls_first: list[bool] | None,
     num_quantiles: int,
-    *samples: MicroPartition,
 ) -> PyMicroPartition:
-    sort_by_exprs = ExpressionsProjection(sort_by)
+    """Compute range partition boundaries from already-resolved sample data.
 
-    mp = MicroPartition.concat(list(samples))
-    nulls_first = nulls_first if nulls_first is not None else descending
+    This is the pure-computation core shared by ``BoundaryComputeActor`` and
+    unit tests.
+    """
+    sort_by_exprs = ExpressionsProjection(sort_by)
+    effective_nulls_first = nulls_first if nulls_first is not None else descending
+    mp = MicroPartition.concat(resolved)
     merged_sorted = mp.sort(
         sort_by_exprs.to_column_expressions(),
         descending=descending,
-        nulls_first=nulls_first,
+        nulls_first=effective_nulls_first,
     )
-
     result = merged_sorted.quantiles(num_quantiles)
     return result._micropartition
+
+
+@ray.remote(num_cpus=0)
+class BoundaryComputeActor:
+    """Persistent head-node actor that computes range-partition boundaries.
+
+    Keeps process isolation from the flotilla runner.  ``num_cpus=0`` so it
+    does not consume CPU quota.
+    """
+
+    def compute_boundaries(
+        self,
+        samples: list[ray.ObjectRef],
+        sort_by: list[Expression],
+        descending: list[bool],
+        nulls_first: list[bool] | None,
+        num_quantiles: int,
+    ) -> PyMicroPartition:
+        resolved: list[MicroPartition] = ray.get(samples)
+        return _compute_boundaries_from_resolved(resolved, sort_by, descending, nulls_first, num_quantiles)
+
+
+def _get_boundary_actor() -> ray.actor.ActorHandle:
+    """Return the singleton BoundaryComputeActor, creating it on first call.
+
+    The actor is pinned to the head node (NodeAffinitySchedulingStrategy) and
+    reused across all sort operations in the same Ray job.
+    """
+    global _boundary_actor
+    if _boundary_actor is None:
+        head_node_id = get_head_node_id()
+        _boundary_actor = BoundaryComputeActor.options(  # type: ignore[attr-defined]
+            name=_BOUNDARY_ACTOR_NAME,
+            namespace=_BOUNDARY_ACTOR_NAMESPACE,
+            get_if_exists=True,
+            scheduling_strategy=(
+                ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                    node_id=head_node_id,
+                    soft=False,
+                )
+                if head_node_id
+                else None
+            ),
+        ).remote()
+    return _boundary_actor
 
 
 async def get_boundaries(
@@ -179,7 +247,22 @@ async def get_boundaries(
     nulls_first: list[bool] | None,
     num_quantiles: int,
 ) -> PyMicroPartition:
-    return await get_boundaries_remote.remote(sort_by, descending, nulls_first, num_quantiles, *samples)
+    """Dispatch boundary computation to the persistent BoundaryComputeActor.
+
+    Calling code (Rust via execute_python_coroutine) awaits this coroutine.
+    The actual work runs inside the actor's process on the head node, keeping
+    the flotilla runner free of data-processing work.
+    """
+    actor = _get_boundary_actor()
+    loop = asyncio.get_event_loop()
+    # run_in_executor keeps the flotilla event loop unblocked while we wait
+    # for the synchronous ray.get call to the actor.
+    result: PyMicroPartition = await loop.run_in_executor(
+        None,
+        ray.get,
+        actor.compute_boundaries.remote(samples, sort_by, descending, nulls_first, num_quantiles),
+    )
+    return result
 
 
 @dataclass
@@ -416,17 +499,6 @@ def get_flotilla_runner_actor_name() -> str:
             _FLOTILLA_RUNNER_NAME_SUFFIX = job_id
 
     return f"{FLOTILLA_RUNNER_NAME}-{_FLOTILLA_RUNNER_NAME_SUFFIX}"
-
-
-def get_head_node_id() -> str | None:
-    for node in ray.nodes():
-        if (
-            "Resources" in node
-            and "node:__internal_head__" in node["Resources"]
-            and node["Resources"]["node:__internal_head__"] == 1
-        ):
-            return node["NodeID"]
-    return None
 
 
 class FlotillaRunner:
