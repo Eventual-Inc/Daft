@@ -9,6 +9,7 @@ pub mod python;
 pub mod read;
 mod schema;
 
+pub use local::CsvValidator;
 pub use metadata::read_csv_schema_bulk;
 pub use options::{CsvConvertOptions, CsvParseOptions, CsvReadOptions, char_to_byte};
 #[cfg(feature = "python")]
