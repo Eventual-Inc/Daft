@@ -8,7 +8,7 @@ pub mod snapshot;
 use std::{ops::Index, sync::Arc, time::Duration};
 
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
-pub use meters::{Counter, Gauge, normalize_name};
+pub use meters::{Counter, Gauge, Meter, UpDownCounter, normalize_name};
 pub use operator_metrics::{
     MetricsCollector, NoopMetricsCollector, OperatorCounter, OperatorMetrics,
 };

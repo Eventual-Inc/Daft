@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_metrics::ops::{NodeInfo, NodeType};
+use common_metrics::{
+    Meter,
+    ops::{NodeInfo, NodeType},
+};
 use common_runtime::get_compute_pool_num_threads;
 use daft_micropartition::MicroPartition;
-use opentelemetry::metrics::Meter;
 
 use crate::{
     ExecutionTaskSpawner, OperatorOutput,

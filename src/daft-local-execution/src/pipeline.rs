@@ -10,7 +10,7 @@ use common_display::{
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_metrics::{
-    ATTR_QUERY_ID, QueryID,
+    Meter, QueryID,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use common_scan_info::ScanTaskLikeRef;
@@ -28,7 +28,6 @@ use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
-use opentelemetry::{InstrumentationScope, KeyValue, global, metrics::Meter};
 use snafu::ResultExt;
 
 use crate::{
@@ -204,10 +203,7 @@ impl BuilderContext {
     }
 
     pub fn new_with_context(query_id: QueryID, context: HashMap<String, String>) -> Self {
-        let scope = InstrumentationScope::builder("daft.execution.local")
-            .with_attributes(vec![KeyValue::new(ATTR_QUERY_ID, query_id.to_string())])
-            .build();
-        let meter = global::meter_with_scope(scope);
+        let meter = Meter::query_scope(query_id, "daft.execution.local");
 
         Self {
             index_counter: std::cell::RefCell::new(0),

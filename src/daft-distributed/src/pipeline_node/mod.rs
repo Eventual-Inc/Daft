@@ -14,7 +14,7 @@ use common_display::{
 };
 use common_error::DaftResult;
 use common_metrics::{
-    QueryID,
+    Meter, QueryID,
     ops::{NodeCategory, NodeType},
 };
 use common_partitioning::PartitionRef;
@@ -24,7 +24,6 @@ use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, stream::BoxStream};
 use materialize::materialize_all_pipeline_outputs;
-use opentelemetry::metrics::Meter;
 
 use crate::{
     plan::{PlanExecutionContext, QueryIdx, TaskIDCounter},
