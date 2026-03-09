@@ -332,7 +332,6 @@ async fn partition_and_push(
         RepartitionSpec::Range(config) => {
             input.partition_by_range(&config.by, &config.boundaries, &config.descending)?
         }
-        RepartitionSpec::IntoPartitions(config) => input.into_partitions(config.num_partitions)?,
     };
     state.push(partitioned)?;
     Ok(state)
@@ -497,7 +496,7 @@ mod tests {
         series::IntoSeries,
     };
     use daft_logical_plan::partitioning::{
-        HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
+        HashRepartitionConfig, RandomShuffleConfig, RepartitionSpec,
     };
     use daft_micropartition::MicroPartition;
     use daft_recordbatch::RecordBatch;
@@ -1240,25 +1239,6 @@ mod tests {
         assert_eq!(
             total, 10,
             "hash partition: all 10 rows distributed across 2 partitions"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_partition_and_push_into_partitions() {
-        let dir = tempfile::tempdir().unwrap();
-        let schema = Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)]));
-        let state = make_state(3, u64::MAX, &dir);
-        let mp = Arc::new(make_mp("a", (0..6).collect()));
-        let spec = RepartitionSpec::IntoPartitions(IntoPartitionsConfig::new(3));
-        let mut result_state = partition_and_push(mp, state, spec, 3, schema)
-            .await
-            .unwrap();
-        let total = count_rows_from_emit(&mut result_state, 0)
-            + count_rows_from_emit(&mut result_state, 1)
-            + count_rows_from_emit(&mut result_state, 2);
-        assert_eq!(
-            total, 6,
-            "into_partitions: all 6 rows distributed across 3 partitions"
         );
     }
 
