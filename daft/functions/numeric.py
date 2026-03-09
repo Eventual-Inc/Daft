@@ -387,3 +387,116 @@ def fill_nan(expr: Expression, fill_value: Expression) -> Expression:
 
     """
     return Expression._call_builtin_scalar_fn("fill_nan", expr, fill_value)
+
+
+def bin(expr: Expression) -> Expression:
+    """Returns the string representation of the binary value of the given column.
+
+    Args:
+        expr: The expression to convert to binary string
+
+    Returns:
+        Expression: String expression representing the binary value
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import bin
+        >>> df = daft.from_pydict({"data": [0, 1, 2, 3, 4, 5]})
+        >>> df = df.select(bin(df["data"]))
+        >>> df.collect()
+        ╭───────╮
+        │ data  │
+        │ ---   │
+        │ Str   │
+        ╞═══════╡
+        │ 0b0   │
+        ├╌╌╌╌╌╌╌┤
+        │ 0b1   │
+        ├╌╌╌╌╌╌╌┤
+        │ 0b10  │
+        ├╌╌╌╌╌╌╌┤
+        │ 0b11  │
+        ├╌╌╌╌╌╌╌┤
+        │ 0b100 │
+        ├╌╌╌╌╌╌╌┤
+        │ 0b101 │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 6 of 6 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("bin", expr)
+
+
+def hex(expr: Expression) -> Expression:
+    """Computes hex value of the given column.
+
+    Args:
+        expr: The expression to convert to hex string
+
+    Returns:
+        Expression: String expression representing the hex value
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import hex
+        >>> df = daft.from_pydict({"data": [0, 1, 10, 15, 16, 255]})
+        >>> df = df.select(hex(df["data"]))
+        >>> df.collect()
+        ╭───────╮
+        │ data  │
+        │ ---   │
+        │ Str   │
+        ╞═══════╡
+        │ 0x0   │
+        ├╌╌╌╌╌╌╌┤
+        │ 0x1   │
+        ├╌╌╌╌╌╌╌┤
+        │ 0xa   │
+        ├╌╌╌╌╌╌╌┤
+        │ 0xf   │
+        ├╌╌╌╌╌╌╌┤
+        │ 0x10  │
+        ├╌╌╌╌╌╌╌┤
+        │ 0xff  │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 6 of 6 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("hex", expr)
+
+
+def unhex(expr: Expression) -> Expression:
+    """Converts a hex string to bytes.
+
+    Args:
+        expr: The hex string expression to convert
+
+    Returns:
+        Expression: Binary expression representing the bytes
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import unhex
+        >>> df = daft.from_pydict({"data": ["00", "01", "ff", "1a2b"]})
+        >>> df = df.select(unhex(df["data"]))
+        >>> df.collect()
+        ╭───────╮
+        │ data  │
+        │ ---   │
+        │ Bin   │
+        ╞═══════╡
+        │ b''   │
+        ├╌╌╌╌╌╌╌┤
+        │ b'\x01' │
+        ├╌╌╌╌╌╌╌┤
+        │ b'\xff' │
+        ├╌╌╌╌╌╌╌┤
+        │ b'\x1a+ │
+        ╰───────╯
+        <BLANKLINE>
+        (Showing first 4 of 4 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("unhex", expr)

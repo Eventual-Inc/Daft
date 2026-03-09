@@ -1,9 +1,11 @@
 pub mod abs;
+pub mod bin;
 pub mod cbrt;
 pub mod ceil;
 pub mod clip;
 pub mod exp;
 pub mod floor;
+pub mod hex;
 pub mod log;
 pub mod pow;
 pub mod power;
@@ -11,8 +13,10 @@ pub mod round;
 pub mod sign;
 pub mod sqrt;
 pub mod trigonometry;
+pub mod unhex;
 
 use abs::Abs;
+use bin::Bin;
 use cbrt::Cbrt;
 use ceil::Ceil;
 use clip::Clip;
@@ -24,12 +28,14 @@ use daft_dsl::{
 };
 use exp::{Exp, Expm1};
 use floor::Floor;
+use hex::Hex;
 use log::{Ln, Log, Log1p, Log2, Log10};
 use pow::Pow;
 use power::Power;
 use round::Round;
 use sign::{Negate, Sign};
 use sqrt::Sqrt;
+use unhex::Unhex;
 
 fn to_field_numeric(f: &dyn ScalarUDF, input: &Expr, schema: &Schema) -> DaftResult<Field> {
     let field = input.to_field(schema)?;
@@ -53,11 +59,13 @@ pub struct NumericFunctions;
 impl FunctionModule for NumericFunctions {
     fn register(parent: &mut FunctionRegistry) {
         parent.add_fn(Abs);
+        parent.add_fn(Bin);
         parent.add_fn(Cbrt);
         parent.add_fn(Ceil);
         parent.add_fn(Clip);
         parent.add_fn(Exp);
         parent.add_fn(Expm1);
+        parent.add_fn(Hex);
         parent.add_fn(Log);
         parent.add_fn(Log2);
         parent.add_fn(Log10);
@@ -70,6 +78,7 @@ impl FunctionModule for NumericFunctions {
         parent.add_fn(Sign);
         parent.add_fn(Negate);
         parent.add_fn(Sqrt);
+        parent.add_fn(Unhex);
 
         // trig functions
         use trigonometry::*;

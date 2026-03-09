@@ -843,3 +843,27 @@ def test_table_shift_right_syntactic_sugar() -> None:
     table = MicroPartition.from_pydict({"a": [1, 2, 4]})
     shift_table = table.eval_expression_list([col("a").shift_right(1)])
     assert [1 >> 1, 2 >> 1, 4 >> 1] == shift_table.get_column_by_name("a").to_pylist()
+
+
+def test_table_bin() -> None:
+    from daft.functions import bin
+    table = MicroPartition.from_pydict({"a": [0, 1, 2, 3, 4, 5]})
+    bin_table = table.eval_expression_list([bin(col("a"))])
+    expected = ["0b0", "0b1", "0b10", "0b11", "0b100", "0b101"]
+    assert expected == bin_table.get_column_by_name("a").to_pylist()
+
+
+def test_table_hex() -> None:
+    from daft.functions import hex
+    table = MicroPartition.from_pydict({"a": [0, 1, 10, 15, 16, 255]})
+    hex_table = table.eval_expression_list([hex(col("a"))])
+    expected = ["0x0", "0x1", "0xa", "0xf", "0x10", "0xff"]
+    assert expected == hex_table.get_column_by_name("a").to_pylist()
+
+
+def test_table_unhex() -> None:
+    import daft
+    from daft.functions import unhex
+    table = MicroPartition.from_pydict({"a": ["00", "01", "ff", "1a2b"]})
+    unhex_table = table.eval_expression_list([unhex(col("a"))])
+    assert unhex_table.get_column_by_name("a").datatype() == daft.DataType.binary()
