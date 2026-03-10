@@ -404,23 +404,23 @@ def bin(expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"data": [0, 1, 2, 3, 4, 5]})
         >>> df = df.select(bin(df["data"]))
         >>> df.collect()
-        ╭───────╮
-        │ data  │
-        │ ---   │
-        │ Str   │
-        ╞═══════╡
-        │ 0b0   │
-        ├╌╌╌╌╌╌╌┤
-        │ 0b1   │
-        ├╌╌╌╌╌╌╌┤
-        │ 0b10  │
-        ├╌╌╌╌╌╌╌┤
-        │ 0b11  │
-        ├╌╌╌╌╌╌╌┤
-        │ 0b100 │
-        ├╌╌╌╌╌╌╌┤
-        │ 0b101 │
-        ╰───────╯
+        ╭────────╮
+        │ data   │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ 0      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 1      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 10     │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 11     │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 100    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 101    │
+        ╰────────╯
         <BLANKLINE>
         (Showing first 6 of 6 rows)
 
@@ -443,23 +443,23 @@ def hex(expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"data": [0, 1, 10, 15, 16, 255]})
         >>> df = df.select(hex(df["data"]))
         >>> df.collect()
-        ╭───────╮
-        │ data  │
-        │ ---   │
-        │ Str   │
-        ╞═══════╡
-        │ 0x0   │
-        ├╌╌╌╌╌╌╌┤
-        │ 0x1   │
-        ├╌╌╌╌╌╌╌┤
-        │ 0xa   │
-        ├╌╌╌╌╌╌╌┤
-        │ 0xf   │
-        ├╌╌╌╌╌╌╌┤
-        │ 0x10  │
-        ├╌╌╌╌╌╌╌┤
-        │ 0xff  │
-        ╰───────╯
+        ╭────────╮
+        │ data   │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ 0      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 1      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ A      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ F      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 10     │
+        ├╌╌╌╌╌╌╌╌┤
+        │ FF     │
+        ╰────────╯
         <BLANKLINE>
         (Showing first 6 of 6 rows)
 
@@ -482,19 +482,19 @@ def unhex(expr: Expression) -> Expression:
         >>> df = daft.from_pydict({"data": ["00", "01", "ff", "1a2b"]})
         >>> df = df.select(unhex(df["data"]))
         >>> df.collect()
-        ╭───────╮
-        │ data  │
-        │ ---   │
-        │ Bin   │
-        ╞═══════╡
-        │ b''   │
-        ├╌╌╌╌╌╌╌┤
-        │ b'\x01' │
-        ├╌╌╌╌╌╌╌┤
-        │ b'\xff' │
-        ├╌╌╌╌╌╌╌┤
-        │ b'\x1a+ │
-        ╰───────╯
+        ╭──────────╮
+        │ data     │
+        │ ---      │
+        │ Binary   │
+        ╞══════════╡
+        │ b"\x00"  │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ b"\x01"  │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ b"\xff"  │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ b"\x1a+" │
+        ╰──────────╯
         <BLANKLINE>
         (Showing first 4 of 4 rows)
 
