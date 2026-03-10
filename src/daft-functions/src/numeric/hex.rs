@@ -32,7 +32,7 @@ impl ScalarUDF for Hex {
         let hex_strings: Vec<String> = input_array
             .iter()
             .map(|opt_val| match opt_val {
-                Some(val) => format!("0x{:x}", val),
+                Some(val) => format!("{:X}", val),
                 None => "".to_string(),
             })
             .collect();
