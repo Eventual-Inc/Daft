@@ -4,8 +4,8 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
 
@@ -29,15 +29,12 @@ impl ScalarUDF for Bin {
         let input_u64 = input.cast(&daft_core::datatypes::DataType::UInt64)?;
         let input_array = input_u64.downcast::<UInt64Array>()?;
 
-        let binary_strings: Vec<String> = input_array
+        let binary_strings: Vec<Option<String>> = input_array
             .iter()
-            .map(|opt_val| match opt_val {
-                Some(val) => format!("{:b}", val),
-                None => "".to_string(),
-            })
+            .map(|opt_val| opt_val.map(|val| format!("{:b}", val)))
             .collect();
 
-        let utf8_array = Utf8Array::from_values(input.name(), binary_strings);
+        let utf8_array = Utf8Array::from_iter(input.name(), binary_strings);
 
         Ok(utf8_array.into_series())
     }
