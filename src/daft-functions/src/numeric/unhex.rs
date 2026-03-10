@@ -37,10 +37,7 @@ impl ScalarUDF for Unhex {
                     if hex_str.len() % 2 != 0 {
                         return None;
                     }
-                    match hex::decode(hex_str) {
-                        Ok(bytes) => Some(bytes),
-                        Err(_) => None,
-                    }
+                    hex::decode(hex_str).ok()
                 }
                 None => None,
             })

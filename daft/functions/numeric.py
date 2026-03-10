@@ -468,7 +468,7 @@ def hex(expr: Expression) -> Expression:
 
 
 def unhex(expr: Expression) -> Expression:
-    """Converts a hex string to bytes.
+    r"""Converts a hex string to bytes.
 
     Args:
         expr: The hex string expression to convert
