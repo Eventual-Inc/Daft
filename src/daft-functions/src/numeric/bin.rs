@@ -32,7 +32,7 @@ impl ScalarUDF for Bin {
         let binary_strings: Vec<String> = input_array
             .iter()
             .map(|opt_val| match opt_val {
-                Some(val) => format!("0b{:b}", val),
+                Some(val) => format!("{:b}", val),
                 None => "".to_string(),
             })
             .collect();
