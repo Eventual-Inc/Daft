@@ -5,8 +5,8 @@ mod plan;
 pub mod python;
 mod results;
 mod translate;
+use common_partitioning::PartitionRef;
 use common_scan_info::ScanTaskLikeRef;
-use daft_micropartition::MicroPartitionRef;
 #[cfg(feature = "python")]
 pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject, LanceWrite};
 pub use plan::{
@@ -44,5 +44,5 @@ pub enum Input {
     ScanTasks(Vec<ScanTaskLikeRef>),
     GlobPaths(Vec<String>),
     #[serde(skip)]
-    InMemory(Vec<MicroPartitionRef>),
+    InMemory(Vec<PartitionRef>),
 }

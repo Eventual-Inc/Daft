@@ -19,15 +19,22 @@ use crate::{
 #[derive(Debug, Clone)]
 pub(crate) struct TaskResourceRequest {
     pub resource_request: ResourceRequest,
+    pub min_cpu_per_task: f64,
 }
 
 impl TaskResourceRequest {
-    pub fn new(resource_request: ResourceRequest) -> Self {
-        Self { resource_request }
+    pub fn new(resource_request: ResourceRequest, min_cpu_per_task: f64) -> Self {
+        Self {
+            resource_request,
+            min_cpu_per_task,
+        }
     }
 
     pub fn num_cpus(&self) -> f64 {
-        self.resource_request.num_cpus().unwrap_or(1.0)
+        f64::max(
+            self.resource_request.num_cpus().unwrap_or(1.0),
+            self.min_cpu_per_task,
+        )
     }
 
     pub fn num_gpus(&self) -> f64 {
@@ -409,7 +416,8 @@ impl SwordfishTaskBuilder {
         context.insert("task_id".to_string(), task_context.task_id.to_string());
 
         // Extract resource_request from plan
-        let resource_request = TaskResourceRequest::new(self.plan.resource_request());
+        let resource_request =
+            TaskResourceRequest::new(self.plan.resource_request(), self.config.min_cpu_per_task);
 
         let task = SwordfishTask {
             task_context,
@@ -476,7 +484,7 @@ impl<H: TaskResultHandle> TaskResultAwaiter<H> {
 
 #[cfg(test)]
 pub(super) mod tests {
-    use std::{any::Any, sync::Mutex, time::Duration};
+    use std::{any::Any, pin::Pin, sync::Mutex, time::Duration};
 
     use common_error::DaftError;
     use common_partitioning::Partition;
@@ -510,6 +518,29 @@ pub(super) mod tests {
 
         fn num_rows(&self) -> usize {
             self.num_rows
+        }
+
+        fn fetch_native(
+            &self,
+        ) -> Pin<
+            Box<
+                dyn Future<
+                        Output = Result<
+                            std::sync::Arc<
+                                dyn std::any::Any + std::marker::Send + std::marker::Sync + 'static,
+                            >,
+                            DaftError,
+                        >,
+                    > + std::marker::Send
+                    + 'static,
+            >,
+        > {
+            let num_rows = self.num_rows;
+            let size_bytes = self.size_bytes;
+            Box::pin(async move {
+                Ok(Arc::new(MockPartition::new(num_rows, size_bytes))
+                    as Arc<dyn Any + Send + Sync>)
+            })
         }
     }
 
@@ -574,7 +605,7 @@ pub(super) mod tests {
                 task_name: "".into(),
                 priority: MockTaskPriority { priority: 0 },
                 scheduling_strategy: SchedulingStrategy::Spread,
-                resource_request: TaskResourceRequest::new(ResourceRequest::default()),
+                resource_request: TaskResourceRequest::new(ResourceRequest::default(), 0.5),
                 task_result: MaterializedOutput::new(
                     vec![partition_ref],
                     "".into(),
@@ -593,7 +624,16 @@ pub(super) mod tests {
         }
 
         pub fn with_resource_request(mut self, resource_request: ResourceRequest) -> Self {
-            self.resource_request = TaskResourceRequest::new(resource_request);
+            self.resource_request = TaskResourceRequest::new(resource_request, 0.5);
+            self
+        }
+
+        pub fn with_resource_request_and_min_cpu(
+            mut self,
+            resource_request: ResourceRequest,
+            min_cpu_per_task: f64,
+        ) -> Self {
+            self.resource_request = TaskResourceRequest::new(resource_request, min_cpu_per_task);
             self
         }
 
@@ -864,5 +904,42 @@ pub(super) mod tests {
             }
         );
         assert!(heap.pop().is_none()); // Heap should be empty
+    }
+
+    #[test]
+    fn test_min_cpu_per_task_floor() {
+        // Default case: base=1.0, min_cpu=0.25 → 1.0 wins
+        let req = TaskResourceRequest::new(ResourceRequest::default(), 0.25);
+        assert_eq!(req.num_cpus(), 1.0);
+
+        // min_cpu below base: base=1.0, min_cpu=0.5 → 1.0 wins
+        let req = TaskResourceRequest::new(ResourceRequest::default(), 0.5);
+        assert_eq!(req.num_cpus(), 1.0);
+
+        // min_cpu matches base: base=1.0, min_cpu=1.0 → 1.0
+        let req = TaskResourceRequest::new(ResourceRequest::default(), 1.0);
+        assert_eq!(req.num_cpus(), 1.0);
+
+        // min_cpu above base: base=1.0, min_cpu=2.0 → 2.0 wins
+        let req = TaskResourceRequest::new(ResourceRequest::default(), 2.0);
+        assert_eq!(req.num_cpus(), 2.0);
+    }
+
+    #[test]
+    fn test_min_cpu_per_task_with_explicit_udf_num_cpus() {
+        // UDF requests 4.0 CPUs, min_cpu=2.0 → 4.0 wins (UDF is higher)
+        let rr = ResourceRequest::try_new_internal(Some(4.0), None, None).unwrap();
+        let req = TaskResourceRequest::new(rr, 2.0);
+        assert_eq!(req.num_cpus(), 4.0);
+
+        // UDF requests 0.5 CPUs, min_cpu=2.0 → 2.0 wins (floor is higher)
+        let rr = ResourceRequest::try_new_internal(Some(0.5), None, None).unwrap();
+        let req = TaskResourceRequest::new(rr, 2.0);
+        assert_eq!(req.num_cpus(), 2.0);
+
+        // UDF requests 2.0 CPUs, min_cpu=2.0 → 2.0 (equal)
+        let rr = ResourceRequest::try_new_internal(Some(2.0), None, None).unwrap();
+        let req = TaskResourceRequest::new(rr, 2.0);
+        assert_eq!(req.num_cpus(), 2.0);
     }
 }

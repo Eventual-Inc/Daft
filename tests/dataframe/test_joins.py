@@ -10,6 +10,40 @@ from tests.conftest import get_tests_daft_runner_name
 from tests.utils import sort_arrow_table
 
 
+def assert_partition_local_sort_order(df, join_keys, join_strategy, join_type):
+    """Assert that sort_merge join output is sorted by join keys within each partition.
+
+    Per Spark semantics, SortMergeJoin guarantees partition-local ordering by join key
+    for all join types EXCEPT full outer (which has no ordering guarantee).
+    """
+    if join_strategy != "sort_merge" or join_type == "outer":
+        return
+
+    if isinstance(join_keys, str):
+        join_keys = [join_keys]
+
+    # Must collect first so iter_partitions() yields materialized partitions
+    df = df.collect()
+    parts = list(df.iter_partitions())
+    if get_tests_daft_runner_name() == "ray":
+        import ray
+
+        parts = ray.get(parts)
+
+    for i, part in enumerate(parts):
+        part_data = part.to_pydict()
+        if len(part_data.get(join_keys[0], [])) <= 1:
+            continue
+        # Build tuples of join key values for multi-column comparison
+        key_tuples = list(zip(*(part_data[k] for k in join_keys)))
+        # Filter out None values for comparison (nulls can appear in outer-like results)
+        non_null_tuples = [(t, idx) for idx, t in enumerate(key_tuples) if all(v is not None for v in t)]
+        if len(non_null_tuples) <= 1:
+            continue
+        values = [t for t, _ in non_null_tuples]
+        assert values == sorted(values), f"Partition {i} not locally sorted by {join_keys}. Got: {values}"
+
+
 def get_n_partitions():
     """Returns the number of partitions to test."""
     return [1, 2, 4, 8]
@@ -28,12 +62,8 @@ def get_join_params():
 
     for strategy in strategies:
         for join_type in join_types:
-            # Native runner only supports None and hash strategies
-            if runner == "native" and strategy not in [None, "hash"]:
-                continue
-
-            # Sort-merge only supports inner joins (for now)
-            if strategy == "sort_merge" and join_type != "inner":
+            # Native runner only supports None, hash and sort_merge strategies
+            if runner == "native" and strategy not in [None, "hash", "sort_merge"]:
                 continue
 
             # Broadcast doesn't support outer joins
@@ -51,12 +81,8 @@ def is_valid_join_strategy_combination(join_strategy, join_type):
     """
     runner = get_tests_daft_runner_name()
 
-    # Native runner only supports None and hash strategies
-    if runner == "native" and join_strategy not in [None, "hash"]:
-        return False
-
-    # Sort-merge only supports inner joins (for now)
-    if join_strategy == "sort_merge" and join_type != "inner":
+    # Native runner only supports None, hash and sort_merge strategies
+    if runner == "native" and join_strategy not in [None, "hash", "sort_merge"]:
         return False
 
     # Broadcast doesn't support outer joins
@@ -73,10 +99,6 @@ def test_invalid_join_strategies(make_df):
             "B": ["a", "b", "c"],
         },
     )
-
-    for join_type in ["left", "right", "outer"]:
-        with pytest.raises(ValueError):
-            df.join(df, on="A", strategy="sort_merge", how=join_type)
 
     with pytest.raises(ValueError):
         df.join(df, on="A", strategy="broadcast", how="outer")
@@ -127,9 +149,8 @@ def test_joins(join_strategy, join_type, make_df, n_partitions, with_default_mor
 
     print(f"join_strategy: {join_strategy}, join_type: {join_type}")
     joined = df.join(df, on="A", strategy=join_strategy, how=join_type)
-    # We shouldn't need to sort the joined output if using a sort-merge join.
-    if join_strategy != "sort_merge":
-        joined = joined.sort("A")
+    assert_partition_local_sort_order(joined, "A", join_strategy, join_type)
+    joined = joined.sort("A")
     joined_data = joined.to_pydict()
 
     assert joined_data == {
@@ -156,9 +177,9 @@ def test_multicol_joins(join_strategy, join_type, make_df, n_partitions: int, wi
     )
 
     joined = df.join(df, on=["A", "B"], strategy=join_strategy, how=join_type)
-    # We shouldn't need to sort the joined output if using a sort-merge join.
-    if join_strategy != "sort_merge":
-        joined = joined.sort("A")
+
+    assert_partition_local_sort_order(joined, ["A", "B"], join_strategy, join_type)
+    joined = joined.sort("A")
     joined_data = joined.to_pydict()
 
     assert joined_data == {
@@ -185,6 +206,7 @@ def test_dupes_join_key(join_strategy, join_type, make_df, n_partitions: int, wi
     )
 
     joined = df.join(df, on="A", strategy=join_strategy, how=join_type)
+    assert_partition_local_sort_order(joined, "A", join_strategy, join_type)
     joined = joined.sort(["A", "B", "right.B"])
     joined_data = joined.to_pydict()
 
@@ -212,6 +234,7 @@ def test_multicol_dupes_join_key(join_strategy, join_type, make_df, n_partitions
     )
 
     joined = df.join(df, on=["A", "B"], strategy=join_strategy, how=join_type)
+    assert_partition_local_sort_order(joined, ["A", "B"], join_strategy, join_type)
     joined = joined.sort(["A", "B", "C", "right.C"])
     joined_data = joined.to_pydict()
 
@@ -239,6 +262,7 @@ def test_joins_all_same_key(join_strategy, join_type, make_df, n_partitions: int
     )
 
     joined = df.join(df, on="A", strategy=join_strategy, how=join_type)
+    assert_partition_local_sort_order(joined, "A", join_strategy, join_type)
     joined = joined.sort(["A", "B", "right.B"])
     joined_data = joined.to_pydict()
 
@@ -326,6 +350,7 @@ def test_joins_no_overlap_disjoint(
         joined = df2.join(df1, on="A", strategy=join_strategy, how=join_type)
     else:
         joined = df1.join(df2, on="A", strategy=join_strategy, how=join_type)
+    assert_partition_local_sort_order(joined, "A", join_strategy, join_type)
     joined = joined.sort("A")
     joined_data = joined.to_pydict()
 
@@ -409,9 +434,8 @@ def test_joins_no_overlap_interleaved(
         joined = df2.join(df1, on="A", strategy=join_strategy, how=join_type)
     else:
         joined = df1.join(df2, on="A", strategy=join_strategy, how=join_type)
-    # We shouldn't need to sort the joined output if using a sort-merge join.
-    if join_strategy != "sort_merge":
-        joined = joined.sort("A")
+    assert_partition_local_sort_order(joined, "A", join_strategy, join_type)
+    joined = joined.sort("A")
     joined_data = joined.to_pydict()
 
     assert joined_data == expected

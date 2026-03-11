@@ -1275,3 +1275,49 @@ def test_create_dataframe_of_deeply_nested_tuples():
     expected = {"tuples": [{"_0": 1, "_1": {"foo": 1, "more_nesting": [1, 2, 3], "bar": {"_0": 1, "_1": "a"}}}]}
 
     assert df.to_pydict() == expected
+
+
+def test_multipartition_order_preserved():
+    """Test that InMemorySource preserves partition order.
+
+    Reading a multi-partition DataFrame through the execution engine should
+    preserve partition order.
+    _from_micropartitions sets _result_cache, so a bare .collect() returns
+    the cache directly without going through InMemorySource. We must add an
+    operator (e.g. with_column) to force a new logical plan that triggers
+    the execution engine and thus exercises InMemorySource's concurrent
+    fetch + order-preserving flattener path.
+    """
+    from daft.recordbatch import MicroPartition, RecordBatch
+
+    # Create 8 partitions with non-overlapping, sequentially increasing ids.
+    # If InMemorySource doesn't preserve order, the ids won't be monotonically increasing.
+    num_partitions = 8
+    rows_per_partition = 500
+    micropartitions = []
+    for i in range(num_partitions):
+        start = i * rows_per_partition
+        ids = list(range(start, start + rows_per_partition))
+        rb = RecordBatch.from_pydict({"id": ids, "partition_idx": [i] * rows_per_partition})
+        mp = MicroPartition._from_record_batches([rb])
+        micropartitions.append(mp)
+
+    df = daft.DataFrame._from_micropartitions(*micropartitions)
+
+    # Add a trivial computed column to force a new logical plan.
+    # This ensures .collect() goes through the execution engine → InMemorySource,
+    # rather than returning the cached partition set directly.
+    result = df.with_column("id_copy", daft.col("id")).collect()
+
+    total_rows = num_partitions * rows_per_partition
+    ids = result.to_pydict()["id"]
+    assert ids == list(range(total_rows)), "Partition order not preserved through InMemorySource"
+
+    # Verify partition_idx column also matches expected order
+    expected_partition_idx = []
+    for i in range(num_partitions):
+        expected_partition_idx.extend([i] * rows_per_partition)
+    assert result.to_pydict()["partition_idx"] == expected_partition_idx
+
+    # Verify the computed column to prove the execution engine actually ran
+    assert result.to_pydict()["id_copy"] == list(range(total_rows))

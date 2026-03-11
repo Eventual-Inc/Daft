@@ -54,6 +54,24 @@ fn parse_number_from_env_with_custom_parser<T: std::str::FromStr + std::fmt::Dis
     None
 }
 
+/// Parse an optional numeric-type configuration item from the Env.
+/// Returns `Some(value)` when set and valid, `None` when unset or invalid.
+fn parse_optional_number_from_env<T: std::str::FromStr + std::fmt::Display>(
+    env_var: &str,
+) -> Option<T> {
+    if let Ok(val) = std::env::var(env_var) {
+        match val.trim().parse::<T>() {
+            Ok(parsed) => Some(parsed),
+            Err(_) => {
+                eprintln!("Invalid {} value: {}, ignoring", env_var, val);
+                None
+            }
+        }
+    } else {
+        None
+    }
+}
+
 /// Configurations for Daft to use during the building of a Dataframe's plan.
 ///
 /// 1. Creation of a Dataframe including any file listing and schema inference that needs to happen. Note
@@ -139,6 +157,10 @@ pub struct DaftExecutionConfig {
     pub enable_dynamic_batching: bool,
     pub dynamic_batching_strategy: String,
     pub flight_shuffle_dirs: Vec<String>,
+    pub map_reduce_shuffle_target_block_size: usize,
+    pub map_reduce_shuffle_spill_memory_limit_bytes: Option<usize>,
+    pub map_reduce_shuffle_spill_dir: Option<String>,
+    pub map_reduce_shuffle_spill_batch_size: usize,
 }
 
 #[cfg(not(debug_assertions))]
@@ -183,6 +205,10 @@ impl Default for DaftExecutionConfig {
             enable_dynamic_batching: false,
             dynamic_batching_strategy: "auto".to_string(),
             flight_shuffle_dirs: vec!["/tmp".to_string()],
+            map_reduce_shuffle_target_block_size: 64 * 1024 * 1024,
+            map_reduce_shuffle_spill_memory_limit_bytes: Some(512 * 1024 * 1024), // 512MB
+            map_reduce_shuffle_spill_dir: None,
+            map_reduce_shuffle_spill_batch_size: 8192,
         }
     }
 }
@@ -198,6 +224,13 @@ impl DaftExecutionConfig {
     const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
     const ENV_TEXT_INFLATION_FACTOR: &'static str = "DAFT_TEXT_INFLATION_FACTOR";
     const ENV_DAFT_MAINTAIN_ORDER: &'static str = "DAFT_MAINTAIN_ORDER";
+    const ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_DIR: &'static str = "DAFT_MAP_REDUCE_SHUFFLE_SPILL_DIR";
+    const ENV_DAFT_MAP_REDUCE_SHUFFLE_TARGET_BLOCK_SIZE: &'static str =
+        "DAFT_MAP_REDUCE_SHUFFLE_TARGET_BLOCK_SIZE";
+    const ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_MEMORY_LIMIT_BYTES: &'static str =
+        "DAFT_MAP_REDUCE_SHUFFLE_SPILL_MEMORY_LIMIT_BYTES";
+    const ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_BATCH_SIZE: &'static str =
+        "DAFT_MAP_REDUCE_SHUFFLE_SPILL_BATCH_SIZE";
 
     #[must_use]
     pub fn from_env() -> Self {
@@ -261,6 +294,39 @@ impl DaftExecutionConfig {
             parse_number_from_env(Self::ENV_TEXT_INFLATION_FACTOR, cfg.text_inflation_factor)
         {
             cfg.text_inflation_factor = val;
+        }
+
+        if let Some(val) = parse_string_from_env(Self::ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_DIR, true)
+        {
+            cfg.map_reduce_shuffle_spill_dir = Some(val);
+        }
+
+        if let Some(val) = parse_number_from_env(
+            Self::ENV_DAFT_MAP_REDUCE_SHUFFLE_TARGET_BLOCK_SIZE,
+            cfg.map_reduce_shuffle_target_block_size,
+        ) {
+            cfg.map_reduce_shuffle_target_block_size = val;
+        }
+
+        if let Some(val) = parse_optional_number_from_env::<usize>(
+            Self::ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_MEMORY_LIMIT_BYTES,
+        ) {
+            cfg.map_reduce_shuffle_spill_memory_limit_bytes = Some(val);
+        }
+
+        if let Some(val) = parse_number_from_env(
+            Self::ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_BATCH_SIZE,
+            cfg.map_reduce_shuffle_spill_batch_size,
+        ) {
+            if val == 0 {
+                eprintln!(
+                    "Invalid {} value: 0, map_reduce_shuffle_spill_batch_size must be > 0, using default {}",
+                    Self::ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_BATCH_SIZE,
+                    cfg.map_reduce_shuffle_spill_batch_size
+                );
+            } else {
+                cfg.map_reduce_shuffle_spill_batch_size = val;
+            }
         }
 
         cfg
@@ -499,6 +565,135 @@ mod tests {
 
             unsafe {
                 std::env::remove_var(DaftExecutionConfig::ENV_DAFT_MAINTAIN_ORDER);
+            }
+        }
+
+        // ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_DIR
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.map_reduce_shuffle_spill_dir, None);
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_DIR,
+                    "/tmp/test_spills",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(
+                cfg.map_reduce_shuffle_spill_dir,
+                Some("/tmp/test_spills".to_string())
+            );
+            unsafe {
+                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_DIR);
+            }
+        }
+
+        // ENV_DAFT_MAP_REDUCE_SHUFFLE_TARGET_BLOCK_SIZE
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.map_reduce_shuffle_target_block_size, 64 * 1024 * 1024);
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_MAP_REDUCE_SHUFFLE_TARGET_BLOCK_SIZE,
+                    "1048576",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.map_reduce_shuffle_target_block_size, 1048576);
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_MAP_REDUCE_SHUFFLE_TARGET_BLOCK_SIZE,
+                    "invalid",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.map_reduce_shuffle_target_block_size, 64 * 1024 * 1024);
+
+            unsafe {
+                std::env::remove_var(
+                    DaftExecutionConfig::ENV_DAFT_MAP_REDUCE_SHUFFLE_TARGET_BLOCK_SIZE,
+                );
+            }
+        }
+
+        // ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_MEMORY_LIMIT_BYTES
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(
+                cfg.map_reduce_shuffle_spill_memory_limit_bytes,
+                Some(536_870_912)
+            );
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_MEMORY_LIMIT_BYTES,
+                    "4194304",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(
+                cfg.map_reduce_shuffle_spill_memory_limit_bytes,
+                Some(4194304)
+            );
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_MEMORY_LIMIT_BYTES,
+                    "invalid",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(
+                cfg.map_reduce_shuffle_spill_memory_limit_bytes,
+                Some(512 * 1024 * 1024)
+            ); // invalid env var keeps 512MB default
+
+            unsafe {
+                std::env::remove_var(
+                    DaftExecutionConfig::ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_MEMORY_LIMIT_BYTES,
+                );
+            }
+        }
+
+        // ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_BATCH_SIZE
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.map_reduce_shuffle_spill_batch_size, 8192);
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_BATCH_SIZE,
+                    "4096",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.map_reduce_shuffle_spill_batch_size, 4096);
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_BATCH_SIZE,
+                    "0",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.map_reduce_shuffle_spill_batch_size, 8192); // 0 is invalid, falls back to default
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_BATCH_SIZE,
+                    "invalid",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.map_reduce_shuffle_spill_batch_size, 8192); // parse failure, falls back to default
+
+            unsafe {
+                std::env::remove_var(
+                    DaftExecutionConfig::ENV_DAFT_MAP_REDUCE_SHUFFLE_SPILL_BATCH_SIZE,
+                );
             }
         }
     }

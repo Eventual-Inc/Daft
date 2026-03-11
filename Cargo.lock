@@ -2960,7 +2960,11 @@ name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
  "arc-swap",
+ "arrow-array",
  "arrow-buffer 57.3.0",
+ "arrow-ipc",
+ "arrow-row",
+ "arrow-schema 57.3.0",
  "async-trait",
  "capitalize",
  "common-daft-config",
@@ -2970,6 +2974,7 @@ dependencies = [
  "common-io-config",
  "common-logging",
  "common-metrics",
+ "common-partitioning",
  "common-py-serde",
  "common-resource-request",
  "common-runtime",
@@ -3008,10 +3013,12 @@ dependencies = [
  "rand 0.8.5",
  "serde_json",
  "snafu",
+ "tempfile",
  "tokio",
  "tokio-stream",
  "tokio-util",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -3025,8 +3032,10 @@ dependencies = [
  "common-file-formats",
  "common-io-config",
  "common-metrics",
+ "common-partitioning",
  "common-py-serde",
  "common-resource-request",
+ "common-runtime",
  "common-scan-info",
  "common-treenode",
  "daft-core",
@@ -3036,6 +3045,7 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
+ "futures",
  "indexmap",
  "log",
  "pyo3",

@@ -390,6 +390,7 @@ class RecordBatch:
                 right._recordbatch,
                 left_on=left_exprs,
                 right_on=right_exprs,
+                how=how,
                 is_sorted=is_sorted,
             )
         )
