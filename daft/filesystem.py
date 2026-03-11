@@ -222,12 +222,9 @@ def _infer_filesystem(
             _set_if_not_none(translated_kwargs, "anonymous", s3_config.anonymous)
             _set_if_not_none(translated_kwargs, "force_virtual_addressing", s3_config.force_virtual_addressing)
             if s3_config.num_tries is not None:
-                try:
-                    from pyarrow.fs import AwsStandardS3RetryStrategy
+                from pyarrow.fs import AwsStandardS3RetryStrategy
 
-                    translated_kwargs["retry_strategy"] = AwsStandardS3RetryStrategy(max_attempts=s3_config.num_tries)
-                except ImportError:
-                    pass  # Config does not exist in pyarrow 7.0.0
+                translated_kwargs["retry_strategy"] = AwsStandardS3RetryStrategy(max_attempts=s3_config.num_tries)
 
             if (s3_creds := s3_config.provide_cached_credentials()) is not None:
                 _set_if_not_none(translated_kwargs, "access_key", s3_creds.key_id)
@@ -253,13 +250,7 @@ def _infer_filesystem(
     # GCS
     ###
     elif protocol in {"gs", "gcs"}:
-        try:
-            from pyarrow.fs import GcsFileSystem
-        except ImportError:
-            raise ImportError(
-                "Unable to import GcsFileSystem from pyarrow - please ensure you have pyarrow >= 9.0 or consider "
-                "using Daft's native GCS IO code instead"
-            )
+        from pyarrow.fs import GcsFileSystem
 
         translated_kwargs = {}
         if io_config is not None and io_config.gcs is not None:

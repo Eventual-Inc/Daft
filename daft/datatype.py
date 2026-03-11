@@ -851,7 +851,7 @@ class DataType:
                 key_type=cls.from_arrow_type(arrow_type.key_type, python_fallback),
                 value_type=cls.from_arrow_type(arrow_type.item_type, python_fallback),
             )
-        elif isinstance(arrow_type, getattr(pa, "FixedShapeTensorType", ())):
+        elif isinstance(arrow_type, pa.FixedShapeTensorType):
             scalar_dtype = cls.from_arrow_type(arrow_type.value_type, python_fallback)
             return cls.tensor(scalar_dtype, tuple(arrow_type.shape))
         # Only check for PyExtensionType if pyarrow version is < 21.0.0

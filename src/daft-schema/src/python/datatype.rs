@@ -348,26 +348,15 @@ impl PyDataType {
     pub fn to_arrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         match &self.dtype {
-            DataType::FixedShapeTensor(dtype, shape) => {
-                if py
-                    .import(pyo3::intern!(py, "daft.utils"))?
-                    .getattr(pyo3::intern!(py, "pyarrow_supports_fixed_shape_tensor"))?
-                    .call0()?
-                    .extract()?
-                {
-                    pyarrow
-                        .getattr(pyo3::intern!(py, "fixed_shape_tensor"))?
-                        .call1((
-                            Self {
-                                dtype: *dtype.clone(),
-                            }
-                            .to_arrow(py)?,
-                            pyo3::types::PyTuple::new(py, shape.clone())?,
-                        ))
-                } else {
-                    self.dtype.to_pyarrow(py)
-                }
-            }
+            DataType::FixedShapeTensor(dtype, shape) => pyarrow
+                .getattr(pyo3::intern!(py, "fixed_shape_tensor"))?
+                .call1((
+                    Self {
+                        dtype: *dtype.clone(),
+                    }
+                    .to_arrow(py)?,
+                    pyo3::types::PyTuple::new(py, shape.clone())?,
+                )),
             _ => self.dtype.to_pyarrow(py),
         }
     }
