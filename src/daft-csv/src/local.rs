@@ -164,7 +164,6 @@ pub async fn read_csv_local(
             &convert_options.unwrap_or_default(),
             &parse_options,
             io_client,
-            io_stats,
         )
         .await?;
         return Ok(RecordBatch::empty(Some(Arc::new(Schema::try_from(
@@ -225,14 +224,8 @@ pub async fn stream_csv_local(
     .unwrap_or_default();
 
     // Get schema and row estimations.
-    let (schema, estimated_mean_row_size, estimated_std_row_size) = get_schema_and_estimators(
-        uri,
-        &convert_options,
-        &parse_options,
-        io_client,
-        io_stats.clone(),
-    )
-    .await?;
+    let (schema, estimated_mean_row_size, estimated_std_row_size) =
+        get_schema_and_estimators(uri, &convert_options, &parse_options, io_client).await?;
     let fields: Vec<ArrowField> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
     let num_fields = fields.len();
     let projection_indices =
@@ -302,7 +295,6 @@ async fn get_schema_and_estimators(
     convert_options: &CsvConvertOptions,
     parse_options: &CsvParseOptions,
     io_client: Arc<IOClient>,
-    io_stats: Option<IOStatsRef>,
 ) -> DaftResult<(arrow_schema::Schema, f64, f64)> {
     let (inferred_schema, read_stats) = read_csv_schema_single(
         uri,
@@ -310,7 +302,7 @@ async fn get_schema_and_estimators(
         // Read at most 1 MiB to estimate stats.
         Some(1024 * 1024),
         io_client.clone(),
-        io_stats.clone(),
+        None,
     )
     .await?;
 
