@@ -541,3 +541,32 @@ def test_write_json_invalid_timestamp_format_raises_error(tmp_path):
 
     # Check that the error message is clear about the invalid format
     assert "Invalid timestamp format string" in str(exc_info.value)
+
+
+def test_write_json_target_filesize(tmp_path):
+    """Test that json_target_filesize parameter controls file splitting."""
+    data = {"x": list(range(10_000))}
+    df = daft.from_pydict(data)
+
+    with daft.execution_config_ctx(json_target_filesize=1024):
+        output_files = df.write_json(str(tmp_path))
+
+    assert len(output_files) > 1, "Expected multiple files to be written with small target filesize"
+
+    read_back = daft.read_json(str(tmp_path) + "/*.json").sort(by="x").to_pydict()
+    assert read_back == data
+
+
+def test_write_json_target_filesize_with_partitioning(tmp_path):
+    """Test that json_target_filesize works correctly with partitioning."""
+    data = {"x": list(range(10_000)), "partition": [i % 3 for i in range(10_000)]}
+    df = daft.from_pydict(data)
+
+    with daft.execution_config_ctx(json_target_filesize=1024):
+        output_files = df.write_json(str(tmp_path), partition_cols=["partition"])
+
+    assert len(output_files) >= 3, "Expected at least 3 partitions"
+
+    read_back = daft.read_json(str(tmp_path) + "/**/*.json").sort(by="x").to_pydict()
+    assert read_back["x"] == data["x"]
+    assert read_back["partition"] == data["partition"]

@@ -103,6 +103,7 @@ impl PyDaftExecutionConfig {
         parquet_inflation_factor=None,
         csv_target_filesize=None,
         csv_inflation_factor=None,
+        json_target_filesize=None,
         json_inflation_factor=None,
         text_inflation_factor=None,
         shuffle_aggregation_default_partitions=None,
@@ -137,6 +138,7 @@ impl PyDaftExecutionConfig {
         parquet_inflation_factor: Option<f64>,
         csv_target_filesize: Option<usize>,
         csv_inflation_factor: Option<f64>,
+        json_target_filesize: Option<usize>,
         json_inflation_factor: Option<f64>,
         text_inflation_factor: Option<f64>,
         shuffle_aggregation_default_partitions: Option<usize>,
@@ -198,6 +200,9 @@ impl PyDaftExecutionConfig {
         }
         if let Some(csv_inflation_factor) = csv_inflation_factor {
             config.csv_inflation_factor = csv_inflation_factor;
+        }
+        if let Some(json_target_filesize) = json_target_filesize {
+            config.json_target_filesize = json_target_filesize;
         }
         if let Some(json_inflation_factor) = json_inflation_factor {
             config.json_inflation_factor = json_inflation_factor;
@@ -355,6 +360,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn get_csv_inflation_factor(&self) -> PyResult<f64> {
         Ok(self.config.csv_inflation_factor)
+    }
+
+    #[getter]
+    fn get_json_target_filesize(&self) -> PyResult<usize> {
+        Ok(self.config.json_target_filesize)
     }
 
     #[getter]
