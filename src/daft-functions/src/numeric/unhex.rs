@@ -4,8 +4,8 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
 
@@ -67,7 +67,10 @@ impl ScalarUDF for Unhex {
             )));
         }
 
-        Ok(Field::new(field.name, daft_core::datatypes::DataType::Binary))
+        Ok(Field::new(
+            field.name,
+            daft_core::datatypes::DataType::Binary,
+        ))
     }
 
     fn docstring(&self) -> &'static str {
