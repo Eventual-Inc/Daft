@@ -1910,24 +1910,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "common-scan-info"
-version = "0.3.0-dev0"
-dependencies = [
- "common-daft-config",
- "common-display",
- "common-error",
- "common-file-formats",
- "daft-algebra",
- "daft-core",
- "daft-dsl",
- "daft-schema",
- "fnv",
- "pyo3",
- "serde",
- "typetag",
-]
-
-[[package]]
 name = "common-system-info"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2279,22 +2261,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ctor"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "424e0138278faeb2b401f174ad17e715c829512d74f3d1e81eb43365c2e0590e"
-dependencies = [
- "ctor-proc-macro",
- "dtor",
-]
-
-[[package]]
-name = "ctor-proc-macro"
-version = "0.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52560adf09603e58c9a7ee1fe1dcb95a16927b17c127f0ac02d6e768a0e25bc1"
-
-[[package]]
 name = "daft"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2307,7 +2273,6 @@ dependencies = [
  "common-partitioning",
  "common-resource-request",
  "common-runtime",
- "common-scan-info",
  "common-system-info",
  "common-tracing",
  "common-version",
@@ -2572,7 +2537,6 @@ dependencies = [
  "common-py-serde",
  "common-resource-request",
  "common-runtime",
- "common-scan-info",
  "common-treenode",
  "daft-context",
  "daft-dsl",
@@ -2580,6 +2544,7 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
+ "daft-scan",
  "daft-schema",
  "futures",
  "itertools 0.14.0",
@@ -2973,7 +2938,6 @@ dependencies = [
  "common-py-serde",
  "common-resource-request",
  "common-runtime",
- "common-scan-info",
  "common-system-info",
  "common-tracing",
  "console",
@@ -3027,7 +2991,6 @@ dependencies = [
  "common-metrics",
  "common-py-serde",
  "common-resource-request",
- "common-scan-info",
  "common-treenode",
  "daft-core",
  "daft-dsl",
@@ -3036,6 +2999,7 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
+ "daft-scan",
  "indexmap",
  "log",
  "pyo3",
@@ -3056,7 +3020,6 @@ dependencies = [
  "common-partitioning",
  "common-py-serde",
  "common-resource-request",
- "common-scan-info",
  "common-treenode",
  "daft-algebra",
  "daft-core",
@@ -3067,6 +3030,7 @@ dependencies = [
  "daft-functions-uri",
  "daft-functions-utf8",
  "daft-recordbatch",
+ "daft-scan",
  "daft-schema",
  "educe",
  "indexmap",
@@ -3211,8 +3175,7 @@ dependencies = [
  "common-io-config",
  "common-py-serde",
  "common-runtime",
- "common-scan-info",
- "ctor",
+ "daft-algebra",
  "daft-compression",
  "daft-core",
  "daft-csv",
@@ -3220,12 +3183,12 @@ dependencies = [
  "daft-dsl",
  "daft-io",
  "daft-json",
- "daft-logical-plan",
  "daft-parquet",
  "daft-recordbatch",
  "daft-schema",
  "daft-stats",
  "either",
+ "fnv",
  "futures",
  "indexmap",
  "itertools 0.14.0",
@@ -3233,7 +3196,6 @@ dependencies = [
  "serde",
  "snafu",
  "tokio",
- "typetag",
  "url",
  "urlencoding",
 ]
@@ -3560,21 +3522,6 @@ checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
 dependencies = [
  "litrs",
 ]
-
-[[package]]
-name = "dtor"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "404d02eeb088a82cfd873006cb713fe411306c7d182c344905e101fb1167d301"
-dependencies = [
- "dtor-proc-macro",
-]
-
-[[package]]
-name = "dtor-proc-macro"
-version = "0.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f678cf4a922c215c63e0de95eb1ff08a958a81d47e485cf9da1e27bf6305cfa5"
 
 [[package]]
 name = "dunce"

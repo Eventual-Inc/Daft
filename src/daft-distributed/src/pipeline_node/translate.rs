@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use common_scan_info::{SPLIT_AND_MERGE_PASS, ScanState};
+use daft_scan::{ScanState, scan_task_iters};
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
     expr::{
@@ -113,18 +113,17 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     )
                     .into_node(),
                     SourceInfo::Physical(info) => {
-                        // We should be able to pass the ScanOperator into the physical plan directly but we need to figure out the serialization story
                         let scan_tasks = match &info.scan_state {
                             ScanState::Operator(_) => unreachable!(
                                 "ScanOperator should not be present in the optimized logical plan for pipeline node translation"
                             ),
                             ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
                         };
+
                         // Perform scan task splitting and merging.
                         let scan_tasks = if self.plan_config.config.enable_scan_task_split_and_merge
-                            && let Some(split_and_merge_pass) = SPLIT_AND_MERGE_PASS.get()
                         {
-                            split_and_merge_pass(
+                            scan_task_iters::split_and_merge_pass(
                                 scan_tasks,
                                 &info.pushdowns,
                                 &self.plan_config.config,

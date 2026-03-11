@@ -8,7 +8,6 @@ common-metrics = {path = "src/common/metrics", default-features = false}
 common-partitioning = {path = "src/common/partitioning", default-features = false}
 common-resource-request = {path = "src/common/resource-request", default-features = false}
 common-runtime = {path = "src/common/runtime", default-features = false}
-common-scan-info = {path = "src/common/scan-info", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
@@ -69,7 +68,6 @@ python = [
   "common-partitioning/python",
   "common-resource-request/python",
   "common-file-formats/python",
-  "common-scan-info/python",
   "common-system-info/python",
   "common-metrics/python",
   "daft-ai/python",
@@ -176,7 +174,6 @@ members = [
   "src/common/macros",
   "src/common/pattern",
   "src/common/partitioning",
-  "src/common/scan-info",
   "src/common/system-info",
   "src/common/treenode",
   "src/common/metrics",

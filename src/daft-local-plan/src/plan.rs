@@ -10,7 +10,7 @@ use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use common_py_serde::{PyObjectWrapper, deserialize_py_object, serialize_py_object};
 use common_resource_request::ResourceRequest;
-use common_scan_info::{Pushdowns, ScanTaskLikeRef};
+use daft_scan::Pushdowns;
 use common_treenode::{DynTreeNode, TreeNode, TreeNodeRecursion};
 use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{

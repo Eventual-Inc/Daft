@@ -1,37 +1,48 @@
-#![feature(if_let_guard)]
-
-mod expr_rewriter;
-mod partitioning;
-mod pushdowns;
-#[cfg(feature = "python")]
-pub mod python;
-mod scan_operator;
-mod scan_task;
-mod sharder;
-pub mod test;
-
-use std::{fmt::Debug, hash::Hash, sync::Arc};
+use std::{
+    fmt::Debug,
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use common_display::{DisplayAs, DisplayLevel};
+use crate::{PartitionField, Pushdowns};
 use daft_schema::schema::SchemaRef;
-pub use expr_rewriter::{PredicateGroups, rewrite_predicate_for_partitioning};
-pub use partitioning::{PartitionField, PartitionTransform};
-pub use pushdowns::{Pushdowns, SupportsPushdownFilters};
-#[cfg(feature = "python")]
-pub use python::register_modules;
-pub use scan_operator::{ScanOperator, ScanOperatorRef};
-pub use scan_task::{SPLIT_AND_MERGE_PASS, ScanTaskLike, ScanTaskLikeRef};
 use serde::{Deserialize, Serialize};
-pub use sharder::{Sharder, ShardingStrategy};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+use crate::{ScanOperatorRef, ScanTaskRef};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ScanState {
-    Tasks(Arc<Vec<ScanTaskLikeRef>>),
+    Tasks(Arc<Vec<ScanTaskRef>>),
     #[serde(
         serialize_with = "serialize_invalid",
         deserialize_with = "deserialize_invalid"
     )]
     Operator(ScanOperatorRef),
+}
+
+// Pointer-based equality: two Tasks are equal iff they point to the same Arc.
+// This is consistent with ScanOperatorRef, which also uses pointer equality.
+impl PartialEq for ScanState {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Tasks(a), Self::Tasks(b)) => Arc::ptr_eq(a, b),
+            (Self::Operator(a), Self::Operator(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for ScanState {}
+
+impl Hash for ScanState {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+        match self {
+            Self::Tasks(tasks) => Arc::as_ptr(tasks).hash(state),
+            Self::Operator(op) => op.hash(state),
+        }
+    }
 }
 
 fn serialize_invalid<S>(_: &ScanOperatorRef, _: S) -> Result<S::Ok, S::Error>
@@ -66,12 +77,12 @@ impl ScanState {
                 // Display scan tasks similar to ScanTaskSource
                 // Show pushdowns and schema from the first scan task
                 let first_task = scan_tasks.first().unwrap();
-                let pushdowns = first_task.pushdowns();
+                let pushdowns = &first_task.pushdowns;
                 if !pushdowns.is_empty() {
                     result.push(pushdowns.display_as(DisplayLevel::Compact));
                 }
 
-                let schema = first_task.schema();
+                let schema = &first_task.schema;
                 result.push(format!(
                     "Schema: {{{}}}",
                     schema.display_as(DisplayLevel::Compact)

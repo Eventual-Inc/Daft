@@ -5,9 +5,10 @@ use std::{
 };
 
 use common_error::DaftResult;
+use crate::{PartitionField, Pushdowns, SupportsPushdownFilters};
 use daft_schema::schema::SchemaRef;
 
-use crate::{PartitionField, Pushdowns, ScanTaskLikeRef, SupportsPushdownFilters};
+use crate::ScanTaskRef;
 
 pub trait ScanOperator: Send + Sync + Debug {
     fn name(&self) -> &str;
@@ -43,7 +44,7 @@ pub trait ScanOperator: Send + Sync + Debug {
 
     /// If cfg provided, `to_scan_tasks` should apply the appropriate transformations
     /// (merging, splitting) to the outputted scan tasks
-    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>>;
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskRef>>;
 
     fn as_pushdown_filter(&self) -> Option<&dyn SupportsPushdownFilters> {
         None

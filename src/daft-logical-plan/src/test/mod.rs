@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use common_scan_info::{Pushdowns, ScanOperatorRef, test::DummyScanOperator};
+use daft_scan::Pushdowns;
+use daft_scan::{ScanOperatorRef, test_utils::DummyScanOperator};
 use daft_schema::{field::Field, schema::Schema};
 
 use crate::builder::LogicalPlanBuilder;
@@ -48,6 +49,6 @@ pub fn dummy_scan_operator_for_aggregation(
         schema,
         num_scan_tasks: 1,
         num_rows_per_task: None,
-        supports_count_pushdown_flag: supports_count_pushdown_flag,
+        supports_count_pushdown_flag,
     }))
 }

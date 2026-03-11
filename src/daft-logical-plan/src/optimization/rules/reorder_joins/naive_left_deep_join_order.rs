@@ -35,7 +35,7 @@ impl JoinOrderer for NaiveLeftDeepJoinOrderer {
 
 #[cfg(test)]
 mod tests {
-    use common_scan_info::Pushdowns;
+    use daft_scan::Pushdowns;
     use common_treenode::TransformedResult;
     use daft_schema::{dtype::DataType, field::Field};
     use rand::{Rng, SeedableRng, rngs::StdRng, seq::SliceRandom};

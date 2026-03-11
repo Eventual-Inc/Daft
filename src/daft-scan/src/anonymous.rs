@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
-use common_scan_info::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
+use crate::{PartitionField, Pushdowns};
 use daft_schema::schema::SchemaRef;
 
-use crate::{ChunkSpec, DataSource, ScanTask, storage_config::StorageConfig};
+use crate::{ChunkSpec, DataSource, ScanOperator, ScanTask, ScanTaskRef, storage_config::StorageConfig};
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
     files: Vec<String>,
@@ -80,7 +80,7 @@ impl ScanOperator for AnonymousScanOperator {
         lines
     }
 
-    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskRef>> {
         let files = self.files.clone();
         let file_format_config = self.file_format_config.clone();
         let schema = self.schema.clone();
@@ -120,7 +120,6 @@ impl ScanOperator for AnonymousScanOperator {
                     None,
                 ))
             })
-            .map(|st| st as Arc<dyn ScanTaskLike>)
             .collect())
     }
 }

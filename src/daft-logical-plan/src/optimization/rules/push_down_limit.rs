@@ -233,7 +233,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use common_scan_info::Pushdowns;
+    use daft_scan::Pushdowns;
     use daft_core::prelude::*;
     use daft_dsl::unresolved_col;
     #[cfg(feature = "python")]

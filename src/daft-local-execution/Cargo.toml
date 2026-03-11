@@ -13,7 +13,6 @@ common-metrics = {path = "../common/metrics", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-resource-request = {path = "../common/resource-request", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
-common-scan-info = {path = "../common/scan-info", default-features = false}
 common-system-info = {path = "../common/system-info", default-features = false}
 common-tracing = {path = "../common/tracing", default-features = false}
 console = {workspace = true}
@@ -63,7 +62,6 @@ python = [
   "common-file-formats/python",
   "common-py-serde/python",
   "common-runtime/python",
-  "common-scan-info/python",
   "common-metrics/python",
   "daft-core/python",
   "daft-context/python",

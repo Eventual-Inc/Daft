@@ -213,7 +213,7 @@ impl SplitGranularProjection {
 mod tests {
     use std::any::TypeId;
 
-    use common_scan_info::Pushdowns;
+    use daft_scan::Pushdowns;
     use daft_core::prelude::Operator;
     use daft_dsl::{Column, ExprRef, ResolvedColumn, lit};
     use daft_functions_binary::{BinaryDecode, Codec};

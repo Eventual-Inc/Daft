@@ -4,7 +4,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftError;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
-use common_scan_info::ScanTaskLikeRef;
+use daft_scan::ScanTaskRef;
 use daft_local_plan::{ExecutionStats, Input, LocalPhysicalPlanRef, SourceId};
 use tokio_util::sync::CancellationToken;
 
@@ -366,7 +366,7 @@ impl SwordfishTaskBuilder {
     pub fn with_scan_tasks(
         mut self,
         source_id: SourceId,
-        scan_tasks: Vec<ScanTaskLikeRef>,
+        scan_tasks: Vec<ScanTaskRef>,
     ) -> Self {
         self.inputs.insert(source_id, Input::ScanTasks(scan_tasks));
         self

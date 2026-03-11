@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_core::prelude::TimeUnit;
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_scan::builder::ParquetScanBuilder;
+use daft_logical_plan::scan_builder::ParquetScanBuilder;
 use sqlparser::ast::TableFunctionArgs;
 
 use super::{SQLTableFunction, try_coerce_list};

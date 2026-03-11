@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_io_config::IOConfig;
 use common_metrics::ops::{NodeCategory, NodeType};
-use common_scan_info::Pushdowns;
+use daft_scan::Pushdowns;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;

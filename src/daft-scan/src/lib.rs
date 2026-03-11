@@ -1,5 +1,6 @@
+#![feature(if_let_guard)]
+
 use std::{
-    any::Any,
     borrow::Cow,
     collections::HashMap,
     fmt::Debug,
@@ -10,7 +11,6 @@ use std::{
 use common_display::DisplayAs;
 use common_error::DaftError;
 use common_file_formats::FileFormatConfig;
-use common_scan_info::{Pushdowns, ScanTaskLike, ScanTaskLikeRef};
 use daft_parquet::DaftParquetMetadata;
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
@@ -20,11 +20,24 @@ use serde::{Deserialize, Serialize};
 
 mod anonymous;
 pub use anonymous::AnonymousScanOperator;
+mod expr_rewriter;
 pub mod glob;
 mod hive;
+mod partitioning;
+mod pushdowns;
 use common_daft_config::DaftExecutionConfig;
-pub mod builder;
+mod scan_operator;
+pub mod scan_state;
 pub mod scan_task_iters;
+mod sharder;
+
+pub use expr_rewriter::{PredicateGroups, rewrite_predicate_for_partitioning};
+pub use partitioning::{PartitionField, PartitionTransform};
+pub use pushdowns::{Pushdowns, SupportsPushdownFilters};
+pub use scan_operator::{ScanOperator, ScanOperatorRef};
+pub use scan_state::{PhysicalScanInfo, ScanState};
+pub use sharder::{Sharder, SharderExt, ShardingStrategy};
+pub mod test_utils;
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -450,79 +463,6 @@ impl std::fmt::Debug for ScanTask {
     }
 }
 
-#[typetag::serde]
-impl ScanTaskLike for ScanTask {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
-        self
-    }
-
-    fn dyn_eq(&self, other: &dyn ScanTaskLike) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>()
-            .is_some_and(|a| a == self)
-    }
-
-    fn dyn_hash(&self, mut state: &mut dyn Hasher) {
-        self.hash(&mut state);
-    }
-
-    fn materialized_schema(&self) -> SchemaRef {
-        self.materialized_schema()
-    }
-
-    fn num_rows(&self) -> Option<usize> {
-        self.num_rows()
-    }
-
-    fn approx_num_rows(&self, config: Option<&DaftExecutionConfig>) -> Option<f64> {
-        self.approx_num_rows(config)
-    }
-
-    fn upper_bound_rows(&self) -> Option<usize> {
-        self.upper_bound_rows()
-    }
-
-    fn size_bytes_on_disk(&self) -> Option<usize> {
-        self.size_bytes_on_disk()
-    }
-
-    fn estimate_in_memory_size_bytes(&self, config: Option<&DaftExecutionConfig>) -> Option<usize> {
-        self.estimate_in_memory_size_bytes(config)
-    }
-
-    fn file_format_config(&self) -> Arc<FileFormatConfig> {
-        self.file_format_config.clone()
-    }
-
-    fn pushdowns(&self) -> &Pushdowns {
-        &self.pushdowns
-    }
-
-    fn schema(&self) -> SchemaRef {
-        self.schema.clone()
-    }
-
-    fn get_file_paths(&self) -> Vec<String> {
-        self.sources
-            .iter()
-            .filter_map(|s| match s {
-                DataSource::File { path, .. } => Some(path.clone()),
-                _ => None,
-            })
-            .collect()
-    }
-}
-
-impl From<ScanTask> for ScanTaskLikeRef {
-    fn from(task: ScanTask) -> Self {
-        Arc::new(task)
-    }
-}
 
 pub type ScanTaskRef = Arc<ScanTask>;
 
@@ -741,6 +681,16 @@ impl ScanTask {
                 }
             })
         }
+    }
+
+    pub fn get_file_paths(&self) -> Vec<String> {
+        self.sources
+            .iter()
+            .filter_map(|s| match s {
+                DataSource::File { path, .. } => Some(path.clone()),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Obtain an approximate num_rows from the ScanTask, or `None` if this is not possible
@@ -1018,12 +968,14 @@ mod test {
     use common_display::{DisplayAs, DisplayLevel};
     use common_error::DaftResult;
     use common_file_formats::{FileFormatConfig, ParquetSourceConfig, WarcSourceConfig};
-    use common_scan_info::{Pushdowns, ScanOperator};
+    use crate::Pushdowns;
     use daft_schema::{dtype::DataType, field::Field, schema::Schema, time_unit::TimeUnit};
     use daft_stats::TableMetadata;
     use itertools::Itertools;
 
-    use crate::{DataSource, ScanTask, glob::GlobScanOperator, storage_config::StorageConfig};
+    use crate::{
+        DataSource, ScanOperator, ScanTask, glob::GlobScanOperator, storage_config::StorageConfig,
+    };
 
     fn make_scan_task(num_sources: usize) -> ScanTask {
         let sources = (0..num_sources)

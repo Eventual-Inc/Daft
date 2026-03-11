@@ -5,7 +5,8 @@ use std::{
 
 use common_io_config::IOConfig;
 use common_partitioning::PartitionCacheEntry;
-use common_scan_info::{PhysicalScanInfo, Pushdowns};
+use daft_scan::Pushdowns;
+use daft_scan::PhysicalScanInfo;
 use daft_core::prelude::Schema;
 use daft_schema::{dtype::DataType, field::Field, schema::SchemaRef};
 use serde::{Deserialize, Serialize};

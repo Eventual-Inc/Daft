@@ -13,7 +13,7 @@ use common_metrics::{
     ATTR_QUERY_ID, QueryID,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
-use common_scan_info::ScanTaskLikeRef;
+use daft_scan::ScanTaskRef;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
@@ -324,7 +324,7 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<ScanTaskLikeRef>)>();
+            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<ScanTaskRef>)>();
             input_senders.insert(*source_id, InputSender::ScanTasks(tx));
 
             let scan_task_source = ScanTaskSource::new(

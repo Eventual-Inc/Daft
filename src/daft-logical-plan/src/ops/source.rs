@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-use common_scan_info::{PhysicalScanInfo, ScanState};
+use daft_scan::{PhysicalScanInfo, ScanState};
 use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 

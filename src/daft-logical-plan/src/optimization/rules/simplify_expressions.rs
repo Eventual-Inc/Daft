@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_scan_info::{PhysicalScanInfo, ScanState};
+use daft_scan::{PhysicalScanInfo, ScanState};
 use common_treenode::{Transformed, TreeNode};
 use daft_algebra::simplify_expr;
 
