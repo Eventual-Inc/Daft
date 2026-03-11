@@ -225,9 +225,14 @@ pub async fn stream_csv_local(
     .unwrap_or_default();
 
     // Get schema and row estimations.
-    let (schema, estimated_mean_row_size, estimated_std_row_size) =
-        get_schema_and_estimators(uri, &convert_options, &parse_options, io_client, io_stats)
-            .await?;
+    let (schema, estimated_mean_row_size, estimated_std_row_size) = get_schema_and_estimators(
+        uri,
+        &convert_options,
+        &parse_options,
+        io_client,
+        io_stats.clone(),
+    )
+    .await?;
     let fields: Vec<ArrowField> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
     let num_fields = fields.len();
     let projection_indices =
@@ -276,6 +281,7 @@ pub async fn stream_csv_local(
         .into();
     stream_csv_as_tables(
         file,
+        io_stats,
         buffer_pool,
         num_fields,
         parse_options,
@@ -339,15 +345,15 @@ async fn get_schema_and_estimators(
 struct SlabIterator {
     file: std::fs::File,
     slabpool: Arc<FileSlabPool>,
-    total_bytes_read: usize,
+    io_stats: Option<IOStatsRef>,
 }
 
 impl SlabIterator {
-    fn new(file: std::fs::File, slabpool: Arc<FileSlabPool>) -> Self {
+    fn new(file: std::fs::File, slabpool: Arc<FileSlabPool>, io_stats: Option<IOStatsRef>) -> Self {
         Self {
             file,
             slabpool,
-            total_bytes_read: 0,
+            io_stats,
         }
     }
 }
@@ -364,7 +370,9 @@ impl Iterator for SlabIterator {
             if bytes_read == 0 {
                 return None;
             }
-            self.total_bytes_read += bytes_read;
+            if let Some(io_stats) = &self.io_stats {
+                io_stats.mark_bytes_read(bytes_read);
+            }
             guard.valid_bytes = bytes_read;
             bytes_read
         };
@@ -542,6 +550,7 @@ where
 #[allow(clippy::too_many_arguments)]
 fn stream_csv_as_tables(
     file: std::fs::File,
+    io_stats: Option<IOStatsRef>,
     buffer_pool: Arc<CsvBufferPool>,
     num_fields: usize,
     parse_options: CsvParseOptions,
@@ -556,7 +565,7 @@ fn stream_csv_as_tables(
 ) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>> + Send> {
     // Create a slab iterator over the file.
     let slabpool = FileSlabPool::new();
-    let slab_iterator = SlabIterator::new(file, slabpool);
+    let slab_iterator = SlabIterator::new(file, slabpool, io_stats);
 
     // Create a chunk iterator over the slab iterator.
     let csv_validator = CsvValidator::new(
