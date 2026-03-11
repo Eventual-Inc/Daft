@@ -98,7 +98,7 @@ pub trait Table: Sync + Send {
 
 /// View is an immutable Table backed by a DataFrame.
 #[derive(Clone)]
-#[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(feature = "python", pyo3::pyclass(skip_from_py_object))]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct View {
     name: String,

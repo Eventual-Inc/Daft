@@ -27,7 +27,7 @@ use crate::{
     partitioning::MicroPartitionSet,
 };
 
-#[pyclass(module = "daft.daft", frozen)]
+#[pyclass(module = "daft.daft", frozen, from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyMicroPartition {
     pub inner: Arc<MicroPartition>,
@@ -1205,7 +1205,7 @@ impl From<PyMicroPartition> for Arc<MicroPartition> {
     }
 }
 
-#[pyclass(frozen, module = "daft.daft")]
+#[pyclass(frozen, module = "daft.daft", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyMicroPartitionSet(Arc<MicroPartitionSet>);
 

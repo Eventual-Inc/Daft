@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-#[pyclass(module = "daft.daft", name = "RayTaskResult")]
+#[pyclass(module = "daft.daft", name = "RayTaskResult", from_py_object)]
 #[derive(Clone)]
 pub(crate) enum RayTaskResult {
     Success(Vec<RayPartitionRef>, Vec<u8>),
@@ -125,7 +125,7 @@ impl TaskResultHandle for RayTaskResultHandle {
     }
 }
 
-#[pyclass(module = "daft.daft", name = "RayPartitionRef", frozen)]
+#[pyclass(module = "daft.daft", name = "RayPartitionRef", frozen, from_py_object)]
 #[derive(Debug, Clone)]
 pub(crate) struct RayPartitionRef {
     pub object_ref: Arc<Py<PyAny>>,

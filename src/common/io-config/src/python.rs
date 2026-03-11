@@ -47,7 +47,7 @@ use crate::{
 ///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct S3Config {
     pub config: crate::S3Config,
 }
@@ -70,7 +70,7 @@ pub struct S3Config {
 ///     >>> io_config = IOConfig(s3=S3Config(credentials_provider=get_credentials))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
 #[derive(Clone, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct S3Credentials {
     pub credentials: crate::S3Credentials,
 }
@@ -98,7 +98,7 @@ pub struct S3Credentials {
 ///     >>> io_config = IOConfig(azure=AzureConfig(storage_account="dafttestdata", access_key="xxx"))
 ///     >>> daft.read_parquet("az://some-path", io_config=io_config)
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct AzureConfig {
     pub config: crate::AzureConfig,
 }
@@ -122,7 +122,7 @@ pub struct AzureConfig {
 ///     >>> io_config = IOConfig(gcs=GCSConfig(anonymous=True))
 ///     >>> daft.read_parquet("gs://some-path", io_config=io_config)
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct GCSConfig {
     pub config: crate::GCSConfig,
 }
@@ -138,7 +138,7 @@ pub struct GCSConfig {
 ///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx", num_tries=10), azure=AzureConfig(anonymous=True), gcs=GCSConfig(...))
 ///     >>> daft.read_parquet(["s3://some-path", "az://some-other-path", "gs://path3"], io_config=io_config)
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct IOConfig {
     pub config: config::IOConfig,
 }
@@ -157,31 +157,31 @@ pub struct IOConfig {
 ///     >>> io_config = IOConfig(http=HTTPConfig(user_agent="my_application/0.0.1", bearer_token="xxx"))
 ///     >>> daft.read_parquet("http://some-path", io_config=io_config)
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct HTTPConfig {
     pub config: crate::HTTPConfig,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct UnityConfig {
     pub config: crate::UnityConfig,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct GravitinoConfig {
     pub config: crate::GravitinoConfig,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct HuggingFaceConfig {
     pub config: crate::HuggingFaceConfig,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct TosConfig {
     pub config: crate::TosConfig,
 }
@@ -206,7 +206,7 @@ pub struct TosConfig {
 ///     >>> io_config = IOConfig(cos=CosConfig(region="ap-guangzhou", secret_id="xxx", secret_key="xxx"))
 ///     >>> daft.read_parquet("cos://bucket/path", io_config=io_config)
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct CosConfig {
     pub config: crate::CosConfig,
 }

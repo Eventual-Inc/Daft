@@ -11,7 +11,7 @@ use {
 
 /// Options for converting CSV data to Daft data.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", from_py_object))]
 pub struct CsvConvertOptions {
     pub limit: Option<usize>,
     pub include_columns: Option<Vec<String>>,
@@ -156,7 +156,10 @@ impl_bincode_py_state_serialization!(CsvConvertOptions);
 
 /// Options for parsing CSV files.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", get_all, from_py_object)
+)]
 pub struct CsvParseOptions {
     pub has_header: bool,
     pub delimiter: u8,
@@ -323,7 +326,10 @@ impl_bincode_py_state_serialization!(CsvParseOptions);
 
 /// Options for reading CSV files.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", get_all, from_py_object)
+)]
 pub struct CsvReadOptions {
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,

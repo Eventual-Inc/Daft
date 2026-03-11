@@ -21,7 +21,7 @@ use crate::{
     preview::{Preview, PreviewFormat, PreviewOptions},
 };
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PyRecordBatch {
     pub record_batch: RecordBatch,

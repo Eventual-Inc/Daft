@@ -1047,7 +1047,10 @@ impl LogicalPlanBuilder {
 /// This lightweight proxy interface should hold as much of the Python-specific logic
 /// as possible, converting pyo3 wrapper type arguments into their underlying Rust-native types
 /// (e.g. PySchema -> Schema).
-#[cfg_attr(feature = "python", pyclass(name = "LogicalPlanBuilder"))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(name = "LogicalPlanBuilder", from_py_object)
+)]
 #[derive(Clone)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PyLogicalPlanBuilder {

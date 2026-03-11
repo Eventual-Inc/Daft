@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 
 /// Metadata for a single file.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", get_all, from_py_object)
+)]
 pub struct FileInfo {
     pub file_path: String,
     pub file_size: Option<i64>,
@@ -36,7 +39,10 @@ impl FileInfo {
 
 /// Metadata for a collection of files.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", get_all, from_py_object)
+)]
 pub struct FileInfos {
     pub file_paths: Vec<String>,
     pub file_sizes: Vec<Option<i64>>,
