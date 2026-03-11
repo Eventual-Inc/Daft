@@ -23,6 +23,9 @@ from .utils import combine_filters_to_arrow
 
 logger = logging.getLogger(__name__)
 
+_DAFT_PER_FRAGMENT_NEAREST_KEY = "__daft_per_fragment_nearest"
+_DAFT_DISTANCE_THRESHOLD_KEY = "__daft_distance_threshold"
+
 
 # TODO support fts and fast_search
 def _lancedb_table_factory_function(
@@ -35,7 +38,17 @@ def _lancedb_table_factory_function(
     include_fragment_id: bool | None = False,
     nearest: dict[str, Any] | None = None,
 ) -> Iterator[PyRecordBatch]:
-    if fragment_ids is not None and nearest is not None:
+    allow_per_fragment_nearest = False
+    distance_threshold: float | None = None
+    nearest_for_lance = nearest
+    if isinstance(nearest, dict):
+        nearest_for_lance = dict(nearest)
+        allow_per_fragment_nearest = bool(nearest_for_lance.pop(_DAFT_PER_FRAGMENT_NEAREST_KEY, False))
+        raw_threshold = nearest_for_lance.pop(_DAFT_DISTANCE_THRESHOLD_KEY, None)
+        if raw_threshold is not None:
+            distance_threshold = float(raw_threshold)
+
+    if fragment_ids is not None and nearest_for_lance is not None and not allow_per_fragment_nearest:
         raise ValueError(
             "fragment_ids and nearest options are mutually exclusive. "
             "Per-fragment scans do not support vector search as it would break global top-K semantics. "
@@ -52,33 +65,53 @@ def _lancedb_table_factory_function(
     # Attempt to import lance and reconstruct with best-effort kwargs
     ds = lance.dataset(ds_uri, **(open_kwargs or {}))
 
+    def _filtered_required_columns(cols: list[str] | None) -> list[str] | None:
+        if cols is None:
+            return None
+        return [c for c in cols if c != "fragment_id"]
+
     def _iter_batches() -> Iterator[PyRecordBatch]:
-        # Iterate fragments individually; append a fragment_id column only when requested
-        # Handle limit correctly by tracking how many rows we've yielded so far
         rows_yielded = 0
         for fragment in fragments:
-            # If we've already yielded enough rows, stop processing
             if limit is not None and rows_yielded >= limit:
                 break
 
-            # Exclude synthetic fragment_id from required columns passed to Lance
-            cols = [c for c in (required_columns or []) if c != "fragment_id"]
+            cols = _filtered_required_columns(required_columns)
 
-            # Calculate how many rows we can still yield
             fragment_limit = None
             if limit is not None:
                 fragment_limit = limit - rows_yielded
 
-            scanner = ds.scanner(fragments=[fragment], columns=cols or None, filter=filter, limit=fragment_limit)
+            scanner = ds.scanner(
+                fragments=[fragment],
+                columns=cols,
+                filter=filter,
+                limit=fragment_limit,
+                prefilter=True if nearest_for_lance is not None else None,
+                nearest=nearest_for_lance,
+            )
+            stop_fragment = False
             for rb in scanner.to_batches():
-                # If we have a limit, we may need to truncate this batch
                 if limit is not None:
                     remaining_rows = limit - rows_yielded
                     if remaining_rows <= 0:
+                        stop_fragment = True
                         break
                     if len(rb) > remaining_rows:
-                        # Truncate the batch to respect the limit
                         rb = rb.slice(0, remaining_rows)
+
+                if distance_threshold is not None and "_distance" in rb.schema.names:
+                    import numpy as np
+
+                    dist_arr = rb.column(rb.schema.get_field_index("_distance"))
+                    dist_np = dist_arr.to_numpy(zero_copy_only=False)
+                    keep = int(np.searchsorted(dist_np, distance_threshold, side="right"))
+                    if keep <= 0:
+                        stop_fragment = True
+                        break
+                    if keep < len(rb):
+                        rb = rb.slice(0, keep)
+                        stop_fragment = True
 
                 if include_fragment_id:
                     frag_id_array = pa.array([fragment.fragment_id] * len(rb), type=pa.int64())
@@ -89,11 +122,35 @@ def _lancedb_table_factory_function(
                 else:
                     yield RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
                 rows_yielded += len(rb)
+                if stop_fragment:
+                    break
+            if stop_fragment:
+                break
 
     # If fragment_ids is None, let Lance choose fragments via index; omit the fragments parameter.
     if fragment_ids is None:
-        scanner = ds.scanner(columns=required_columns, filter=filter, limit=limit, nearest=nearest)
-        return (RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch for rb in scanner.to_batches())
+        cols = _filtered_required_columns(required_columns)
+        scanner = ds.scanner(columns=cols, filter=filter, limit=limit, nearest=nearest_for_lance)
+
+        def _iter_thresholded() -> Iterator[PyRecordBatch]:
+            import numpy as np
+
+            for rb in scanner.to_batches():
+                if distance_threshold is None or "_distance" not in rb.schema.names:
+                    yield RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
+                    continue
+                dist_arr = rb.column(rb.schema.get_field_index("_distance"))
+                dist_np = dist_arr.to_numpy(zero_copy_only=False)
+                keep = int(np.searchsorted(dist_np, distance_threshold, side="right"))
+                if keep <= 0:
+                    break
+                if keep < len(rb):
+                    rb = rb.slice(0, keep)
+                    yield RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
+                    break
+                yield RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
+
+        return _iter_thresholded()
     else:
         fragments = [ds.get_fragment(id) for id in (fragment_ids or [])]
         if not fragments:
@@ -133,21 +190,25 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         ds: "lance.LanceDataset",
         fragment_group_size: int | None = None,
         include_fragment_id: bool | None = False,
+        include_distance: bool = False,
+        nearest_per_fragment: bool = False,
     ):
         self._ds = ds
         self._pushed_filters: list[PyExpr] | None = None
         self._remaining_filters: list[PyExpr] | None = None
         self._fragment_group_size = fragment_group_size
         self._include_fragment_id = include_fragment_id
+        self._include_distance = include_distance
+        self._nearest_per_fragment = nearest_per_fragment
         self._enable_strict_filter_pushdown = get_context().daft_planning_config.enable_strict_filter_pushdown
-        # Ensure Daft extension type is registered so PyArrow can deserialize it from Lance
         _ensure_registered_super_ext_type()
         base = self._ds.schema
+        fields = list(base)
+        if self._include_distance:
+            fields.append(pa.field("_distance", pa.float32()))
         if self._include_fragment_id:
-            new_schema = pa.schema([*base, pa.field("fragment_id", pa.int64())], metadata=base.metadata)
-            self._schema = Schema.from_pyarrow_schema(new_schema)
-        else:
-            self._schema = Schema.from_pyarrow_schema(base)
+            fields.append(pa.field("fragment_id", pa.int64()))
+        self._schema = Schema.from_pyarrow_schema(pa.schema(fields, metadata=base.metadata))
 
     def name(self) -> str:
         return "LanceDBScanOperator"
@@ -222,6 +283,8 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             )
             if self._include_fragment_id:
                 required_columns.append("fragment_id")
+            if self._include_distance and "_distance" not in required_columns:
+                required_columns.append("_distance")
 
         nearest_option = self._nearest_default_option()
 
@@ -356,8 +419,10 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 source_name=self.display_name(),
             )
 
-        # Use index-driven scan for point lookups with BTREE indices or nearest search.
-        if self._should_use_index_for_point_lookup() or nearest_option is not None:
+        if self._should_use_index_for_point_lookup():
+            yield _python_factory_func_scan_task(fragment_ids=None, num_rows=None, size_bytes=None)
+            return
+        if nearest_option is not None and not self._nearest_per_fragment:
             yield _python_factory_func_scan_task(fragment_ids=None, num_rows=None, size_bytes=None)
             return
 

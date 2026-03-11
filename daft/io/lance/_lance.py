@@ -5,7 +5,7 @@ import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Optional, Union
 
-from daft import context
+from daft import col, context
 from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, ScanOperatorHandle
 from daft.dataframe import DataFrame
@@ -40,7 +40,7 @@ def read_lance(
     block_size: int | None = None,
     commit_lock: object | None = None,
     index_cache_size: int | None = None,
-    default_scan_options: dict[str, str] | None = None,
+    default_scan_options: dict[str, Any] | None = None,
     metadata_cache_size_bytes: int | None = None,
     fragment_group_size: int | None = None,
     include_fragment_id: bool | None = None,
@@ -130,6 +130,25 @@ def read_lance(
         >>> df = daft.read_lance("rest://my_namespace/my_table", rest_config=rest_config)
         >>> df.show()
     """
+    approx_k: int | None = None
+    nearest_dict: dict[str, Any] | None = None
+    if isinstance(default_scan_options, dict):
+        nearest = default_scan_options.get("nearest")
+        if isinstance(nearest, dict):
+            nearest_dict = nearest
+        if nearest_dict is not None and "__daft_approx_k" in nearest_dict:
+            if "k" in nearest_dict:
+                raise ValueError("default_scan_options['nearest'] cannot set both 'k' and '__daft_approx_k'")
+            use_index = nearest_dict.get("use_index", None)
+            if use_index is not False:
+                raise ValueError(
+                    "default_scan_options['nearest']['use_index'] must be False when using '__daft_approx_k'"
+                )
+            approx_k_value = nearest_dict.get("__daft_approx_k")
+            if isinstance(approx_k_value, bool) or not isinstance(approx_k_value, int) or approx_k_value <= 0:
+                raise ValueError("default_scan_options['nearest']['__daft_approx_k'] must be a positive int")
+            approx_k = approx_k_value
+
     # Parse URI to determine if it's REST-based or file-based
     uri_str = str(uri)
     uri_type, uri_info = parse_lance_uri(uri_str)
@@ -138,6 +157,8 @@ def read_lance(
         # REST-based Lance table
         if rest_config is None:
             raise ValueError("rest_config is required when using REST URIs (rest://namespace/table_name)")
+        if approx_k is not None:
+            raise NotImplementedError("__daft_approx_k is not supported for REST-based Lance tables")
 
         lance_operator: LanceDBScanOperator | LanceRestScanOperator = LanceRestScanOperator(
             rest_config=rest_config,
@@ -149,21 +170,105 @@ def read_lance(
         io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
         storage_options = io_config_to_storage_options(io_config, uri_str)
 
-        ds = construct_lance_dataset(
-            uri_str,
-            storage_options=storage_options,
-            version=version,
-            asof=asof,
-            block_size=block_size,
-            commit_lock=commit_lock,
-            index_cache_size=index_cache_size,
-            default_scan_options=default_scan_options,
-            metadata_cache_size_bytes=metadata_cache_size_bytes,
-        )
+        if approx_k is not None:
+            assert nearest_dict is not None
+            assert isinstance(default_scan_options, dict)
+            nearest1 = dict(nearest_dict)
+            nearest1.pop("__daft_approx_k", None)
+            nearest1["k"] = approx_k
+            nearest1["__daft_per_fragment_nearest"] = True
 
-        lance_operator = LanceDBScanOperator(
-            ds, fragment_group_size=fragment_group_size, include_fragment_id=include_fragment_id
-        )
+            scan_opts1 = dict(default_scan_options)
+            scan_opts1["nearest"] = nearest1
+
+            ds1 = construct_lance_dataset(
+                uri_str,
+                storage_options=storage_options,
+                version=version,
+                asof=asof,
+                block_size=block_size,
+                commit_lock=commit_lock,
+                index_cache_size=index_cache_size,
+                default_scan_options=scan_opts1,
+                metadata_cache_size_bytes=metadata_cache_size_bytes,
+            )
+
+            fragments = ds1.get_fragments()
+            total_candidates = sum(min(int(f.count_rows()), approx_k) for f in fragments)
+            if total_candidates <= 0:
+                lance_operator = LanceDBScanOperator(
+                    ds1,
+                    fragment_group_size=fragment_group_size,
+                    include_fragment_id=include_fragment_id,
+                    include_distance=True,
+                    nearest_per_fragment=True,
+                )
+                handle = ScanOperatorHandle.from_python_scan_operator(lance_operator)
+                builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
+                return DataFrame(builder).limit(0)
+
+            p = approx_k / total_candidates
+            if p > 1.0:
+                p = 1.0
+            if p < 0.0:
+                p = 0.0
+
+            lance_operator1 = LanceDBScanOperator(
+                ds1,
+                fragment_group_size=fragment_group_size,
+                include_fragment_id=include_fragment_id,
+                include_distance=True,
+                nearest_per_fragment=True,
+            )
+            handle1 = ScanOperatorHandle.from_python_scan_operator(lance_operator1)
+            builder1 = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle1)
+            df_candidates = DataFrame(builder1)
+
+            df_thr = df_candidates.select("_distance").agg(col("_distance").approx_percentiles(p).alias("_thr"))
+            thr = df_thr.to_pydict()["_thr"][0]
+            if thr is None:
+                return df_candidates.limit(0)
+
+            nearest2 = dict(nearest1)
+            nearest2["__daft_distance_threshold"] = float(thr)
+            scan_opts2 = dict(default_scan_options)
+            scan_opts2["nearest"] = nearest2
+
+            ds2 = construct_lance_dataset(
+                uri_str,
+                storage_options=storage_options,
+                version=version,
+                asof=asof,
+                block_size=block_size,
+                commit_lock=commit_lock,
+                index_cache_size=index_cache_size,
+                default_scan_options=scan_opts2,
+                metadata_cache_size_bytes=metadata_cache_size_bytes,
+            )
+
+            lance_operator = LanceDBScanOperator(
+                ds2,
+                fragment_group_size=fragment_group_size,
+                include_fragment_id=include_fragment_id,
+                include_distance=True,
+                nearest_per_fragment=True,
+            )
+        else:
+            ds = construct_lance_dataset(
+                uri_str,
+                storage_options=storage_options,
+                version=version,
+                asof=asof,
+                block_size=block_size,
+                commit_lock=commit_lock,
+                index_cache_size=index_cache_size,
+                default_scan_options=default_scan_options,
+                metadata_cache_size_bytes=metadata_cache_size_bytes,
+            )
+
+            lance_operator = LanceDBScanOperator(
+                ds, fragment_group_size=fragment_group_size, include_fragment_id=include_fragment_id
+            )
 
     handle = ScanOperatorHandle.from_python_scan_operator(lance_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)

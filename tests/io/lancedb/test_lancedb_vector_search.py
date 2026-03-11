@@ -4,6 +4,7 @@ import inspect
 import io
 
 import lance
+import numpy as np
 import pyarrow as pa
 import pytest
 
@@ -271,3 +272,65 @@ def test_nearest_with_prefilter_false(tmp_path_factory) -> None:
     # then applies the filter, which can yield fewer than K results (or empty).
     assert result["id"] == []
     assert result["group"] == []
+
+
+def test_nearest_approx_k_threshold_filters_out_large_distances(tmp_path) -> None:
+    path = str(tmp_path / "approx_k.lance")
+
+    vector_type = pa.list_(pa.float32(), 1)
+
+    def write_fragment(start: int, end: int, mode: str | None) -> None:
+        ids = pa.array(list(range(start, end)), type=pa.int64())
+        vectors = pa.array([[float(i)] for i in range(start, end)], type=vector_type)
+        table = pa.table({"id": ids, "vector": vectors})
+        lance.write_dataset(table, path, mode=mode)
+
+    write_fragment(0, 100, mode="overwrite")
+    write_fragment(100, 200, mode="append")
+    write_fragment(200, 300, mode="append")
+
+    query = np.array([0.0], dtype=np.float32)
+    df = daft.read_lance(
+        path,
+        default_scan_options={"nearest": {"column": "vector", "q": query, "use_index": False, "__daft_approx_k": 50}},
+    ).select("id", "_distance")
+
+    out = df.to_pydict()
+    assert set(out.keys()) == {"id", "_distance"}
+    assert out["id"]
+
+    distances = out["_distance"]
+    assert distances[0] == 0.0
+    assert out["id"][0] == 0
+    assert distances == sorted(distances)
+
+
+def test_nearest_approx_k_rejects_k_conflict(tmp_path_factory) -> None:
+    dataset_path = build_single_fragment_dataset(tmp_path_factory)
+    query = pa.array([0.0, 0.0], type=pa.float32())
+    nearest = {"column": "vector", "q": query, "k": 1, "use_index": False, "__daft_approx_k": 10}
+
+    with pytest.raises(ValueError, match="cannot set both 'k' and '__daft_approx_k'"):
+        daft.read_lance(dataset_path, default_scan_options={"nearest": nearest}).limit(1).collect()
+
+
+@pytest.mark.parametrize("use_index", [True, None])
+def test_nearest_approx_k_requires_use_index_false(tmp_path_factory, use_index) -> None:
+    dataset_path = build_single_fragment_dataset(tmp_path_factory)
+    query = pa.array([0.0, 0.0], type=pa.float32())
+    nearest = {"column": "vector", "q": query, "__daft_approx_k": 10}
+    if use_index is not None:
+        nearest["use_index"] = use_index
+
+    with pytest.raises(ValueError, match="use_index.*must be False"):
+        daft.read_lance(dataset_path, default_scan_options={"nearest": nearest}).limit(1).collect()
+
+
+@pytest.mark.parametrize("approx_k", [0, -1, True])
+def test_nearest_approx_k_requires_positive_int(tmp_path_factory, approx_k) -> None:
+    dataset_path = build_single_fragment_dataset(tmp_path_factory)
+    query = pa.array([0.0, 0.0], type=pa.float32())
+    nearest = {"column": "vector", "q": query, "use_index": False, "__daft_approx_k": approx_k}
+
+    with pytest.raises(ValueError, match="__daft_approx_k.*positive int"):
+        daft.read_lance(dataset_path, default_scan_options={"nearest": nearest}).limit(1).collect()
