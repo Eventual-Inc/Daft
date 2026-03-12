@@ -53,8 +53,16 @@ impl RayWorkerManagerState {
             DaftResult::Ok(ray_workers)
         })?;
 
-        for worker in ray_workers {
-            self.ray_workers.insert(worker.id().clone(), worker);
+        if !ray_workers.is_empty() {
+            for worker in &ray_workers {
+                tracing::debug!(worker_id = %worker.id(), "New worker joined");
+            }
+            for worker in ray_workers {
+                self.ray_workers.insert(worker.id().clone(), worker);
+            }
+            // Reset watermark so autoscaling can re-evaluate demand against the new topology
+            self.max_resources_requested = ResourceRequest::default();
+            tracing::debug!("Reset autoscaling watermark after new workers joined");
         }
         self.last_refresh = Some(Instant::now());
         DaftResult::Ok(())
@@ -142,6 +150,9 @@ impl WorkerManager for RayWorkerManager {
             .lock()
             .expect("Failed to lock RayWorkerManagerState");
         state.ray_workers.remove(&worker_id);
+        // Reset watermark so autoscaling can re-evaluate demand against reduced capacity
+        state.max_resources_requested = ResourceRequest::default();
+        tracing::debug!(%worker_id, "Reset autoscaling watermark after worker died");
     }
 
     fn shutdown(&self) -> DaftResult<()> {
@@ -192,6 +203,21 @@ impl WorkerManager for RayWorkerManager {
             || requested_num_gpus > state.max_resources_requested.num_gpus().unwrap_or(0.0)
             || requested_memory_bytes > state.max_resources_requested.memory_bytes().unwrap_or(0);
 
+        tracing::debug!(
+            requested_num_cpus,
+            requested_num_gpus,
+            requested_memory_bytes,
+            cluster_num_cpus,
+            cluster_num_gpus,
+            cluster_memory_bytes,
+            watermark_cpus = state.max_resources_requested.num_cpus().unwrap_or(0.0),
+            watermark_gpus = state.max_resources_requested.num_gpus().unwrap_or(0.0),
+            watermark_memory = state.max_resources_requested.memory_bytes().unwrap_or(0),
+            exceeds_capacity = resource_request_greater_than_current_capacity,
+            exceeds_watermark = resource_request_greater_than_max_requested,
+            "Autoscaling decision"
+        );
+
         // Only autoscale if we need more capacity AND this is greater than we've seen before
         if resource_request_greater_than_current_capacity
             && resource_request_greater_than_max_requested
@@ -206,8 +232,14 @@ impl WorkerManager for RayWorkerManager {
                 .map(|bundle| {
                     let mut dict = HashMap::new();
                     dict.insert("CPU", bundle.num_cpus().ceil() as i64);
-                    dict.insert("GPU", bundle.num_gpus().ceil() as i64);
-                    dict.insert("memory", bundle.memory_bytes() as i64);
+                    let gpu = bundle.num_gpus().ceil() as i64;
+                    if gpu > 0 {
+                        dict.insert("GPU", gpu);
+                    }
+                    let memory = bundle.memory_bytes() as i64;
+                    if memory > 0 {
+                        dict.insert("memory", memory);
+                    }
                     dict
                 })
                 .collect::<Vec<_>>();
