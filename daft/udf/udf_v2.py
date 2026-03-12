@@ -25,8 +25,6 @@ from daft.daft import batch_udf, row_wise_udf
 from daft.datatype import DataType, DataTypeLike
 from daft.expressions.expressions import Expression
 
-from .utils import is_complex_ray_options
-
 # TODO(cory): use a dataclass to hold all of these attributes
 RETURN_DTYPE_ATTR = "_daft_return_dtype"
 UNNEST_ATTR = "_daft_unnest"
@@ -315,7 +313,8 @@ class Func(Generic[P, T, C]):
                 "Cannot set 'memory' in `ray_options`. Please use the 'memory_bytes' argument in @daft.func or @daft.cls instead."
             )
 
-        max_concurrency = self.max_concurrency or (1 if is_complex_ray_options(ray_options) else None)
+        # If there are any ray options (other than the banned resource ones), we must use an actor pool
+        max_concurrency = self.max_concurrency or (1 if ray_options else None)
 
         # TODO: implement generator UDFs on the engine side
         if self.is_generator:

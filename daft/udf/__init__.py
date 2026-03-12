@@ -395,7 +395,7 @@ def cls(
     """Decorator to convert a Python class into a Daft user-defined class.
 
     Args:
-        cpus: The number of CPUs each instance of the class requires. Defaults to None (let Ray decide).
+        cpus: The number of CPUs each instance of the class requires. Defaults to None (let the engine decide).
         gpus: The number of GPUs each instance of the class requires. Defaults to 0.
               Fractional values between 0 and 1.0, such as 0.5, are supported. This can be useful when running multiple small models on the same GPU.
               However, fractional values greater than 1.0, such as 1.5 or 2.5, are not supported.
