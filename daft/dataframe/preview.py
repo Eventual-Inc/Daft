@@ -59,14 +59,27 @@ class PreviewOptions:
 
     _options: dict[str, object]  # normalized options
 
+    _DEFAULT_MAX_WIDTH = 30
+    _DEFAULT_ALIGN = "left"
+
     def __init__(self, **options: Any) -> None:
         self._options = {
             "verbose": options.get("verbose", False),
             "null": options.get("null", "None"),
-            "max_width": options.get("max_width", 30),
-            "align": options.get("align", "left"),
+            "max_width": options.get("max_width", self._DEFAULT_MAX_WIDTH),
+            "align": options.get("align", self._DEFAULT_ALIGN),
             "columns": options.get("columns"),
         }
+
+    def has_custom_options(self) -> bool:
+        """Return True if any formatting options differ from their defaults."""
+        if self._options["max_width"] != self._DEFAULT_MAX_WIDTH:
+            return True
+        if self._options["align"] != self._DEFAULT_ALIGN:
+            return True
+        if self._options["columns"] is not None:
+            return True
+        return False
 
     def __repr__(self) -> str:
         """For debugging."""
@@ -135,9 +148,14 @@ class PreviewFormatter:
             raise ValueError("Formatting options with HTML are not currently supported.")
 
         if self._preview.partition is not None:
-            if self._format:
+            if self._format or self._options.has_custom_options():
+                # Route through preview() to apply formatting options (max_width,
+                # align, columns).  When no explicit format was given, default to
+                # "fancy" so that the options are actually honoured — the
+                # __repr__ path uses a hardcoded column width and ignores them.
+                fmt = self._format or "fancy"
                 return self._preview.partition.to_record_batch()._recordbatch.preview(
-                    self._format, self._options.serialize()
+                    fmt, self._options.serialize()
                 )
             else:
                 return self._preview.partition.to_record_batch()._recordbatch.__repr__()
