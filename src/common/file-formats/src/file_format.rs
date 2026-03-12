@@ -12,7 +12,10 @@ use serde::{Deserialize, Serialize};
 
 /// Format of a file, e.g. Parquet, CSV, JSON.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", eq, eq_int, from_py_object)
+)]
 pub enum FileFormat {
     Parquet,
     Csv,
@@ -68,7 +71,10 @@ impl FromStr for FileFormat {
 impl_bincode_py_state_serialization!(FileFormat);
 
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", eq, eq_int, from_py_object)
+)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub enum WriteMode {
     Overwrite,

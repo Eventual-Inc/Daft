@@ -8,7 +8,10 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[allow(clippy::upper_case_acronyms)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", eq, eq_int, from_py_object)
+)]
 pub enum ImageProperty {
     Height,
     Width,

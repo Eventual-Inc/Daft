@@ -300,7 +300,7 @@ educe = "0.6.0"
 futures = "0.3.30"
 hashbrown = "0.16"
 html-escape = "0.2.13"
-image = {version = "0.25.9", default-features = false}
+image = {version = "0.25.10", default-features = false}
 indexmap = "2.9.0"
 indicatif = "0.18"
 console = "0.16"
@@ -314,7 +314,7 @@ ndarray = "0.17"
 num-derive = "0.4.2"
 num-format = "0.4.4"
 num-traits = "0.2"
-numpy = "0.27"
+numpy = "0.28"
 opendal = {version = "0.55", default-features = false}
 opentelemetry = {version = "0.31", features = ["trace", "metrics", "logs"]}
 opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic", "logs"]}
@@ -329,17 +329,17 @@ prost-types = "0.13.5"
 rand = "^0.8"
 rayon = "1.11.0"
 regex = "1.12.2"
-rstest = "0.18.2"
+rstest = "0.26.1"
 reqwest = {version = "0.12.19", default-features = false, features = ["json"]}
 serde_json = "1.0.145"
 sha1 = "0.11.0-rc.3"
 simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 smallvec = {version = "1.15.1", features = ["serde", "impl_bincode"]}
-snafu = {version = "0.7.4", features = ["futures"]}
+snafu = {version = "0.9.0", features = ["futures"]}
 spark-connect = {path = "src/generated/spark-connect", default-features = false}
 sqlparser = "0.59.0"
-sysinfo = "0.35.2"
+sysinfo = "0.38.4"
 tango-bench = "0.6.0"
 test-log = "0.2.19"
 thiserror = "2.0.17"
@@ -380,11 +380,11 @@ version = "0.4.29"
 
 [workspace.dependencies.pyo3]
 features = ["extension-module", "multiple-pymethods", "abi3-py310", "indexmap", "chrono", "chrono-tz"]
-version = "0.27.2"
+version = "0.28.2"
 
 [workspace.dependencies.pyo3-async-runtimes]
 features = ["attributes", "tokio-runtime"]
-version = "0.27"
+version = "0.28"
 
 [workspace.dependencies.pyo3-log]
 version = "0.13"

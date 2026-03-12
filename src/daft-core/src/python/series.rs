@@ -29,7 +29,7 @@ use crate::{
     utils::supertype::try_get_collection_supertype,
 };
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PySeries {
     pub series: series::Series,
@@ -500,7 +500,7 @@ impl From<PySeries> for series::Series {
     }
 }
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 /// Iterator over elements in a Python Series
 ///
