@@ -11,14 +11,10 @@ import pytest
 
 import daft
 from daft import DataType, TimeUnit
-from tests.conftest import get_tests_daft_runner_name
 
 PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
-)
 @pytest.mark.parametrize(
     ["data", "pa_type", "expected_dtype", "expected_inferred_dtype"],
     [
@@ -91,9 +87,6 @@ def test_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype, e
     assert before.to_arrow() == after.with_column("foo", after["foo"].cast(expected_dtype)).to_arrow()
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
-)
 def test_roundtrip_struct_types(tmp_path):
     struct_data = [
         {"name": "Alice", "age": 30, "city": "New York"},
@@ -116,8 +109,8 @@ def test_roundtrip_struct_types(tmp_path):
 
 
 @pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native" or not PYARROW_GE_11_0_0,
-    reason="JSON writes are only implemented in the native runner, and map types require PyArrow >= 11.0.0",
+    not PYARROW_GE_11_0_0,
+    reason="Map types require PyArrow >= 11.0.0",
 )
 def test_roundtrip_map_types(tmp_path):
     map_data = [
@@ -143,9 +136,6 @@ def test_roundtrip_map_types(tmp_path):
     assert before.count_rows() == after.count_rows()
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
-)
 def test_roundtrip_nested_struct_with_arrays(tmp_path):
     """Test JSON roundtrip with nested structs containing arrays."""
     nested_struct_data = [
@@ -173,9 +163,6 @@ def test_roundtrip_nested_struct_with_arrays(tmp_path):
     assert before.to_arrow() == after.to_arrow()
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
-)
 def test_throws_error_on_duration_and_binary_types(tmp_path):
     # TODO(desmond): Binary and Duration types currently produce inconsistent behaviours between our readers and writers.
     # Our readers expect BINARY to be encoded as plain text, and DURATION to be encoded with i64. Arrow-rs expects BINARY
@@ -285,9 +272,6 @@ def _read_first_json_file_text(root: str) -> str:
         return fh.read()
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
-)
 def test_write_json_custom_date_format(tmp_path):
     """Test custom date formatting when writing JSON files."""
     dates = [datetime.date(2024, 1, 15), datetime.date(2024, 12, 31), None]
@@ -302,9 +286,6 @@ def test_write_json_custom_date_format(tmp_path):
     assert "31/12/2024" in text
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
-)
 def test_write_json_custom_timestamp_format(tmp_path):
     """Test custom timestamp formatting when writing JSON files."""
     timestamps = [
@@ -323,9 +304,6 @@ def test_write_json_custom_timestamp_format(tmp_path):
     assert "2024-12-31 23:59:59" in text
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
-)
 def test_write_json_custom_date_and_timestamp_format(tmp_path):
     """Test both custom date and timestamp formatting when writing JSON files."""
     dates = [datetime.date(2024, 1, 15), datetime.date(2024, 12, 31), None]
@@ -354,9 +332,6 @@ def test_write_json_custom_date_and_timestamp_format(tmp_path):
     assert "2024-12-31 23:59:59" in text
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
-)
 def test_write_json_iso8601_timestamp_format(tmp_path):
     """Test ISO 8601 / RFC 3339 timestamp formatting."""
     timestamps = [
@@ -376,9 +351,6 @@ def test_write_json_iso8601_timestamp_format(tmp_path):
     assert "2024-12-31T23:59:59" in text
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
-)
 def test_write_json_timezone_aware_timestamp(tmp_path):
     """Test that timezone-aware timestamps are formatted in their timezone."""
     # Create timezone-aware timestamps
@@ -407,9 +379,6 @@ def test_write_json_timezone_aware_timestamp(tmp_path):
     assert "1993-12-31 19:00:00" in text or "EST" in text or "EDT" in text
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
-)
 def test_write_json_invalid_timezone_raises_error(tmp_path):
     """Test that invalid timezone strings raise an error instead of silently using UTC."""
     # Create timestamps with an invalid timezone string
@@ -434,9 +403,6 @@ def test_write_json_invalid_timezone_raises_error(tmp_path):
         df.write_json(str(tmp_path), write_mode="overwrite", timestamp_format="%Y-%m-%d %H:%M:%S")
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
-)
 def test_write_json_date64_with_timestamp_format(tmp_path):
     """Test that Date64 (which Daft converts to Timestamp[ms]) uses timestamp_format."""
     # Date64 is converted to Timestamp[ms] internally by Daft
@@ -464,9 +430,6 @@ def test_write_json_date64_with_timestamp_format(tmp_path):
     assert "31/12/2024" in text
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
-)
 @pytest.mark.parametrize("time_unit", ["s", "ms", "us", "ns"])
 def test_write_json_timestamp_all_time_units(tmp_path, time_unit):
     """Test timestamp formatting works for all time units (second, millisecond, microsecond, nanosecond)."""
@@ -492,9 +455,6 @@ def test_write_json_timestamp_all_time_units(tmp_path, time_unit):
     assert "2024-12-31 23:59:59" in text
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
-)
 def test_write_json_no_custom_format_preserves_default(tmp_path):
     """Test that not providing custom formats preserves default Arrow JSON behavior."""
     dates = [datetime.date(2024, 1, 15), datetime.date(2024, 12, 31)]
@@ -513,9 +473,6 @@ def test_write_json_no_custom_format_preserves_default(tmp_path):
     assert "2024-12-31" in text
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
-)
 def test_write_json_invalid_date_format_raises_error(tmp_path):
     """Test that invalid date format strings raise a clear error."""
     dates = [datetime.date(2024, 1, 15)]
@@ -528,9 +485,6 @@ def test_write_json_invalid_date_format_raises_error(tmp_path):
     assert "Invalid date format string" in str(exc_info.value)
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
-)
 def test_write_json_invalid_timestamp_format_raises_error(tmp_path):
     """Test that invalid timestamp format strings raise a clear error."""
     timestamps = [datetime.datetime(2024, 1, 15, 10, 30, 45)]

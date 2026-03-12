@@ -1131,9 +1131,6 @@ class DataFrame:
 
             >>> df.write_json("output_dir", timestamp_format="%+")  # doctest: +SKIP
             # Output: "2024-01-15T10:30:45+00:00"
-
-        Warning:
-            Currently only supported with the Native runner!
         """
         if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
             raise ValueError(
