@@ -275,6 +275,24 @@ def test_repr_with_html_string():
         )
 
 
+def test_repr_mimebundle_contains_plain_and_html(make_df):
+    df = make_df({"A": [1, 2, 3], "B": ["x", "y", "z"]})
+
+    bundle = df._repr_mimebundle_()
+
+    assert set(bundle.keys()) == {"text/plain", "text/html"}
+    assert bundle["text/plain"] == df.__repr__()
+    assert bundle["text/html"] == df._repr_html_()
+
+
+def test_repr_mimebundle_include_exclude(make_df):
+    df = make_df({"A": [1]})
+
+    assert set(df._repr_mimebundle_(include={"text/plain"}).keys()) == {"text/plain"}
+    assert set(df._repr_mimebundle_(exclude={"text/html"}).keys()) == {"text/plain"}
+    assert df._repr_mimebundle_(include={"text/plain"}, exclude={"text/plain"}) == {}
+
+
 class MyObj:
     def __repr__(self) -> str:
         return "myobj-custom-repr"

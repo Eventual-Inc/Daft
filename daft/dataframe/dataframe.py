@@ -685,6 +685,25 @@ class DataFrame:
         except ImportError:
             return preview._repr_html_()
 
+    @DataframePublicAPI
+    def _repr_mimebundle_(
+        self, include: Iterable[str] | None = None, exclude: Iterable[str] | None = None
+    ) -> dict[str, str]:
+        mimebundle = {
+            "text/plain": self.__repr__(),
+            "text/html": self._repr_html_(),
+        }
+
+        if include is not None:
+            include_set = set(include)
+            mimebundle = {k: v for k, v in mimebundle.items() if k in include_set}
+
+        if exclude is not None:
+            exclude_set = set(exclude)
+            mimebundle = {k: v for k, v in mimebundle.items() if k not in exclude_set}
+
+        return mimebundle
+
     ###
     # Creation methods
     ###
