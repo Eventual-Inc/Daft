@@ -689,18 +689,16 @@ class DataFrame:
     def _repr_mimebundle_(
         self, include: Iterable[str] | None = None, exclude: Iterable[str] | None = None
     ) -> dict[str, str]:
-        mimebundle = {
-            "text/plain": self.__repr__(),
-            "text/html": self._repr_html_(),
-        }
+        include_set = set(include) if include is not None else None
+        exclude_set = set(exclude) if exclude is not None else set()
 
-        if include is not None:
-            include_set = set(include)
-            mimebundle = {k: v for k, v in mimebundle.items() if k in include_set}
+        mimebundle: dict[str, str] = {}
 
-        if exclude is not None:
-            exclude_set = set(exclude)
-            mimebundle = {k: v for k, v in mimebundle.items() if k not in exclude_set}
+        if (include_set is None or "text/plain" in include_set) and "text/plain" not in exclude_set:
+            mimebundle["text/plain"] = self.__repr__()
+
+        if (include_set is None or "text/html" in include_set) and "text/html" not in exclude_set:
+            mimebundle["text/html"] = self._repr_html_()
 
         return mimebundle
 
