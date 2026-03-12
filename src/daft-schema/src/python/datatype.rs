@@ -18,7 +18,7 @@ use crate::{
     time_unit::TimeUnit,
 };
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PyTimeUnit {
     pub timeunit: TimeUnit,
@@ -86,7 +86,7 @@ impl PyTimeUnit {
     }
 }
 
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyDataType {
     pub dtype: DataType,

@@ -60,7 +60,7 @@ impl PyLocalPhysicalPlan {
 
 impl_bincode_py_state_serialization!(PyLocalPhysicalPlan);
 
-#[pyclass(module = "daft.daft", name = "Input", frozen)]
+#[pyclass(module = "daft.daft", name = "Input", frozen, from_py_object)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyInput {
     pub inner: Input,
@@ -86,7 +86,12 @@ impl<'py> FromPyObject<'_, 'py> for Input {
     }
 }
 
-#[pyclass(module = "daft.daft", name = "PyExecutionStats", frozen)]
+#[pyclass(
+    module = "daft.daft",
+    name = "PyExecutionStats",
+    frozen,
+    from_py_object
+)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyExecutionStats {
     inner: Arc<ExecutionStats>,

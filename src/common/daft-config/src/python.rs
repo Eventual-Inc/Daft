@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::{DaftExecutionConfig, DaftPlanningConfig};
 
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct PyDaftPlanningConfig {
     pub config: Arc<DaftPlanningConfig>,
 }
@@ -66,7 +66,7 @@ impl PyDaftPlanningConfig {
 impl_bincode_py_state_serialization!(PyDaftPlanningConfig);
 
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct PyDaftExecutionConfig {
     pub config: Arc<DaftExecutionConfig>,
 }
