@@ -217,17 +217,7 @@ class Series:
     def to_arrow(self) -> pa.Array:
         """Convert this Series to an pyarrow array."""
         _ensure_registered_super_ext_type()
-
-        dtype = self.datatype()
-
-        # Special-case for PyArrow FixedShapeTensor canonical extension type
-        # TODO: Push this down into self._series.to_arrow()?
-        if dtype.is_fixed_shape_tensor():
-            pyarrow_dtype = dtype.to_arrow_dtype()
-            arrow_series = self._series.to_arrow()
-            return pa.ExtensionArray.from_storage(pyarrow_dtype, arrow_series.storage)
-        else:
-            return self._series.to_arrow()
+        return self._series.to_arrow()
 
     def to_pylist(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> list[Any]:
         """Convert this Series to a Python list.
