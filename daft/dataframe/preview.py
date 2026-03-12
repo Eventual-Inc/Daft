@@ -79,6 +79,8 @@ class PreviewOptions:
             return True
         if self._options["columns"] is not None:
             return True
+        if self._options["verbose"]:
+            return True
         return False
 
     def __repr__(self) -> str:
