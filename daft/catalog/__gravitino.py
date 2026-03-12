@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
 from daft.gravitino import GravitinoClient as InnerCatalog
 from daft.gravitino import GravitinoTable as InnerTable
+from daft.io._parquet import read_parquet
 from daft.io.iceberg._iceberg import read_iceberg
 
 if TYPE_CHECKING:
@@ -219,8 +220,6 @@ class GravitinoTable(Table):
         Returns:
             DataFrame containing table data
         """
-        from daft.io._parquet import read_parquet
-
         # For Hive tables, storage_location is the data directory
         path = self._inner.table_info.storage_location
 

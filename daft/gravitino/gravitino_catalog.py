@@ -7,6 +7,7 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 
 from daft.dependencies import pafs, requests
+from daft.filesystem import _infer_filesystem
 from daft.io import AzureConfig, GravitinoConfig, IOConfig, S3Config
 
 
@@ -327,8 +328,6 @@ class GravitinoClient:
                 elif parsed_url.scheme == "s3" or parsed_url.scheme == "s3a":
                     # S3 storage - implement metadata file resolution for S3
                     try:
-                        from daft.filesystem import _infer_filesystem
-
                         # Construct the metadata directory path
                         # S3 paths are in format: s3://bucket/path/to/table
                         bucket_and_path = parsed_url.netloc + parsed_url.path
