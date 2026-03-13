@@ -1,25 +1,79 @@
-use std::sync::Arc;
+use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    Counter, Meter, StatSnapshot,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::JoinSnapshot,
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, TryStreamExt};
+use opentelemetry::KeyValue;
 
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
+    statistics::{RuntimeStats, stats::RuntimeStatsRef},
     utils::channel::{Sender, create_channel},
 };
+
+pub struct BroadcastJoinStats {
+    duration_us: Counter,
+    build_rows_inserted: Counter,
+    probe_rows_in: Counter,
+    probe_rows_out: Counter,
+    node_kv: Vec<KeyValue>,
+}
+
+impl BroadcastJoinStats {
+    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        Self {
+            duration_us: meter.duration_us_metric(),
+            build_rows_inserted: meter.u64_counter("build rows inserted"),
+            probe_rows_in: meter.u64_counter("probe rows in"),
+            probe_rows_out: meter.u64_counter("probe rows out"),
+            node_kv: key_values_from_context(context),
+        }
+    }
+
+    pub fn set_build_rows_inserted(&self, rows: u64) {
+        self.build_rows_inserted.add(rows, self.node_kv.as_slice());
+    }
+}
+
+impl RuntimeStats for BroadcastJoinStats {
+    fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
+        let StatSnapshot::Join(snapshot) = snapshot else {
+            return;
+        };
+
+        self.duration_us
+            .add(snapshot.cpu_us, self.node_kv.as_slice());
+        self.probe_rows_in
+            .add(snapshot.probe_rows_in, self.node_kv.as_slice());
+        self.probe_rows_out
+            .add(snapshot.probe_rows_out, self.node_kv.as_slice());
+    }
+
+    fn export_snapshot(&self) -> StatSnapshot {
+        StatSnapshot::Join(JoinSnapshot {
+            cpu_us: self.duration_us.load(Ordering::SeqCst),
+            build_rows_inserted: self.build_rows_inserted.load(Ordering::SeqCst),
+            probe_rows_in: self.probe_rows_in.load(Ordering::SeqCst),
+            probe_rows_out: self.probe_rows_out.load(Ordering::SeqCst),
+        })
+    }
+}
 
 pub(crate) struct BroadcastJoinNode {
     config: PipelineNodeConfig,
@@ -35,6 +89,7 @@ pub(crate) struct BroadcastJoinNode {
     broadcaster: DistributedPipelineNode,
     broadcaster_schema: SchemaRef,
     receiver: DistributedPipelineNode,
+    runtime_stats: Arc<BroadcastJoinStats>,
 }
 
 impl BroadcastJoinNode {
@@ -52,6 +107,7 @@ impl BroadcastJoinNode {
         broadcaster: DistributedPipelineNode,
         receiver: DistributedPipelineNode,
         output_schema: SchemaRef,
+        meter: &Meter,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
@@ -69,8 +125,9 @@ impl BroadcastJoinNode {
             plan_config.config.clone(),
             receiver.config().clustering_spec.clone(),
         );
-
         let broadcaster_schema = broadcaster.config().schema.clone();
+        let runtime_stats = Arc::new(BroadcastJoinStats::new(meter, &context));
+
         Self {
             config,
             context,
@@ -82,11 +139,8 @@ impl BroadcastJoinNode {
             broadcaster,
             broadcaster_schema,
             receiver,
+            runtime_stats,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop(
@@ -105,6 +159,14 @@ impl BroadcastJoinNode {
             )
             .try_collect::<Vec<_>>()
             .await?;
+
+        let build_rows = materialized_broadcast_data
+            .iter()
+            .map(|output| output.num_rows())
+            .sum::<usize>();
+        self.runtime_stats
+            .set_build_rows_inserted(build_rows as u64);
+
         let (materialized_broadcast_data_plan, broadcast_psets) =
             MaterializedOutput::into_in_memory_scan_with_psets(
                 materialized_broadcast_data,
@@ -157,6 +219,10 @@ impl PipelineNodeImpl for BroadcastJoinNode {
 
     fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.broadcaster.clone(), self.receiver.clone()]
+    }
+
+    fn make_runtime_stats(&self, _meter: &Meter) -> RuntimeStatsRef {
+        self.runtime_stats.clone()
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {

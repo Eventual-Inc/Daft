@@ -5,6 +5,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_display::{DisplayLevel, tree::TreeDisplay};
+use common_metrics::Meter;
 use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_local_plan::python::PyExecutionStats;
@@ -106,6 +107,7 @@ impl PyDistributedPhysicalPlan {
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
+            &Meter::test_scope("daft.execution.distributed.num_partitions"),
         )?;
 
         Ok(pipeline_node.num_partitions())
@@ -123,6 +125,7 @@ impl PyDistributedPhysicalPlan {
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
+            &Meter::test_scope("daft.execution.distributed.repr_ascii"),
         )?;
 
         Ok(viz_distributed_pipeline_ascii(&pipeline_node, simple))
@@ -140,6 +143,7 @@ impl PyDistributedPhysicalPlan {
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
+            &Meter::test_scope("daft.execution.distributed.repr_mermaid"),
         )?;
 
         let display_level = if simple {
@@ -165,6 +169,7 @@ impl PyDistributedPhysicalPlan {
             plan_config,
             self.plan.logical_plan().clone(),
             Arc::new(HashMap::new()), // No psets needed for repr_json
+            &Meter::test_scope("daft.execution.distributed.repr_json"),
         )
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 

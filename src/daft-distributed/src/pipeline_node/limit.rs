@@ -158,10 +158,6 @@ impl LimitNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     fn process_materialized_output(
         self: &Arc<Self>,
         materialized_output: MaterializedOutput,
@@ -353,7 +349,7 @@ impl PipelineNodeImpl for LimitNode {
         vec![self.child.clone()]
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(LimitStats::new(meter, self.context()))
     }
 

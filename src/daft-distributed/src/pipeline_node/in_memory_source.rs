@@ -57,10 +57,6 @@ impl InMemorySourceNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     fn make_in_memory_source_task(
         self: &Arc<Self>,
         partition_ref: PartitionRef,
@@ -120,7 +116,7 @@ impl PipelineNodeImpl for InMemorySourceNode {
         TaskBuilderStream::new(stream::iter(builders_iter).boxed())
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(SourceStats::new(meter, self.context()))
     }
 }

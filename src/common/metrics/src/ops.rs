@@ -18,11 +18,9 @@ pub enum NodeType {
 
     // Intermediate Ops
     // Consumes a MicroPartition and immediately produces a resulting one. Little internal state
-    CrossJoin,
     DistributedActorPoolProject,
     Explode,
     Filter,
-    InnerHashJoinProbe,
     IntoBatches,
     Project,
     Sample,
@@ -37,7 +35,6 @@ pub enum NodeType {
     JoinCollect,
     Dedup,
     GroupByAgg,
-    HashJoinBuild,
     IntoPartitions,
     Pivot,
     Repartition,
@@ -49,18 +46,17 @@ pub enum NodeType {
     // Streaming Sinks
     // Both consumes and produces MicroPartitions at arbitrary intervals
     // For example, limit cuts off early.
-    AntiSemiHashJoinProbe,
     AsyncUDFProject,
     Concat,
     Limit,
     MonotonicallyIncreasingId,
-    OuterHashJoinProbe,
-    SortMergeJoinProbe,
 
-    // Specific to distributed only
-    DistributedHashJoin,
-    BroadcastJoin,
+    // Join Operators
+    HashJoin,
     SortMergeJoin,
+    CrossJoin,
+    // Specific to distributed only
+    BroadcastJoin,
 }
 
 impl Display for NodeType {
