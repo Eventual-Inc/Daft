@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+mod split_csv;
 mod split_jsonl;
 
 use common_daft_config::DaftExecutionConfig;
@@ -341,10 +342,11 @@ fn split_and_merge_pass(
                 .map_err(|e| DaftError::TypeError(format!("Expected Arc<ScanTask>, found {:?}", e)))
         }));
         // Split JSONL by byte ranges aligned to line boundaries for JSONFileFormat, other formats will be leaked through.
-        // If there are other file formats in the future, a pipeline can be constructed to pass split_tasks.
+        // Split CSV by byte ranges aligned to record boundaries for CsvFileFormat, other formats will be leaked through.
         let split_jsonl_tasks = split_jsonl::split_by_jsonl_ranges(iter, cfg);
+        let split_csv_tasks = split_csv::split_by_csv_ranges(split_jsonl_tasks, cfg);
         let split_tasks = split_by_row_groups(
-            split_jsonl_tasks,
+            split_csv_tasks,
             cfg.parquet_split_row_groups_max_files,
             cfg.scan_tasks_min_size_bytes,
             cfg.scan_tasks_max_size_bytes,

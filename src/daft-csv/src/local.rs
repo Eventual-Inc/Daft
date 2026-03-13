@@ -1,12 +1,16 @@
 use core::str;
-use std::{io::Read, num::NonZeroUsize, sync::Arc};
+use std::{
+    io::{Read, Seek, SeekFrom},
+    num::NonZeroUsize,
+    sync::Arc,
+};
 
 use arrow_schema::Field as ArrowField;
 use common_error::DaftResult;
 use daft_core::prelude::{Schema, Series};
 use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{Expr, expr::bound_expr::BoundExpr, optimization::get_required_columns};
-use daft_io::{IOClient, IOStatsRef};
+use daft_io::{GetRange, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{Stream, StreamExt, TryStreamExt};
 use rayon::{
@@ -131,6 +135,16 @@ use pool::{CsvBuffer, CsvBufferPool, FileSlab, FileSlabPool, SLABSIZE};
 // Default size for CSV buffers.
 const DEFAULT_CSV_BUFFER_SIZE: usize = SLABSIZE; // 4MiB. Like SLABSIZE, this can be tuned.
 
+/// Options for streaming a local CSV file, bundling the various configuration
+/// structs so that [`stream_csv_local`] stays below the clippy
+/// `too_many_arguments` threshold.
+pub struct CsvStreamOptions {
+    pub convert_options: Option<CsvConvertOptions>,
+    pub parse_options: CsvParseOptions,
+    pub read_options: Option<CsvReadOptions>,
+    pub range: Option<GetRange>,
+}
+
 /// Reads a single local CSV file in a non-streaming fashion.
 pub async fn read_csv_local(
     uri: &str,
@@ -143,9 +157,12 @@ pub async fn read_csv_local(
 ) -> DaftResult<RecordBatch> {
     let stream = stream_csv_local(
         uri.to_string(),
-        convert_options.clone(),
-        parse_options.clone(),
-        read_options,
+        CsvStreamOptions {
+            convert_options: convert_options.clone(),
+            parse_options: parse_options.clone(),
+            read_options,
+            range: None,
+        },
         io_client.clone(),
         io_stats.clone(),
         max_chunks_in_flight,
@@ -187,15 +204,28 @@ pub async fn read_csv_local(
 /// Reads a single local CSV file in a streaming fashion.
 pub async fn stream_csv_local(
     uri: String,
-    convert_options: Option<CsvConvertOptions>,
-    parse_options: CsvParseOptions,
-    read_options: Option<CsvReadOptions>,
+    options: CsvStreamOptions,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>> + Send> {
+    let CsvStreamOptions {
+        convert_options,
+        parse_options,
+        read_options,
+        range,
+    } = options;
     let uri = uri.trim_start_matches("file://");
-    let file = std::fs::File::open(uri)?;
+    let mut file = std::fs::File::open(uri)?;
+
+    // If a byte range is specified, seek to the start and limit the read.
+    let byte_range = match &range {
+        Some(GetRange::Bounded(r)) => Some((r.start, r.end)),
+        _ => None,
+    };
+    if let Some((start, _end)) = byte_range {
+        file.seek(SeekFrom::Start(start as u64))?;
+    }
 
     // Process the CSV convert options.
     let predicate = convert_options
@@ -274,8 +304,13 @@ pub async fn stream_csv_local(
     let n_threads: usize = std::thread::available_parallelism()
         .unwrap_or(NonZeroUsize::new(2).unwrap())
         .into();
+    let reader = if let Some((start, end)) = byte_range {
+        file.take((end - start) as u64)
+    } else {
+        file.take(u64::MAX)
+    };
     stream_csv_as_tables(
-        file,
+        reader,
         buffer_pool,
         num_fields,
         parse_options,
@@ -334,18 +369,18 @@ async fn get_schema_and_estimators(
     ))
 }
 
-/// An iterator of FileSlabs that takes in a File and FileSlabPool and yields FileSlabs
-/// over the given file.
-struct SlabIterator {
-    file: std::fs::File,
+/// An iterator of FileSlabs that takes in a reader and FileSlabPool and yields FileSlabs
+/// over the given reader.
+struct SlabIterator<R: Read> {
+    reader: R,
     slabpool: Arc<FileSlabPool>,
     total_bytes_read: usize,
 }
 
-impl SlabIterator {
-    fn new(file: std::fs::File, slabpool: Arc<FileSlabPool>) -> Self {
+impl<R: Read> SlabIterator<R> {
+    fn new(reader: R, slabpool: Arc<FileSlabPool>) -> Self {
         Self {
-            file,
+            reader,
             slabpool,
             total_bytes_read: 0,
         }
@@ -354,13 +389,13 @@ impl SlabIterator {
 
 type SlabRow = (Arc<FileSlab>, usize);
 
-impl Iterator for SlabIterator {
+impl<R: Read> Iterator for SlabIterator<R> {
     type Item = SlabRow;
     fn next(&mut self) -> Option<Self::Item> {
         let slab = self.slabpool.get_slab();
         let bytes_read = {
             let mut guard = slab.write();
-            let bytes_read = self.file.read(&mut guard.buffer).unwrap();
+            let bytes_read = self.reader.read(&mut guard.buffer).unwrap();
             if bytes_read == 0 {
                 return None;
             }
@@ -540,8 +575,8 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-fn stream_csv_as_tables(
-    file: std::fs::File,
+fn stream_csv_as_tables<R: Read + Send + 'static>(
+    reader: R,
     buffer_pool: Arc<CsvBufferPool>,
     num_fields: usize,
     parse_options: CsvParseOptions,
@@ -554,9 +589,9 @@ fn stream_csv_as_tables(
     limit: Option<usize>,
     n_threads: usize,
 ) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>> + Send> {
-    // Create a slab iterator over the file.
+    // Create a slab iterator over the reader.
     let slabpool = FileSlabPool::new();
-    let slab_iterator = SlabIterator::new(file, slabpool);
+    let slab_iterator = SlabIterator::new(reader, slabpool);
 
     // Create a chunk iterator over the slab iterator.
     let csv_validator = CsvValidator::new(
@@ -703,7 +738,7 @@ const NEWLINE: u8 = b'\n';
 const DOUBLE_QUOTE: u8 = b'"';
 
 /// State machine that validates CSV records.
-struct CsvValidator {
+pub struct CsvValidator {
     state: CsvState,
     num_fields: usize,
     num_fields_seen: usize,
@@ -721,7 +756,7 @@ struct CsvValidator {
 
 /// Csv states used by the state machine in `validate_csv_record`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CsvState {
+pub enum CsvState {
     FieldStart,
     RecordEnd,
     UnquotedField,
@@ -733,7 +768,7 @@ enum CsvState {
 }
 
 impl CsvValidator {
-    fn new(
+    pub fn new(
         num_fields: usize,
         quote_char: u8,
         field_delimiter: u8,
@@ -807,7 +842,7 @@ impl CsvValidator {
             CsvState::RecordEnd;
     }
 
-    fn validate_record<'a>(&mut self, iter: &mut impl Iterator<Item = &'a u8>) -> Option<bool> {
+    pub fn validate_record<'a>(&mut self, iter: &mut impl Iterator<Item = &'a u8>) -> Option<bool> {
         // Reset state machine for each new validation attempt.
         self.state = CsvState::FieldStart;
         self.num_fields_seen = 1;

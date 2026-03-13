@@ -10,7 +10,7 @@ use daft_compression::CompressionCodec;
 use daft_core::prelude::*;
 use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
-use daft_io::{GetResult, IOClient, IOStatsRef, SourceType, parse_url};
+use daft_io::{GetRange, GetResult, IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
 use futures::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
 use rayon::{
@@ -34,7 +34,7 @@ trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<csv_async::ByteReco
 impl<S> ByteRecordChunkStream for S where S: Stream<Item = super::Result<Vec<csv_async::ByteRecord>>>
 {}
 
-use crate::local::{read_csv_local, stream_csv_local};
+use crate::local::{CsvStreamOptions, read_csv_local, stream_csv_local};
 
 type TableChunkResult =
     super::Result<Context<JoinHandle<DaftResult<RecordBatch>>, super::JoinSnafu, super::Error>>;
@@ -143,15 +143,19 @@ pub async fn stream_csv(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
+    range: Option<GetRange>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let (source_type, _) = parse_url(&uri)?;
     let is_compressed = CompressionCodec::from_uri(&uri).is_some();
     if matches!(source_type, SourceType::File) && !is_compressed {
         let stream = stream_csv_local(
             uri,
-            convert_options,
-            parse_options.unwrap_or_default(),
-            read_options,
+            CsvStreamOptions {
+                convert_options,
+                parse_options: parse_options.unwrap_or_default(),
+                read_options,
+                range,
+            },
             io_client,
             io_stats,
             max_chunks_in_flight,

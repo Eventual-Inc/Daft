@@ -587,6 +587,10 @@ async fn stream_scan_task(
             )?;
             let csv_chunk_size = cfg.chunk_size.or(Some(chunk_size));
             let read_options = CsvReadOptions::new_internal(cfg.buffer_size, csv_chunk_size);
+            let range = source.get_chunk_spec().and_then(|spec| match spec {
+                daft_scan::ChunkSpec::Bytes { start, end } => Some(GetRange::Bounded(*start..*end)),
+                _ => None,
+            });
             daft_csv::stream_csv(
                 url.to_string(),
                 Some(convert_options),
@@ -595,6 +599,7 @@ async fn stream_scan_task(
                 io_client,
                 Some(io_stats.clone()),
                 None,
+                range,
             )
             .await?
         }
