@@ -4,15 +4,17 @@ use common_error::DaftResult;
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftNumericType, DataType, Decimal128Array, ExtensionArray,
         FileArray, FixedSizeBinaryArray, IntervalArray, IntervalValue, NullArray, UInt64Array,
         Utf8Array,
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, GeographyArray, GeometryArray,
+            GeometryCollectionArray, ImageArray, LineStringArray, MapArray, MultiLineStringArray,
+            MultiPointArray, MultiPolygonArray, PointArray, PolygonArray, RectArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray, WkbArray, WktArray,
         },
     },
     file::DaftMediaType,
@@ -473,12 +475,139 @@ impl StructArray {
         }
     }
 }
+
+impl UnionArray {
+    pub fn str_value(&self, _idx: usize) -> DaftResult<String> {
+        todo!("Implement str_value for UnionArray")
+    }
+}
+
 impl<T> FileArray<T>
 where
     T: DaftMediaType,
 {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         Ok(self.get_lit(idx).to_string())
+    }
+}
+
+impl WktArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<WKT>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl WkbArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<WKB>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl PointArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<Point>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl LineStringArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<LineString>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl PolygonArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<Polygon>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl MultiPointArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<MultiPoint>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl MultiLineStringArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<MultiLineString>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl MultiPolygonArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<MultiPolygon>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl GeometryCollectionArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<GeometryCollection>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl GeometryArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<Geometry>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl GeographyArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<Geography>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
+    }
+}
+
+impl RectArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if self.physical.is_valid(idx) {
+            Ok("<Rect>".to_string())
+        } else {
+            Ok("None".to_string())
+        }
     }
 }
 
@@ -548,6 +677,19 @@ impl_array_html_value!(DurationArray);
 impl_array_html_value!(IntervalArray);
 impl_array_html_value!(TimestampArray);
 impl_array_html_value!(EmbeddingArray);
+impl_array_html_value!(UnionArray);
+impl_array_html_value!(WktArray);
+impl_array_html_value!(WkbArray);
+impl_array_html_value!(PointArray);
+impl_array_html_value!(LineStringArray);
+impl_array_html_value!(PolygonArray);
+impl_array_html_value!(MultiPointArray);
+impl_array_html_value!(MultiLineStringArray);
+impl_array_html_value!(MultiPolygonArray);
+impl_array_html_value!(GeometryCollectionArray);
+impl_array_html_value!(GeometryArray);
+impl_array_html_value!(RectArray);
+impl_array_html_value!(GeographyArray);
 
 #[cfg(feature = "python")]
 impl PythonArray {

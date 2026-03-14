@@ -1,0 +1,29 @@
+[package]
+name = "geoarrow-array"
+version = "0.7.0"
+authors = ["Kyle Barron <kylebarron2@gmail.com>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/geoarrow/geoarrow-rs"
+description = "GeoArrow array definitions."
+
+[features]
+geozero = ["dep:geozero", "dep:arrow-json"]
+
+[dependencies]
+arrow-array = {workspace = true}
+arrow-buffer = {workspace = true}
+arrow-json = {workspace = true, optional = true}
+arrow-schema = {workspace = true}
+geo-traits = {workspace = true}
+geo-types = {workspace = true}
+geoarrow-schema = {workspace = true}
+geozero = {workspace = true, optional = true}
+num-traits = {workspace = true}
+wkb = {workspace = true}
+wkt = {workspace = true}
+
+[dev-dependencies]
+geo = {workspace = true}
+geo-types = {workspace = true}
+wkt = {workspace = true}

@@ -51,7 +51,19 @@ macro_rules! with_match_daft_types {
             DataType::File(MediaType::Unknown) => __with_ty__! { UnknownFileType },
             DataType::File(MediaType::Video) => __with_ty__! { VideoFileType },
             DataType::File(MediaType::Audio) => __with_ty__! { AudioFileType },
-
+            DataType::Union(..) => __with_ty__! { UnionType },
+            DataType::WKT(_) => __with_ty__! { WKTType },
+            DataType::WKB(_) => __with_ty__! { WKBType },
+            DataType::Point(_) => __with_ty__! { PointType },
+            DataType::LineString(_) => __with_ty__! { LineStringType },
+            DataType::Polygon(_) => __with_ty__! { PolygonType },
+            DataType::MultiPoint(_) => __with_ty__! { MultiPointType },
+            DataType::MultiLineString(_) => __with_ty__! { MultiLineStringType },
+            DataType::MultiPolygon(_) => __with_ty__! { MultiPolygonType },
+            DataType::GeometryCollection(_) => __with_ty__! { GeometryCollectionType },
+            DataType::Geometry(_) => __with_ty__! { GeometryType },
+            DataType::Rect(_) => __with_ty__! { RectType },
+            DataType::Geography => __with_ty__! { GeographyType },
 
             // NOTE: We should not implement a default for match here, because this is meant to be
             // an exhaustive match across **all** Daft types.
@@ -95,6 +107,7 @@ macro_rules! with_match_physical_daft_types {
             DataType::Interval => __with_ty__! { IntervalType },
             #[cfg(feature = "python")]
             DataType::Python => __with_ty__! { PythonType },
+            DataType::Union(_, _, _) => __with_ty__! { UnionType },
 
             _ => panic!("{:?} not implemented for with_match_physical_daft_types", $key_type)
         }

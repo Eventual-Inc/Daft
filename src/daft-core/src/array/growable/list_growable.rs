@@ -105,4 +105,8 @@ impl Growable for ListGrowable<'_> {
         )
         .into_series())
     }
+
+    fn len(&self) -> usize {
+        self.growable_offsets.len() - 1
+    }
 }

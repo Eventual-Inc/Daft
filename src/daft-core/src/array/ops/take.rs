@@ -47,6 +47,18 @@ impl_logicalarray_take!(SparseTensorArray);
 impl_logicalarray_take!(FixedShapeSparseTensorArray);
 impl_logicalarray_take!(FixedShapeTensorArray);
 impl_logicalarray_take!(MapArray);
+impl_logicalarray_take!(WktArray);
+impl_logicalarray_take!(WkbArray);
+impl_logicalarray_take!(PointArray);
+impl_logicalarray_take!(LineStringArray);
+impl_logicalarray_take!(PolygonArray);
+impl_logicalarray_take!(MultiPointArray);
+impl_logicalarray_take!(MultiLineStringArray);
+impl_logicalarray_take!(MultiPolygonArray);
+impl_logicalarray_take!(GeometryCollectionArray);
+impl_logicalarray_take!(GeometryArray);
+impl_logicalarray_take!(RectArray);
+impl_logicalarray_take!(GeographyArray);
 
 impl FixedSizeListArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
@@ -116,6 +128,13 @@ impl ListArray {
         ))
     }
 }
+
+impl UnionArray {
+    pub fn take(&self, _idx: &UInt64Array) -> DaftResult<Self> {
+        todo!("implement take for UnionArray")
+    }
+}
+
 impl StructArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let nulls = self.nulls().map(|v| {

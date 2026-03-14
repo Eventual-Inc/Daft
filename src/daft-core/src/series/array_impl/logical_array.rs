@@ -198,6 +198,18 @@ impl_series_like_for_logical_array!(FixedShapeTensorArray);
 impl_series_like_for_logical_array!(SparseTensorArray);
 impl_series_like_for_logical_array!(FixedShapeSparseTensorArray);
 impl_series_like_for_logical_array!(MapArray);
+impl_series_like_for_logical_array!(WktArray);
+impl_series_like_for_logical_array!(WkbArray);
+impl_series_like_for_logical_array!(PointArray);
+impl_series_like_for_logical_array!(LineStringArray);
+impl_series_like_for_logical_array!(PolygonArray);
+impl_series_like_for_logical_array!(MultiPointArray);
+impl_series_like_for_logical_array!(MultiLineStringArray);
+impl_series_like_for_logical_array!(MultiPolygonArray);
+impl_series_like_for_logical_array!(GeometryCollectionArray);
+impl_series_like_for_logical_array!(GeometryArray);
+impl_series_like_for_logical_array!(RectArray);
+impl_series_like_for_logical_array!(GeographyArray);
 
 impl<T> SeriesLike for ArrayWrapper<FileArray<T>>
 where

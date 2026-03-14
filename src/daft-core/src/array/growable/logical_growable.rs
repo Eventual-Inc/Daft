@@ -44,6 +44,10 @@ where
         );
         Ok(arr.into_series())
     }
+
+    fn len(&self) -> usize {
+        self.physical_growable.len()
+    }
 }
 
 macro_rules! impl_logical_growable {
@@ -115,3 +119,15 @@ where
         }
     }
 }
+impl_logical_growable!(LogicalWKTGrowable, WKTType);
+impl_logical_growable!(LogicalWKBGrowable, WKBType);
+impl_logical_growable!(LogicalPointGrowable, PointType);
+impl_logical_growable!(LogicalLineStringGrowable, LineStringType);
+impl_logical_growable!(LogicalPolygonGrowable, PolygonType);
+impl_logical_growable!(LogicalMultiPointGrowable, MultiPointType);
+impl_logical_growable!(LogicalMultiLineStringGrowable, MultiLineStringType);
+impl_logical_growable!(LogicalMultiPolygonGrowable, MultiPolygonType);
+impl_logical_growable!(LogicalGeometryCollectionGrowable, GeometryCollectionType);
+impl_logical_growable!(LogicalGeometryGrowable, GeometryType);
+impl_logical_growable!(LogicalGeographyGrowable, GeographyType);
+impl_logical_growable!(LogicalRectGrowable, RectType);

@@ -53,6 +53,10 @@ daft-sql = {path = "src/daft-sql", default-features = false}
 daft-stats = {path = "src/daft-stats", default-features = false}
 daft-warc = {path = "src/daft-warc", default-features = false}
 daft-writers = {path = "src/daft-writers", default-features = false}
+geoarrow-array = {path = "src/geoarrow/geoarrow-array", default-features = false}
+geoarrow-cast = {path = "src/geoarrow/geoarrow-cast", default-features = false}
+geoarrow-expr-geo = {path = "src/geoarrow/geoarrow-expr-geo", default-features = false}
+geoarrow-schema = {path = "src/geoarrow/geoarrow-schema", default-features = false}
 log = {workspace = true}
 lzma-sys = {version = "*", features = ["static"]}
 pyo3 = {workspace = true, optional = true}
@@ -222,7 +226,11 @@ members = [
   "src/daft-writers",
   "src/hyperloglog",
   "src/daft-cli",
-  "src/daft-text"
+  "src/daft-text",
+  "src/geoarrow/geoarrow-array",
+  "src/geoarrow/geoarrow-cast",
+  "src/geoarrow/geoarrow-expr-geo",
+  "src/geoarrow/geoarrow-schema"
 ]
 exclude = [
   "examples/hello"
@@ -232,6 +240,7 @@ exclude = [
 arrow = "57.1.0"
 arrow-array = {version = "57.1.0", features = ["chrono-tz"]}
 arrow-buffer = "57.1.0"
+arrow-cast = "57.1.0"
 arrow-csv = "57.1.0"
 arrow-data = "57.1.0"
 arrow-flight = "57.1.0"
@@ -299,6 +308,16 @@ dashmap = "6.1.0"
 educe = "0.6.0"
 futures = "0.3.30"
 hashbrown = "0.16"
+geo = "0.31.0"
+geo-traits = "0.3.0"
+geo-types = "0.7.16"
+geozero = "0.14"
+geoarrow-array = {path = "src/geoarrow/geoarrow-array", default-features = false}
+geoarrow-cast = {path = "src/geoarrow/geoarrow-cast", default-features = false}
+geoarrow-expr-geo = {path = "src/geoarrow/geoarrow-expr-geo", default-features = false}
+geoarrow-schema = {path = "src/geoarrow/geoarrow-schema", default-features = false}
+wkb = "0.9.1"
+wkt = "0.14"
 html-escape = "0.2.13"
 image = {version = "0.25.10", default-features = false}
 indexmap = "2.9.0"

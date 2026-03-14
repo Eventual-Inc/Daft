@@ -19,6 +19,7 @@ pub use agg_ops::{
 pub use daft_schema::dtype::DataType;
 pub use daft_schema::{
     field::{Field, FieldID, FieldRef},
+    geospatial_mode::{CoordType, Crs, CrsType, Dimension, Edges, GeospatialMode, Metadata},
     image_format::ImageFormat,
     image_mode::ImageMode,
     time_unit::{TimeUnit, format_string_has_offset, infer_timeunit_from_format_string},
@@ -31,7 +32,7 @@ pub use crate::array::{DataArray, FixedSizeListArray, file_array::FileArray};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{ListArray, StructArray},
+    array::{ListArray, StructArray, UnionArray},
     file::{DaftMediaType, FileType},
 };
 
@@ -241,12 +242,19 @@ impl_daft_arrow_datatype!(Decimal128Type, Unknown);
 impl_nested_datatype!(FixedSizeListType, FixedSizeListArray);
 impl_nested_datatype!(StructType, StructArray);
 impl_nested_datatype!(ListType, ListArray);
+impl_nested_datatype!(UnionType, UnionArray);
 
 impl_daft_logical_data_array_datatype!(TimestampType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DateType, Date, Int32Type);
 impl_daft_logical_data_array_datatype!(TimeType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DurationType, Unknown, Int64Type);
+impl_daft_logical_data_array_datatype!(WKTType, Unknown, Utf8Type);
+impl_daft_logical_data_array_datatype!(WKBType, Unknown, BinaryType);
+impl_daft_logical_data_array_datatype!(GeometryType, Unknown, UnionType);
+impl_daft_logical_data_array_datatype!(RectType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(ImageType, Unknown, StructType);
+impl_daft_logical_data_array_datatype!(PointType, Unknown, StructType);
+impl_daft_logical_data_array_datatype!(GeographyType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(TensorType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(SparseTensorType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(FixedShapeSparseTensorType, Unknown, StructType);
@@ -254,6 +262,12 @@ impl_daft_logical_fixed_size_list_datatype!(EmbeddingType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeImageType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeTensorType, Unknown);
 impl_daft_logical_list_datatype!(MapType, Unknown);
+impl_daft_logical_list_datatype!(LineStringType, Unknown);
+impl_daft_logical_list_datatype!(PolygonType, Unknown);
+impl_daft_logical_list_datatype!(MultiPointType, Unknown);
+impl_daft_logical_list_datatype!(MultiLineStringType, Unknown);
+impl_daft_logical_list_datatype!(MultiPolygonType, Unknown);
+impl_daft_logical_list_datatype!(GeometryCollectionType, Unknown);
 
 impl<T> DaftDataType for FileType<T>
 where

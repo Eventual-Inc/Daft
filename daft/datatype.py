@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from packaging.version import parse
 
-from daft.daft import ImageMode, PyDataType, PyMediaType, PyTimeUnit, sql_datatype
+from daft.daft import GeospatialMode, ImageMode, PyDataType, PyMediaType, PyTimeUnit, sql_datatype
 from daft.dependencies import np, pa
 from daft.runners import get_or_create_runner
 
@@ -727,6 +727,111 @@ class DataType:
         return cls._from_pydatatype(PyDataType.image(mode, height, width))
 
     @datatype_constructor
+    @classmethod
+    def wkt(
+        cls,
+        mode: GeospatialMode | None = None,
+    ) -> DataType:
+        if not isinstance(mode, GeospatialMode) and mode is not None:
+            raise ValueError(f"geospatial mode must be none or GeospatialMode variant, but got: {mode}")
+        return cls._from_pydatatype(PyDataType.wkt(mode))
+
+    @classmethod
+    def wkb(
+        cls,
+        mode: GeospatialMode | None = None,
+    ) -> DataType:
+        if not isinstance(mode, GeospatialMode) and mode is not None:
+            raise ValueError(f"geospatial mode must be none or GeospatialMode variant, but got: {mode}")
+        return cls._from_pydatatype(PyDataType.wkb(mode))
+
+    @classmethod
+    def point(
+        cls,
+        mode: GeospatialMode | None = None,
+    ) -> DataType:
+        if not isinstance(mode, GeospatialMode) and mode is not None:
+            raise ValueError(f"geospatial mode must be none or GeospatialMode variant, but got: {mode}")
+        return cls._from_pydatatype(PyDataType.point(mode))
+
+    @classmethod
+    def linestring(
+        cls,
+        mode: GeospatialMode | None = None,
+    ) -> DataType:
+        if not isinstance(mode, GeospatialMode) and mode is not None:
+            raise ValueError(f"geospatial mode must be none or GeospatialMode variant, but got: {mode}")
+        return cls._from_pydatatype(PyDataType.linestring(mode))
+
+    @classmethod
+    def polygon(
+        cls,
+        mode: GeospatialMode | None = None,
+    ) -> DataType:
+        if not isinstance(mode, GeospatialMode) and mode is not None:
+            raise ValueError(f"geospatial mode must be none or GeospatialMode variant, but got: {mode}")
+        return cls._from_pydatatype(PyDataType.polygon(mode))
+
+    @classmethod
+    def multipoint(
+        cls,
+        mode: GeospatialMode | None = None,
+    ) -> DataType:
+        if not isinstance(mode, GeospatialMode) and mode is not None:
+            raise ValueError(f"geospatial mode must be none or GeospatialMode variant, but got: {mode}")
+        return cls._from_pydatatype(PyDataType.multipoint(mode))
+
+    @classmethod
+    def multilinestring(
+        cls,
+        mode: GeospatialMode | None = None,
+    ) -> DataType:
+        if not isinstance(mode, GeospatialMode) and mode is not None:
+            raise ValueError(f"geospatial mode must be none or GeospatialMode variant, but got: {mode}")
+        return cls._from_pydatatype(PyDataType.multilinestring(mode))
+
+    @classmethod
+    def multipolygon(
+        cls,
+        mode: GeospatialMode | None = None,
+    ) -> DataType:
+        if not isinstance(mode, GeospatialMode) and mode is not None:
+            raise ValueError(f"geospatial mode must be none or GeospatialMode variant, but got: {mode}")
+        return cls._from_pydatatype(PyDataType.multipolygon(mode))
+
+    @classmethod
+    def geometry_collection(
+        cls,
+        mode: GeospatialMode | None = None,
+    ) -> DataType:
+        if not isinstance(mode, GeospatialMode) and mode is not None:
+            raise ValueError(f"geospatial mode must be none or GeospatialMode variant, but got: {mode}")
+        return cls._from_pydatatype(PyDataType.geometry_collection(mode))
+
+    @classmethod
+    def geometry(
+        cls,
+        mode: GeospatialMode | None = None,
+    ) -> DataType:
+        if not isinstance(mode, GeospatialMode) and mode is not None:
+            raise ValueError(f"geospatial mode must be none or GeospatialMode variant, but got: {mode}")
+        return cls._from_pydatatype(PyDataType.geometry(mode))
+
+    @classmethod
+    def geography(
+        cls,
+    ) -> DataType:
+        return cls._from_pydatatype(PyDataType.geography())
+
+    @classmethod
+    def rect(
+        cls,
+        mode: GeospatialMode | None = None,
+    ) -> DataType:
+        if not isinstance(mode, GeospatialMode) and mode is not None:
+            raise ValueError(f"geospatial mode must be none or GeospatialMode variant, but got: {mode}")
+        return cls._from_pydatatype(PyDataType.rect(mode))
+
     @classmethod
     def tensor(
         cls,
