@@ -111,6 +111,7 @@ pub enum LocalPhysicalPlan {
     Repartition(Repartition),
     IntoPartitions(IntoPartitions),
     FlightShuffleWrite(FlightShuffleWrite),
+    FlightGatherWrite(FlightGatherWrite),
     FlightShuffleRead(FlightShuffleRead),
     SortMergeJoin(SortMergeJoin),
     #[cfg(feature = "python")]
@@ -167,6 +168,7 @@ impl LocalPhysicalPlan {
             | Self::Repartition(Repartition { stats_state, .. })
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
             | Self::FlightShuffleWrite(FlightShuffleWrite { stats_state, .. })
+            | Self::FlightGatherWrite(FlightGatherWrite { stats_state, .. })
             | Self::FlightShuffleRead(FlightShuffleRead { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
@@ -218,6 +220,7 @@ impl LocalPhysicalPlan {
             | Self::Repartition(Repartition { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
             | Self::FlightShuffleWrite(FlightShuffleWrite { context, .. })
+            | Self::FlightGatherWrite(FlightGatherWrite { context, .. })
             | Self::FlightShuffleRead(FlightShuffleRead { context, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { context, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { context, .. })
@@ -993,8 +996,8 @@ impl LocalPhysicalPlan {
     #[allow(clippy::too_many_arguments)]
     pub fn flight_shuffle_write(
         input: LocalPhysicalPlanRef,
-        partition_by: Option<Vec<ExprRef>>,
         num_partitions: usize,
+        partition_by: Option<Vec<ExprRef>>,
         schema: SchemaRef,
         shuffle_id: u64,
         shuffle_dirs: Vec<String>,
@@ -1006,6 +1009,28 @@ impl LocalPhysicalPlan {
             input,
             num_partitions,
             partition_by,
+            schema,
+            shuffle_id,
+            shuffle_dirs,
+            compression,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn flight_gather_write(
+        input: LocalPhysicalPlanRef,
+        schema: SchemaRef,
+        shuffle_id: u64,
+        shuffle_dirs: Vec<String>,
+        compression: Option<String>,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::FlightGatherWrite(FlightGatherWrite {
+            input,
             schema,
             shuffle_id,
             shuffle_dirs,
@@ -1102,6 +1127,7 @@ impl LocalPhysicalPlan {
             Self::Repartition(Repartition { schema, .. }) => schema,
             Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
             Self::FlightShuffleWrite(FlightShuffleWrite { schema, .. }) => schema,
+            Self::FlightGatherWrite(FlightGatherWrite { schema, .. }) => schema,
             Self::FlightShuffleRead(FlightShuffleRead { schema, .. }) => schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
@@ -1186,6 +1212,7 @@ impl LocalPhysicalPlan {
             Self::Repartition(Repartition { input, .. }) => vec![input.clone()],
             Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
             Self::FlightShuffleWrite(FlightShuffleWrite { input, .. }) => vec![input.clone()],
+            Self::FlightGatherWrite(FlightGatherWrite { input, .. }) => vec![input.clone()],
             Self::FlightShuffleRead(FlightShuffleRead { .. }) => vec![], // No input children
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
             Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
@@ -1667,8 +1694,24 @@ impl LocalPhysicalPlan {
                     ..
                 }) => Self::flight_shuffle_write(
                     new_child.clone(),
-                    partition_by.clone(),
                     *num_partitions,
+                    partition_by.clone(),
+                    schema.clone(),
+                    *shuffle_id,
+                    shuffle_dirs.clone(),
+                    compression.clone(),
+                    StatsState::NotMaterialized,
+                    context.clone(),
+                ),
+                Self::FlightGatherWrite(FlightGatherWrite {
+                    schema,
+                    shuffle_id,
+                    shuffle_dirs,
+                    compression,
+                    context,
+                    ..
+                }) => Self::flight_gather_write(
+                    new_child.clone(),
                     schema.clone(),
                     *shuffle_id,
                     shuffle_dirs.clone(),
@@ -2245,6 +2288,17 @@ pub struct FlightShuffleWrite {
     pub input: LocalPhysicalPlanRef,
     pub num_partitions: usize,
     pub partition_by: Option<Vec<ExprRef>>,
+    pub schema: SchemaRef,
+    pub shuffle_id: u64,
+    pub shuffle_dirs: Vec<String>,
+    pub compression: Option<String>,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FlightGatherWrite {
+    pub input: LocalPhysicalPlanRef,
     pub schema: SchemaRef,
     pub shuffle_id: u64,
     pub shuffle_dirs: Vec<String>,

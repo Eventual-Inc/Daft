@@ -6,7 +6,8 @@ use crate::pipeline_node::{
     DistributedPipelineNode,
     shuffles::{
         flight_shuffle::FlightShuffleNode, gather::GatherNode,
-        pre_shuffle_merge::PreShuffleMergeNode, repartition::RepartitionNode,
+        pre_shuffle_merge::PreShuffleMergeNode,
+        pre_shuffle_merge_flight::PreShuffleMergeFlightNode, repartition::RepartitionNode,
     },
     translate::LogicalPlanToPipelineNodeTranslator,
 };
@@ -30,53 +31,70 @@ impl LogicalPlanToPipelineNodeTranslator {
                 .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
         };
 
-        // Check if we should use flight shuffle
-        if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
+        let is_flight_shuffle = matches!(
+            self.plan_config.config.shuffle_algorithm.as_str(),
+            "flight_shuffle" | "flight_shuffle_pre_shuffle_merge"
+        );
+        let use_pre_shuffle_merge = self.should_use_pre_shuffle_merge(&child, num_partitions)?;
+
+        if is_flight_shuffle && use_pre_shuffle_merge {
             let shuffle_dirs = self.plan_config.config.flight_shuffle_dirs.clone();
-            let compression = None;
-            return Ok(FlightShuffleNode::new(
+            let pre_merge_node = PreShuffleMergeFlightNode::new(
+                self.get_next_pipeline_node_id(),
+                &self.plan_config,
+                schema.clone(),
+                shuffle_dirs.clone(),
+                None,
+                child,
+            )
+            .into_node();
+
+            Ok(FlightShuffleNode::new(
                 self.get_next_pipeline_node_id(),
                 &self.plan_config,
                 repartition_spec,
                 schema,
                 num_partitions,
                 shuffle_dirs,
-                compression,
-                child,
+                None,
+                pre_merge_node,
             )
-            .into_node());
-        }
-
-        let use_pre_shuffle_merge = self.should_use_pre_shuffle_merge(&child, num_partitions)?;
-
-        if use_pre_shuffle_merge {
-            // Create merge node first
-            let merge_node = PreShuffleMergeNode::new(
-                self.get_next_pipeline_node_id(),
-                &self.plan_config,
-                self.plan_config.config.pre_shuffle_merge_threshold,
-                schema.clone(),
-                child,
-            )
-            .into_node();
-
-            Ok(RepartitionNode::new(
+            .into_node())
+        } else if is_flight_shuffle {
+            // Flight shuffle only (no pre-shuffle merge)
+            let shuffle_dirs = self.plan_config.config.flight_shuffle_dirs.clone();
+            Ok(FlightShuffleNode::new(
                 self.get_next_pipeline_node_id(),
                 &self.plan_config,
                 repartition_spec,
-                num_partitions,
                 schema,
-                merge_node,
+                num_partitions,
+                shuffle_dirs,
+                None,
+                child,
             )
             .into_node())
         } else {
+            // Non-flight: optionally wrap in PreShuffleMergeNode then RepartitionNode
+            let input = if use_pre_shuffle_merge {
+                PreShuffleMergeNode::new(
+                    self.get_next_pipeline_node_id(),
+                    &self.plan_config,
+                    self.plan_config.config.pre_shuffle_merge_threshold,
+                    schema.clone(),
+                    child,
+                )
+                .into_node()
+            } else {
+                child
+            };
             Ok(RepartitionNode::new(
                 self.get_next_pipeline_node_id(),
                 &self.plan_config,
                 repartition_spec,
                 num_partitions,
                 schema,
-                child,
+                input,
             )
             .into_node())
         }
@@ -91,10 +109,9 @@ impl LogicalPlanToPipelineNodeTranslator {
         let input_num_partitions = child.config().clustering_spec.num_partitions();
 
         match self.plan_config.config.shuffle_algorithm.as_str() {
-            "pre_shuffle_merge" => Ok(true),
+            "pre_shuffle_merge" | "flight_shuffle_pre_shuffle_merge" => Ok(true),
             "map_reduce" => Ok(false),
-            "flight_shuffle" => Ok(false), // Flight shuffle will be handled separately
-            "auto" => {
+            "flight_shuffle" | "auto" => {
                 let total_num_partitions = input_num_partitions * target_num_partitions;
                 let geometric_mean = (total_num_partitions as f64).sqrt() as usize;
                 const PARTITION_THRESHOLD_TO_USE_PRE_SHUFFLE_MERGE: usize = 200;
