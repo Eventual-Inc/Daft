@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use common_scan_info::{SPLIT_AND_MERGE_PASS, ScanState};
+use common_scan_info::{LazyTaskProducer, SPLIT_AND_MERGE_PASS, ScanState};
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
     expr::{
@@ -113,30 +113,37 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     )
                     .into_node(),
                     SourceInfo::Physical(info) => {
-                        // We should be able to pass the ScanOperator into the physical plan directly but we need to figure out the serialization story
-                        let scan_tasks = match &info.scan_state {
+                        let lazy_producer = match &info.scan_state {
                             ScanState::Operator(_) => unreachable!(
                                 "ScanOperator should not be present in the optimized logical plan for pipeline node translation"
                             ),
-                            ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
+                            ScanState::Tasks(scan_tasks) => {
+                                Arc::new(LazyTaskProducer::from_vec((**scan_tasks).clone()))
+                            }
+                            ScanState::LazyTasks(producer) => producer.clone(),
                         };
-                        // Perform scan task splitting and merging.
-                        let scan_tasks = if self.plan_config.config.enable_scan_task_split_and_merge
-                            && let Some(split_and_merge_pass) = SPLIT_AND_MERGE_PASS.get()
-                        {
-                            split_and_merge_pass(
-                                scan_tasks,
-                                &info.pushdowns,
-                                &self.plan_config.config,
-                            )?
-                        } else {
-                            scan_tasks
-                        };
+
+                        // Split-and-merge requires eager collection of all tasks.
+                        let lazy_producer =
+                            if self.plan_config.config.enable_scan_task_split_and_merge
+                                && let Some(split_and_merge_pass) = SPLIT_AND_MERGE_PASS.get()
+                            {
+                                let scan_tasks = Arc::new(lazy_producer.collect_tasks()?);
+                                let merged = split_and_merge_pass(
+                                    scan_tasks,
+                                    &info.pushdowns,
+                                    &self.plan_config.config,
+                                )?;
+                                Arc::new(LazyTaskProducer::from_vec((*merged).clone()))
+                            } else {
+                                lazy_producer
+                            };
+
                         ScanSourceNode::new(
                             self.get_next_pipeline_node_id(),
                             &self.plan_config,
                             info.pushdowns.clone(),
-                            scan_tasks,
+                            lazy_producer,
                             source.output_schema.clone(),
                         )
                         .into_node()

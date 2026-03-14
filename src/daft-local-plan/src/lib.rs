@@ -5,7 +5,9 @@ mod plan;
 pub mod python;
 mod results;
 mod translate;
-use common_scan_info::ScanTaskLikeRef;
+use std::sync::Arc;
+
+use common_scan_info::{LazyTaskProducer, ScanTaskLikeRef};
 use daft_micropartition::MicroPartitionRef;
 #[cfg(feature = "python")]
 pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject, LanceWrite};
@@ -45,4 +47,6 @@ pub enum Input {
     GlobPaths(Vec<String>),
     #[serde(skip)]
     InMemory(Vec<MicroPartitionRef>),
+    #[serde(skip)]
+    LazyScanTasks(Arc<LazyTaskProducer>),
 }
