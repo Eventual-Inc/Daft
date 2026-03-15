@@ -38,7 +38,7 @@ deltalake = ["deltalake < 1.3.0"]
 gcp = []
 google = ["google-genai<1.64.0", "numpy<2.4.0", "pillow==12.1.1"]
 gravitino = ["requests>=2.28.0,<3.0.0"]
-hudi = ["pyarrow >= 15.0.0,<22.1.0"]
+hudi = ["pyarrow >= 15.0.0,< 23.1.0"]
 huggingface = ["huggingface-hub<1.5.0", "datasets<4.6.0"]
 iceberg = ["pyiceberg >= 0.7.0, <= 0.11.0, != 0.9.1, != 0.10.0"]
 lance = ["pylance<0.40.0"]
@@ -51,10 +51,10 @@ ray = [
   'ray[data, client]>=2.0.0,<2.54.0; platform_system != "Windows"',
   'ray[data, client]>=2.10.0,<2.54.0; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
 ]
-transformers = ["transformers<5.2.0", "sentence-transformers<5.3.0", "torch<2.11.0", "torchvision<0.26.0", "pillow==12.1.1"]
+transformers = ["transformers<5.4.0", "sentence-transformers<5.4.0", "torch<2.11.0", "torchvision<0.26.0", "pillow==12.1.1"]
 # connectorx 0.4.4 is needed for pgvector support.
 sql = ["connectorx>=0.4.4,<0.5.0", "sqlalchemy<2.1.0", "sqlglot<28.11.0"]
-turbopuffer = ["turbopuffer<1.16.0"]
+turbopuffer = ["turbopuffer<1.19.0"]
 unity = ["httpx<=0.28.1", "unitycatalog<0.2.0", "deltalake<1.3.0"]
 video = ["av >= 15.0.0,<16.2.0", "pillow==12.1.1"]
 audio = ["soundfile >= 0.13.0,<0.14.0", "librosa >= 0.11.0,<0.12.0"]
@@ -63,7 +63,7 @@ viz = []
 [dependency-groups]
 dev = [
   "ipdb==0.13.13",
-  "maturin==1.11.5",
+  "maturin==1.12.6",
   "pre-commit==4.5.1",
   "docker==7.1.0",
   # Pinned aiohttp due to Ray connection issue in aiohttp==3.12.6
@@ -82,7 +82,7 @@ dev = [
   "pytest-cov==7.0.0",
   "pytest-profiling>=1.8.1",
   "pytest-xdist[psutil]>=3.8.0",
-  "memray==1.19.1; platform_system != \"Windows\"",
+  "memray==1.19.2; platform_system != \"Windows\"",
   # Testing dependencies
   "lxml==6.0.2",
   "dask[dataframe]==2025.11.0",
@@ -94,62 +94,62 @@ dev = [
   "xxhash==3.6.0",
   "Pillow==12.1.1",
   "reportlab==4.4.10",
-  "opencv-python==4.10.0.84",
+  "opencv-python==4.13.0.92",
   "tiktoken==0.12.0",
-  "duckdb==1.4.4",
-  "datasets==4.5.0",
-  "torch==2.8.0",
-  "torchvision==0.23.0",
+  "duckdb==1.5.0",
+  "datasets==4.7.0",
+  "torch==2.10.0",
+  "torchvision==0.25.0",
   "jax==0.6.2",
   "jaxtyping==0.3.7",
   # Pyarrow
   "pyarrow >= 15.0.0,<24.0.0",
   "pyarrow-stubs==20.0.0.20251215",
   # Ray
-  "ray[data, client]==2.53.0",
+  "ray[data, client]==2.54.0",
   # Lance
-  "pylance==0.39.0",
+  "pylance==3.0.0",
   # Iceberg
-  "pyiceberg==0.11.0",
+  "pyiceberg==0.11.1",
   "pydantic==2.12.4",
   "tenacity==9.1.4",
   # Delta Lake
   "deltalake==0.5.8; platform_system == \"Windows\"",
-  "deltalake==1.2.1; platform_system != \"Windows\"",
+  "deltalake==1.5.0; platform_system != \"Windows\"",
   # Databricks
-  "databricks-sdk==0.88.0",
+  "databricks-sdk==0.99.0",
   "unitycatalog==0.1.1",
   # SQL
-  "sqlalchemy==2.0.46",
+  "sqlalchemy==2.0.48",
   "connectorx==0.4.5; platform_system == \"Linux\" and platform_machine == \"aarch64\"",
   "connectorx==0.4.5; platform_system != \"Linux\" or platform_machine != \"aarch64\"",
-  "trino[sqlalchemy]==0.336.0",
+  "trino[sqlalchemy]==0.337.0",
   "PyMySQL==1.1.2",
   "psycopg2-binary==2.9.11",
-  "sqlglot==28.10.1",
+  "sqlglot==29.0.1",
   "pyodbc==5.3.0",
   # AWS
-  "s3fs==2024.9.0",
-  "boto3==1.36.2",
-  "boto3-stubs[essential,glue,s3,s3tables]==1.38.46",
-  "moto[glue,s3,server]==5.1.21",
+  "s3fs==2026.2.0",
+  "boto3==1.42.68",
+  "boto3-stubs[essential,glue,s3,s3tables]==1.42.68",
+  "moto[glue,s3,server]==5.1.22",
   # Azure
-  "adlfs==2024.7.0",
-  "azure-storage-blob==12.27.1",
+  "adlfs==2026.2.0",
+  "azure-storage-blob==12.28.0",
   # GCS
-  "gcsfs==2024.9.0.post1",
+  "gcsfs==2026.2.0",
   # Hugging Face
-  "huggingface-hub==0.36.0",
+  "huggingface-hub==1.7.1",
   # AI
-  "vllm==0.11.0",
-  "openai==2.20.0",
-  "google-genai==1.63.0",
+  "vllm==0.17.1",
+  "openai==2.28.0",
+  "google-genai==1.67.0",
   # AV
-  "av==16.1.0",
+  "av==17.0.0",
   "soundfile==0.13.1",
   "librosa==0.11.0",
   # Clickhouse
-  "clickhouse-connect==0.11.0",
+  "clickhouse-connect==0.14.1",
   # mcap
   "mcap==1.3.1",
   "mcap-ros2-support==0.5.7",
@@ -160,14 +160,14 @@ dev = [
 docs = [
   "markdown-exec==1.12.1",
   "mkdocs-jupyter==0.25.1",
-  "mkdocs-material==9.7.1",
+  "mkdocs-material==9.7.5",
   "mkdocs-macros-plugin==1.5.0",
   "mkdocs-simple-hooks==0.1.5",
-  "pymdown-extensions==10.20.1",
+  "pymdown-extensions==10.21",
   # NOTE: [imaging] extra removed because it pins pillow<12.0, conflicting with pillow==12.1.1 (security fix).
   # Image optimization for docs is not critical. Re-add when mkdocs-material supports Pillow 12+.
   # "mkdocs-material[imaging]==9.7.1",
-  "mkdocstrings-python==2.0.2",
+  "mkdocstrings-python==2.0.3",
   "mkdocs-minify-plugin==0.8.0",
   "mkdocs-redirects==1.2.2",
   "mkdocs-gen-files==0.6.0",
@@ -176,9 +176,9 @@ docs = [
   "Jinja2==3.1.6"
 ]
 lint = [
-  "ruff==0.15.1",
-  "black==26.1.0",
-  "isort==7.0.0",
+  "ruff==0.15.6",
+  "black==26.3.1",
+  "isort==8.0.1",
   "mypy==1.19.1"
 ]
 
