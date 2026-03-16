@@ -1,4 +1,7 @@
 [dependencies]
+# Pin aws-lc-rs/sys to avoid __builtin_bswap MSVC linking bug on Windows (aws/aws-lc-rs#780)
+aws-lc-rs = "=1.15.2"
+aws-lc-sys = "=0.35.0"
 common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-display = {path = "src/common/display", default-features = false}
 common-file-formats = {path = "src/common/file-formats", default-features = false}
