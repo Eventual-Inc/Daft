@@ -15,12 +15,12 @@ mod test;
 mod treenode;
 
 pub use builder::{LogicalPlanBuilder, PyLogicalPlanBuilder};
+pub use daft_core::join::{JoinStrategy, JoinType};
 #[cfg(feature = "python")]
-use common_file_formats::{
+use daft_scan::{
     CsvSourceConfig, DatabaseSourceConfig, JsonSourceConfig, ParquetSourceConfig, TextSourceConfig,
     WarcSourceConfig, python::PyFileFormatConfig,
 };
-pub use daft_core::join::{JoinStrategy, JoinType};
 pub use logical_plan::{LogicalPlan, LogicalPlanRef};
 pub use ops::join::JoinOptions;
 pub use partitioning::ClusteringSpec;

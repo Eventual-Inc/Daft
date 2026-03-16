@@ -6,8 +6,8 @@ capitalize = "*"
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
-common-io-config = {path = "../common/io-config", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
+common-io-config = {path = "../common/io-config", default-features = false}
 common-logging = {path = "../common/logging", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
@@ -60,7 +60,6 @@ python = [
   "common-daft-config/python",
   "common-display/python",
   "common-error/python",
-  "common-file-formats/python",
   "common-py-serde/python",
   "common-runtime/python",
   "common-metrics/python",
