@@ -23,6 +23,10 @@ LOG_LEVEL_MAP = {
 }
 
 
+class _DaftFileHandler(logging.FileHandler):
+    pass
+
+
 def setup_debug_logger() -> None:
     import warnings
 
@@ -40,7 +44,7 @@ def setup_logger(
     daft_only: bool = False,
     logformat: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt: str = "%Y-%m-%d %H:%M:%S.%s".format(),
-    log_path: str | None = None,
+    log_path: str | Path | None = None,
 ) -> None:
     """Setup Daft logger with a specific log level, optional prefix filtering, and Rust sync.
 
@@ -78,6 +82,8 @@ def setup_logger(
 
     if log_path is not None:
         path = Path(log_path).expanduser().resolve()
+        if not path.name:
+            raise ValueError(f"log_path must be a file path, not a directory: {log_path!r}")
         path.parent.mkdir(parents=True, exist_ok=True)
 
         file_handler = _DaftFileHandler(path)
@@ -95,7 +101,3 @@ def setup_logger(
                 handler.addFilter(lambda r, p=prefix: not r.name.startswith(p))  # type: ignore
 
     refresh_logger()
-
-
-class _DaftFileHandler(logging.FileHandler):
-    pass
