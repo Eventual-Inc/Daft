@@ -69,7 +69,7 @@ def setup_logger(
     numeric_level: int = LOG_LEVEL_MAP[level]
     root_logger.setLevel(numeric_level)
 
-    for handler in root_logger.handlers:
+    for handler in list(root_logger.handlers):
         handler.filters.clear()
         # remove daft managed file handler if present
         if isinstance(handler, _DaftFileHandler):
@@ -77,10 +77,7 @@ def setup_logger(
             handler.close()
 
     if log_path is not None:
-        path = Path(log_path)
-        if "~" in str(path):
-            path = path.expanduser()
-        path = path.resolve()
+        path = Path(log_path).expanduser().resolve()
         path.parent.mkdir(parents=True, exist_ok=True)
 
         file_handler = _DaftFileHandler(path)
