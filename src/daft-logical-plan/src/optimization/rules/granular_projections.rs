@@ -213,12 +213,12 @@ impl SplitGranularProjection {
 mod tests {
     use std::any::TypeId;
 
-    use daft_scan::Pushdowns;
     use daft_core::prelude::Operator;
     use daft_dsl::{Column, ExprRef, ResolvedColumn, lit};
     use daft_functions_binary::{BinaryDecode, Codec};
     use daft_functions_uri::download::UrlDownload;
     use daft_functions_utf8::{Capitalize, capitalize, lower};
+    use daft_scan::Pushdowns;
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::*;

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_scan::{PhysicalScanInfo, ScanState};
 use common_treenode::{Transformed, TreeNode};
 use daft_algebra::simplify_expr;
+use daft_scan::{PhysicalScanInfo, ScanState};
 
 use super::OptimizerRule;
 use crate::LogicalPlan;

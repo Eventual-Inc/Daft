@@ -233,9 +233,9 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_scan::Pushdowns;
     use daft_core::prelude::*;
     use daft_dsl::unresolved_col;
+    use daft_scan::Pushdowns;
     #[cfg(feature = "python")]
     use pyo3::Python;
     use rstest::rstest;

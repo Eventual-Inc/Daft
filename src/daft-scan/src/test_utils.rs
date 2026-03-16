@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_file_formats::FileFormatConfig;
 use daft_dsl::ExprRef;
 use daft_schema::schema::SchemaRef;
+use daft_stats::TableMetadata;
 
 use crate::{
     DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
@@ -63,9 +65,6 @@ impl ScanOperator for DummyScanOperator {
     }
 
     fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskRef>> {
-        use common_file_formats::FileFormatConfig;
-        use daft_stats::TableMetadata;
-
         Ok((0..self.num_scan_tasks)
             .map(|i| {
                 let metadata = self.num_rows_per_task.map(|n| TableMetadata { length: n });

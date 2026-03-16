@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use common_error::{DaftError, DaftResult};
-use daft_scan::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::{
     expr::{
@@ -13,7 +12,7 @@ use daft_dsl::{
 };
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState};
 use daft_micropartition::MicroPartitionRef;
-use daft_scan::ScanTaskRef;
+use daft_scan::{ScanState, ScanTaskRef};
 
 use super::plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 use crate::{Input, SourceId, SourceIdCounter};

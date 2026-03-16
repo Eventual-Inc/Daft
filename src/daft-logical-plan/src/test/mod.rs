@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use daft_scan::Pushdowns;
-use daft_scan::{ScanOperatorRef, test_utils::DummyScanOperator};
+use daft_scan::{Pushdowns, ScanOperatorRef, test_utils::DummyScanOperator};
 use daft_schema::{field::Field, schema::Schema};
 
 use crate::builder::LogicalPlanBuilder;

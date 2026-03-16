@@ -394,7 +394,6 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use common_error::DaftResult;
-    use daft_scan::Pushdowns;
     use common_treenode::{Transformed, TreeNode};
     use daft_core::prelude::*;
     use daft_dsl::{
@@ -402,6 +401,7 @@ mod tests {
         functions::{FunctionExpr, python::LegacyPythonUDF},
         lit, resolved_col, unresolved_col,
     };
+    use daft_scan::Pushdowns;
 
     use super::{Optimizer, OptimizerBuilder, OptimizerConfig, RuleBatch, RuleExecutionStrategy};
     use crate::{

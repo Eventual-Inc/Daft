@@ -9,10 +9,9 @@ use common_metrics::{
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::SourceSnapshot,
 };
-use daft_scan::Pushdowns;
-use daft_scan::ScanTaskRef;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
+use daft_scan::{Pushdowns, ScanTaskRef};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
 use opentelemetry::{KeyValue, metrics::Meter};

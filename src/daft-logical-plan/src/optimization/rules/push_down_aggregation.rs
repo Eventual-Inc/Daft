@@ -137,9 +137,9 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use daft_scan::Pushdowns;
     use daft_core::prelude::*;
     use daft_dsl::{AggExpr, Expr, lit, resolved_col, unresolved_col};
+    use daft_scan::Pushdowns;
 
     use crate::{
         LogicalPlan,

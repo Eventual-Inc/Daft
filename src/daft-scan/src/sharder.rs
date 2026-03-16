@@ -114,7 +114,7 @@ fn filter_scan_tasks_by_file(
         .iter()
         .filter(|scan_task| {
             let paths = scan_task.get_file_paths();
-            sharder.should_handle_item(&paths[0])
+            paths.first().is_some_and(|p| sharder.should_handle_item(p))
         })
         .cloned()
         .collect();
@@ -123,9 +123,9 @@ fn filter_scan_tasks_by_file(
 
 fn sort_scan_tasks_by_file(mut scan_tasks: Vec<ScanTaskRef>) -> Vec<ScanTaskRef> {
     scan_tasks.sort_by(|a, b| {
-        let path_a = &a.get_file_paths()[0];
-        let path_b = &b.get_file_paths()[0];
-        path_a.cmp(path_b)
+        let path_a = a.get_file_paths();
+        let path_b = b.get_file_paths();
+        path_a.first().cmp(&path_b.first())
     });
     scan_tasks
 }

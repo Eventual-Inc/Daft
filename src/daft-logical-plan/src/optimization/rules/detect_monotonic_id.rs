@@ -118,8 +118,8 @@ impl OptimizerRule for DetectMonotonicId {
 #[cfg(test)]
 mod tests {
     use common_error::DaftResult;
-    use daft_scan::Pushdowns;
     use daft_functions::monotonically_increasing_id::monotonically_increasing_id;
+    use daft_scan::Pushdowns;
     use daft_schema::{dtype::DataType, field::Field};
 
     use crate::{
