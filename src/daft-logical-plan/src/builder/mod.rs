@@ -13,7 +13,6 @@ use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
-use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
@@ -21,6 +20,7 @@ use daft_dsl::{
     Column, Expr, ExprRef, UnresolvedColumn, WindowSpec, left_col, resolved_col, right_col,
     unresolved_col,
 };
+use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
 use resolve_expr::ExprResolver;

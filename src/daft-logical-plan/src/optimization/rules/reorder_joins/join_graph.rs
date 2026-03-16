@@ -1014,10 +1014,10 @@ mod tests {
     use std::sync::Arc;
 
     use common_daft_config::DaftExecutionConfig;
-    use common_scan_info::Pushdowns;
     use common_treenode::TransformedResult;
     use daft_core::prelude::*;
     use daft_dsl::{AggExpr, Expr, resolved_col, unresolved_col};
+    use daft_scan::Pushdowns;
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::JoinGraphBuilder;

@@ -5,14 +5,13 @@ use common_file_formats::{
     CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig,
 };
 use common_io_config::IOConfig;
-use common_scan_info::ScanOperatorRef;
 use daft_core::prelude::TimeUnit;
-use daft_logical_plan::{LogicalPlanBuilder, builder::IntoGlobPath};
+use daft_scan::{ScanOperatorRef, glob::GlobScanOperator, storage_config::StorageConfig};
 use daft_schema::{field::Field, schema::SchemaRef};
 #[cfg(feature = "python")]
-use {crate::python::pylib::ScanOperatorHandle, pyo3::prelude::*};
+use {daft_scan::python::pylib::ScanOperatorHandle, pyo3::prelude::*};
 
-use crate::{glob::GlobScanOperator, storage_config::StorageConfig};
+use crate::{LogicalPlanBuilder, builder::IntoGlobPath};
 
 pub struct ParquetScanBuilder {
     pub glob_paths: Vec<String>,
@@ -364,8 +363,6 @@ pub fn delta_scan<T: AsRef<str>>(
     io_config: Option<IOConfig>,
     multithreaded_io: bool,
 ) -> DaftResult<LogicalPlanBuilder> {
-    use crate::storage_config::StorageConfig;
-
     Python::attach(|py| {
         let io_config = io_config.unwrap_or_default();
 
@@ -374,7 +371,6 @@ pub fn delta_scan<T: AsRef<str>>(
             multithreaded_io,
         };
 
-        // let py_io_config = PyIOConfig { config: io_config };
         let delta_lake_scan = PyModule::import(py, "daft.io.delta_lake.delta_lake_scan")?;
         let delta_lake_scan_operator =
             delta_lake_scan.getattr(pyo3::intern!(py, "DeltaLakeScanOperator"))?;
@@ -399,11 +395,6 @@ pub fn delta_scan<T: IntoGlobPath>(
 }
 
 /// Creates a logical scan operator from a Python IcebergScanOperator.
-/// ex:
-/// ```python
-/// iceberg_table = pyiceberg.table.StaticTable.from_metadata(metadata_location)
-/// iceberg_scan = daft.iceberg.iceberg_scan.IcebergScanOperator(iceberg_table, snapshot_id, storage_config)
-/// ```
 #[cfg(feature = "python")]
 pub fn iceberg_scan<T: AsRef<str>>(
     metadata_location: T,
@@ -413,12 +404,10 @@ pub fn iceberg_scan<T: AsRef<str>>(
     use pyo3::IntoPyObjectExt;
     let storage_config: StorageConfig = io_config.unwrap_or_default().into();
     let scan_operator = Python::attach(|py| -> DaftResult<ScanOperatorHandle> {
-        // iceberg_table = pyiceberg.table.StaticTable.from_metadata(metadata_location)
         let iceberg_table_module = PyModule::import(py, "pyiceberg.table")?;
         let iceberg_static_table = iceberg_table_module.getattr("StaticTable")?;
         let iceberg_table =
             iceberg_static_table.call_method1("from_metadata", (metadata_location.as_ref(),))?;
-        // iceberg_scan = daft.iceberg.iceberg_scan.IcebergScanOperator(iceberg_table, snapshot_id, storage_config)
         let iceberg_scan_module = PyModule::import(py, "daft.io.iceberg.iceberg_scan")?;
         let iceberg_scan_class = iceberg_scan_module.getattr("IcebergScanOperator")?;
         let iceberg_scan = iceberg_scan_class

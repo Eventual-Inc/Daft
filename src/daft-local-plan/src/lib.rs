@@ -5,8 +5,8 @@ mod plan;
 pub mod python;
 mod results;
 mod translate;
-use common_scan_info::ScanTaskLikeRef;
 use daft_micropartition::MicroPartitionRef;
+use daft_scan::ScanTaskRef;
 #[cfg(feature = "python")]
 pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject, LanceWrite};
 pub use plan::{
@@ -41,7 +41,7 @@ impl SourceIdCounter {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Input {
-    ScanTasks(Vec<ScanTaskLikeRef>),
+    ScanTasks(Vec<ScanTaskRef>),
     GlobPaths(Vec<String>),
     #[serde(skip)]
     InMemory(Vec<MicroPartitionRef>),

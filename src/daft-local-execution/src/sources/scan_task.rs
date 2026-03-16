@@ -10,7 +10,6 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
-use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
@@ -19,7 +18,7 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_local_plan::InputId;
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
-use daft_scan::{ChunkSpec, ScanTask};
+use daft_scan::{ChunkSpec, Pushdowns, ScanTask, ScanTaskRef};
 use daft_text::{TextConvertOptions, TextReadOptions};
 use daft_warc::WarcConvertOptions;
 use futures::{FutureExt, Stream, StreamExt};
@@ -33,7 +32,7 @@ use crate::{
 };
 
 pub struct ScanTaskSource {
-    receiver: Option<UnboundedReceiver<(InputId, Vec<ScanTaskLikeRef>)>>,
+    receiver: Option<UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>>,
     file_format_config: Option<Arc<FileFormatConfig>>,
     pushdowns: Pushdowns,
     schema: SchemaRef,
@@ -42,7 +41,7 @@ pub struct ScanTaskSource {
 
 impl ScanTaskSource {
     pub fn new(
-        receiver: UnboundedReceiver<(InputId, Vec<ScanTaskLikeRef>)>,
+        receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
         file_format_config: Option<Arc<FileFormatConfig>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
@@ -65,7 +64,7 @@ impl ScanTaskSource {
 
     fn spawn_scan_task_processor(
         &self,
-        mut receiver: UnboundedReceiver<(InputId, Vec<ScanTaskLikeRef>)>,
+        mut receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
         output_sender: Sender<Arc<MicroPartition>>,
         io_stats: IOStatsRef,
         chunk_size: usize,
@@ -135,19 +134,6 @@ impl ScanTaskSource {
                                 }
                             }
                             Some((input_id, scan_tasks_batch)) => {
-                                let scan_tasks_batch: Vec<Arc<ScanTask>> = scan_tasks_batch
-                                    .into_iter()
-                                    .map(|task| {
-                                        task.as_any_arc()
-                                            .downcast::<ScanTask>()
-                                            .map_err(|_| {
-                                                DaftError::ValueError(
-                                                    "Failed to downcast ScanTaskLikeRef to ScanTask"
-                                                        .to_string(),
-                                            )
-                                    })
-                                    })
-                                    .collect::<DaftResult<Vec<_>>>()?;
                                 let delete_map =
                                     get_delete_map(&scan_tasks_batch).await?.map(Arc::new);
 

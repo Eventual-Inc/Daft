@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use common_error::{DaftError, DaftResult};
-use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::{
     expr::{
@@ -13,6 +12,7 @@ use daft_dsl::{
 };
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState};
 use daft_micropartition::MicroPartitionRef;
+use daft_scan::{ScanState, ScanTaskRef};
 
 use super::plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 use crate::{Input, SourceId, SourceIdCounter};
@@ -49,7 +49,7 @@ fn translate_helper(
                     )
                 }
                 SourceInfo::Physical(info) => {
-                    let scan_tasks = match &info.scan_state {
+                    let scan_tasks: Vec<ScanTaskRef> = match &info.scan_state {
                         ScanState::Operator(scan_op) => {
                             scan_op.0.to_scan_tasks(info.pushdowns.clone())?
                         }
@@ -58,7 +58,7 @@ fn translate_helper(
 
                     let format_config = scan_tasks
                         .first()
-                        .map(|scan_task| scan_task.file_format_config());
+                        .map(|scan_task| scan_task.file_format_config.clone());
                     let source_id = source_counter.next();
                     inputs.insert(source_id, Input::ScanTasks(scan_tasks));
 
