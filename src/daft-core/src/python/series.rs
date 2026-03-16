@@ -572,7 +572,7 @@ impl ToPyArrow for Series {
         // an ExtensionArray — nothing to do. But if PyArrow dropped the extension
         // metadata (no registered type), wrap as DaftExtension so the round-trip
         // preserves the extension name and metadata.
-        if let DataType::Extension(name, _, metadata) = self.data_type() {
+        if let DataType::Extension(name, _, _) = self.data_type() {
             let is_already_extension = array
                 .getattr(pyo3::intern!(py, "type"))?
                 .is_instance(&pyarrow.getattr(pyo3::intern!(py, "BaseExtensionType"))?)?;
