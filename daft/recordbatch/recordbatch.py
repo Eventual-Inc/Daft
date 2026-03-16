@@ -198,8 +198,6 @@ class RecordBatch:
         schema: Schema | None = None,
         coerce_temporal_nanoseconds: bool = False,
     ) -> pd.DataFrame:
-        from packaging.version import parse
-
         if not pd.module_available():  # type: ignore[attr-defined]
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
 
@@ -221,19 +219,13 @@ class RecordBatch:
                 else:
                     # Arrow-native field, so provide column as Arrow array.
                     column_arrow = column_series.to_arrow()
-                    if parse(pa.__version__) < parse("13.0.0"):
-                        column = column_arrow.to_pandas()
-                    else:
-                        column = column_arrow.to_pandas(coerce_temporal_nanoseconds=coerce_temporal_nanoseconds)
+                    column = column_arrow.to_pandas(coerce_temporal_nanoseconds=coerce_temporal_nanoseconds)
                 table[colname] = column
 
             return pd.DataFrame.from_dict(table)
         else:
             arrow_table = self.to_arrow_record_batch()
-            if parse(pa.__version__) < parse("13.0.0"):
-                return arrow_table.to_pandas()
-            else:
-                return arrow_table.to_pandas(coerce_temporal_nanoseconds=coerce_temporal_nanoseconds)
+            return arrow_table.to_pandas(coerce_temporal_nanoseconds=coerce_temporal_nanoseconds)
 
     def to_ipc_stream(self) -> bytes:
         return self._recordbatch.to_ipc_stream()

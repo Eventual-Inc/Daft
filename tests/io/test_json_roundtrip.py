@@ -12,8 +12,6 @@ import pytest
 import daft
 from daft import DataType, TimeUnit
 
-PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
-
 
 @pytest.mark.parametrize(
     ["data", "pa_type", "expected_dtype", "expected_inferred_dtype"],
@@ -108,10 +106,6 @@ def test_roundtrip_struct_types(tmp_path):
     assert before.to_arrow() == after.to_arrow()
 
 
-@pytest.mark.skipif(
-    not PYARROW_GE_11_0_0,
-    reason="Map types require PyArrow >= 11.0.0",
-)
 def test_roundtrip_map_types(tmp_path):
     map_data = [
         {"key1": "value1", "key2": "value2"},

@@ -3,7 +3,6 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use daft_scan::{ScanState, scan_task_iters};
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
     expr::{
@@ -16,6 +15,7 @@ use daft_logical_plan::{
     LogicalPlan, LogicalPlanRef, SourceInfo,
     partitioning::{ClusteringSpec, HashRepartitionConfig, RepartitionSpec},
 };
+use daft_scan::{ScanState, scan_task_iters};
 use daft_schema::schema::Schema;
 
 use crate::{
@@ -140,14 +140,14 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         )
                         .into_node()
                     }
-                    SourceInfo::GlobScan(info) => GlobScanSourceNode::new(
+                    SourceInfo::GlobScan(info) => GlobScanSourceNode::try_new(
                         self.get_next_pipeline_node_id(),
                         &self.plan_config,
                         info.glob_paths.clone(),
                         info.pushdowns.clone(),
                         source.output_schema.clone(),
                         info.io_config.clone().map(|c| *c),
-                    )
+                    )?
                     .into_node(),
                     SourceInfo::PlaceHolder(_) => unreachable!(
                         "PlaceHolder should not be present in the logical plan for pipeline node translation"
