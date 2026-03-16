@@ -54,7 +54,7 @@ def setup_logger(
         daft_only (bool, optional): Whether to only log messages from the Daft module. Defaults to False.
         logformat (str, optional): The log format to use. Defaults to "%(asctime)s - %(name)s - %(levelname)s - %(message)s".
         datefmt (str, optional): The date format to use. Defaults to '%Y-%m-%d %H:%M:%S.%s'.format().
-        log_path (str | None, optional): Path to a log file to append Daft logs to. If None, logs are only emitted to the configured stream handlers. Defaults to None.
+        log_path (str | Path | None, optional): Path to a log file to append Daft logs to. If None, logs are only emitted to the configured stream handlers. Defaults to None.
 
     Raises:
         ValueError: If the log level is not valid.
