@@ -200,9 +200,9 @@ macro_rules! impl_broadcast_via_concat {
 
 impl_broadcast_via_concat!(FixedSizeListArray);
 impl_broadcast_via_concat!(ListArray);
-impl_broadcast_via_concat!(ExtensionArray);
 #[cfg(feature = "python")]
 impl_broadcast_via_concat!(PythonArray);
+impl_broadcast_via_concat!(ExtensionArray);
 
 impl Broadcastable for StructArray {
     fn broadcast(&self, num: usize) -> DaftResult<Self> {

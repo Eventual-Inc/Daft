@@ -91,7 +91,6 @@ macro_rules! with_match_physical_daft_types {
             DataType::FixedSizeList(_, _) => __with_ty__! { FixedSizeListType },
             DataType::List(_) => __with_ty__! { ListType },
             DataType::Struct(_) => __with_ty__! { StructType },
-            DataType::Extension(_, _, _) => __with_ty__! { ExtensionType },
             DataType::Interval => __with_ty__! { IntervalType },
             #[cfg(feature = "python")]
             DataType::Python => __with_ty__! { PythonType },
@@ -129,7 +128,6 @@ macro_rules! with_match_arrow_daft_types {
             DataType::Float64 => __with_ty__! { Float64Type },
             DataType::Decimal128(..) => __with_ty__! { Decimal128Type },
             DataType::List(_) => __with_ty__! { ListType },
-            DataType::Extension(_, _, _) => __with_ty__! { ExtensionType },
             DataType::Utf8 => __with_ty__! { Utf8Type },
 
             _ => panic!("{:?} not implemented", $key_type)

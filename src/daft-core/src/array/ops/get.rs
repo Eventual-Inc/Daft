@@ -194,10 +194,9 @@ impl ExtensionArray {
             idx,
             self.len()
         );
-        let is_valid = self.is_valid(idx);
-        if is_valid {
+        if self.physical.is_valid(idx) {
             let scalar = self.slice(idx, idx + 1).unwrap();
-            let scalar = Scalar::new(scalar.to_arrow());
+            let scalar = Scalar::new(scalar.to_arrow().unwrap());
             Some(scalar)
         } else {
             None

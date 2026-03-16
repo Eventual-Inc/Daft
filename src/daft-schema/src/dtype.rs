@@ -379,6 +379,7 @@ impl DataType {
                     Field::new("indices", List(Box::new(minimal_indices_dtype)))
                 },
             ]),
+            Extension(_, storage, _) => storage.to_physical(),
             File(..) => Struct(vec![
                 Field::new("url", Utf8),
                 Field::new("io_config", Binary),
@@ -798,6 +799,7 @@ impl DataType {
                 | Self::SparseTensor(..)
                 | Self::FixedShapeSparseTensor(..)
                 | Self::Map { .. }
+                | Self::Extension(..)
                 | Self::File(..)
         )
     }

@@ -235,7 +235,18 @@ impl_daft_arrow_datatype!(Float64Type, Float64);
 impl_daft_arrow_datatype!(BinaryType, Binary);
 impl_daft_arrow_datatype!(FixedSizeBinaryType, Unknown);
 impl_daft_arrow_datatype!(Utf8Type, Utf8);
-impl_daft_arrow_datatype!(ExtensionType, Unknown);
+// ExtensionType is a logical type backed by a variable physical type (stored as Series).
+// It is neither DaftPhysicalType nor DaftArrowBackedType.
+#[derive(Clone, Debug)]
+pub struct ExtensionType {}
+
+impl DaftDataType for ExtensionType {
+    #[inline]
+    fn get_dtype() -> DataType {
+        DataType::Unknown
+    }
+    type ArrayType = crate::array::extension_array::ExtensionArray;
+}
 impl_daft_arrow_datatype!(Decimal128Type, Unknown);
 
 impl_nested_datatype!(FixedSizeListType, FixedSizeListArray);
@@ -461,6 +472,6 @@ pub type Float64Array = DataArray<Float64Type>;
 pub type BinaryArray = DataArray<BinaryType>;
 pub type FixedSizeBinaryArray = DataArray<FixedSizeBinaryType>;
 pub type Utf8Array = DataArray<Utf8Type>;
-pub type ExtensionArray = DataArray<ExtensionType>;
+pub use crate::array::extension_array::ExtensionArray;
 pub type IntervalArray = DataArray<IntervalType>;
 pub type Decimal128Array = DataArray<Decimal128Type>;
