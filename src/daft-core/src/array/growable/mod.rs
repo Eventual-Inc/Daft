@@ -190,6 +190,7 @@ impl_growable_array!(
     arrow_growable::ArrowGrowable<'a, IntervalType>
 );
 
+impl_growable_array!(BFloat16Array, logical_growable::LogicalBFloat16Growable<'a>);
 impl_growable_array!(DateArray, logical_growable::LogicalDateGrowable<'a>);
 impl_growable_array!(TimeArray, logical_growable::LogicalTimeGrowable<'a>);
 impl_growable_array!(

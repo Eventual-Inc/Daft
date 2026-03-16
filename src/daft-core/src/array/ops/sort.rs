@@ -22,7 +22,7 @@ use crate::{
         ExtensionArray, Field, FileArray, FixedSizeBinaryArray, Float32Array, Float64Array,
         IntervalArray, NullArray, NumericNative, Utf8Array,
         logical::{
-            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            BFloat16Array, DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
@@ -687,6 +687,18 @@ impl IntervalArray {
 impl PythonArray {
     pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for python array")
+    }
+}
+
+impl BFloat16Array {
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
+        // Cannot sort by raw u16 bits because bf16 has sign bit, exponent, and mantissa
+        // like IEEE floats. Instead, cast to f32, sort to get indices, and reorder.
+        let f32_series = self.cast(&DataType::Float32)?;
+        let f32_arr = f32_series.downcast::<Float32Array>()?;
+        let sort_indices = f32_arr.argsort(descending, nulls_first)?;
+        let sorted_physical = self.physical.take(&sort_indices)?;
+        Ok(Self::new(self.field.clone(), sorted_physical))
     }
 }
 

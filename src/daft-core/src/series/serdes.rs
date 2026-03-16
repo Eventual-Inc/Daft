@@ -10,7 +10,7 @@ use crate::{
     array::{ListArray, StructArray, ops::full::FullNull},
     datatypes::{
         logical::{
-            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            BFloat16Array, DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
@@ -224,6 +224,14 @@ impl<'d> serde::Deserialize<'d> for Series {
                             physical.downcast::<PType>().unwrap().clone(),
                         )
                         .into_series())
+                    }
+                    DataType::BFloat16 => {
+                        type PType = <<BFloat16Type as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(
+                            BFloat16Array::new(field, physical.downcast::<PType>().unwrap().clone())
+                                .into_series(),
+                        )
                     }
                     DataType::Date => {
                         type PType = <<DateType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;

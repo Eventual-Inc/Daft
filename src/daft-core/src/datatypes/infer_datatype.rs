@@ -253,6 +253,7 @@ impl Add for InferDataType<'_> {
                         DataType::Date => Err(DaftError::TypeError(
                             format!("Cannot add types: {}, {}", dtype, other)
                         )),
+                        DataType::BFloat16 => Ok(DataType::BFloat16),
                         other if other.is_physical() => Ok(other.clone()),
                         _ => Err(DaftError::TypeError(
                             format!("Cannot add types: {}, {}", dtype, other)
@@ -413,6 +414,11 @@ impl Div for InferDataType<'_> {
                         Ok(DataType::Decimal128(p_prime as usize, s_prime as usize))
                     }
                 }
+                // BFloat16 division rules (must precede generic numeric catch-all)
+                (DataType::BFloat16, DataType::BFloat16) => Ok(DataType::BFloat16),
+                (DataType::BFloat16, DataType::Float32) | (DataType::Float32, DataType::BFloat16) => Ok(DataType::Float32),
+                (DataType::BFloat16, DataType::Float64) | (DataType::Float64, DataType::BFloat16) => Ok(DataType::Float64),
+                (DataType::BFloat16, other) | (other, DataType::BFloat16) if other.is_integer() => Ok(DataType::Float32),
                 (s, o) if s.is_numeric() && o.is_numeric() => Ok(DataType::Float64),
                 (l, r) => Err(DaftError::TypeError(format!(
                     "Cannot divide types: {}, {}",
@@ -635,6 +641,12 @@ pub fn try_numeric_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType>
 
             (DataType::Float64, DataType::Float64) => Some(DataType::Float64),
 
+            // BFloat16 rules
+            (DataType::BFloat16, DataType::BFloat16) => Some(DataType::BFloat16),
+            (DataType::BFloat16, DataType::Float32) => Some(DataType::Float32),
+            (DataType::BFloat16, DataType::Float64) => Some(DataType::Float64),
+            (DataType::BFloat16, other) if other.is_integer() => Some(DataType::Float32),
+
             _ => None,
         }
     }
@@ -654,6 +666,18 @@ pub fn try_integer_widen_for_rem(l: &DataType, r: &DataType) -> DaftResult<DataT
 
     fn inner(l: &DataType, r: &DataType) -> Option<DataType> {
         match (l, r) {
+            // BFloat16 rules (must precede generic floating catch-alls)
+            (DataType::BFloat16, DataType::BFloat16) => Some(DataType::BFloat16),
+            (DataType::BFloat16, DataType::Float32) | (DataType::Float32, DataType::BFloat16) => {
+                Some(DataType::Float32)
+            }
+            (DataType::BFloat16, DataType::Float64) | (DataType::Float64, DataType::BFloat16) => {
+                Some(DataType::Float64)
+            }
+            (DataType::BFloat16, other) | (other, DataType::BFloat16) if other.is_integer() => {
+                Some(DataType::Float32)
+            }
+
             (DataType::Float64, other) | (other, DataType::Float64) if other.is_numeric() => {
                 Some(DataType::Float64)
             }
@@ -796,5 +820,95 @@ where
             "Invalid arguments to numeric supertype: {}, {}",
             l, r
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bfloat16_add_bfloat16() {
+        let result = InferDataType::from(&DataType::BFloat16) + InferDataType::from(&DataType::BFloat16);
+        assert_eq!(result.unwrap(), DataType::BFloat16);
+    }
+
+    #[test]
+    fn bfloat16_add_float32() {
+        let result = InferDataType::from(&DataType::BFloat16) + InferDataType::from(&DataType::Float32);
+        assert_eq!(result.unwrap(), DataType::Float32);
+    }
+
+    #[test]
+    fn bfloat16_add_float64() {
+        let result = InferDataType::from(&DataType::BFloat16) + InferDataType::from(&DataType::Float64);
+        assert_eq!(result.unwrap(), DataType::Float64);
+    }
+
+    #[test]
+    fn bfloat16_add_int32() {
+        let result = InferDataType::from(&DataType::BFloat16) + InferDataType::from(&DataType::Int32);
+        assert_eq!(result.unwrap(), DataType::Float32);
+    }
+
+    #[test]
+    fn bfloat16_add_null() {
+        let result = InferDataType::from(&DataType::BFloat16) + InferDataType::from(&DataType::Null);
+        assert_eq!(result.unwrap(), DataType::BFloat16);
+    }
+
+    #[test]
+    fn bfloat16_sub_bfloat16() {
+        let result = InferDataType::from(&DataType::BFloat16) - InferDataType::from(&DataType::BFloat16);
+        assert_eq!(result.unwrap(), DataType::BFloat16);
+    }
+
+    #[test]
+    fn bfloat16_mul_float32() {
+        let result = InferDataType::from(&DataType::BFloat16) * InferDataType::from(&DataType::Float32);
+        assert_eq!(result.unwrap(), DataType::Float32);
+    }
+
+    #[test]
+    fn bfloat16_div_bfloat16() {
+        let result = InferDataType::from(&DataType::BFloat16) / InferDataType::from(&DataType::BFloat16);
+        assert_eq!(result.unwrap(), DataType::BFloat16);
+    }
+
+    #[test]
+    fn bfloat16_div_float32() {
+        let result = InferDataType::from(&DataType::BFloat16) / InferDataType::from(&DataType::Float32);
+        assert_eq!(result.unwrap(), DataType::Float32);
+    }
+
+    #[test]
+    fn bfloat16_div_int64() {
+        let result = InferDataType::from(&DataType::BFloat16) / InferDataType::from(&DataType::Int64);
+        assert_eq!(result.unwrap(), DataType::Float32);
+    }
+
+    #[test]
+    fn bfloat16_rem_bfloat16() {
+        let result = InferDataType::from(&DataType::BFloat16) % InferDataType::from(&DataType::BFloat16);
+        assert_eq!(result.unwrap(), DataType::BFloat16);
+    }
+
+    #[test]
+    fn bfloat16_rem_int32() {
+        let result = InferDataType::from(&DataType::BFloat16) % InferDataType::from(&DataType::Int32);
+        assert_eq!(result.unwrap(), DataType::Float32);
+    }
+
+    #[test]
+    fn int32_add_bfloat16() {
+        // Test reverse direction
+        let result = InferDataType::from(&DataType::Int32) + InferDataType::from(&DataType::BFloat16);
+        assert_eq!(result.unwrap(), DataType::Float32);
+    }
+
+    #[test]
+    fn float64_div_bfloat16() {
+        let result = InferDataType::from(&DataType::Float64) / InferDataType::from(&DataType::BFloat16);
+        assert_eq!(result.unwrap(), DataType::Float64);
     }
 }

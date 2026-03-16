@@ -64,6 +64,10 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
             let arr = s.timestamp().unwrap();
             arr.html_value(idx, truncate)
         }
+        DataType::BFloat16 => {
+            let arr = s.bfloat16().unwrap();
+            arr.html_value(idx, truncate)
+        }
         DataType::Date => {
             let arr = s.date().unwrap();
             arr.html_value(idx, truncate)

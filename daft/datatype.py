@@ -394,6 +394,13 @@ class DataType:
             )
             return cls.timestamp(TimeUnit.us(), timezone=None)
         else:
+            try:
+                import ml_dtypes
+
+                if t is ml_dtypes.bfloat16:
+                    return cls.bfloat16()
+            except ImportError:
+                pass
             return cls.python()
 
     @classmethod
@@ -544,6 +551,12 @@ class DataType:
     def float64(cls) -> DataType:
         """Create a 64-bit float DataType."""
         return cls._from_pydatatype(PyDataType.float64())
+
+    @datatype_constructor
+    @classmethod
+    def bfloat16(cls) -> DataType:
+        """Create a BFloat16 (Brain Floating Point 16) DataType."""
+        return cls._from_pydatatype(PyDataType.bfloat16())
 
     @datatype_constructor
     @classmethod
@@ -898,6 +911,13 @@ class DataType:
     @classmethod
     def from_numpy_dtype(cls, np_type: np.dtype[Any]) -> DataType:
         """Maps a Numpy datatype to a Daft DataType."""
+        try:
+            import ml_dtypes
+
+            if np_type == ml_dtypes.bfloat16:
+                return cls.bfloat16()
+        except ImportError:
+            pass
         arrow_type = pa.from_numpy_dtype(np_type)
         return cls.from_arrow_type(arrow_type)
 

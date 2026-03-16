@@ -74,6 +74,12 @@ impl Add for &Series {
                 }
             }
             // ----------------
+            // BFloat16
+            // ----------------
+            DataType::BFloat16 => {
+                bfloat16_binary_op(lhs, rhs, |a, b| a + b)
+            }
+            // ----------------
             // Numeric types
             // ----------------
             output_type if output_type.is_numeric() => {
@@ -174,6 +180,12 @@ impl Sub for &Series {
             #[cfg(feature = "python")]
             DataType::Python => run_python_binary_operator_fn(lhs, rhs, "sub"),
             // ----------------
+            // BFloat16
+            // ----------------
+            DataType::BFloat16 => {
+                bfloat16_binary_op(lhs, rhs, |a, b| a - b)
+            }
+            // ----------------
             // Numeric types
             // ----------------
             output_type if output_type.is_numeric() => {
@@ -272,6 +284,12 @@ impl Mul for &Series {
             #[cfg(feature = "python")]
             DataType::Python => run_python_binary_operator_fn(lhs, rhs, "mul"),
             // ----------------
+            // BFloat16
+            // ----------------
+            DataType::BFloat16 => {
+                bfloat16_binary_op(lhs, rhs, |a, b| a * b)
+            }
+            // ----------------
             // Numeric types
             // ----------------
             output_type if output_type.is_numeric() => {
@@ -334,6 +352,12 @@ impl Div for &Series {
             #[cfg(feature = "python")]
             DataType::Python => run_python_binary_operator_fn(lhs, rhs, "truediv"),
             // ----------------
+            // BFloat16
+            // ----------------
+            DataType::BFloat16 => {
+                bfloat16_binary_op(lhs, rhs, |a, b| a / b)
+            }
+            // ----------------
             // Numeric types
             // ----------------
             DataType::Float64 => {
@@ -369,6 +393,9 @@ impl Rem for &Series {
         match &output_type {
             #[cfg(feature = "python")]
             DataType::Python => run_python_binary_operator_fn(lhs, rhs, "mod"),
+            DataType::BFloat16 => {
+                bfloat16_binary_op(lhs, rhs, |a, b| a % b)
+            }
             output_type if output_type.is_numeric() => {
                 with_match_numeric_daft_types!(output_type, |$T| {
                     Ok(cast_downcast_op!(lhs, rhs, output_type, <$T as DaftDataType>::ArrayType, rem)?.into_series())
@@ -402,6 +429,18 @@ impl Series {
             _ => arithmetic_op_not_implemented!(self, "floor_div", rhs, output_type),
         }
     }
+}
+
+/// BFloat16 arithmetic: cast both sides to Float32, apply op, cast result back to BFloat16.
+fn bfloat16_binary_op(
+    lhs: &Series,
+    rhs: &Series,
+    op: impl Fn(Series, Series) -> DaftResult<Series>,
+) -> DaftResult<Series> {
+    let lhs_f32 = lhs.cast(&DataType::Float32)?;
+    let rhs_f32 = rhs.cast(&DataType::Float32)?;
+    let result_f32 = op(lhs_f32, rhs_f32)?;
+    result_f32.cast(&DataType::BFloat16)
 }
 
 enum FixedSizeBinaryOp {

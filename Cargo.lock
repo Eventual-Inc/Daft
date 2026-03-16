@@ -2472,6 +2472,7 @@ dependencies = [
  "derive_more",
  "fastrand 2.3.0",
  "fnv",
+ "half",
  "html-escape",
  "hyperloglog",
  "image",

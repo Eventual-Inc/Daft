@@ -3,7 +3,7 @@ use crate::{
     datatypes::{
         BinaryArray, BooleanArray, DaftPrimitiveType, FixedSizeBinaryArray, IntervalArray,
         NullArray, NumericNative, Utf8Array,
-        logical::{DateArray, DurationArray, TimeArray, TimestampArray},
+        logical::{BFloat16Array, DateArray, DurationArray, TimeArray, TimestampArray},
     },
 };
 
@@ -90,6 +90,7 @@ impl_asarrow_dataarray!(BinaryArray, arrow::array::LargeBinaryArray);
 impl_asarrow_dataarray!(FixedSizeBinaryArray, arrow::array::FixedSizeBinaryArray);
 impl_asarrow_dataarray!(IntervalArray, arrow::array::IntervalMonthDayNanoArray);
 
+impl_asarrow_logicalarray!(BFloat16Array, arrow::array::UInt16Array);
 impl_asarrow_logicalarray!(DateArray, arrow::array::Int32Array);
 impl_asarrow_logicalarray!(TimeArray, arrow::array::Int64Array);
 impl_asarrow_logicalarray!(DurationArray, arrow::array::Int64Array);

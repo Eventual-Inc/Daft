@@ -242,6 +242,7 @@ impl_nested_datatype!(FixedSizeListType, FixedSizeListArray);
 impl_nested_datatype!(StructType, StructArray);
 impl_nested_datatype!(ListType, ListArray);
 
+impl_daft_logical_data_array_datatype!(BFloat16Type, BFloat16, UInt16Type);
 impl_daft_logical_data_array_datatype!(TimestampType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DateType, Date, Int32Type);
 impl_daft_logical_data_array_datatype!(TimeType, Unknown, Int64Type);

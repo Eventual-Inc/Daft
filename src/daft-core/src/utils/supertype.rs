@@ -120,6 +120,12 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
 
             (DataType::Float64, DataType::Float32) => Some(DataType::Float64),
 
+            // BFloat16 rules
+            (DataType::BFloat16, DataType::Float32) => Some(DataType::Float32),
+            (DataType::BFloat16, DataType::Float64) => Some(DataType::Float64),
+            (DataType::BFloat16, other) if other.is_integer() => Some(DataType::Float32),
+            (DataType::BFloat16, DataType::Boolean) => Some(DataType::BFloat16),
+
             (DataType::Date, DataType::UInt8) => Some(DataType::Int64),
             (DataType::Date, DataType::UInt16) => Some(DataType::Int64),
             (DataType::Date, DataType::UInt32) => Some(DataType::Int64),
@@ -241,5 +247,56 @@ mod tests {
         let result = get_supertype(&DataType::Utf8, &DataType::Binary);
         assert_eq!(result, None);
         Ok(())
+    }
+
+    #[test]
+    fn bfloat16_supertype_bfloat16() {
+        let result = try_get_supertype(&DataType::BFloat16, &DataType::BFloat16).unwrap();
+        assert_eq!(result, DataType::BFloat16);
+    }
+
+    #[test]
+    fn bfloat16_supertype_float32() {
+        let result = try_get_supertype(&DataType::BFloat16, &DataType::Float32).unwrap();
+        assert_eq!(result, DataType::Float32);
+        // Reverse direction
+        let result = try_get_supertype(&DataType::Float32, &DataType::BFloat16).unwrap();
+        assert_eq!(result, DataType::Float32);
+    }
+
+    #[test]
+    fn bfloat16_supertype_float64() {
+        let result = try_get_supertype(&DataType::BFloat16, &DataType::Float64).unwrap();
+        assert_eq!(result, DataType::Float64);
+    }
+
+    #[test]
+    fn bfloat16_supertype_null() {
+        let result = try_get_supertype(&DataType::BFloat16, &DataType::Null).unwrap();
+        assert_eq!(result, DataType::BFloat16);
+        // Reverse direction
+        let result = try_get_supertype(&DataType::Null, &DataType::BFloat16).unwrap();
+        assert_eq!(result, DataType::BFloat16);
+    }
+
+    #[test]
+    fn bfloat16_supertype_int64() {
+        let result = try_get_supertype(&DataType::BFloat16, &DataType::Int64).unwrap();
+        assert_eq!(result, DataType::Float32);
+    }
+
+    #[test]
+    fn bfloat16_supertype_int32() {
+        let result = try_get_supertype(&DataType::BFloat16, &DataType::Int32).unwrap();
+        assert_eq!(result, DataType::Float32);
+        // Reverse direction
+        let result = try_get_supertype(&DataType::Int32, &DataType::BFloat16).unwrap();
+        assert_eq!(result, DataType::Float32);
+    }
+
+    #[test]
+    fn bfloat16_supertype_boolean() {
+        let result = try_get_supertype(&DataType::BFloat16, &DataType::Boolean).unwrap();
+        assert_eq!(result, DataType::BFloat16);
     }
 }

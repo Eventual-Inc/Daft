@@ -133,6 +133,9 @@ pub enum DataType {
     /// A logical type for sparse tensors with the same shape.
     FixedShapeSparseTensor(Box<DataType>, Vec<u64>, bool),
 
+    /// A 16-bit brain floating point type (8 exponent bits, 7 mantissa bits).
+    BFloat16,
+
     #[cfg(feature = "python")]
     Python,
 
@@ -209,6 +212,7 @@ impl Display for DataType {
                 f,
                 "FixedShapeSparseTensor[{dtype}; {shape:?}; indices_offset: {indices_offset}]"
             ),
+            Self::BFloat16 => write!(f, "BFloat16"),
             #[cfg(feature = "python")]
             Self::Python => write!(f, "Python"),
             Self::Unknown => write!(f, "Unknown"),
@@ -321,6 +325,7 @@ impl DataType {
     pub fn to_physical(&self) -> Self {
         use DataType::*;
         match self {
+            BFloat16 => UInt16,
             Date => Int32,
             Duration(_) | Timestamp(..) | Time(_) => Int64,
 
@@ -407,6 +412,11 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_bfloat16(&self) -> bool {
+        matches!(self, Self::BFloat16)
+    }
+
+    #[inline]
     pub fn is_numeric(&self) -> bool {
         match self {
             Self::Int8
@@ -419,7 +429,8 @@ impl DataType {
             | Self::UInt64
             // DataType::Float16
             | Self::Float32
-            | Self::Float64 => true,
+            | Self::Float64
+            | Self::BFloat16 => true,
             Self::Extension(_, inner, _) => inner.is_numeric(),
             _ => false
         }
@@ -488,7 +499,7 @@ impl DataType {
         matches!(
             self,
             // DataType::Float16 |
-            Self::Float32 | Self::Float64
+            Self::Float32 | Self::Float64 | Self::BFloat16
         )
     }
 
@@ -706,6 +717,7 @@ impl DataType {
             Self::UInt8 => Self::Float32,
             Self::UInt16 => Self::Float32,
             Self::Float32 => Self::Float32,
+            Self::BFloat16 => Self::Float32,
 
             // All numeric types that coerce to `f64`
             Self::Int32 => Self::Float64,
@@ -786,7 +798,8 @@ impl DataType {
     pub fn is_logical(&self) -> bool {
         matches!(
             self,
-            Self::Date
+            Self::BFloat16
+                | Self::Date
                 | Self::Time(..)
                 | Self::Timestamp(..)
                 | Self::Duration(..)

@@ -21,6 +21,7 @@ daft-sketch = {path = "../daft-sketch", default-features = false}
 derive_more = {workspace = true}
 fastrand = "2.1.0"
 fnv = "1.0.7"
+half = { version = "2", features = ["bytemuck", "num-traits"] }
 html-escape = {workspace = true}
 hyperloglog = {path = "../hyperloglog"}
 image = {workspace = true, features = [

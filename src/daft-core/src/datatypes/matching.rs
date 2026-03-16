@@ -12,6 +12,7 @@ macro_rules! with_match_daft_types {
 
         match $key_type {
             // Float16 => unimplemented!("Array for Float16 DataType not implemented"),
+            DataType::BFloat16 => __with_ty__! { BFloat16Type },
             DataType::Binary => __with_ty__! { BinaryType },
             DataType::Boolean => __with_ty__! { BooleanType },
             DataType::Date => __with_ty__! { DateType },

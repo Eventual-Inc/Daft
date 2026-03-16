@@ -131,6 +131,16 @@ class Series:
         if not isinstance(data, np.ndarray):
             raise TypeError(f"Expected a NumPy ndarray, got {type(data)}")
         if data.ndim <= 1:
+            # Handle ml_dtypes.bfloat16 arrays: view as uint16 physical representation
+            try:
+                import ml_dtypes
+
+                if data.dtype == ml_dtypes.bfloat16:
+                    uint16_data = data.view(np.uint16)
+                    arrow_array = pa.array(uint16_data)
+                    return cls.from_arrow(arrow_array, name=name, dtype=DataType.bfloat16())
+            except ImportError:
+                pass
             try:
                 arrow_array = pa.array(data)
             except pa.ArrowInvalid:

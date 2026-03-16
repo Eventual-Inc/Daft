@@ -1,4 +1,6 @@
 mod abs;
+#[cfg(test)]
+mod bfloat16_tests;
 mod apply;
 mod approx_count_distinct;
 mod approx_sketch;

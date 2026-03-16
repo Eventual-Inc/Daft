@@ -27,7 +27,7 @@ use crate::{
         DaftArrayType, DaftArrowBackedType, DataType, Field, FileArray, ImageMode, Int64Array,
         NullArray, TimeUnit, UInt64Array, Utf8Array,
         logical::{
-            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            BFloat16Array, DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
@@ -74,6 +74,30 @@ where
             #[cfg(feature = "python")]
             DataType::Python => {
                 Series::from_arrow(self.field().clone(), self.data.clone())?.cast_to_python()
+            }
+            DataType::BFloat16 => {
+                // Cast numeric/string types to BFloat16 via f32 intermediate.
+                use half::bf16;
+
+                let f32_series = if self.data_type() == &DataType::Float32 {
+                    Series::from_arrow(self.field().clone(), self.data.clone())?
+                } else {
+                    // Cast to f32 first (handles integers, f64, utf8->f64->f32, etc.)
+                    Series::from_arrow(self.field().clone(), self.data.clone())?
+                        .cast(&DataType::Float32)?
+                };
+                let f32_arr = f32_series.downcast::<DataArray<crate::datatypes::Float32Type>>()?;
+                let u16_iter = f32_arr.into_iter().map(|opt| {
+                    opt.map(|v| bf16::from_f32(v).to_bits())
+                });
+                let physical = DataArray::<crate::datatypes::UInt16Type>::from_iter(
+                    Field::new(self.name(), DataType::UInt16),
+                    u16_iter,
+                );
+                Ok(BFloat16Array::new(
+                    Field::new(self.name(), DataType::BFloat16),
+                    physical,
+                ).into_series())
             }
             _ => {
                 // Cast from DataArray to the target DataType
@@ -217,6 +241,55 @@ where
                 let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
                 Series::from_arrow(new_field, result_array)
             }
+        }
+    }
+}
+
+impl BFloat16Array {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        use half::bf16;
+
+        match dtype {
+            DataType::Null => {
+                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
+            }
+            DataType::BFloat16 => Ok(self.clone().into_series()),
+            DataType::Float32 => {
+                let f32_iter = self.physical.into_iter().map(|opt| {
+                    opt.map(|bits| bf16::from_bits(bits).to_f32())
+                });
+                let result = DataArray::<crate::datatypes::Float32Type>::from_iter(
+                    Field::new(self.name(), DataType::Float32),
+                    f32_iter,
+                );
+                Ok(result.into_series())
+            }
+            DataType::Float64 => {
+                let f64_iter = self.physical.into_iter().map(|opt| {
+                    opt.map(|bits| bf16::from_bits(bits).to_f32() as f64)
+                });
+                let result = DataArray::<crate::datatypes::Float64Type>::from_iter(
+                    Field::new(self.name(), DataType::Float64),
+                    f64_iter,
+                );
+                Ok(result.into_series())
+            }
+            DataType::Utf8 => {
+                let str_iter = self.physical.into_iter().map(|opt| {
+                    opt.map(|bits| format!("{}", bf16::from_bits(bits)))
+                });
+                Ok(Utf8Array::from_iter(self.name(), str_iter).into_series())
+            }
+            dtype if dtype.is_integer() => {
+                // bf16 -> f32 -> target integer
+                let f32_series = self.cast(&DataType::Float32)?;
+                f32_series.cast(dtype)
+            }
+            #[cfg(feature = "python")]
+            DataType::Python => self.clone().into_series().cast_to_python(),
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot cast BFloat16 to {dtype}"
+            ))),
         }
     }
 }

@@ -14,7 +14,8 @@ use crate::{
         BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, ExtensionArray, FileArray,
         FixedSizeBinaryArray, IntervalArray, NullArray, Utf8Array,
         logical::{
-            DateArray, DurationArray, LogicalArrayImpl, MapArray, TimeArray, TimestampArray,
+            BFloat16Array, DateArray, DurationArray, LogicalArrayImpl, MapArray, TimeArray,
+            TimestampArray,
         },
     },
     file::{DaftMediaType, FileReference},
@@ -167,6 +168,7 @@ impl FixedSizeBinaryArray {
 }
 impl_array_arrow_get!(IntervalArray, IntervalMonthDayNano);
 impl_array_arrow_get!(BooleanArray, bool);
+impl_logicalarray_get!(BFloat16Array, u16);
 impl_logicalarray_get!(DateArray, i32);
 impl_logicalarray_get!(TimeArray, i64);
 impl_logicalarray_get!(DurationArray, i64);

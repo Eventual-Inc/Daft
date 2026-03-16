@@ -430,7 +430,8 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             image_array_from_img_buffers("literal", iter, image_mode)?.into_series()
         }
 
-        DataType::FixedSizeBinary(..)
+        DataType::BFloat16
+        | DataType::FixedSizeBinary(..)
         | DataType::FixedSizeList(..)
         | DataType::Extension(..)
         | DataType::FixedShapeImage(..)

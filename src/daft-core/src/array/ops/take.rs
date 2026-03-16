@@ -35,6 +35,7 @@ macro_rules! impl_logicalarray_take {
     };
 }
 
+impl_logicalarray_take!(BFloat16Array);
 impl_logicalarray_take!(DateArray);
 impl_logicalarray_take!(TimeArray);
 impl_logicalarray_take!(DurationArray);

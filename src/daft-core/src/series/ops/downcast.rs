@@ -10,7 +10,7 @@ use crate::prelude::PythonArray;
 use crate::{
     array::{ListArray, StructArray},
     datatypes::{
-        logical::{DateArray, FixedShapeImageArray, TimeArray, TimestampArray},
+        logical::{BFloat16Array, DateArray, FixedShapeImageArray, TimeArray, TimestampArray},
         *,
     },
     file::DaftMediaType,
@@ -118,6 +118,10 @@ impl Series {
     }
 
     pub fn fixed_size_image(&self) -> DaftResult<&FixedShapeImageArray> {
+        self.downcast()
+    }
+
+    pub fn bfloat16(&self) -> DaftResult<&BFloat16Array> {
         self.downcast()
     }
 

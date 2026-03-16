@@ -10,7 +10,7 @@ use crate::{
         FileArray, FixedSizeBinaryArray, IntervalArray, IntervalValue, NullArray, UInt64Array,
         Utf8Array,
         logical::{
-            DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
+            BFloat16Array, DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
@@ -160,6 +160,19 @@ impl PythonArray {
             })?)
         } else {
             Ok("None".to_string())
+        }
+    }
+}
+
+impl BFloat16Array {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            Some(bits) => {
+                let f = half::bf16::from_bits(bits).to_f32();
+                Ok(format!("{f}"))
+            }
         }
     }
 }
@@ -542,6 +555,7 @@ impl_array_html_value!(MapArray);
 impl_array_html_value!(StructArray);
 impl_array_html_value!(ExtensionArray);
 impl_array_html_value!(Decimal128Array);
+impl_array_html_value!(BFloat16Array);
 impl_array_html_value!(DateArray);
 impl_array_html_value!(TimeArray);
 impl_array_html_value!(DurationArray);

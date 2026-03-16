@@ -251,6 +251,9 @@ impl_array_get_lit!(Float32Array, Float32);
 impl_array_get_lit!(Float64Array, Float64);
 impl_array_get_lit!(Utf8Array, Utf8);
 impl_array_get_lit!(IntervalArray, Interval);
+// TODO: BFloat16 stores as Literal::UInt16 (raw bits) since there is no Literal::BFloat16 variant.
+// The raw u16 bits preserve the bf16 value exactly and can be reinterpreted via half::bf16::from_bits().
+impl_array_get_lit!(BFloat16Array, UInt16);
 impl_array_get_lit!(DateArray, Date);
 impl_array_get_lit!(ListArray, List);
 impl_array_get_lit!(FixedSizeListArray, List);

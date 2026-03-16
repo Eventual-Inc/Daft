@@ -4,7 +4,7 @@ use arrow::array::ArrayRef;
 use common_error::DaftResult;
 
 use super::{
-    DaftArrayType, DaftDataType, DataArray, DataType, DurationType, EmbeddingType,
+    BFloat16Type, DaftArrayType, DaftDataType, DataArray, DataType, DurationType, EmbeddingType,
     FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, FixedSizeListArray,
     ImageType, MapType, SparseTensorType, TensorType, TimeType, TimestampType,
 };
@@ -182,6 +182,7 @@ impl MapArray {
 pub type LogicalArray<L> =
     LogicalArrayImpl<L, <<L as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType>;
 // pub type Decimal128Array = LogicalArray<Decimal128Type>;
+pub type BFloat16Array = LogicalArray<BFloat16Type>;
 pub type DateArray = LogicalArray<DateType>;
 pub type TimeArray = LogicalArray<TimeType>;
 pub type DurationArray = LogicalArray<DurationType>;

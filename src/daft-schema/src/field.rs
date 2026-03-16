@@ -111,7 +111,8 @@ impl Field {
                 }
                 physical.with_metadata(metadata_map)
             }
-            dtype @ DataType::Embedding(..)
+            dtype @ DataType::BFloat16
+            | dtype @ DataType::Embedding(..)
             | dtype @ DataType::Image(..)
             | dtype @ DataType::FixedShapeImage(..)
             | dtype @ DataType::Tensor(..)

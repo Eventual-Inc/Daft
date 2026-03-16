@@ -265,6 +265,21 @@ macro_rules! impl_logical_from_arrow {
     };
 }
 
+impl FromArrow for LogicalArray<BFloat16Type> {
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        let field = field.into();
+        let target_convert = field.to_physical();
+        // BFloat16 is stored as UInt16 physically
+        let physical_arrow_array = arrow::compute::cast(arrow_arr.as_ref(), &arrow::datatypes::DataType::UInt16)?;
+        let physical =
+            <<BFloat16Type as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow(
+                Arc::new(target_convert),
+                physical_arrow_array,
+            )?;
+        Ok(Self::new(field, physical))
+    }
+}
+
 impl FromArrow for LogicalArray<DateType> {
     fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
         let field = field.into();
