@@ -3297,7 +3297,6 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
- "daft-scan",
  "daft-session",
  "itertools 0.14.0",
  "pyo3",
