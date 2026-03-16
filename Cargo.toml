@@ -134,7 +134,7 @@ exclude = [
 ]
 
 [package.metadata.cargo-machete]
-ignored = ["lzma-sys"]
+ignored = ["lzma-sys", "aws-lc-rs", "aws-lc-sys"]
 
 [profile.bench]
 debug = true
