@@ -51,6 +51,10 @@ const DEFAULT_BATCH_SIZE: usize = 8192;
 /// setup, hconcat) exceeds the benefit of parallel decode.
 const MIN_RG_BYTES_FOR_COL_PARALLELISM: i64 = 16 * 1024 * 1024; // 16 MiB
 
+/// Minimum number of read columns to enable intra-RG column parallelism.
+/// With fewer columns the per-column reader overhead dominates the parallel benefit.
+const MIN_COLS_FOR_COL_PARALLELISM: usize = 3;
+
 /// Convert a parquet error to a DaftError.
 fn parquet_err(e: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> common_error::DaftError {
     common_error::DaftError::External(e.into())
@@ -509,7 +513,7 @@ fn compute_root_indices(
 /// Decode predicate columns for a single RG, evaluate predicate, return filtered
 /// predicate batch and the refined RowSelection for data columns.
 fn decode_rg_predicate_phase(
-    file_bytes: &bytes::Bytes,
+    path: &str,
     setup: &LocalParquetSetup,
     task: &RgTask,
     predicate: &ExprRef,
@@ -517,8 +521,10 @@ fn decode_rg_predicate_phase(
 ) -> DaftResult<(arrow::array::RecordBatch, RowSelection)> {
     let rg_rows = setup.parquet_metadata.row_group(task.rg_idx).num_rows() as usize;
 
+    let file = std::fs::File::open(path)
+        .map_err(|e| parquet_err(format!("Failed to open '{}': {}", path, e)))?;
     let mut builder = ParquetRecordBatchReaderBuilder::new_with_metadata(
-        file_bytes.clone(),
+        file,
         (*setup.arrow_reader_metadata).clone(),
     );
 
@@ -603,20 +609,24 @@ fn decode_rg_predicate_phase(
     Ok((filtered_pred_batch, final_selection))
 }
 
-/// Decode a single column from a single RG with the given RowSelection.
-fn decode_rg_column(
-    file_bytes: &bytes::Bytes,
+/// Decode one or more columns from a single RG with the given RowSelection.
+/// Each call opens its own file handle (independent seek position, ~microsecond syscall).
+/// The OS page cache ensures file data is served from memory after first access.
+fn decode_rg_columns(
+    path: &str,
     setup: &LocalParquetSetup,
     task: &RgTask,
-    col_root_index: usize,
+    col_root_indices: &[usize],
     row_selection: Option<&RowSelection>,
 ) -> DaftResult<arrow::array::RecordBatch> {
+    let file = std::fs::File::open(path)
+        .map_err(|e| parquet_err(format!("Failed to open '{}': {}", path, e)))?;
     let mut builder = ParquetRecordBatchReaderBuilder::new_with_metadata(
-        file_bytes.clone(),
+        file,
         (*setup.arrow_reader_metadata).clone(),
     );
 
-    let mask = ProjectionMask::roots(builder.parquet_schema(), std::iter::once(col_root_index));
+    let mask = ProjectionMask::roots(builder.parquet_schema(), col_root_indices.iter().copied());
     builder = builder
         .with_projection(mask)
         .with_row_groups(vec![task.rg_idx])
@@ -631,8 +641,11 @@ fn decode_rg_column(
         reader.collect::<Result<Vec<_>, _>>().map_err(parquet_err)?;
 
     if arrow_batches.is_empty() {
-        let field = setup.arrow_schema.field(col_root_index).clone();
-        let schema = Arc::new(arrow::datatypes::Schema::new(vec![field]));
+        let fields: Vec<_> = col_root_indices
+            .iter()
+            .map(|&i| setup.arrow_schema.field(i).clone())
+            .collect();
+        let schema = Arc::new(arrow::datatypes::Schema::new(fields));
         Ok(arrow::array::RecordBatch::new_empty(schema))
     } else if arrow_batches.len() == 1 {
         Ok(arrow_batches.into_iter().next().unwrap())
@@ -640,6 +653,18 @@ fn decode_rg_column(
         arrow::compute::concat_batches(&arrow_batches[0].schema(), &arrow_batches)
             .map_err(|e| parquet_err(e).into())
     }
+}
+
+/// Convenience wrapper: decode a single column.
+#[inline]
+fn decode_rg_column(
+    path: &str,
+    setup: &LocalParquetSetup,
+    task: &RgTask,
+    col_root_index: usize,
+    row_selection: Option<&RowSelection>,
+) -> DaftResult<arrow::array::RecordBatch> {
+    decode_rg_columns(path, setup, task, &[col_root_index], row_selection)
 }
 
 /// Decode a single RG with intra-RG column parallelism (rayon).
@@ -657,19 +682,14 @@ fn decode_single_rg_col_parallel(
         compute_root_indices(&setup.arrow_schema, setup.read_col_set.as_ref(), None);
 
     // Fallback: single column or small row group where parallel overhead exceeds benefit.
+    // This is called per-RG from the streaming path, so even 2 columns benefit from splitting.
     let rg_byte_size = setup
         .parquet_metadata
         .row_group(task.rg_idx)
         .total_byte_size();
-    if all_col_indices.len() <= 1 || rg_byte_size < MIN_RG_BYTES_FOR_COL_PARALLELISM {
+    if all_col_indices.len() < 3 || rg_byte_size < MIN_RG_BYTES_FOR_COL_PARALLELISM {
         return decode_single_rg(path, setup, task, predicate, None);
     }
-
-    // Read file into memory once; column tasks share the buffer via cheap Bytes::clone().
-    let file_bytes = bytes::Bytes::from(
-        std::fs::read(path)
-            .map_err(|e| parquet_err(format!("Failed to read '{}': {}", path, e)))?,
-    );
 
     if setup.predicate_pushed {
         let pred = predicate.unwrap();
@@ -683,7 +703,7 @@ fn decode_single_rg_col_parallel(
 
         // Phase 1: decode predicate columns.
         let (pred_batch, final_selection) =
-            decode_rg_predicate_phase(&file_bytes, setup, task, pred, &pred_col_indices)?;
+            decode_rg_predicate_phase(path, setup, task, pred, &pred_col_indices)?;
 
         if data_col_indices.is_empty() {
             let daft_batch = RecordBatch::try_from(&pred_batch)?;
@@ -696,12 +716,10 @@ fn decode_single_rg_col_parallel(
             );
         }
 
-        // Phase 2: decode data columns in parallel.
+        // Phase 2: decode data columns in parallel (each task opens its own file handle).
         let col_results: Vec<DaftResult<arrow::array::RecordBatch>> = data_col_indices
             .par_iter()
-            .map(|&col_idx| {
-                decode_rg_column(&file_bytes, setup, task, col_idx, Some(&final_selection))
-            })
+            .map(|&col_idx| decode_rg_column(path, setup, task, col_idx, Some(&final_selection)))
             .collect();
         let col_batches: Vec<arrow::array::RecordBatch> =
             col_results.into_iter().collect::<DaftResult<Vec<_>>>()?;
@@ -718,7 +736,7 @@ fn decode_single_rg_col_parallel(
             &setup.return_daft_schema,
         )
     } else {
-        // No predicate: decode all columns in parallel.
+        // No predicate: decode all columns in parallel (each task opens its own file handle).
         let mut base_sel = build_base_row_selection(setup, task, rg_rows);
         if task.local_offset > 0 {
             let offset_sel = build_offset_row_selection(task.local_offset, rg_rows);
@@ -727,7 +745,7 @@ fn decode_single_rg_col_parallel(
 
         let col_results: Vec<DaftResult<arrow::array::RecordBatch>> = all_col_indices
             .par_iter()
-            .map(|&col_idx| decode_rg_column(&file_bytes, setup, task, col_idx, base_sel.as_ref()))
+            .map(|&col_idx| decode_rg_column(path, setup, task, col_idx, base_sel.as_ref()))
             .collect();
         let col_batches: Vec<arrow::array::RecordBatch> =
             col_results.into_iter().collect::<DaftResult<Vec<_>>>()?;
@@ -1058,8 +1076,8 @@ pub async fn read_parquet_single_arrowrs(
             .collect()
     };
 
-    // Fallback: single column -> use original single-stream approach.
-    if all_col_indices.len() <= 1 {
+    // Fallback: few columns -> use original single-stream approach.
+    if all_col_indices.len() < MIN_COLS_FOR_COL_PARALLELISM {
         // Rebuild single stream (original code path).
         let reader2 = DaftAsyncFileReader::new(
             uri.to_string(),
@@ -1731,14 +1749,26 @@ pub fn local_parquet_read_arrowrs(
     let all_col_indices =
         compute_root_indices(&setup.arrow_schema, setup.read_col_set.as_ref(), None);
 
-    // Check if any row group is large enough to benefit from column parallelism.
-    let any_rg_large = setup.rg_tasks.iter().any(|t| {
+    // Column parallelism decision:
+    // - For single-RG reads, column splitting is the only way to parallelize, so use it
+    //   whenever we have >= 2 columns and the RG is large enough.
+    // - For multi-RG reads, per-RG decode provides parallelism on its own. Only add column
+    //   splitting when we have enough columns (>= 4) AND RGs don't already saturate cores.
+    let num_cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(2);
+    let has_large_rg = setup.rg_tasks.iter().any(|t| {
         setup.parquet_metadata.row_group(t.rg_idx).total_byte_size()
             >= MIN_RG_BYTES_FOR_COL_PARALLELISM
     });
+    let use_col_parallelism = has_large_rg
+        && all_col_indices.len() >= 3
+        && (setup.rg_tasks.len() == 1
+            || (all_col_indices.len() >= MIN_COLS_FOR_COL_PARALLELISM
+                && setup.rg_tasks.len() < num_cpus * 2));
 
-    // Fallback: single column or all RGs too small -> use decode_single_rg per RG.
-    if all_col_indices.len() <= 1 || !any_rg_large {
+    // Fallback: use decode_single_rg per RG with rayon over RGs.
+    if !use_col_parallelism {
         // Single-column: no benefit from column splitting.
         if setup.rg_tasks.len() == 1 {
             let mut table = decode_single_rg(
@@ -1773,11 +1803,9 @@ pub fn local_parquet_read_arrowrs(
 
     let has_predicate = predicate.is_some();
 
-    // Read file into memory once; column tasks share the buffer via cheap Bytes::clone().
-    let file_bytes = bytes::Bytes::from(
-        std::fs::read(path)
-            .map_err(|e| parquet_err(format!("Failed to read '{}': {}", path, e)))?,
-    );
+    // Each column task opens its own file handle (independent seek position, ~microsecond
+    // syscall). This avoids the cost of reading the entire file into memory upfront
+    // (e.g., 728MB -> ~380ms), and the OS page cache serves subsequent reads from memory.
 
     if setup.predicate_pushed {
         // Two-phase decode: predicate columns first (serial per RG), then data columns parallel.
@@ -1795,7 +1823,7 @@ pub fn local_parquet_read_arrowrs(
             .par_iter()
             .map(|task| {
                 decode_rg_predicate_phase(
-                    &file_bytes,
+                    path,
                     &setup,
                     task,
                     predicate.as_ref().unwrap(),
@@ -1838,7 +1866,7 @@ pub fn local_parquet_read_arrowrs(
             .map(|&(task_idx, col_idx)| {
                 let (_, ref selection) = phase1[task_idx];
                 let batch = decode_rg_column(
-                    &file_bytes,
+                    path,
                     &setup,
                     &setup.rg_tasks[task_idx],
                     col_idx,
@@ -1892,8 +1920,6 @@ pub fn local_parquet_read_arrowrs(
             .map(|task| {
                 let rg_rows = setup.parquet_metadata.row_group(task.rg_idx).num_rows() as usize;
                 let mut sel = build_base_row_selection(&setup, task, rg_rows);
-                // For non-pushed predicate path, offset is handled via RowSelection
-                // only when there's no predicate. With predicate, offset is in base_selection.
                 if !setup.predicate_pushed && task.local_offset > 0 {
                     let rg_rows = setup.parquet_metadata.row_group(task.rg_idx).num_rows() as usize;
                     let offset_sel = build_offset_row_selection(task.local_offset, rg_rows);
@@ -1907,7 +1933,7 @@ pub fn local_parquet_read_arrowrs(
             .par_iter()
             .map(|&(task_idx, col_idx)| {
                 let batch = decode_rg_column(
-                    &file_bytes,
+                    path,
                     &setup,
                     &setup.rg_tasks[task_idx],
                     col_idx,
@@ -2211,8 +2237,8 @@ pub async fn stream_parquet_single_arrowrs(
             .collect()
     };
 
-    // Fallback: single column -> use original single-stream approach.
-    if all_col_indices.len() <= 1 {
+    // Fallback: few columns -> use original single-stream approach.
+    if all_col_indices.len() < MIN_COLS_FOR_COL_PARALLELISM {
         let reader2 = DaftAsyncFileReader::new(
             uri.to_string(),
             io_client_saved,
