@@ -14,7 +14,6 @@ from daft.datatype import DataType
 from daft.logical.schema import Schema
 from daft.recordbatch import MicroPartition, recordbatch_io
 from daft.runners.partitioning import TableParseCSVOptions, TableReadOptions
-from daft.utils import get_arrow_version
 
 
 def test_read_input(tmpdir):
@@ -295,15 +294,12 @@ def test_csv_read_data_custom_comment():
                 "data": ["aa", "aa"],
             }
         )
-        # Skipping test for arrow < 7.0.0 as comments are not supported in pyarrow
-        arrow_version = get_arrow_version()
-        if arrow_version >= (7, 0, 0):
-            table = recordbatch_io.read_csv(
-                file,
-                schema,
-                csv_options=TableParseCSVOptions(comment="#"),
-            )
-            assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
+        table = recordbatch_io.read_csv(
+            file,
+            schema,
+            csv_options=TableParseCSVOptions(comment="#"),
+        )
+        assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
 
 
 def test_csv_read_data_variable_missing_columns():

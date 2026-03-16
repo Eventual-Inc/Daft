@@ -91,7 +91,7 @@ pub mod pylib {
         storage_config::StorageConfig,
     };
 
-    #[pyclass(module = "daft.daft", frozen)]
+    #[pyclass(module = "daft.daft", frozen, from_py_object)]
     #[derive(Debug, Clone)]
     pub struct ScanOperatorHandle {
         scan_op: ScanOperatorRef,
@@ -424,7 +424,7 @@ pub mod pylib {
         }
     }
 
-    #[pyclass(module = "daft.daft", name = "ScanTask", frozen)]
+    #[pyclass(module = "daft.daft", name = "ScanTask", frozen, from_py_object)]
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PyScanTask(pub ScanTaskLikeRef);
 

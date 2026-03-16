@@ -11,7 +11,12 @@ pub mod pylib {
 
     use crate::{PartitionField, PartitionTransform, Pushdowns};
 
-    #[pyclass(module = "daft.daft", name = "PyPartitionField", frozen)]
+    #[pyclass(
+        module = "daft.daft",
+        name = "PyPartitionField",
+        frozen,
+        from_py_object
+    )]
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PyPartitionField(pub Arc<PartitionField>);
 
@@ -52,7 +57,12 @@ pub mod pylib {
         }
     }
 
-    #[pyclass(module = "daft.daft", name = "PyPartitionTransform", frozen)]
+    #[pyclass(
+        module = "daft.daft",
+        name = "PyPartitionTransform",
+        frozen,
+        from_py_object
+    )]
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PyPartitionTransform(pub PartitionTransform);
 
@@ -153,7 +163,7 @@ pub mod pylib {
         }
     }
 
-    #[pyclass(module = "daft.daft", name = "PyPushdowns", frozen)]
+    #[pyclass(module = "daft.daft", name = "PyPushdowns", frozen, from_py_object)]
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PyPushdowns(pub Arc<Pushdowns>);
 

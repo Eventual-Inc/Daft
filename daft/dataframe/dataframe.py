@@ -766,7 +766,7 @@ class DataFrame:
 
     @classmethod
     def _from_schema(cls, schema: Schema) -> "DataFrame":
-        """Creates a Daft DataFrom from a Schema.
+        """Creates a Daft DataFrame from a Schema.
 
         Args:
             schema: The Schema to convert into a DataFrame.
@@ -1131,9 +1131,6 @@ class DataFrame:
 
             >>> df.write_json("output_dir", timestamp_format="%+")  # doctest: +SKIP
             # Output: "2024-01-15T10:30:45+00:00"
-
-        Warning:
-            Currently only supported with the Native runner!
         """
         if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
             raise ValueError(
@@ -1221,11 +1218,6 @@ class DataFrame:
         # Snapshot properties are only supported on pyiceberg >= 0.7.0. See https://github.com/apache/iceberg-python/issues/367
         if snapshot_properties and parse(pyiceberg.__version__) < parse("0.7.0"):
             raise ValueError("Snapshot properties are only supported on pyiceberg>=0.7.0")
-
-        if parse(pa.__version__) < parse("12.0.1"):
-            raise ValueError(
-                f"Write Iceberg is only supported on pyarrow>=12.0.1, found {pa.__version__}. See this issue for more information: https://github.com/apache/arrow/issues/37054#issuecomment-1668644887"
-            )
 
         if mode not in ["append", "overwrite"]:
             raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
@@ -4921,8 +4913,6 @@ class DataFrame:
     @classmethod
     def _from_ray_dataset(cls, ds: "ray.data.dataset.DataSet") -> "DataFrame":
         """Creates a DataFrame from a [Ray Dataset](https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset)."""
-        from ray.exceptions import RayTaskError
-
         if get_or_create_runner().name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
@@ -4933,17 +4923,7 @@ class DataFrame:
 
         partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
         cache_entry = get_or_create_runner().put_partition_set_into_cache(partition_set)
-        try:
-            size_bytes = partition_set.size_bytes()
-        except RayTaskError as e:
-            import pyarrow as pa
-            from packaging.version import parse
-
-            if "extension<arrow.fixed_shape_tensor>" in str(e) and parse(pa.__version__) < parse("13.0.0"):
-                raise ValueError(
-                    f"Reading Ray Dataset tensors is only supported with PyArrow >= 13.0.0, found {pa.__version__}. See this issue for more information: https://github.com/apache/arrow/pull/35933"
-                ) from e
-            raise e
+        size_bytes = partition_set.size_bytes()
 
         num_rows = len(partition_set)
         assert size_bytes is not None, "In-memory data should always have non-None size in bytes"

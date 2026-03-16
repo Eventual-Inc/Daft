@@ -30,7 +30,7 @@ impl DaftMergeSketchAggable for &StructArray {
 
         StructArray::from_arrow(
             Arc::new(Field::new(
-                &self.field.name,
+                self.field.name.clone(),
                 DataType::try_from(&*daft_sketch::ARROW_DDSKETCH_DTYPE)?,
             )),
             arrow_array,
@@ -67,7 +67,7 @@ impl DaftMergeSketchAggable for &StructArray {
 
         StructArray::from_arrow(
             Arc::new(Field::new(
-                &self.field.name,
+                self.field.name.clone(),
                 DataType::try_from(&*daft_sketch::ARROW_DDSKETCH_DTYPE)?,
             )),
             arrow_array,

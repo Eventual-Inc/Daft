@@ -170,15 +170,7 @@ class DeltaLakeWriteVisitors:
             self.partition_values = partition_values
 
         def __call__(self, written_file: pads.WrittenFile) -> None:
-            from daft.utils import get_arrow_version
-
-            # PyArrow added support for size in 9.0.0
-            if get_arrow_version() >= (9, 0, 0):
-                size = written_file.size
-            elif self.parent.fs is not None:
-                size = self.parent.fs.get_file_info([written_file.path])[0].size
-            else:
-                size = 0
+            size = written_file.size
 
             add_action = make_deltalake_add_action(
                 written_file.path, written_file.metadata, size, self.partition_values

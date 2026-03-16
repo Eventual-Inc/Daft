@@ -15,7 +15,6 @@ use serde::{Deserialize, Serialize};
 pub enum RepartitionSpec {
     Hash(HashRepartitionConfig),
     Random(RandomShuffleConfig),
-    IntoPartitions(IntoPartitionsConfig),
     Range(RangeRepartitionConfig),
 }
 
@@ -24,7 +23,6 @@ impl RepartitionSpec {
         match self {
             Self::Hash(_) => "Hash",
             Self::Random(_) => "Random",
-            Self::IntoPartitions(_) => "IntoPartitions",
             Self::Range(_) => "Range",
         }
     }
@@ -40,7 +38,6 @@ impl RepartitionSpec {
         match self {
             Self::Hash(conf) => conf.multiline_display(),
             Self::Random(conf) => conf.multiline_display(),
-            Self::IntoPartitions(conf) => conf.multiline_display(),
             Self::Range(conf) => conf.multiline_display(),
         }
     }
@@ -56,9 +53,6 @@ impl RepartitionSpec {
             Self::Random(RandomShuffleConfig { num_partitions }) => ClusteringSpec::Random(
                 RandomClusteringConfig::new(num_partitions.unwrap_or(upstream_num_partitions)),
             ),
-            Self::IntoPartitions(IntoPartitionsConfig { num_partitions }) => {
-                ClusteringSpec::Unknown(UnknownClusteringConfig::new(*num_partitions))
-            }
             Self::Range(RangeRepartitionConfig {
                 num_partitions,
                 by,
@@ -146,21 +140,6 @@ impl RangeRepartitionConfig {
         res.push(format!("Num partitions = {:?}", self.num_partitions));
         res.push(format!("By = {}", pairs));
         res
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub struct IntoPartitionsConfig {
-    pub num_partitions: usize,
-}
-
-impl IntoPartitionsConfig {
-    pub fn new(num_partitions: usize) -> Self {
-        Self { num_partitions }
-    }
-
-    pub fn multiline_display(&self) -> Vec<String> {
-        vec![format!("Num partitions = {}", self.num_partitions)]
     }
 }
 

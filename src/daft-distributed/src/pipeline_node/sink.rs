@@ -1,6 +1,7 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
+use common_file_formats::FileFormat;
 use common_metrics::{
     BYTES_WRITTEN_KEY, Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_WRITTEN_KEY, StatSnapshot,
     UNIT_BYTES, UNIT_MICROSECONDS, UNIT_ROWS,
@@ -9,6 +10,8 @@ use common_metrics::{
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
+#[cfg(feature = "python")]
+use daft_logical_plan::sink_info::CatalogType;
 use daft_logical_plan::{OutputFileInfo, SinkInfo, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
@@ -17,7 +20,7 @@ use opentelemetry::{KeyValue, metrics::Meter};
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -74,6 +77,47 @@ impl RuntimeStats for WriteStats {
     }
 }
 
+fn sink_display_name(sink_info: &SinkInfo<BoundExpr>) -> String {
+    match sink_info {
+        SinkInfo::OutputFileInfo(OutputFileInfo {
+            file_format,
+            partition_cols,
+            ..
+        }) => {
+            let partitioned = partition_cols.as_ref().is_some_and(|c| !c.is_empty());
+            match (file_format, partitioned) {
+                (FileFormat::Parquet, true) => "Partitioned Parquet Write".to_string(),
+                (FileFormat::Parquet, false) => "Parquet Write".to_string(),
+                (FileFormat::Csv, true) => "Partitioned CSV Write".to_string(),
+                (FileFormat::Csv, false) => "CSV Write".to_string(),
+                (FileFormat::Json, true) => "Partitioned JSON Write".to_string(),
+                (FileFormat::Json, false) => "JSON Write".to_string(),
+                (_, _) => "Write".to_string(),
+            }
+        }
+        #[cfg(feature = "python")]
+        SinkInfo::CatalogInfo(catalog_info) => match &catalog_info.catalog {
+            CatalogType::Iceberg(ic) => {
+                if ic.partition_cols.is_empty() {
+                    "Iceberg Write".to_string()
+                } else {
+                    "Partitioned Iceberg Write".to_string()
+                }
+            }
+            CatalogType::DeltaLake(dl) => {
+                if dl.partition_cols.as_ref().is_none_or(|c| c.is_empty()) {
+                    "DeltaLake Write".to_string()
+                } else {
+                    "Partitioned DeltaLake Write".to_string()
+                }
+            }
+            CatalogType::Lance(_) => "Lance Write".to_string(),
+        },
+        #[cfg(feature = "python")]
+        SinkInfo::DataSinkInfo(data_sink_info) => data_sink_info.name.clone(),
+    }
+}
+
 pub(crate) struct SinkNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
@@ -83,8 +127,6 @@ pub(crate) struct SinkNode {
 }
 
 impl SinkNode {
-    const NODE_NAME: NodeName = "Sink";
-
     pub fn new(
         node_id: NodeID,
         plan_config: &PlanConfig,
@@ -93,11 +135,12 @@ impl SinkNode {
         data_schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
+        let node_name = Arc::from(sink_display_name(sink_info.as_ref()));
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            node_name,
             NodeType::Write,
             NodeCategory::BlockingSink,
         );

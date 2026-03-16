@@ -69,7 +69,7 @@ mod window;
 
 pub(crate) use translate::logical_plan_to_pipeline_node;
 pub(crate) type NodeID = u32;
-pub(crate) type NodeName = &'static str;
+pub(crate) type NodeName = Arc<str>;
 
 /// The materialized output of a completed pipeline node.
 /// Contains both the partition data as well as metadata about the partition.
@@ -271,7 +271,7 @@ pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn produce_tasks(self: Arc<Self>, plan_context: &mut PlanExecutionContext)
     -> TaskBuilderStream;
     fn name(&self) -> NodeName {
-        self.context().node_name
+        self.context().node_name.clone()
     }
     fn node_id(&self) -> NodeID {
         self.context().node_id

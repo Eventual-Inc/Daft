@@ -8,9 +8,7 @@ use daft_schema::schema::SchemaRef;
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-    },
+    pipeline_node::{DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
 };
 
@@ -27,8 +25,6 @@ pub(crate) struct TopNNode {
 }
 
 impl TopNNode {
-    const NODE_NAME: NodeName = "TopN";
-
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
@@ -45,7 +41,7 @@ impl TopNNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(format!("TopN {}", limit)),
             NodeType::TopN,
             NodeCategory::BlockingSink,
         );

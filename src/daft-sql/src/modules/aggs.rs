@@ -94,7 +94,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
                 let pushdown_col = schema
                     .min_estimated_size_column()
                     .map(|name| name.to_string())
-                    .unwrap_or_else(|| schema[0].name.clone());
+                    .unwrap_or_else(|| schema[0].name.to_string());
                 unresolved_col(pushdown_col)
                     .count(daft_core::count_mode::CountMode::All)
                     .alias("count")
@@ -112,7 +112,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
                         let pushdown_col = schema
                             .min_estimated_size_column()
                             .map(|name| name.to_string())
-                            .unwrap_or_else(|| schema[0].name.clone());
+                            .unwrap_or_else(|| schema[0].name.to_string());
                         unresolved_col(pushdown_col)
                             .count(daft_core::count_mode::CountMode::All)
                             .alias("count")
@@ -136,7 +136,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
                         let pushdown_col = schema
                             .min_estimated_size_column()
                             .map(|name| name.to_string())
-                            .unwrap_or_else(|| schema[0].name.clone());
+                            .unwrap_or_else(|| schema[0].name.to_string());
                         unresolved_col(pushdown_col)
                             .count(daft_core::count_mode::CountMode::All)
                             .alias("count")
