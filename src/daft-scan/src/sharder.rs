@@ -80,6 +80,13 @@ impl Sharder {
     pub fn should_handle_item<T: Hash>(&self, item: &T) -> bool {
         self.shard_for_item(item) == self.rank
     }
+
+    /// Shards scan tasks according to the configured strategy.
+    pub fn shard_scan_tasks(&self, scan_tasks: &[ScanTaskRef]) -> DaftResult<Vec<ScanTaskRef>> {
+        match &self.strategy {
+            ShardingStrategy::File => shard_scan_tasks_by_file(self, scan_tasks),
+        }
+    }
 }
 
 impl fmt::Display for Sharder {
@@ -97,19 +104,6 @@ fn fnv_hash<T: Hash>(item: &T) -> u64 {
     let mut hasher = FnvHasher::default();
     item.hash(&mut hasher);
     hasher.finish()
-}
-
-/// Extension methods for `Sharder` that operate on concrete `ScanTaskRef` values.
-pub trait SharderExt {
-    fn shard_scan_tasks(&self, scan_tasks: &[ScanTaskRef]) -> DaftResult<Vec<ScanTaskRef>>;
-}
-
-impl SharderExt for Sharder {
-    fn shard_scan_tasks(&self, scan_tasks: &[ScanTaskRef]) -> DaftResult<Vec<ScanTaskRef>> {
-        match self.strategy() {
-            ShardingStrategy::File => shard_scan_tasks_by_file(self, scan_tasks),
-        }
-    }
 }
 
 fn filter_scan_tasks_by_file(

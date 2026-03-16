@@ -66,16 +66,12 @@ impl PartialEq for PythonTablesFactoryArgs {
 }
 
 pub mod pylib {
-    use std::{convert::TryFrom, default, sync::Arc};
+    use std::{default, sync::Arc};
 
     use common_daft_config::PyDaftExecutionConfig;
     use common_error::DaftResult;
     use common_file_formats::{FileFormatConfig, python::PyFileFormatConfig};
     use common_py_serde::impl_bincode_py_state_serialization;
-    use crate::{
-        PartitionField, Pushdowns, SupportsPushdownFilters,
-        python::pylib_scan_info::{PyPartitionField, PyPushdowns},
-    };
     use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, python::PyExpr};
     use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
     use daft_schema::{python::schema::PySchema, schema::SchemaRef};
@@ -85,8 +81,11 @@ pub mod pylib {
 
     use super::PythonTablesFactoryArgs;
     use crate::{
-        DataSource, ScanOperator, ScanOperatorRef, ScanTask, ScanTaskRef,
-        anonymous::AnonymousScanOperator, glob::GlobScanOperator,
+        DataSource, PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTask,
+        ScanTaskRef, SupportsPushdownFilters,
+        anonymous::AnonymousScanOperator,
+        glob::GlobScanOperator,
+        python::pylib_scan_info::{PyPartitionField, PyPushdowns},
         storage_config::StorageConfig,
     };
 
@@ -959,13 +958,13 @@ pub mod pylib_scan_info {
         }
 
         pub fn aggregation_count_mode(&self) -> Option<CountMode> {
-            match self.0.aggregation.as_ref() {
-                Some(expr) => match expr.as_ref() {
+            self.0
+                .aggregation
+                .as_ref()
+                .and_then(|expr| match expr.as_ref() {
                     Expr::Agg(AggExpr::Count(_, count_mode)) => Some(*count_mode),
                     _ => None,
-                },
-                None => None,
-            }
+                })
         }
     }
 }

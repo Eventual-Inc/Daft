@@ -5,10 +5,9 @@ use std::{
 };
 
 use common_error::DaftResult;
-use crate::{PartitionField, Pushdowns, SupportsPushdownFilters};
 use daft_schema::schema::SchemaRef;
 
-use crate::ScanTaskRef;
+use crate::{PartitionField, Pushdowns, ScanTaskRef, SupportsPushdownFilters};
 
 pub trait ScanOperator: Send + Sync + Debug {
     fn name(&self) -> &str;

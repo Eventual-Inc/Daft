@@ -5,9 +5,8 @@ use common_file_formats::{
     CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig,
 };
 use common_io_config::IOConfig;
-use daft_scan::ScanOperatorRef;
 use daft_core::prelude::TimeUnit;
-use daft_scan::{glob::GlobScanOperator, storage_config::StorageConfig};
+use daft_scan::{ScanOperatorRef, glob::GlobScanOperator, storage_config::StorageConfig};
 use daft_schema::{field::Field, schema::SchemaRef};
 #[cfg(feature = "python")]
 use {daft_scan::python::pylib::ScanOperatorHandle, pyo3::prelude::*};
@@ -364,8 +363,6 @@ pub fn delta_scan<T: AsRef<str>>(
     io_config: Option<IOConfig>,
     multithreaded_io: bool,
 ) -> DaftResult<LogicalPlanBuilder> {
-    use daft_scan::storage_config::StorageConfig;
-
     Python::attach(|py| {
         let io_config = io_config.unwrap_or_default();
 
@@ -374,7 +371,6 @@ pub fn delta_scan<T: AsRef<str>>(
             multithreaded_io,
         };
 
-        // let py_io_config = PyIOConfig { config: io_config };
         let delta_lake_scan = PyModule::import(py, "daft.io.delta_lake.delta_lake_scan")?;
         let delta_lake_scan_operator =
             delta_lake_scan.getattr(pyo3::intern!(py, "DeltaLakeScanOperator"))?;

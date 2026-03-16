@@ -5,11 +5,10 @@ use std::{
 };
 
 use common_display::{DisplayAs, DisplayLevel};
-use crate::{PartitionField, Pushdowns};
 use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 
-use crate::{ScanOperatorRef, ScanTaskRef};
+use crate::{PartitionField, Pushdowns, ScanOperatorRef, ScanTaskRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ScanState {

@@ -2,10 +2,12 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
-use crate::{PartitionField, Pushdowns};
 use daft_schema::schema::SchemaRef;
 
-use crate::{ChunkSpec, DataSource, ScanOperator, ScanTask, ScanTaskRef, storage_config::StorageConfig};
+use crate::{
+    ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
+    storage_config::StorageConfig,
+};
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
     files: Vec<String>,

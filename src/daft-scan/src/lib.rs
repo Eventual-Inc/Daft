@@ -36,7 +36,7 @@ pub use partitioning::{PartitionField, PartitionTransform};
 pub use pushdowns::{Pushdowns, SupportsPushdownFilters};
 pub use scan_operator::{ScanOperator, ScanOperatorRef};
 pub use scan_state::{PhysicalScanInfo, ScanState};
-pub use sharder::{Sharder, SharderExt, ShardingStrategy};
+pub use sharder::{Sharder, ShardingStrategy};
 pub mod test_utils;
 
 #[cfg(feature = "python")]
@@ -462,7 +462,6 @@ impl std::fmt::Debug for ScanTask {
         write!(f, "ScanTask")
     }
 }
-
 
 pub type ScanTaskRef = Arc<ScanTask>;
 
@@ -968,13 +967,13 @@ mod test {
     use common_display::{DisplayAs, DisplayLevel};
     use common_error::DaftResult;
     use common_file_formats::{FileFormatConfig, ParquetSourceConfig, WarcSourceConfig};
-    use crate::Pushdowns;
     use daft_schema::{dtype::DataType, field::Field, schema::Schema, time_unit::TimeUnit};
     use daft_stats::TableMetadata;
     use itertools::Itertools;
 
     use crate::{
-        DataSource, ScanOperator, ScanTask, glob::GlobScanOperator, storage_config::StorageConfig,
+        DataSource, Pushdowns, ScanOperator, ScanTask, glob::GlobScanOperator,
+        storage_config::StorageConfig,
     };
 
     fn make_scan_task(num_sources: usize) -> ScanTask {
