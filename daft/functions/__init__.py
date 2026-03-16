@@ -71,6 +71,17 @@ from .similarity import (
 )
 
 from .file_ import file, file_size, video_file, audio_file, guess_mime_type
+from .h3 import (
+    h3_latlng_to_cell,
+    h3_cell_to_lat,
+    h3_cell_to_lng,
+    h3_cell_to_str,
+    h3_str_to_cell,
+    h3_cell_resolution,
+    h3_cell_is_valid,
+    h3_cell_parent,
+    h3_grid_distance,
+)
 
 from .image import (
     resize,
@@ -315,6 +326,15 @@ __all__ = [
     "format",
     "get",
     "guess_mime_type",
+    "h3_cell_is_valid",
+    "h3_cell_parent",
+    "h3_cell_resolution",
+    "h3_cell_to_lat",
+    "h3_cell_to_lng",
+    "h3_cell_to_str",
+    "h3_grid_distance",
+    "h3_latlng_to_cell",
+    "h3_str_to_cell",
     "hash",
     "hour",
     "ilike",

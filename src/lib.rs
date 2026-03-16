@@ -164,6 +164,7 @@ pub mod pylib {
         functions_registry.register::<daft_functions_binary::BinaryFunctions>();
         functions_registry.register::<daft_functions_list::ListFunctions>();
         functions_registry.register::<daft_functions_utf8::Utf8Functions>();
+        functions_registry.register::<daft_functions_h3::H3Functions>();
         functions_registry.register::<daft_functions_json::JsonFunctions>();
         functions_registry.register::<daft_functions_serde::SerdeFunctions>();
         functions_registry.register::<daft_functions_temporal::TemporalFunctions>();
