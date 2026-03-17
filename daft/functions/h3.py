@@ -1,4 +1,7 @@
-"""H3 Geospatial Indexing Functions."""
+"""H3 Geospatial Indexing Functions.
+
+Functions for [H3](https://h3geo.org/), Uber's hierarchical hexagonal geospatial indexing system.
+"""
 
 from __future__ import annotations
 
