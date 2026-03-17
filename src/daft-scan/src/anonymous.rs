@@ -4,8 +4,8 @@ use common_error::DaftResult;
 use daft_schema::schema::SchemaRef;
 
 use crate::{
-    ChunkSpec, DataSource, FileFormatConfig, ParquetSourceConfig, PartitionField, Pushdowns,
-    ScanOperator, ScanTask, ScanTaskRef, SourceConfig, storage_config::StorageConfig,
+    ChunkSpec, FileFormatConfig, ParquetSourceConfig, PartitionField, Pushdowns, ScanOperator,
+    ScanSource, ScanTask, ScanTaskRef, SourceConfig, storage_config::StorageConfig,
 };
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
@@ -104,7 +104,7 @@ impl ScanOperator for AnonymousScanOperator {
             .map(|(f, rg)| {
                 let chunk_spec = rg.map(ChunkSpec::Parquet);
                 Arc::new(ScanTask::new(
-                    vec![DataSource::File {
+                    vec![ScanSource::File {
                         path: f,
                         chunk_spec,
                         size_bytes: None,

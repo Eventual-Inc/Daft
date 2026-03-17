@@ -19,8 +19,8 @@ use futures::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
 use snafu::Snafu;
 
 use crate::{
-    ChunkSpec, CsvSourceConfig, DataSource, FileFormatConfig, ParquetSourceConfig, PartitionField,
-    Pushdowns, ScanOperator, ScanTask, ScanTaskRef, SourceConfig,
+    ChunkSpec, CsvSourceConfig, FileFormatConfig, ParquetSourceConfig, PartitionField, Pushdowns,
+    ScanOperator, ScanSource, ScanTask, ScanTaskRef, SourceConfig,
     hive::{hive_partitions_to_fields, hive_partitions_to_series, parse_hive_partitioning},
     storage_config::StorageConfig,
 };
@@ -576,7 +576,7 @@ impl ScanOperator for GlobScanOperator {
                         .flatten();
                     let chunk_spec = row_group.map(ChunkSpec::Parquet);
                     Ok(Some(ScanTask::new(
-                        vec![DataSource::File {
+                        vec![ScanSource::File {
                             metadata: if let Some(first_filepath) = first_filepath
                                 && path == *first_filepath
                             {
