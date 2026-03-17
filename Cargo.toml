@@ -100,7 +100,6 @@ python = [
   "daft-scan/python",
   "daft-sql/python",
   "daft-session/python",
-  "daft-shuffles/python",
   "daft-stats/python",
   "daft-recordbatch/python",
   "daft-writers/python"

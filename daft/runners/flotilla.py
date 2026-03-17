@@ -22,7 +22,6 @@ from daft.daft import (
     RaySwordfishWorker,
     RayTaskResult,
     set_compute_runtime_num_worker_threads,
-    start_flight_server,
 )
 from daft.event_loop import set_event_loop
 from daft.expressions import Expression, ExpressionsProjection
@@ -98,16 +97,16 @@ class RaySwordfishActor:
     """
 
     def __init__(self, num_cpus: int, num_gpus: int) -> None:
-        os.environ["DAFT_FLOTILLA_WORKER"] = "1"
+        os.environ["DAFT_FLOTILLA_WORKER"] = "1"  # TODO: Remove once fixed DashboardSubscriber
         if num_gpus > 0:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_cpus)
         set_event_loop(asyncio.get_running_loop())
-        self.native_executor = NativeExecutor()
+
         self.ip = ray.util.get_node_ip_address()
-        self.server = start_flight_server(self.ip)
-        self.port = self.server.port()
+        self.native_executor = NativeExecutor(is_flotilla_worker=True, ip=self.ip)
+        self.port = self.native_executor.shuffle_port()
 
     def get_address(self) -> str:
         return f"grpc://{self.ip}:{self.port}"

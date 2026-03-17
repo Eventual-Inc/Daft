@@ -26,6 +26,7 @@ use daft_local_plan::{
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use daft_scan::ScanTaskRef;
+use daft_shuffles::server::flight_server::ShuffleFlightServer;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
 use opentelemetry::{InstrumentationScope, KeyValue, global, metrics::Meter};
@@ -196,14 +197,19 @@ pub struct BuilderContext {
     index_counter: std::cell::RefCell<usize>,
     pub meter: Meter,
     context: HashMap<String, String>,
+    shuffle_server: Option<Arc<ShuffleFlightServer>>,
 }
 
 impl BuilderContext {
     pub fn new() -> Self {
-        Self::new_with_context("".into(), HashMap::new())
+        Self::new_with_context("".into(), HashMap::new(), None)
     }
 
-    pub fn new_with_context(query_id: QueryID, context: HashMap<String, String>) -> Self {
+    pub fn new_with_context(
+        query_id: QueryID,
+        context: HashMap<String, String>,
+        shuffle_server: Option<Arc<ShuffleFlightServer>>,
+    ) -> Self {
         let scope = InstrumentationScope::builder("daft.execution.local")
             .with_attributes(vec![KeyValue::new(ATTR_QUERY_ID, query_id.to_string())])
             .build();
@@ -213,7 +219,12 @@ impl BuilderContext {
             index_counter: std::cell::RefCell::new(0),
             meter,
             context,
+            shuffle_server,
         }
+    }
+
+    pub fn shuffle_server(&self) -> Option<Arc<ShuffleFlightServer>> {
+        self.shuffle_server.clone()
     }
 
     pub fn next_id(&self) -> usize {
@@ -1395,6 +1406,9 @@ fn physical_plan_to_pipeline(
                 .get("task_id")
                 .cloned()
                 .expect("task_id must be set in context");
+            let shuffle_server = ctx
+                .shuffle_server()
+                .expect("Flight shuffle server must be initialized for FlightShuffleWrite plans when using flight_shuffle algorithm");
             let flight_shuffle_write_sink = FlightShuffleWriteSink::try_new(
                 *num_partitions,
                 partition_by.clone(),
@@ -1402,6 +1416,7 @@ fn physical_plan_to_pipeline(
                 shuffle_dirs.clone(),
                 compression.clone(),
                 cache_id,
+                shuffle_server,
             )
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
