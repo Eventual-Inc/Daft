@@ -211,3 +211,25 @@ def test_subscriber_template():
     df.collect()
     # Should only have the previous query
     assert len(subscriber.query_metadata) == 1
+
+
+def test_csv_scan_reports_bytes_read(tmp_path):
+    subscriber = MockSubscriber()
+    ctx = daft.context.get_context()
+    ctx.attach_subscriber("mock", subscriber)
+
+    try:
+        csv_path = tmp_path / "input.csv"
+        csv_path.write_text("a,b\n1,2\n3,4\n5,6\n")
+
+        daft.read_csv(str(csv_path)).collect()
+
+        query_id = subscriber.query_ids[-1]
+        all_node_stats = subscriber.query_node_stats[query_id]
+        bytes_read_values = [
+            value for stats in all_node_stats.values() for name, value in stats.items() if name == "bytes.read"
+        ]
+        assert bytes_read_values, "Expected at least one source node to report bytes.read"
+        assert any(value > 0 for value in bytes_read_values)
+    finally:
+        ctx.detach_subscriber("mock")

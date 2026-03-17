@@ -692,12 +692,15 @@ class DataFrame:
     @classmethod
     def _from_pylist(cls, data: list[dict[str, Any]]) -> "DataFrame":
         """Creates a DataFrame from a list of dictionaries."""
-        headers: set[str] = set()
+        headers_ordered: list[str] = []
+        seen_headers: set[str] = set()
         for row in data:
             if not isinstance(row, dict):
                 raise ValueError(f"Expected list of dictionaries of {{column_name: value}}, received: {type(row)}")
-            headers.update(row.keys())
-        headers_ordered = sorted(list(headers))
+            for key in row.keys():
+                if key not in seen_headers:
+                    seen_headers.add(key)
+                    headers_ordered.append(key)
         return cls._from_pydict(data={header: [row.get(header, None) for row in data] for header in headers_ordered})
 
     @classmethod
