@@ -382,7 +382,7 @@ impl FormatSinkOption {
 }
 
 #[cfg(feature = "python")]
-#[pyo3::pyclass()]
+#[pyo3::pyclass(from_py_object)]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PyFormatSinkOption {
     pub inner: FormatSinkOption,

@@ -3,6 +3,11 @@ name = "daft-ext"
 edition = {workspace = true}
 version = {workspace = true}
 
+[features]
+arrow-56 = ["daft-ext-abi/arrow-56"]
+arrow-57 = ["daft-ext-abi/arrow-57"]
+arrow-58 = ["daft-ext-abi/arrow-58"]
+
 [dependencies]
 daft-ext-abi = {path = "../daft-ext-abi"}
 daft-ext-core = {path = "../daft-ext-core"}

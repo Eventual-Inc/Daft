@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import daft
 from daft.datatype import DataType
 from daft.expressions import col
-from daft.udf import udf
 from tests.conftest import assert_df_equals
 from tests.dataframe.test_aggregations import _assert_all_hashable
 
@@ -296,7 +296,7 @@ def test_sum_groupby_sorted(daft_df, service_requests_csv_pd_df, repartition_npa
 def test_map_groups(daft_df, service_requests_csv_pd_df, repartition_nparts, keys, with_morsel_size):
     """Test map_groups."""
 
-    @udf(return_dtype=DataType.float64())
+    @daft.func.batch(return_dtype=DataType.float64())
     def average_resolution_time(created_date, closed_date):
         # Calculate the time difference in seconds between created and closed date
         times = [

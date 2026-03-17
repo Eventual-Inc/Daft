@@ -9,16 +9,14 @@ use common_metrics::{
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::SourceSnapshot,
 };
-use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
+use daft_scan::{Pushdowns, ScanTaskRef};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
 use opentelemetry::{KeyValue, metrics::Meter};
 
-use super::{
-    NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
-};
+use super::{PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID, metrics::key_values_from_context},
     plan::{PlanConfig, PlanExecutionContext},
@@ -71,24 +69,24 @@ pub(crate) struct ScanSourceNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     pushdowns: Pushdowns,
-    scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+    scan_tasks: Arc<Vec<ScanTaskRef>>,
 }
 
 impl ScanSourceNode {
-    const NODE_NAME: NodeName = "ScanSource";
+    const NODE_NAME: &'static str = "ScanTaskSource";
 
     pub fn new(
         node_id: NodeID,
         plan_config: &PlanConfig,
         pushdowns: Pushdowns,
-        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+        scan_tasks: Arc<Vec<ScanTaskRef>>,
         schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::ScanTask,
             NodeCategory::Source,
         );
@@ -111,9 +109,10 @@ impl ScanSourceNode {
         DistributedPipelineNode::new(Arc::new(self))
     }
 
-    fn make_source_task(self: &Arc<Self>, scan_task: ScanTaskLikeRef) -> SwordfishTaskBuilder {
+    fn make_source_task(self: &Arc<Self>, scan_task: ScanTaskRef) -> SwordfishTaskBuilder {
         let physical_scan = LocalPhysicalPlan::physical_scan(
             self.node_id(),
+            Some(scan_task.file_format_config.clone()),
             self.pushdowns.clone(),
             self.config.schema.clone(),
             StatsState::NotMaterialized,
@@ -157,7 +156,7 @@ impl PipelineNodeImpl for ScanSourceNode {
         if let Some(ffc) = self
             .scan_tasks
             .first()
-            .map(|s| s.file_format_config())
+            .map(|s| s.file_format_config.clone())
             .as_deref()
         {
             match ffc {

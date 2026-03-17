@@ -41,12 +41,25 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    use arrow_array::{ArrayRef, Int32Array};
-    use arrow_schema::{DataType, Field};
-    use daft_ext_abi::FFI_ScalarFunction;
+    use arrow_array::{Array, Int32Array};
+    use arrow_schema::{DataType, Field, Schema};
+    use daft_ext_abi::{ArrowArray, ArrowData, ArrowSchema, FFI_ScalarFunction};
 
     use super::*;
     use crate::{error::DaftResult, function::DaftScalarFunction};
+
+    fn export_array(array: &dyn Array) -> ArrowData {
+        let (ffi_array, ffi_schema) = arrow::ffi::to_ffi(&array.to_data()).unwrap();
+        ArrowData {
+            array: unsafe { ArrowArray::from_owned(ffi_array) },
+            schema: unsafe { ArrowSchema::from_owned(ffi_schema) },
+        }
+    }
+
+    fn export_schema(schema: &Schema) -> ArrowSchema {
+        let ffi = arrow::ffi::FFI_ArrowSchema::try_from(schema).unwrap();
+        unsafe { ArrowSchema::from_owned(ffi) }
+    }
 
     #[test]
     fn session_context_integration() {
@@ -74,11 +87,16 @@ mod tests {
             fn name(&self) -> &CStr {
                 c"my_add"
             }
-            fn return_field(&self, _: &[Field]) -> DaftResult<Field> {
-                Ok(Field::new("sum", DataType::Int32, false))
+            fn return_field(&self, _: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
+                Ok(export_schema(&Schema::new(vec![Field::new(
+                    "sum",
+                    DataType::Int32,
+                    false,
+                )])))
             }
-            fn call(&self, _: &[ArrayRef]) -> DaftResult<ArrayRef> {
-                Ok(Arc::new(Int32Array::from(vec![0])))
+            fn call(&self, _: Vec<ArrowData>) -> DaftResult<ArrowData> {
+                let output = Int32Array::from(vec![0]);
+                Ok(export_array(&output))
             }
         }
 
@@ -117,11 +135,16 @@ mod tests {
             fn name(&self) -> &CStr {
                 c"fn_a"
             }
-            fn return_field(&self, _: &[Field]) -> DaftResult<Field> {
-                Ok(Field::new("a", DataType::Int32, false))
+            fn return_field(&self, _: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
+                Ok(export_schema(&Schema::new(vec![Field::new(
+                    "a",
+                    DataType::Int32,
+                    false,
+                )])))
             }
-            fn call(&self, _: &[ArrayRef]) -> DaftResult<ArrayRef> {
-                Ok(Arc::new(Int32Array::from(vec![0])))
+            fn call(&self, _: Vec<ArrowData>) -> DaftResult<ArrowData> {
+                let output = Int32Array::from(vec![0]);
+                Ok(export_array(&output))
             }
         }
 
@@ -130,11 +153,16 @@ mod tests {
             fn name(&self) -> &CStr {
                 c"fn_b"
             }
-            fn return_field(&self, _: &[Field]) -> DaftResult<Field> {
-                Ok(Field::new("b", DataType::Utf8, true))
+            fn return_field(&self, _: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
+                Ok(export_schema(&Schema::new(vec![Field::new(
+                    "b",
+                    DataType::Utf8,
+                    true,
+                )])))
             }
-            fn call(&self, _: &[ArrayRef]) -> DaftResult<ArrayRef> {
-                Ok(Arc::new(Int32Array::from(vec![0])))
+            fn call(&self, _: Vec<ArrowData>) -> DaftResult<ArrowData> {
+                let output = Int32Array::from(vec![0]);
+                Ok(export_array(&output))
             }
         }
 

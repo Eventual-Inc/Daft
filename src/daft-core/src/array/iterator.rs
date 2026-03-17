@@ -87,7 +87,6 @@ impl<'a, T: DaftPrimitiveType> IntoIterator for &'a DataArray<T> {
 // ---- Generic index-based iterator ----
 // Used for Utf8, Binary, and FixedSizeBinary arrays.
 // Stores a reference to the daft array and uses .get(idx) for value access,
-// avoiding any direct dependency on arrow2 types.
 
 #[derive(Clone)]
 pub struct GenericArrayIter<'a, A, T> {

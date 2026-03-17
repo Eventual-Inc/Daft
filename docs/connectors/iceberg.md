@@ -115,7 +115,7 @@ algebraic operator is called a *scan*.
 
 ### [`read_iceberg`][daft.read_iceberg]
 
-Daft's [`daft.read_iceberg`][daft.read_iceberg] method creates a DataFrame from the the given PyIceberg
+Daft's [`daft.read_iceberg`][daft.read_iceberg] method creates a DataFrame from the given PyIceberg
 table. It produces rows by traversing the table's metadata tree to locate all
 the data files for the given snapshot which is handled by our
 `IcebergScanOperator`.

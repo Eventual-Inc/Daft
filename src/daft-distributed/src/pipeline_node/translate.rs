@@ -3,7 +3,6 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use common_scan_info::{SPLIT_AND_MERGE_PASS, ScanState};
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_dsl::{
     expr::{
@@ -16,6 +15,7 @@ use daft_logical_plan::{
     LogicalPlan, LogicalPlanRef, SourceInfo,
     partitioning::{ClusteringSpec, HashRepartitionConfig, RepartitionSpec},
 };
+use daft_scan::{ScanState, scan_task_iters};
 use daft_schema::schema::Schema;
 
 use crate::{
@@ -113,18 +113,17 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     )
                     .into_node(),
                     SourceInfo::Physical(info) => {
-                        // We should be able to pass the ScanOperator into the physical plan directly but we need to figure out the serialization story
                         let scan_tasks = match &info.scan_state {
                             ScanState::Operator(_) => unreachable!(
                                 "ScanOperator should not be present in the optimized logical plan for pipeline node translation"
                             ),
                             ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
                         };
+
                         // Perform scan task splitting and merging.
                         let scan_tasks = if self.plan_config.config.enable_scan_task_split_and_merge
-                            && let Some(split_and_merge_pass) = SPLIT_AND_MERGE_PASS.get()
                         {
-                            split_and_merge_pass(
+                            scan_task_iters::split_and_merge_pass(
                                 scan_tasks,
                                 &info.pushdowns,
                                 &self.plan_config.config,
@@ -141,14 +140,14 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         )
                         .into_node()
                     }
-                    SourceInfo::GlobScan(info) => GlobScanSourceNode::new(
+                    SourceInfo::GlobScan(info) => GlobScanSourceNode::try_new(
                         self.get_next_pipeline_node_id(),
                         &self.plan_config,
                         info.glob_paths.clone(),
                         info.pushdowns.clone(),
                         source.output_schema.clone(),
                         info.io_config.clone().map(|c| *c),
-                    )
+                    )?
                     .into_node(),
                     SourceInfo::PlaceHolder(_) => unreachable!(
                         "PlaceHolder should not be present in the logical plan for pipeline node translation"
@@ -313,15 +312,15 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         child,
                     )?
                 }
-                RepartitionSpec::IntoPartitions(into_partitions_spec) => IntoPartitionsNode::new(
-                    self.get_next_pipeline_node_id(),
-                    &self.plan_config,
-                    into_partitions_spec.num_partitions,
-                    node.schema(),
-                    self.curr_node.pop().unwrap(),
-                )
-                .into_node(),
             },
+            LogicalPlan::IntoPartitions(into_partitions) => IntoPartitionsNode::new(
+                self.get_next_pipeline_node_id(),
+                &self.plan_config,
+                into_partitions.num_partitions,
+                node.schema(),
+                self.curr_node.pop().unwrap(),
+            )
+            .into_node(),
             LogicalPlan::Aggregate(aggregate) => {
                 let input_schema = aggregate.input.schema();
                 let group_by = BoundExpr::bind_all(&aggregate.groupby, &input_schema)?;

@@ -1,12 +1,31 @@
-[dependencies]
-arrow = {workspace = true, features = ["ffi"]}
-arrow-array = {workspace = true}
-
-[lints]
-workspace = true
-
 [package]
 description = "Daft extension C ABI contract"
 edition = {workspace = true}
 name = "daft-ext-abi"
 version = {workspace = true}
+
+[package.metadata.cargo-machete]
+ignored = [
+  "arrow-data-56",
+  "arrow-data-57",
+  "arrow-data-58",
+  "arrow-schema-56",
+  "arrow-schema-57",
+  "arrow-schema-58"
+]
+
+[features]
+arrow-56 = ["dep:arrow-schema-56", "dep:arrow-data-56"]
+arrow-57 = ["dep:arrow-schema-57", "dep:arrow-data-57"]
+arrow-58 = ["dep:arrow-schema-58", "dep:arrow-data-58"]
+
+[dependencies]
+arrow-schema-56 = {package = "arrow-schema", version = "56", features = ["ffi"], optional = true}
+arrow-data-56 = {package = "arrow-data", version = "56", features = ["ffi"], optional = true}
+arrow-schema-57 = {package = "arrow-schema", version = "57", features = ["ffi"], optional = true}
+arrow-data-57 = {package = "arrow-data", version = "57", features = ["ffi"], optional = true}
+arrow-schema-58 = {package = "arrow-schema", version = "58", features = ["ffi"], optional = true}
+arrow-data-58 = {package = "arrow-data", version = "58", features = ["ffi"], optional = true}
+
+[lints]
+workspace = true

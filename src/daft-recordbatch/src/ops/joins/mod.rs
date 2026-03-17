@@ -54,7 +54,7 @@ fn add_non_join_key_columns(
         .collect::<HashSet<_>>();
 
     for field in left.schema.as_ref() {
-        if join_keys.contains(&field.name) {
+        if join_keys.contains(&*field.name) {
             continue;
         }
         join_series.push(get_column_by_name(left, &field.name)?.take(&lidx)?);
@@ -63,7 +63,7 @@ fn add_non_join_key_columns(
     drop(lidx);
 
     for field in right.schema.as_ref() {
-        if join_keys.contains(&field.name) {
+        if join_keys.contains(&*field.name) {
             continue;
         }
 

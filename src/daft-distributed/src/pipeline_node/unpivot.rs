@@ -8,9 +8,7 @@ use daft_schema::schema::SchemaRef;
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-    },
+    pipeline_node::{DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
 };
 
@@ -25,7 +23,7 @@ pub(crate) struct UnpivotNode {
 }
 
 impl UnpivotNode {
-    const NODE_NAME: NodeName = "Unpivot";
+    const NODE_NAME: &'static str = "Unpivot";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -42,7 +40,7 @@ impl UnpivotNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Unpivot,
             NodeCategory::Intermediate,
         );

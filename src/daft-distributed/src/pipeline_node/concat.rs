@@ -10,8 +10,8 @@ use futures::StreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, TaskBuilderStream,
+        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
+        TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
 };
@@ -24,7 +24,7 @@ pub(crate) struct ConcatNode {
 }
 
 impl ConcatNode {
-    const NODE_NAME: NodeName = "Concat";
+    const NODE_NAME: &'static str = "Concat";
 
     pub fn new(
         node_id: NodeID,
@@ -37,7 +37,7 @@ impl ConcatNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Concat,
             NodeCategory::StreamingSink,
         );

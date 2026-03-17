@@ -10,10 +10,11 @@ import daft
 def test_sql_udf():
     df = daft.from_pydict({"a": [1, 2, 3]})
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def multiply_by_n(data, n):
         return [i * n for i in data]
 
+    daft.attach_function(multiply_by_n)
     bindings = {"df": df}
 
     expected = {"b": [2, 4, 6]}
@@ -26,14 +27,16 @@ def test_sql_udf_ambigious_name():
     df = daft.from_pydict({"a": [1, 2, 3]})
     bindings = {"df": df}
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def multiply_by_n(data, n):
         return [i * n for i in data]
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def MULTIPLY_BY_N(data, n):
         return [i * n for i in data]
 
+    daft.attach_function(multiply_by_n)
+    daft.attach_function(MULTIPLY_BY_N)
     with pytest.raises(Exception, match="Invalid operation: Ambigiuous identifier for Function: found"):
         daft.sql("select multiply_by_n(a, n:=2) from df", **bindings).to_pydict()
 
@@ -42,10 +45,11 @@ def test_sql_udf_multi_column():
     df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
     bindings = {"df": df}
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def multiply(a, b):
         return a * b
 
+    daft.attach_function(multiply)
     expected = {"a": [4, 10, 18]}
     actual = daft.sql("select multiply(a, b) as a from df", **bindings).to_pydict()
     assert actual == expected
@@ -55,10 +59,11 @@ def test_sql_udf_multi_column_and_kwargs():
     df = daft.from_pydict({"first_name": ["Alice", "Bob", "Charlie"], "last_name": ["Smith", "Johnson", "Williams"]})
     bindings = {"df": df}
 
-    @daft.udf(return_dtype=str)
+    @daft.func.batch(return_dtype=str)
     def make_greeting(a, b, greeting="hello"):
         return [f"{greeting}, {a} {b}" for a, b in zip(a, b)]
 
+    daft.attach_function(make_greeting)
     expected = {
         "greeting1": ["hello, Alice Smith", "hello, Bob Johnson", "hello, Charlie Williams"],
         "greeting2": ["hi, Alice Smith", "hi, Bob Johnson", "hi, Charlie Williams"],
@@ -86,10 +91,11 @@ def test_sql_udf_kwargs_dont_work_as_positional():
     [("1.23", float), ("1", int), ("'hello'", str), ("['hello']", daft.DataType.list(daft.DataType.string()))],
 )
 def test_sql_udf_various_datatypes(value, return_type):
-    @daft.udf(return_dtype=return_type)
+    @daft.func.batch(return_dtype=return_type)
     def udf(column, literal):
         return [literal for i in column]
 
+    daft.attach_function(udf)
     df = daft.from_pydict({"x": [i for i in range(10)]})
 
     bindings = {"df": df}
@@ -110,10 +116,11 @@ def test_sql_udf_various_datatypes(value, return_type):
 
 
 def test_sql_udf_unregister():
-    @daft.udf(return_dtype=str)
+    @daft.func.batch(return_dtype=str)
     def my_udf(column, literal):
         return ["hello" for i in column]
 
+    daft.attach_function(my_udf)
     daft.detach_function("my_udf")
     with pytest.raises(Exception, match="Function `my_udf` not found"):
         daft.sql("select my_udf(1, literal:='world')").to_pydict()

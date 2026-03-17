@@ -312,10 +312,10 @@ impl Join {
                             Field { name, dtype, .. },
                             JoinSide::Right,
                         ))) = e.as_ref()
-                            && let Some(new_name) = right_rename_mapping.get(&name.clone())
+                            && let Some(new_name) = right_rename_mapping.get(&**name)
                         {
                             Ok(Transformed::yes(right_col(Field::new(
-                                new_name,
+                                new_name.as_str(),
                                 dtype.clone(),
                             ))))
                         } else {
@@ -382,7 +382,7 @@ impl Join {
     }
 }
 
-#[cfg_attr(feature = "python", pyclass)]
+#[cfg_attr(feature = "python", pyclass(from_py_object))]
 #[derive(Clone, Default)]
 pub struct JoinOptions {
     pub prefix: Option<String>,

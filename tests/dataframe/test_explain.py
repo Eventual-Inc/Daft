@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import warnings
+
 import pytest
+
+# This module tests legacy @daft.udf features (ray_options, override_options) with no new-API equivalent.
+warnings.filterwarnings("ignore", category=DeprecationWarning, message=r".*@daft\.udf.*")
+pytestmark = pytest.mark.filterwarnings(r"ignore:.*@daft\.udf.*:DeprecationWarning")
 
 import daft
 from daft import col, get_or_infer_runner_type, udf
@@ -128,7 +134,7 @@ def test_explain_with_cross_join(small_df, large_df):
         df = small_df.join(other=large_df, how="cross")
         expected = """
         * CrossJoin
-        |   Left: Node name = ScanSource
+        |   Left: Node name = ScanTaskSource
         |   Right: Node name = Project
             """
         assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
@@ -136,7 +142,7 @@ def test_explain_with_cross_join(small_df, large_df):
         df = large_df.join(other=small_df, how="cross")
         expected = """
         * CrossJoin
-        |   Left: Node name = ScanSource
+        |   Left: Node name = ScanTaskSource
         |   Right: Node name = Project
             """
         assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))

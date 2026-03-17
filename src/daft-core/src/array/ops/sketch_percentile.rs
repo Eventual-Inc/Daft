@@ -15,7 +15,7 @@ impl StructArray {
         force_list_output: bool,
     ) -> DaftResult<Series> {
         let output_dtype = DataType::FixedSizeList(Box::new(DataType::Float64), percentiles.len());
-        let output_field = Field::new(self.field.name.as_str(), output_dtype);
+        let output_field = Field::new(self.field.name.as_ref(), output_dtype);
 
         let mut array_builder =
             arrow::array::Float64Builder::with_capacity(percentiles.len() * self.len());

@@ -13,7 +13,6 @@ use common_metrics::{
     ATTR_QUERY_ID, QueryID,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
-use common_scan_info::ScanTaskLikeRef;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
@@ -26,6 +25,7 @@ use daft_local_plan::{
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
+use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
 use opentelemetry::{InstrumentationScope, KeyValue, global, metrics::Meter};
@@ -242,11 +242,16 @@ impl BuilderContext {
 
         let node_phase = node_context.phase.clone();
 
+        let id = self.next_id();
+        // Keep a unique local runtime node id (`id`), but preserve the originating
+        // distributed plan node id (`node_origin_id`) when available so metrics/stats
+        // from local execution can be attributed back to the distributed node.
+        let node_origin_id = node_context.origin_node_id.unwrap_or(id);
+
         NodeInfo {
             name,
-            id: node_context
-                .origin_node_id
-                .unwrap_or_else(|| self.next_id()),
+            id,
+            node_origin_id,
             node_type,
             node_category,
             node_phase,
@@ -313,15 +318,22 @@ fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan {
             source_id,
+            file_format_config,
             pushdowns,
             schema,
             stats_state,
             context,
         }) => {
-            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<ScanTaskLikeRef>)>();
+            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<ScanTaskRef>)>();
             input_senders.insert(*source_id, InputSender::ScanTasks(tx));
 
-            let scan_task_source = ScanTaskSource::new(rx, pushdowns.clone(), schema.clone(), cfg);
+            let scan_task_source = ScanTaskSource::new(
+                rx,
+                file_format_config.clone(),
+                pushdowns.clone(),
+                schema.clone(),
+                cfg,
+            );
             SourceNode::new(
                 Box::new(scan_task_source),
                 stats_state.clone(),

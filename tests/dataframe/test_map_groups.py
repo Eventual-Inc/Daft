@@ -19,7 +19,7 @@ def test_map_groups(make_df, repartition_nparts, with_morsel_size):
         repartition=repartition_nparts,
     )
 
-    @daft.udf(return_dtype=daft.DataType.list(daft.DataType.float64()))
+    @daft.func.batch(return_dtype=daft.DataType.list(daft.DataType.float64()))
     def udf(a, b):
         a, b = a.to_pylist(), b.to_pylist()
         res = []
@@ -84,7 +84,7 @@ def test_map_groups_more_than_one_output_row(make_df, repartition_nparts, output
         repartition=repartition_nparts,
     )
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def udf(a):
         a = a.to_pylist()
         if len(a) == 0:

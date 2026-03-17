@@ -53,7 +53,7 @@ impl SQLTableFunction for SqlReadIceberg {
         args: &TableFunctionArgs,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
         let args = SqlReadIcebergArgs::try_from(planner, args)?;
-        Ok(daft_scan::builder::iceberg_scan(
+        Ok(daft_logical_plan::scan_builder::iceberg_scan(
             args.metadata_location,
             args.snapshot_id,
             args.io_config,
