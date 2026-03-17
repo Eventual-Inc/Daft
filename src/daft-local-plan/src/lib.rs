@@ -10,12 +10,13 @@ use daft_scan::ScanTaskRef;
 #[cfg(feature = "python")]
 pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject, LanceWrite};
 pub use plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleRead, FlightShuffleWrite,
-    GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, IntoPartitions, Limit,
-    LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, MonotonicallyIncreasingId,
-    PhysicalScan, PhysicalWrite, Pivot, Project, Repartition, Sample, SamplingMethod, Sort,
-    SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
-    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
+    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleRead,
+    FlightShuffleReadInput, FlightShuffleWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan,
+    IntoBatches, IntoPartitions, Limit, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,
+    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Repartition, Sample,
+    SamplingMethod, Sort, SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot,
+    VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
+    WindowPartitionOnly,
 };
 #[cfg(feature = "python")]
 pub use python::{PyLocalPhysicalPlan, register_modules};
@@ -42,6 +43,7 @@ impl SourceIdCounter {
 pub enum Input {
     ScanTasks(Vec<ScanTaskRef>),
     GlobPaths(Vec<String>),
+    FlightShuffle(Vec<FlightShuffleReadInput>),
     #[serde(skip)]
     InMemory(Vec<MicroPartitionRef>),
 }
