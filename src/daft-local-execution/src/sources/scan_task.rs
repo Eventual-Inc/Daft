@@ -7,33 +7,29 @@ use async_trait::async_trait;
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
-use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
-use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_dsl::{AggExpr, Expr};
-use daft_io::{GetRange, IOStatsRef};
-use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
+use daft_io::IOStatsRef;
 use daft_local_plan::InputId;
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
-use daft_scan::{ChunkSpec, Pushdowns, ScanTask, ScanTaskRef};
-use daft_text::{TextConvertOptions, TextReadOptions};
-use daft_warc::WarcConvertOptions;
+use daft_scan::{FileFormatConfig, Pushdowns, ScanTask, ScanTaskRef, SourceConfig};
 use futures::{FutureExt, Stream, StreamExt};
-use snafu::ResultExt;
 use tracing::instrument;
 
 use crate::{
     channel::{Receiver, Sender, UnboundedReceiver, create_channel, create_unbounded_channel},
     pipeline::NodeName,
-    sources::source::{Source, SourceStream},
+    sources::{
+        scan_task_reader,
+        source::{Source, SourceStream},
+    },
 };
 
 pub struct ScanTaskSource {
     receiver: Option<UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>>,
-    file_format_config: Option<Arc<FileFormatConfig>>,
+    source_config: Option<Arc<SourceConfig>>,
     pushdowns: Pushdowns,
     schema: SchemaRef,
     num_parallel_tasks: usize,
@@ -42,7 +38,7 @@ pub struct ScanTaskSource {
 impl ScanTaskSource {
     pub fn new(
         receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
-        file_format_config: Option<Arc<FileFormatConfig>>,
+        source_config: Option<Arc<SourceConfig>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
@@ -55,7 +51,7 @@ impl ScanTaskSource {
         };
         Self {
             receiver: Some(receiver),
-            file_format_config,
+            source_config,
             pushdowns,
             schema,
             num_parallel_tasks,
@@ -209,23 +205,25 @@ impl Source for ScanTaskSource {
     }
 
     fn name(&self) -> NodeName {
-        if let Some(file_format_config) = &self.file_format_config {
-            match file_format_config.as_ref() {
-                FileFormatConfig::Parquet(_) => "Read Parquet".into(),
-                FileFormatConfig::Csv(_) => "Read CSV".into(),
-                FileFormatConfig::Json(_) => "Read JSON".into(),
-                FileFormatConfig::Warc(_) => "Read WARC".into(),
+        if let Some(source_config) = &self.source_config {
+            match source_config.as_ref() {
+                SourceConfig::File(ffc) => match ffc {
+                    FileFormatConfig::Parquet(_) => "Read Parquet".into(),
+                    FileFormatConfig::Csv(_) => "Read CSV".into(),
+                    FileFormatConfig::Json(_) => "Read JSON".into(),
+                    FileFormatConfig::Warc(_) => "Read WARC".into(),
+                    FileFormatConfig::Text(_) => "Read Text".into(),
+                },
                 #[cfg(feature = "python")]
-                FileFormatConfig::Database(_) => "Read Database".into(),
+                SourceConfig::Database(_) => "Read Database".into(),
                 #[cfg(feature = "python")]
-                FileFormatConfig::PythonFunction { source_name, .. } => {
+                SourceConfig::PythonFunction { source_name, .. } => {
                     if let Some(source_name) = source_name {
                         format!("Read {source_name} (Python)").into()
                     } else {
                         "Read Python".into()
                     }
                 }
-                FileFormatConfig::Text(_) => "Read Text".into(),
             }
         } else {
             "Empty (Scan Task)".into()
@@ -492,194 +490,19 @@ async fn stream_scan_task(
             .unwrap_or_default(),
     );
     let io_client = daft_io::get_io_client(scan_task.storage_config.multithreaded_io, io_config)?;
-    let table_stream = match scan_task.file_format_config.as_ref() {
-        FileFormatConfig::Parquet(ParquetSourceConfig {
-            coerce_int96_timestamp_unit,
-            field_id_mapping,
-            chunk_size: chunk_size_from_config,
-            ..
-        }) => {
-            if let Some(aggregation) = &scan_task.pushdowns.aggregation
-                && let Expr::Agg(AggExpr::Count(_, _)) = aggregation.as_ref()
-            {
-                daft_parquet::read::stream_parquet_count_pushdown(
-                    url,
-                    io_client,
-                    Some(io_stats),
-                    field_id_mapping.clone(),
-                    aggregation,
-                )
-                .await?
-            } else {
-                let parquet_chunk_size = chunk_size_from_config.or(Some(chunk_size));
-                let inference_options =
-                    ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
 
-                let delete_rows = delete_map.as_ref().and_then(|m| m.get(url).cloned());
-                let row_groups =
-                    if let Some(ChunkSpec::Parquet(row_groups)) = source.get_chunk_spec() {
-                        Some(row_groups.clone())
-                    } else {
-                        None
-                    };
-                let metadata = scan_task
-                    .sources
-                    .first()
-                    .and_then(|s| s.get_parquet_metadata().cloned());
-                daft_parquet::read::stream_parquet(
-                    url,
-                    file_column_names,
-                    scan_task.pushdowns.limit,
-                    row_groups,
-                    scan_task.pushdowns.filters.clone(),
-                    io_client,
-                    Some(io_stats),
-                    &inference_options,
-                    field_id_mapping.clone(),
-                    metadata,
-                    maintain_order,
-                    delete_rows,
-                    parquet_chunk_size,
-                )
-                .await?
-            }
-        }
-        FileFormatConfig::Csv(cfg) => {
-            let schema_of_file = scan_task.schema.clone();
-            let col_names = if !cfg.has_headers {
-                Some(schema_of_file.field_names().collect::<Vec<_>>())
-            } else {
-                None
-            };
-            let convert_options = CsvConvertOptions::new_internal(
-                scan_task.pushdowns.limit,
-                file_column_names
-                    .as_ref()
-                    .map(|cols| cols.iter().map(|col| (*col).clone()).collect()),
-                col_names
-                    .as_ref()
-                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
-                Some(schema_of_file),
-                scan_task.pushdowns.filters.clone(),
-            );
-            let parse_options = CsvParseOptions::new_with_defaults(
-                cfg.has_headers,
-                cfg.delimiter,
-                cfg.double_quote,
-                cfg.quote,
-                cfg.allow_variable_columns,
-                cfg.escape_char,
-                cfg.comment,
-            )?;
-            let csv_chunk_size = cfg.chunk_size.or(Some(chunk_size));
-            let read_options = CsvReadOptions::new_internal(cfg.buffer_size, csv_chunk_size);
-            daft_csv::stream_csv(
-                url.to_string(),
-                Some(convert_options),
-                Some(parse_options),
-                Some(read_options),
-                io_client,
-                Some(io_stats.clone()),
-                None,
-            )
-            .await?
-        }
-        FileFormatConfig::Json(cfg) => {
-            let schema_of_file = scan_task.schema.clone();
-            let convert_options = JsonConvertOptions::new_internal(
-                scan_task.pushdowns.limit,
-                file_column_names
-                    .as_ref()
-                    .map(|cols| cols.iter().map(|col| (*col).clone()).collect()),
-                Some(schema_of_file),
-                scan_task.pushdowns.filters.clone(),
-            );
-            let parse_options = JsonParseOptions::new_internal(cfg.skip_empty_files);
-            let json_chunk_size = cfg.chunk_size.or(Some(chunk_size));
-            let read_options = JsonReadOptions::new_internal(cfg.buffer_size, json_chunk_size);
-
-            let range = source.get_chunk_spec().and_then(|spec| match spec {
-                daft_scan::ChunkSpec::Bytes { start, end } => Some(GetRange::Bounded(*start..*end)),
-                _ => None,
-            });
-            daft_json::read::stream_json(
-                url.to_string(),
-                Some(convert_options),
-                Some(parse_options),
-                Some(read_options),
-                io_client,
-                Some(io_stats),
-                None,
-                range,
-                // maintain_order, TODO: Implement maintain_order for JSON
-            )
-            .await?
-        }
-        FileFormatConfig::Warc(_) => {
-            let convert_options = WarcConvertOptions {
-                limit: scan_task.pushdowns.limit,
-                include_columns: None,
-                schema: scan_task.schema.clone(),
-                predicate: scan_task.pushdowns.filters.clone(),
-            };
-            daft_warc::stream_warc(url, io_client, io_stats, convert_options, None).await?
-        }
-        #[cfg(feature = "python")]
-        FileFormatConfig::Database(common_file_formats::DatabaseSourceConfig { sql, conn }) => {
-            use pyo3::Python;
-
-            use crate::PyIOSnafu;
-            let predicate = scan_task
-                .pushdowns
-                .filters
-                .as_ref()
-                .map(|p| (*p.as_ref()).clone().into());
-            let table = Python::attach(|py| {
-                daft_micropartition::python::read_sql_into_py_table(
-                    py,
-                    sql,
-                    conn,
-                    predicate.clone(),
-                    scan_task.schema.clone().into(),
-                    scan_task
-                        .pushdowns
-                        .columns
-                        .as_ref()
-                        .map(|cols| cols.as_ref().clone()),
-                    scan_task.pushdowns.limit,
-                )
-                .map(|t| t.into())
-                .context(PyIOSnafu)
-            })?;
-            Box::pin(futures::stream::once(async { Ok(table) }))
-        }
-        #[cfg(feature = "python")]
-        FileFormatConfig::PythonFunction { .. } => {
-            let iter = daft_micropartition::python::read_pyfunc_into_table_iter(scan_task.clone())?;
-            let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
-            Box::pin(stream)
-        }
-        FileFormatConfig::Text(cfg) => {
-            let schema_of_file = scan_task.schema.clone();
-            let convert_options = TextConvertOptions::new(
-                &cfg.encoding,
-                cfg.skip_blank_lines,
-                Some(schema_of_file),
-                scan_task.pushdowns.limit,
-            );
-            let text_chunk_size = cfg.chunk_size.or(Some(chunk_size));
-            let read_options = TextReadOptions::new(cfg.buffer_size, text_chunk_size);
-            daft_text::read::stream_text(
-                url.to_string(),
-                convert_options,
-                read_options,
-                io_client,
-                Some(io_stats),
-                // maintain_order, TODO: Implement maintain_order for Text
-            )
-            .await?
-        }
-    };
+    // TODO(rchowell): remove the scan_task_reader module in the near future with a more general DataSource (TableProvider-like) trait.
+    let table_stream = scan_task_reader::read_scan_task(
+        &scan_task,
+        url,
+        file_column_names,
+        io_client,
+        io_stats,
+        delete_map,
+        maintain_order,
+        chunk_size,
+    )
+    .await?;
 
     Ok(table_stream.map(move |table| {
         let table = table?;
