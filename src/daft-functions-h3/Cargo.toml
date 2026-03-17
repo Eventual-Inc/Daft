@@ -20,3 +20,6 @@ workspace = true
 name = "daft-functions-h3"
 edition.workspace = true
 version.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["serde"]

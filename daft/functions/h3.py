@@ -1,3 +1,8 @@
+"""H3 Functions.
+
+Hexagonal geospatial indexing functions backed by h3o.
+"""
+
 from __future__ import annotations
 
 from daft.expressions import Expression
