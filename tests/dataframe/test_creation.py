@@ -113,6 +113,17 @@ def test_create_dataframe_list_ragged_keys() -> None:
     }
 
 
+def test_create_dataframe_list_preserves_field_order() -> None:
+    df = daft.from_pylist(
+        [
+            {"z": 1, "a": 2},
+            {"m": 3, "z": 4},
+            {"a": 5, "b": 6},
+        ]
+    )
+    assert df.column_names == ["z", "a", "m", "b"]
+
+
 def test_create_dataframe_list_empty_dicts() -> None:
     df = daft.from_pylist([{}, {}, {}])
     assert df.column_names == []
