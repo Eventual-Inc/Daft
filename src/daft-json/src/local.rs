@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 
 use arrow::array::builder::ArrayBuilder;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::{Expr, ExprRef, expr::bound_expr::BoundExpr};
 use daft_recordbatch::RecordBatch;
@@ -18,7 +18,7 @@ use crate::{
     decoding::{allocate_array, deserialize_into},
     deserializer::Value,
     inference::{column_types_map_to_fields, infer_records_schema},
-    read::tables_concat,
+    read::{tables_concat, truncate_tables_to_limit},
 };
 
 const JSON_NULL_VALUE: Value<'static> = Value::Static(StaticNode::Null);
@@ -26,6 +26,10 @@ const JSON_NULL_VALUE: Value<'static> = Value::Static(StaticNode::Null);
 const NEWLINE: u8 = b'\n';
 const CLOSING_BRACKET: u8 = b'}';
 
+/// Backward-compatible wrapper that concatenates all chunks into a single RecordBatch.
+///
+/// Only used by legacy test paths (via `read_json_single_into_table`).
+/// The production path uses [`read_json_local_into_tables_with_range`] directly via `stream_json`.
 pub fn read_json_local(
     uri: &str,
     convert_options: Option<JsonConvertOptions>,
@@ -33,19 +37,50 @@ pub fn read_json_local(
     read_options: Option<JsonReadOptions>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<RecordBatch> {
+    let schema_hint = convert_options
+        .as_ref()
+        .and_then(|c| c.schema.as_ref())
+        .map_or_else(|| Schema::empty().into(), |s| s.clone());
+    let tables = read_json_local_into_tables_with_range(
+        uri,
+        convert_options,
+        parse_options,
+        read_options,
+        max_chunks_in_flight,
+        None,
+    )?;
+    if tables.is_empty() {
+        return Ok(RecordBatch::empty(Some(schema_hint)));
+    }
+    tables_concat(tables)
+}
+
+pub fn read_json_local_into_tables_with_range(
+    uri: &str,
+    convert_options: Option<JsonConvertOptions>,
+    parse_options: Option<JsonParseOptions>,
+    read_options: Option<JsonReadOptions>,
+    max_chunks_in_flight: Option<usize>,
+    range: Option<daft_io::GetRange>,
+) -> DaftResult<Vec<RecordBatch>> {
     let uri = uri.trim_start_matches("file://");
     let file = std::fs::File::open(uri)?;
     // SAFETY: mmapping is inherently unsafe.
     // We are trusting that the file is not modified or accessed by other systems while we are reading it.
     let mmap = unsafe { memmap2::Mmap::map(&file) }.context(StdIOSnafu)?;
+    let full_bytes = &mmap[..];
+    let has_range = range.is_some();
+    let bytes = if let Some(range) = range {
+        let slice_range = range
+            .as_range(full_bytes.len())
+            .map_err(|e| DaftError::ValueError(e.to_string()))?;
+        &full_bytes[slice_range]
+    } else {
+        full_bytes
+    };
 
-    let bytes = &mmap[..];
     if parse_options.as_ref().is_some_and(|p| p.skip_empty_files) && bytes.is_empty() {
-        let schema = convert_options
-            .as_ref()
-            .and_then(|c| c.schema.as_ref())
-            .map_or_else(|| Schema::empty().into(), |s| s.clone());
-        return Ok(RecordBatch::empty(Some(schema)));
+        return Ok(Vec::new());
     }
 
     if bytes.is_empty() {
@@ -54,23 +89,33 @@ pub fn read_json_local(
         }
         .into());
     }
-    if bytes[0] == b'[' {
-        let schema: Schema = infer_schema(bytes, None, None)?.try_into()?;
 
+    // Detect JSON array format (e.g. `[{...}, {...}]`) by checking if the first byte is `[`.
+    //
+    // We only do this check when reading the full file (!has_range), because when reading a
+    // byte-range sub-slice (from scan_task_split_and_merge), `bytes` is a fragment of the
+    // original file — the first byte is whatever happens to be at the range start, NOT the
+    // first byte of the file. Checking `bytes[0]` on a fragment would be meaningless.
+    //
+    // This guard is safe because split_by_jsonl_ranges only creates byte-range sub-tasks for
+    // JSONL files (.jsonl / .ndjson); JSON array files (.json) are excluded by `supports_split`,
+    // so they will always arrive here with has_range == false.
+    if !has_range && bytes[0] == b'[' {
+        let schema: Schema = infer_schema(bytes, None, None)?.try_into()?;
         let predicate = convert_options
             .as_ref()
             .and_then(|options| options.predicate.clone());
-        read_json_array_impl(bytes, schema, predicate)
-    } else {
-        let reader = JsonReader::try_new(
-            bytes,
-            convert_options,
-            parse_options,
-            read_options,
-            max_chunks_in_flight,
-        )?;
-        reader.finish()
+        return Ok(vec![read_json_array_impl(bytes, schema, predicate)?]);
     }
+
+    let reader = JsonReader::try_new(
+        bytes,
+        convert_options,
+        parse_options,
+        read_options,
+        max_chunks_in_flight,
+    )?;
+    reader.finish_into_tables()
 }
 
 pub fn read_json_array_impl(
@@ -227,7 +272,7 @@ impl<'a> JsonReader<'a> {
         })
     }
 
-    pub fn finish(&self) -> DaftResult<RecordBatch> {
+    pub fn finish_into_tables(&self) -> DaftResult<Vec<RecordBatch>> {
         let mut bytes = self.bytes;
         let mut n_threads = self.n_threads;
         let mut total_rows = 128;
@@ -254,31 +299,25 @@ impl<'a> JsonReader<'a> {
         }
 
         let total_len = bytes.len();
-        let chunk_size = self.chunk_size.unwrap_or_else(|| total_len / n_threads);
-        let file_chunks = self.get_file_chunks(bytes, n_threads, total_len, chunk_size);
+        let chunk_size = self
+            .chunk_size
+            .unwrap_or_else(|| total_len / n_threads.max(1));
+        let file_chunks = self.get_file_chunks(bytes, total_len, chunk_size);
 
         let tbls = self.pool.install(|| {
             file_chunks
                 .into_par_iter()
                 .map(|(start, stop)| {
                     let chunk = &bytes[start..stop];
-                    self.parse_json_chunk(chunk, chunk_size)
+                    self.parse_json_chunk(chunk)
                 })
                 .collect::<DaftResult<Vec<RecordBatch>>>()
         })?;
 
-        let tbl = tables_concat(tbls)?;
-
-        // The `limit` is not guaranteed to be fully applied from the byte slice, so we need to properly apply the limit after concatenating the tables
-        if let Some(limit) = self.n_rows
-            && tbl.len() > limit
-        {
-            return tbl.head(limit);
-        }
-        Ok(tbl)
+        truncate_tables_to_limit(tbls, self.n_rows)
     }
 
-    fn parse_json_chunk(&self, bytes: &[u8], chunk_size: usize) -> DaftResult<RecordBatch> {
+    fn parse_json_chunk(&self, bytes: &[u8]) -> DaftResult<RecordBatch> {
         let mut scratch = vec![];
         let scratch = &mut scratch;
 
@@ -294,9 +333,15 @@ impl<'a> JsonReader<'a> {
         let iter =
             serde_json::Deserializer::from_slice(bytes).into_iter::<&serde_json::value::RawValue>();
 
+        let estimated_rows = std::cmp::max(1, memchr::memchr_iter(NEWLINE, bytes).count());
         let mut columns: IndexMap<Cow<str>, Box<dyn ArrayBuilder>> = arrow_fields
             .iter()
-            .map(|f| (Cow::Owned(f.name().clone()), allocate_array(f, chunk_size)))
+            .map(|f| {
+                (
+                    Cow::Owned(f.name().clone()),
+                    allocate_array(f, estimated_rows),
+                )
+            })
             .collect();
 
         let mut num_rows = 0;
@@ -350,17 +395,14 @@ impl<'a> JsonReader<'a> {
     fn get_file_chunks(
         &self,
         bytes: &[u8],
-        n_threads: usize,
         total_len: usize,
         chunk_size: usize,
     ) -> Vec<(usize, usize)> {
         let mut last_pos = 0;
 
-        let (n_chunks, chunk_size) = calculate_chunks_and_size(n_threads, chunk_size, total_len);
+        let mut offsets = Vec::new();
 
-        let mut offsets = Vec::with_capacity(n_chunks);
-
-        for _ in 0..n_chunks {
+        loop {
             let search_pos = last_pos + chunk_size;
 
             if search_pos >= bytes.len() {
@@ -480,38 +522,6 @@ fn get_line_stats_json(bytes: &[u8], n_lines: usize) -> Option<(f32, f32)> {
     Some((mean, std))
 }
 
-/// Calculate the max number of chunks to split the file into
-/// It looks for the largest number divisible by `n_threads` and less than `chunk_size`
-/// It has an arbitrary limit of `n_threads * n_threads`, which seems to work well in practice.
-///
-/// Example:
-///
-/// ```text
-/// n_threads = 4
-/// chunk_size = 2048
-/// calculate_chunks_and_size(n_threads, chunk_size) = (16, 128)
-/// ```
-fn calculate_chunks_and_size(n_threads: usize, chunk_size: usize, total: usize) -> (usize, usize) {
-    let mut max_divisible_chunks = n_threads;
-
-    // The maximum number of chunks is n_threads * n_threads
-    // This was chosen based on some crudely done benchmarks. It seems to work well in practice.
-    // The idea is to have a number of chunks that is a divisible by the number threads to maximize parallelism.
-    // But we dont want to have too small chunks, as that would increase the overhead of the parallelism.
-    // This is a heuristic and could be improved.
-    let max_chunks = n_threads * n_threads;
-
-    while max_divisible_chunks <= chunk_size && max_divisible_chunks < max_chunks {
-        let md = max_divisible_chunks + n_threads;
-        if md > chunk_size || md > max_chunks {
-            break;
-        }
-        max_divisible_chunks = md;
-    }
-    let chunk_size = total / n_threads;
-    (max_divisible_chunks, chunk_size)
-}
-
 #[inline(always)]
 fn parse_raw_value<'a>(
     raw_value: &'a RawValue,
@@ -527,6 +537,9 @@ fn parse_raw_value<'a>(
     })
 }
 
+// TODO: only recognises `}\n` as a line boundary; JSONL rows that are JSON arrays
+// (e.g. `[1,2,3]\n`) will not be detected. This is fine for now because Daft only
+// supports object-per-line JSONL, but should be revisited if array rows are needed.
 fn next_line_position(input: &[u8]) -> Option<usize> {
     let pos = memchr::memchr(NEWLINE, input)?;
     if pos == 0 {
@@ -581,6 +594,7 @@ mod tests {
 {"floats": 3.0, "utf8": "!\\n", "bools": true}
 "#;
         let reader = JsonReader::try_new(json.as_bytes(), None, None, None, None).unwrap();
-        let _result = reader.finish();
+        let tables = reader.finish_into_tables().unwrap();
+        let _result = tables_concat(tables);
     }
 }
