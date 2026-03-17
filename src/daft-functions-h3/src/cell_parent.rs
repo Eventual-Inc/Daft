@@ -1,8 +1,7 @@
-use daft_core::{prelude::UInt64Array, series::IntoSeries};
 use daft_dsl::functions::prelude::*;
 use h3o::Resolution;
 
-use crate::utils::{ensure_cell_dtype, series_to_cell_indices};
+use crate::utils::{cell_indices_to_series, ensure_cell_dtype, series_to_cell_indices};
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct H3CellParent;
@@ -31,7 +30,7 @@ impl ScalarUDF for H3CellParent {
             resolution <= 15,
             ValueError: "h3_cell_parent: resolution must be 0-15, got {resolution}"
         );
-        Ok(Field::new(cell.name, DataType::UInt64))
+        Ok(Field::new(cell.name, cell.dtype))
     }
 
     fn call(
@@ -41,16 +40,19 @@ impl ScalarUDF for H3CellParent {
     ) -> DaftResult<Series> {
         let Args { cell, resolution } = args.try_into()?;
         let name = cell.name().to_string();
+        let input_dtype = cell.data_type().clone();
         let res = Resolution::try_from(resolution).map_err(|e| {
             common_error::DaftError::ValueError(format!(
                 "h3_cell_parent: invalid resolution {resolution}: {e}"
             ))
         })?;
         let cells = series_to_cell_indices(&cell)?;
-        let result: UInt64Array = cells
-            .into_iter()
-            .map(|opt| opt.and_then(|c| c.parent(res)).map(u64::from))
-            .collect();
-        Ok(result.rename(&name).into_series())
+        Ok(cell_indices_to_series(
+            &name,
+            cells
+                .into_iter()
+                .map(move |opt| opt.and_then(|c| c.parent(res))),
+            &input_dtype,
+        ))
     }
 }

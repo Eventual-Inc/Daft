@@ -161,8 +161,13 @@ class TestH3CellParent:
     def test_parent_string(self):
         df = daft.from_pydict({"hex": [SF_RES7_HEX]})
         df = df.with_column("parent", h3_cell_parent(col("hex"), 5))
-        result = df.select(h3_cell_resolution(col("parent")).alias("res")).to_pydict()
-        assert result["res"][0] == 5
+        result = df.to_pydict()
+        # String in -> string out
+        assert isinstance(result["parent"][0], str)
+        # And it's a valid hex string at the right resolution
+        parent_df = daft.from_pydict({"p": result["parent"]})
+        res = parent_df.select(h3_cell_resolution(col("p")).alias("res")).to_pydict()
+        assert res["res"][0] == 5
 
     def test_parent_null_on_finer_resolution(self):
         df = daft.from_pydict({"lat": [SF_LAT], "lng": [SF_LNG]})
