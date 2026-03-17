@@ -244,10 +244,7 @@ impl LogicalPlanBuilder {
         let to_select_has_aggs = to_select.iter().any(has_agg);
         let to_select = if to_select_has_aggs {
             let empty_groupby: Vec<ExprRef> = vec![];
-            let agg_resolver = ExprResolver::builder()
-                .in_agg_context(true)
-                .groupby(&empty_groupby)
-                .build();
+            let agg_resolver = ExprResolver::builder().groupby(&empty_groupby).build();
             agg_resolver.resolve(to_select, self.plan.clone())?
         } else {
             expr_resolver.resolve(to_select, self.plan.clone())?
