@@ -1,7 +1,6 @@
-#![allow(deprecated, reason = "arrow2 migration")]
+#![feature(if_let_guard)]
 
 use std::{
-    any::Any,
     borrow::Cow,
     collections::HashMap,
     fmt::Debug,
@@ -12,21 +11,33 @@ use std::{
 use common_display::DisplayAs;
 use common_error::DaftError;
 use common_file_formats::FileFormatConfig;
-use common_scan_info::{Pushdowns, ScanTaskLike, ScanTaskLikeRef};
+use daft_parquet::DaftParquetMetadata;
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use either::Either;
 use itertools::Itertools;
-use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 
 mod anonymous;
 pub use anonymous::AnonymousScanOperator;
+mod expr_rewriter;
 pub mod glob;
 mod hive;
+mod partitioning;
+mod pushdowns;
 use common_daft_config::DaftExecutionConfig;
-pub mod builder;
+mod scan_operator;
+pub mod scan_state;
 pub mod scan_task_iters;
+mod sharder;
+
+pub use expr_rewriter::{PredicateGroups, rewrite_predicate_for_partitioning};
+pub use partitioning::{PartitionField, PartitionTransform};
+pub use pushdowns::{Pushdowns, SupportsPushdownFilters};
+pub use scan_operator::{ScanOperator, ScanOperatorRef};
+pub use scan_state::{PhysicalScanInfo, ScanState};
+pub use sharder::{Sharder, ShardingStrategy};
+pub mod test_utils;
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -145,7 +156,7 @@ pub enum DataSource {
         metadata: Option<TableMetadata>,
         partition_spec: Option<PartitionSpec>,
         statistics: Option<TableStatistics>,
-        parquet_metadata: Option<Arc<FileMetaData>>,
+        parquet_metadata: Option<Arc<DaftParquetMetadata>>,
     },
     Database {
         path: String,
@@ -233,7 +244,7 @@ impl DataSource {
     }
 
     #[must_use]
-    pub fn get_parquet_metadata(&self) -> Option<&Arc<FileMetaData>> {
+    pub fn get_parquet_metadata(&self) -> Option<&Arc<DaftParquetMetadata>> {
         match self {
             Self::File {
                 parquet_metadata, ..
@@ -452,80 +463,6 @@ impl std::fmt::Debug for ScanTask {
     }
 }
 
-#[typetag::serde]
-impl ScanTaskLike for ScanTask {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
-        self
-    }
-
-    fn dyn_eq(&self, other: &dyn ScanTaskLike) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>()
-            .is_some_and(|a| a == self)
-    }
-
-    fn dyn_hash(&self, mut state: &mut dyn Hasher) {
-        self.hash(&mut state);
-    }
-
-    fn materialized_schema(&self) -> SchemaRef {
-        self.materialized_schema()
-    }
-
-    fn num_rows(&self) -> Option<usize> {
-        self.num_rows()
-    }
-
-    fn approx_num_rows(&self, config: Option<&DaftExecutionConfig>) -> Option<f64> {
-        self.approx_num_rows(config)
-    }
-
-    fn upper_bound_rows(&self) -> Option<usize> {
-        self.upper_bound_rows()
-    }
-
-    fn size_bytes_on_disk(&self) -> Option<usize> {
-        self.size_bytes_on_disk()
-    }
-
-    fn estimate_in_memory_size_bytes(&self, config: Option<&DaftExecutionConfig>) -> Option<usize> {
-        self.estimate_in_memory_size_bytes(config)
-    }
-
-    fn file_format_config(&self) -> Arc<FileFormatConfig> {
-        self.file_format_config.clone()
-    }
-
-    fn pushdowns(&self) -> &Pushdowns {
-        &self.pushdowns
-    }
-
-    fn schema(&self) -> SchemaRef {
-        self.schema.clone()
-    }
-
-    fn get_file_paths(&self) -> Vec<String> {
-        self.sources
-            .iter()
-            .filter_map(|s| match s {
-                DataSource::File { path, .. } => Some(path.clone()),
-                _ => None,
-            })
-            .collect()
-    }
-}
-
-impl From<ScanTask> for ScanTaskLikeRef {
-    fn from(task: ScanTask) -> Self {
-        Arc::new(task)
-    }
-}
-
 pub type ScanTaskRef = Arc<ScanTask>;
 
 static WARC_COLUMN_SIZES: OnceLock<HashMap<&'static str, usize>> = OnceLock::new();
@@ -714,7 +651,7 @@ impl ScanTask {
                     schema_with_generated_fields
                         .fields()
                         .iter()
-                        .filter(|field| columns.contains(&field.name))
+                        .filter(|field| columns.iter().any(|c| c.as_str() == &*field.name))
                         .cloned()
                         .collect()
                 } else {
@@ -745,6 +682,16 @@ impl ScanTask {
         }
     }
 
+    pub fn get_file_paths(&self) -> Vec<String> {
+        self.sources
+            .iter()
+            .filter_map(|s| match s {
+                DataSource::File { path, .. } => Some(path.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Obtain an approximate num_rows from the ScanTask, or `None` if this is not possible
     #[must_use]
     pub fn approx_num_rows(&self, config: Option<&DaftExecutionConfig>) -> Option<f64> {
@@ -765,6 +712,7 @@ impl ScanTask {
                         FileFormatConfig::Parquet(_) => config.parquet_inflation_factor,
                         FileFormatConfig::Csv(_) => config.csv_inflation_factor,
                         FileFormatConfig::Json(_) => config.json_inflation_factor,
+                        FileFormatConfig::Text(_) => config.text_inflation_factor,
                         FileFormatConfig::Warc(_) => {
                             if self.is_gzipped() {
                                 5.0
@@ -773,13 +721,9 @@ impl ScanTask {
                             }
                         }
                         #[cfg(feature = "python")]
-                        FileFormatConfig::Database(_) => 1.0,
-                        #[cfg(feature = "python")]
-                        FileFormatConfig::PythonFunction {
-                            source_type: _,
-                            module_name: _,
-                            function_name: _,
-                        } => 1.0,
+                        FileFormatConfig::Database(_) | FileFormatConfig::PythonFunction { .. } => {
+                            1.0
+                        }
                     };
                     let in_mem_size: f64 = (file_size as f64) * inflation_factor;
                     let read_row_size = if self.is_warc() {
@@ -970,7 +914,7 @@ impl ScanTask {
 impl DisplayAs for ScanTask {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         // take first 3 and last 3 if more than 6 sources
-        let condensed_sources = if self.sources.len() <= 6 {
+        let mut condensed_sources = if self.sources.len() <= 6 {
             self.sources.iter().map(|s| s.display_as(level)).join(", ")
         } else {
             let len = self.sources.len();
@@ -984,6 +928,16 @@ impl DisplayAs for ScanTask {
                     _ => None,
                 })
                 .join(", ")
+        };
+
+        #[cfg(feature = "python")]
+        if let FileFormatConfig::PythonFunction { .. } = self.file_format_config.as_ref() {
+            // For Python Function, only display the first source, which makes it more readable
+            if self.sources.len() > 1 {
+                condensed_sources = format!("{}, ...", self.sources[0].display_as(level));
+            } else {
+                condensed_sources = self.sources.iter().map(|s| s.display_as(level)).join(", ");
+            }
         };
 
         match level {
@@ -1013,12 +967,14 @@ mod test {
     use common_display::{DisplayAs, DisplayLevel};
     use common_error::DaftResult;
     use common_file_formats::{FileFormatConfig, ParquetSourceConfig, WarcSourceConfig};
-    use common_scan_info::{Pushdowns, ScanOperator};
     use daft_schema::{dtype::DataType, field::Field, schema::Schema, time_unit::TimeUnit};
     use daft_stats::TableMetadata;
     use itertools::Itertools;
 
-    use crate::{DataSource, ScanTask, glob::GlobScanOperator, storage_config::StorageConfig};
+    use crate::{
+        DataSource, Pushdowns, ScanOperator, ScanTask, glob::GlobScanOperator,
+        storage_config::StorageConfig,
+    };
 
     fn make_scan_task(num_sources: usize) -> ScanTask {
         let sources = (0..num_sources)

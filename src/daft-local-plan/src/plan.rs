@@ -5,11 +5,11 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult, ensure};
+use common_file_formats::FileFormatConfig;
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use common_py_serde::{PyObjectWrapper, deserialize_py_object, serialize_py_object};
 use common_resource_request::ResourceRequest;
-use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{DynTreeNode, TreeNode, TreeNodeRecursion};
 use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
@@ -25,6 +25,7 @@ use daft_logical_plan::{
     partitioning::RepartitionSpec,
     stats::{PlanStats, StatsState},
 };
+use daft_scan::Pushdowns;
 use serde::{Deserialize, Serialize};
 
 use crate::SourceId;
@@ -32,7 +33,28 @@ use crate::SourceId;
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct LocalNodeContext {
     pub origin_node_id: Option<usize>,
+    pub phase: Option<String>,
     pub additional: Option<HashMap<String, String>>,
+}
+
+impl LocalNodeContext {
+    pub fn new(origin_node_id: Option<usize>) -> Self {
+        Self {
+            origin_node_id,
+            phase: None,
+            additional: None,
+        }
+    }
+
+    pub fn with_phase(mut self, phase: impl Into<String>) -> Self {
+        self.phase = Some(phase.into());
+        self
+    }
+
+    pub fn with_additional(mut self, additional: HashMap<String, String>) -> Self {
+        self.additional = Some(additional);
+        self
+    }
 }
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
@@ -212,6 +234,7 @@ impl LocalPhysicalPlan {
 
     pub fn physical_scan(
         source_id: SourceId,
+        file_format_config: Option<Arc<FileFormatConfig>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         stats_state: StatsState,
@@ -219,6 +242,7 @@ impl LocalPhysicalPlan {
     ) -> LocalPhysicalPlanRef {
         Self::PhysicalScan(PhysicalScan {
             source_id,
+            file_format_config,
             pushdowns,
             schema,
             stats_state,
@@ -1766,6 +1790,7 @@ impl DynTreeNode for LocalPhysicalPlan {
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PhysicalScan {
     pub source_id: SourceId,
+    pub file_format_config: Option<Arc<FileFormatConfig>>,
     pub pushdowns: Pushdowns,
     pub schema: SchemaRef,
     pub stats_state: StatsState,

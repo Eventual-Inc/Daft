@@ -36,6 +36,10 @@ pub(crate) struct OperatorInfo {
     pub stats: HashMap<String, Stat>,
     #[serde(skip)]
     pub source_stats: HashMap<String, HashMap<String, Stat>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_sec: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_sec: Option<f64>,
 }
 
 pub(crate) type OperatorInfos = HashMap<NodeID, OperatorInfo>;

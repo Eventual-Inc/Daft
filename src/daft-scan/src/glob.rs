@@ -3,7 +3,6 @@ use std::{sync::Arc, vec};
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{CsvSourceConfig, FileFormat, FileFormatConfig, ParquetSourceConfig};
 use common_runtime::RuntimeRef;
-use common_scan_info::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -20,7 +19,7 @@ use futures::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
 use snafu::Snafu;
 
 use crate::{
-    ChunkSpec, DataSource, ScanTask,
+    ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
     hive::{hive_partitions_to_fields, hive_partitions_to_series, parse_hive_partitioning},
     storage_config::StorageConfig,
 };
@@ -222,7 +221,7 @@ impl GlobScanOperator {
                     let first_metadata = Some((
                         first_filepath.clone(),
                         TableMetadata {
-                            length: metadata.num_rows,
+                            length: metadata.num_rows(),
                         },
                     ));
                     (schema, first_metadata, first_filepath)
@@ -329,14 +328,13 @@ impl GlobScanOperator {
                     ));
                 }
                 #[cfg(feature = "python")]
-                FileFormatConfig::PythonFunction {
-                    source_type: _,
-                    module_name: _,
-                    function_name: _,
-                } => {
+                FileFormatConfig::PythonFunction { .. } => {
                     return Err(DaftError::ValueError(
                         "Cannot glob a PythonFunction source".to_string(),
                     ));
+                }
+                FileFormatConfig::Text(..) => {
+                    return Err(DaftError::ValueError("Text schema is fixed".to_string()));
                 }
             };
 
@@ -386,7 +384,7 @@ impl GlobScanOperator {
         };
         // If file path column is set, extend the partition fields.
         if let Some(fp_col) = &file_path_column {
-            let fp_field = Field::new(fp_col, DataType::Utf8);
+            let fp_field = Field::new(fp_col.as_str(), DataType::Utf8);
             partition_fields.push(fp_field);
         }
         let (partitioning_keys, generated_fields) = if partition_fields.is_empty() {
@@ -488,7 +486,7 @@ impl ScanOperator for GlobScanOperator {
         lines
     }
 
-    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskRef>> {
         let (io_runtime, io_client) = self.storage_config.get_io_client_and_runtime()?;
         let io_stats = IOStatsContext::new(format!(
             "GlobScanOperator::to_scan_tasks for {:#?}",
@@ -613,7 +611,7 @@ impl ScanOperator for GlobScanOperator {
                     )))
                 })();
                 match scan_task_result {
-                    Ok(Some(scan_task)) => Some(Ok(Arc::new(scan_task) as Arc<dyn ScanTaskLike>)),
+                    Ok(Some(scan_task)) => Some(Ok(Arc::new(scan_task))),
                     Ok(None) => None,
                     Err(e) => Some(Err(e)),
                 }

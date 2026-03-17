@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import os
 import threading
+import warnings
 
 import httpx
 import numpy as np
 import pyarrow as pa
 import pytest
 from openai import APIStatusError
+
+# This module intentionally tests the deprecated @daft.udf API for backward compatibility.
+warnings.filterwarnings("ignore", category=DeprecationWarning, message=r".*@daft\.udf.*")
+pytestmark = pytest.mark.filterwarnings(r"ignore:.*@daft\.udf.*:DeprecationWarning")
 
 import daft
 from daft import col

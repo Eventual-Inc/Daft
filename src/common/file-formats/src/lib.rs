@@ -5,7 +5,8 @@ mod file_format_config;
 #[cfg(feature = "python")]
 pub use file_format_config::DatabaseSourceConfig;
 pub use file_format_config::{
-    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, WarcSourceConfig,
+    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, TextSourceConfig,
+    WarcSourceConfig,
 };
 
 #[cfg(feature = "python")]
@@ -21,11 +22,8 @@ impl From<&FileFormatConfig> for FileFormat {
             #[cfg(feature = "python")]
             FileFormatConfig::Database(_) => Self::Database,
             #[cfg(feature = "python")]
-            FileFormatConfig::PythonFunction {
-                source_type: _,
-                module_name: _,
-                function_name: _,
-            } => Self::Python,
+            FileFormatConfig::PythonFunction { .. } => Self::Python,
+            FileFormatConfig::Text(_) => Self::Text,
         }
     }
 }

@@ -49,7 +49,7 @@ mod tests {
     #[test]
     fn test_sparse_tensor_to_fixed_shape_sparse_tensor_roundtrip() -> DaftResult<()> {
         let raw_nulls = vec![true, false, true];
-        let nulls = daft_arrow::buffer::NullBuffer::from(raw_nulls.as_slice());
+        let nulls = arrow::buffer::NullBuffer::from(raw_nulls.as_slice());
 
         let values_array = ListArray::new(
             Field::new("values", DataType::List(Box::new(DataType::Int64))),
@@ -127,7 +127,7 @@ mod tests {
                 assert_eq!(fields.len(), 2, "Expected exactly 2 fields in Struct");
 
                 let indices_field = &fields[INDICES_IDX];
-                assert_eq!(indices_field.name, "indices");
+                assert_eq!(&*indices_field.name, "indices");
                 assert_eq!(
                     indices_field.dtype,
                     DataType::List(Box::new(minimal_dtype.clone()))

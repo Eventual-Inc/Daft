@@ -24,10 +24,11 @@ pub enum FileFormatConfig {
     Database(DatabaseSourceConfig),
     #[cfg(feature = "python")]
     PythonFunction {
-        source_type: Option<String>,
+        source_name: Option<String>,
         module_name: Option<String>,
         function_name: Option<String>,
     },
+    Text(TextSourceConfig),
 }
 #[cfg(not(debug_assertions))]
 impl std::fmt::Debug for FileFormatConfig {
@@ -53,12 +54,12 @@ impl FileFormatConfig {
             Self::Database(_) => "Database".to_string(),
             #[cfg(feature = "python")]
             Self::PythonFunction {
-                source_type,
+                source_name,
                 module_name,
-                function_name: _,
+                ..
             } => {
-                if let Some(source_type) = source_type {
-                    format!("{}(Python)", source_type)
+                if let Some(source_name) = source_name {
+                    format!("{}(Python)", source_name)
                 } else if let Some(module_name) = module_name {
                     // Infer type from module name
                     format!("{}(Python)", module_name)
@@ -66,6 +67,7 @@ impl FileFormatConfig {
                     "PythonFunction".to_string()
                 }
             }
+            Self::Text(_) => "Text".to_string(),
         }
     }
 
@@ -79,14 +81,31 @@ impl FileFormatConfig {
             #[cfg(feature = "python")]
             Self::Database(source) => source.multiline_display(),
             #[cfg(feature = "python")]
-            Self::PythonFunction { .. } => vec![],
+            Self::PythonFunction {
+                source_name,
+                module_name,
+                function_name,
+            } => {
+                let mut res = vec![];
+                if let Some(source_name) = source_name {
+                    res.push(format!("Source = {source_name}"));
+                }
+                if let Some(module_name) = module_name {
+                    res.push(format!("Module = {module_name}"));
+                }
+                if let Some(function_name) = function_name {
+                    res.push(format!("Function = {function_name}"));
+                }
+                res
+            }
+            Self::Text(source) => source.multiline_display(),
         }
     }
 }
 
 /// Configuration for a Parquet data source.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", from_py_object))]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ParquetSourceConfig {
     pub coerce_int96_timestamp_unit: TimeUnit,
@@ -190,7 +209,10 @@ impl_bincode_py_state_serialization!(ParquetSourceConfig);
 /// Configuration for a CSV data source.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", get_all, from_py_object)
+)]
 pub struct CsvSourceConfig {
     pub delimiter: Option<char>,
     pub has_headers: bool,
@@ -289,7 +311,10 @@ impl_bincode_py_state_serialization!(CsvSourceConfig);
 /// Configuration for a JSON data source.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", get_all, from_py_object)
+)]
 pub struct JsonSourceConfig {
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
@@ -351,7 +376,7 @@ impl_bincode_py_state_serialization!(JsonSourceConfig);
 #[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 #[cfg(feature = "python")]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft"))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", from_py_object))]
 pub struct DatabaseSourceConfig {
     pub sql: String,
     #[serde(
@@ -414,7 +439,10 @@ impl_bincode_py_state_serialization!(DatabaseSourceConfig);
 /// Configuration for a Warc data source.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", get_all, from_py_object)
+)]
 pub struct WarcSourceConfig {}
 
 impl WarcSourceConfig {
@@ -437,3 +465,62 @@ impl WarcSourceConfig {
 }
 
 impl_bincode_py_state_serialization!(WarcSourceConfig);
+
+/// Configuration for a Text data source.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", get_all, from_py_object)
+)]
+pub struct TextSourceConfig {
+    pub encoding: String,
+    pub skip_blank_lines: bool,
+    pub buffer_size: Option<usize>,
+    pub chunk_size: Option<usize>,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl TextSourceConfig {
+    /// Create a config for a Text data source.
+    #[allow(clippy::too_many_arguments)]
+    #[new]
+    #[pyo3(signature = (
+        encoding,
+        skip_blank_lines,
+        buffer_size=None,
+        chunk_size=None
+    ))]
+    fn new(
+        encoding: String,
+        skip_blank_lines: bool,
+        buffer_size: Option<usize>,
+        chunk_size: Option<usize>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            encoding,
+            skip_blank_lines,
+            buffer_size,
+            chunk_size,
+        })
+    }
+}
+
+impl TextSourceConfig {
+    #[must_use]
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("Encoding = {}", self.encoding));
+        res.push(format!("Skip blank lines = {}", self.skip_blank_lines));
+        if let Some(buffer_size) = self.buffer_size {
+            res.push(format!("Buffer size = {buffer_size}"));
+        }
+        if let Some(chunk_size) = self.chunk_size {
+            res.push(format!("Chunk size = {chunk_size}"));
+        }
+        res
+    }
+}
+
+impl_bincode_py_state_serialization!(TextSourceConfig);

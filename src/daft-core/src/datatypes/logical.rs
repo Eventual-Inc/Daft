@@ -11,7 +11,6 @@ use super::{
 use crate::{
     array::{ListArray, StructArray},
     datatypes::{DaftLogicalType, DateType, Field},
-    with_match_daft_logical_primitive_types,
 };
 
 /// A LogicalArray is a wrapper on top of some underlying array, applying the semantic meaning of its
@@ -92,42 +91,9 @@ macro_rules! impl_logical_type {
 impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
     impl_logical_type!(DataArray);
 
-    #[deprecated(note = "arrow2 migration")]
-    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-        let daft_type = self.data_type();
-        let arrow_logical_type = daft_type.to_arrow2().unwrap();
-        let physical_arrow_array = self.physical.data();
-        use crate::datatypes::DataType::*;
-        match daft_type {
-            // For wrapped primitive types, switch the datatype label on the arrow2 Array.
-            Decimal128(..) | Date | Timestamp(..) | Duration(..) | Time(..) => {
-                with_match_daft_logical_primitive_types!(daft_type, |$P| {
-                    use daft_arrow::array::Array;
-                    physical_arrow_array
-                        .as_any()
-                        .downcast_ref::<daft_arrow::array::PrimitiveArray<$P>>()
-                        .unwrap()
-                        .clone()
-                        .to(arrow_logical_type)
-                        .to_boxed()
-                })
-            }
-            // Otherwise, use arrow cast to make sure the result arrow2 array is of the correct type.
-            _ => daft_arrow::compute::cast::cast(
-                physical_arrow_array,
-                &arrow_logical_type,
-                daft_arrow::compute::cast::CastOptions {
-                    wrapped: true,
-                    partial: false,
-                },
-            )
-            .unwrap(),
-        }
-    }
-
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
         let arrow_field = self.field().to_arrow()?;
-        let physical = arrow::array::make_array(self.physical.to_data());
+        let physical = self.physical.to_arrow();
 
         Ok(arrow::compute::cast(
             physical.as_ref(),
@@ -139,14 +105,6 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
 /// Implementation for a LogicalArray that wraps a FixedSizeListArray
 impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
     impl_logical_type!(FixedSizeListArray);
-
-    #[deprecated(note = "arrow2 migration")]
-    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-        let mut fixed_size_list_arrow_array = self.physical.to_arrow2();
-        let arrow_logical_type = self.data_type().to_arrow2().unwrap();
-        fixed_size_list_arrow_array.change_type(arrow_logical_type);
-        fixed_size_list_arrow_array
-    }
 
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
         let inner_dtype = self.physical.field().dtype.dtype()?;
@@ -168,13 +126,6 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
 impl<L: DaftLogicalType> LogicalArrayImpl<L, StructArray> {
     impl_logical_type!(StructArray);
 
-    #[deprecated(note = "arrow2 migration")]
-    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-        let mut struct_arrow_array = self.physical.to_arrow2();
-        let arrow_logical_type = self.data_type().to_arrow2().unwrap();
-        struct_arrow_array.change_type(arrow_logical_type);
-        struct_arrow_array
-    }
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
         let struct_arrow_array = self.physical.to_arrow()?;
         Ok(struct_arrow_array)
@@ -183,40 +134,6 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, StructArray> {
 
 impl MapArray {
     impl_logical_type!(ListArray);
-
-    #[deprecated(note = "arrow2 migration")]
-    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-        let arrow_dtype = self.data_type().to_arrow2().unwrap();
-        let inner_struct_arrow_dtype = match &arrow_dtype {
-            daft_arrow::datatypes::DataType::Map(field, _) => field.data_type().clone(),
-            _ => unreachable!("Expected map type"),
-        };
-        let inner_struct_array = self
-            .physical
-            .flat_child
-            .struct_()
-            .expect("Expected struct array");
-        let arrow_field = Box::new(daft_arrow::array::StructArray::new(
-            inner_struct_arrow_dtype,
-            inner_struct_array
-                .children
-                .iter()
-                .map(|s| s.to_arrow2())
-                .collect(),
-            daft_arrow::buffer::wrap_null_buffer(inner_struct_array.nulls().cloned()),
-        ));
-        let offsets: daft_arrow::offset::OffsetsBuffer<i64> =
-            self.physical.offsets().clone().try_into().unwrap();
-
-        let offsets: daft_arrow::offset::OffsetsBuffer<i32> = (&offsets).try_into().unwrap();
-
-        Box::new(daft_arrow::array::MapArray::new(
-            arrow_dtype,
-            offsets,
-            arrow_field,
-            daft_arrow::buffer::wrap_null_buffer(self.physical.nulls().cloned()),
-        ))
-    }
 
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
         let arrow_field = self.field().to_arrow()?;

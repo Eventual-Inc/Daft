@@ -8,9 +8,7 @@ import pytest
 import daft
 from daft import DataType, Series, col
 from daft.datatype import get_super_ext_type
-from daft.utils import pyarrow_supports_fixed_shape_tensor
 
-ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 DaftExtension = get_super_ext_type()
 
 
@@ -101,7 +99,4 @@ def test_fixed_shape_tensor_type_df() -> None:
     df = df.sort("index")
     df = df.collect()
     arrow_table = df.to_arrow()
-    if pyarrow_supports_fixed_shape_tensor():
-        assert arrow_table["tensor"].type == pa.fixed_shape_tensor(pa.int64(), shape)
-    else:
-        assert isinstance(arrow_table["tensor"].type, DaftExtension)
+    assert arrow_table["tensor"].type == pa.fixed_shape_tensor(pa.int64(), shape)

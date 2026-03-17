@@ -6,11 +6,8 @@ import pytest
 
 from daft.datatype import DataType
 from daft.series import Series
-from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.conftest import get_tests_daft_runner_name
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
-
-ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES + ARROW_STRING_TYPES)
@@ -135,10 +132,6 @@ def test_series_filter_on_extension_array(uuid_ext_type) -> None:
     assert result.to_pylist() == expected
 
 
-@pytest.mark.skipif(
-    not pyarrow_supports_fixed_shape_tensor(),
-    reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
-)
 def test_series_filter_on_canonical_tensor_extension_array() -> None:
     arr = np.arange(20).reshape((5, 2, 2))
     data = pa.FixedShapeTensorArray.from_numpy_ndarray(arr)

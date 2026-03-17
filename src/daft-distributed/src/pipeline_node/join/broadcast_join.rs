@@ -10,7 +10,7 @@ use futures::{StreamExt, TryStreamExt};
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -38,7 +38,7 @@ pub(crate) struct BroadcastJoinNode {
 }
 
 impl BroadcastJoinNode {
-    const NODE_NAME: NodeName = "BroadcastJoin";
+    const NODE_NAME: &'static str = "BroadcastJoin";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -57,7 +57,7 @@ impl BroadcastJoinNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::BroadcastJoin,
             NodeCategory::BlockingSink,
         );
@@ -133,10 +133,7 @@ impl BroadcastJoinNode {
                         self.join_type,
                         self.config.schema.clone(),
                         StatsState::NotMaterialized,
-                        LocalNodeContext {
-                            origin_node_id: Some(self.node_id() as usize),
-                            additional: None,
-                        },
+                        LocalNodeContext::new(Some(self.node_id() as usize)),
                     )
                 })
                 .with_psets(self.node_id(), broadcast_psets.clone());

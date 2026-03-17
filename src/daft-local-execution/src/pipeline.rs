@@ -13,7 +13,6 @@ use common_metrics::{
     ATTR_QUERY_ID, QueryID,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
-use common_scan_info::ScanTaskLikeRef;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
@@ -26,6 +25,7 @@ use daft_local_plan::{
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
+use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
 use opentelemetry::{InstrumentationScope, KeyValue, global, metrics::Meter};
@@ -160,15 +160,13 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
         default_requirement: MorselSizeRequirement,
     );
     fn start(
-        &mut self,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 
-    /// Unique id to identify which plan all nodes belong to
-    fn plan_id(&self) -> Arc<str>;
     /// Unique id to identify the node.
     fn node_id(&self) -> usize;
     // General Node Info
@@ -241,13 +239,21 @@ impl BuilderContext {
             self.context.clone()
         };
 
+        let node_phase = node_context.phase.clone();
+
+        let id = self.next_id();
+        // Keep a unique local runtime node id (`id`), but preserve the originating
+        // distributed plan node id (`node_origin_id`) when available so metrics/stats
+        // from local execution can be attributed back to the distributed node.
+        let node_origin_id = node_context.origin_node_id.unwrap_or(id);
+
         NodeInfo {
             name,
-            id: node_context
-                .origin_node_id
-                .unwrap_or_else(|| self.next_id()),
+            id,
+            node_origin_id,
             node_type,
             node_category,
+            node_phase,
             context,
         }
     }
@@ -264,61 +270,6 @@ pub fn viz_pipeline_mermaid(
         MermaidDisplayVisitor::new(&mut output, display_type, bottom_up, subgraph_options);
     visitor.fmt(root.as_tree_display()).unwrap();
     output
-}
-
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "python", pyo3::pyclass)]
-#[allow(dead_code)]
-pub struct RelationshipNode {
-    pub id: usize,
-    pub parent_id: Option<usize>,
-}
-
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "python", pyo3::pyclass)]
-#[allow(dead_code)]
-pub struct RelationshipInformation {
-    pub ids: Vec<RelationshipNode>,
-    pub plan_id: Arc<str>,
-}
-/// Performs a depth first pre-order traversal of the pipeline tree.
-/// Returning a list of ids for each node traversed
-/// For example, given the following pipeline with ids of:
-/// ```
-///                  1
-///              /   |   \
-///             2    3    4
-///           /  \   |   / \
-///          5    6  7  8   10
-///                    /
-///                   9
-/// ```
-/// The result would be [1, 2, 5, 6, 3, 7, 4, 8, 9, 10]
-/// as we visit each node in pre-order traversal.
-pub fn get_pipeline_relationship_mapping(root: &dyn PipelineNode) -> RelationshipInformation {
-    let mut nodes = Vec::new();
-
-    fn traverse(
-        node: &dyn PipelineNode,
-        parent_id: Option<usize>,
-        nodes: &mut Vec<RelationshipNode>,
-    ) {
-        let current_id = node.node_id();
-        nodes.push(RelationshipNode {
-            id: current_id,
-            parent_id,
-        });
-
-        for child in node.children() {
-            traverse(child, Some(current_id), nodes);
-        }
-    }
-
-    traverse(root, None, &mut nodes);
-    RelationshipInformation {
-        ids: nodes,
-        plan_id: root.plan_id(),
-    }
 }
 
 pub fn viz_pipeline_ascii(root: &dyn PipelineNode, simple: bool) -> String {
@@ -358,15 +309,22 @@ fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan {
             source_id,
+            file_format_config,
             pushdowns,
             schema,
             stats_state,
             context,
         }) => {
-            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<ScanTaskLikeRef>)>();
+            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<ScanTaskRef>)>();
             input_senders.insert(*source_id, InputSender::ScanTasks(tx));
 
-            let scan_task_source = ScanTaskSource::new(rx, pushdowns.clone(), schema.clone(), cfg);
+            let scan_task_source = ScanTaskSource::new(
+                rx,
+                file_format_config.clone(),
+                pushdowns.clone(),
+                schema.clone(),
+                cfg,
+            );
             SourceNode::new(
                 Box::new(scan_task_source),
                 stats_state.clone(),
@@ -574,10 +532,7 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            if udf_properties.is_async
-                && udf_properties.concurrency.is_none()
-                && !udf_properties.use_process.unwrap_or(false)
-            {
+            if udf_properties.is_async && !udf_properties.use_process.unwrap_or(false) {
                 let async_sink = AsyncUdfSink::new(
                     expr.clone(),
                     udf_properties.clone(),

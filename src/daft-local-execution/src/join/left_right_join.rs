@@ -195,7 +195,7 @@ pub(crate) async fn finalize_left(
             .right_schema
             .fields()
             .iter()
-            .filter(|f| !params.common_join_cols.contains(&f.name))
+            .filter(|f| !params.common_join_cols.contains(&*f.name))
             .cloned(),
     ));
 
@@ -244,7 +244,7 @@ pub(crate) async fn finalize_right(
             .left_schema
             .fields()
             .iter()
-            .filter(|f| !params.common_join_cols.contains(&f.name))
+            .filter(|f| !params.common_join_cols.contains(&*f.name))
             .cloned(),
     ));
 

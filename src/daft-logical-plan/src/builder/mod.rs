@@ -13,7 +13,6 @@ use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
-use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
@@ -21,6 +20,7 @@ use daft_dsl::{
     Column, Expr, ExprRef, UnresolvedColumn, WindowSpec, left_col, resolved_col, right_col,
     unresolved_col,
 };
+use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use daft_schema::schema::{Schema, SchemaRef};
 use indexmap::IndexSet;
 use resolve_expr::ExprResolver;
@@ -46,9 +46,7 @@ use crate::{
         join::{JoinOptions, JoinPredicate},
     },
     optimization::{OptimizerBuilder, OptimizerConfig},
-    partitioning::{
-        HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
-    },
+    partitioning::{HashRepartitionConfig, RandomShuffleConfig, RepartitionSpec},
     sink_info::{FormatSinkOption, OutputFileInfo, SinkInfo},
     source_info::{GlobScanInfo, InMemoryInfo, SourceInfo},
 };
@@ -223,7 +221,7 @@ impl LogicalPlanBuilder {
         {
             let pruned_upstream_schema = schema_with_generated_fields
                 .into_iter()
-                .filter(|field| columns.contains(&field.name))
+                .filter(|field| columns.iter().any(|c| c.as_str() == &*field.name))
                 .cloned()
                 .collect::<Vec<_>>();
             Arc::new(Schema::new(pruned_upstream_schema))
@@ -462,11 +460,8 @@ impl LogicalPlanBuilder {
     }
 
     pub fn into_partitions(&self, num_partitions: usize) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = ops::Repartition::new(
-            self.plan.clone(),
-            RepartitionSpec::IntoPartitions(IntoPartitionsConfig::new(num_partitions)),
-        )
-        .into();
+        let logical_plan: LogicalPlan =
+            ops::IntoPartitions::new(self.plan.clone(), num_partitions).into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -1052,7 +1047,10 @@ impl LogicalPlanBuilder {
 /// This lightweight proxy interface should hold as much of the Python-specific logic
 /// as possible, converting pyo3 wrapper type arguments into their underlying Rust-native types
 /// (e.g. PySchema -> Schema).
-#[cfg_attr(feature = "python", pyclass(name = "LogicalPlanBuilder"))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(name = "LogicalPlanBuilder", from_py_object)
+)]
 #[derive(Clone)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PyLogicalPlanBuilder {

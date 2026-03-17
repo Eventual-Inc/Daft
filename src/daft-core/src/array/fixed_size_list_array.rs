@@ -154,16 +154,6 @@ impl FixedSizeListArray {
         ))
     }
 
-    #[deprecated(note = "arrow2 migration")]
-    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-        let arrow_dtype = self.data_type().to_arrow2().unwrap();
-        Box::new(daft_arrow::array::FixedSizeListArray::new(
-            arrow_dtype,
-            self.flat_child.to_arrow2(),
-            daft_arrow::buffer::wrap_null_buffer(self.nulls.clone()),
-        ))
-    }
-
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
         let field = Arc::new(self.flat_child.field().to_arrow()?);
         let size = self.fixed_element_len() as i32;

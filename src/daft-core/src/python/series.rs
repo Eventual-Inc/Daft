@@ -29,7 +29,7 @@ use crate::{
     utils::supertype::try_get_collection_supertype,
 };
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PySeries {
     pub series: series::Series,
@@ -83,24 +83,7 @@ impl PySeries {
     ) -> PyResult<Self> {
         let (data, field) = array_to_rust(&pyarrow_array)?;
         let daft_field = daft_schema::field::Field::try_from(&field)?.rename(name);
-
-        // For Extension types, get the coerced inner storage type directly
-        // (e.g. Binary → LargeBinary). We can't use Field::to_arrow() here because
-        // it uses the REGISTRY to return the *original* storage type for export,
-        // but internally we need the coerced type.
-        // For all other types, use Field::to_arrow() which handles logical types
-        // like Embedding, Tensor, Image correctly.
-        let target_arrow_dtype = match &daft_field.dtype {
-            DataType::Extension(_, inner_dtype, _) => inner_dtype.to_arrow()?,
-            _ => daft_field.to_arrow()?.data_type().clone(),
-        };
-
         let arr = make_array(data);
-        let arr = if &target_arrow_dtype != field.data_type() {
-            arrow::compute::cast(&arr, &target_arrow_dtype).map_err(DaftError::from)?
-        } else {
-            arr
-        };
 
         let series = if let Some(dtype) = dtype {
             let field = Field::new(name, dtype.into());
@@ -373,6 +356,10 @@ impl PySeries {
         Ok((self.series).mean(None)?.into())
     }
 
+    pub fn stddev(&self, ddof: usize) -> PyResult<Self> {
+        Ok((self.series).stddev(None, ddof)?.into())
+    }
+
     pub fn min(&self) -> PyResult<Self> {
         Ok((self.series).min(None)?.into())
     }
@@ -513,7 +500,7 @@ impl From<PySeries> for series::Series {
     }
 }
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 /// Iterator over elements in a Python Series
 ///
@@ -553,11 +540,6 @@ impl ToPyArrow for Series {
     ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         let array = self.to_arrow()?;
         let target_field = self.field().to_arrow()?;
-        let array = if array.data_type() != target_field.data_type() {
-            arrow::compute::cast(&array, target_field.data_type()).map_err(DaftError::from)?
-        } else {
-            array
-        };
 
         let schema = Box::new(arrow::ffi::FFI_ArrowSchema::try_from(target_field).map_err(
             |e| {
@@ -584,6 +566,16 @@ impl ToPyArrow for Series {
         let array = pyo3::types::PyModule::import(py, pyo3::intern!(py, "daft.arrow_utils"))?
             .getattr(pyo3::intern!(py, "remove_empty_struct_placeholders"))?
             .call1((array,))?;
+
+        // For FixedShapeTensor, re-wrap the storage array as a PyArrow canonical
+        // FixedShapeTensorArray instead of returning a DaftExtension array.
+        if self.data_type().is_fixed_shape_tensor() {
+            let py_dtype = PyDataType::from(self.data_type().clone()).to_arrow(py)?;
+            let storage = array.getattr(pyo3::intern!(py, "storage"))?;
+            return pyarrow
+                .getattr(pyo3::intern!(py, "ExtensionArray"))?
+                .call_method1(pyo3::intern!(py, "from_storage"), (py_dtype, storage));
+        }
 
         Ok(array)
     }

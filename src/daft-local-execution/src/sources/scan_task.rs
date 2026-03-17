@@ -10,7 +10,6 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
-use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
@@ -19,7 +18,8 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_local_plan::InputId;
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
-use daft_scan::{ChunkSpec, ScanTask};
+use daft_scan::{ChunkSpec, Pushdowns, ScanTask, ScanTaskRef};
+use daft_text::{TextConvertOptions, TextReadOptions};
 use daft_warc::WarcConvertOptions;
 use futures::{FutureExt, Stream, StreamExt};
 use snafu::ResultExt;
@@ -32,7 +32,8 @@ use crate::{
 };
 
 pub struct ScanTaskSource {
-    receiver: Option<UnboundedReceiver<(InputId, Vec<ScanTaskLikeRef>)>>,
+    receiver: Option<UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>>,
+    file_format_config: Option<Arc<FileFormatConfig>>,
     pushdowns: Pushdowns,
     schema: SchemaRef,
     num_parallel_tasks: usize,
@@ -40,7 +41,8 @@ pub struct ScanTaskSource {
 
 impl ScanTaskSource {
     pub fn new(
-        receiver: UnboundedReceiver<(InputId, Vec<ScanTaskLikeRef>)>,
+        receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
+        file_format_config: Option<Arc<FileFormatConfig>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
@@ -53,6 +55,7 @@ impl ScanTaskSource {
         };
         Self {
             receiver: Some(receiver),
+            file_format_config,
             pushdowns,
             schema,
             num_parallel_tasks,
@@ -61,7 +64,7 @@ impl ScanTaskSource {
 
     fn spawn_scan_task_processor(
         &self,
-        mut receiver: UnboundedReceiver<(InputId, Vec<ScanTaskLikeRef>)>,
+        mut receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
         output_sender: Sender<Arc<MicroPartition>>,
         io_stats: IOStatsRef,
         chunk_size: usize,
@@ -131,19 +134,6 @@ impl ScanTaskSource {
                                 }
                             }
                             Some((input_id, scan_tasks_batch)) => {
-                                let scan_tasks_batch: Vec<Arc<ScanTask>> = scan_tasks_batch
-                                    .into_iter()
-                                    .map(|task| {
-                                        task.as_any_arc()
-                                            .downcast::<ScanTask>()
-                                            .map_err(|_| {
-                                                DaftError::ValueError(
-                                                    "Failed to downcast ScanTaskLikeRef to ScanTask"
-                                                        .to_string(),
-                                            )
-                                    })
-                                    })
-                                    .collect::<DaftResult<Vec<_>>>()?;
                                 let delete_map =
                                     get_delete_map(&scan_tasks_batch).await?.map(Arc::new);
 
@@ -219,9 +209,27 @@ impl Source for ScanTaskSource {
     }
 
     fn name(&self) -> NodeName {
-        // We can't access scan_tasks here anymore, so use a generic name
-        // The actual format will be determined when we receive the tasks
-        "ScanTaskSource".into()
+        if let Some(file_format_config) = &self.file_format_config {
+            match file_format_config.as_ref() {
+                FileFormatConfig::Parquet(_) => "Read Parquet".into(),
+                FileFormatConfig::Csv(_) => "Read CSV".into(),
+                FileFormatConfig::Json(_) => "Read JSON".into(),
+                FileFormatConfig::Warc(_) => "Read WARC".into(),
+                #[cfg(feature = "python")]
+                FileFormatConfig::Database(_) => "Read Database".into(),
+                #[cfg(feature = "python")]
+                FileFormatConfig::PythonFunction { source_name, .. } => {
+                    if let Some(source_name) = source_name {
+                        format!("Read {source_name} (Python)").into()
+                    } else {
+                        "Read Python".into()
+                    }
+                }
+                FileFormatConfig::Text(_) => "Read Text".into(),
+            }
+        } else {
+            "Empty (Scan Task)".into()
+        }
     }
 
     fn op_type(&self) -> NodeType {
@@ -470,7 +478,7 @@ async fn stream_scan_task(
     };
 
     if scan_task.sources.len() != 1 {
-        return Err(common_error::DaftError::TypeError(
+        return Err(DaftError::TypeError(
             "Streaming reads only supported for single source ScanTasks".to_string(),
         ));
     }
@@ -614,7 +622,7 @@ async fn stream_scan_task(
                 schema: scan_task.schema.clone(),
                 predicate: scan_task.pushdowns.filters.clone(),
             };
-            daft_warc::stream_warc(url, io_client, Some(io_stats), convert_options, None).await?
+            daft_warc::stream_warc(url, io_client, io_stats, convert_options, None).await?
         }
         #[cfg(feature = "python")]
         FileFormatConfig::Database(common_file_formats::DatabaseSourceConfig { sql, conn }) => {
@@ -650,6 +658,26 @@ async fn stream_scan_task(
             let iter = daft_micropartition::python::read_pyfunc_into_table_iter(scan_task.clone())?;
             let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
             Box::pin(stream)
+        }
+        FileFormatConfig::Text(cfg) => {
+            let schema_of_file = scan_task.schema.clone();
+            let convert_options = TextConvertOptions::new(
+                &cfg.encoding,
+                cfg.skip_blank_lines,
+                Some(schema_of_file),
+                scan_task.pushdowns.limit,
+            );
+            let text_chunk_size = cfg.chunk_size.or(Some(chunk_size));
+            let read_options = TextReadOptions::new(cfg.buffer_size, text_chunk_size);
+            daft_text::read::stream_text(
+                url.to_string(),
+                convert_options,
+                read_options,
+                io_client,
+                Some(io_stats),
+                // maintain_order, TODO: Implement maintain_order for Text
+            )
+            .await?
         }
     };
 

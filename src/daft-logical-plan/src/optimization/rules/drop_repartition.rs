@@ -22,16 +22,16 @@ impl DropRepartition {
 impl OptimizerRule for DropRepartition {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         plan.transform_down(|node| {
-            let repartition = match node.as_ref() {
-                LogicalPlan::Repartition(repartition) => repartition,
+            let child_plan = match node.as_ref() {
+                LogicalPlan::Repartition(repartition) => &repartition.input,
+                LogicalPlan::IntoPartitions(into_partitions) => &into_partitions.input,
                 _ => return Ok(Transformed::no(node)),
             };
-            let child_plan = repartition.input.as_ref();
-            let new_plan = match child_plan {
-                LogicalPlan::Repartition(_) => {
-                    // Drop upstream Repartition for back-to-back Repartitions.
+            let new_plan = match child_plan.as_ref() {
+                LogicalPlan::Repartition(_) | LogicalPlan::IntoPartitions(_) => {
+                    // Drop upstream partition operators for back-to-back partition operators.
                     //
-                    // Repartition1-Repartition2 -> Repartition1
+                    // Repartition1<-Repartition2 -> Repartition1
                     node.with_new_children(&[child_plan.arc_children()[0].clone()])
                         .into()
                 }
@@ -95,6 +95,29 @@ mod tests {
             .build();
         let expected = dummy_scan_node(scan_op)
             .hash_repartition(Some(num_partitions2), partition_by)?
+            .build();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that DropRepartition does drops the upstream Repartition in back-to-back mixed Repartition and IntoPartitions.
+    ///
+    /// Repartition1-IntoPartitions2 -> Repartition1
+    #[test]
+    fn repartition_dropped_in_back_to_back_mixed() -> DaftResult<()> {
+        let num_partitions1 = 10;
+        let num_partitions2 = 5;
+        let partition_by = vec![unresolved_col("a")];
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let plan = dummy_scan_node(scan_op.clone())
+            .hash_repartition(Some(num_partitions1), partition_by.clone())?
+            .into_partitions(num_partitions2)?
+            .build();
+        let expected = dummy_scan_node(scan_op)
+            .into_partitions(num_partitions2)?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())

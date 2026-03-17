@@ -8,7 +8,7 @@ use std::{
 use common_error::DaftResult;
 use common_metrics::{ATTR_QUERY_ID, QueryID, ops::NodeInfo};
 use common_treenode::{TreeNode, TreeNodeRecursion};
-use daft_local_plan::ExecutionEngineFinalResult;
+use daft_local_plan::ExecutionStats;
 use opentelemetry::{InstrumentationScope, KeyValue, global};
 pub use stats::RuntimeStats;
 
@@ -33,7 +33,7 @@ pub(crate) enum TaskEvent {
     },
     Completed {
         context: TaskContext,
-        stats: ExecutionEngineFinalResult,
+        stats: ExecutionStats,
     },
     Failed {
         context: TaskContext,
@@ -112,10 +112,12 @@ impl StatisticsManager {
         let mut runtime_node_managers = HashMap::new();
         pipeline_node.apply(|node| {
             let node_info = Arc::new(NodeInfo {
-                name: node.name().to_string().into(),
+                name: node.name(),
                 id: node.node_id() as usize,
+                node_origin_id: node.node_id() as usize,
                 node_type: node.context().node_type.clone(),
                 node_category: node.context().node_category.clone(),
+                node_phase: None,
                 context: HashMap::new(),
             });
             runtime_node_managers.insert(
@@ -142,7 +144,7 @@ impl StatisticsManager {
 
         let mut subscribers = self.subscribers.lock().unwrap();
         for (i, subscriber) in subscribers.iter_mut().enumerate() {
-            tracing::info!(target: STATISTICS_LOG_TARGET, "StatisticsManager calling subscriber {}", i);
+            tracing::debug!(target: STATISTICS_LOG_TARGET, "StatisticsManager calling subscriber {}", i);
             subscriber.handle_event(&event)?;
         }
         Ok(())
@@ -150,12 +152,12 @@ impl StatisticsManager {
 
     /// Collects accumulated stats from each node manager and returns them as an
     /// ExecutionEngineFinalResult for export to the driver (e.g. after the partition stream is done).
-    pub fn export_metrics(&self) -> ExecutionEngineFinalResult {
+    pub fn export_metrics(&self) -> ExecutionStats {
         let nodes: Vec<(Arc<NodeInfo>, _)> = self
             .runtime_node_managers
             .values()
             .map(RuntimeNodeManager::export_snapshot)
             .collect();
-        ExecutionEngineFinalResult::new(nodes)
+        ExecutionStats::new("".into(), nodes)
     }
 }

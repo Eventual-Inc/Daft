@@ -117,13 +117,19 @@ impl TreeDisplay for ConcatNode {
             .map(|child| child.repr_json())
             .collect();
 
-        serde_json::json!({
+        let mut json = serde_json::json!({
             "id": self.node_id(),
-            "category": "Intermediate",
+            "category": "StreamingSink",
             "type": NodeType::Concat.to_string(),
             "name": self.name(),
             "children": children,
-        })
+        });
+
+        if let StatsState::Materialized(stats) = &self.plan_stats {
+            json["approx_stats"] = serde_json::json!(stats);
+        }
+
+        json
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
@@ -160,17 +166,19 @@ impl PipelineNode for ConcatNode {
     }
 
     fn start(
-        &mut self,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+        let node_id = self.node_id();
+        let name = self.name();
+
         let left_receiver = self.left.start(maintain_order, runtime_handle)?;
         let right_receiver = self.right.start(maintain_order, runtime_handle)?;
 
         let (destination_sender, destination_receiver) = create_channel(1);
 
         let stats_manager = runtime_handle.stats_manager();
-        let node_id = self.node_id();
         let runtime_stats = self.runtime_stats.clone();
         let left_sender = destination_sender.clone();
         let right_sender = destination_sender;
@@ -211,7 +219,7 @@ impl PipelineNode for ConcatNode {
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            &self.name(),
+            &name,
         );
 
         Ok(destination_receiver)
@@ -223,10 +231,6 @@ impl PipelineNode for ConcatNode {
 
     fn node_id(&self) -> usize {
         self.node_info.id
-    }
-
-    fn plan_id(&self) -> Arc<str> {
-        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
 
     fn node_info(&self) -> Arc<NodeInfo> {

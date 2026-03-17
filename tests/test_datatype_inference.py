@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
-from typing import NamedTuple, TypedDict
+from typing import NamedTuple, Optional, TypedDict
 
 import jax
 import jaxtyping
@@ -35,6 +35,12 @@ class SimplePydanticModel(BaseModel):
 class NestedPydanticModel(BaseModel):
     user: SimplePydanticModel
     active: bool
+
+
+# Class-based TypedDict
+class ClassFooBar(TypedDict):
+    foo: str
+    bar: int
 
 
 class PydanticWithAlias(BaseModel):
@@ -79,63 +85,77 @@ class PydanticWithNamedTuple(BaseModel):
 @pytest.mark.parametrize(
     "user_provided_type, expected_datatype",
     [
-        (type(None), dt.null()),
-        (bool, dt.bool()),
-        (str, dt.string()),
-        (bytes, dt.binary()),
-        (int, dt.int64()),
-        (float, dt.float64()),
-        (datetime.datetime, dt.timestamp(TimeUnit.us())),
-        (datetime.date, dt.date()),
-        (datetime.time, dt.time(TimeUnit.us())),
-        (datetime.timedelta, dt.duration(TimeUnit.us())),
-        (list, dt.list(dt.python())),
-        (list[str], dt.list(dt.string())),
-        (list[list], dt.list(dt.list(dt.python()))),
-        (list[list[str]], dt.list(dt.list(dt.string()))),
-        (
+        pytest.param(type(None), dt.null(), id="null"),
+        pytest.param(bool, dt.bool(), id="bool"),
+        pytest.param(str, dt.string(), id="str"),
+        pytest.param(bytes, dt.binary(), id="bytes"),
+        pytest.param(int, dt.int64(), id="int"),
+        pytest.param(float, dt.float64(), id="float"),
+        pytest.param(datetime.datetime, dt.timestamp(TimeUnit.us()), id="datetime"),
+        pytest.param(datetime.date, dt.date(), id="date"),
+        pytest.param(datetime.time, dt.time(TimeUnit.us()), id="time"),
+        pytest.param(datetime.timedelta, dt.duration(TimeUnit.us()), id="timedelta"),
+        pytest.param(list, dt.list(dt.python()), id="list_untyped"),
+        pytest.param(list[str], dt.list(dt.string()), id="list_str"),
+        pytest.param(list[list], dt.list(dt.list(dt.python())), id="list_list_untyped"),
+        pytest.param(list[list[str]], dt.list(dt.list(dt.string())), id="list_list_str"),
+        pytest.param(str | int, dt.python(), id="union"),
+        pytest.param(str | None, dt.string(), id="union_str_none"),
+        pytest.param(str | int | None, dt.python(), id="union_str_int_none"),
+        pytest.param(Optional[str], dt.string(), id="optional_str"),  # noqa: UP045
+        pytest.param(
             TypedDict("Foobar", {"foo": str, "bar": int}),
             dt.struct({"foo": dt.string(), "bar": dt.int64()}),
+            id="typeddict_inline",
         ),
-        (dict, dt.map(dt.python(), dt.python())),
-        (dict[str, str], dt.map(dt.string(), dt.string())),
-        (tuple, dt.list(dt.python())),
-        (tuple[str, ...], dt.list(dt.string())),
-        (tuple[str, int], dt.struct({"_0": dt.string(), "_1": dt.int64()})),
-        (np.ndarray, dt.tensor(dt.python())),
-        (torch.Tensor, dt.tensor(dt.python())),
-        (torch.FloatTensor, dt.tensor(dt.float32())),
-        (torch.DoubleTensor, dt.tensor(dt.float64())),
-        (torch.ByteTensor, dt.tensor(dt.uint8())),
-        (torch.CharTensor, dt.tensor(dt.int8())),
-        (torch.ShortTensor, dt.tensor(dt.int16())),
-        (torch.IntTensor, dt.tensor(dt.int32())),
-        (torch.LongTensor, dt.tensor(dt.int64())),
-        (torch.BoolTensor, dt.tensor(dt.bool())),
-        *([] if tensorflow is None else [(tensorflow.Tensor, dt.tensor(dt.python()))]),
-        (jax.Array, dt.tensor(dt.python())),
-        (npt.NDArray[int], dt.tensor(dt.int64())),
-        (np.bool_, dt.bool()),
-        (np.int8, dt.int8()),
-        (np.uint8, dt.uint8()),
-        (np.int16, dt.int16()),
-        (np.uint16, dt.uint16()),
-        (np.int32, dt.int32()),
-        (np.uint32, dt.uint32()),
-        (np.int64, dt.int64()),
-        (np.uint64, dt.uint64()),
-        (np.float32, dt.float32()),
-        (np.float64, dt.float64()),
-        (np.datetime64, dt.timestamp(TimeUnit.us())),
-        (pandas.Series, dt.list(dt.python())),
-        (PIL.Image.Image, dt.image()),
-        (Series, dt.list(dt.python())),
-        (File, dt.file(MediaType.unknown())),
-        (VideoFile, dt.file(MediaType.video())),
-        (object, dt.python()),
+        pytest.param(ClassFooBar, dt.struct({"foo": dt.string(), "bar": dt.int64()}), id="typeddict_class"),
+        pytest.param(dict, dt.map(dt.python(), dt.python()), id="dict_untyped"),
+        pytest.param(dict[str, str], dt.map(dt.string(), dt.string()), id="dict_str_str"),
+        pytest.param(tuple, dt.list(dt.python()), id="tuple_untyped"),
+        pytest.param(tuple[str, ...], dt.list(dt.string()), id="tuple_str_variadic"),
+        pytest.param(tuple[str, int], dt.struct({"_0": dt.string(), "_1": dt.int64()}), id="tuple_str_int_named"),
+        pytest.param(np.ndarray, dt.tensor(dt.python()), id="numpy_ndarray"),
+        pytest.param(torch.Tensor, dt.tensor(dt.python()), id="torch_tensor"),
+        pytest.param(torch.FloatTensor, dt.tensor(dt.float32()), id="torch_float32"),
+        pytest.param(torch.DoubleTensor, dt.tensor(dt.float64()), id="torch_float64"),
+        pytest.param(torch.ByteTensor, dt.tensor(dt.uint8()), id="torch_uint8"),
+        pytest.param(torch.CharTensor, dt.tensor(dt.int8()), id="torch_int8"),
+        pytest.param(torch.ShortTensor, dt.tensor(dt.int16()), id="torch_int16"),
+        pytest.param(torch.IntTensor, dt.tensor(dt.int32()), id="torch_int32"),
+        pytest.param(torch.LongTensor, dt.tensor(dt.int64()), id="torch_int64"),
+        pytest.param(torch.BoolTensor, dt.tensor(dt.bool()), id="torch_bool"),
+        *(
+            []
+            if tensorflow is None
+            else [pytest.param(tensorflow.Tensor, dt.tensor(dt.python()), id="tensorflow_tensor")]
+        ),
+        pytest.param(jax.Array, dt.tensor(dt.python()), id="jax_array"),
+        pytest.param(npt.NDArray[int], dt.tensor(dt.int64()), id="numpy_ndarray_int"),
+        pytest.param(np.bool_, dt.bool(), id="numpy_bool"),
+        pytest.param(np.int8, dt.int8(), id="numpy_int8"),
+        pytest.param(np.uint8, dt.uint8(), id="numpy_uint8"),
+        pytest.param(np.int16, dt.int16(), id="numpy_int16"),
+        pytest.param(np.uint16, dt.uint16(), id="numpy_uint16"),
+        pytest.param(np.int32, dt.int32(), id="numpy_int32"),
+        pytest.param(np.uint32, dt.uint32(), id="numpy_uint32"),
+        pytest.param(np.int64, dt.int64(), id="numpy_int64"),
+        pytest.param(np.uint64, dt.uint64(), id="numpy_uint64"),
+        pytest.param(np.float32, dt.float32(), id="numpy_float32"),
+        pytest.param(np.float64, dt.float64(), id="numpy_float64"),
+        pytest.param(np.datetime64, dt.timestamp(TimeUnit.us()), id="numpy_datetime64"),
+        pytest.param(pandas.Series, dt.list(dt.python()), id="pandas_series"),
+        pytest.param(PIL.Image.Image, dt.image(), id="pil_image"),
+        pytest.param(Series, dt.list(dt.python()), id="daft_series"),
+        pytest.param(File, dt.file(MediaType.unknown()), id="daft_file"),
+        pytest.param(VideoFile, dt.file(MediaType.video()), id="daft_video_file"),
+        pytest.param(object, dt.python(), id="object_python"),
         # Pydantic models
-        (SimplePydanticModel, dt.struct({"name": dt.string(), "age": dt.int64()})),
-        (
+        pytest.param(
+            SimplePydanticModel,
+            dt.struct({"name": dt.string(), "age": dt.int64()}),
+            id="pydantic_simple",
+        ),
+        pytest.param(
             NestedPydanticModel,
             dt.struct(
                 {
@@ -143,14 +163,16 @@ class PydanticWithNamedTuple(BaseModel):
                     "active": dt.bool(),
                 }
             ),
+            id="pydantic_nested",
         ),
         # TODO: Uncomment this when we update to pydantic>=2.11 which supports `serialize_by_alias`
         # (PydanticWithAlias, dt.struct({"fullName": dt.string(), "age": dt.int64()})),
-        (
+        pytest.param(
             PydanticWithAliasNoSerializeByAlias,
             dt.struct({"full_name": dt.string(), "user_age": dt.int64()}),
+            id="pydantic_alias_no_serialize",
         ),
-        (
+        pytest.param(
             PydanticWithComputedField,
             dt.struct(
                 {
@@ -159,8 +181,9 @@ class PydanticWithNamedTuple(BaseModel):
                     "full_name": dt.string(),
                 }
             ),
+            id="pydantic_computed_field",
         ),
-        (
+        pytest.param(
             PydanticWithMixedTypes,
             dt.struct(
                 {
@@ -168,8 +191,9 @@ class PydanticWithNamedTuple(BaseModel):
                     "metadata": dt.map(dt.string(), dt.string()),
                 }
             ),
+            id="pydantic_mixed_types",
         ),
-        (EmptyPydanticModel, dt.struct({})),
+        pytest.param(EmptyPydanticModel, dt.struct({}), id="pydantic_empty"),
         # TODO: uncomment once we support named tuples
         # (SimpleNamedTuple, dt.struct({"foo": dt.string(), "bar": dt.int64()})),
         # (PydanticWithNamedTuple, dt.struct({"values": dt.struct({"foo": dt.string(), "bar": dt.int64()})})),

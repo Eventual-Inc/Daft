@@ -13,8 +13,6 @@ pub use table_stats::row_group_metadata_to_table_stats;
 pub enum Error {
     #[snafu(display("MissingParquetColumnStatistics"))]
     MissingParquetColumnStatistics {},
-    #[snafu(display("UnableToParseParquetColumnStatistics: {source}"))]
-    UnableToParseParquetColumnStatistics { source: parquet2::error::Error },
     #[snafu(display("UnableToParseUtf8FromBinary: {source}"))]
     UnableToParseUtf8FromBinary { source: FromUtf8Error },
     #[snafu(display("DaftCoreComputeError: {}", source))]
@@ -40,13 +38,5 @@ impl From<Error> for DaftError {
             Error::DaftCoreCompute { source } => source,
             _ => Self::External(value.into()),
         }
-    }
-}
-
-pub struct Wrap<T>(T);
-
-impl<T> From<T> for Wrap<T> {
-    fn from(value: T) -> Self {
-        Self(value)
     }
 }

@@ -9,8 +9,8 @@ use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, TaskBuilderStream,
+        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
+        TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -36,7 +36,7 @@ pub(crate) struct FlightShuffleNode {
 }
 
 impl FlightShuffleNode {
-    const NODE_NAME: NodeName = "FlightShuffle";
+    const NODE_NAME: &'static str = "FlightShuffle";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -53,7 +53,7 @@ impl FlightShuffleNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Repartition,
             NodeCategory::BlockingSink,
         );
@@ -121,10 +121,7 @@ impl FlightShuffleNode {
                 server_cache_mapping.clone(),
                 self.config.schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.context.node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self.context.node_id as usize)),
             );
 
             // For flight shuffle, we create a task directly with the flight shuffle read plan
@@ -172,9 +169,6 @@ impl PipelineNodeImpl for FlightShuffleNode {
             RepartitionSpec::Range(_) => {
                 unreachable!("Range repartition is not supported for flight shuffle")
             }
-            RepartitionSpec::IntoPartitions(_) => {
-                unreachable!("IntoPartitions repartition is not supported for flight shuffle")
-            }
         };
         let local_flight_shuffle_write_node =
             input_node.pipeline_instruction(self.clone(), move |input| {
@@ -187,10 +181,7 @@ impl PipelineNodeImpl for FlightShuffleNode {
                     self.shuffle_dirs.clone(),
                     self.compression.clone(),
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(self.context.node_id as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(self.context.node_id as usize)),
                 )
             });
 

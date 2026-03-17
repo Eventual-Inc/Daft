@@ -22,13 +22,18 @@ jobs:
     timeout-minutes: 45
     steps:
     - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        key: ${{ runner.os }}-profile
+        shared-key: ${{ runner.os }}-integration-build
         cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
 
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
@@ -84,7 +89,7 @@ jobs:
         py-spy record --native --function --gil -o tpch-gil-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup --skip_questions=11,12,13,14,15,16,17,18,19,20,21,22 || true
 
     - name: Upload Profile
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: speedscope-profile
         path: tpch-*.txt

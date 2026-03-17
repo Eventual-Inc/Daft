@@ -12,7 +12,7 @@ use crate::{
     datatypes::*,
 };
 
-/// Helper to perform a grouped count on a validity map of type daft_arrow::buffer::NullBuffer
+/// Helper to perform a grouped count on a validity map of type arrow::buffer::NullBuffer
 fn grouped_count_arrow_bitmap(
     groups: &GroupIndices,
     mode: &CountMode,

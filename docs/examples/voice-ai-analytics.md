@@ -485,7 +485,7 @@ Traditionally, delivering all of this meant juggling multiple tools, data format
 *For more examples and to get help, check out:*
 
 - **GitHub**: [github.com/Eventual-Inc/Daft](https://github.com/Eventual-Inc/Daft)
-- **Slack**: [Join our community](https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg) for support and discussions
+- **Slack**: [Join our community](https://join.slack.com/t/dist-data/shared_invite/zt-3rh9jr9iv-tmmTNOlQpfvhEy2NTMWS_w) for support and discussions
 
 
 ## Appendix: `TranscriptionResult` Definition

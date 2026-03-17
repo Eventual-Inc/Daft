@@ -2,7 +2,6 @@ use std::{fmt::Display, str::FromStr};
 
 use arrow_schema::TimeUnit as ArrowTimeUnit;
 use common_error::DaftError;
-use daft_arrow::{datatypes::TimeUnit as Arrow2TimeUnit, error::Error};
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
@@ -25,17 +24,6 @@ impl Display for TimeUnit {
 }
 
 impl TimeUnit {
-    #![allow(clippy::wrong_self_convention)]
-    #[must_use]
-    #[deprecated(note = "use .to_arrow")]
-    pub fn to_arrow2(&self) -> Arrow2TimeUnit {
-        match self {
-            Self::Nanoseconds => Arrow2TimeUnit::Nanosecond,
-            Self::Microseconds => Arrow2TimeUnit::Microsecond,
-            Self::Milliseconds => Arrow2TimeUnit::Millisecond,
-            Self::Seconds => Arrow2TimeUnit::Second,
-        }
-    }
     #[must_use]
     pub fn to_arrow(&self) -> ArrowTimeUnit {
         match self {
@@ -66,17 +54,6 @@ impl FromStr for TimeUnit {
             "ms" | "milliseconds" => Ok(Self::Milliseconds),
             "s" | "seconds" => Ok(Self::Seconds),
             _ => Err(DaftError::ValueError("Invalid time unit".to_string())),
-        }
-    }
-}
-
-impl From<&Arrow2TimeUnit> for TimeUnit {
-    fn from(tu: &Arrow2TimeUnit) -> Self {
-        match tu {
-            Arrow2TimeUnit::Nanosecond => Self::Nanoseconds,
-            Arrow2TimeUnit::Microsecond => Self::Microseconds,
-            Arrow2TimeUnit::Millisecond => Self::Milliseconds,
-            Arrow2TimeUnit::Second => Self::Seconds,
         }
     }
 }
@@ -118,20 +95,14 @@ pub fn format_string_has_offset(format: &str) -> bool {
 #[inline]
 pub fn timestamp_to_naive_datetime(timestamp: i64, time_unit: TimeUnit) -> chrono::NaiveDateTime {
     match time_unit {
-        TimeUnit::Seconds => daft_arrow::temporal_conversions::timestamp_s_to_datetime(timestamp)
+        TimeUnit::Seconds => arrow::temporal_conversions::timestamp_s_to_datetime(timestamp)
             .expect("timestamp_s_to_datetime should not return None"),
-        TimeUnit::Milliseconds => {
-            daft_arrow::temporal_conversions::timestamp_ms_to_datetime(timestamp)
-                .expect("timestamp_ms_to_datetime should not return None")
-        }
-        TimeUnit::Microseconds => {
-            daft_arrow::temporal_conversions::timestamp_us_to_datetime(timestamp)
-                .expect("timestamp_us_to_datetime should not return None")
-        }
-        TimeUnit::Nanoseconds => {
-            daft_arrow::temporal_conversions::timestamp_ns_to_datetime(timestamp)
-                .expect("timestamp_ns_to_datetime should not return None")
-        }
+        TimeUnit::Milliseconds => arrow::temporal_conversions::timestamp_ms_to_datetime(timestamp)
+            .expect("timestamp_ms_to_datetime should not return None"),
+        TimeUnit::Microseconds => arrow::temporal_conversions::timestamp_us_to_datetime(timestamp)
+            .expect("timestamp_us_to_datetime should not return None"),
+        TimeUnit::Nanoseconds => arrow::temporal_conversions::timestamp_ns_to_datetime(timestamp)
+            .expect("timestamp_ns_to_datetime should not return None"),
     }
 }
 
@@ -148,7 +119,7 @@ pub fn timestamp_to_datetime<T: chrono::TimeZone>(
 /// Parses an offset of the form `"+WX:YZ"` or `"UTC"` into [`FixedOffset`].
 /// # Errors
 /// If the offset is not in any of the allowed forms.
-pub fn parse_offset(offset: &str) -> Result<chrono::FixedOffset, Error> {
+pub fn parse_offset(offset: &str) -> Result<chrono::FixedOffset, DaftError> {
     if offset == "UTC" {
         return Ok(chrono::FixedOffset::east_opt(0).expect("FixedOffset::east out of bounds"));
     }
@@ -158,17 +129,17 @@ pub fn parse_offset(offset: &str) -> Result<chrono::FixedOffset, Error> {
     let first = a
         .next()
         .map(Ok)
-        .unwrap_or_else(|| Err(Error::InvalidArgumentError(error.to_string())))?;
+        .unwrap_or_else(|| Err(DaftError::InvalidArgumentError(error.to_string())))?;
     let last = a
         .next()
         .map(Ok)
-        .unwrap_or_else(|| Err(Error::InvalidArgumentError(error.to_string())))?;
+        .unwrap_or_else(|| Err(DaftError::InvalidArgumentError(error.to_string())))?;
     let hours: i32 = first
         .parse()
-        .map_err(|_| Error::InvalidArgumentError(error.to_string()))?;
+        .map_err(|_| DaftError::InvalidArgumentError(error.to_string()))?;
     let minutes: i32 = last
         .parse()
-        .map_err(|_| Error::InvalidArgumentError(error.to_string()))?;
+        .map_err(|_| DaftError::InvalidArgumentError(error.to_string()))?;
 
     Ok(
         chrono::FixedOffset::east_opt(hours * 60 * 60 + minutes * 60)
@@ -176,9 +147,9 @@ pub fn parse_offset(offset: &str) -> Result<chrono::FixedOffset, Error> {
     )
 }
 
-pub fn parse_offset_tz(timezone: &str) -> Result<chrono_tz::Tz, Error> {
+pub fn parse_offset_tz(timezone: &str) -> Result<chrono_tz::Tz, DaftError> {
     timezone.parse::<chrono_tz::Tz>().map_err(|_| {
-        Error::InvalidArgumentError(format!("timezone \"{timezone}\" cannot be parsed"))
+        DaftError::InvalidArgumentError(format!("timezone \"{timezone}\" cannot be parsed"))
     })
 }
 

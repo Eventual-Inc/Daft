@@ -23,6 +23,9 @@ python = [
   "daft-runners/python"
 ]
 
+[lints]
+workspace = true
+
 [package]
 name = "daft-catalog"
 edition.workspace = true

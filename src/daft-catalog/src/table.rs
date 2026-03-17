@@ -21,19 +21,19 @@ pub enum TableSource {
 
 impl From<SchemaRef> for TableSource {
     fn from(schema: SchemaRef) -> Self {
-        TableSource::Schema(schema)
+        Self::Schema(schema)
     }
 }
 
 impl From<LogicalPlanRef> for TableSource {
     fn from(view: LogicalPlanRef) -> Self {
-        TableSource::View(view)
+        Self::View(view)
     }
 }
 
 impl From<LogicalPlanBuilder> for TableSource {
     fn from(view: LogicalPlanBuilder) -> Self {
-        TableSource::View(view.build())
+        Self::View(view.build())
     }
 }
 
@@ -98,7 +98,7 @@ pub trait Table: Sync + Send {
 
 /// View is an immutable Table backed by a DataFrame.
 #[derive(Clone)]
-#[cfg_attr(feature = "python", pyo3::pyclass)]
+#[cfg_attr(feature = "python", pyo3::pyclass(skip_from_py_object))]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct View {
     name: String,

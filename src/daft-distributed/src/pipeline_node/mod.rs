@@ -69,7 +69,7 @@ mod window;
 
 pub(crate) use translate::logical_plan_to_pipeline_node;
 pub(crate) type NodeID = u32;
-pub(crate) type NodeName = &'static str;
+pub(crate) type NodeName = Arc<str>;
 
 /// The materialized output of a completed pipeline node.
 /// Contains both the partition data as well as metadata about the partition.
@@ -151,19 +151,33 @@ impl MaterializedOutput {
         schema: SchemaRef,
         node_id: NodeID,
     ) -> (LocalPhysicalPlanRef, Vec<PartitionRef>) {
-        Self::into_in_memory_scan_with_psets_and_context(
+        Self::build_in_memory_scan(
             materialized_outputs,
             schema,
             node_id,
-            None,
+            LocalNodeContext::new(Some(node_id as usize)),
         )
     }
 
-    pub fn into_in_memory_scan_with_psets_and_context(
+    pub fn into_in_memory_scan_with_psets_and_phase(
         materialized_outputs: Vec<Self>,
         schema: SchemaRef,
         node_id: NodeID,
-        additional: Option<HashMap<String, String>>,
+        node_phase: impl Into<String>,
+    ) -> (LocalPhysicalPlanRef, Vec<PartitionRef>) {
+        Self::build_in_memory_scan(
+            materialized_outputs,
+            schema,
+            node_id,
+            LocalNodeContext::new(Some(node_id as usize)).with_phase(node_phase),
+        )
+    }
+
+    fn build_in_memory_scan(
+        materialized_outputs: Vec<Self>,
+        schema: SchemaRef,
+        node_id: NodeID,
+        local_ctx: LocalNodeContext,
     ) -> (LocalPhysicalPlanRef, Vec<PartitionRef>) {
         let total_size_bytes = materialized_outputs
             .iter()
@@ -175,10 +189,7 @@ impl MaterializedOutput {
             schema,
             total_size_bytes,
             StatsState::NotMaterialized,
-            LocalNodeContext {
-                origin_node_id: Some(node_id as usize),
-                additional,
-            },
+            local_ctx,
         );
 
         let partition_refs = materialized_outputs
@@ -260,7 +271,7 @@ pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn produce_tasks(self: Arc<Self>, plan_context: &mut PlanExecutionContext)
     -> TaskBuilderStream;
     fn name(&self) -> NodeName {
-        self.context().node_name
+        self.context().node_name.clone()
     }
     fn node_id(&self) -> NodeID {
         self.context().node_id

@@ -9,9 +9,7 @@ use opentelemetry::metrics::Meter;
 
 use super::{PipelineNodeContext, PipelineNodeImpl, scan_source::SourceStats};
 use crate::{
-    pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, TaskBuilderStream,
-    },
+    pipeline_node::{DistributedPipelineNode, NodeID, PipelineNodeConfig, TaskBuilderStream},
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
     statistics::stats::RuntimeStatsRef,
@@ -25,7 +23,7 @@ pub(crate) struct InMemorySourceNode {
 }
 
 impl InMemorySourceNode {
-    const NODE_NAME: NodeName = "InMemorySource";
+    const NODE_NAME: &'static str = "InMemorySource";
 
     pub fn new(
         node_id: NodeID,
@@ -37,7 +35,7 @@ impl InMemorySourceNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::InMemoryScan,
             NodeCategory::Source,
         );
@@ -70,10 +68,7 @@ impl InMemorySourceNode {
             self.info.source_schema.clone(),
             partition_ref.size_bytes(),
             StatsState::NotMaterialized,
-            LocalNodeContext {
-                origin_node_id: Some(self.node_id() as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.node_id() as usize)),
         );
 
         SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())

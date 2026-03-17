@@ -9,8 +9,8 @@ use futures::{StreamExt, stream::select};
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, TaskBuilderStream,
+        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
+        TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
@@ -25,7 +25,7 @@ pub(crate) struct CrossJoinNode {
 }
 
 impl CrossJoinNode {
-    const NODE_NAME: NodeName = "CrossJoin";
+    const NODE_NAME: &'static str = "CrossJoin";
 
     pub fn new(
         node_id: NodeID,
@@ -39,7 +39,7 @@ impl CrossJoinNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::CrossJoin,
             NodeCategory::Intermediate,
         );
@@ -90,10 +90,7 @@ impl CrossJoinNode {
                                 right_plan,
                                 self.config.schema.clone(),
                                 StatsState::NotMaterialized,
-                                LocalNodeContext {
-                                    origin_node_id: Some(self.node_id() as usize),
-                                    additional: None,
-                                },
+                                LocalNodeContext::new(Some(self.node_id() as usize)),
                             )
                         },
                     );
@@ -113,10 +110,7 @@ impl CrossJoinNode {
                                 right_plan,
                                 self.config.schema.clone(),
                                 StatsState::NotMaterialized,
-                                LocalNodeContext {
-                                    origin_node_id: Some(self.node_id() as usize),
-                                    additional: None,
-                                },
+                                LocalNodeContext::new(Some(self.node_id() as usize)),
                             )
                         },
                     );

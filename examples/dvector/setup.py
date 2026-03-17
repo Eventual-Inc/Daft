@@ -1,0 +1,18 @@
+from __future__ import annotations
+
+from setuptools import find_packages, setup
+from setuptools_rust import Binding, RustExtension
+
+setup(
+    packages=find_packages(),
+    rust_extensions=[
+        RustExtension(
+            # Places the cdylib inside the Python package directory.
+            # Must match: <python_package>.<lib_name>
+            "dvector.libdvector",
+            path="Cargo.toml",
+            binding=Binding.NoBinding,
+            strip=True,
+        )
+    ],
+)

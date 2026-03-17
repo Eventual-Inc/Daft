@@ -11,7 +11,7 @@ use futures::StreamExt;
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -31,7 +31,7 @@ pub(crate) struct IntoPartitionsNode {
 }
 
 impl IntoPartitionsNode {
-    const NODE_NAME: NodeName = "IntoPartitions";
+    const NODE_NAME: &'static str = "IntoPartitions";
 
     pub fn new(
         node_id: NodeID,
@@ -44,7 +44,7 @@ impl IntoPartitionsNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::IntoPartitions,
             NodeCategory::BlockingSink,
         );
@@ -134,10 +134,7 @@ impl IntoPartitionsNode {
                 in_memory_scan,
                 1,
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self.node_id() as usize)),
             );
             let builder =
                 SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
@@ -183,10 +180,7 @@ impl IntoPartitionsNode {
                     plan,
                     num_outputs,
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(self.node_id() as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(self.node_id() as usize)),
                 )
             });
             // Build and submit
@@ -250,10 +244,7 @@ impl IntoPartitionsNode {
                                 plan,
                                 1,
                                 StatsState::NotMaterialized,
-                                LocalNodeContext {
-                                    origin_node_id: Some(node_id as usize),
-                                    additional: None,
-                                },
+                                LocalNodeContext::new(Some(node_id as usize)),
                             )
                         });
                         let _ = result_tx.send(builder).await;

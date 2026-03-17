@@ -12,10 +12,10 @@ use arrow::{
     },
     buffer::{BooleanBuffer, NullBuffer},
     compute::kernels::cmp,
+    error::ArrowError,
 };
 use arrow_row::{RowConverter, SortField};
 use common_error::{DaftError, DaftResult};
-use daft_arrow::ArrowError;
 use num_traits::{NumCast, ToPrimitive};
 
 use super::{DaftCompare, DaftLogical, as_arrow::AsArrow};
@@ -688,7 +688,7 @@ where
 impl Not for &BooleanArray {
     type Output = DaftResult<BooleanArray>;
     fn not(self) -> Self::Output {
-        let arrow_arr = arrow::compute::not(&self.as_arrow()?)?;
+        let arrow_arr = arrow::compute::not(self.as_arrow()?)?;
 
         BooleanArray::from_arrow(
             Field::new(self.name(), DataType::Boolean),
@@ -994,8 +994,8 @@ impl_scalar_compare!(
 
 #[cfg(test)]
 mod tests {
+    use arrow::buffer::NullBuffer;
     use common_error::{DaftError, DaftResult};
-    use daft_arrow::buffer::NullBuffer;
     use rstest::rstest;
 
     use crate::{

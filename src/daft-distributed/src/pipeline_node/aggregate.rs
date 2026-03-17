@@ -22,7 +22,7 @@ use daft_schema::{
 use super::PipelineNodeImpl;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,
         TaskBuilderStream, project::ProjectNode, translate::LogicalPlanToPipelineNodeTranslator,
     },
     plan::{PlanConfig, PlanExecutionContext},
@@ -37,13 +37,17 @@ pub(crate) struct AggregateNode {
 }
 
 impl AggregateNode {
-    const GROUPED_NAME: NodeName = "GroupBy Aggregate";
-    const UNGROUPED_NAME: NodeName = "Aggregate";
-    fn node_name(group_by: &[BoundExpr]) -> NodeName {
+    const GROUPED_NAME: &'static str = "GroupedAggregate";
+    const UNGROUPED_NAME: &'static str = "Aggregate";
+    fn node_name(group_by: &[BoundExpr], aggs: &[BoundAggExpr]) -> Arc<str> {
         if group_by.is_empty() {
-            Self::UNGROUPED_NAME
+            if aggs.len() == 1 {
+                Arc::from(aggs[0].as_ref().agg_name())
+            } else {
+                Arc::from(Self::UNGROUPED_NAME)
+            }
         } else {
-            Self::GROUPED_NAME
+            Arc::from(Self::GROUPED_NAME)
         }
     }
     fn node_type(group_by: &[BoundExpr]) -> NodeType {
@@ -67,7 +71,7 @@ impl AggregateNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::node_name(&group_by),
+            Self::node_name(&group_by, &aggs),
             Self::node_type(&group_by),
             NodeCategory::BlockingSink,
         );
@@ -141,10 +145,7 @@ impl PipelineNodeImpl for AggregateNode {
                     self_clone.aggs.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(self_clone.node_id() as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(self_clone.node_id() as usize)),
                 )
             } else {
                 LocalPhysicalPlan::hash_aggregate(
@@ -153,10 +154,7 @@ impl PipelineNodeImpl for AggregateNode {
                     self_clone.group_by.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(self_clone.node_id() as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(self_clone.node_id() as usize)),
                 )
             }
         })

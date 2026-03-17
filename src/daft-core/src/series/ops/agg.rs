@@ -241,14 +241,17 @@ impl Series {
         }
     }
 
-    pub fn stddev(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+    pub fn stddev(&self, groups: Option<&GroupIndices>, ddof: usize) -> DaftResult<Self> {
         let target_type = try_stddev_aggregation_supertype(self.data_type())?;
         match target_type {
             DataType::Float64 => {
                 let casted = self.cast(&DataType::Float64)?;
                 let casted = casted.f64()?;
                 let series = groups
-                    .map_or_else(|| casted.stddev(), |groups| casted.grouped_stddev(groups))?
+                    .map_or_else(
+                        || casted.stddev(ddof),
+                        |groups| casted.grouped_stddev(groups, ddof),
+                    )?
                     .into_series();
                 Ok(series)
             }
@@ -396,7 +399,7 @@ impl Series {
             DataType::Null => {
                 // Return a single null value for null type
                 Ok(Self::full_null(
-                    self.field().name.as_str(),
+                    self.field().name.as_ref(),
                     &DataType::Boolean,
                     1,
                 ))
@@ -422,7 +425,7 @@ impl Series {
             DataType::Null => {
                 // Return a single null value for null type
                 Ok(Self::full_null(
-                    self.field().name.as_str(),
+                    self.field().name.as_ref(),
                     &DataType::Boolean,
                     1,
                 ))

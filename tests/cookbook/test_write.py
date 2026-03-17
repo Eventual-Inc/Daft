@@ -13,8 +13,6 @@ import daft
 from tests.conftest import assert_df_equals
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
-PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
-
 
 def test_parquet_write(tmp_path, with_morsel_size):
     df = daft.read_csv(COOKBOOK_DATA_CSV)
@@ -156,10 +154,6 @@ def test_parquet_write_with_iceberg_bucket_and_trunc(exp, key, answer, tmp_path,
     assert_df_equals(df.to_pandas(), read_back_pd_df, sort_key="id")
 
 
-@pytest.mark.skipif(
-    not PYARROW_GE_7_0_0,
-    reason="We only use pyarrow datasets 7 for this test",
-)
 def test_parquet_write_with_null_values(tmp_path, with_morsel_size):
     df = daft.from_pydict({"x": [1, 2, 3, None]})
     df.write_parquet(tmp_path, partition_cols=[df["x"].alias("y")])
@@ -174,10 +168,6 @@ def smaller_parquet_target_filesize():
         yield
 
 
-@pytest.mark.skipif(
-    not PYARROW_GE_7_0_0,
-    reason="We only use pyarrow datasets 7 for this test",
-)
 def test_parquet_write_multifile(tmp_path, smaller_parquet_target_filesize, with_morsel_size):
     data = {"x": list(range(1_000))}
     df = daft.from_pydict(data)
@@ -187,10 +177,6 @@ def test_parquet_write_multifile(tmp_path, smaller_parquet_target_filesize, with
     assert read_back == data
 
 
-@pytest.mark.skipif(
-    not PYARROW_GE_7_0_0,
-    reason="We only use pyarrow datasets 7 for this test",
-)
 def test_parquet_write_multifile_with_partitioning(tmp_path, smaller_parquet_target_filesize, with_morsel_size):
     data = {"x": list(range(1_000))}
     df = daft.from_pydict(data)

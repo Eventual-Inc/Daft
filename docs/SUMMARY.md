@@ -32,6 +32,7 @@
     * Data Connectors
         * [Connectors](connectors/index.md)
         * [Custom Connectors](connectors/custom.md)
+        * [Custom Catalogs](connectors/custom-catalogs.md)
         * [AWS Glue](connectors/glue.md)
         * [AWS S3 Tables](connectors/s3tables.md)
         * [Apache Gravitino](connectors/gravitino.md)
@@ -46,6 +47,8 @@
         * [SQL Databases](connectors/sql.md)
         * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
+    * Extensions
+        * [Extensions](extensions/index.md)
     * Scaling Out and Deployment
         * [Distributed Execution](distributed/index.md)
         * [Running on Kubernetes](distributed/kubernetes.md)
@@ -55,6 +58,7 @@
     * Optimization
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
+        * [Join Strategies](optimization/join-strategies.md)
     * Observability
         * [Progress Indicators](observability/progress-indicators.md)
         * [Logging](observability/logging.md)
@@ -70,7 +74,6 @@
     * [Multimodal Structured Outputs: Evaluating Image Understanding](examples/mm_structured_outputs.md)
     * [Voice AI Analytics with Faster-Whisper and embed_text](examples/voice-ai-analytics.md)
     * [Web Text Deduplication](examples/minhash-dedupe.md)
-    * [Voice AI Analytics](examples/voice-ai-analytics.md)
     * [Audio Transcription](examples/audio-transcription.md)
     * [Generate Text Embeddings for Turbopuffer](examples/text-embeddings.md)
     * [Running LLMs on the Red Pajamas Dataset](examples/llms-red-pajamas.md)

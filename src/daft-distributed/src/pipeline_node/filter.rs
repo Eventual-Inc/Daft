@@ -15,7 +15,7 @@ use opentelemetry::{KeyValue, metrics::Meter};
 use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, metrics::key_values_from_context,
+        NodeID, PipelineNodeConfig, PipelineNodeContext, metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext},
     statistics::{RuntimeStats, stats::RuntimeStatsRef},
@@ -87,7 +87,7 @@ pub(crate) struct FilterNode {
 }
 
 impl FilterNode {
-    const NODE_NAME: NodeName = "Filter";
+    const NODE_NAME: &'static str = "Filter";
 
     pub fn new(
         node_id: NodeID,
@@ -100,7 +100,7 @@ impl FilterNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Filter,
             NodeCategory::Intermediate,
         );
@@ -156,10 +156,7 @@ impl PipelineNodeImpl for FilterNode {
                 input,
                 predicate.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             )
         })
     }

@@ -83,7 +83,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                         .next_value::<Vec<Option<bool>>>()?
                         .into_iter()
                         .collect::<BooleanArray>()
-                        .rename(field.name.as_str())
+                        .rename(field.name.as_ref())
                         .into_series()),
                     DataType::Int8 => Ok(Int8Array::from_iter(
                         field,
@@ -136,27 +136,26 @@ impl<'d> serde::Deserialize<'d> for Series {
                     )
                     .into_series()),
                     DataType::Utf8 => Ok(Utf8Array::from_iter(
-                        field.name.as_str(),
+                        field.name.as_ref(),
                         map.next_value::<Vec<Option<Cow<str>>>>()?.into_iter(),
                     )
                     .into_series()),
                     DataType::Binary => Ok(BinaryArray::from_iter(
-                        field.name.as_str(),
+                        field.name.as_ref(),
                         map.next_value::<Vec<Option<Cow<[u8]>>>>()?.into_iter(),
                     )
                     .into_series()),
                     DataType::FixedSizeBinary(size) => Ok(FixedSizeBinaryArray::from_iter(
-                        field.name.as_str(),
+                        field.name.as_ref(),
                         map.next_value::<Vec<Option<Cow<[u8]>>>>()?.into_iter(),
                         *size,
                     )
                     .into_series()),
                     DataType::Extension(..) => {
                         let physical = map.next_value::<Series>()?;
-                        let physical = physical.to_arrow2();
-                        let ext_array =
-                            physical.convert_logical_type(field.dtype.to_arrow2().unwrap());
-                        Ok(ExtensionArray::new(Arc::new(field), ext_array)
+                        let physical = physical.to_arrow().unwrap();
+
+                        Ok(ExtensionArray::from_arrow(Arc::new(field), physical)
                             .unwrap()
                             .into_series())
                     }
@@ -255,7 +254,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                         )
                     }
                     DataType::Interval => Ok(IntervalArray::from_iter(
-                        field.name.as_str(),
+                        field.name.as_ref(),
                         map.next_value::<Vec<Option<MonthDayNano>>>()?
                             .into_iter()
                             .map(|opt| opt.map(|v| IntervalMonthDayNano::new(v.0, v.1, v.2))),
