@@ -77,12 +77,12 @@ class EventLogSubscriber(Subscriber):
             self._operator_starts.pop(key, None)
 
     def _write_session_header(self) -> None:
-        import daft
+        from daft import __version__ as daft_version
 
         self._write_event(
             "session_started",
             {
-                "daft_version": daft.__version__,
+                "daft_version": daft_version,
             },
         )
 
@@ -91,7 +91,10 @@ class EventLogSubscriber(Subscriber):
             return
         record: dict[str, Any] = {"event": event_name, "ts": _iso_now()}
         record.update(payload)
-        self._file.write(json.dumps(record, default=_json_default) + "\n")
+        try:
+            self._file.write(json.dumps(record, default=_json_default) + "\n")
+        except OSError:
+            pass  # Don't let logging failures affect query execution
 
     def close(self) -> None:
         if self._closed:
@@ -226,8 +229,13 @@ def enable_event_log(dir: str | Path | None = None) -> None:
     if not _EVENT_LOG_ATEXIT_REGISTERED:
         atexit.register(disable_event_log)
         _EVENT_LOG_ATEXIT_REGISTERED = True
+
     subscriber = EventLogSubscriber(dir or _DEFAULT_EVENT_LOG_DIR)
-    get_context().attach_subscriber(_EVENT_LOG_ALIAS, subscriber)
+    try:
+        get_context().attach_subscriber(_EVENT_LOG_ALIAS, subscriber)
+    except Exception:
+        subscriber.close()
+        raise
     _EVENT_LOG_SUBSCRIBER = subscriber
 
 
