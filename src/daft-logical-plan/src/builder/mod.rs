@@ -866,7 +866,6 @@ impl LogicalPlanBuilder {
                     },
                 )
                 .with_default_optimizations()
-                .enrich_with_stats(Some(execution_config.clone()))
                 .when(
                     !cfg.as_ref()
                         .is_some_and(|conf| conf.disable_join_reordering),
@@ -874,6 +873,7 @@ impl LogicalPlanBuilder {
                 )
                 .simplify_expressions()
                 .split_granular_projections()
+                .enrich_with_stats(Some(execution_config))
                 .build();
 
             let optimized_plan = optimizer.optimize(
@@ -939,10 +939,11 @@ impl LogicalPlanBuilder {
             .when(
                 !cfg.as_ref()
                     .is_some_and(|conf| conf.disable_join_reordering),
-                |builder| builder.reorder_joins(Some(execution_config)),
+                |builder| builder.reorder_joins(Some(execution_config.clone())),
             )
             .simplify_expressions()
             .split_granular_projections()
+            .enrich_with_stats(Some(execution_config))
             .build();
 
         let optimized_plan = optimizer.optimize(

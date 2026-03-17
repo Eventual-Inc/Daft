@@ -92,12 +92,15 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |   Passthrough Columns = []
 |   Properties = {{ batch_size = 10, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
 |   Resource request = {{ num_gpus = 0 }}
+|   Stats = {{ Approx num rows = 5, Approx size bytes = 156 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = 10
 |
 * Project: col(0: __TruncateRootUDF_0-0-0__) as __TruncateRootUDF_0-0-0__
+|   Stats = {{ Approx num rows = 5, Approx size bytes = 156 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = Range(0, 10]
 |
 * Project: image_decode(col(0: {id_placeholder}), lit("raise"), lit(PyObject(RGB))) as __TruncateRootUDF_0-0-0__, col(1: data)
+|   Stats = {{ Approx num rows = 5, Approx size bytes = 156 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = Range(0, 10]
 |
 * Project: url_download(col(0: data), lit(true), lit("raise"), lit(32), lit(PyObject(IOConfig:
@@ -190,6 +193,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |   HuggingFaceConfig
 |   Anonymous = false
 |   ))) as {id_placeholder}, col(0: data)
+|   Stats = {{ Approx num rows = 5, Approx size bytes = 156 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = Range(0, 10]
 |
 * InMemoryScan:
