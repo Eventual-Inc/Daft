@@ -4,7 +4,9 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftError;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
-use daft_local_plan::{ExecutionStats, Input, LocalPhysicalPlanRef, SourceId};
+use daft_local_plan::{
+    ExecutionStats, FlightShuffleReadInput, Input, LocalPhysicalPlanRef, SourceId,
+};
 use daft_scan::ScanTaskRef;
 use tokio_util::sync::CancellationToken;
 
@@ -371,6 +373,16 @@ impl SwordfishTaskBuilder {
     /// Add glob paths with source_id to the builder.
     pub fn with_glob_paths(mut self, source_id: SourceId, glob_paths: Vec<String>) -> Self {
         self.inputs.insert(source_id, Input::GlobPaths(glob_paths));
+        self
+    }
+
+    /// Add flight shuffle read inputs with source_id to the builder.
+    pub fn with_flight_shuffle_reads(
+        mut self,
+        source_id: SourceId,
+        inputs: Vec<FlightShuffleReadInput>,
+    ) -> Self {
+        self.inputs.insert(source_id, Input::FlightShuffle(inputs));
         self
     }
 

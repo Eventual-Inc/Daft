@@ -16,11 +16,11 @@ use common_metrics::{
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
-    HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
-    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Sample, Sort,
-    SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
-    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
+    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, FlightShuffleReadInput,
+    GlobScan, HashAggregate, HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext,
+    LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
+    Sample, Sort, SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot,
+    VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
     WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
@@ -1417,21 +1417,14 @@ fn physical_plan_to_pipeline(
             .boxed()
         }
         LocalPhysicalPlan::FlightShuffleRead(daft_local_plan::FlightShuffleRead {
-            shuffle_id,
-            partition_idx,
-            server_addresses,
-            server_cache_mapping,
+            source_id,
             schema,
             stats_state,
             context,
         }) => {
-            let source = FlightShuffleReadSource::new(
-                *shuffle_id,
-                *partition_idx,
-                server_addresses.clone(),
-                server_cache_mapping.clone(),
-                schema.clone(),
-            );
+            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
+            input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
+            let source = FlightShuffleReadSource::new(rx, schema.clone(), cfg);
             SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
         }
         LocalPhysicalPlan::VLLMProject(VLLMProject {
