@@ -17,7 +17,7 @@ use daft_io::{IOStatsContext, python::IOConfig};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
-use daft_scan::{DataSource, ScanTaskRef, storage_config::StorageConfig};
+use daft_scan::{ScanSource, ScanTaskRef, storage_config::StorageConfig};
 use daft_stats::{TableMetadata, TableStatistics};
 use pyo3::{PyTypeInfo, exceptions::PyValueError, prelude::*, types::PyBytes};
 use snafu::ResultExt;
@@ -1085,7 +1085,7 @@ pub fn read_pyfunc_into_table_iter(
     let table_iterators = scan_task.sources.iter().map(|source| {
         // Call Python function to create an Iterator (Grabs the GIL and then releases it)
         match source {
-            DataSource::PythonFactoryFunction {
+            ScanSource::PythonFactoryFunction {
                 module,
                 func_name,
                 func_args,
