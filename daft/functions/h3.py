@@ -1,10 +1,4 @@
-"""H3 Functions.
-
-Functions for the `H3 <https://h3geo.org/>`_ hierarchical geospatial indexing system.
-
-All functions that take a cell index accept both UInt64 and Utf8 (hex string) columns.
-To convert between representations, use :func:`h3_str_to_cell` and :func:`h3_cell_to_str`.
-"""
+"""H3 Geospatial Indexing Functions."""
 
 from __future__ import annotations
 
