@@ -109,8 +109,18 @@ pub fn split_by_jsonl_ranges<'a>(
                         let end = w[1];
                         assert!(end > start, "Invalid chunk range: start={start}, end={end}");
                         let mut new_source = source.clone();
-                        if let ScanSource::File { chunk_spec, .. } = &mut new_source {
+                        if let ScanSource::File {
+                            chunk_spec,
+                            size_bytes,
+                            metadata,
+                            statistics,
+                            ..
+                        } = &mut new_source
+                        {
                             *chunk_spec = Some(ChunkSpec::Bytes { start, end });
+                            *size_bytes = Some((end - start) as u64);
+                            *metadata = None;
+                            *statistics = None;
                         }
                         let new_task = ScanTask::new(
                             vec![new_source],
