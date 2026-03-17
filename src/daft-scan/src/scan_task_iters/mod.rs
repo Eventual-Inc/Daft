@@ -9,7 +9,7 @@ use daft_parquet::{RowGroupList, read::read_parquet_metadata};
 use indexmap::IndexMap;
 
 use crate::{
-    ChunkSpec, DataSource, FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanTask, ScanTaskRef,
+    ChunkSpec, FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanSource, ScanTask, ScanTaskRef,
     SourceConfig,
 };
 
@@ -224,7 +224,7 @@ fn split_by_row_groups(
                     ) = (
                         t.source_config.as_ref(),
                         &t.sources[..],
-                        t.sources.first().map(DataSource::get_chunk_spec),
+                        t.sources.first().map(ScanSource::get_chunk_spec),
                         t.pushdowns.limit,
                     ) && source
                         .get_size_bytes()
@@ -266,7 +266,7 @@ fn split_by_row_groups(
                             if curr_size_bytes >= min_size_bytes || Some(i) == last_original_index {
                                 let mut new_source = source.clone();
 
-                                if let DataSource::File {
+                                if let ScanSource::File {
                                     chunk_spec,
                                     size_bytes,
                                     parquet_metadata,
@@ -280,10 +280,10 @@ fn split_by_row_groups(
                                     *chunk_spec = Some(ChunkSpec::Parquet(curr_row_group_indices));
                                     *size_bytes = Some(curr_size_bytes as u64);
                                 } else {
-                                    unreachable!("Parquet file format should only be used with DataSource::File");
+                                    unreachable!("Parquet file format should only be used with ScanSource::File");
                                 }
 
-                                if let DataSource::File {
+                                if let ScanSource::File {
                                     metadata: Some(metadata),
                                     ..
                                 } = &mut new_source

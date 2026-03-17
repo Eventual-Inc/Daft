@@ -8,7 +8,7 @@ use url::Url;
 use urlencoding::decode;
 
 use crate::{
-    ChunkSpec, DataSource, FileFormatConfig, JsonSourceConfig, ScanTask, ScanTaskRef, SourceConfig,
+    ChunkSpec, FileFormatConfig, JsonSourceConfig, ScanSource, ScanTask, ScanTaskRef, SourceConfig,
     StorageConfig,
 };
 
@@ -32,7 +32,7 @@ pub fn split_by_jsonl_ranges<'a>(
                 ) = (
                     t.source_config.as_ref(),
                     &t.sources[..],
-                    t.sources.first().map(DataSource::get_chunk_spec),
+                    t.sources.first().map(ScanSource::get_chunk_spec),
                 ) {
                     let path = source.get_path();
                     if !supports_split(path) {
@@ -109,7 +109,7 @@ pub fn split_by_jsonl_ranges<'a>(
                         let end = w[1];
                         assert!(end > start, "Invalid chunk range: start={start}, end={end}");
                         let mut new_source = source.clone();
-                        if let DataSource::File { chunk_spec, .. } = &mut new_source {
+                        if let ScanSource::File { chunk_spec, .. } = &mut new_source {
                             *chunk_spec = Some(ChunkSpec::Bytes { start, end });
                         }
                         let new_task = ScanTask::new(
@@ -234,7 +234,7 @@ mod tests {
 
     fn make_scan_task(path: &str, size_bytes: u64) -> ScanTask {
         ScanTask::new(
-            vec![DataSource::File {
+            vec![ScanSource::File {
                 path: path.to_string(),
                 chunk_spec: None,
                 size_bytes: Some(size_bytes),
@@ -309,7 +309,7 @@ mod tests {
         for t in tasks {
             let t = t.unwrap();
             let src = &t.sources[0];
-            if let crate::DataSource::File {
+            if let crate::ScanSource::File {
                 chunk_spec: Some(crate::ChunkSpec::Bytes { start, end }),
                 ..
             } = src

@@ -182,9 +182,8 @@ pub mod pylib {
 
     use super::{PyFileFormatConfig, PythonTablesFactoryArgs};
     use crate::{
-        DataSource, DatabaseSourceConfig, FileFormatConfig, PartitionField, Pushdowns,
-        ScanOperator, ScanOperatorRef, ScanTask, ScanTaskRef, SourceConfig,
-        SupportsPushdownFilters,
+        DatabaseSourceConfig, FileFormatConfig, PartitionField, Pushdowns, ScanOperator,
+        ScanOperatorRef, ScanSource, ScanTask, ScanTaskRef, SourceConfig, SupportsPushdownFilters,
         anonymous::AnonymousScanOperator,
         glob::GlobScanOperator,
         python::pylib_scan_info::{PyPartitionField, PyPushdowns},
@@ -601,7 +600,7 @@ pub mod pylib {
 
             let metadata = num_rows.map(|n| TableMetadata { length: n as usize });
 
-            let data_source = DataSource::File {
+            let data_source = ScanSource::File {
                 path: file,
                 chunk_spec: None,
                 size_bytes,
@@ -649,7 +648,7 @@ pub mod pylib {
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.record_batch))
                 .transpose()?;
-            let data_source = DataSource::Database {
+            let data_source = ScanSource::Database {
                 path: url,
                 size_bytes,
                 metadata: num_rows.map(|n| TableMetadata { length: n as usize }),
@@ -694,7 +693,7 @@ pub mod pylib {
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.record_batch))
                 .transpose()?;
-            let data_source = DataSource::PythonFactoryFunction {
+            let data_source = ScanSource::PythonFactoryFunction {
                 module: module.clone(),
                 func_name: func_name.clone(),
                 func_args: PythonTablesFactoryArgs::new(
@@ -782,7 +781,7 @@ pub mod pylib {
                 None,
             ),
         )?;
-        let data_source = DataSource::File {
+        let data_source = ScanSource::File {
             path: uri.to_string(),
             chunk_spec: None,
             size_bytes: Some(file_size),

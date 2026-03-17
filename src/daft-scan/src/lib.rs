@@ -154,7 +154,7 @@ impl ChunkSpec {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum DataSource {
+pub enum ScanSource {
     File {
         path: String,
         chunk_spec: Option<ChunkSpec>,
@@ -183,7 +183,7 @@ pub enum DataSource {
     },
 }
 
-impl Hash for DataSource {
+impl Hash for ScanSource {
     fn hash<H: Hasher>(&self, state: &mut H) {
         // Hash everything except for cached parquet metadata.
         match self {
@@ -240,7 +240,7 @@ impl Hash for DataSource {
     }
 }
 
-impl DataSource {
+impl ScanSource {
     #[must_use]
     pub fn get_path(&self) -> &str {
         match self {
@@ -418,7 +418,7 @@ impl DataSource {
     }
 }
 
-impl DisplayAs for DataSource {
+impl DisplayAs for ScanSource {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         match level {
             common_display::DisplayLevel::Compact | common_display::DisplayLevel::Default => {
@@ -443,7 +443,7 @@ impl DisplayAs for DataSource {
 #[derive(PartialEq, Serialize, Deserialize, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ScanTask {
-    pub sources: Vec<DataSource>,
+    pub sources: Vec<ScanSource>,
 
     /// Schema to use when reading the DataSources.
     ///
@@ -492,7 +492,7 @@ fn warc_column_sizes() -> &'static HashMap<&'static str, usize> {
 impl ScanTask {
     #[must_use]
     pub fn new(
-        sources: Vec<DataSource>,
+        sources: Vec<ScanSource>,
         source_config: Arc<SourceConfig>,
         schema: SchemaRef,
         storage_config: Arc<StorageConfig>,
@@ -693,7 +693,7 @@ impl ScanTask {
         self.sources
             .iter()
             .filter_map(|s| match s {
-                DataSource::File { path, .. } => Some(path.clone()),
+                ScanSource::File { path, .. } => Some(path.clone()),
                 _ => None,
             })
             .collect()
@@ -788,7 +788,7 @@ impl ScanTask {
         self.sources
             .first()
             .and_then(|s| match s {
-                DataSource::File { path, .. } => {
+                ScanSource::File { path, .. } => {
                     let filename = std::path::Path::new(path);
                     Some(
                         filename
@@ -981,13 +981,13 @@ mod test {
     use itertools::Itertools;
 
     use crate::{
-        DataSource, FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanOperator, ScanTask,
+        FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanOperator, ScanSource, ScanTask,
         SourceConfig, WarcSourceConfig, glob::GlobScanOperator, storage_config::StorageConfig,
     };
 
     fn make_scan_task(num_sources: usize) -> ScanTask {
         let sources = (0..num_sources)
-            .map(|i| DataSource::File {
+            .map(|i| ScanSource::File {
                 path: format!("test{i}"),
                 chunk_spec: None,
                 size_bytes: None,
@@ -1134,7 +1134,7 @@ mod test {
 
     #[test]
     fn test_warc_memory_estimation_with_extremely_large_row_count() {
-        let sources = vec![DataSource::File {
+        let sources = vec![ScanSource::File {
             path: "test.warc.gz".to_string(),
             chunk_spec: None,
             size_bytes: Some(1_000_000),
@@ -1176,7 +1176,7 @@ mod test {
 
     #[test]
     fn test_warc_memory_estimation_with_large_row_count_f64() {
-        let sources = vec![DataSource::File {
+        let sources = vec![ScanSource::File {
             path: "test.warc.gz".to_string(),
             chunk_spec: None,
             size_bytes: Some(1_000_000_000_000), // 1TB file
@@ -1217,7 +1217,7 @@ mod test {
 
     #[test]
     fn test_warc_memory_estimation_valid_edge_case() {
-        let sources = vec![DataSource::File {
+        let sources = vec![ScanSource::File {
             path: "test.warc.gz".to_string(),
             chunk_spec: None,
             size_bytes: Some(10_000_000), // 10MB
@@ -1258,7 +1258,7 @@ mod test {
 
     #[test]
     fn test_schema_row_size_estimation_with_extremely_large_row_count() {
-        let sources = vec![DataSource::File {
+        let sources = vec![ScanSource::File {
             path: "test.parquet".to_string(),
             chunk_spec: None,
             size_bytes: Some(1_000_000),
@@ -1305,7 +1305,7 @@ mod test {
 
     #[test]
     fn test_schema_row_size_estimation_with_nested_schema() {
-        let sources = vec![DataSource::File {
+        let sources = vec![ScanSource::File {
             path: "test.parquet".to_string(),
             chunk_spec: None,
             size_bytes: Some(100_000_000), // 100MB
@@ -1353,7 +1353,7 @@ mod test {
 
     #[test]
     fn test_schema_row_size_estimation_with_large_file_no_metadata() {
-        let sources = vec![DataSource::File {
+        let sources = vec![ScanSource::File {
             path: "test.parquet".to_string(),
             chunk_spec: None,
             size_bytes: Some(u64::MAX / 100), // Very large file
@@ -1397,7 +1397,7 @@ mod test {
 
     #[test]
     fn test_schema_row_size_estimation_valid_case() {
-        let sources = vec![DataSource::File {
+        let sources = vec![ScanSource::File {
             path: "test.parquet".to_string(),
             chunk_spec: None,
             size_bytes: Some(1_000_000),
@@ -1441,7 +1441,7 @@ mod test {
 
     #[test]
     fn test_overflow_protection_with_infinity() {
-        let sources = vec![DataSource::File {
+        let sources = vec![ScanSource::File {
             path: "test.parquet".to_string(),
             chunk_spec: None,
             size_bytes: Some(u64::MAX), // Maximum possible file size
