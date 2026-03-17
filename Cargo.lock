@@ -1792,10 +1792,8 @@ version = "0.3.0-dev0"
 dependencies = [
  "common-error",
  "common-py-serde",
- "daft-schema",
  "pyo3",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -3014,7 +3012,6 @@ dependencies = [
  "arrow-schema 57.3.0",
  "bincode",
  "common-error",
- "common-file-formats",
  "common-io-config",
  "common-metrics",
  "common-py-serde",
@@ -3222,6 +3219,7 @@ dependencies = [
  "itertools 0.14.0",
  "pyo3",
  "serde",
+ "serde_json",
  "snafu",
  "tokio",
  "url",

@@ -44,7 +44,6 @@ python = [
   "dep:pyo3",
   "common-display/python",
   "common-error/python",
-  "common-file-formats/python",
   "common-io-config/python",
   "common-daft-config/python",
   "common-resource-request/python",

@@ -56,15 +56,15 @@ fn translate_helper(
                         ScanState::Tasks(scan_tasks) => (**scan_tasks).clone(),
                     };
 
-                    let format_config = scan_tasks
+                    let source_config = scan_tasks
                         .first()
-                        .map(|scan_task| scan_task.file_format_config.clone());
+                        .map(|scan_task| scan_task.source_config.clone());
                     let source_id = source_counter.next();
                     inputs.insert(source_id, Input::ScanTasks(scan_tasks));
 
                     LocalPhysicalPlan::physical_scan(
                         source_id,
-                        format_config,
+                        source_config,
                         info.pushdowns.clone(),
                         source.output_schema.clone(),
                         source.stats_state.clone(),

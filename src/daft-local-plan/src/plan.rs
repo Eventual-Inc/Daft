@@ -5,7 +5,6 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult, ensure};
-use common_file_formats::FileFormatConfig;
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use common_py_serde::{PyObjectWrapper, deserialize_py_object, serialize_py_object};
@@ -25,7 +24,7 @@ use daft_logical_plan::{
     partitioning::RepartitionSpec,
     stats::{PlanStats, StatsState},
 };
-use daft_scan::Pushdowns;
+use daft_scan::{Pushdowns, SourceConfig};
 use serde::{Deserialize, Serialize};
 
 use crate::SourceId;
@@ -237,7 +236,7 @@ impl LocalPhysicalPlan {
 
     pub fn physical_scan(
         source_id: SourceId,
-        file_format_config: Option<Arc<FileFormatConfig>>,
+        source_config: Option<Arc<SourceConfig>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         stats_state: StatsState,
@@ -245,7 +244,7 @@ impl LocalPhysicalPlan {
     ) -> LocalPhysicalPlanRef {
         Self::PhysicalScan(PhysicalScan {
             source_id,
-            file_format_config,
+            source_config,
             pushdowns,
             schema,
             stats_state,
@@ -1805,7 +1804,7 @@ impl DynTreeNode for LocalPhysicalPlan {
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PhysicalScan {
     pub source_id: SourceId,
-    pub file_format_config: Option<Arc<FileFormatConfig>>,
+    pub source_config: Option<Arc<SourceConfig>>,
     pub pushdowns: Pushdowns,
     pub schema: SchemaRef,
     pub stats_state: StatsState,

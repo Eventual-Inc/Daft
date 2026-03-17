@@ -332,7 +332,7 @@ class TextSourceConfig:
 class FileFormatConfig:
     """Configuration for parsing a particular file format (Parquet, CSV, JSON)."""
 
-    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | DatabaseSourceConfig | WarcSourceConfig
+    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | WarcSourceConfig
 
     @staticmethod
     def from_parquet_config(config: ParquetSourceConfig) -> FileFormatConfig:
@@ -352,11 +352,6 @@ class FileFormatConfig:
     @staticmethod
     def from_warc_config(config: WarcSourceConfig) -> FileFormatConfig:
         """Create a WARC file format config."""
-        ...
-
-    @staticmethod
-    def from_database_config(config: DatabaseSourceConfig) -> FileFormatConfig:
-        """Create a database file format config."""
         ...
 
     @staticmethod
@@ -1086,7 +1081,7 @@ class ScanTask:
     @staticmethod
     def sql_scan_task(
         url: str,
-        file_format: FileFormatConfig,
+        config: DatabaseSourceConfig,
         schema: PySchema,
         storage_config: StorageConfig,
         num_rows: int | None,

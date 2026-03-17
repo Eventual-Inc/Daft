@@ -26,6 +26,7 @@ indexmap = {workspace = true}
 itertools = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
+serde_json = {workspace = true, optional = true}
 snafu = {workspace = true}
 url = {workspace = true}
 urlencoding = "2.1.3"
@@ -36,7 +37,9 @@ tokio = {workspace = true, features = ["full"]}
 [features]
 python = [
   "dep:pyo3",
+  "dep:serde_json",
   "common-error/python",
+  "common-py-serde/python",
   "daft-core/python",
   "daft-dsl/python",
   "daft-recordbatch/python",

@@ -1,8 +1,6 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_display::{DisplayAs, DisplayLevel};
-#[cfg(feature = "python")]
-use common_file_formats::FileFormatConfig;
 use common_metrics::{
     BYTES_READ_KEY, Counter, DURATION_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_BYTES,
     UNIT_MICROSECONDS, UNIT_ROWS,
@@ -11,7 +9,7 @@ use common_metrics::{
 };
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
-use daft_scan::{Pushdowns, ScanTaskRef};
+use daft_scan::{Pushdowns, ScanTaskRef, SourceConfig};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
 use opentelemetry::{KeyValue, metrics::Meter};
@@ -112,7 +110,7 @@ impl ScanSourceNode {
     fn make_source_task(self: &Arc<Self>, scan_task: ScanTaskRef) -> SwordfishTaskBuilder {
         let physical_scan = LocalPhysicalPlan::physical_scan(
             self.node_id(),
-            Some(scan_task.file_format_config.clone()),
+            Some(scan_task.source_config.clone()),
             self.pushdowns.clone(),
             self.config.schema.clone(),
             StatsState::NotMaterialized,
@@ -153,15 +151,15 @@ impl PipelineNodeImpl for ScanSourceNode {
         res.push(format!("Num Scan Tasks = {num_scan_tasks}"));
         res.push(format!("Estimated Scan Bytes = {total_bytes}"));
 
-        if let Some(ffc) = self
+        if let Some(sc) = self
             .scan_tasks
             .first()
-            .map(|s| s.file_format_config.clone())
+            .map(|s| s.source_config.clone())
             .as_deref()
         {
-            match ffc {
+            match sc {
                 #[cfg(feature = "python")]
-                FileFormatConfig::Database(config) => {
+                SourceConfig::Database(config) => {
                     if num_scan_tasks == 1 {
                         res.push(format!("SQL Query = {}", &config.sql));
                     } else {
@@ -169,7 +167,7 @@ impl PipelineNodeImpl for ScanSourceNode {
                     }
                 }
                 #[cfg(feature = "python")]
-                FileFormatConfig::PythonFunction { source_name, .. } => {
+                SourceConfig::PythonFunction { source_name, .. } => {
                     res.push(format!(
                         "Source = {}",
                         source_name.clone().unwrap_or_else(|| "None".to_string())

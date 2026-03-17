@@ -318,7 +318,7 @@ fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan {
             source_id,
-            file_format_config,
+            source_config,
             pushdowns,
             schema,
             stats_state,
@@ -329,7 +329,7 @@ fn physical_plan_to_pipeline(
 
             let scan_task_source = ScanTaskSource::new(
                 rx,
-                file_format_config.clone(),
+                source_config.clone(),
                 pushdowns.clone(),
                 schema.clone(),
                 cfg,
