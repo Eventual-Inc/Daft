@@ -1219,7 +1219,7 @@ jobs:
   benchmark-codspeed:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
-    runs-on: buildjet-8vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
       package-name: daft
@@ -1237,7 +1237,7 @@ jobs:
         shared-key: ${{ runner.os }}-dev-bench-build
         cache-all-crates: "true"
         cache-workspace-crates: "true"
-        cache-provider: buildjet
+        cache-provider: github
         save-if: ${{ github.ref == 'refs/heads/main' }}
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
