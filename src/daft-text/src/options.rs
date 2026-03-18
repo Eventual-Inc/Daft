@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub struct TextConvertOptions {
     pub encoding: String,
     pub skip_blank_lines: bool,
+    pub whole_text: bool,
     pub schema: Option<SchemaRef>,
     pub limit: Option<usize>,
 }
@@ -15,12 +16,14 @@ impl TextConvertOptions {
     pub fn new(
         encoding: &str,
         skip_blank_lines: bool,
+        whole_text: bool,
         schema: Option<SchemaRef>,
         limit: Option<usize>,
     ) -> Self {
         Self {
             encoding: encoding.to_string(),
             skip_blank_lines,
+            whole_text,
             schema,
             limit,
         }
@@ -29,7 +32,7 @@ impl TextConvertOptions {
 
 impl Default for TextConvertOptions {
     fn default() -> Self {
-        Self::new("utf-8", true, None, None)
+        Self::new("utf-8", true, false, None, None)
     }
 }
 
