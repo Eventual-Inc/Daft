@@ -1802,8 +1802,6 @@ pub fn local_parquet_read_arrowrs(
         return Ok(table);
     }
 
-    let has_predicate = predicate.is_some();
-
     // Each column task opens its own file handle (independent seek position, ~microsecond
     // syscall). This avoids the cost of reading the entire file into memory upfront
     // (e.g., 728MB -> ~380ms), and the OS page cache serves subsequent reads from memory.
@@ -1922,7 +1920,6 @@ pub fn local_parquet_read_arrowrs(
                 let rg_rows = setup.parquet_metadata.row_group(task.rg_idx).num_rows() as usize;
                 let mut sel = build_base_row_selection(&setup, task, rg_rows);
                 if !setup.predicate_pushed && task.local_offset > 0 {
-                    let rg_rows = setup.parquet_metadata.row_group(task.rg_idx).num_rows() as usize;
                     let offset_sel = build_offset_row_selection(task.local_offset, rg_rows);
                     sel = combine_selections(sel, Some(offset_sel));
                 }
@@ -1968,14 +1965,7 @@ pub fn local_parquet_read_arrowrs(
         }
 
         let mut table = RecordBatch::concat(rg_batches.as_slice())?;
-        // Apply limit: for no-predicate, local_limit per RG handles most cases,
-        // but with predicate (non-pushed), we need post-concat limit.
-        if has_predicate && let Some(limit) = num_rows {
-            table = table.head(limit)?;
-        }
-        // For non-predicate with limit, tasks already have local_limit, but
-        // concat may overshoot by up to 1 RG. Apply final limit.
-        if !has_predicate && let Some(limit) = num_rows {
+        if let Some(limit) = num_rows {
             table = table.head(limit)?;
         }
         Ok(table)
