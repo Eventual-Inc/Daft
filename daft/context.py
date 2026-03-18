@@ -171,6 +171,7 @@ def set_execution_config(
     parquet_inflation_factor: float | None = None,
     csv_target_filesize: int | None = None,
     csv_inflation_factor: float | None = None,
+    json_target_filesize: int | None = None,
     json_inflation_factor: float | None = None,
     text_inflation_factor: float | None = None,
     shuffle_aggregation_default_partitions: int | None = None,
@@ -188,6 +189,7 @@ def set_execution_config(
     enable_dynamic_batching: bool | None = None,
     dynamic_batching_strategy: str | None = None,
     flight_shuffle_dirs: list[str] | None = None,
+    enable_multi_glob_path_tasks: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -216,6 +218,7 @@ def set_execution_config(
         parquet_inflation_factor: Inflation Factor of parquet files (In-Memory-Size / File-Size) ratio. Defaults to 3.0
         csv_target_filesize: Target File Size when writing out CSV Files. Defaults to 512MB
         csv_inflation_factor: Inflation Factor of CSV files (In-Memory-Size / File-Size) ratio. Defaults to 0.5
+        json_target_filesize: Target File Size when writing out JSON Files. Defaults to 512MB
         json_inflation_factor: Inflation Factor of JSON files (In-Memory-Size / File-Size) ratio. Defaults to 0.25
         text_inflation_factor: Inflation Factor of Text files (In-Memory-Size / File-Size) ratio. Defaults to 1.0
         shuffle_aggregation_default_partitions: Maximum number of partitions to create when performing aggregations on the Ray Runner. Defaults to 200, unless the number of input partitions is less than 200.
@@ -233,6 +236,7 @@ def set_execution_config(
         enable_dynamic_batching: Whether to enable dynamic batching. Defaults to False.
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
         flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to ["/tmp"]. Must not be empty.
+        enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -254,6 +258,7 @@ def set_execution_config(
             parquet_inflation_factor=parquet_inflation_factor,
             csv_target_filesize=csv_target_filesize,
             csv_inflation_factor=csv_inflation_factor,
+            json_target_filesize=json_target_filesize,
             json_inflation_factor=json_inflation_factor,
             text_inflation_factor=text_inflation_factor,
             shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions,
@@ -271,6 +276,7 @@ def set_execution_config(
             enable_dynamic_batching=enable_dynamic_batching,
             dynamic_batching_strategy=dynamic_batching_strategy,
             flight_shuffle_dirs=flight_shuffle_dirs,
+            enable_multi_glob_path_tasks=enable_multi_glob_path_tasks,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

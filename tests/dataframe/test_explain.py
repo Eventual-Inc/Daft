@@ -284,3 +284,25 @@ def test_explain_with_explode_index_column():
     output = explain_to_text(df)
     assert "Explode" in output
     assert "Index column = idx" in output
+
+
+def test_explain_when_join_with_download():
+    df1 = daft.from_pydict(
+        {
+            "name": ["a", "b"],
+            "url": ["https://www.daft.ai/"] * 2,
+        }
+    ).with_column("bytes", col("url").download())
+
+    df2 = daft.from_pydict(
+        {
+            "name": ["a", "b"],
+            "value": [1, 2],
+        }
+    )
+
+    df = df1.join(df2, on="name", prefix="df2_")
+
+    output = explain_to_text(df, only_physical_plan=True)
+    assert "url_download" in output
+    assert "Join" in output

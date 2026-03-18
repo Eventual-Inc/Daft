@@ -11,7 +11,7 @@ use crate::{
     subscribers::{QueryMetadata, QueryResult},
 };
 
-#[pyclass(frozen)]
+#[pyclass(frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyQueryMetadata(pub(crate) Arc<QueryMetadata>);
 
@@ -56,7 +56,7 @@ impl PyQueryMetadata {
     }
 }
 
-#[pyclass(frozen)]
+#[pyclass(frozen, from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyQueryResult(pub(crate) Arc<QueryResult>);
 

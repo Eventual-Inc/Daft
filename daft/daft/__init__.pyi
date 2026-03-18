@@ -332,7 +332,7 @@ class TextSourceConfig:
 class FileFormatConfig:
     """Configuration for parsing a particular file format (Parquet, CSV, JSON)."""
 
-    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | DatabaseSourceConfig | WarcSourceConfig
+    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | WarcSourceConfig
 
     @staticmethod
     def from_parquet_config(config: ParquetSourceConfig) -> FileFormatConfig:
@@ -352,11 +352,6 @@ class FileFormatConfig:
     @staticmethod
     def from_warc_config(config: WarcSourceConfig) -> FileFormatConfig:
         """Create a WARC file format config."""
-        ...
-
-    @staticmethod
-    def from_database_config(config: DatabaseSourceConfig) -> FileFormatConfig:
-        """Create a database file format config."""
         ...
 
     @staticmethod
@@ -1086,7 +1081,7 @@ class ScanTask:
     @staticmethod
     def sql_scan_task(
         url: str,
-        file_format: FileFormatConfig,
+        config: DatabaseSourceConfig,
         schema: PySchema,
         storage_config: StorageConfig,
         num_rows: int | None,
@@ -2243,6 +2238,7 @@ class PyDaftExecutionConfig:
         parquet_inflation_factor: float | None = None,
         csv_target_filesize: int | None = None,
         csv_inflation_factor: float | None = None,
+        json_target_filesize: int | None = None,
         json_inflation_factor: float | None = None,
         text_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
@@ -2260,6 +2256,7 @@ class PyDaftExecutionConfig:
         enable_dynamic_batching: bool | None = None,
         dynamic_batching_strategy: str | None = None,
         flight_shuffle_dirs: list[str] | None = None,
+        enable_multi_glob_path_tasks: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def enable_scan_task_split_and_merge(self) -> bool: ...
@@ -2290,6 +2287,8 @@ class PyDaftExecutionConfig:
     @property
     def csv_inflation_factor(self) -> float: ...
     @property
+    def json_target_filesize(self) -> int: ...
+    @property
     def json_inflation_factor(self) -> float: ...
     @property
     def text_inflation_factor(self) -> float: ...
@@ -2319,6 +2318,8 @@ class PyDaftExecutionConfig:
     def dynamic_batching_strategy(self) -> str: ...
     @property
     def flight_shuffle_dirs(self) -> list[str]: ...
+    @property
+    def enable_multi_glob_path_tasks(self) -> bool: ...
 
 class PyDaftPlanningConfig:
     @staticmethod

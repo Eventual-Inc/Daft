@@ -7,11 +7,8 @@ import pyarrow as pa
 import pytest
 
 from daft import DataType, Series
-from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.conftest import UuidType, get_tests_daft_runner_name
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
-
-ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
 class MockObject:
@@ -153,10 +150,6 @@ def test_series_concat_struct_array(chunks) -> None:
             counter += 1
 
 
-@pytest.mark.skipif(
-    not pyarrow_supports_fixed_shape_tensor(),
-    reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
-)
 @pytest.mark.parametrize("chunks", [1, 2, 3, 10])
 def test_series_concat_tensor_array_canonical(chunks) -> None:
     element_shape = (2, 2)

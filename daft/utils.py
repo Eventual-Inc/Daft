@@ -106,11 +106,6 @@ def map_operator_arrow_semantics(
     ]
 
 
-def pyarrow_supports_fixed_shape_tensor() -> bool:
-    """Whether pyarrow supports the fixed_shape_tensor canonical extension type."""
-    return hasattr(pa, "fixed_shape_tensor")
-
-
 # Column utility functions
 def is_column_input(x: Any) -> bool:
     from daft.expressions import Expression

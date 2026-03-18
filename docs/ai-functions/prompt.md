@@ -23,7 +23,7 @@ A key strength of Daft is its ability to parallelize data processing on structur
 </div>
 
 !!! note
-    `prompt` is under active development, so make sure to stay up to date with our [latest releases on github](https://github.com/Eventual-Inc/Daft/releases) or through announcements in our [slack community](https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg).
+    `prompt` is under active development, so make sure to stay up to date with our [latest releases on github](https://github.com/Eventual-Inc/Daft/releases) or through announcements in our [slack community](https://join.slack.com/t/dist-data/shared_invite/zt-3rh9jr9iv-tmmTNOlQpfvhEy2NTMWS_w).
 
 ## Quick Start
 
