@@ -2248,6 +2248,7 @@ class PyDaftExecutionConfig:
         default_morsel_size: int | None = None,
         shuffle_algorithm: str | None = None,
         pre_shuffle_merge_threshold: int | None = None,
+        pre_shuffle_merge_partition_threshold: int | None = None,
         scantask_max_parallel: int | None = None,
         native_parquet_writer: bool | None = None,
         min_cpu_per_task: float | None = None,
@@ -2306,6 +2307,8 @@ class PyDaftExecutionConfig:
     def shuffle_algorithm(self) -> str: ...
     @property
     def pre_shuffle_merge_threshold(self) -> int: ...
+    @property
+    def pre_shuffle_merge_partition_threshold(self) -> int: ...
     @property
     def min_cpu_per_task(self) -> float: ...
     @property

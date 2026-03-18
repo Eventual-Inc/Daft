@@ -181,6 +181,7 @@ def set_execution_config(
     default_morsel_size: int | None = None,
     shuffle_algorithm: str | None = None,
     pre_shuffle_merge_threshold: int | None = None,
+    pre_shuffle_merge_partition_threshold: int | None = None,
     scantask_max_parallel: int | None = None,
     native_parquet_writer: bool | None = None,
     min_cpu_per_task: float | None = None,
@@ -228,6 +229,7 @@ def set_execution_config(
         default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
         shuffle_algorithm: The shuffle algorithm to use. Defaults to "auto", which will let Daft determine the algorithm. Options are "map_reduce", "pre_shuffle_merge", and "flight_shuffle".
         pre_shuffle_merge_threshold: Memory threshold in bytes for pre-shuffle merge. Defaults to 1GB
+        pre_shuffle_merge_partition_threshold: Number of partitions threshold to enable pre-shuffle merge when shuffle_algorithm is "auto". Defaults to 200.
         scantask_max_parallel: Set the max parallelism for running scan tasks simultaneously. Currently, this only works for Native Runner. If set to 0, all available CPUs will be used. Defaults to 8.
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
         min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
@@ -268,6 +270,7 @@ def set_execution_config(
             default_morsel_size=default_morsel_size,
             shuffle_algorithm=shuffle_algorithm,
             pre_shuffle_merge_threshold=pre_shuffle_merge_threshold,
+            pre_shuffle_merge_partition_threshold=pre_shuffle_merge_partition_threshold,
             scantask_max_parallel=scantask_max_parallel,
             native_parquet_writer=native_parquet_writer,
             min_cpu_per_task=min_cpu_per_task,
