@@ -3,13 +3,13 @@ from __future__ import annotations
 import atexit
 import json
 import time
-import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from io import TextIOWrapper
 
 from daft.context import get_context
 from daft.daft import PyMicroPartition, PyQueryMetadata, PyQueryResult, QueryEndState, StatType
@@ -36,12 +36,6 @@ def _mono_ms() -> float:
     return time.monotonic() * 1000
 
 
-def _generate_run_id() -> str:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    suffix = uuid.uuid4().hex[:4]
-    return f"run_{timestamp}_{suffix}"
-
-
 class EventLogSubscriber(Subscriber):
     """Experimental subscriber that writes query lifecycle events to a JSONL log.
 
@@ -49,14 +43,11 @@ class EventLogSubscriber(Subscriber):
     one JSON object per line with ``event``, ``ts``, and event-specific fields.
     """
 
-    def __init__(self, log_dir: str | Path, run_id: str | None = None) -> None:
+    def __init__(self, log_dir: str | Path) -> None:
         self._log_dir = Path(log_dir).expanduser().resolve()
-        self._run_id = run_id or _generate_run_id()
-        self._run_dir = self._log_dir / self._run_id
-        self._events_path = self._run_dir / "events.jsonl"
-        self._run_dir.mkdir(parents=True, exist_ok=True)
-        self._file = open(self._events_path, "a", buffering=1)  # line-buffered
+        self._log_dir.mkdir(parents=True, exist_ok=True)
         self._closed = False
+        self._query_files: dict[str, TextIOWrapper] = {}
 
         # Track start times for duration computation (monotonic ms).
         # TODO update the framework to pass this information
@@ -64,8 +55,6 @@ class EventLogSubscriber(Subscriber):
         self._optimization_starts: dict[str, float] = {}
         self._exec_starts: dict[str, float] = {}
         self._operator_starts: dict[tuple[str, int], float] = {}
-
-        self._write_session_header()
 
     def _clear_query_state(self, query_id: str) -> None:
         """Remove any leftover timing state for the given query."""
@@ -76,23 +65,55 @@ class EventLogSubscriber(Subscriber):
         for key in stale_operator_keys:
             self._operator_starts.pop(key, None)
 
-    def _write_session_header(self) -> None:
+    def _query_dir(self, query_id: str) -> Path:
+        return self._log_dir / query_id
+
+    def _events_path(self, query_id: str) -> Path:
+        return self._query_dir(query_id) / "events.jsonl"
+
+    def _get_query_file(self, query_id: str) -> TextIOWrapper | None:
+        if self._closed:
+            return None
+        query_file = self._query_files.get(query_id)
+        if query_file is not None:
+            return query_file
+
+        query_dir = self._query_dir(query_id)
+        query_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            query_file = open(self._events_path(query_id), "a", buffering=1)  # line-buffered
+        except OSError:
+            return None
+
+        self._query_files[query_id] = query_file
+        self._write_session_header(query_id)
+        return query_file
+
+    def _close_query_file(self, query_id: str) -> None:
+        query_file = self._query_files.pop(query_id, None)
+        if query_file is None:
+            return
+        query_file.close()
+
+    def _write_session_header(self, query_id: str) -> None:
         from daft import __version__ as daft_version
 
         self._write_event(
-            "session_started",
+            query_id,
+            "event_log_started",
             {
                 "daft_version": daft_version,
             },
         )
 
-    def _write_event(self, event_name: str, payload: dict[str, Any]) -> None:
-        if self._closed:
+    def _write_event(self, query_id: str, event_name: str, payload: dict[str, Any]) -> None:
+        query_file = self._get_query_file(query_id)
+        if query_file is None:
             return
-        record: dict[str, Any] = {"event": event_name, "ts": _iso_now()}
+        record: dict[str, Any] = {"event": event_name, "ts": _iso_now(), "query_id": query_id}
         record.update(payload)
         try:
-            self._file.write(json.dumps(record, default=_json_default) + "\n")
+            query_file.write(json.dumps(record, default=_json_default) + "\n")
         except OSError:
             pass  # Don't let logging failures affect query execution
 
@@ -100,20 +121,22 @@ class EventLogSubscriber(Subscriber):
         if self._closed:
             return
         self._closed = True
-        self._file.close()
+        for query_file in self._query_files.values():
+            query_file.close()
+        self._query_files.clear()
 
     # Query lifecycle
 
     def on_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
         self._query_starts[query_id] = _mono_ms()
-        self._write_event("query_started", {"query_id": query_id})
-        self._write_event("plan_unoptimized", {"query_id": query_id, "plan": metadata.unoptimized_plan})
+        self._write_event(query_id, "query_started", {})
+        self._write_event(query_id, "plan_unoptimized", {"plan": metadata.unoptimized_plan})
 
     def on_query_end(self, query_id: str, result: PyQueryResult) -> None:
         start = self._query_starts.pop(query_id, None)
         duration_ms = round(_mono_ms() - start) if start is not None else None
 
-        payload: dict[str, Any] = {"query_id": query_id}
+        payload: dict[str, Any] = {}
         if duration_ms is not None:
             payload["duration_ms"] = duration_ms
 
@@ -128,16 +151,17 @@ class EventLogSubscriber(Subscriber):
         else:
             payload["status"] = "dead"
 
-        self._write_event("query_ended", payload)
+        self._write_event(query_id, "query_ended", payload)
         self._clear_query_state(query_id)
+        self._close_query_file(query_id)
 
     # Result
 
     def on_result_out(self, query_id: str, result: PyMicroPartition) -> None:
         self._write_event(
+            query_id,
             "result_out",
             {
-                "query_id": query_id,
                 "rows": len(result),
             },
         )
@@ -146,32 +170,32 @@ class EventLogSubscriber(Subscriber):
 
     def on_optimization_start(self, query_id: str) -> None:
         self._optimization_starts[query_id] = _mono_ms()
-        self._write_event("optimization_started", {"query_id": query_id})
+        self._write_event(query_id, "optimization_started", {})
 
     def on_optimization_end(self, query_id: str, optimized_plan: str) -> None:
         start = self._optimization_starts.pop(query_id, None)
         duration_ms = round(_mono_ms() - start) if start is not None else None
 
-        payload: dict[str, Any] = {"query_id": query_id}
+        payload: dict[str, Any] = {}
         if duration_ms is not None:
             payload["duration_ms"] = duration_ms
 
-        self._write_event("optimization_ended", payload)
-        self._write_event("plan_optimized", {"query_id": query_id, "plan": optimized_plan})
+        self._write_event(query_id, "optimization_ended", payload)
+        self._write_event(query_id, "plan_optimized", {"plan": optimized_plan})
 
     # Execution
 
     def on_exec_start(self, query_id: str, physical_plan: str) -> None:
         self._exec_starts[query_id] = _mono_ms()
-        self._write_event("execution_started", {"query_id": query_id})
-        self._write_event("plan_physical", {"query_id": query_id, "plan": physical_plan})
+        self._write_event(query_id, "execution_started", {})
+        self._write_event(query_id, "plan_physical", {"plan": physical_plan})
 
     def on_exec_operator_start(self, query_id: str, node_id: int) -> None:
         self._operator_starts[(query_id, node_id)] = _mono_ms()
         self._write_event(
+            query_id,
             "operator_started",
             {
-                "query_id": query_id,
                 "node_id": node_id,
             },
         )
@@ -182,9 +206,9 @@ class EventLogSubscriber(Subscriber):
             for name, (_stat_type, value) in node_stats.items():
                 metrics[name] = value
             self._write_event(
+                query_id,
                 "stats",
                 {
-                    "query_id": query_id,
                     "node_id": node_id,
                     "metrics": metrics,
                 },
@@ -195,29 +219,28 @@ class EventLogSubscriber(Subscriber):
         duration_ms = round(_mono_ms() - start) if start is not None else None
 
         payload: dict[str, Any] = {
-            "query_id": query_id,
             "node_id": node_id,
         }
         if duration_ms is not None:
             payload["duration_ms"] = duration_ms
 
-        self._write_event("operator_ended", payload)
+        self._write_event(query_id, "operator_ended", payload)
 
     def on_exec_end(self, query_id: str) -> None:
         start = self._exec_starts.pop(query_id, None)
         duration_ms = round(_mono_ms() - start) if start is not None else None
 
-        payload: dict[str, Any] = {"query_id": query_id}
+        payload: dict[str, Any] = {}
         if duration_ms is not None:
             payload["duration_ms"] = duration_ms
 
-        self._write_event("execution_ended", payload)
+        self._write_event(query_id, "execution_ended", payload)
 
 
 _EVENT_LOG_SUBSCRIBER: EventLogSubscriber | None = None
 
 
-def enable_event_log(dir: str | Path | None = None) -> None:
+def enable_event_log(log_dir: str | Path | None = None) -> None:
     """Experimental helper that attaches an event-log subscriber.
 
     This API is currently intended for local event-log capture through
@@ -230,7 +253,7 @@ def enable_event_log(dir: str | Path | None = None) -> None:
         atexit.register(disable_event_log)
         _EVENT_LOG_ATEXIT_REGISTERED = True
 
-    subscriber = EventLogSubscriber(dir or _DEFAULT_EVENT_LOG_DIR)
+    subscriber = EventLogSubscriber(log_dir or _DEFAULT_EVENT_LOG_DIR)
     try:
         get_context().attach_subscriber(_EVENT_LOG_ALIAS, subscriber)
     except Exception:

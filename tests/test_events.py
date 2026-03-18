@@ -41,17 +41,14 @@ def _make_query_metadata() -> PyQueryMetadata:
 
 
 def test_event_log_subscriber_writes_session_header(tmp_path):
-    subscriber = EventLogSubscriber(tmp_path, run_id="testrun")
+    subscriber = EventLogSubscriber(tmp_path)
     subscriber.close()
 
-    events = _load_events(tmp_path / "testrun" / "events.jsonl")
-    assert len(events) == 1
-    assert events[0]["event"] == "session_started"
-    assert "daft_version" in events[0]
+    assert list(tmp_path.rglob("events.jsonl")) == []
 
 
 def test_event_log_subscriber_writes_query_lifecycle_events(tmp_path):
-    subscriber = EventLogSubscriber(tmp_path, run_id="testrun")
+    subscriber = EventLogSubscriber(tmp_path)
 
     try:
         query_id = "q_success"
@@ -62,9 +59,9 @@ def test_event_log_subscriber_writes_query_lifecycle_events(tmp_path):
     finally:
         subscriber.close()
 
-    events = _load_events(tmp_path / "testrun" / "events.jsonl")
+    events = _load_events(tmp_path / query_id / "events.jsonl")
     event_names = [event["event"] for event in events]
-    assert event_names == ["session_started", "query_started", "plan_unoptimized", "query_ended"]
+    assert event_names == ["event_log_started", "query_started", "plan_unoptimized", "query_ended"]
 
     query_ended = events[-1]
     assert query_ended["query_id"] == query_id
@@ -73,7 +70,7 @@ def test_event_log_subscriber_writes_query_lifecycle_events(tmp_path):
 
 
 def test_on_query_end_clears_stale_timing_state_for_failed_query(tmp_path):
-    subscriber = EventLogSubscriber(tmp_path, run_id="testrun")
+    subscriber = EventLogSubscriber(tmp_path)
 
     try:
         query_id = "q_failed"
@@ -96,7 +93,7 @@ def test_on_query_end_clears_stale_timing_state_for_failed_query(tmp_path):
 
 
 def test_on_query_end_only_clears_ended_query_state(tmp_path):
-    subscriber = EventLogSubscriber(tmp_path, run_id="testrun")
+    subscriber = EventLogSubscriber(tmp_path)
 
     try:
         ended_query_id = "q_ended"
@@ -133,7 +130,6 @@ def test_enable_event_log_attach_and_disable_close(tmp_path):
     subscriber = subscriber_events._EVENT_LOG_SUBSCRIBER
 
     assert subscriber is not None
-    assert subscriber._events_path.exists()
 
     df = daft.from_pydict({"x": [1, 2, 3]}).with_column("y", daft.col("x") + 1)
     df.collect()
@@ -143,7 +139,10 @@ def test_enable_event_log_attach_and_disable_close(tmp_path):
     assert subscriber_events._EVENT_LOG_SUBSCRIBER is None
     assert subscriber._closed is True
 
-    events = _load_events(subscriber._events_path)
+    event_logs = list(tmp_path.rglob("events.jsonl"))
+    assert len(event_logs) == 1
+
+    events = _load_events(event_logs[0])
     event_names = [event["event"] for event in events]
     assert "query_started" in event_names
     assert "query_ended" in event_names
