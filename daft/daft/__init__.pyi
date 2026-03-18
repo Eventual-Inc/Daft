@@ -1601,6 +1601,7 @@ def row_wise_udf(
     builtin_name: bool,
     is_async: bool,
     return_dtype: PyDataType,
+    cpus: float | None,
     gpus: float,
     use_process: bool | None,
     max_concurrency: int | None,
@@ -1608,6 +1609,7 @@ def row_wise_udf(
     on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
+    ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
 def batch_udf(
     func_id: str,
@@ -1617,6 +1619,7 @@ def batch_udf(
     builtin_name: bool,
     is_async: bool,
     return_dtype: PyDataType,
+    cpus: float | None,
     gpus: float,
     use_process: bool | None,
     max_concurrency: int | None,
@@ -1625,6 +1628,7 @@ def batch_udf(
     on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
+    ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
 def initialize_udfs(expression: PyExpr) -> PyExpr: ...
 def resolve_expr(expr: PyExpr, schema: PySchema) -> tuple[PyExpr, PyField]: ...
@@ -2238,6 +2242,7 @@ class PyDaftExecutionConfig:
         parquet_inflation_factor: float | None = None,
         csv_target_filesize: int | None = None,
         csv_inflation_factor: float | None = None,
+        json_target_filesize: int | None = None,
         json_inflation_factor: float | None = None,
         text_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
@@ -2247,6 +2252,7 @@ class PyDaftExecutionConfig:
         default_morsel_size: int | None = None,
         shuffle_algorithm: str | None = None,
         pre_shuffle_merge_threshold: int | None = None,
+        pre_shuffle_merge_partition_threshold: int | None = None,
         scantask_max_parallel: int | None = None,
         native_parquet_writer: bool | None = None,
         min_cpu_per_task: float | None = None,
@@ -2286,6 +2292,8 @@ class PyDaftExecutionConfig:
     @property
     def csv_inflation_factor(self) -> float: ...
     @property
+    def json_target_filesize(self) -> int: ...
+    @property
     def json_inflation_factor(self) -> float: ...
     @property
     def text_inflation_factor(self) -> float: ...
@@ -2303,6 +2311,8 @@ class PyDaftExecutionConfig:
     def shuffle_algorithm(self) -> str: ...
     @property
     def pre_shuffle_merge_threshold(self) -> int: ...
+    @property
+    def pre_shuffle_merge_partition_threshold(self) -> int: ...
     @property
     def min_cpu_per_task(self) -> float: ...
     @property

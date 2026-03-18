@@ -106,3 +106,28 @@ def test_union_with_failed_implicit_type_coercion(make_df):
 
     with pytest.raises(Exception, match=r"unable to find a common supertype for union"):
         daft.sql("select * from df1 union all select * from df2", **bindings).sort(by="foo").to_pydict()
+
+
+def test_union_with_duplicate_aliases(make_df):
+    df1 = make_df({"id": [1, 2, 3], "value": [10, 20, 30]})
+    df2 = make_df({"id": [4, 5, 6], "value": [40, 50, 60]})
+
+    # Test UNION ALL with duplicate aliases in subqueries (similar to TPC-DS Query 23)
+    query = """
+    SELECT name, total
+    FROM (
+        SELECT id AS name, SUM(value) AS total
+        FROM df1
+        GROUP BY id
+        UNION ALL
+        SELECT id AS name, SUM(value) AS total
+        FROM df2
+        GROUP BY id
+    ) AS sq
+    ORDER BY name
+    """
+
+    result = daft.sql(query, df1=df1, df2=df2)
+
+    expected = {"name": [1, 2, 3, 4, 5, 6], "total": [10, 20, 30, 40, 50, 60]}
+    assert result.sort(by="name").to_pydict() == expected
