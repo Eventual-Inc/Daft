@@ -572,6 +572,12 @@ def read_kafka(
 ) -> DataFrame:
     """Creates a DataFrame by reading messages from Kafka topic(s).
 
+    .. warning::
+
+        This API is **experimental** and may change in future releases. Currently only bounded
+        batch reads are supported — there is no streaming/unbounded mode and no offset commit
+        management.
+
     This function reads bounded ranges of messages from one or more Kafka topics. It supports
     multiple ways to specify the start and end bounds: earliest/latest, timestamp, or explicit
     partition offsets.
