@@ -351,6 +351,28 @@ def test_read_kafka_multi_topic_offset_map(kafka_context: dict[str, object]) -> 
 
 
 @pytest.mark.integration()
+def test_read_kafka_limit(kafka_context: dict[str, object]) -> None:
+    bootstrap = str(kafka_context["bootstrap"])
+    topic = str(kafka_context["topic"])
+
+    df = (
+        daft.read_kafka(
+            bootstrap_servers=bootstrap,
+            topics=topic,
+            group_id="daft-kafka-integration",
+            timeout_ms=20_000,
+            start="earliest",
+            end="latest",
+            partitions=[0],
+        )
+        .limit(5)
+        .collect()
+    )
+    decoded = _decode_rows(df.to_pylist())
+    assert len(decoded) <= 5
+
+
+@pytest.mark.integration()
 def test_read_kafka_multi_topic_offset_map_topic_mismatch_raises(kafka_context: dict[str, object]) -> None:
     bootstrap = str(kafka_context["bootstrap"])
     topic = str(kafka_context["topic"])

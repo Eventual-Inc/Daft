@@ -391,3 +391,70 @@ def test_kafka_source_task_respects_chunk_size(monkeypatch: pytest.MonkeyPatch) 
     micro_partitions = list(task.get_micro_partitions())
     assert len(micro_partitions) == 3
     assert [rows[0]["offset"] for rows in (mp.to_pylist() for mp in micro_partitions)] == [0, 1, 2]
+
+
+def test_kafka_source_task_respects_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    from daft.dependencies import confluent_kafka as lazy_confluent_kafka
+    from daft.io import _kafka
+
+    class _Msg:
+        def __init__(self, offset: int) -> None:
+            self._offset = offset
+
+        def error(self) -> None:
+            return None
+
+        def offset(self) -> int:
+            return self._offset
+
+        def timestamp(self) -> tuple[int, int]:
+            return (1, 0)
+
+        def key(self) -> bytes:
+            return b"k"
+
+        def value(self) -> bytes:
+            return b"v"
+
+    # Stub consumer that always returns exactly as many messages as requested,
+    # with sequentially increasing offsets. This simulates an "infinite" partition
+    # so we can verify that the limit logic stops reading after _limit rows.
+    class _Consumer:
+        def __init__(self, cfg: object) -> None:
+            self._next = 0
+
+        def assign(self, tps: list[object]) -> None:
+            return None
+
+        def consume(self, num_messages: int, *, timeout: float) -> list[_Msg]:
+            msgs = [_Msg(self._next + i) for i in range(num_messages)]
+            self._next += num_messages
+            return msgs
+
+        def close(self) -> None:
+            return None
+
+    stub = SimpleNamespace(
+        Consumer=_Consumer,
+        TopicPartition=lambda topic, partition, offset=None: (topic, partition, offset),
+        TIMESTAMP_NOT_AVAILABLE=0,
+    )
+    monkeypatch.setattr(lazy_confluent_kafka, "_module", None)
+    monkeypatch.setitem(__import__("sys").modules, "confluent_kafka", stub)
+
+    task = _kafka.KafkaSourceTask(
+        _bootstrap_servers="localhost:9092",
+        _group_id="gid",
+        _topic="t",
+        _partition=0,
+        _start_offset=0,
+        _end_offset=100,
+        _kafka_client_config=None,
+        _timeout_ms=1,
+        _chunk_size=1024,
+        _limit=3,
+    )
+
+    micro_partitions = list(task.get_micro_partitions())
+    total_rows = sum(len(mp.to_pylist()) for mp in micro_partitions)
+    assert total_rows == 3

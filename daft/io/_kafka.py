@@ -647,7 +647,7 @@ def read_kafka(
 
     Note:
         This function requires the ``confluent-kafka`` package. Install it with:
-        ``pip install confluent-kafka``
+        ``pip install daft[kafka]`` or ``pip install confluent-kafka``
 
         Timestamp bounds use Kafka message timestamps. If your cluster uses CreateTime, producers can publish
         late/out-of-order timestamps; timestamp bounds are not a safe exactly-once checkpoint. Prefer offset-based
