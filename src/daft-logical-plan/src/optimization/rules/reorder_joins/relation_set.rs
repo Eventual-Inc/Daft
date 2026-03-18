@@ -39,6 +39,7 @@ impl RelationSet {
     }
 
     pub fn contains(self, id: usize) -> bool {
+        debug_assert!(id < 32, "RelationSet supports at most 32 relations");
         (self.0 >> id) & 1 == 1
     }
 
@@ -55,6 +56,7 @@ impl RelationSet {
     }
 
     pub fn remove(self, id: usize) -> Self {
+        debug_assert!(id < 32, "RelationSet supports at most 32 relations");
         Self(self.0 & !(1 << id))
     }
 
