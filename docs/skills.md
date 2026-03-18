@@ -48,7 +48,7 @@ Navigate Daft's documentation for APIs, concepts, and examples.
 
 If you're working inside a Daft clone, the skills are already available. No setup needed - Claude Code picks them up from `.claude/skills/`.
 
-### Install globally with `npx skills add`
+### Install with `npx skills add`
 
 To use these Daft skills outside the repo (across many agents including Claude Code, Cursor, Codex, Gemini CLI, Copilot, and more):
 
@@ -60,7 +60,7 @@ npx skills add Eventual-Inc/Daft
 npx skills add Eventual-Inc/Daft --skill daft-udf-tuning
 ```
 
-This creates symlinks so the skills are available in any project.
+Follow the prompts to choose skills, agents, scope (project or global), and whether to symlink or copy.
 
 ### Claude Code plugin
 
