@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Stat, operator_metrics::OperatorMetrics};
 
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, skip_from_py_object)]
 #[derive(PartialEq, Eq)]
 pub enum StatType {
     #[pyo3(name = "COUNT")]
@@ -36,7 +36,7 @@ impl Stat {
     }
 }
 
-#[pyclass(module = "daft.daft", name = "OperatorMetrics")]
+#[pyclass(module = "daft.daft", name = "OperatorMetrics", from_py_object)]
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct PyOperatorMetrics {
     pub inner: OperatorMetrics,

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_scan::builder::JsonScanBuilder;
+use daft_logical_plan::scan_builder::JsonScanBuilder;
 
 use super::{SQLTableFunction, expr_to_iocfg, try_coerce_list};
 use crate::{

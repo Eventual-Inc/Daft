@@ -6,14 +6,13 @@ capitalize = "*"
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
-common-io-config = {path = "../common/io-config", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
+common-io-config = {path = "../common/io-config", default-features = false}
 common-logging = {path = "../common/logging", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-resource-request = {path = "../common/resource-request", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
-common-scan-info = {path = "../common/scan-info", default-features = false}
 common-system-info = {path = "../common/system-info", default-features = false}
 common-tracing = {path = "../common/tracing", default-features = false}
 console = {workspace = true}
@@ -25,6 +24,7 @@ daft-functions-list = {path = "../daft-functions-list", default-features = false
 daft-functions-uri = {workspace = true}
 daft-io = {path = "../daft-io", default-features = false}
 daft-json = {path = "../daft-json", default-features = false}
+daft-text = {path = "../daft-text", default-features = false}
 daft-local-plan = {path = "../daft-local-plan", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
@@ -51,6 +51,7 @@ tokio-util = {workspace = true}
 tracing = {workspace = true}
 serde_json = {workspace = true}
 opentelemetry = {workspace = true}
+dashmap = {workspace = true}
 
 [features]
 python = [
@@ -59,10 +60,8 @@ python = [
   "common-daft-config/python",
   "common-display/python",
   "common-error/python",
-  "common-file-formats/python",
   "common-py-serde/python",
   "common-runtime/python",
-  "common-scan-info/python",
   "common-metrics/python",
   "daft-core/python",
   "daft-context/python",
@@ -73,7 +72,8 @@ python = [
   "daft-logical-plan/python",
   "daft-micropartition/python",
   "daft-scan/python",
-  "daft-writers/python"
+  "daft-writers/python",
+  "daft-text/python"
 ]
 
 [lints]

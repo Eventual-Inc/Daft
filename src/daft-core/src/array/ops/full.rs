@@ -148,7 +148,7 @@ impl FullNull for StructArray {
                 let field = Field::new(name, dtype.clone());
                 let empty_children = children
                     .iter()
-                    .map(|f| Series::full_null(f.name.as_str(), &f.dtype, length))
+                    .map(|f| Series::full_null(f.name.as_ref(), &f.dtype, length))
                     .collect::<Vec<_>>();
                 Self::new(field, empty_children, Some(nulls))
             }
@@ -162,7 +162,7 @@ impl FullNull for StructArray {
                 let field = Field::new(name, dtype.clone());
                 let empty_children = children
                     .iter()
-                    .map(|f| Series::empty(f.name.as_str(), &f.dtype))
+                    .map(|f| Series::empty(f.name.as_ref(), &f.dtype))
                     .collect::<Vec<_>>();
                 Self::new(field, empty_children, None)
             }

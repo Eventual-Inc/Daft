@@ -18,7 +18,7 @@ use opentelemetry::{KeyValue, metrics::Meter};
 use super::PipelineNodeImpl;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,
         TaskBuilderStream, metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext},
@@ -96,8 +96,6 @@ pub(crate) struct UDFNode {
 }
 
 impl UDFNode {
-    const NODE_NAME: NodeName = "UDF";
-
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
@@ -108,11 +106,22 @@ impl UDFNode {
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
+        let node_name = if udf_properties.builtin_name {
+            Arc::from(udf_properties.name.as_str())
+        } else {
+            let udf_name = udf_properties
+                .name
+                .rsplit_once('.')
+                .map(|(_, name)| name)
+                .unwrap_or(udf_properties.name.as_str());
+            Arc::from(format!("UDF {}", udf_name))
+        };
+
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            node_name,
             NodeType::UDFProject,
             NodeCategory::Intermediate,
         );

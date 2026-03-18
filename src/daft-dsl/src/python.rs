@@ -365,7 +365,7 @@ pub fn initialize_udfs(expr: PyExpr) -> PyResult<PyExpr> {
     Ok(initialize_udfs(expr.expr)?.into())
 }
 
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyExpr {
     pub expr: crate::ExprRef,

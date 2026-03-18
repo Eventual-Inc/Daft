@@ -1,17 +1,20 @@
 //! Stable C ABI contract between Daft and extension cdylibs.
 //!
 //! This crate defines the `repr(C)` types that Daft and extension shared
-//! libraries use to communicate. It has zero Daft-internal dependencies.
+//! libraries use to communicate. It has zero Daft internal dependencies
+//! and zero Arrow implementation dependencies (unless a feature flag is enabled).
 //!
 //! Naming follows Postgres conventions:
 //! - "module" = the shared library at the ABI boundary
 //! - "extension" = the higher-level Python package wrapping a module
 
+pub mod arrow;
+pub mod compat;
 pub mod ffi;
 
 use std::ffi::{c_char, c_int, c_void};
 
-pub use arrow::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
+pub use arrow::{ArrowArray, ArrowArrayStream, ArrowData, ArrowSchema};
 
 /// Modules built against a different ABI version are rejected at load time.
 pub const DAFT_ABI_VERSION: u32 = 1;
@@ -78,9 +81,9 @@ pub struct FFI_ScalarFunction {
     /// Returns 0 on success, non-zero on error.
     pub get_return_field: unsafe extern "C" fn(
         ctx: *const c_void,
-        args: *const FFI_ArrowSchema,
+        args: *const ArrowSchema,
         args_count: usize,
-        ret: *mut FFI_ArrowSchema,
+        ret: *mut ArrowSchema,
         errmsg: *mut *mut c_char,
     ) -> c_int,
 
@@ -92,11 +95,11 @@ pub struct FFI_ScalarFunction {
     /// Returns 0 on success, non-zero on error.
     pub call: unsafe extern "C" fn(
         ctx: *const c_void,
-        args: *const FFI_ArrowArray,
-        args_schemas: *const FFI_ArrowSchema,
+        args: *const ArrowArray,
+        args_schemas: *const ArrowSchema,
         args_count: usize,
-        ret_array: *mut FFI_ArrowArray,
-        ret_schema: *mut FFI_ArrowSchema,
+        ret_array: *mut ArrowArray,
+        ret_schema: *mut ArrowSchema,
         errmsg: *mut *mut c_char,
     ) -> c_int,
 
@@ -111,7 +114,7 @@ unsafe impl Sync for FFI_ScalarFunction {}
 
 /// Host-side session context passed to a module's `init` function.
 ///
-/// The module calls `define_function` to register scalar functions.
+/// The module calls `define_function` to register extensions.
 #[repr(C)]
 pub struct FFI_SessionContext {
     /// Opaque host-side context pointer.
@@ -162,6 +165,8 @@ mod tests {
 
     #[test]
     fn constants() {
+        // !! THIS TEST EXISTS SO THAT THESE ARE NOT CHANGED BY ACCIDENT
+        // IT MEANS WE HAVE TO MANUALLY UPDATE IN TWO PLACES !!
         assert_eq!(DAFT_ABI_VERSION, 1);
         assert_eq!(DAFT_MODULE_MAGIC_SYMBOL, "daft_module_magic");
     }

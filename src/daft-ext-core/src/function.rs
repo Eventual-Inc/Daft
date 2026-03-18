@@ -3,23 +3,15 @@ use std::{
     sync::Arc,
 };
 
-use arrow_array::ArrayRef;
-use arrow_schema::Field;
-use daft_ext_abi::{FFI_ArrowArray, FFI_ArrowSchema, FFI_ScalarFunction};
+use daft_ext_abi::{ArrowArray, ArrowData, ArrowSchema, FFI_ScalarFunction};
 
-use crate::{
-    error::{DaftError, DaftResult},
-    ffi::{
-        arrow::{export_arrow_result, import_arrow_args},
-        trampoline::trampoline,
-    },
-};
+use crate::{error::DaftResult, ffi::trampoline::trampoline};
 
 /// Trait that extension authors implement to define a scalar function.
 pub trait DaftScalarFunction {
     fn name(&self) -> &CStr;
-    fn return_field(&self, args: &[Field]) -> DaftResult<Field>;
-    fn call(&self, args: &[ArrayRef]) -> DaftResult<ArrayRef>;
+    fn return_field(&self, args: &[ArrowSchema]) -> DaftResult<ArrowSchema>;
+    fn call(&self, args: Vec<ArrowData>) -> DaftResult<ArrowData>;
 }
 
 /// A shared, type-erased scalar function reference.
@@ -51,24 +43,20 @@ unsafe extern "C" fn ffi_name(ctx: *const c_void) -> *const c_char {
 #[rustfmt::skip]
 unsafe extern "C" fn ffi_get_return_field(
     ctx:        *const c_void,
-    args:       *const FFI_ArrowSchema,
+    args:       *const ArrowSchema,
     args_count: usize,
-    ret:        *mut FFI_ArrowSchema,
+    ret:        *mut ArrowSchema,
     errmsg:     *mut *mut c_char,
 ) -> c_int {
     unsafe { trampoline(errmsg, "panic in get_return_field", || {
         let ctx = &*ctx.cast::<DaftScalarFunctionRef>();
-        let mut fields = Vec::with_capacity(args_count);
-        for i in 0..args_count {
-            let schema = &*args.add(i);
-            let field = Field::try_from(schema)
-                .map_err(|e| DaftError::TypeError(format!("arg {i}: {e}")))?;
-            fields.push(field);
-        }
-        let result = ctx.return_field(&fields)?;
-        let out_schema = FFI_ArrowSchema::try_from(&result)
-            .map_err(|e| DaftError::RuntimeError(format!("schema export failed: {e}")))?;
-        std::ptr::write(ret, out_schema);
+        let schemas = if args_count == 0 {
+            &[]
+        } else {
+            std::slice::from_raw_parts(args, args_count)
+        };
+        let result = ctx.return_field(schemas)?;
+        std::ptr::write(ret, result);
         Ok(())
     })}
 }
@@ -77,18 +65,25 @@ unsafe extern "C" fn ffi_get_return_field(
 #[rustfmt::skip]
 unsafe extern "C" fn ffi_call(
     ctx:          *const c_void,
-    args:         *const FFI_ArrowArray,
-    args_schemas: *const FFI_ArrowSchema,
+    args:         *const ArrowArray,
+    args_schemas: *const ArrowSchema,
     args_count:   usize,
-    ret_array:    *mut FFI_ArrowArray,
-    ret_schema:   *mut FFI_ArrowSchema,
+    ret_array:    *mut ArrowArray,
+    ret_schema:   *mut ArrowSchema,
     errmsg:       *mut *mut c_char,
 ) -> c_int {
     unsafe { trampoline(errmsg, "panic in call", || {
         let ctx = &*ctx.cast::<DaftScalarFunctionRef>();
-        let arrays = import_arrow_args(args, args_schemas, args_count)?;
-        let result = ctx.call(&arrays)?;
-        export_arrow_result(result, ret_array, ret_schema)
+        let mut data = Vec::with_capacity(args_count);
+        for i in 0..args_count {
+            let array = std::ptr::read(args.add(i));
+            let schema = std::ptr::read(args_schemas.add(i));
+            data.push(ArrowData { schema, array });
+        }
+        let result = ctx.call(data)?;
+        std::ptr::write(ret_array, result.array);
+        std::ptr::write(ret_schema, result.schema);
+        Ok(())
     })}
 }
 
@@ -101,12 +96,37 @@ unsafe extern "C" fn ffi_fini(ctx: *mut c_void) {
 
 #[cfg(test)]
 mod tests {
-    use arrow::ffi as arrow_ffi;
-    use arrow_array::{Array, Int32Array, make_array};
-    use arrow_schema::{DataType, Field};
+    use arrow_array::{Array, ArrayRef, Int32Array};
+    use arrow_schema::{DataType, Field, Schema};
+    use daft_ext_abi::ffi::strings::free_string;
 
     use super::*;
-    use crate::ffi::strings::free_string;
+    use crate::error::DaftError;
+
+    fn export_array(array: &dyn Array) -> ArrowData {
+        let (ffi_array, ffi_schema) = arrow::ffi::to_ffi(&array.to_data()).unwrap();
+        ArrowData {
+            array: unsafe { ArrowArray::from_owned(ffi_array) },
+            schema: unsafe { ArrowSchema::from_owned(ffi_schema) },
+        }
+    }
+
+    fn import_array(data: ArrowData) -> ArrayRef {
+        let ffi_array: arrow::ffi::FFI_ArrowArray = unsafe { data.array.into_owned() };
+        let ffi_schema: arrow::ffi::FFI_ArrowSchema = unsafe { data.schema.into_owned() };
+        let arrow_data = unsafe { arrow::ffi::from_ffi(ffi_array, &ffi_schema) }.unwrap();
+        arrow_array::make_array(arrow_data)
+    }
+
+    fn export_schema(schema: &Schema) -> ArrowSchema {
+        let ffi = arrow::ffi::FFI_ArrowSchema::try_from(schema).unwrap();
+        unsafe { ArrowSchema::from_owned(ffi) }
+    }
+
+    fn import_schema(schema: &ArrowSchema) -> Schema {
+        let ffi: &arrow::ffi::FFI_ArrowSchema = unsafe { schema.as_raw() };
+        Schema::try_from(ffi).unwrap()
+    }
 
     struct IncrementFn;
 
@@ -115,17 +135,19 @@ mod tests {
             c"increment"
         }
 
-        fn return_field(&self, _args: &[Field]) -> DaftResult<Field> {
-            Ok(Field::new("result", DataType::Int32, false))
+        fn return_field(&self, _args: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
+            let field = Field::new("result", DataType::Int32, false);
+            Ok(export_schema(&Schema::new(vec![field])))
         }
 
-        fn call(&self, args: &[ArrayRef]) -> DaftResult<ArrayRef> {
-            let input = args[0]
+        fn call(&self, mut args: Vec<ArrowData>) -> DaftResult<ArrowData> {
+            let input_array = import_array(args.into_iter().next().unwrap());
+            let input = input_array
                 .as_any()
                 .downcast_ref::<Int32Array>()
                 .ok_or_else(|| DaftError::TypeError("expected Int32".into()))?;
             let output: Int32Array = input.iter().map(|v| v.map(|x| x + 1)).collect();
-            Ok(Arc::new(output))
+            Ok(export_array(&output))
         }
     }
 
@@ -144,15 +166,15 @@ mod tests {
         let vtable = into_ffi(Arc::new(IncrementFn));
 
         let field = Field::new("x", DataType::Int32, false);
-        let ffi_field = FFI_ArrowSchema::try_from(&field).unwrap();
+        let ffi_schema = export_schema(&Schema::new(vec![field]));
 
-        let mut ret_schema = FFI_ArrowSchema::empty();
+        let mut ret_schema = ArrowSchema::empty();
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
         let rc = unsafe {
             (vtable.get_return_field)(
                 vtable.ctx,
-                &raw const ffi_field,
+                &raw const ffi_schema,
                 1,
                 &raw mut ret_schema,
                 &raw mut errmsg,
@@ -161,32 +183,29 @@ mod tests {
 
         assert_eq!(rc, 0, "get_return_field should succeed");
 
-        let result_field = Field::try_from(&ret_schema).unwrap();
-        assert_eq!(result_field.name(), "result");
-        assert_eq!(*result_field.data_type(), DataType::Int32);
+        let schema = import_schema(&ret_schema);
+        assert_eq!(schema.field(0).name(), "result");
+        assert_eq!(*schema.field(0).data_type(), DataType::Int32);
 
         unsafe { (vtable.fini)(vtable.ctx.cast_mut()) };
     }
 
     #[test]
     fn vtable_call_roundtrip() {
-        use std::mem::ManuallyDrop;
-
         let vtable = into_ffi(Arc::new(IncrementFn));
 
         let input = Int32Array::from(vec![1, 2, 3]);
-        let (ffi_array, ffi_schema) = arrow_ffi::to_ffi(&input.to_data()).unwrap();
-        let ffi_array = ManuallyDrop::new(ffi_array);
+        let data = export_array(&input);
 
-        let mut ret_array = FFI_ArrowArray::empty();
-        let mut ret_schema = FFI_ArrowSchema::empty();
+        let mut ret_array = ArrowArray::empty();
+        let mut ret_schema = ArrowSchema::empty();
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
         let rc = unsafe {
             (vtable.call)(
                 vtable.ctx,
-                &raw const *ffi_array,
-                &raw const ffi_schema,
+                &raw const data.array,
+                &raw const data.schema,
                 1,
                 &raw mut ret_array,
                 &raw mut ret_schema,
@@ -196,9 +215,11 @@ mod tests {
 
         assert_eq!(rc, 0, "call should succeed");
 
-        let result_data = unsafe { arrow_ffi::from_ffi(ret_array, &ret_schema) }.unwrap();
-        let result = make_array(result_data);
-        let result = result.as_any().downcast_ref::<Int32Array>().unwrap();
+        let result_array = import_array(ArrowData {
+            schema: ret_schema,
+            array: ret_array,
+        });
+        let result = result_array.as_any().downcast_ref::<Int32Array>().unwrap();
         assert_eq!(result.values(), &[2, 3, 4]);
 
         unsafe { (vtable.fini)(vtable.ctx.cast_mut()) };
@@ -211,17 +232,17 @@ mod tests {
             fn name(&self) -> &CStr {
                 c"failing"
             }
-            fn return_field(&self, _: &[Field]) -> DaftResult<Field> {
+            fn return_field(&self, _: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
                 Err(DaftError::TypeError("bad type".into()))
             }
-            fn call(&self, _: &[ArrayRef]) -> DaftResult<ArrayRef> {
+            fn call(&self, _: Vec<ArrowData>) -> DaftResult<ArrowData> {
                 Err(DaftError::RuntimeError("compute failed".into()))
             }
         }
 
         let vtable = into_ffi(Arc::new(FailingFn));
 
-        let mut ret_schema = FFI_ArrowSchema::empty();
+        let mut ret_schema = ArrowSchema::empty();
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
         let rc = unsafe {
@@ -251,31 +272,32 @@ mod tests {
             fn name(&self) -> &CStr {
                 c"call_fail"
             }
-            fn return_field(&self, _: &[Field]) -> DaftResult<Field> {
-                Ok(Field::new("x", DataType::Int32, false))
+            fn return_field(&self, _: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
+                Ok(export_schema(&Schema::new(vec![Field::new(
+                    "x",
+                    DataType::Int32,
+                    false,
+                )])))
             }
-            fn call(&self, _: &[ArrayRef]) -> DaftResult<ArrayRef> {
+            fn call(&self, _: Vec<ArrowData>) -> DaftResult<ArrowData> {
                 Err(DaftError::RuntimeError("compute failed".into()))
             }
         }
 
-        use std::mem::ManuallyDrop;
-
         let vtable = into_ffi(Arc::new(CallFailFn));
 
         let input = Int32Array::from(vec![1]);
-        let (ffi_array, ffi_schema) = arrow_ffi::to_ffi(&input.to_data()).unwrap();
-        let ffi_array = ManuallyDrop::new(ffi_array);
+        let data = export_array(&input);
 
-        let mut ret_array = FFI_ArrowArray::empty();
-        let mut ret_schema = FFI_ArrowSchema::empty();
+        let mut ret_array = ArrowArray::empty();
+        let mut ret_schema = ArrowSchema::empty();
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
         let rc = unsafe {
             (vtable.call)(
                 vtable.ctx,
-                &raw const *ffi_array,
-                &raw const ffi_schema,
+                &raw const data.array,
+                &raw const data.schema,
                 1,
                 &raw mut ret_array,
                 &raw mut ret_schema,
@@ -303,19 +325,23 @@ mod tests {
             fn name(&self) -> &CStr {
                 c"no_args"
             }
-            fn return_field(&self, args: &[Field]) -> DaftResult<Field> {
+            fn return_field(&self, args: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
                 assert!(args.is_empty());
-                Ok(Field::new("result", DataType::Int32, false))
+                Ok(export_schema(&Schema::new(vec![Field::new(
+                    "result",
+                    DataType::Int32,
+                    false,
+                )])))
             }
-            fn call(&self, _: &[ArrayRef]) -> DaftResult<ArrayRef> {
-                Ok(Arc::new(Int32Array::from(vec![42])))
+            fn call(&self, _: Vec<ArrowData>) -> DaftResult<ArrowData> {
+                let output = Int32Array::from(vec![42]);
+                Ok(export_array(&output))
             }
         }
 
         let vtable = into_ffi(Arc::new(NoArgFn));
 
-        // Test return_field with zero args
-        let mut ret_schema = FFI_ArrowSchema::empty();
+        let mut ret_schema = ArrowSchema::empty();
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
         let rc = unsafe {
@@ -329,8 +355,8 @@ mod tests {
         };
         assert_eq!(rc, 0, "get_return_field with zero args should succeed");
 
-        let result_field = Field::try_from(&ret_schema).unwrap();
-        assert_eq!(result_field.name(), "result");
+        let schema = import_schema(&ret_schema);
+        assert_eq!(schema.field(0).name(), "result");
 
         unsafe { (vtable.fini)(vtable.ctx.cast_mut()) };
     }
@@ -342,11 +368,16 @@ mod tests {
             fn name(&self) -> &CStr {
                 c"disposable"
             }
-            fn return_field(&self, _: &[Field]) -> DaftResult<Field> {
-                Ok(Field::new("x", DataType::Null, true))
+            fn return_field(&self, _: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
+                Ok(export_schema(&Schema::new(vec![Field::new(
+                    "x",
+                    DataType::Null,
+                    true,
+                )])))
             }
-            fn call(&self, _: &[ArrayRef]) -> DaftResult<ArrayRef> {
-                Ok(Arc::new(Int32Array::from(vec![0])))
+            fn call(&self, _: Vec<ArrowData>) -> DaftResult<ArrowData> {
+                let output = Int32Array::from(vec![0]);
+                Ok(export_array(&output))
             }
         }
 

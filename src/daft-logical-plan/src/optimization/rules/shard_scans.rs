@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_scan_info::ScanState;
 use common_treenode::{Transformed, TreeNode};
+use daft_scan::ScanState;
 
 use super::OptimizerRule;
 use crate::{LogicalPlan, SourceInfo, ops::Source};
@@ -56,8 +56,8 @@ impl ShardScans {
 mod tests {
     use std::{collections::HashSet, sync::Arc};
 
-    use common_scan_info::{
-        Pushdowns, ScanOperator, Sharder, ShardingStrategy, test::DummyScanOperator,
+    use daft_scan::{
+        Pushdowns, ScanOperator, Sharder, ShardingStrategy, test_utils::DummyScanOperator,
     };
     use daft_schema::{dtype::DataType, field::Field, schema::Schema};
 

@@ -19,10 +19,6 @@ from daft.recordbatch import MicroPartition
 
 from ..integration.io.conftest import minio_create_bucket
 
-PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
-PYARROW_GE_13_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (13, 0, 0)
-
-
 ###
 # Test Parquet Int96 timestamps
 ###
@@ -54,9 +50,8 @@ def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps):
     papq_write_table_kwargs = {
         "use_deprecated_int96_timestamps": use_deprecated_int96_timestamps,
         "coerce_timestamps": "us" if not use_deprecated_int96_timestamps else None,
+        "store_schema": False,
     }
-    if PYARROW_GE_11_0_0:
-        papq_write_table_kwargs["store_schema"] = False
 
     with _parquet_write_helper(
         pa.Table.from_pydict(data),
@@ -81,9 +76,8 @@ def test_parquet_read_int96_timestamps_overflow(coerce_to):
 
     papq_write_table_kwargs = {
         "use_deprecated_int96_timestamps": True,
+        "store_schema": False,
     }
-    if PYARROW_GE_11_0_0:
-        papq_write_table_kwargs["store_schema"] = False
 
     with _parquet_write_helper(
         pa.Table.from_pydict(data),
@@ -123,9 +117,8 @@ def test_parquet_read_int96_timestamps_schema_inference(coerce_to, store_schema)
 
     papq_write_table_kwargs = {
         "use_deprecated_int96_timestamps": True,
+        "store_schema": store_schema,
     }
-    if PYARROW_GE_11_0_0:
-        papq_write_table_kwargs["store_schema"] = store_schema
 
     with _parquet_write_helper(
         pa.Table.from_pydict(data),

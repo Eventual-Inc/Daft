@@ -14,7 +14,6 @@ use daft_dsl::{
     python_udf::PyScalarFn,
     resolved_col, right_col,
 };
-use typed_builder::TypedBuilder;
 
 use crate::LogicalPlanRef;
 
@@ -84,7 +83,7 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
                     )));
                 };
 
-                set_wildcard_expansion(&mut wildcard_expansion, &expr, struct_fields.iter().map(|f| f.name.as_str()))?;
+                set_wildcard_expansion(&mut wildcard_expansion, &expr, struct_fields.iter().map(|f| f.name.as_ref()))?;
             }
             _ => {}
         }
@@ -285,28 +284,52 @@ fn convert_udfs_to_map_groups(expr: &ExprRef) -> DaftResult<ExprRef> {
 /// Used for resolving and validating expressions.
 /// Specifically, makes sure the expression does not contain aggregations or actor pool UDFs
 /// where they are not allowed, and resolves struct accessors and wildcards.
-#[derive(Default, TypedBuilder)]
+#[derive(Default)]
 pub struct ExprResolver<'a> {
-    #[builder(default)]
     allow_actor_pool_udf: bool,
-    #[builder(default)]
     allow_monotonic_id: bool,
-    #[builder(default)]
     allow_explode: bool,
-    #[builder(via_mutators, mutators(
-        pub fn in_agg_context(&mut self, in_agg_context: bool) {
-            // workaround since typed_builder can't have defaults for mutator requirements
-            self.in_agg_context = in_agg_context;
-        }
-    ))]
     in_agg_context: bool,
-    #[builder(via_mutators, mutators(
-        pub fn groupby(&mut self, groupby: &'a Vec<ExprRef>) {
-            self.groupby = HashSet::from_iter(groupby);
-            self.in_agg_context = true;
-        }
-    ))]
     groupby: HashSet<&'a ExprRef>,
+}
+
+pub struct ExprResolverBuilder<'a> {
+    inner: ExprResolver<'a>,
+}
+
+impl<'a> ExprResolver<'a> {
+    pub fn builder() -> ExprResolverBuilder<'a> {
+        ExprResolverBuilder {
+            inner: ExprResolver::default(),
+        }
+    }
+}
+
+impl<'a> ExprResolverBuilder<'a> {
+    pub fn allow_actor_pool_udf(mut self, v: bool) -> Self {
+        self.inner.allow_actor_pool_udf = v;
+        self
+    }
+
+    pub fn allow_monotonic_id(mut self, v: bool) -> Self {
+        self.inner.allow_monotonic_id = v;
+        self
+    }
+
+    pub fn allow_explode(mut self, v: bool) -> Self {
+        self.inner.allow_explode = v;
+        self
+    }
+
+    pub fn groupby(mut self, groupby: &'a Vec<ExprRef>) -> Self {
+        self.inner.groupby = HashSet::from_iter(groupby);
+        self.inner.in_agg_context = true;
+        self
+    }
+
+    pub fn build(self) -> ExprResolver<'a> {
+        self.inner
+    }
 }
 
 impl ExprResolver<'_> {
@@ -445,7 +468,7 @@ impl ExprResolver<'_> {
     fn validate_expr(&self, expr: ExprRef) -> DaftResult<ExprRef> {
         if has_agg(&expr) {
             return Err(DaftError::ValueError(format!(
-                "Aggregation expressions are currently only allowed in agg, pivot, and window: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
+                "Aggregation expressions are currently only allowed in agg, pivot, window, or as a global aggregation in select(): {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
             )));
         }
 

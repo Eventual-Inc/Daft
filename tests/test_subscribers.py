@@ -84,15 +84,15 @@ def test_capture_states(monkeypatch):
     def inject_keyboard_interrupt():
         threading.Timer(2.0, lambda: signal.raise_signal(signal.SIGINT)).start()
 
-    @daft.udf(return_dtype=daft.DataType.string())
+    @daft.func.batch(return_dtype=daft.DataType.string())
     def failing_udf(_s: daft.Series):
         raise ValueError("This UDF will fail forever")
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def success_udf(s: daft.Series):
         return s
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def long_running_udf(s: daft.Series):
         time.sleep(10)
         return s
@@ -115,7 +115,7 @@ def test_capture_states(monkeypatch):
     df = daft.from_pydict({"x": ["1", "2", "3"]})
     df = df.with_column("y", failing_udf(df["x"]))
 
-    with pytest.raises(daft.errors.UDFException):
+    with pytest.raises(ValueError):
         df.collect()
 
     query_id = subscriber.query_ids[-1]
@@ -137,6 +137,41 @@ def test_capture_states(monkeypatch):
     assert subscriber.end_states[query_id] == QueryEndState.Canceled
     # contains the Value Error message
     assert "Query canceled by the user" in subscriber.end_messages[query_id]
+
+
+def test_show_fires_query_end():
+    """Regression test for DF-1664.
+
+    .show() abandons the run_iter generator early, which must still fire
+    on_query_end so the dashboard transitions out of Finalizing.
+    """
+    subscriber = MockSubscriber()
+    ctx = daft.context.get_context()
+    ctx.attach_subscriber("mock", subscriber)
+
+    try:
+        # Sanity check: .collect() on a transformed DataFrame fires on_query_end.
+        df = daft.from_pydict({"x": list(range(100))})
+        df = df.with_column("y", daft.col("x") + 1)
+        df.collect()
+
+        query_id = subscriber.query_ids[-1]
+        assert query_id in subscriber.end_states, "collect() should fire on_query_end"
+        assert subscriber.end_states[query_id] == QueryEndState.Finished
+
+        # The actual bug: .show() on a transformed DataFrame does NOT fire on_query_end,
+        # because _construct_show_preview breaks out of the run_iter generator early.
+        df = daft.from_pydict({"x": list(range(100))})
+        df = df.with_column("y", daft.col("x") + 1)
+        df.show()
+
+        query_id = subscriber.query_ids[-1]
+        assert query_id in subscriber.end_states, (
+            "on_query_end was not called — query would be stuck in Finalizing on the dashboard"
+        )
+        assert subscriber.end_states[query_id] == QueryEndState.Finished
+    finally:
+        ctx.detach_subscriber("mock")
 
 
 def test_subscriber_template():
@@ -176,3 +211,25 @@ def test_subscriber_template():
     df.collect()
     # Should only have the previous query
     assert len(subscriber.query_metadata) == 1
+
+
+def test_csv_scan_reports_bytes_read(tmp_path):
+    subscriber = MockSubscriber()
+    ctx = daft.context.get_context()
+    ctx.attach_subscriber("mock", subscriber)
+
+    try:
+        csv_path = tmp_path / "input.csv"
+        csv_path.write_text("a,b\n1,2\n3,4\n5,6\n")
+
+        daft.read_csv(str(csv_path)).collect()
+
+        query_id = subscriber.query_ids[-1]
+        all_node_stats = subscriber.query_node_stats[query_id]
+        bytes_read_values = [
+            value for stats in all_node_stats.values() for name, value in stats.items() if name == "bytes.read"
+        ]
+        assert bytes_read_values, "Expected at least one source node to report bytes.read"
+        assert any(value > 0 for value in bytes_read_values)
+    finally:
+        ctx.detach_subscriber("mock")

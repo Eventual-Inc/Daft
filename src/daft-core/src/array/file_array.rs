@@ -46,7 +46,7 @@ where
         ));
 
         FileArray::new(
-            Field::new(&field.name, DataType::File(T::get_type())),
+            Field::new(field.name.clone(), DataType::File(T::get_type())),
             physical,
         )
     }

@@ -1,62 +1,39 @@
-#![allow(deprecated, reason = "arrow2 migration")]
-use std::{cmp::max, num::NonZeroUsize};
-
 use common_error::DaftError;
-use daft_arrow::io::parquet::read::schema::{SchemaInferenceOptions, infer_schema_with_options};
-use daft_core::prelude::SchemaRef;
 use snafu::Snafu;
 
-mod arrow_bridge;
 mod arrowrs_reader;
 mod async_reader;
-mod file;
 pub mod metadata;
 mod metadata_adapter;
-pub use metadata_adapter::{DaftParquetMetadata, DaftRowGroupMetaData};
+pub use metadata_adapter::{DaftParquetMetadata, DaftRowGroupMetaData, RowGroupList};
 #[cfg(feature = "python")]
 pub mod python;
 pub mod read;
 mod read_planner;
 mod schema_inference;
 mod statistics;
-pub use statistics::{
-    arrowrs_row_group_metadata_to_table_stats, row_group_metadata_to_table_stats,
-};
-mod stream_reader;
-mod utils;
-
 #[cfg(feature = "python")]
 pub use python::register_modules;
+pub use statistics::row_group_metadata_to_table_stats;
 
-// This is the default size of an emitted morsel from the parquet reader
-const PARQUET_MORSEL_SIZE: usize = 128 * 1024;
-
-// This function determines the number of parallel deserialize tasks to use when reading parquet files
-// It is calculated by taking 2x the number of cores available (to ensure pipelining), and dividing
-// by the number of columns in the schema.
-fn determine_parquet_parallelism(daft_schema: &SchemaRef) -> usize {
-    (std::thread::available_parallelism()
-        .unwrap_or(NonZeroUsize::new(2).unwrap())
-        .checked_mul(2.try_into().unwrap())
-        .unwrap()
-        .get() as f64
-        / max(daft_schema.len(), 1) as f64)
-        .ceil() as usize
-}
-
-pub fn infer_arrow_schema_from_metadata(
-    metadata: &parquet2::metadata::FileMetaData,
-    options: Option<SchemaInferenceOptions>,
-) -> daft_arrow::error::Result<daft_arrow::datatypes::Schema> {
-    let arrow_schema = infer_schema_with_options(metadata, options)?;
-    let coerced_arrow_schema = utils::coerce_to_daft_compatible_schema(arrow_schema);
-    Ok(coerced_arrow_schema)
+/// Infer a Daft `Schema` from arrow-rs-backed `DaftParquetMetadata`.
+pub fn infer_schema_from_daft_metadata(
+    metadata: &DaftParquetMetadata,
+    options: read::ParquetSchemaInferenceOptions,
+) -> common_error::DaftResult<daft_core::prelude::Schema> {
+    let arrow_schema = schema_inference::infer_schema_from_parquet_metadata_arrowrs(
+        metadata.as_arrowrs(),
+        Some(options.coerce_int96_timestamp_unit),
+        options.string_encoding == read::StringEncoding::Raw,
+    )
+    .map_err(|e| common_error::DaftError::External(e.into()))?;
+    daft_core::prelude::Schema::try_from(&arrow_schema)
 }
 
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("{source}"))]
-    Arrow2Error { source: daft_arrow::error::Error },
+    ArrowError { source: arrow::error::ArrowError },
 
     #[snafu(display("{source}"))]
     DaftIOError { source: daft_io::Error },
@@ -71,69 +48,33 @@ pub enum Error {
         source: std::io::Error,
     },
 
-    #[snafu(display("Unable to parse parquet metadata for file {}: {}", path, source))]
-    UnableToParseMetadata {
+    #[snafu(display(
+        "Unable to parse parquet metadata (arrow-rs) for file {}: {}",
+        path,
+        source
+    ))]
+    UnableToParseMetadataArrowRs {
         path: String,
-        source: parquet2::error::Error,
+        source: parquet::errors::ParquetError,
     },
     #[snafu(display("Unable to parse parquet metadata for file {}: {}", path, source))]
     UnableToParseMetadataFromLocalFile {
         path: String,
-        source: daft_arrow::error::Error,
-    },
-
-    #[snafu(display(
-        "Unable to create arrow arrays from parquet pages {}: {}",
-        path,
-        source
-    ))]
-    UnableToConvertParquetPagesToArrow {
-        path: String,
-        source: daft_arrow::error::Error,
+        source: arrow::error::ArrowError,
     },
 
     #[snafu(display("Unable to read parquet row group for file {}: {}", path, source))]
     UnableToReadParquetRowGroup {
         path: String,
-        source: daft_arrow::error::Error,
+        source: arrow::error::ArrowError,
     },
 
-    #[snafu(display("Unable to create page stream for parquet file {}: {}", path, source))]
-    UnableToCreateParquetPageStream {
-        path: String,
-        source: parquet2::error::Error,
-    },
-    #[snafu(display(
-        "Unable to create arrow chunk from streaming file reader{}: {}",
-        path,
-        source
-    ))]
-    UnableToCreateChunkFromStreamingFileReader {
-        path: String,
-        source: daft_arrow::error::Error,
-    },
-    #[snafu(display(
-        "Unable to parse parquet metadata to arrow schema for file {}: {}",
-        path,
-        source
-    ))]
-    UnableToParseSchemaFromMetadata {
-        path: String,
-        source: daft_arrow::error::Error,
-    },
     #[snafu(display(
         "Unable to create table from arrow chunk for file {}: {}",
         path,
         source
     ))]
     UnableToCreateTableFromChunk { path: String, source: DaftError },
-    #[snafu(display(
-        "Unable to convert arrow schema to daft schema for file {}: {}",
-        path,
-        source
-    ))]
-    UnableToConvertSchemaToDaft { path: String, source: DaftError },
-
     #[snafu(display(
         "File: {} is not a valid parquet file. Has incorrect footer: {:?}",
         path,
@@ -158,18 +99,6 @@ pub enum Error {
         path: String,
         footer_size: usize,
         file_size: usize,
-    },
-
-    #[snafu(display(
-        "File: {} had a total of: {} row groups but requested index {}",
-        path,
-        total_row_groups,
-        row_group
-    ))]
-    ParquetRowGroupOutOfIndex {
-        path: String,
-        row_group: i64,
-        total_row_groups: i64,
     },
 
     #[snafu(display(
@@ -200,18 +129,6 @@ pub enum Error {
         path: String,
         metadata_num_columns: usize,
         read_columns: usize,
-    },
-
-    #[snafu(display(
-        "Parquet file: {} attempted to delete row at position {} but only read {} rows",
-        path,
-        row,
-        read_rows
-    ))]
-    ParquetDeleteRowOutOfIndex {
-        path: String,
-        row: usize,
-        read_rows: usize,
     },
 
     #[snafu(display(
@@ -247,6 +164,8 @@ pub enum Error {
     OneShotRecvError {
         source: tokio::sync::oneshot::error::RecvError,
     },
+    #[snafu(display("Parse error: {}", message))]
+    ParseError { message: String },
 }
 
 impl From<Error> for DaftError {

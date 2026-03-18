@@ -10,6 +10,5 @@ name = "hello"
 crate-type = ["cdylib"]
 
 [dependencies]
-daft-ext = {path = "../../src/daft-ext"}
-arrow-array = {version = "57.1.0", features = ["chrono-tz"]}
-arrow-schema = "57.1.0"
+daft-ext = {path = "../../src/daft-ext", features = ["arrow-58"]}
+arrow = {version = "58", features = ["ffi"]}

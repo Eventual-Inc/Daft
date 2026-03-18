@@ -8,7 +8,7 @@ use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -26,7 +26,7 @@ pub(crate) struct GatherNode {
 }
 
 impl GatherNode {
-    const NODE_NAME: NodeName = "Gather";
+    const NODE_NAME: &'static str = "Gather";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -39,7 +39,7 @@ impl GatherNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Repartition,
             NodeCategory::BlockingSink,
         );

@@ -586,13 +586,13 @@ fn pylist_to_list_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResult<L
 
 fn pydict_to_struct_lit(dict: &Bound<PyDict>, dtype: Option<&DataType>) -> PyResult<Literal> {
     let field_dtypes = if let Some(DataType::Struct(fields)) = dtype {
-        fields.iter().map(|f| (&f.name, &f.dtype)).collect()
+        fields.iter().map(|f| (f.name.as_ref(), &f.dtype)).collect()
     } else {
         HashMap::new()
     };
     let field_mapping = dict.iter().map(|(k, v)| {
         let field_name = k.extract::<String>().map_err(|_| DaftError::TypeError(format!("Expected all dict keys when converting into Daft struct to be string, found: {k}")))?;
-        let field_dtype = field_dtypes.get(&field_name).copied();
+        let field_dtype = field_dtypes.get(field_name.as_str()).copied();
         let field_value = Literal::from_pyobj(&v, field_dtype)?;
 
         Ok((field_name, field_value))
@@ -633,7 +633,7 @@ fn pytuple_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResul
             .map(|(v, f)| {
                 let field_value = Literal::from_pyobj(&v, Some(&f.dtype))?;
 
-                Ok((f.name.clone(), field_value))
+                Ok((f.name.to_string(), field_value))
             })
             .collect::<PyResult<_>>()
     } else {

@@ -196,15 +196,15 @@ impl BlockingSink for WriteSink {
     fn name(&self) -> NodeName {
         match &self.write_format {
             WriteFormat::Parquet => "Parquet Write".into(),
-            WriteFormat::PartitionedParquet => "PartitionedParquet Write".into(),
-            WriteFormat::Csv => "Csv Write".into(),
-            WriteFormat::PartitionedCsv => "PartitionedCsv Write".into(),
-            WriteFormat::Json => "Json Write".into(),
-            WriteFormat::PartitionedJson => "PartitionedJson Write".into(),
+            WriteFormat::PartitionedParquet => "Partitioned Parquet Write".into(),
+            WriteFormat::Csv => "CSV Write".into(),
+            WriteFormat::PartitionedCsv => "Partitioned CSV Write".into(),
+            WriteFormat::Json => "JSON Write".into(),
+            WriteFormat::PartitionedJson => "Partitioned JSON Write".into(),
             WriteFormat::Iceberg => "Iceberg Write".into(),
-            WriteFormat::PartitionedIceberg => "PartitionedIceberg Write".into(),
-            WriteFormat::Deltalake => "Deltalake Write".into(),
-            WriteFormat::PartitionedDeltalake => "PartitionedDeltalake Write".into(),
+            WriteFormat::PartitionedIceberg => "Partitioned Iceberg Write".into(),
+            WriteFormat::Deltalake => "DeltaLake Write".into(),
+            WriteFormat::PartitionedDeltalake => "Partitioned DeltaLake Write".into(),
             WriteFormat::Lance => "Lance Write".into(),
             WriteFormat::DataSink(name) => name.clone().into(),
         }

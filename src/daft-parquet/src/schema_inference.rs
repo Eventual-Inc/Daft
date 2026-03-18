@@ -42,6 +42,19 @@ pub fn infer_schema_from_parquet_metadata_arrowrs(
         arrow_schema = Schema::new_with_metadata(new_fields, arrow_schema.metadata().clone());
     }
 
+    // Post-process: strip dictionary encoding. Arrow-rs parquet reader can infer
+    // Dictionary(Int32, Utf8) etc. for dictionary-encoded columns. Daft doesn't
+    // support dictionary types, so unwrap to the value type.
+    // This must run before large-offset promotion so Dictionary(_, Utf8) → Utf8 → LargeUtf8.
+    {
+        let new_fields: Vec<Field> = arrow_schema
+            .fields()
+            .iter()
+            .map(|f| strip_dictionary_field(f.as_ref()))
+            .collect();
+        arrow_schema = Schema::new_with_metadata(new_fields, arrow_schema.metadata().clone());
+    }
+
     // Post-process: promote small-offset types to large-offset types.
     // Arrow-rs parquet reader produces Utf8/Binary/List (i32 offsets) by default,
     // but Daft expects LargeUtf8/LargeBinary/LargeList (i64 offsets).
@@ -139,8 +152,16 @@ fn promote_to_large_offsets_datatype(dtype: &DataType) -> Option<DataType> {
         DataType::Utf8 => Some(DataType::LargeUtf8),
         DataType::Binary => Some(DataType::LargeBinary),
         DataType::List(inner) => {
+            // arrow-rs with_schema() can promote Utf8→LargeUtf8 and Binary→LargeBinary,
+            // but does NOT support List→LargeList coercion. So keep the outer List and
+            // only promote inner types. Daft's ListArray::from_arrow handles i32→i64
+            // offset widening transparently.
             let new_inner = promote_to_large_offsets_field(inner.as_ref());
-            Some(DataType::LargeList(new_inner.into()))
+            if &new_inner != inner.as_ref() {
+                Some(DataType::List(new_inner.into()))
+            } else {
+                None
+            }
         }
         DataType::LargeList(inner) => {
             let new_inner = promote_to_large_offsets_field(inner.as_ref());
@@ -177,6 +198,74 @@ fn promote_to_large_offsets_datatype(dtype: &DataType) -> Option<DataType> {
             let new_inner = promote_to_large_offsets_field(inner.as_ref());
             if &new_inner != inner.as_ref() {
                 Some(DataType::FixedSizeList(new_inner.into(), *size))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Recursively strip dictionary encoding, replacing `Dictionary(_, value_type)` with `value_type`.
+fn strip_dictionary_field(field: &Field) -> Field {
+    let new_dtype = strip_dictionary_datatype(field.data_type());
+    match new_dtype {
+        Some(dt) => field.as_ref().clone().with_data_type(dt),
+        None => field.as_ref().clone(),
+    }
+}
+
+fn strip_dictionary_datatype(dtype: &DataType) -> Option<DataType> {
+    match dtype {
+        DataType::Dictionary(_, value_type) => {
+            // Recursively strip in case the value type itself contains dictionaries
+            let inner =
+                strip_dictionary_datatype(value_type).unwrap_or_else(|| *value_type.clone());
+            Some(inner)
+        }
+        DataType::List(inner) => {
+            let new_inner = strip_dictionary_field(inner.as_ref());
+            if &new_inner != inner.as_ref() {
+                Some(DataType::List(new_inner.into()))
+            } else {
+                None
+            }
+        }
+        DataType::LargeList(inner) => {
+            let new_inner = strip_dictionary_field(inner.as_ref());
+            if &new_inner != inner.as_ref() {
+                Some(DataType::LargeList(new_inner.into()))
+            } else {
+                None
+            }
+        }
+        DataType::FixedSizeList(inner, size) => {
+            let new_inner = strip_dictionary_field(inner.as_ref());
+            if &new_inner != inner.as_ref() {
+                Some(DataType::FixedSizeList(new_inner.into(), *size))
+            } else {
+                None
+            }
+        }
+        DataType::Struct(fields) => {
+            let new_fields: Vec<Field> = fields
+                .iter()
+                .map(|f| strip_dictionary_field(f.as_ref()))
+                .collect();
+            if new_fields
+                .iter()
+                .zip(fields.iter())
+                .any(|(a, b)| a != b.as_ref())
+            {
+                Some(DataType::Struct(new_fields.into()))
+            } else {
+                None
+            }
+        }
+        DataType::Map(inner, sorted) => {
+            let new_inner = strip_dictionary_field(inner.as_ref());
+            if &new_inner != inner.as_ref() {
+                Some(DataType::Map(new_inner.into(), *sorted))
             } else {
                 None
             }
@@ -388,6 +477,43 @@ mod tests {
     }
 
     #[test]
+    fn test_strip_dictionary_types() {
+        let schema = Schema::new(vec![
+            Field::new(
+                "dict_str",
+                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+                true,
+            ),
+            Field::new("plain_int", DataType::Int32, true),
+            Field::new(
+                "list_of_dict",
+                DataType::List(Arc::new(Field::new(
+                    "item",
+                    DataType::Dictionary(Box::new(DataType::Int8), Box::new(DataType::Utf8)),
+                    true,
+                ))),
+                true,
+            ),
+        ]);
+
+        let new_fields: Vec<Field> = schema
+            .fields()
+            .iter()
+            .map(|f| strip_dictionary_field(f.as_ref()))
+            .collect();
+        let result = Schema::new(new_fields);
+
+        assert_eq!(result.field(0).data_type(), &DataType::Utf8);
+        assert_eq!(result.field(1).data_type(), &DataType::Int32);
+        match result.field(2).data_type() {
+            DataType::List(inner) => {
+                assert_eq!(inner.data_type(), &DataType::Utf8);
+            }
+            other => panic!("Expected List, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn test_arrow_schema_to_daft_schema() {
         let schema = Schema::new(vec![
             Field::new("a", DataType::Int32, true),
@@ -396,7 +522,7 @@ mod tests {
 
         let daft_schema = arrow_schema_to_daft_schema(&schema).unwrap();
         assert_eq!(daft_schema.len(), 2);
-        assert_eq!(daft_schema.fields()[0].name, "a");
-        assert_eq!(daft_schema.fields()[1].name, "b");
+        assert_eq!(&*daft_schema.fields()[0].name, "a");
+        assert_eq!(&*daft_schema.fields()[1].name, "b");
     }
 }

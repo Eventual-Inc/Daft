@@ -3,14 +3,15 @@ use std::sync::Arc;
 mod split_jsonl;
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::{DaftError, DaftResult};
-use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
-use common_scan_info::{SPLIT_AND_MERGE_PASS, ScanTaskLike, ScanTaskLikeRef};
+use common_error::DaftResult;
 use daft_io::IOStatsContext;
-use daft_parquet::{DaftParquetMetadata, read::read_parquet_metadata};
-use parquet2::metadata::RowGroupList;
+use daft_parquet::{RowGroupList, read::read_parquet_metadata};
+use indexmap::IndexMap;
 
-use crate::{ChunkSpec, DataSource, Pushdowns, ScanTask, ScanTaskRef};
+use crate::{
+    ChunkSpec, FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanSource, ScanTask, ScanTaskRef,
+    SourceConfig,
+};
 
 type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
 
@@ -121,7 +122,7 @@ impl MergeByFileSize<'_> {
         }
 
         let child_matches_accumulator = other.partition_spec() == accumulator.partition_spec()
-            && other.file_format_config == accumulator.file_format_config
+            && other.source_config == accumulator.source_config
             && other.schema == accumulator.schema
             && other.storage_config == accumulator.storage_config
             && other.pushdowns == accumulator.pushdowns;
@@ -214,16 +215,16 @@ fn split_by_row_groups(
                         - no iceberg delete files
                     */
                     if let (
-                        FileFormatConfig::Parquet(ParquetSourceConfig {
+                        SourceConfig::File(FileFormatConfig::Parquet(ParquetSourceConfig {
                             field_id_mapping, ..
-                        }),
+                        })),
                         [source],
                         Some(None),
                         None,
                     ) = (
-                        t.file_format_config.as_ref(),
+                        t.source_config.as_ref(),
                         &t.sources[..],
-                        t.sources.first().map(DataSource::get_chunk_spec),
+                        t.sources.first().map(ScanSource::get_chunk_spec),
                         t.pushdowns.limit,
                     ) && source
                         .get_size_bytes()
@@ -240,34 +241,32 @@ fn split_by_row_groups(
                         let io_stats =
                             IOStatsContext::new(format!("split_by_row_groups for {path:#?}"));
 
-                        let mut file = io_runtime
+                        let file_metadata = io_runtime
                             .block_on_current_thread(read_parquet_metadata(
                                 path,
                                 io_client,
                                 Some(io_stats),
                                 field_id_mapping.clone(),
-                            ))?
-                            .into_parquet2();
+                            ))?;
 
                         let mut new_tasks: Vec<DaftResult<ScanTaskRef>> = Vec::new();
                         let mut curr_row_group_indices = Vec::new();
-                        let mut curr_row_groups = Vec::new();
-                        let mut curr_size_bytes = 0;
-                        let mut curr_num_rows = 0;
+                        let mut curr_row_groups: RowGroupList = IndexMap::new();
+                        let mut curr_size_bytes: usize = 0;
+                        let mut curr_num_rows: usize = 0;
 
-                        let row_groups = std::mem::take(&mut file.row_groups);
-                        let num_row_groups = row_groups.len();
-                        for (i, rg) in row_groups {
-                            curr_row_groups.push((i, rg));
-                            let rg = &curr_row_groups.last().unwrap().1;
+                        let all_row_groups: Vec<_> = file_metadata.row_groups().collect();
+                        let last_original_index = all_row_groups.last().map(|(i, _)| *i);
+                        for (i, rg) in all_row_groups {
                             curr_row_group_indices.push(i as i64);
                             curr_size_bytes += rg.compressed_size();
                             curr_num_rows += rg.num_rows();
+                            curr_row_groups.insert(i, rg);
 
-                            if curr_size_bytes >= min_size_bytes || i == num_row_groups - 1 {
+                            if curr_size_bytes >= min_size_bytes || Some(i) == last_original_index {
                                 let mut new_source = source.clone();
 
-                                if let DataSource::File {
+                                if let ScanSource::File {
                                     chunk_spec,
                                     size_bytes,
                                     parquet_metadata,
@@ -275,17 +274,16 @@ fn split_by_row_groups(
                                 } = &mut new_source
                                 {
                                     // only keep relevant row groups in the metadata
-                                    let row_group_list = RowGroupList::from_iter(curr_row_groups.into_iter());
-                                    let new_metadata = file.clone_with_row_groups(curr_num_rows, row_group_list);
-                                    *parquet_metadata = Some(Arc::new(DaftParquetMetadata::from(new_metadata)));
+                                    let new_metadata = file_metadata.clone_with_row_groups(curr_num_rows, curr_row_groups);
+                                    *parquet_metadata = Some(Arc::new(new_metadata));
 
                                     *chunk_spec = Some(ChunkSpec::Parquet(curr_row_group_indices));
                                     *size_bytes = Some(curr_size_bytes as u64);
                                 } else {
-                                    unreachable!("Parquet file format should only be used with DataSource::File");
+                                    unreachable!("Parquet file format should only be used with ScanSource::File");
                                 }
 
-                                if let DataSource::File {
+                                if let ScanSource::File {
                                     metadata: Some(metadata),
                                     ..
                                 } = &mut new_source
@@ -294,14 +292,14 @@ fn split_by_row_groups(
                                 }
 
                                 // Reset accumulators
-                                curr_row_groups = Vec::new();
+                                curr_row_groups = IndexMap::new();
                                 curr_row_group_indices = Vec::new();
                                 curr_size_bytes = 0;
                                 curr_num_rows = 0;
 
                                 new_tasks.push(Ok(ScanTask::new(
                                     vec![new_source],
-                                    t.file_format_config.clone(),
+                                    t.source_config.clone(),
                                     t.schema.clone(),
                                     t.storage_config.clone(),
                                     t.pushdowns.clone(),
@@ -321,49 +319,31 @@ fn split_by_row_groups(
     }
 }
 
-fn split_and_merge_pass(
-    scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+pub fn split_and_merge_pass(
+    scan_tasks: Arc<Vec<ScanTaskRef>>,
     pushdowns: &Pushdowns,
     cfg: &DaftExecutionConfig,
-) -> DaftResult<Arc<Vec<ScanTaskLikeRef>>> {
-    // Perform scan task splitting and merging if there are only ScanTasks (i.e. no DummyScanTasks).
-    if scan_tasks
-        .iter()
-        .all(|st| st.as_any().downcast_ref::<ScanTask>().is_some())
-        && !scan_tasks
-            .iter()
-            .any(|st| matches!(st.file_format_config().as_ref(), FileFormatConfig::Warc(_)))
-    {
-        // TODO(desmond): Here we downcast Arc<dyn ScanTaskLike> to Arc<ScanTask>. ScanTask and DummyScanTask (test only) are
-        // the only non-test implementer of ScanTaskLike. It might be possible to avoid the downcast by implementing merging
-        // at the trait level, but today that requires shifting around a non-trivial amount of code to avoid circular dependencies.
-        let iter: BoxScanTaskIter = Box::new(scan_tasks.as_ref().iter().map(|st| {
-            st.clone()
-                .as_any_arc()
-                .downcast::<ScanTask>()
-                .map_err(|e| DaftError::TypeError(format!("Expected Arc<ScanTask>, found {:?}", e)))
-        }));
-        // Split JSONL by byte ranges aligned to line boundaries for JSONFileFormat, other formats will be leaked through.
-        // If there are other file formats in the future, a pipeline can be constructed to pass split_tasks.
-        let split_jsonl_tasks = split_jsonl::split_by_jsonl_ranges(iter, cfg);
-        let split_tasks = split_by_row_groups(
-            split_jsonl_tasks,
-            cfg.parquet_split_row_groups_max_files,
-            cfg.scan_tasks_min_size_bytes,
-            cfg.scan_tasks_max_size_bytes,
-        );
-        let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
-        let scan_tasks: Vec<Arc<dyn ScanTaskLike>> = merged_tasks
-            .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
-            .collect::<DaftResult<Vec<_>>>()?;
-        Ok(Arc::new(scan_tasks))
-    } else {
-        Ok(scan_tasks)
+) -> DaftResult<Arc<Vec<ScanTaskRef>>> {
+    if scan_tasks.iter().any(|st| {
+        matches!(
+            st.source_config.as_ref(),
+            SourceConfig::File(FileFormatConfig::Warc(_))
+        )
+    }) {
+        return Ok(scan_tasks);
     }
-}
 
-/// Sets ``SPLIT_AND_MERGE_PASS``, which is the publicly-available pass that the query optimizer can use
-#[ctor::ctor]
-fn set_pass() {
-    let _ = SPLIT_AND_MERGE_PASS.set(&split_and_merge_pass);
+    let iter: BoxScanTaskIter = Box::new(scan_tasks.as_ref().iter().cloned().map(Ok));
+    // Split JSONL by byte ranges aligned to line boundaries for JSONFileFormat, other formats will be leaked through.
+    // If there are other file formats in the future, a pipeline can be constructed to pass split_tasks.
+    let split_jsonl_tasks = split_jsonl::split_by_jsonl_ranges(iter, cfg);
+    let split_tasks = split_by_row_groups(
+        split_jsonl_tasks,
+        cfg.parquet_split_row_groups_max_files,
+        cfg.scan_tasks_min_size_bytes,
+        cfg.scan_tasks_max_size_bytes,
+    );
+    let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
+    let scan_tasks: Vec<ScanTaskRef> = merged_tasks.collect::<DaftResult<Vec<_>>>()?;
+    Ok(Arc::new(scan_tasks))
 }

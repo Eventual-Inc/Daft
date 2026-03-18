@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING
 
 from daft.scarf_telemetry import track_import_on_scarf
 
@@ -130,7 +131,6 @@ from daft.io import (
     IOConfig,
     from_glob_path,
     _range as range,
-    read_lance,
     read_csv,
     read_deltalake,
     read_hudi,
@@ -138,6 +138,7 @@ from daft.io import (
     read_json,
     read_parquet,
     read_sql,
+    read_text,
     read_video_frames,
     read_warc,
     read_huggingface,
@@ -149,12 +150,24 @@ from daft.viz import register_viz_hook
 from daft.window import Window
 from daft.file import File, VideoFile, AudioFile
 
-import daft.context as context
-import daft.io as io
-import daft.runners as runners
-import daft.datasets as datasets
-import daft.functions as functions
-import daft.gravitino as gravitino
+from daft import context
+from daft import io
+from daft import runners
+from daft import datasets
+from daft import functions
+from daft import gravitino
+
+
+# Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.
+if TYPE_CHECKING:
+    from daft.io import read_lance
+
+
+def __getattr__(name: str) -> object:
+    if name == "read_lance":
+        return getattr(io, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "AudioFile",
@@ -247,6 +260,7 @@ __all__ = [
     "read_parquet",
     "read_sql",
     "read_table",
+    "read_text",
     "read_video_frames",
     "read_warc",
     "refresh_logger",

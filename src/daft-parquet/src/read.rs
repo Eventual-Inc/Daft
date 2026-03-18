@@ -4,39 +4,48 @@ use std::{
     time::Duration,
 };
 
+use arrow::array::ArrayRef;
 use common_error::DaftResult;
 use common_runtime::get_io_runtime;
-use daft_arrow::{
-    bitmap::Bitmap,
-    io::parquet::read::schema::{SchemaInferenceOptions, StringEncoding},
-};
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
 use daft_core::python::PyTimeUnit;
-use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, optimization::get_required_columns};
+use daft_dsl::ExprRef;
 use daft_io::{IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
 use futures::{
-    StreamExt, TryStreamExt,
+    StreamExt, TryFutureExt, TryStreamExt,
     future::{join_all, try_join_all},
     stream::BoxStream,
 };
-use itertools::Itertools;
-use parquet2::metadata::FileMetaData;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
-use crate::{
-    DaftParquetMetadata, JoinSnafu, file::ParquetReaderBuilder, infer_arrow_schema_from_metadata,
-};
+use crate::{DaftParquetMetadata, JoinSnafu, infer_schema_from_daft_metadata};
 
-/// Check if the arrow-rs parquet reader should be used.
+/// How to decode Parquet BYTE_ARRAY columns annotated as strings.
 ///
-/// Set `DAFT_PARQUET_READER=arrowrs` to enable.
-fn use_arrowrs_reader() -> bool {
-    std::env::var("DAFT_PARQUET_READER")
-        .map(|v| v.eq_ignore_ascii_case("arrowrs"))
-        .unwrap_or(false)
+/// - `Utf8` (default): arrow-rs decodes as Utf8/LargeUtf8 with UTF-8 validation.
+/// - `Raw`: strip the STRING logical type so arrow-rs decodes as Binary (no validation).
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StringEncoding {
+    Raw,
+    #[default]
+    Utf8,
+}
+
+impl std::str::FromStr for StringEncoding {
+    type Err = common_error::DaftError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "utf-8" => Ok(Self::Utf8),
+            "raw" => Ok(Self::Raw),
+            other => Err(common_error::DaftError::ValueError(format!(
+                "Unrecognized string encoding: {other}"
+            ))),
+        }
+    }
 }
 
 #[cfg(feature = "python")]
@@ -58,11 +67,18 @@ impl TryFrom<ParquetSchemaInferenceOptionsBuilder> for ParquetSchemaInferenceOpt
     type Error = crate::Error;
 
     fn try_from(value: ParquetSchemaInferenceOptionsBuilder) -> crate::Result<Self> {
+        let string_encoding: StringEncoding =
+            value
+                .string_encoding
+                .parse()
+                .map_err(|e: common_error::DaftError| crate::Error::ArrowError {
+                    source: arrow::error::ArrowError::InvalidArgumentError(e.to_string()),
+                })?;
         Ok(Self {
             coerce_int96_timestamp_unit: value
                 .coerce_int96_timestamp_unit
                 .map_or(TimeUnit::Nanoseconds, From::from),
-            string_encoding: value.string_encoding.parse().context(crate::Arrow2Snafu)?,
+            string_encoding,
         })
     }
 }
@@ -104,105 +120,6 @@ impl Default for ParquetSchemaInferenceOptions {
     }
 }
 
-impl From<ParquetSchemaInferenceOptions> for SchemaInferenceOptions {
-    fn from(value: ParquetSchemaInferenceOptions) -> Self {
-        Self {
-            int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow2(),
-            string_encoding: value.string_encoding,
-        }
-    }
-}
-
-/// Returns the new number of rows to read after taking into account rows that need to be deleted after reading
-fn limit_with_delete_rows(
-    delete_rows: &[i64],
-    start_offset: Option<usize>,
-    num_rows_to_read: Option<usize>,
-) -> Option<usize> {
-    if let Some(mut n) = num_rows_to_read {
-        let mut delete_rows_sorted = if let Some(start_offset) = start_offset {
-            delete_rows
-                .iter()
-                .filter_map(|r| {
-                    let shifted_row = *r - start_offset as i64;
-                    if shifted_row >= 0 {
-                        Some(shifted_row as usize)
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-        } else {
-            delete_rows.iter().map(|r| *r as usize).collect::<Vec<_>>()
-        };
-        delete_rows_sorted.sort_unstable();
-        delete_rows_sorted.dedup();
-
-        for r in delete_rows_sorted {
-            if r < n {
-                n += 1;
-            } else {
-                break;
-            }
-        }
-
-        Some(n)
-    } else {
-        num_rows_to_read
-    }
-}
-
-/// Applies Iceberg positional deletes to a table by masking out deleted rows.
-/// `start_offset` is the global row offset of the first row in the table.
-fn apply_delete_rows(
-    table: &mut RecordBatch,
-    delete_rows: Vec<i64>,
-    start_offset: usize,
-    num_rows_to_read: Option<usize>,
-    uri: &str,
-) -> DaftResult<usize> {
-    if delete_rows.is_empty() {
-        return Ok(0);
-    }
-    let mut selection_mask = Bitmap::new_trued(table.len()).make_mut();
-    for row in delete_rows.into_iter().map(|r| r as usize) {
-        if row >= start_offset && num_rows_to_read.is_none_or(|n| row < start_offset + n) {
-            let table_row = row - start_offset;
-            if table_row < table.len() {
-                unsafe {
-                    selection_mask.set_unchecked(table_row, false);
-                }
-            } else {
-                return Err(super::Error::ParquetDeleteRowOutOfIndex {
-                    path: uri.into(),
-                    row: table_row,
-                    read_rows: table.len(),
-                }
-                .into());
-            }
-        }
-    }
-    let num_deleted = selection_mask.unset_bits();
-    let nb = daft_arrow::buffer::NullBuffer::from(Bitmap::from(selection_mask));
-    let selection_mask = BooleanArray::from_null_buffer("selection_mask", &nb)?;
-    *table = table.mask_filter(&selection_mask.into_series())?;
-    Ok(num_deleted)
-}
-
-fn pq2_to_adapter_arc(metadata: Arc<FileMetaData>) -> Arc<DaftParquetMetadata> {
-    match Arc::try_unwrap(metadata) {
-        Ok(metadata) => Arc::new(metadata.into()),
-        Err(metadata) => Arc::new(metadata.as_ref().clone().into()),
-    }
-}
-
-fn adapter_to_pq2_arc(metadata: Arc<DaftParquetMetadata>) -> Arc<FileMetaData> {
-    match Arc::try_unwrap(metadata) {
-        Ok(metadata) => Arc::new(metadata.into_parquet2()),
-        Err(metadata) => Arc::new(metadata.as_parquet2().clone()),
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 async fn read_parquet_single(
     uri: &str,
@@ -215,281 +132,68 @@ async fn read_parquet_single(
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-    metadata: Option<Arc<DaftParquetMetadata>>,
+    // TODO(arrow-rs): wire metadata through to the arrowrs reader to skip redundant footer reads.
+    // The arrowrs reader currently reads its own metadata via ArrowReaderMetadata::load(),
+    // but callers (e.g. scan_task.rs) already have pre-fetched DaftParquetMetadata from planning.
+    _metadata: Option<Arc<DaftParquetMetadata>>,
     delete_rows: Option<Vec<i64>>,
     chunk_size: Option<usize>,
 ) -> DaftResult<RecordBatch> {
-    let field_id_mapping_provided = field_id_mapping.is_some();
-    let mut columns_to_read = columns.clone();
-    let columns_to_return = columns;
-    let num_rows_to_return = num_rows;
-    let mut num_rows_to_read = num_rows;
-    let requested_columns = columns_to_read.as_ref().map(std::vec::Vec::len);
-    if let Some(ref pred) = predicate {
-        num_rows_to_read = None;
-
-        if let Some(req_columns) = columns_to_read.as_mut() {
-            let needed_columns = get_required_columns(pred);
-            for c in needed_columns {
-                if !req_columns.contains(&c) {
-                    req_columns.push(c);
-                }
-            }
-        }
-    }
-
-    // Increase the number of rows_to_read to account for deleted rows
-    // in order to have the correct number of rows in the end
-    if let Some(delete_rows) = &delete_rows {
-        num_rows_to_read = limit_with_delete_rows(delete_rows, start_offset, num_rows_to_read);
-    }
-
-    // Arrow-rs reader path: enabled via DAFT_PARQUET_READER=arrowrs.
-    if use_arrowrs_reader() {
-        let columns_ref: Option<Vec<&str>> = columns_to_read
-            .as_ref()
-            .map(|v| v.iter().map(|s| s.as_str()).collect());
-
-        // Use sync local reader for local files, async reader for remote.
-        let (source_type_check, fixed_uri_check) = parse_url(uri)?;
-        let mut table = if matches!(source_type_check, SourceType::File) {
-            tokio::task::spawn_blocking({
-                let path = fixed_uri_check
-                    .strip_prefix("file://")
-                    .unwrap_or(&fixed_uri_check)
-                    .to_string();
-                let columns_ref_owned: Option<Vec<String>> = columns_ref
-                    .as_deref()
-                    .map(|c| c.iter().map(|s| (*s).to_string()).collect());
-                let row_groups_owned = row_groups.as_deref().map(|r| r.to_vec());
-                let predicate = predicate.clone();
-                let field_id_mapping = field_id_mapping.clone();
-                move || {
-                    let col_refs: Option<Vec<&str>> = columns_ref_owned
-                        .as_ref()
-                        .map(|v| v.iter().map(|s| s.as_str()).collect());
-                    crate::arrowrs_reader::local_parquet_read_arrowrs(
-                        &path,
-                        col_refs.as_deref(),
-                        start_offset,
-                        num_rows_to_read,
-                        row_groups_owned.as_deref(),
-                        predicate,
-                        schema_infer_options,
-                        chunk_size,
-                        field_id_mapping,
-                    )
-                }
-            })
-            .await
-            .map_err(|e| common_error::DaftError::External(e.into()))??
-        } else {
-            crate::arrowrs_reader::read_parquet_single_arrowrs(
-                uri,
-                columns_ref.as_deref(),
-                start_offset,
-                num_rows_to_read,
-                row_groups.as_deref(),
-                predicate.clone(),
-                io_client,
-                io_stats,
-                schema_infer_options,
-                None,
-                chunk_size,
-                field_id_mapping,
-            )
-            .await?
-        };
-
-        // Post-read delete_rows filtering (Iceberg positional deletes).
-        if let Some(delete_rows) = delete_rows {
-            assert!(
-                row_groups.is_none(),
-                "Row group splitting is not supported with Iceberg deletion files."
-            );
-            apply_delete_rows(
-                &mut table,
-                delete_rows,
-                start_offset.unwrap_or(0),
-                num_rows_to_read,
-                uri,
-            )?;
-        }
-
-        // Post-read predicate filtering (same as parquet2 path).
-        if let Some(predicate) = predicate {
-            let predicate = BoundExpr::try_new(predicate, &table.schema)?;
-            table = table.filter(&[predicate])?;
-            if let Some(oc) = columns_to_return {
-                let oc_indices = oc
-                    .iter()
-                    .map(|name| table.schema.get_index(name))
-                    .collect::<DaftResult<Vec<_>>>()?;
-                table = table.get_columns(&oc_indices);
-            }
-            if let Some(nr) = num_rows_to_return {
-                table = table.head(nr)?;
-            }
-        }
-        return Ok(table);
-    }
+    let columns_ref: Option<Vec<&str>> = columns
+        .as_ref()
+        .map(|v| v.iter().map(|s| s.as_str()).collect());
 
     let (source_type, fixed_uri) = parse_url(uri)?;
-
-    let (metadata, mut table) = if matches!(source_type, SourceType::File) {
-        let metadata = metadata.map(adapter_to_pq2_arc);
-        crate::stream_reader::local_parquet_read_async(
-            fixed_uri.as_ref(),
-            columns_to_read,
+    let table = if matches!(source_type, SourceType::File) {
+        let (send, recv) = tokio::sync::oneshot::channel();
+        let path = fixed_uri
+            .strip_prefix("file://")
+            .unwrap_or(&fixed_uri)
+            .to_string();
+        let columns_owned: Option<Vec<String>> = columns_ref
+            .as_deref()
+            .map(|c| c.iter().map(|s| (*s).to_string()).collect());
+        let row_groups_owned = row_groups.as_deref().map(|r| r.to_vec());
+        let predicate = predicate.clone();
+        let field_id_mapping = field_id_mapping.clone();
+        let delete_rows = delete_rows.clone();
+        rayon::spawn(move || {
+            let col_refs: Option<Vec<&str>> = columns_owned
+                .as_ref()
+                .map(|v| v.iter().map(|s| s.as_str()).collect());
+            let result = crate::arrowrs_reader::local_parquet_read_arrowrs(
+                &path,
+                col_refs.as_deref(),
+                start_offset,
+                num_rows,
+                row_groups_owned.as_deref(),
+                predicate,
+                schema_infer_options,
+                chunk_size,
+                field_id_mapping,
+                delete_rows.as_deref(),
+            );
+            let _ = send.send(result);
+        });
+        recv.await.context(super::OneShotRecvSnafu {})??
+    } else {
+        crate::arrowrs_reader::read_parquet_single_arrowrs(
+            uri,
+            columns_ref.as_deref(),
             start_offset,
-            num_rows_to_read,
-            row_groups.clone(),
+            num_rows,
+            row_groups.as_deref(),
             predicate.clone(),
+            io_client,
+            io_stats,
             schema_infer_options,
-            metadata,
+            None,
             chunk_size,
-        )
-        .await
-        .map(|(metadata, table)| (pq2_to_adapter_arc(metadata), table))
-    } else {
-        let builder = ParquetReaderBuilder::from_uri(
-            uri,
-            io_client.clone(),
-            io_stats.clone(),
             field_id_mapping,
+            delete_rows.as_deref(),
         )
-        .await?;
-        let builder = builder.set_infer_schema_options(schema_infer_options);
-
-        let builder = if let Some(columns) = &columns_to_read {
-            builder.prune_columns(columns)?
-        } else {
-            builder
-        };
-
-        if row_groups.is_some() && (num_rows_to_read.is_some() || start_offset.is_some()) {
-            return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.".to_string()));
-        }
-        let builder = builder.limit(start_offset, num_rows_to_read)?;
-        let metadata = builder.metadata().clone();
-
-        let builder = if let Some(ref row_groups) = row_groups {
-            builder.set_row_groups(row_groups)?
-        } else {
-            builder
-        };
-
-        let builder = if let Some(ref predicate) = predicate {
-            builder.set_filter(predicate.clone())
-        } else {
-            builder
-        };
-
-        let builder = builder.set_chunk_size(chunk_size);
-
-        let parquet_reader = builder.build()?;
-        let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
-        Ok((
-            Arc::new(metadata.into()),
-            parquet_reader.read_from_ranges_into_table(ranges).await?,
-        ))
-    }?;
-
-    let metadata_num_rows = metadata.num_rows();
-    let metadata_num_columns = metadata.as_parquet2().schema().fields().len();
-
-    let num_deleted_rows = if let Some(delete_rows) = delete_rows {
-        assert!(
-            row_groups.is_none(),
-            "Row group splitting is not supported with Iceberg deletion files."
-        );
-        apply_delete_rows(
-            &mut table,
-            delete_rows,
-            start_offset.unwrap_or(0),
-            num_rows_to_read,
-            uri,
-        )?
-    } else {
-        0
+        .await?
     };
-
-    if let Some(predicate) = predicate {
-        // If a predicate exists, we need to apply it before a limit and also keep all of the columns that it needs until it is applied
-        // TODO ideally pipeline this with IO and before concatenating, rather than after
-        let predicate = BoundExpr::try_new(predicate, &table.schema)?;
-        table = table.filter(&[predicate])?;
-        if let Some(oc) = columns_to_return {
-            let oc_indices = oc
-                .iter()
-                .map(|name| table.schema.get_index(name))
-                .collect::<DaftResult<Vec<_>>>()?;
-
-            table = table.get_columns(&oc_indices);
-        }
-        if let Some(nr) = num_rows_to_return {
-            table = table.head(nr)?;
-        }
-    } else if let Some(row_groups) = row_groups {
-        let expected_rows = row_groups
-            .iter()
-            .map(|i| metadata.get_row_group_ref(*i as usize).unwrap().num_rows())
-            .sum::<usize>()
-            - num_deleted_rows;
-        if expected_rows != table.len() {
-            return Err(super::Error::ParquetNumRowMismatch {
-                path: uri.into(),
-                expected_rows,
-                read_rows: table.len(),
-            }
-            .into());
-        }
-    } else {
-        let expected_rows = metadata_num_rows - num_deleted_rows;
-        match (start_offset, num_rows_to_read) {
-            (None, None) if expected_rows != table.len() => {
-                Err(super::Error::ParquetNumRowMismatch {
-                    path: uri.into(),
-                    expected_rows,
-                    read_rows: table.len(),
-                })
-            }
-            (Some(s), None) if expected_rows.saturating_sub(s) != table.len() => {
-                Err(super::Error::ParquetNumRowMismatch {
-                    path: uri.into(),
-                    expected_rows: expected_rows.saturating_sub(s),
-                    read_rows: table.len(),
-                })
-            }
-            (_, Some(n)) if n < table.len() => Err(super::Error::ParquetNumRowMismatch {
-                path: uri.into(),
-                expected_rows: n.min(expected_rows),
-                read_rows: table.len(),
-            }),
-            _ => Ok(()),
-        }?;
-    }
-
-    let expected_num_columns = if let Some(columns) = requested_columns {
-        columns
-    } else {
-        metadata_num_columns
-    };
-
-    if (!field_id_mapping_provided
-        && requested_columns.is_none()
-        && table.num_columns() != expected_num_columns)
-        || (field_id_mapping_provided && table.num_columns() > expected_num_columns)
-        || (requested_columns.is_some() && table.num_columns() > expected_num_columns)
-    {
-        return Err(super::Error::ParquetNumColumnMismatch {
-            path: uri.into(),
-            metadata_num_columns: expected_num_columns,
-            read_columns: table.num_columns(),
-        }
-        .into());
-    }
-
     Ok(table)
 }
 
@@ -504,269 +208,68 @@ async fn stream_parquet_single(
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-    metadata: Option<Arc<DaftParquetMetadata>>,
+    // TODO(arrow-rs): wire metadata through to the arrowrs reader to skip redundant footer reads.
+    _metadata: Option<Arc<DaftParquetMetadata>>,
     delete_rows: Option<Vec<i64>>,
     maintain_order: bool,
     chunk_size: Option<usize>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let field_id_mapping_provided = field_id_mapping.is_some();
-    let columns_to_return = columns
+    let columns_ref: Option<Vec<&str>> = columns
         .as_ref()
-        .map(|s| s.iter().map(|s| (*s).clone()).collect_vec());
-    let num_rows_to_return = num_rows;
-    let mut num_rows_to_read = num_rows;
-    let mut columns_to_read = columns.map(|s| s.iter().map(|s| (*s).clone()).collect_vec());
-    let requested_columns = columns_to_read.as_ref().map(std::vec::Vec::len);
-    if let Some(ref pred) = predicate {
-        num_rows_to_read = None;
-
-        if let Some(req_columns) = columns_to_read.as_mut() {
-            let needed_columns = get_required_columns(pred);
-            for c in needed_columns {
-                if !req_columns.contains(&c) {
-                    req_columns.push(c);
-                }
-            }
-        }
-    }
-
-    // Increase the number of rows_to_read to account for deleted rows
-    // in order to have the correct number of rows in the end
-    if let Some(delete_rows) = &delete_rows {
-        num_rows_to_read = limit_with_delete_rows(delete_rows, None, num_rows_to_read);
-    }
-
-    // Arrow-rs reader path: enabled via DAFT_PARQUET_READER=arrowrs.
-    if use_arrowrs_reader() {
-        let columns_ref: Option<Vec<&str>> = columns_to_read
-            .as_ref()
-            .map(|v| v.iter().map(|s| s.as_str()).collect());
-
-        // For local files, use the sync reader and emit a single-batch stream.
-        let (source_type_check, fixed_uri_check) = parse_url(uri.as_str())?;
-        let table_stream: BoxStream<'static, DaftResult<RecordBatch>> =
-            if matches!(source_type_check, SourceType::File) {
-                let batch = tokio::task::spawn_blocking({
-                    let path = fixed_uri_check
-                        .strip_prefix("file://")
-                        .unwrap_or(&fixed_uri_check)
-                        .to_string();
-                    let columns_ref_owned: Option<Vec<String>> = columns_ref
-                        .as_deref()
-                        .map(|c| c.iter().map(|s| (*s).to_string()).collect());
-                    let row_groups_owned = row_groups.as_deref().map(|r| r.to_vec());
-                    let predicate = predicate.clone();
-                    let field_id_mapping = field_id_mapping.clone();
-                    move || {
-                        let col_refs: Option<Vec<&str>> = columns_ref_owned
-                            .as_ref()
-                            .map(|v| v.iter().map(|s| s.as_str()).collect());
-                        crate::arrowrs_reader::local_parquet_read_arrowrs(
-                            &path,
-                            col_refs.as_deref(),
-                            None, // start_offset not supported in stream path
-                            num_rows_to_read,
-                            row_groups_owned.as_deref(),
-                            predicate,
-                            schema_infer_options,
-                            chunk_size,
-                            field_id_mapping,
-                        )
-                    }
-                })
-                .await
-                .map_err(|e| common_error::DaftError::External(e.into()))??;
-                futures::stream::once(async move { Ok(batch) }).boxed()
-            } else {
-                crate::arrowrs_reader::stream_parquet_single_arrowrs(
-                    uri.as_str(),
-                    columns_ref.as_deref(),
-                    None, // start_offset not supported in stream path
-                    num_rows_to_read,
-                    row_groups.as_deref(),
-                    predicate.clone(),
-                    io_client,
-                    io_stats,
-                    schema_infer_options,
-                    None,
-                    chunk_size,
-                    field_id_mapping,
-                )
-                .await?
-            };
-
-        // Apply post-read delete_rows and predicate filtering per batch.
-        let mut index_so_far: usize = 0;
-        let mut curr_delete_row_idx: usize = 0;
-        let mut remaining_rows = num_rows_to_return.map(|limit| limit as i64);
-        let stream = table_stream
-            .map(move |result| {
-                let mut table = result?;
-                let len = table.len();
-
-                // Apply delete_rows (Iceberg positional deletes).
-                if let Some(ref delete_rows) = delete_rows
-                    && !delete_rows.is_empty()
-                {
-                    let mut selection_mask = Bitmap::new_trued(len).make_mut();
-                    while curr_delete_row_idx < delete_rows.len()
-                        && (delete_rows[curr_delete_row_idx] as usize) < index_so_far + len
-                    {
-                        let table_row = delete_rows[curr_delete_row_idx] as usize - index_so_far;
-                        unsafe {
-                            selection_mask.set_unchecked(table_row, false);
-                        }
-                        curr_delete_row_idx += 1;
-                    }
-                    let nb = daft_arrow::buffer::NullBuffer::from(Bitmap::from(selection_mask));
-                    let selection_mask = BooleanArray::from_null_buffer("selection_mask", &nb)?;
-                    table = table.mask_filter(&selection_mask.into_series())?;
-                }
-                index_so_far += len;
-
-                if let Some(ref pred) = predicate {
-                    let bound = BoundExpr::try_new(pred.clone(), &table.schema)?;
-                    table = table.filter(&[bound])?;
-                    if let Some(ref oc) = columns_to_return {
-                        let oc_indices = oc
-                            .iter()
-                            .map(|name| table.schema.get_index(name))
-                            .collect::<DaftResult<Vec<_>>>()?;
-                        table = table.get_columns(&oc_indices);
-                    }
-                }
-                Ok(table)
-            })
-            .try_take_while(move |table| {
-                let should_continue = match remaining_rows {
-                    Some(ref mut remaining) => {
-                        *remaining -= table.len() as i64;
-                        *remaining > 0
-                    }
-                    None => true,
-                };
-                futures::future::ready(Ok(should_continue))
-            });
-        return Ok(stream.boxed());
-    }
+        .map(|v| v.iter().map(|s| s.as_str()).collect());
 
     let (source_type, fixed_uri) = parse_url(uri.as_str())?;
-
-    let (metadata, table_stream) = if matches!(source_type, SourceType::File) {
-        let metadata = metadata.map(adapter_to_pq2_arc);
-        crate::stream_reader::local_parquet_stream(
-            fixed_uri.to_string(),
-            columns_to_return,
-            columns_to_read,
-            num_rows_to_return,
-            num_rows_to_read,
-            delete_rows,
-            row_groups.clone(),
-            predicate.clone(),
-            schema_infer_options,
-            metadata,
-            maintain_order,
-            io_stats,
-            chunk_size,
-        )
-        .await
-        .map(|(metadata, table_stream)| (pq2_to_adapter_arc(metadata), table_stream))
-    } else {
-        let builder = ParquetReaderBuilder::from_uri(
-            uri.as_str(),
-            io_client.clone(),
-            io_stats.clone(),
-            field_id_mapping,
-        )
-        .await?;
-
-        let builder = builder.set_chunk_size(chunk_size);
-
-        let builder = builder.set_infer_schema_options(schema_infer_options);
-
-        let builder = if let Some(columns) = &columns_to_read {
-            builder.prune_columns(columns)?
+    let table_stream: BoxStream<'static, DaftResult<RecordBatch>> =
+        if matches!(source_type, SourceType::File) {
+            let path = fixed_uri
+                .strip_prefix("file://")
+                .unwrap_or(&fixed_uri)
+                .to_string();
+            crate::arrowrs_reader::local_parquet_stream_arrowrs(
+                &path,
+                columns_ref.as_deref(),
+                num_rows,
+                row_groups.as_deref(),
+                predicate.clone(),
+                schema_infer_options,
+                chunk_size,
+                field_id_mapping.clone(),
+                delete_rows.as_deref(),
+                maintain_order,
+            )
+            .await?
         } else {
-            builder
+            crate::arrowrs_reader::stream_parquet_single_arrowrs(
+                uri.as_str(),
+                columns_ref.as_deref(),
+                None,
+                num_rows,
+                row_groups.as_deref(),
+                predicate.clone(),
+                io_client,
+                io_stats,
+                schema_infer_options,
+                None,
+                chunk_size,
+                field_id_mapping,
+                delete_rows.as_deref(),
+            )
+            .await?
         };
 
-        if row_groups.is_some() && num_rows_to_read.is_some() {
-            return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` is set at the same time. We only support setting one set or the other.".to_string()));
-        }
-        let builder = builder.limit(None, num_rows_to_read)?;
-        let metadata = builder.metadata().clone();
-
-        let builder = if let Some(ref row_groups) = row_groups {
-            builder.set_row_groups(row_groups)?
-        } else {
-            builder
-        };
-
-        let builder = if let Some(ref predicate) = predicate {
-            builder.set_filter(predicate.clone())
-        } else {
-            builder
-        };
-
-        let parquet_reader = builder.build()?;
-        let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
-        Ok((
-            Arc::new(metadata.into()),
-            parquet_reader
-                .read_from_ranges_into_table_stream(
-                    ranges,
-                    maintain_order,
-                    predicate.clone(),
-                    columns_to_return,
-                    num_rows_to_return,
-                    delete_rows,
-                )
-                .await?,
-        ))
-    }?;
-
-    let metadata_num_columns = metadata.as_parquet2().schema().fields().len();
-    let mut remaining_rows = num_rows_to_return.map(|limit| limit as i64);
-    let finalized_table_stream = table_stream
-        .map(move |table| {
-            let table = table?;
-
-            let expected_num_columns = if let Some(columns) = requested_columns {
-                columns
-            } else {
-                metadata_num_columns
-            };
-
-            if (!field_id_mapping_provided
-                && requested_columns.is_none()
-                && table.num_columns() != expected_num_columns)
-                || (field_id_mapping_provided && table.num_columns() > expected_num_columns)
-                || (requested_columns.is_some() && table.num_columns() > expected_num_columns)
-            {
-                return Err(super::Error::ParquetNumColumnMismatch {
-                    path: uri.clone(),
-                    metadata_num_columns: expected_num_columns,
-                    read_columns: table.num_columns(),
-                }
-                .into());
+    let mut remaining_rows = num_rows.map(|limit| limit as i64);
+    let stream = table_stream.try_take_while(move |table| {
+        let should_continue = match remaining_rows {
+            Some(rows_left) if rows_left <= 0 => false,
+            Some(rows_left) => {
+                remaining_rows = Some(rows_left - table.len() as i64);
+                true
             }
-            DaftResult::Ok(table)
-        })
-        .try_take_while(move |table| {
-            match remaining_rows {
-                // Limit has been met, early-terminate.
-                Some(rows_left) if rows_left <= 0 => futures::future::ready(Ok(false)),
-                // Limit has not yet been met, update remaining limit slack and continue.
-                Some(rows_left) => {
-                    remaining_rows = Some(rows_left - table.len() as i64);
-                    futures::future::ready(Ok(true))
-                }
-                // No limit, never early-terminate.
-                None => futures::future::ready(Ok(true)),
-            }
-        });
-
-    Ok(finalized_table_stream.boxed())
+            None => true,
+        };
+        futures::future::ready(Ok(should_continue))
+    });
+    Ok(stream.boxed())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -780,141 +283,76 @@ async fn read_parquet_single_into_arrow(
     io_stats: Option<IOStatsRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-    metadata: Option<Arc<FileMetaData>>,
 ) -> DaftResult<ParquetPyarrowChunk> {
-    let field_id_mapping_provided = field_id_mapping.is_some();
-    let (source_type, fixed_uri) = parse_url(uri)?;
-    let (metadata, schema, all_arrays, num_rows_read) = if matches!(source_type, SourceType::File) {
-        let (metadata, schema, all_arrays, num_rows_read) =
-            crate::stream_reader::local_parquet_read_into_arrow_async(
-                fixed_uri.as_ref(),
-                columns.clone(),
-                start_offset,
-                num_rows,
-                row_groups.clone(),
-                None,
-                schema_infer_options,
-                metadata,
-                None,
-            )
-            .await?;
-        (metadata, Arc::new(schema), all_arrays, num_rows_read)
-    } else {
-        let builder = ParquetReaderBuilder::from_uri(
-            uri,
-            io_client.clone(),
-            io_stats.clone(),
-            field_id_mapping,
-        )
-        .await?;
-        let builder = builder.set_infer_schema_options(schema_infer_options);
+    // Read data and metadata concurrently.
+    // The metadata read is needed to recover schema-level key-value metadata
+    // (e.g. custom metadata like {"str": "foo"}) that Daft's RecordBatch doesn't carry.
+    let data_fut = read_parquet_single(
+        uri,
+        columns,
+        start_offset,
+        num_rows,
+        row_groups,
+        None, // predicate (pyarrow API doesn't expose it)
+        io_client.clone(),
+        io_stats.clone(),
+        schema_infer_options,
+        field_id_mapping,
+        None, // metadata
+        None, // delete_rows
+        None, // chunk_size
+    );
+    let metadata_fut =
+        crate::metadata::read_parquet_metadata(uri, None, io_client, io_stats, None, None);
 
-        let builder = if let Some(columns) = &columns {
-            builder.prune_columns(columns)?
-        } else {
-            builder
-        };
+    let (rb, parquet_metadata) =
+        futures::future::try_join(data_fut, metadata_fut.err_into()).await?;
+    let num_rows_read = rb.len();
 
-        if row_groups.is_some() && (num_rows.is_some() || start_offset.is_some()) {
-            return Err(common_error::DaftError::ValueError("Both `row_groups` and `num_rows` or `start_offset` is set at the same time. We only support setting one set or the other.".to_string()));
-        }
-        let builder = builder.limit(start_offset, num_rows)?;
-        let metadata = builder.metadata().clone();
+    // Infer the Arrow schema from parquet metadata. This gives us:
+    // - schema-level key-value metadata (handled the same way as pyarrow)
+    // - per-field nullability from the parquet schema
+    let arrow_schema = parquet::arrow::parquet_to_arrow_schema(
+        parquet_metadata.file_metadata().schema_descr(),
+        parquet_metadata.file_metadata().key_value_metadata(),
+    )
+    .ok();
+    let schema_metadata: std::collections::HashMap<String, String> = arrow_schema
+        .as_ref()
+        .map(|s| {
+            s.metadata()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
 
-        let builder = if let Some(ref row_groups) = row_groups {
-            builder.set_row_groups(row_groups)?
-        } else {
-            builder
-        };
+    // Convert each Daft Series → FFI-compatible arrays for the pyarrow bridge.
+    // Return in COLUMN-MAJOR layout: all_arrays[col_idx] = [chunks_for_that_column].
+    // The Python side (recordbatch.py) zips schema fields with this outer list,
+    // so each entry must be the list of chunks for one column.
+    let mut ffi_fields = Vec::with_capacity(rb.schema.fields().len());
+    let mut all_arrays: Vec<ArrowChunk> = Vec::with_capacity(rb.schema.fields().len());
 
-        let parquet_reader = builder.build()?;
+    for (col, daft_field) in rb.columns().iter().zip(rb.schema.fields()) {
+        let arrow_array = col.to_arrow()?;
 
-        let schema = parquet_reader.arrow_schema().clone();
-        let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
-        let (all_arrays, num_rows_read) = parquet_reader
-            .read_from_ranges_into_arrow_arrays(ranges)
-            .await?;
-        (Arc::new(metadata), schema, all_arrays, num_rows_read)
-    };
-
-    let rows_per_row_groups = metadata
-        .row_groups
-        .values()
-        .map(parquet2::metadata::RowGroupMetaData::num_rows)
-        .collect::<Vec<_>>();
-
-    let metadata_num_rows = metadata.num_rows;
-    let metadata_num_columns = metadata.schema().fields().len();
-
-    let len_per_col = all_arrays
-        .iter()
-        .map(|v| v.iter().map(|a| a.len()).sum::<usize>())
-        .collect::<Vec<_>>();
-    let all_same_size = len_per_col.windows(2).all(|w| w[0] == w[1]);
-    if !all_same_size {
-        return Err(super::Error::ParquetColumnsDontHaveEqualRows { path: uri.into() }.into());
+        let nullable = arrow_schema
+            .as_ref()
+            .and_then(|s| s.field_with_name(&daft_field.name).ok())
+            .is_none_or(|f| f.is_nullable());
+        ffi_fields.push(arrow::datatypes::Field::new(
+            daft_field.name.to_string(),
+            arrow_array.data_type().clone(),
+            nullable,
+        ));
+        all_arrays.push(vec![arrow_array]);
     }
 
-    let table_len = num_rows_read;
-    let table_ncol = all_arrays.len();
+    let mut ffi_schema = arrow::datatypes::Schema::new(ffi_fields);
+    ffi_schema.metadata = schema_metadata;
 
-    if let Some(row_groups) = &row_groups {
-        let expected_rows: usize = row_groups
-            .iter()
-            .map(|i| rows_per_row_groups.get(*i as usize).unwrap())
-            .sum();
-        if expected_rows != table_len {
-            return Err(super::Error::ParquetNumRowMismatch {
-                path: uri.into(),
-                expected_rows,
-                read_rows: table_len,
-            }
-            .into());
-        }
-    } else {
-        match (start_offset, num_rows) {
-            (None, None) if metadata_num_rows != table_len => {
-                Err(super::Error::ParquetNumRowMismatch {
-                    path: uri.into(),
-                    expected_rows: metadata_num_rows,
-                    read_rows: table_len,
-                })
-            }
-            (Some(s), None) if metadata_num_rows.saturating_sub(s) != table_len => {
-                Err(super::Error::ParquetNumRowMismatch {
-                    path: uri.into(),
-                    expected_rows: metadata_num_rows.saturating_sub(s),
-                    read_rows: table_len,
-                })
-            }
-            (_, Some(n)) if n < table_len => Err(super::Error::ParquetNumRowMismatch {
-                path: uri.into(),
-                expected_rows: n.min(metadata_num_rows),
-                read_rows: table_len,
-            }),
-            _ => Ok(()),
-        }?;
-    }
-
-    let expected_num_columns = if let Some(columns) = &columns {
-        columns.len()
-    } else {
-        metadata_num_columns
-    };
-
-    if (!field_id_mapping_provided && columns.is_none() && table_ncol != expected_num_columns)
-        || (field_id_mapping_provided && table_ncol > expected_num_columns)
-        || (columns.is_some() && table_ncol > expected_num_columns)
-    {
-        return Err(super::Error::ParquetNumColumnMismatch {
-            path: uri.into(),
-            metadata_num_columns: expected_num_columns,
-            read_columns: table_ncol,
-        }
-        .into());
-    }
-
-    Ok((schema, all_arrays, table_len))
+    Ok((Arc::new(ffi_schema), all_arrays, num_rows_read))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -929,10 +367,9 @@ pub fn read_parquet(
     io_stats: Option<IOStatsRef>,
     multithreaded_io: bool,
     schema_infer_options: ParquetSchemaInferenceOptions,
-    metadata: Option<Arc<FileMetaData>>,
+    metadata: Option<Arc<DaftParquetMetadata>>,
 ) -> DaftResult<RecordBatch> {
     let runtime_handle = get_io_runtime(multithreaded_io);
-    let metadata = metadata.map(pq2_to_adapter_arc);
 
     runtime_handle.block_on_current_thread(async {
         read_parquet_single(
@@ -953,15 +390,11 @@ pub fn read_parquet(
         .await
     })
 }
-pub type ArrowChunk = Vec<Box<dyn daft_arrow::array::Array>>;
-pub type ArrowChunkIters = Vec<
-    Box<
-        dyn Iterator<Item = daft_arrow::error::Result<Box<dyn daft_arrow::array::Array>>>
-            + Send
-            + Sync,
-    >,
->;
-pub type ParquetPyarrowChunk = (daft_arrow::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
+pub type ArrowChunk = Vec<ArrayRef>;
+pub type ArrowChunkIters =
+    Vec<Box<dyn Iterator<Item = arrow::error::Result<ArrayRef>> + Send + Sync>>;
+pub type ParquetPyarrowChunk = (arrow::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
+
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow(
     uri: &str,
@@ -986,7 +419,6 @@ pub fn read_parquet_into_pyarrow(
             io_client,
             io_stats,
             schema_infer_options,
-            None,
             None,
         );
         if let Some(timeout) = file_timeout_ms {
@@ -1201,7 +633,6 @@ pub fn read_parquet_into_pyarrow_bulk<T: AsRef<str>>(
                             io_stats,
                             schema_infer_options,
                             None,
-                            None,
                         )
                         .await?,
                     ))
@@ -1224,15 +655,18 @@ pub async fn read_parquet_schema_and_metadata(
     schema_inference_options: ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<(Schema, DaftParquetMetadata)> {
-    let builder =
-        ParquetReaderBuilder::from_uri(uri, io_client.clone(), io_stats, field_id_mapping).await?;
-    let builder = builder.set_infer_schema_options(schema_inference_options);
-
-    let metadata = builder.metadata;
-    let arrow_schema =
-        infer_arrow_schema_from_metadata(&metadata, Some(schema_inference_options.into()))?;
-    let schema = arrow_schema.into();
-    Ok((schema, metadata.into()))
+    let metadata = crate::metadata::read_parquet_metadata(
+        uri,
+        None,
+        io_client,
+        io_stats,
+        field_id_mapping,
+        None,
+    )
+    .await?;
+    let adapter = DaftParquetMetadata::from_arrowrs(metadata);
+    let schema = infer_schema_from_daft_metadata(&adapter, schema_inference_options)?;
+    Ok((schema, adapter))
 }
 
 pub async fn read_parquet_metadata(
@@ -1241,9 +675,16 @@ pub async fn read_parquet_metadata(
     io_stats: Option<IOStatsRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
 ) -> DaftResult<DaftParquetMetadata> {
-    let builder =
-        ParquetReaderBuilder::from_uri(uri, io_client, io_stats, field_id_mapping).await?;
-    Ok(builder.metadata.into())
+    let metadata = crate::metadata::read_parquet_metadata(
+        uri,
+        None,
+        io_client,
+        io_stats,
+        field_id_mapping,
+        None,
+    )
+    .await?;
+    Ok(DaftParquetMetadata::from_arrowrs(metadata))
 }
 pub async fn read_parquet_metadata_bulk(
     uris: &[&str],
@@ -1380,13 +821,13 @@ pub fn read_parquet_statistics(
 
 #[cfg(test)]
 mod tests {
-    use std::{path::PathBuf, sync::Arc};
+    use std::{ops::Deref, path::PathBuf, sync::Arc};
 
+    use arrow::datatypes::DataType;
     use common_error::DaftResult;
-    use daft_arrow::{datatypes::DataType, io::parquet::read::schema::StringEncoding};
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
-    use parquet2::schema::types::{ParquetType, PrimitiveConvertedType, PrimitiveLogicalType};
+    use parquet::schema::types::Type as ParquetSchemaType;
 
     use super::*;
 
@@ -1509,23 +950,28 @@ mod tests {
             })
             .flatten()
             .unwrap();
-        let primitive_type = match file_metadata.as_parquet2().schema_descr.fields() {
-            [parquet_type] => match parquet_type {
-                ParquetType::PrimitiveType(primitive_type) => primitive_type,
-                ParquetType::GroupType { .. } => {
-                    panic!("Parquet type should be primitive type, not group type")
-                }
-            },
-            _ => panic!("This test parquet file should have only 1 field"),
-        };
+        let schema_descr = file_metadata.schema_descriptor();
+        let fields = schema_descr.root_schema().get_fields();
         assert_eq!(
-            primitive_type.logical_type,
-            Some(PrimitiveLogicalType::String)
+            fields.len(),
+            1,
+            "This test parquet file should have only 1 field"
         );
-        assert_eq!(
-            primitive_type.converted_type,
-            Some(PrimitiveConvertedType::Utf8)
-        );
+        match fields[0].as_ref() {
+            ParquetSchemaType::PrimitiveType { basic_info, .. } => {
+                assert_eq!(
+                    basic_info.logical_type_ref(),
+                    Some(&parquet::basic::LogicalType::String),
+                );
+                assert_eq!(
+                    basic_info.converted_type(),
+                    parquet::basic::ConvertedType::UTF8,
+                );
+            }
+            ParquetSchemaType::GroupType { .. } => {
+                panic!("Parquet type should be primitive type, not group type")
+            }
+        }
         let (schema, _, _) = read_parquet_into_pyarrow(
             &parquet,
             None,
@@ -1542,9 +988,80 @@ mod tests {
             None,
         )
         .unwrap();
-        match schema.fields.as_slice() {
-            [field] => assert_eq!(field.data_type, DataType::LargeBinary),
+        match schema.fields().deref() {
+            [field] => assert_eq!(field.data_type(), &DataType::LargeBinary),
             _ => panic!("There should only be one field in the schema"),
         };
+    }
+
+    /// Regression test: streaming with a limit equal to the batch size should
+    /// return all requested rows, not an empty stream.
+    #[test]
+    fn test_stream_limit_exact_batch_size() {
+        use arrow::{
+            array::Int32Array,
+            datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema},
+        };
+        use parquet::arrow::ArrowWriter;
+
+        let dir = std::env::temp_dir().join("daft_test_stream_limit_exact");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file_path = dir.join("test.parquet");
+
+        // Write a parquet file with exactly 5 rows.
+        let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
+            "id",
+            ArrowDataType::Int32,
+            false,
+        )]));
+        let file = std::fs::File::create(&file_path).unwrap();
+        let mut writer = ArrowWriter::try_new(file, schema.clone(), None).unwrap();
+        let batch = arrow::array::RecordBatch::try_new(
+            schema,
+            vec![Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5]))],
+        )
+        .unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let uri = file_path.to_str().unwrap().to_string();
+        let io_client = Arc::new(IOClient::new(IOConfig::default().into()).unwrap());
+        let runtime = get_io_runtime(true);
+
+        // Stream with num_rows=5 (exactly the file size).
+        let total_rows: usize = runtime
+            .block_within_async_context(async move {
+                let mut stream = stream_parquet_single(
+                    uri,
+                    None,
+                    Some(5),
+                    None,
+                    None,
+                    io_client,
+                    None,
+                    ParquetSchemaInferenceOptions::default(),
+                    None,
+                    None,
+                    None,
+                    true,
+                    None,
+                )
+                .await
+                .unwrap();
+
+                let mut count = 0;
+                while let Some(batch) = stream.next().await {
+                    count += batch.unwrap().len();
+                }
+                count
+            })
+            .unwrap();
+
+        assert_eq!(
+            total_rows, 5,
+            "stream with limit=5 on 5-row file should return 5 rows"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -189,7 +189,7 @@ impl FromArrow for MapArray {
         let arrow_child_array: ArrayRef = Arc::new(arrow_arr.entries().clone());
 
         let child_field = Field::new(
-            map_field.name(),
+            map_field.name().as_str(),
             DataType::Struct(vec![
                 Field::new("key", *key.clone()),
                 Field::new("value", *value.clone()),

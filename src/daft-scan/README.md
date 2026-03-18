@@ -1,10 +1,3 @@
 # daft-scan
 
-This crate is used to create scan operators in logical plans.
-
-## Contributing
-
-Suppose your format is `jsonl` - you should add two things.
-
-1. Export top-level `scan_jsonl` which takes all arguments.
-2. Export `builder::JsonlScanBuilder`
+Defines the `ScanOperator` trait, `ScanTask` struct, and built-in operator implementations (`GlobScanOperator`, `AnonymousScanOperator`). Also owns scan-related primitives: `Pushdowns`, `PartitionField`, `Sharder`, and predicate rewriting for partition pruning.
