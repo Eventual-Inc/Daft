@@ -105,41 +105,31 @@ impl Source for FlightShuffleReadSource {
                     .collect();
 
                 // Build optional local stream (in-process) and remote stream (gRPC), then merge.
-                let mut streams: Vec<
-                    futures::stream::BoxStream<'static, DaftResult<daft_recordbatch::RecordBatch>>,
-                > = Vec::new();
+                let mut client_manager = FlightClientManager::new(remote_addresses);
+                let remote_stream = client_manager
+                    .fetch_partition(
+                        shuffle_id,
+                        partition_idx,
+                        &remote_server_cache_mapping,
+                        schema.clone(),
+                    )
+                    .await?;
 
-                if has_local {
-                    match local_server
+                let local_stream = futures::stream::iter(if has_local {
+                    local_server
                         .get_partition_local(
                             shuffle_id,
                             partition_idx,
                             local_cache_ids.as_deref(),
-                            schema.clone(),
                         )
-                        .await
-                    {
-                        Ok(s) => streams.push(s.boxed()),
-                        Err(e) => return Err(e),
-                    }
-                }
+                        .await?
+                } else {
+                    vec![]
+                });
 
-                if !remote_addresses.is_empty() {
-                    let mut client_manager = FlightClientManager::new(remote_addresses);
-                    let remote_stream = client_manager
-                        .fetch_partition(
-                            shuffle_id,
-                            partition_idx,
-                            &remote_server_cache_mapping,
-                            schema.clone(),
-                        )
-                        .await?;
-                    streams.push(remote_stream);
-                }
+                let mut combined_stream = tokio_stream::StreamExt::merge(local_stream, remote_stream);
 
-                let merged = futures::stream::iter(streams).flatten_unordered(None);
-                futures::pin_mut!(merged);
-                while let Some(batch) = merged.next().await {
+                while let Some(batch) = combined_stream.next().await {
                     let mp = MicroPartition::new_loaded(schema.clone(), vec![batch?].into(), None);
                     if tx.send(Arc::new(mp)).await.is_err() {
                         break;

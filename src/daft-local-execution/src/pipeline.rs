@@ -1397,6 +1397,7 @@ fn physical_plan_to_pipeline(
             compression,
             stats_state,
             context,
+            schema,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
@@ -1417,6 +1418,7 @@ fn physical_plan_to_pipeline(
                 compression.clone(),
                 cache_id,
                 shuffle_server,
+                schema.clone(),
             )
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),

@@ -3,14 +3,14 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use daft_core::{
-    prelude::{Int32Array, Schema},
+    prelude::{Int32Array, Schema, SchemaRef},
     series::IntoSeries,
 };
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_shuffles::{
-    server::flight_server::ShuffleFlightServer, shuffle_cache::InProgressShuffleCache,
+    server::flight_server::ShuffleFlightServer, shuffle_cache::{InMemoryShuffleCache, InProgressShuffleCache},
 };
 use tracing::{Span, instrument};
 
@@ -18,6 +18,21 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+
+pub struct InMemoryData {
+    data: Vec<Vec<RecordBatch>>,
+}
+
+impl InMemoryData {
+    pub fn append(&mut self, input: Vec<MicroPartition>) {
+        for (partition, input) in self.data.iter_mut().zip(input.into_iter()) {
+            let record_batches = input.record_batches();
+            for record_batch in record_batches {
+                partition.push(record_batch.clone());
+            }
+        }
+    }
+}
 
 pub struct FlightShuffleWriteSink {
     num_partitions: usize,
@@ -28,6 +43,7 @@ pub struct FlightShuffleWriteSink {
     shuffle_cache: Arc<InProgressShuffleCache>,
     // Flight shuffle server registry for this node (if enabled)
     shuffle_server: Arc<ShuffleFlightServer>,
+    schema: SchemaRef,
 }
 
 impl FlightShuffleWriteSink {
@@ -39,6 +55,7 @@ impl FlightShuffleWriteSink {
         compression: Option<String>,
         cache_id: String,
         shuffle_server: Arc<ShuffleFlightServer>,
+        schema: SchemaRef,
     ) -> DaftResult<Self> {
         const TARGET_TOTAL_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 2000; // 2000MB = ~2GB
 
@@ -59,23 +76,23 @@ impl FlightShuffleWriteSink {
             partition_by,
             shuffle_cache: Arc::new(shuffle_cache),
             shuffle_server,
+            schema,
         })
     }
 }
 
 impl BlockingSink for FlightShuffleWriteSink {
-    type State = ();
+    type State = InMemoryData;
 
     #[instrument(skip_all, name = "FlightShuffleWriteSink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
-        _state: Self::State,
+        mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let num_partitions = self.num_partitions;
         let partition_by = self.partition_by.clone();
-        let shuffle_cache = self.shuffle_cache.clone();
 
         spawner
             .spawn(
@@ -88,12 +105,8 @@ impl BlockingSink for FlightShuffleWriteSink {
                         None => input.partition_by_random(num_partitions, 0)?,
                     };
 
-                    // Convert Vec<MicroPartition> to Vec<Arc<MicroPartition>>
-                    let partitioned = partitioned.into_iter().map(Arc::new).collect();
-
-                    // Send partitioned data to writers
-                    shuffle_cache.push_partitioned_data(partitioned).await?;
-                    Ok(())
+                    state.append(partitioned);
+                    Ok(state)
                 },
                 Span::current(),
             )
@@ -103,34 +116,41 @@ impl BlockingSink for FlightShuffleWriteSink {
     #[instrument(skip_all, name = "FlightShuffleWriteSink::finalize")]
     fn finalize(
         &self,
-        _states: Vec<Self::State>,
+        states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult<Self> {
         let num_partitions = self.num_partitions;
         let shuffle_id = self.shuffle_id;
-        let shuffle_cache = self.shuffle_cache.clone();
         let shuffle_server = self.shuffle_server.clone();
+        let schema = self.schema.clone();
+        let cache_id = self.cache_id.clone();
+        
         spawner
             .spawn(
                 async move {
-                    // Close the shuffle cache to finalize it
-                    let finalized_cache = shuffle_cache.close().await?;
-                    let rows_per_partition = finalized_cache.rows_per_partition();
-                    let bytes_per_partition = finalized_cache.bytes_per_partition();
+                    let mut final_partitions = vec![vec![]; num_partitions];
+                    for state in states {
+                        for (partition, data) in state.data.iter().zip(final_partitions.iter_mut()) {
+                            data.extend(partition.clone());
+                        }
+                    }
+
+                    let final_partitions = final_partitions.into_iter().map(|p| Arc::new(MicroPartition::new_loaded(schema.clone(), Arc::new(p), None))).collect();
+                    let in_memory_cache = InMemoryShuffleCache::new(schema, final_partitions, cache_id.clone());
 
                     // Register the shuffle cache with the flight server
                     shuffle_server
-                        .register_shuffle_cache(shuffle_id, finalized_cache.into())
+                        .register_shuffle_cache(shuffle_id, Arc::new(in_memory_cache))
                         .await?;
 
                     let rows_per_partition = Int32Array::from_values(
                         "rows_per_partition",
-                        rows_per_partition.into_iter().map(|i| i as i32),
+                        vec![],
                     )
                     .into_series();
                     let bytes_per_partition = Int32Array::from_values(
                         "bytes_per_partition",
-                        bytes_per_partition.into_iter().map(|i| i as i32),
+                        vec![],
                     )
                     .into_series();
                     let schema = Schema::new(vec![
@@ -171,7 +191,6 @@ impl BlockingSink for FlightShuffleWriteSink {
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {
-        // No per-state data needed, shuffle cache is shared in the sink
-        Ok(())
+        Ok(InMemoryData { data: vec![vec![]; self.num_partitions] })
     }
 }

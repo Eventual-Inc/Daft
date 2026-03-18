@@ -357,6 +357,31 @@ impl ShuffleCache {
     }
 }
 
+#[derive(Debug)]
+pub struct InMemoryShuffleCache {
+    schema: SchemaRef,
+    partitions: Vec<Arc<MicroPartition>>,
+    cache_id: String,
+}
+
+impl InMemoryShuffleCache {
+    pub fn new(schema: SchemaRef, partitions: Vec<Arc<MicroPartition>>, cache_id: String) -> Self {
+        Self { schema, partitions, cache_id }
+    }
+
+    pub fn cache_id(&self) -> &str {
+        &self.cache_id
+    }
+
+    pub fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
+
+    pub fn partition(&self, partition_idx: usize) -> Arc<MicroPartition> {
+        self.partitions[partition_idx].clone()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
