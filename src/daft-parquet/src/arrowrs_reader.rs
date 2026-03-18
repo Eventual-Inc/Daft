@@ -541,10 +541,8 @@ fn decode_rg_predicate_phase(
         builder = builder.with_row_selection(sel.clone());
     }
 
-    // Non-pushed offset for predicate phase.
-    if !setup.predicate_pushed {
-        builder = builder.with_offset(task.local_offset);
-    }
+    // This function is only called when predicate_pushed == true.
+    debug_assert!(setup.predicate_pushed);
 
     let reader = builder.build().map_err(parquet_err)?;
     let arrow_batches: Vec<arrow::array::RecordBatch> =
@@ -780,6 +778,7 @@ async fn decode_rg_predicate_phase_async(
     rg_idx: usize,
     base_selection: Option<RowSelection>,
     predicate_columns: &HashSet<String>,
+    batch_size: usize,
 ) -> DaftResult<(arrow::array::RecordBatch, RowSelection)> {
     let reader = DaftAsyncFileReader::new(
         uri.to_string(),
@@ -798,7 +797,7 @@ async fn decode_rg_predicate_phase_async(
     builder = builder
         .with_projection(mask)
         .with_row_groups(vec![rg_idx])
-        .with_batch_size(DEFAULT_BATCH_SIZE);
+        .with_batch_size(batch_size);
 
     if let Some(ref sel) = base_selection {
         builder = builder.with_row_selection(sel.clone());
@@ -864,6 +863,7 @@ async fn decode_rg_column_async(
     col_root_index: usize,
     rg_idx: usize,
     row_selection: Option<RowSelection>,
+    batch_size: usize,
 ) -> DaftResult<arrow::array::RecordBatch> {
     let reader = DaftAsyncFileReader::new(
         uri.to_string(),
@@ -882,7 +882,7 @@ async fn decode_rg_column_async(
     builder = builder
         .with_projection(mask)
         .with_row_groups(vec![rg_idx])
-        .with_batch_size(DEFAULT_BATCH_SIZE);
+        .with_batch_size(batch_size);
 
     if let Some(sel) = row_selection {
         builder = builder.with_row_selection(sel);
@@ -1190,11 +1190,12 @@ pub async fn read_parquet_single_arrowrs(
                 let base_sel = per_rg_selections[ri].clone();
                 let pc = pred_cols.clone();
                 let sem = semaphore.clone();
+                let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
                 async move {
                     let _permit = sem.acquire().await.unwrap();
                     decode_rg_predicate_phase_async(
                         &uri, &io_client, &io_stats, &pm, &as_arc, &pred, &pci, rg_idx, base_sel,
-                        &pc,
+                        &pc, rg_rows,
                     )
                     .await
                 }
@@ -1234,6 +1235,7 @@ pub async fn read_parquet_single_arrowrs(
                 let pm = parquet_metadata.clone();
                 let as_arc = arrow_schema_arc.clone();
                 let sem = semaphore.clone();
+                let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
                 data_col_indices.iter().map(move |&col_idx| {
                     let uri = uri.to_string();
                     let io_client = io_client.clone();
@@ -1253,6 +1255,7 @@ pub async fn read_parquet_single_arrowrs(
                             col_idx,
                             rg_idx,
                             Some(sel),
+                            rg_rows,
                         )
                         .await?;
                         Ok::<_, common_error::DaftError>((ri, batch))
@@ -1304,6 +1307,7 @@ pub async fn read_parquet_single_arrowrs(
                 let pm = parquet_metadata.clone();
                 let as_arc = arrow_schema_arc.clone();
                 let sem = semaphore.clone();
+                let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
                 all_col_indices.iter().map(move |&col_idx| {
                     let uri = uri.to_string();
                     let io_client = io_client.clone();
@@ -1316,6 +1320,7 @@ pub async fn read_parquet_single_arrowrs(
                         let _permit = sem.acquire().await.unwrap();
                         let batch = decode_rg_column_async(
                             &uri, &io_client, &io_stats, &pm, &as_arc, col_idx, rg_idx, sel,
+                            rg_rows,
                         )
                         .await?;
                         Ok::<_, common_error::DaftError>((ri, batch))
@@ -2324,6 +2329,7 @@ pub async fn stream_parquet_single_arrowrs(
         let pred = predicate.clone();
         let pred_cols = predicate_columns.clone();
         let read_col_set_owned = read_col_set_owned.clone();
+        let rg_rows = pm.row_group(rg_idx).num_rows() as usize;
         let all_col_indices = all_col_indices.clone();
         let read_daft_schema = read_daft_schema.clone();
         let return_daft_schema = return_daft_schema.clone();
@@ -2349,6 +2355,7 @@ pub async fn stream_parquet_single_arrowrs(
                         rg_idx,
                         base_sel,
                         pred_cols,
+                        rg_rows,
                     )
                     .await?
                 };
@@ -2386,6 +2393,7 @@ pub async fn stream_parquet_single_arrowrs(
                                 col_idx,
                                 rg_idx,
                                 Some(sel),
+                                rg_rows,
                             )
                             .await
                         }
@@ -2420,7 +2428,7 @@ pub async fn stream_parquet_single_arrowrs(
                         async move {
                             let _permit = sem.acquire().await.unwrap();
                             decode_rg_column_async(
-                                &uri, &ic, &is, &pm, &as_arc, col_idx, rg_idx, sel,
+                                &uri, &ic, &is, &pm, &as_arc, col_idx, rg_idx, sel, rg_rows,
                             )
                             .await
                         }
