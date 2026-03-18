@@ -10,7 +10,6 @@ use std::{
     sync::Arc,
 };
 
-use arrow::array::Array;
 use common_error::DaftResult;
 use common_runtime::{combine_stream, get_compute_runtime};
 use daft_core::prelude::*;
@@ -35,11 +34,14 @@ use rayon::prelude::*;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
-    async_reader::DaftAsyncFileReader,
+    async_reader::{
+        DaftAsyncFileReader, PrefetchedAsyncFileReader, build_read_planner_and_collect,
+    },
     metadata::{
         apply_field_ids_to_arrowrs_parquet_metadata, strip_string_types_from_parquet_metadata,
     },
     read::{ParquetSchemaInferenceOptions, StringEncoding},
+    read_planner::RangesContainer,
     schema_inference::{arrow_schema_to_daft_schema, infer_schema_from_parquet_metadata_arrowrs},
     statistics::row_group_metadata_to_table_stats,
 };
@@ -295,7 +297,7 @@ fn finalize_batch(
         table = table.filter(&[bound])?;
     }
 
-    if read_schema != return_schema {
+    if read_schema.len() != return_schema.len() {
         let return_indices: Vec<usize> = return_schema
             .names()
             .iter()
@@ -340,6 +342,7 @@ fn deletes_to_row_selection(local_deletes: &[usize], total_rows: usize) -> RowSe
 
 /// RLE-encode a boolean mask into a `RowSelection`.
 fn bool_array_to_row_selection(mask: &arrow::array::BooleanArray) -> RowSelection {
+    use arrow::array::Array;
     let mut selectors = Vec::new();
     let mut current_select = false;
     let mut current_count = 0usize;
@@ -541,8 +544,10 @@ fn decode_rg_predicate_phase(
         builder = builder.with_row_selection(sel.clone());
     }
 
-    // This function is only called when predicate_pushed == true.
-    debug_assert!(setup.predicate_pushed);
+    // Non-pushed offset for predicate phase.
+    if !setup.predicate_pushed {
+        builder = builder.with_offset(task.local_offset);
+    }
 
     let reader = builder.build().map_err(parquet_err)?;
     let arrow_batches: Vec<arrow::array::RecordBatch> =
@@ -607,14 +612,14 @@ fn decode_rg_predicate_phase(
     Ok((filtered_pred_batch, final_selection))
 }
 
-/// Decode one or more columns from a single RG with the given RowSelection.
-/// Each call opens its own file handle (independent seek position, ~microsecond syscall).
+/// Decode a single column from a single RG with the given RowSelection.
+/// Opens its own file handle (independent seek position, ~microsecond syscall).
 /// The OS page cache ensures file data is served from memory after first access.
-fn decode_rg_columns(
+fn decode_rg_column(
     path: &str,
     setup: &LocalParquetSetup,
     task: &RgTask,
-    col_root_indices: &[usize],
+    col_root_index: usize,
     row_selection: Option<&RowSelection>,
 ) -> DaftResult<arrow::array::RecordBatch> {
     let file = std::fs::File::open(path)
@@ -624,7 +629,7 @@ fn decode_rg_columns(
         (*setup.arrow_reader_metadata).clone(),
     );
 
-    let mask = ProjectionMask::roots(builder.parquet_schema(), col_root_indices.iter().copied());
+    let mask = ProjectionMask::roots(builder.parquet_schema(), std::iter::once(col_root_index));
     builder = builder
         .with_projection(mask)
         .with_row_groups(vec![task.rg_idx])
@@ -639,11 +644,8 @@ fn decode_rg_columns(
         reader.collect::<Result<Vec<_>, _>>().map_err(parquet_err)?;
 
     if arrow_batches.is_empty() {
-        let fields: Vec<_> = col_root_indices
-            .iter()
-            .map(|&i| setup.arrow_schema.field(i).clone())
-            .collect();
-        let schema = Arc::new(arrow::datatypes::Schema::new(fields));
+        let field = setup.arrow_schema.field(col_root_index).clone();
+        let schema = Arc::new(arrow::datatypes::Schema::new(vec![field]));
         Ok(arrow::array::RecordBatch::new_empty(schema))
     } else if arrow_batches.len() == 1 {
         Ok(arrow_batches.into_iter().next().unwrap())
@@ -651,18 +653,6 @@ fn decode_rg_columns(
         arrow::compute::concat_batches(&arrow_batches[0].schema(), &arrow_batches)
             .map_err(|e| parquet_err(e).into())
     }
-}
-
-/// Convenience wrapper: decode a single column.
-#[inline]
-fn decode_rg_column(
-    path: &str,
-    setup: &LocalParquetSetup,
-    task: &RgTask,
-    col_root_index: usize,
-    row_selection: Option<&RowSelection>,
-) -> DaftResult<arrow::array::RecordBatch> {
-    decode_rg_columns(path, setup, task, &[col_root_index], row_selection)
 }
 
 /// Decode a single RG with intra-RG column parallelism (rayon).
@@ -680,6 +670,7 @@ fn decode_single_rg_col_parallel(
         compute_root_indices(&setup.arrow_schema, setup.read_col_set.as_ref(), None);
 
     // Fallback: single column or small row group where parallel overhead exceeds benefit.
+    // This is called per-RG from the streaming path, so even 2 columns benefit from splitting.
     let rg_byte_size = setup
         .parquet_metadata
         .row_group(task.rg_idx)
@@ -762,15 +753,56 @@ fn decode_single_rg_col_parallel(
 }
 
 // ---------------------------------------------------------------------------
-// Async column-parallel decode helpers (Paths 3, 4)
+// Pre-fetched async column decode helpers (S3 byte range coalescing)
 // ---------------------------------------------------------------------------
 
-/// Async version of `decode_rg_predicate_phase` for remote reads.
-#[allow(clippy::too_many_arguments, clippy::ref_option)]
-async fn decode_rg_predicate_phase_async(
+/// Map root (top-level) column indices to parquet leaf column indices.
+///
+/// Parquet files can have nested schemas where a single root column maps to
+/// multiple leaf columns. The `SchemaDescriptor` tracks this mapping.
+fn root_to_leaf_columns(schema_descr: &SchemaDescriptor, root_indices: &[usize]) -> Vec<usize> {
+    let root_set: HashSet<usize> = root_indices.iter().copied().collect();
+    (0..schema_descr.num_columns())
+        .filter(|&leaf| root_set.contains(&schema_descr.get_column_root_idx(leaf)))
+        .collect()
+}
+
+/// Pre-fetch all byte ranges for the given (rg, col) pairs using a single
+/// `ReadPlanner`, enabling cross-column and cross-RG coalescing into fewer
+/// large HTTP requests.
+#[allow(clippy::ref_option)]
+async fn prefetch_column_ranges(
     uri: &str,
     io_client: &Arc<IOClient>,
     io_stats: &Option<IOStatsRef>,
+    parquet_metadata: &Arc<ParquetMetaData>,
+    rg_indices: &[usize],
+    root_col_indices: &[usize],
+) -> DaftResult<Arc<RangesContainer>> {
+    let schema_descr = parquet_metadata.file_metadata().schema_descr();
+    let leaf_cols = root_to_leaf_columns(schema_descr, root_col_indices);
+
+    let mut ranges: Vec<std::ops::Range<usize>> = Vec::new();
+    for &rg_idx in rg_indices {
+        let rg_meta = parquet_metadata.row_group(rg_idx);
+        for &leaf_col in &leaf_cols {
+            let col_meta = rg_meta.column(leaf_col);
+            let (offset, length) = col_meta.byte_range();
+            ranges.push(offset as usize..(offset + length) as usize);
+        }
+    }
+
+    let container =
+        build_read_planner_and_collect(uri, &ranges, io_client.clone(), io_stats.clone())
+            .map_err(|e| common_error::DaftError::External(Box::new(e)))?;
+
+    Ok(container)
+}
+
+/// Async decode of predicate columns for a single RG using a pre-fetched cache.
+#[allow(clippy::too_many_arguments)]
+async fn decode_rg_predicate_phase_async_prefetched(
+    ranges_container: &Arc<RangesContainer>,
     parquet_metadata: &Arc<ParquetMetaData>,
     arrow_schema: &Arc<arrow::datatypes::Schema>,
     predicate: &ExprRef,
@@ -780,13 +812,7 @@ async fn decode_rg_predicate_phase_async(
     predicate_columns: &HashSet<String>,
     batch_size: usize,
 ) -> DaftResult<(arrow::array::RecordBatch, RowSelection)> {
-    let reader = DaftAsyncFileReader::new(
-        uri.to_string(),
-        io_client.clone(),
-        io_stats.clone(),
-        Some(parquet_metadata.clone()),
-        None,
-    );
+    let reader = PrefetchedAsyncFileReader::new(ranges_container.clone(), parquet_metadata.clone());
     let options = ArrowReaderOptions::new().with_schema(arrow_schema.clone());
     let arrow_reader_metadata =
         ArrowReaderMetadata::try_new(parquet_metadata.clone(), options).map_err(parquet_err)?;
@@ -839,7 +865,6 @@ async fn decode_rg_predicate_phase_async(
         .map_err(|e| parquet_err(format!("Failed to convert to arrow bool: {}", e)))?;
 
     let predicate_sel = bool_array_to_row_selection(arrow_bool);
-
     let final_selection = if let Some(ref base) = base_selection {
         refine_selection(base, &predicate_sel)
     } else {
@@ -852,12 +877,10 @@ async fn decode_rg_predicate_phase_async(
     Ok((filtered_pred_batch, final_selection))
 }
 
-/// Async version of `decode_rg_column` for remote reads.
-#[allow(clippy::too_many_arguments, clippy::ref_option)]
-async fn decode_rg_column_async(
-    uri: &str,
-    io_client: &Arc<IOClient>,
-    io_stats: &Option<IOStatsRef>,
+/// Async decode of a single column from a single RG using a pre-fetched cache.
+#[allow(clippy::too_many_arguments)]
+async fn decode_rg_column_async_prefetched(
+    ranges_container: &Arc<RangesContainer>,
     parquet_metadata: &Arc<ParquetMetaData>,
     arrow_schema: &Arc<arrow::datatypes::Schema>,
     col_root_index: usize,
@@ -865,13 +888,7 @@ async fn decode_rg_column_async(
     row_selection: Option<RowSelection>,
     batch_size: usize,
 ) -> DaftResult<arrow::array::RecordBatch> {
-    let reader = DaftAsyncFileReader::new(
-        uri.to_string(),
-        io_client.clone(),
-        io_stats.clone(),
-        Some(parquet_metadata.clone()),
-        None,
-    );
+    let reader = PrefetchedAsyncFileReader::new(ranges_container.clone(), parquet_metadata.clone());
     let options = ArrowReaderOptions::new().with_schema(arrow_schema.clone());
     let arrow_reader_metadata =
         ArrowReaderMetadata::try_new(parquet_metadata.clone(), options).map_err(parquet_err)?;
@@ -902,6 +919,75 @@ async fn decode_rg_column_async(
         arrow::compute::concat_batches(&arrow_batches[0].schema(), &arrow_batches)
             .map_err(|e| parquet_err(e).into())
     }
+}
+
+/// Spawn per-(RG, col) decode tasks on the compute runtime and collect results
+/// as one RecordBatch per column (concat'd across RGs).
+///
+/// Each (rg_idx, col_idx) pair is decoded in parallel. Results are grouped by
+/// column and concat'd per-column on the compute runtime, yielding one
+/// contiguous array per column.
+async fn spawn_column_decode(
+    prefetch_container: &Arc<RangesContainer>,
+    parquet_metadata: &Arc<ParquetMetaData>,
+    arrow_schema: &Arc<arrow::datatypes::Schema>,
+    rg_indices: &[usize],
+    col_indices: &[usize],
+    per_rg_selections: &[Option<RowSelection>],
+) -> DaftResult<Vec<arrow::array::RecordBatch>> {
+    let num_cols = col_indices.len();
+    let decode_handles: Vec<_> = rg_indices
+        .iter()
+        .enumerate()
+        .flat_map(|(ri, &rg_idx)| {
+            let sel = per_rg_selections[ri].clone();
+            let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
+            let container = prefetch_container.clone();
+            let pm = parquet_metadata.clone();
+            let as_arc = arrow_schema.clone();
+            col_indices.iter().enumerate().map(move |(ci, &col_idx)| {
+                let container = container.clone();
+                let pm = pm.clone();
+                let as_arc = as_arc.clone();
+                let sel = sel.clone();
+                get_compute_runtime().spawn(async move {
+                    let batch = decode_rg_column_async_prefetched(
+                        &container, &pm, &as_arc, col_idx, rg_idx, sel, rg_rows,
+                    )
+                    .await?;
+                    Ok::<_, common_error::DaftError>((ci, batch))
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    let decode_results = futures::future::join_all(decode_handles).await;
+
+    // Group by column, preserving RG order.
+    let mut per_col_batches: Vec<Vec<arrow::array::RecordBatch>> = vec![Vec::new(); num_cols];
+    for result in decode_results {
+        let (ci, batch) = result.map_err(|e| common_error::DaftError::External(e.into()))??;
+        per_col_batches[ci].push(batch);
+    }
+
+    // Per-column concat (parallel on compute runtime).
+    let concat_handles: Vec<_> = per_col_batches
+        .into_iter()
+        .map(|batches| {
+            get_compute_runtime().spawn(async move {
+                if batches.len() <= 1 {
+                    Ok::<_, common_error::DaftError>(batches.into_iter().next().unwrap())
+                } else {
+                    arrow::compute::concat_batches(&batches[0].schema(), &batches)
+                        .map_err(|e| parquet_err(e).into())
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    let concat_results = futures::future::join_all(concat_handles).await;
+    concat_results
+        .into_iter()
+        .map(|r| r.map_err(|e| common_error::DaftError::External(e.into()))?)
+        .collect::<DaftResult<Vec<_>>>()
 }
 
 /// Read a single parquet file into a Daft [`RecordBatch`].
@@ -1077,23 +1163,20 @@ pub async fn read_parquet_single_arrowrs(
             .collect()
     };
 
-    // Fallback: few columns or small RGs -> use original single-stream approach.
-    let max_rg_bytes = rg_indices
-        .iter()
-        .map(|&idx| parquet_metadata.row_group(idx).total_byte_size())
-        .max()
-        .unwrap_or(0);
-    if all_col_indices.len() < MIN_COLS_FOR_COL_PARALLELISM
-        || max_rg_bytes < MIN_RG_BYTES_FOR_COL_PARALLELISM
-    {
-        // Rebuild single stream (original code path).
-        let reader2 = DaftAsyncFileReader::new(
-            uri.to_string(),
-            io_client_saved.clone(),
-            io_stats_saved.clone(),
-            Some(parquet_metadata.clone()),
-            None,
-        );
+    // Fallback: few columns -> single-stream with prefetched I/O for cross-RG coalescing.
+    if all_col_indices.len() < MIN_COLS_FOR_COL_PARALLELISM {
+        // Pre-fetch all RG ranges upfront for cross-RG coalescing.
+        let prefetch_container = prefetch_column_ranges(
+            uri,
+            &io_client_saved,
+            &io_stats_saved,
+            &parquet_metadata,
+            &rg_indices,
+            &all_col_indices,
+        )
+        .await?;
+
+        let reader2 = PrefetchedAsyncFileReader::new(prefetch_container, parquet_metadata.clone());
         let options2 = ArrowReaderOptions::new().with_schema(arrow_schema_arc.clone());
         let arm2 = ArrowReaderMetadata::try_new(parquet_metadata.clone(), options2)
             .map_err(parquet_err)?;
@@ -1170,203 +1253,139 @@ pub async fn read_parquet_single_arrowrs(
         return Ok(table);
     }
 
-    // Column-parallel async decode with concurrency limiter.
-    let num_cpus = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(2);
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(num_cpus * 2));
-
+    // Column-parallel async decode with prefetched I/O.
+    // Per-(RG, col) tasks on the compute runtime for maximum parallelism,
+    // then per-column concat + hconcat to assemble the final RecordBatch.
     if predicate_pushed {
         let pred_cols = predicate_columns.as_ref().unwrap();
         let pred_col_indices = compute_root_indices(&arrow_schema, Some(pred_cols), None);
         let data_col_indices =
             compute_root_indices(&arrow_schema, read_col_set_owned.as_ref(), Some(pred_cols));
 
-        // Phase 1: decode predicate columns per RG (concurrent).
-        let phase1_futures: Vec<_> = rg_indices
+        // Prefetch ALL columns (pred + data) upfront for maximum coalescing.
+        let prefetch_container = prefetch_column_ranges(
+            uri,
+            &io_client_saved,
+            &io_stats_saved,
+            &parquet_metadata,
+            &rg_indices,
+            &all_col_indices,
+        )
+        .await?;
+
+        // Phase 1: decode predicate columns per RG to compute RowSelections.
+        let phase1_handles: Vec<_> = rg_indices
             .iter()
             .enumerate()
             .map(|(ri, &rg_idx)| {
-                let uri = uri.to_string();
-                let io_client = io_client_saved.clone();
-                let io_stats = io_stats_saved.clone();
+                let container = prefetch_container.clone();
                 let pm = parquet_metadata.clone();
                 let as_arc = arrow_schema_arc.clone();
                 let pred = predicate.clone().unwrap();
                 let pci = pred_col_indices.clone();
                 let base_sel = per_rg_selections[ri].clone();
                 let pc = pred_cols.clone();
-                let sem = semaphore.clone();
                 let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
-                async move {
-                    let _permit = sem.acquire().await.unwrap();
-                    decode_rg_predicate_phase_async(
-                        &uri, &io_client, &io_stats, &pm, &as_arc, &pred, &pci, rg_idx, base_sel,
-                        &pc, rg_rows,
+                get_compute_runtime().spawn(async move {
+                    decode_rg_predicate_phase_async_prefetched(
+                        &container, &pm, &as_arc, &pred, &pci, rg_idx, base_sel, &pc, rg_rows,
                     )
                     .await
-                }
-            })
-            .collect();
-        let phase1: Vec<(arrow::array::RecordBatch, RowSelection)> =
-            futures::future::try_join_all(phase1_futures).await?;
-
-        if data_col_indices.is_empty() {
-            let mut rg_batches = Vec::with_capacity(phase1.len());
-            for (pred_batch, _) in &phase1 {
-                let daft_batch = RecordBatch::try_from(pred_batch)?;
-                let table = finalize_batch(
-                    daft_batch,
-                    None,
-                    true,
-                    &read_daft_schema,
-                    &return_daft_schema,
-                )?;
-                rg_batches.push(table);
-            }
-            let mut table = RecordBatch::concat(rg_batches.as_slice())?;
-            if let Some(limit) = num_rows {
-                table = table.head(limit)?;
-            }
-            return Ok(table);
-        }
-
-        // Phase 2: decode data columns per (RG, col) pair (concurrent).
-        let col_futures: Vec<_> = rg_indices
-            .iter()
-            .enumerate()
-            .flat_map(|(ri, &rg_idx)| {
-                let phase1_sel = phase1[ri].1.clone();
-                let io_client = io_client_saved.clone();
-                let io_stats = io_stats_saved.clone();
-                let pm = parquet_metadata.clone();
-                let as_arc = arrow_schema_arc.clone();
-                let sem = semaphore.clone();
-                let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
-                data_col_indices.iter().map(move |&col_idx| {
-                    let uri = uri.to_string();
-                    let io_client = io_client.clone();
-                    let io_stats = io_stats.clone();
-                    let pm = pm.clone();
-                    let as_arc = as_arc.clone();
-                    let sel = phase1_sel.clone();
-                    let sem = sem.clone();
-                    async move {
-                        let _permit = sem.acquire().await.unwrap();
-                        let batch = decode_rg_column_async(
-                            &uri,
-                            &io_client,
-                            &io_stats,
-                            &pm,
-                            &as_arc,
-                            col_idx,
-                            rg_idx,
-                            Some(sel),
-                            rg_rows,
-                        )
-                        .await?;
-                        Ok::<_, common_error::DaftError>((ri, batch))
-                    }
                 })
             })
-            .collect();
-        let col_results: Vec<(usize, arrow::array::RecordBatch)> =
-            futures::future::try_join_all(col_futures).await?;
+            .collect::<Vec<_>>();
+        let phase1_results = futures::future::join_all(phase1_handles).await;
+        let phase1: Vec<(arrow::array::RecordBatch, RowSelection)> = phase1_results
+            .into_iter()
+            .map(|r| r.map_err(|e| common_error::DaftError::External(e.into()))?)
+            .collect::<DaftResult<Vec<_>>>()?;
 
-        // Group by RG index, hconcat.
-        let num_rgs = rg_indices.len();
-        let mut grouped: Vec<Vec<arrow::array::RecordBatch>> = vec![Vec::new(); num_rgs];
-        for (ri, batch) in col_results {
-            grouped[ri].push(batch);
-        }
+        // Concat pred batches across RGs into one.
+        let pred_batches: Vec<arrow::array::RecordBatch> =
+            phase1.iter().map(|(b, _)| b.clone()).collect();
+        let combined_pred_batch = if pred_batches.len() == 1 {
+            pred_batches.into_iter().next().unwrap()
+        } else {
+            arrow::compute::concat_batches(&pred_batches[0].schema(), &pred_batches)
+                .map_err(parquet_err)?
+        };
 
-        let mut rg_batches = Vec::with_capacity(num_rgs);
-        for (ri, data_batches) in grouped.into_iter().enumerate() {
-            let (ref pred_batch, _) = phase1[ri];
-            let mut all = vec![pred_batch.clone()];
-            all.extend(data_batches);
-            let merged = hconcat_record_batches(&all)?;
-            let daft_batch = RecordBatch::try_from(&merged)?;
-            let table = finalize_batch(
+        if data_col_indices.is_empty() {
+            let daft_batch = RecordBatch::try_from(&combined_pred_batch)?;
+            let mut table = finalize_batch(
                 daft_batch,
                 None,
                 true,
                 &read_daft_schema,
                 &return_daft_schema,
             )?;
-            rg_batches.push(table);
+            if let Some(limit) = num_rows {
+                table = table.head(limit)?;
+            }
+            return Ok(table);
         }
 
-        let mut table = RecordBatch::concat(rg_batches.as_slice())?;
+        // Phase 2: per-(RG, col) decode tasks for data columns on compute runtime.
+        let phase2_selections: Vec<Option<RowSelection>> =
+            phase1.iter().map(|(_, sel)| Some(sel.clone())).collect();
+        let data_col_batches = spawn_column_decode(
+            &prefetch_container,
+            &parquet_metadata,
+            &arrow_schema_arc,
+            &rg_indices,
+            &data_col_indices,
+            &phase2_selections,
+        )
+        .await?;
+
+        // hconcat pred + data columns into one RecordBatch.
+        let mut all_batches = vec![combined_pred_batch];
+        all_batches.extend(data_col_batches);
+        let merged = hconcat_record_batches(&all_batches)?;
+        let daft_batch = RecordBatch::try_from(&merged)?;
+        let mut table = finalize_batch(
+            daft_batch,
+            None,
+            true,
+            &read_daft_schema,
+            &return_daft_schema,
+        )?;
         if let Some(limit) = num_rows {
             table = table.head(limit)?;
         }
         Ok(table)
     } else {
-        // No predicate pushed: decode all columns per (RG, col) pair.
-        let col_futures: Vec<_> = rg_indices
-            .iter()
-            .enumerate()
-            .flat_map(|(ri, &rg_idx)| {
-                let base_sel = per_rg_selections[ri].clone();
-                let io_client = io_client_saved.clone();
-                let io_stats = io_stats_saved.clone();
-                let pm = parquet_metadata.clone();
-                let as_arc = arrow_schema_arc.clone();
-                let sem = semaphore.clone();
-                let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
-                all_col_indices.iter().map(move |&col_idx| {
-                    let uri = uri.to_string();
-                    let io_client = io_client.clone();
-                    let io_stats = io_stats.clone();
-                    let pm = pm.clone();
-                    let as_arc = as_arc.clone();
-                    let sel = base_sel.clone();
-                    let sem = sem.clone();
-                    async move {
-                        let _permit = sem.acquire().await.unwrap();
-                        let batch = decode_rg_column_async(
-                            &uri, &io_client, &io_stats, &pm, &as_arc, col_idx, rg_idx, sel,
-                            rg_rows,
-                        )
-                        .await?;
-                        Ok::<_, common_error::DaftError>((ri, batch))
-                    }
-                })
-            })
-            .collect();
-        let col_results: Vec<(usize, arrow::array::RecordBatch)> =
-            futures::future::try_join_all(col_futures).await?;
+        // No predicate: one stream per column across ALL RGs.
+        let prefetch_container = prefetch_column_ranges(
+            uri,
+            &io_client_saved,
+            &io_stats_saved,
+            &parquet_metadata,
+            &rg_indices,
+            &all_col_indices,
+        )
+        .await?;
 
-        let num_rgs = rg_indices.len();
-        let mut grouped: Vec<Vec<arrow::array::RecordBatch>> = vec![Vec::new(); num_rgs];
-        for (ri, batch) in col_results {
-            grouped[ri].push(batch);
-        }
+        let col_batches = spawn_column_decode(
+            &prefetch_container,
+            &parquet_metadata,
+            &arrow_schema_arc,
+            &rg_indices,
+            &all_col_indices,
+            &per_rg_selections,
+        )
+        .await?;
 
-        let mut rg_batches = Vec::with_capacity(num_rgs);
-        for data_batches in grouped {
-            let merged = hconcat_record_batches(&data_batches)?;
-            let daft_batch = RecordBatch::try_from(&merged)?;
-            let table = finalize_batch(
-                daft_batch,
-                predicate.as_ref(),
-                false,
-                &read_daft_schema,
-                &return_daft_schema,
-            )?;
-            rg_batches.push(table);
-        }
-
-        let mut table = RecordBatch::concat(rg_batches.as_slice())?;
-        if predicate.is_some()
-            && let Some(limit) = num_rows
-        {
-            table = table.head(limit)?;
-        }
-        if predicate.is_none()
-            && let Some(limit) = num_rows
-        {
+        let merged = hconcat_record_batches(&col_batches)?;
+        let daft_batch = RecordBatch::try_from(&merged)?;
+        let mut table = finalize_batch(
+            daft_batch,
+            predicate.as_ref(),
+            false,
+            &read_daft_schema,
+            &return_daft_schema,
+        )?;
+        if let Some(limit) = num_rows {
             table = table.head(limit)?;
         }
         Ok(table)
@@ -1764,9 +1783,9 @@ pub fn local_parquet_read_arrowrs(
 
     // Column parallelism decision:
     // - For single-RG reads, column splitting is the only way to parallelize, so use it
-    //   whenever we have >= MIN_COLS_FOR_COL_PARALLELISM columns and the RG is large enough.
+    //   whenever we have >= 2 columns and the RG is large enough.
     // - For multi-RG reads, per-RG decode provides parallelism on its own. Only add column
-    //   splitting when we have enough columns AND RGs don't already saturate cores.
+    //   splitting when we have enough columns (>= 4) AND RGs don't already saturate cores.
     let num_cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(2);
@@ -1776,9 +1795,7 @@ pub fn local_parquet_read_arrowrs(
     });
     let use_col_parallelism = has_large_rg
         && all_col_indices.len() >= MIN_COLS_FOR_COL_PARALLELISM
-        && (setup.rg_tasks.len() == 1
-            || (all_col_indices.len() >= MIN_COLS_FOR_COL_PARALLELISM
-                && setup.rg_tasks.len() < num_cpus * 2));
+        && (setup.rg_tasks.len() == 1 || setup.rg_tasks.len() < num_cpus * 2);
 
     // Fallback: use decode_single_rg per RG with rayon over RGs.
     if !use_col_parallelism {
@@ -1813,6 +1830,8 @@ pub fn local_parquet_read_arrowrs(
         }
         return Ok(table);
     }
+
+    let has_predicate = predicate.is_some();
 
     // Each column task opens its own file handle (independent seek position, ~microsecond
     // syscall). This avoids the cost of reading the entire file into memory upfront
@@ -1932,6 +1951,7 @@ pub fn local_parquet_read_arrowrs(
                 let rg_rows = setup.parquet_metadata.row_group(task.rg_idx).num_rows() as usize;
                 let mut sel = build_base_row_selection(&setup, task, rg_rows);
                 if !setup.predicate_pushed && task.local_offset > 0 {
+                    let rg_rows = setup.parquet_metadata.row_group(task.rg_idx).num_rows() as usize;
                     let offset_sel = build_offset_row_selection(task.local_offset, rg_rows);
                     sel = combine_selections(sel, Some(offset_sel));
                 }
@@ -1977,7 +1997,14 @@ pub fn local_parquet_read_arrowrs(
         }
 
         let mut table = RecordBatch::concat(rg_batches.as_slice())?;
-        if let Some(limit) = num_rows {
+        // Apply limit: for no-predicate, local_limit per RG handles most cases,
+        // but with predicate (non-pushed), we need post-concat limit.
+        if has_predicate && let Some(limit) = num_rows {
+            table = table.head(limit)?;
+        }
+        // For non-predicate with limit, tasks already have local_limit, but
+        // concat may overshoot by up to 1 RG. Apply final limit.
+        if !has_predicate && let Some(limit) = num_rows {
             table = table.head(limit)?;
         }
         Ok(table)
@@ -2240,22 +2267,19 @@ pub async fn stream_parquet_single_arrowrs(
             .collect()
     };
 
-    // Fallback: few columns or small RGs -> use original single-stream approach.
-    let max_rg_bytes = rg_indices
-        .iter()
-        .map(|&idx| parquet_metadata.row_group(idx).total_byte_size())
-        .max()
-        .unwrap_or(0);
-    if all_col_indices.len() < MIN_COLS_FOR_COL_PARALLELISM
-        || max_rg_bytes < MIN_RG_BYTES_FOR_COL_PARALLELISM
-    {
-        let reader2 = DaftAsyncFileReader::new(
-            uri.to_string(),
-            io_client_saved,
-            io_stats_saved,
-            Some(parquet_metadata.clone()),
-            None,
-        );
+    // Fallback: few columns -> single-stream with prefetched I/O for cross-RG coalescing.
+    if all_col_indices.len() < MIN_COLS_FOR_COL_PARALLELISM {
+        let prefetch_container = prefetch_column_ranges(
+            uri,
+            &io_client_saved,
+            &io_stats_saved,
+            &parquet_metadata,
+            &rg_indices,
+            &all_col_indices,
+        )
+        .await?;
+
+        let reader2 = PrefetchedAsyncFileReader::new(prefetch_container, parquet_metadata.clone());
         let options2 = ArrowReaderOptions::new().with_schema(arrow_schema_arc);
         let arm2 = ArrowReaderMetadata::try_new(parquet_metadata.clone(), options2)
             .map_err(parquet_err)?;
@@ -2320,13 +2344,23 @@ pub async fn stream_parquet_single_arrowrs(
         return Ok(mapped.boxed());
     }
 
-    // 7. Per-RG column-parallel streaming.
+    // 7. Per-RG column-parallel streaming with prefetched I/O.
+    // Pre-fetch ALL column ranges upfront for cross-RG + cross-column coalescing.
+    let prefetch_container = prefetch_column_ranges(
+        uri,
+        &io_client_saved,
+        &io_stats_saved,
+        &parquet_metadata,
+        &rg_indices,
+        &all_col_indices,
+    )
+    .await?;
+
     let num_cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(2);
     let semaphore = Arc::new(tokio::sync::Semaphore::new(num_cpus * 2));
 
-    let uri_owned = uri.to_string();
     let rg_indices_owned = rg_indices;
     let per_rg_selections_owned = per_rg_selections;
     let limit = num_rows;
@@ -2334,19 +2368,17 @@ pub async fn stream_parquet_single_arrowrs(
     let stream = futures::stream::iter(0..rg_indices_owned.len()).then(move |ri| {
         let rg_idx = rg_indices_owned[ri];
         let base_sel = per_rg_selections_owned[ri].clone();
-        let uri = uri_owned.clone();
-        let io_client = io_client_saved.clone();
-        let io_stats = io_stats_saved.clone();
+        let container = prefetch_container.clone();
         let pm = parquet_metadata.clone();
         let as_arc = arrow_schema_arc.clone();
         let sem = semaphore.clone();
         let pred = predicate.clone();
         let pred_cols = predicate_columns.clone();
         let read_col_set_owned = read_col_set_owned.clone();
-        let rg_rows = pm.row_group(rg_idx).num_rows() as usize;
         let all_col_indices = all_col_indices.clone();
         let read_daft_schema = read_daft_schema.clone();
         let return_daft_schema = return_daft_schema.clone();
+        let rg_rows = pm.row_group(rg_idx).num_rows() as usize;
 
         async move {
             if predicate_pushed {
@@ -2355,13 +2387,11 @@ pub async fn stream_parquet_single_arrowrs(
                 let data_col_indices =
                     compute_root_indices(&as_arc, read_col_set_owned.as_ref(), Some(pred_cols));
 
-                // Phase 1: predicate columns.
+                // Phase 1: predicate columns from prefetched cache.
                 let (pred_batch, final_selection) = {
                     let _permit = sem.acquire().await.unwrap();
-                    decode_rg_predicate_phase_async(
-                        &uri,
-                        &io_client,
-                        &io_stats,
+                    decode_rg_predicate_phase_async_prefetched(
+                        &container,
                         &pm,
                         &as_arc,
                         pred.as_ref().unwrap(),
@@ -2385,23 +2415,19 @@ pub async fn stream_parquet_single_arrowrs(
                     );
                 }
 
-                // Phase 2: data columns concurrent.
+                // Phase 2: data columns from prefetched cache.
                 let col_futs: Vec<_> = data_col_indices
                     .iter()
                     .map(|&col_idx| {
-                        let uri = uri.clone();
-                        let ic = io_client.clone();
-                        let is = io_stats.clone();
+                        let container = container.clone();
                         let pm = pm.clone();
                         let as_arc = as_arc.clone();
                         let sel = final_selection.clone();
                         let sem = sem.clone();
                         async move {
                             let _permit = sem.acquire().await.unwrap();
-                            decode_rg_column_async(
-                                &uri,
-                                &ic,
-                                &is,
+                            decode_rg_column_async_prefetched(
+                                &container,
                                 &pm,
                                 &as_arc,
                                 col_idx,
@@ -2428,21 +2454,19 @@ pub async fn stream_parquet_single_arrowrs(
                     &return_daft_schema,
                 )
             } else {
-                // No predicate: decode all columns concurrent.
+                // No predicate: decode all columns from prefetched cache.
                 let col_futs: Vec<_> = all_col_indices
                     .iter()
                     .map(|&col_idx| {
-                        let uri = uri.clone();
-                        let ic = io_client.clone();
-                        let is = io_stats.clone();
+                        let container = container.clone();
                         let pm = pm.clone();
                         let as_arc = as_arc.clone();
                         let sel = base_sel.clone();
                         let sem = sem.clone();
                         async move {
                             let _permit = sem.acquire().await.unwrap();
-                            decode_rg_column_async(
-                                &uri, &ic, &is, &pm, &as_arc, col_idx, rg_idx, sel, rg_rows,
+                            decode_rg_column_async_prefetched(
+                                &container, &pm, &as_arc, col_idx, rg_idx, sel, rg_rows,
                             )
                             .await
                         }
