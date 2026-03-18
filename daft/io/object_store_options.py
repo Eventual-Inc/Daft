@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
-    from daft.daft import AzureConfig, GCSConfig, IOConfig, S3Config
+    from daft.daft import AzureConfig, GCSConfig, IOConfig, S3Config, GravitinoConfig
 
 
 def io_config_to_storage_options(io_config: IOConfig, table_uri: str | pathlib.Path) -> dict[str, str] | None:
@@ -27,6 +27,8 @@ def io_config_to_storage_options(io_config: IOConfig, table_uri: str | pathlib.P
         return _gcs_config_to_storage_options(io_config.gcs)
     elif scheme == "az" or scheme == "abfs" or scheme == "abfss":
         return _azure_config_to_storage_options(io_config.azure)
+    elif scheme == "gvfs":
+        return _gravitino_config_to_storage_options(io_config.gravitino)
     else:
         return None
 
@@ -91,4 +93,21 @@ def _gcs_config_to_storage_options(gcs_config: GCSConfig) -> dict[str, str]:
     storage_options = {}
     if gcs_config.credentials is not None:
         storage_options["google_application_credentials"] = gcs_config.credentials
+    return storage_options
+
+
+def _gravitino_config_to_storage_options(gravitino_config: GravitinoConfig) -> dict[str, str]:
+    storage_options = {}
+    if gravitino_config.endpoint is not None:
+        storage_options["endpoint"] = gravitino_config.endpoint
+    if gravitino_config.metalake_name is not None:
+        storage_options["metalake_name"] = gravitino_config.metalake_name
+    if gravitino_config.auth_type is not None:
+        storage_options["auth_type"] = gravitino_config.auth_type
+    if gravitino_config.username is not None:
+        storage_options["username"] = gravitino_config.username
+    if gravitino_config.password is not None:
+        storage_options["password"] = gravitino_config.password
+    if gravitino_config.token is not None:
+        storage_options["token"] = gravitino_config.token
     return storage_options
