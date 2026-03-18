@@ -106,7 +106,7 @@ async fn forward_partition_batch(
 impl Source for InMemorySource {
     #[instrument(name = "InMemorySource::get_data", level = "info", skip_all)]
     fn get_data(
-        &mut self,
+        mut self: Box<Self>,
         _maintain_order: bool,
         io_stats: IOStatsRef,
         _chunk_size: usize,

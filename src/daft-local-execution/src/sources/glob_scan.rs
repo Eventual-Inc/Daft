@@ -187,7 +187,7 @@ impl GlobScanSource {
 impl Source for GlobScanSource {
     #[instrument(name = "GlobScanSource::get_data", level = "info", skip_all)]
     fn get_data(
-        &mut self,
+        mut self: Box<Self>,
         _maintain_order: bool,
         io_stats: IOStatsRef,
         chunk_size: usize,

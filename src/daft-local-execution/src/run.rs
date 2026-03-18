@@ -163,7 +163,7 @@ impl NativeExecutor {
     pub fn new(is_flotilla_worker: bool, ip: &str) -> Self {
         // Determine if we are running in a flotilla worker.
         if is_flotilla_worker {
-            let shuffle_server = Arc::new(ShuffleFlightServer::new());
+            let shuffle_server = Arc::new(ShuffleFlightServer::new(ip.to_string()));
             let shuffle_server_connection = Some(start_server_loop(ip, shuffle_server.clone()));
 
             Self {

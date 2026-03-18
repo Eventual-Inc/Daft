@@ -86,7 +86,7 @@ pub trait Source: Send + Sync {
     }
     fn multiline_display(&self) -> Vec<String>;
     fn get_data(
-        &mut self,
+        self: Box<Self>,
         maintain_order: bool,
         io_stats: IOStatsRef,
         chunk_size: usize,
@@ -206,7 +206,7 @@ impl PipelineNode for SourceNode {
         self.morsel_size_requirement = downstream_requirement;
     }
     fn start(
-        mut self: Box<Self>,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>> {
@@ -220,14 +220,16 @@ impl PipelineNode for SourceNode {
             MorselSizeRequirement::Flexible(_, upper) => upper,
         };
 
+        let schema = self.source.schema().clone();
+        let runtime_stats = self.runtime_stats.clone();
+        let name = self.name();
         let mut source_stream = self
             .source
             .get_data(maintain_order, io_stats, chunk_size.into())
             .with_context(|_| PipelineExecutionSnafu {
-                node_name: self.name().to_string(),
+                node_name: name.to_string(),
             })?;
-        let runtime_stats = self.runtime_stats.clone();
-        let schema = self.source.schema().clone();
+
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;
@@ -250,7 +252,7 @@ impl PipelineNode for SourceNode {
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            &self.name(),
+            &name,
         );
         Ok(destination_receiver)
     }

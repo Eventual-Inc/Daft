@@ -25,7 +25,7 @@ impl EmptyScanSource {
 impl Source for EmptyScanSource {
     #[instrument(name = "EmptyScanSource::get_data", level = "info", skip_all)]
     fn get_data(
-        &mut self,
+        self: Box<Self>,
         _maintain_order: bool,
         _io_stats: IOStatsRef,
         _chunk_size: usize,

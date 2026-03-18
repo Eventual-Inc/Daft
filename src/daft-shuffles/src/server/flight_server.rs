@@ -3,17 +3,23 @@ use std::{collections::HashMap, pin::Pin, sync::Arc};
 use arrow_flight::{
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
     HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaAsIpc, SchemaResult, Ticket,
+    decode::FlightRecordBatchStream,
+    error::FlightError,
     flight_service_server::{FlightService, FlightServiceServer},
 };
 use arrow_ipc::writer::IpcWriteOptions;
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
+use daft_core::prelude::SchemaRef;
 use futures::{Stream, StreamExt, TryStreamExt};
 use tokio::{io::BufReader, sync::Mutex};
 use tonic::{Request, Response, Status, transport::Server};
 
 use super::stream::FlightDataStreamReader;
-use crate::shuffle_cache::ShuffleCache;
+use crate::{
+    client::flight_client::FlightRecordBatchStreamToDaftRecordBatchStream,
+    shuffle_cache::ShuffleCache,
+};
 
 struct ParsedTicket {
     shuffle_id: u64,
@@ -61,15 +67,19 @@ impl ParsedTicket {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ShuffleFlightServer {
+    pub ip_address: String,
     shuffle_caches: Arc<Mutex<HashMap<u64, Vec<Arc<ShuffleCache>>>>>,
 }
 
 impl ShuffleFlightServer {
     #[must_use]
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(ip_address: String) -> Self {
+        Self {
+            ip_address,
+            shuffle_caches: Default::default(),
+        }
     }
 
     pub async fn register_shuffle_cache(
@@ -85,6 +95,85 @@ impl ShuffleFlightServer {
     async fn get_shuffle_caches(&self, shuffle_id: u64) -> Option<Vec<Arc<ShuffleCache>>> {
         let caches = self.shuffle_caches.lock().await;
         caches.get(&shuffle_id).cloned()
+    }
+
+    /// Get partition data in-process (no gRPC). Returns a stream of Daft RecordBatches.
+    /// Used when the reader runs on the same node as the shuffle server.
+    pub async fn get_partition_local(
+        &self,
+        shuffle_id: u64,
+        partition_idx: usize,
+        cache_ids: Option<&[u32]>,
+        schema: SchemaRef,
+    ) -> DaftResult<FlightRecordBatchStreamToDaftRecordBatchStream> {
+        let shuffle_caches = self.get_shuffle_caches(shuffle_id).await.ok_or_else(|| {
+            DaftError::ValueError(format!("Shuffle cache not found for id: {}", shuffle_id))
+        })?;
+
+        let filtered_caches: Vec<_> = if let Some(ids) = cache_ids {
+            shuffle_caches
+                .iter()
+                .filter(|cache| {
+                    cache
+                        .cache_id()
+                        .parse::<u32>()
+                        .map(|cid| ids.contains(&cid))
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect()
+        } else {
+            shuffle_caches
+        };
+
+        let file_paths: Vec<String> = filtered_caches
+            .iter()
+            .flat_map(|cache| cache.file_paths_for_partition(partition_idx))
+            .collect();
+
+        let arrow_schema = filtered_caches
+            .first()
+            .ok_or_else(|| DaftError::ValueError("No caches for partition".to_string()))?
+            .schema()
+            .to_arrow()
+            .map_err(|e| DaftError::InternalError(e.to_string()))?;
+
+        let options = IpcWriteOptions::default();
+        let flight_schema = SchemaAsIpc::new(&arrow_schema, &options).into();
+
+        let file_path_stream = futures::stream::iter(file_paths);
+        let flight_data_stream = file_path_stream
+            .then(|file_path| async move {
+                let file = tokio::fs::File::open(&file_path).await.map_err(|e| {
+                    DaftError::IoError(std::io::Error::other(format!(
+                        "Error opening file {}: {}",
+                        file_path, e
+                    )))
+                })?;
+                let reader = FlightDataStreamReader::try_new(BufReader::new(file))
+                    .await
+                    .map_err(|e| DaftError::InternalError(format!("Flight data reader: {}", e)))?;
+                Ok::<_, DaftError>(
+                    reader
+                        .into_stream()
+                        .map_err(|e| DaftError::InternalError(e.to_string())),
+                )
+            })
+            .try_flatten();
+
+        let flight_data_with_schema =
+            futures::stream::once(async { Ok(flight_schema) }).chain(flight_data_stream);
+
+        let flight_result_stream = flight_data_with_schema
+            .map_err(|e: DaftError| FlightError::from_external_error(Box::new(e)));
+
+        let record_batch_stream =
+            FlightRecordBatchStream::new_from_flight_data(flight_result_stream);
+
+        Ok(FlightRecordBatchStreamToDaftRecordBatchStream::new(
+            record_batch_stream,
+            schema,
+        ))
     }
 }
 
