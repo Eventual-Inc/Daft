@@ -10,6 +10,7 @@ use std::{
     sync::Arc,
 };
 
+use arrow::array::Array;
 use common_error::DaftResult;
 use common_runtime::{combine_stream, get_compute_runtime};
 use daft_core::prelude::*;
@@ -294,7 +295,7 @@ fn finalize_batch(
         table = table.filter(&[bound])?;
     }
 
-    if read_schema.len() != return_schema.len() {
+    if read_schema != return_schema {
         let return_indices: Vec<usize> = return_schema
             .names()
             .iter()
@@ -339,7 +340,6 @@ fn deletes_to_row_selection(local_deletes: &[usize], total_rows: usize) -> RowSe
 
 /// RLE-encode a boolean mask into a `RowSelection`.
 fn bool_array_to_row_selection(mask: &arrow::array::BooleanArray) -> RowSelection {
-    use arrow::array::Array;
     let mut selectors = Vec::new();
     let mut current_select = false;
     let mut current_count = 0usize;
@@ -682,12 +682,13 @@ fn decode_single_rg_col_parallel(
         compute_root_indices(&setup.arrow_schema, setup.read_col_set.as_ref(), None);
 
     // Fallback: single column or small row group where parallel overhead exceeds benefit.
-    // This is called per-RG from the streaming path, so even 2 columns benefit from splitting.
     let rg_byte_size = setup
         .parquet_metadata
         .row_group(task.rg_idx)
         .total_byte_size();
-    if all_col_indices.len() < 3 || rg_byte_size < MIN_RG_BYTES_FOR_COL_PARALLELISM {
+    if all_col_indices.len() < MIN_COLS_FOR_COL_PARALLELISM
+        || rg_byte_size < MIN_RG_BYTES_FOR_COL_PARALLELISM
+    {
         return decode_single_rg(path, setup, task, predicate, None);
     }
 
