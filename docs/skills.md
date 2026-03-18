@@ -67,5 +67,5 @@ This creates symlinks so the skills are available in any project.
 These Daft skills are also available as a Claude Code plugin.
 
 ```bash
-claude plugin add Eventual-Inc/Daft
+claude plugin install Eventual-Inc/Daft
 ```
