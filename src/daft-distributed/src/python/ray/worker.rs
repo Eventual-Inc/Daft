@@ -11,7 +11,7 @@ use crate::scheduling::{
 
 type ActiveTaskDetails = HashMap<TaskContext, TaskDetails>;
 
-#[pyclass(module = "daft.daft", name = "RaySwordfishWorker")]
+#[pyclass(module = "daft.daft", name = "RaySwordfishWorker", from_py_object)]
 #[derive(Debug, Clone)]
 pub(crate) struct RaySwordfishWorker {
     worker_id: WorkerId,

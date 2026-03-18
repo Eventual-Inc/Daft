@@ -1,9 +1,8 @@
 use std::{sync::Arc, vec};
 
 use common_error::{DaftError, DaftResult};
-use common_file_formats::{CsvSourceConfig, FileFormat, FileFormatConfig, ParquetSourceConfig};
+use common_file_formats::FileFormat;
 use common_runtime::RuntimeRef;
-use common_scan_info::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -20,7 +19,8 @@ use futures::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
 use snafu::Snafu;
 
 use crate::{
-    ChunkSpec, DataSource, ScanTask,
+    ChunkSpec, CsvSourceConfig, FileFormatConfig, ParquetSourceConfig, PartitionField, Pushdowns,
+    ScanOperator, ScanSource, ScanTask, ScanTaskRef, SourceConfig,
     hive::{hive_partitions_to_fields, hive_partitions_to_series, parse_hive_partitioning},
     storage_config::StorageConfig,
 };
@@ -322,18 +322,6 @@ impl GlobScanOperator {
                         "Warc schemas do not need to be inferred".to_string(),
                     ));
                 }
-                #[cfg(feature = "python")]
-                FileFormatConfig::Database(_) => {
-                    return Err(DaftError::ValueError(
-                        "Cannot glob a database source".to_string(),
-                    ));
-                }
-                #[cfg(feature = "python")]
-                FileFormatConfig::PythonFunction { .. } => {
-                    return Err(DaftError::ValueError(
-                        "Cannot glob a PythonFunction source".to_string(),
-                    ));
-                }
                 FileFormatConfig::Text(..) => {
                     return Err(DaftError::ValueError("Text schema is fixed".to_string()));
                 }
@@ -487,7 +475,7 @@ impl ScanOperator for GlobScanOperator {
         lines
     }
 
-    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskRef>> {
         let (io_runtime, io_client) = self.storage_config.get_io_client_and_runtime()?;
         let io_stats = IOStatsContext::new(format!(
             "GlobScanOperator::to_scan_tasks for {:#?}",
@@ -507,7 +495,7 @@ impl ScanOperator for GlobScanOperator {
             )?)
         };
 
-        let file_format_config = self.file_format_config.clone();
+        let source_config = Arc::new(SourceConfig::File(self.file_format_config.as_ref().clone()));
         let schema = self.schema.clone();
         let storage_config = self.storage_config.clone();
 
@@ -588,7 +576,7 @@ impl ScanOperator for GlobScanOperator {
                         .flatten();
                     let chunk_spec = row_group.map(ChunkSpec::Parquet);
                     Ok(Some(ScanTask::new(
-                        vec![DataSource::File {
+                        vec![ScanSource::File {
                             metadata: if let Some(first_filepath) = first_filepath
                                 && path == *first_filepath
                             {
@@ -604,7 +592,7 @@ impl ScanOperator for GlobScanOperator {
                             statistics: None,
                             parquet_metadata: None,
                         }],
-                        file_format_config.clone(),
+                        source_config.clone(),
                         schema.clone(),
                         storage_config.clone(),
                         pushdowns.clone(),
@@ -612,7 +600,7 @@ impl ScanOperator for GlobScanOperator {
                     )))
                 })();
                 match scan_task_result {
-                    Ok(Some(scan_task)) => Some(Ok(Arc::new(scan_task) as Arc<dyn ScanTaskLike>)),
+                    Ok(Some(scan_task)) => Some(Ok(Arc::new(scan_task))),
                     Ok(None) => None,
                     Err(e) => Some(Err(e)),
                 }

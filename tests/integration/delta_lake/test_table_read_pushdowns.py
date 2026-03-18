@@ -16,12 +16,6 @@ import daft
 from daft.logical.schema import Schema
 from tests.utils import assert_pyarrow_tables_equal
 
-PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
-pytestmark = pytest.mark.skipif(
-    PYARROW_LOWER_BOUND_SKIP,
-    reason="deltalake not supported on older versions of pyarrow",
-)
-
 
 def test_read_predicate_pushdown_on_data(deltalake_table):
     deltalake = pytest.importorskip("deltalake")

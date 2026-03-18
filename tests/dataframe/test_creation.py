@@ -18,10 +18,7 @@ import daft
 from daft.api_annotations import APITypeError
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
-from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.conftest import UuidType
-
-ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
 class MyObj:
@@ -116,6 +113,17 @@ def test_create_dataframe_list_ragged_keys() -> None:
     }
 
 
+def test_create_dataframe_list_preserves_field_order() -> None:
+    df = daft.from_pylist(
+        [
+            {"z": 1, "a": 2},
+            {"m": 3, "z": 4},
+            {"a": 5, "b": 6},
+        ]
+    )
+    assert df.column_names == ["z", "a", "m", "b"]
+
+
 def test_create_dataframe_list_empty_dicts() -> None:
     df = daft.from_pylist([{}, {}, {}])
     assert df.column_names == []
@@ -188,10 +196,6 @@ def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) ->
     assert df.to_arrow() == expected
 
 
-@pytest.mark.skipif(
-    not pyarrow_supports_fixed_shape_tensor(),
-    reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
-)
 def test_create_dataframe_arrow_tensor_canonical(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     shape = (2, 2)

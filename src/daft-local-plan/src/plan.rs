@@ -5,12 +5,10 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult, ensure};
-use common_file_formats::FileFormatConfig;
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use common_py_serde::{PyObjectWrapper, deserialize_py_object, serialize_py_object};
 use common_resource_request::ResourceRequest;
-use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{DynTreeNode, TreeNode, TreeNodeRecursion};
 use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
@@ -26,6 +24,7 @@ use daft_logical_plan::{
     partitioning::RepartitionSpec,
     stats::{PlanStats, StatsState},
 };
+use daft_scan::{Pushdowns, SourceConfig};
 use serde::{Deserialize, Serialize};
 
 use crate::SourceId;
@@ -237,7 +236,7 @@ impl LocalPhysicalPlan {
 
     pub fn physical_scan(
         source_id: SourceId,
-        file_format_config: Option<Arc<FileFormatConfig>>,
+        source_config: Option<Arc<SourceConfig>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         stats_state: StatsState,
@@ -245,7 +244,7 @@ impl LocalPhysicalPlan {
     ) -> LocalPhysicalPlanRef {
         Self::PhysicalScan(PhysicalScan {
             source_id,
-            file_format_config,
+            source_config,
             pushdowns,
             schema,
             stats_state,
@@ -1017,39 +1016,13 @@ impl LocalPhysicalPlan {
     }
 
     pub fn flight_shuffle_read(
-        shuffle_id: u64,
-        partition_idx: usize,
-        server_addresses: Vec<String>,
+        source_id: SourceId,
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::FlightShuffleRead(FlightShuffleRead {
-            shuffle_id,
-            partition_idx,
-            server_addresses,
-            server_cache_mapping: HashMap::new(),
-            schema,
-            stats_state,
-            context,
-        })
-        .arced()
-    }
-
-    pub fn flight_shuffle_read_with_cache_ids(
-        shuffle_id: u64,
-        partition_idx: usize,
-        server_cache_mapping: HashMap<String, Vec<u32>>,
-        schema: SchemaRef,
-        stats_state: StatsState,
-        context: LocalNodeContext,
-    ) -> LocalPhysicalPlanRef {
-        let server_addresses: Vec<String> = server_cache_mapping.keys().cloned().collect();
-        Self::FlightShuffleRead(FlightShuffleRead {
-            shuffle_id,
-            partition_idx,
-            server_addresses,
-            server_cache_mapping,
+            source_id,
             schema,
             stats_state,
             context,
@@ -1805,7 +1778,7 @@ impl DynTreeNode for LocalPhysicalPlan {
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PhysicalScan {
     pub source_id: SourceId,
-    pub file_format_config: Option<Arc<FileFormatConfig>>,
+    pub source_config: Option<Arc<SourceConfig>>,
     pub pushdowns: Pushdowns,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
@@ -2255,11 +2228,15 @@ pub struct FlightShuffleWrite {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FlightShuffleRead {
-    pub shuffle_id: u64,
-    pub partition_idx: usize,
-    pub server_addresses: Vec<String>,
-    pub server_cache_mapping: HashMap<String, Vec<u32>>,
+    pub source_id: SourceId,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlightShuffleReadInput {
+    pub shuffle_id: u64,
+    pub partition_idx: usize,
+    pub server_cache_mapping: HashMap<String, Vec<u32>>,
 }
