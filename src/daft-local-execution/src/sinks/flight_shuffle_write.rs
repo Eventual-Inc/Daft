@@ -33,6 +33,7 @@ impl FlightShuffleWriteSink {
         num_partitions: usize,
         partition_by: Option<Vec<ExprRef>>,
         shuffle_id: u64,
+        query_id: String,
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
         cache_id: String,
@@ -44,6 +45,7 @@ impl FlightShuffleWriteSink {
             &shuffle_dirs,
             cache_id.clone(),
             shuffle_id,
+            query_id,
             (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES / num_partitions)
                 .clamp(1024 * 1024 * 8, 1024 * 1024 * 128), // Min 8MB, Max 128MB
             compression.as_deref(),
