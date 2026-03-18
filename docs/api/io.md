@@ -56,6 +56,10 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
     options:
         heading_level: 3
 
+::: daft.read_kafka
+    options:
+        heading_level: 3
+
 ::: daft.read_lance
     options:
         heading_level: 3
