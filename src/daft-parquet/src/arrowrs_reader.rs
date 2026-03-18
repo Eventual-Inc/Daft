@@ -921,6 +921,75 @@ async fn decode_rg_column_async_prefetched(
     }
 }
 
+/// Spawn per-(RG, col) decode tasks on the compute runtime and collect results
+/// as one RecordBatch per column (concat'd across RGs).
+///
+/// Each (rg_idx, col_idx) pair is decoded in parallel. Results are grouped by
+/// column and concat'd per-column on the compute runtime, yielding one
+/// contiguous array per column.
+async fn spawn_column_decode(
+    prefetch_container: &Arc<RangesContainer>,
+    parquet_metadata: &Arc<ParquetMetaData>,
+    arrow_schema: &Arc<arrow::datatypes::Schema>,
+    rg_indices: &[usize],
+    col_indices: &[usize],
+    per_rg_selections: &[Option<RowSelection>],
+) -> DaftResult<Vec<arrow::array::RecordBatch>> {
+    let num_cols = col_indices.len();
+    let decode_handles: Vec<_> = rg_indices
+        .iter()
+        .enumerate()
+        .flat_map(|(ri, &rg_idx)| {
+            let sel = per_rg_selections[ri].clone();
+            let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
+            let container = prefetch_container.clone();
+            let pm = parquet_metadata.clone();
+            let as_arc = arrow_schema.clone();
+            col_indices.iter().enumerate().map(move |(ci, &col_idx)| {
+                let container = container.clone();
+                let pm = pm.clone();
+                let as_arc = as_arc.clone();
+                let sel = sel.clone();
+                get_compute_runtime().spawn(async move {
+                    let batch = decode_rg_column_async_prefetched(
+                        &container, &pm, &as_arc, col_idx, rg_idx, sel, rg_rows,
+                    )
+                    .await?;
+                    Ok::<_, common_error::DaftError>((ci, batch))
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    let decode_results = futures::future::join_all(decode_handles).await;
+
+    // Group by column, preserving RG order.
+    let mut per_col_batches: Vec<Vec<arrow::array::RecordBatch>> = vec![Vec::new(); num_cols];
+    for result in decode_results {
+        let (ci, batch) = result.map_err(|e| common_error::DaftError::External(e.into()))??;
+        per_col_batches[ci].push(batch);
+    }
+
+    // Per-column concat (parallel on compute runtime).
+    let concat_handles: Vec<_> = per_col_batches
+        .into_iter()
+        .map(|batches| {
+            get_compute_runtime().spawn(async move {
+                if batches.len() <= 1 {
+                    Ok::<_, common_error::DaftError>(batches.into_iter().next().unwrap())
+                } else {
+                    arrow::compute::concat_batches(&batches[0].schema(), &batches)
+                        .map_err(|e| parquet_err(e).into())
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    let concat_results = futures::future::join_all(concat_handles).await;
+    concat_results
+        .into_iter()
+        .map(|r| r.map_err(|e| common_error::DaftError::External(e.into()))?)
+        .collect::<DaftResult<Vec<_>>>()
+}
+
 /// Read a single parquet file into a Daft [`RecordBatch`].
 ///
 /// When `predicate` and/or `delete_rows` are provided, the reader handles them
@@ -1185,7 +1254,6 @@ pub async fn read_parquet_single_arrowrs(
     }
 
     // Column-parallel async decode with prefetched I/O.
-    // Column-parallel async decode with prefetched I/O.
     // Per-(RG, col) tasks on the compute runtime for maximum parallelism,
     // then per-column concat + hconcat to assemble the final RecordBatch.
     if predicate_pushed {
@@ -1258,69 +1326,17 @@ pub async fn read_parquet_single_arrowrs(
         }
 
         // Phase 2: per-(RG, col) decode tasks for data columns on compute runtime.
-        let num_data_cols = data_col_indices.len();
-        let decode_handles: Vec<_> = rg_indices
-            .iter()
-            .enumerate()
-            .flat_map(|(ri, &rg_idx)| {
-                let phase1_sel = phase1[ri].1.clone();
-                let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
-                let container = prefetch_container.clone();
-                let pm = parquet_metadata.clone();
-                let as_arc = arrow_schema_arc.clone();
-                data_col_indices
-                    .iter()
-                    .enumerate()
-                    .map(move |(ci, &col_idx)| {
-                        let container = container.clone();
-                        let pm = pm.clone();
-                        let as_arc = as_arc.clone();
-                        let sel = phase1_sel.clone();
-                        get_compute_runtime().spawn(async move {
-                            let batch = decode_rg_column_async_prefetched(
-                                &container,
-                                &pm,
-                                &as_arc,
-                                col_idx,
-                                rg_idx,
-                                Some(sel),
-                                rg_rows,
-                            )
-                            .await?;
-                            Ok::<_, common_error::DaftError>((ci, batch))
-                        })
-                    })
-            })
-            .collect::<Vec<_>>();
-        let decode_results = futures::future::join_all(decode_handles).await;
-
-        // Group by column, preserving RG order.
-        let mut per_col_batches: Vec<Vec<arrow::array::RecordBatch>> =
-            vec![Vec::new(); num_data_cols];
-        for result in decode_results {
-            let (ci, batch) = result.map_err(|e| common_error::DaftError::External(e.into()))??;
-            per_col_batches[ci].push(batch);
-        }
-
-        // Per-column concat (parallel on compute runtime).
-        let concat_handles: Vec<_> = per_col_batches
-            .into_iter()
-            .map(|batches| {
-                get_compute_runtime().spawn(async move {
-                    if batches.len() <= 1 {
-                        Ok::<_, common_error::DaftError>(batches.into_iter().next().unwrap())
-                    } else {
-                        arrow::compute::concat_batches(&batches[0].schema(), &batches)
-                            .map_err(|e| parquet_err(e).into())
-                    }
-                })
-            })
-            .collect::<Vec<_>>();
-        let concat_results = futures::future::join_all(concat_handles).await;
-        let data_col_batches: Vec<arrow::array::RecordBatch> = concat_results
-            .into_iter()
-            .map(|r| r.map_err(|e| common_error::DaftError::External(e.into()))?)
-            .collect::<DaftResult<Vec<_>>>()?;
+        let phase2_selections: Vec<Option<RowSelection>> =
+            phase1.iter().map(|(_, sel)| Some(sel.clone())).collect();
+        let data_col_batches = spawn_column_decode(
+            &prefetch_container,
+            &parquet_metadata,
+            &arrow_schema_arc,
+            &rg_indices,
+            &data_col_indices,
+            &phase2_selections,
+        )
+        .await?;
 
         // hconcat pred + data columns into one RecordBatch.
         let mut all_batches = vec![combined_pred_batch];
@@ -1350,73 +1366,15 @@ pub async fn read_parquet_single_arrowrs(
         )
         .await?;
 
-        // Per-(RG, col) decode tasks on compute runtime for maximum parallelism.
-        // Results are grouped by column and concat'd per-column, then hconcat'd
-        // once. This avoids the expensive per-RG hconcat + cross-RG concat pattern.
-        let num_cols = all_col_indices.len();
-        let decode_handles: Vec<_> = rg_indices
-            .iter()
-            .enumerate()
-            .flat_map(|(ri, &rg_idx)| {
-                let base_sel = per_rg_selections[ri].clone();
-                let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
-                let container = prefetch_container.clone();
-                let pm = parquet_metadata.clone();
-                let as_arc = arrow_schema_arc.clone();
-                all_col_indices
-                    .iter()
-                    .enumerate()
-                    .map(move |(ci, &col_idx)| {
-                        let container = container.clone();
-                        let pm = pm.clone();
-                        let as_arc = as_arc.clone();
-                        let sel = base_sel.clone();
-                        get_compute_runtime().spawn(async move {
-                            let batch = decode_rg_column_async_prefetched(
-                                &container, &pm, &as_arc, col_idx, rg_idx, sel, rg_rows,
-                            )
-                            .await?;
-                            Ok::<_, common_error::DaftError>((ci, batch))
-                        })
-                    })
-            })
-            .collect::<Vec<_>>();
-        let decode_results = futures::future::join_all(decode_handles).await;
-
-        // Group by column index, preserving RG order within each column.
-        let mut per_col_batches: Vec<Vec<arrow::array::RecordBatch>> = vec![Vec::new(); num_cols];
-        for result in decode_results {
-            let (ci, batch) = result.map_err(|e| common_error::DaftError::External(e.into()))??;
-            per_col_batches[ci].push(batch);
-        }
-
-        // Per-column concat (parallel on compute runtime).
-        let concat_handles: Vec<_> = per_col_batches
-            .into_iter()
-            .enumerate()
-            .map(|(ci, batches)| {
-                let as_arc = arrow_schema_arc.clone();
-                get_compute_runtime().spawn(async move {
-                    if batches.is_empty() {
-                        let field = as_arc.field(ci).clone();
-                        let schema = Arc::new(arrow::datatypes::Schema::new(vec![field]));
-                        Ok::<_, common_error::DaftError>(arrow::array::RecordBatch::new_empty(
-                            schema,
-                        ))
-                    } else if batches.len() == 1 {
-                        Ok(batches.into_iter().next().unwrap())
-                    } else {
-                        arrow::compute::concat_batches(&batches[0].schema(), &batches)
-                            .map_err(|e| parquet_err(e).into())
-                    }
-                })
-            })
-            .collect::<Vec<_>>();
-        let concat_results = futures::future::join_all(concat_handles).await;
-        let col_batches: Vec<arrow::array::RecordBatch> = concat_results
-            .into_iter()
-            .map(|r| r.map_err(|e| common_error::DaftError::External(e.into()))?)
-            .collect::<DaftResult<Vec<_>>>()?;
+        let col_batches = spawn_column_decode(
+            &prefetch_container,
+            &parquet_metadata,
+            &arrow_schema_arc,
+            &rg_indices,
+            &all_col_indices,
+            &per_rg_selections,
+        )
+        .await?;
 
         let merged = hconcat_record_batches(&col_batches)?;
         let daft_batch = RecordBatch::try_from(&merged)?;
@@ -1427,14 +1385,7 @@ pub async fn read_parquet_single_arrowrs(
             &read_daft_schema,
             &return_daft_schema,
         )?;
-        if predicate.is_some()
-            && let Some(limit) = num_rows
-        {
-            table = table.head(limit)?;
-        }
-        if predicate.is_none()
-            && let Some(limit) = num_rows
-        {
+        if let Some(limit) = num_rows {
             table = table.head(limit)?;
         }
         Ok(table)
