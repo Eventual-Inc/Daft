@@ -1210,12 +1210,7 @@ pub async fn read_parquet_single_arrowrs(
         .await?;
 
         // Phase 1: decode predicate columns per RG to compute RowSelections.
-        let num_cpus = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(2);
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(num_cpus * 2));
-
-        let phase1_futures: Vec<_> = rg_indices
+        let phase1_handles: Vec<_> = rg_indices
             .iter()
             .enumerate()
             .map(|(ri, &rg_idx)| {
@@ -1226,19 +1221,20 @@ pub async fn read_parquet_single_arrowrs(
                 let pci = pred_col_indices.clone();
                 let base_sel = per_rg_selections[ri].clone();
                 let pc = pred_cols.clone();
-                let sem = semaphore.clone();
                 let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
-                async move {
-                    let _permit = sem.acquire().await.unwrap();
+                tokio::spawn(async move {
                     decode_rg_predicate_phase_async_prefetched(
                         &container, &pm, &as_arc, &pred, &pci, rg_idx, base_sel, &pc, rg_rows,
                     )
                     .await
-                }
+                })
             })
-            .collect();
-        let phase1: Vec<(arrow::array::RecordBatch, RowSelection)> =
-            futures::future::try_join_all(phase1_futures).await?;
+            .collect::<Vec<_>>();
+        let phase1_results = futures::future::join_all(phase1_handles).await;
+        let phase1: Vec<(arrow::array::RecordBatch, RowSelection)> = phase1_results
+            .into_iter()
+            .map(|r| r.map_err(|e| common_error::DaftError::External(e.into()))?)
+            .collect::<DaftResult<Vec<_>>>()?;
 
         // Concat pred batches across RGs into one.
         let pred_batches: Vec<arrow::array::RecordBatch> =
@@ -1276,8 +1272,10 @@ pub async fn read_parquet_single_arrowrs(
             all_selectors.into()
         };
 
-        // Phase 2: one stream per data column across ALL RGs with combined selection.
-        let col_futures: Vec<_> = data_col_indices
+        // Phase 2: one spawned task per data column across ALL RGs.
+        // tokio::spawn creates independent tasks that run on different worker
+        // threads, unlike try_join_all which polls all futures from one task.
+        let col_handles: Vec<_> = data_col_indices
             .iter()
             .map(|&col_idx| {
                 let container = prefetch_container.clone();
@@ -1285,9 +1283,7 @@ pub async fn read_parquet_single_arrowrs(
                 let as_arc = arrow_schema_arc.clone();
                 let sel = combined_selection.clone();
                 let rg_indices = rg_indices.clone();
-                let sem = semaphore.clone();
-                async move {
-                    let _permit = sem.acquire().await.unwrap();
+                tokio::spawn(async move {
                     let reader = PrefetchedAsyncFileReader::new(container, pm.clone());
                     let options = ArrowReaderOptions::new().with_schema(as_arc.clone());
                     let arm =
@@ -1316,11 +1312,14 @@ pub async fn read_parquet_single_arrowrs(
                         arrow::compute::concat_batches(&batches[0].schema(), &batches)
                             .map_err(|e| parquet_err(e).into())
                     }
-                }
+                })
             })
-            .collect();
-        let data_col_batches: Vec<arrow::array::RecordBatch> =
-            futures::future::try_join_all(col_futures).await?;
+            .collect::<Vec<_>>();
+        let data_col_results = futures::future::join_all(col_handles).await;
+        let data_col_batches: Vec<arrow::array::RecordBatch> = data_col_results
+            .into_iter()
+            .map(|r| r.map_err(|e| common_error::DaftError::External(e.into()))?)
+            .collect::<DaftResult<Vec<_>>>()?;
 
         // hconcat pred + data columns into one RecordBatch.
         let mut all_batches = vec![combined_pred_batch];
@@ -1375,12 +1374,9 @@ pub async fn read_parquet_single_arrowrs(
             combine_selections(offset_selection, delete_selection)
         };
 
-        let num_cpus = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(2);
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(num_cpus * 2));
-
-        let col_futures: Vec<_> = all_col_indices
+        // Spawn each column decode as an independent tokio task for true
+        // multi-thread parallelism (try_join_all polls from a single task).
+        let col_handles: Vec<_> = all_col_indices
             .iter()
             .map(|&col_idx| {
                 let container = prefetch_container.clone();
@@ -1388,9 +1384,7 @@ pub async fn read_parquet_single_arrowrs(
                 let as_arc = arrow_schema_arc.clone();
                 let sel = combined_selection.clone();
                 let rg_indices = rg_indices.clone();
-                let sem = semaphore.clone();
-                async move {
-                    let _permit = sem.acquire().await.unwrap();
+                tokio::spawn(async move {
                     let reader = PrefetchedAsyncFileReader::new(container, pm.clone());
                     let options = ArrowReaderOptions::new().with_schema(as_arc.clone());
                     let arm =
@@ -1424,11 +1418,14 @@ pub async fn read_parquet_single_arrowrs(
                         arrow::compute::concat_batches(&batches[0].schema(), &batches)
                             .map_err(|e| parquet_err(e).into())
                     }
-                }
+                })
             })
-            .collect();
-        let col_batches: Vec<arrow::array::RecordBatch> =
-            futures::future::try_join_all(col_futures).await?;
+            .collect::<Vec<_>>();
+        let col_results = futures::future::join_all(col_handles).await;
+        let col_batches: Vec<arrow::array::RecordBatch> = col_results
+            .into_iter()
+            .map(|r| r.map_err(|e| common_error::DaftError::External(e.into()))?)
+            .collect::<DaftResult<Vec<_>>>()?;
 
         let merged = hconcat_record_batches(&col_batches)?;
         let daft_batch = RecordBatch::try_from(&merged)?;
