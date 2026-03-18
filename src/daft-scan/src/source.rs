@@ -37,7 +37,7 @@ pub trait DataSource: Send + Sync + Debug {
 }
 
 /// Pre-computed statistics exposed by a [`DataSource`] for query optimization.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataSourceStatistics {
     /// Total number of rows across all tasks produced by this source.
     pub num_rows: Precision<u64>,
@@ -54,25 +54,72 @@ pub enum Precision<T> {
     Absent,
 }
 
+impl<T> Precision<T> {
+    /// Returns a reference to the inner value regardless of exactness, or `None` if absent.
+    pub fn get(&self) -> Option<&T> {
+        match self {
+            Self::Exact(v) | Self::Inexact(v) => Some(v),
+            Self::Absent => None,
+        }
+    }
+}
+
+/// Metadata about a [`DataSourceTask`] used for planning and optimization.
+#[derive(Debug, Clone)]
+pub struct DataSourceTaskStatistics {
+    /// On-disk size of the data this task will read, used for task coalescing.
+    pub size_bytes: Precision<u64>,
+    /// Column-level range statistics for predicate pushdown evaluation.
+    pub column_stats: Option<TableStatistics>,
+}
+
+/// Options controlling how a [`DataSourceTask`] reads its data.
+#[derive(Debug, Clone, Copy)]
+pub struct ReadOptions {
+    /// Whether the task must emit batches in the order they appear in the source.
+    pub maintain_order: bool,
+    /// Target number of rows per emitted [`RecordBatch`].
+    pub batch_size: usize,
+}
+
 /// A single unit of work produced by a [`DataSource`]. Self-contained and distributable.
 #[async_trait]
 pub trait DataSourceTask: Send + Sync + Debug {
     /// The schema of records this task produces.
     fn schema(&self) -> SchemaRef;
 
-    /// Execute this task, producing a stream of [`RecordBatch`]es.
+    /// Metadata about this task for planning and optimization.
+    ///
+    /// Returning `None` disables all statistics-based optimizations for this task,
+    /// including task coalescing and predicate pushdown evaluation.
+    fn statistics(&self) -> Option<DataSourceTaskStatistics> {
+        None
+    }
+
+    /// Partition values for this task, injected into output records.
+    fn partition_values(&self) -> Option<&PartitionSpec> {
+        None
+    }
+
+    /// Read this task, producing a stream of [`RecordBatch`]es.
     ///
     /// The framework calls this from within an async I/O context — do not
     /// block the calling thread. The outer `DaftResult` captures setup errors
     /// (e.g. file not found, invalid configuration) before any data is read.
     /// Data-read errors are items in the returned stream.
     ///
+    /// ## Lifetime note
+    ///
+    /// The returned stream must be `'static`: it outlives the `&self` borrow
+    /// and may be polled on a different thread. Any data from `self` needed by
+    /// the stream must be cloned or wrapped in `Arc` before being moved into it.
+    ///
     /// ## Blocking I/O (e.g. Python sources)
     ///
     /// Bridge blocking work to the stream with a channel rather than buffering:
     ///
     /// ```ignore
-    /// async fn execute(&self, maintain_order: bool, chunk_size: usize)
+    /// async fn read(&self, opts: ReadOptions)
     ///     -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>>
     /// {
     ///     let (tx, rx) = unbounded_channel();
@@ -84,24 +131,8 @@ pub trait DataSourceTask: Send + Sync + Debug {
     ///     Ok(Box::pin(UnboundedReceiverStream::new(rx)))
     /// }
     /// ```
-    async fn execute(
+    async fn read(
         &self,
-        maintain_order: bool,
-        chunk_size: usize,
+        options: ReadOptions,
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>>;
-
-    /// Estimated size in bytes, used for task scheduling and merging decisions.
-    fn size_bytes(&self) -> Option<u64> {
-        None
-    }
-
-    /// Column-level statistics for this task, used by the query optimizer.
-    fn statistics(&self) -> Option<&TableStatistics> {
-        None
-    }
-
-    /// Partition values for this task, injected into output records.
-    fn partition_values(&self) -> Option<&PartitionSpec> {
-        None
-    }
 }
