@@ -373,7 +373,7 @@ Daft's distributed implementation currently supports `INVERTED`, `FTS`, and `BTR
 - `column`: Column name to index.
 - `index_type`: Index type to build. Distributed execution supports `INVERTED`, `FTS`, and `BTREE`. Other scalar index types supported by Lance will fall back to Lance's built-in implementation.
 - `name`: Optional index name. If omitted, Daft will generate one.
-- `replace`: Whether to replace an existing index with the same name.
+- `replace`: Whether to replace an existing index with the same name. Defaults to `True`.
 - `io_config`: Daft IO configuration used to derive object-store credentials/endpoints when accessing remote datasets.
 - `storage_options`: Low-level storage options passed to Lance when opening the dataset. If provided, this takes precedence over `io_config`.
 - `version` / `asof`: Build the index on a specific dataset version (time travel).
