@@ -3352,6 +3352,7 @@ dependencies = [
  "daft-core",
  "daft-io",
  "daft-recordbatch",
+ "flate2",
  "futures",
  "serde",
  "tokio",
