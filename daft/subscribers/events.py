@@ -122,7 +122,10 @@ class EventLogSubscriber(Subscriber):
             return
         self._closed = True
         for query_file in self._query_files.values():
-            query_file.close()
+            try:
+                query_file.close()
+            except OSError:
+                pass
         self._query_files.clear()
 
     # Query lifecycle

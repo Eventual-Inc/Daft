@@ -40,7 +40,7 @@ def _make_query_metadata() -> PyQueryMetadata:
     )
 
 
-def test_event_log_subscriber_writes_session_header(tmp_path):
+def test_no_files_created_without_query(tmp_path):
     subscriber = EventLogSubscriber(tmp_path)
     subscriber.close()
 
