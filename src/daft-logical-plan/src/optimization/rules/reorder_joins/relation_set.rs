@@ -69,10 +69,12 @@ impl RelationSet {
 
     /// Enumerates all non-empty proper subsets of this set.
     pub fn subsets(self) -> SubsetIter {
+        // Initialize current one step ahead so the first call to next() yields
+        // the largest proper subset directly, without needing a `done` flag or
+        // a skip-if-full check.
         SubsetIter {
             full: self.0,
-            current: self.0, // Will be decremented before first yield
-            done: false,
+            current: self.0.wrapping_sub(1) & self.0,
         }
     }
 }
@@ -101,34 +103,24 @@ impl Iterator for RelationSetIter {
 
 impl ExactSizeIterator for RelationSetIter {}
 
-/// Enumerates all non-empty proper subsets of a bitmask using Gosper's hack variant.
+/// Enumerates all non-empty proper subsets of a bitmask.
 ///
 /// Uses the identity: `next = (current - 1) & full` to walk subsets in descending order.
 pub(super) struct SubsetIter {
     full: u32,
     current: u32,
-    done: bool,
 }
 
 impl Iterator for SubsetIter {
     type Item = RelationSet;
 
     fn next(&mut self) -> Option<RelationSet> {
-        if self.done {
-            return None;
-        }
-        // Decrement within the submask
-        self.current = self.current.wrapping_sub(1) & self.full;
-        // If we've wrapped back to 0, we're done (0 is not a non-empty subset)
         if self.current == 0 {
-            self.done = true;
             return None;
         }
-        // Skip the full set itself (proper subsets only)
-        if self.current == self.full {
-            return self.next();
-        }
-        Some(RelationSet(self.current))
+        let result = self.current;
+        self.current = self.current.wrapping_sub(1) & self.full;
+        Some(RelationSet(result))
     }
 }
 

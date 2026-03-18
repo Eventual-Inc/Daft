@@ -56,13 +56,7 @@ impl BruteForceJoinOrderer {
                 if !connections.is_empty() {
                     let cardinality = left_cardinality * right_cardinality / total_domain;
                     let cur_cost = cardinality + left_cost + right_cost;
-                    if let Some(cur_min_cost) = min_cost {
-                        if cur_min_cost > cur_cost {
-                            min_cost = Some(cur_cost);
-                            chosen_plan =
-                                Some(left_tree.join(right_tree, connections, cardinality));
-                        }
-                    } else {
+                    if min_cost.is_none_or(|c| cur_cost < c) {
                         min_cost = Some(cur_cost);
                         chosen_plan = Some(left_tree.join(right_tree, connections, cardinality));
                     }
