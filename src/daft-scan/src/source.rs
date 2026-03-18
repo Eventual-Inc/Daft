@@ -1,5 +1,6 @@
 use std::{fmt::Debug, sync::Arc};
 
+use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
@@ -54,12 +55,36 @@ pub enum Precision<T> {
 }
 
 /// A single unit of work produced by a [`DataSource`]. Self-contained and distributable.
+#[async_trait]
 pub trait DataSourceTask: Send + Sync + Debug {
     /// The schema of records this task produces.
     fn schema(&self) -> SchemaRef;
 
     /// Execute this task, producing a stream of [`RecordBatch`]es.
-    fn execute(
+    ///
+    /// The framework calls this from within an async I/O context — do not
+    /// block the calling thread. The outer `DaftResult` captures setup errors
+    /// (e.g. file not found, invalid configuration) before any data is read.
+    /// Data-read errors are items in the returned stream.
+    ///
+    /// ## Blocking I/O (e.g. Python sources)
+    ///
+    /// Bridge blocking work to the stream with a channel rather than buffering:
+    ///
+    /// ```ignore
+    /// async fn execute(&self, maintain_order: bool, chunk_size: usize)
+    ///     -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>>
+    /// {
+    ///     let (tx, rx) = unbounded_channel();
+    ///     tokio::task::spawn_blocking(move || {
+    ///         for batch in blocking_iter {
+    ///             if tx.send(Ok(batch)).is_err() { break; }
+    ///         }
+    ///     });
+    ///     Ok(Box::pin(UnboundedReceiverStream::new(rx)))
+    /// }
+    /// ```
+    async fn execute(
         &self,
         maintain_order: bool,
         chunk_size: usize,
