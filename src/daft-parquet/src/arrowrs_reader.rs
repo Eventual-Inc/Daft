@@ -1222,7 +1222,7 @@ pub async fn read_parquet_single_arrowrs(
                 let base_sel = per_rg_selections[ri].clone();
                 let pc = pred_cols.clone();
                 let rg_rows = parquet_metadata.row_group(rg_idx).num_rows() as usize;
-                tokio::spawn(async move {
+                get_compute_runtime().spawn(async move {
                     decode_rg_predicate_phase_async_prefetched(
                         &container, &pm, &as_arc, &pred, &pci, rg_idx, base_sel, &pc, rg_rows,
                     )
@@ -1273,8 +1273,8 @@ pub async fn read_parquet_single_arrowrs(
         };
 
         // Phase 2: one spawned task per data column across ALL RGs.
-        // tokio::spawn creates independent tasks that run on different worker
-        // threads, unlike try_join_all which polls all futures from one task.
+        // Spawn on the compute runtime (DAFTCPU, NUM_CPUS threads) for true
+        // multi-thread parallelism. DAFTIO has fewer threads (8) and is meant for I/O.
         let col_handles: Vec<_> = data_col_indices
             .iter()
             .map(|&col_idx| {
@@ -1283,7 +1283,7 @@ pub async fn read_parquet_single_arrowrs(
                 let as_arc = arrow_schema_arc.clone();
                 let sel = combined_selection.clone();
                 let rg_indices = rg_indices.clone();
-                tokio::spawn(async move {
+                get_compute_runtime().spawn(async move {
                     let reader = PrefetchedAsyncFileReader::new(container, pm.clone());
                     let options = ArrowReaderOptions::new().with_schema(as_arc.clone());
                     let arm =
@@ -1384,7 +1384,7 @@ pub async fn read_parquet_single_arrowrs(
                 let as_arc = arrow_schema_arc.clone();
                 let sel = combined_selection.clone();
                 let rg_indices = rg_indices.clone();
-                tokio::spawn(async move {
+                get_compute_runtime().spawn(async move {
                     let reader = PrefetchedAsyncFileReader::new(container, pm.clone());
                     let options = ArrowReaderOptions::new().with_schema(as_arc.clone());
                     let arm =
