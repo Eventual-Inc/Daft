@@ -168,8 +168,8 @@ impl JoinOrderer for BruteForceJoinOrderer {
 mod tests {
     use std::collections::HashMap;
 
-    use common_scan_info::Pushdowns;
     use common_treenode::TransformedResult;
+    use daft_scan::Pushdowns;
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::{BruteForceJoinOrderer, JoinGraph, JoinOrderTree, JoinOrderer};

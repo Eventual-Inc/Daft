@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::{datatype::PyDataType, field::PyField};
 use crate::{field::Field, schema};
 
-#[pyclass(module = "daft.daft", eq)]
+#[pyclass(module = "daft.daft", eq, from_py_object)]
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PySchema {

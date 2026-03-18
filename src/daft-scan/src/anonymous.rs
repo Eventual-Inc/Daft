@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
-use common_scan_info::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
 use daft_schema::schema::SchemaRef;
 
-use crate::{ChunkSpec, DataSource, ScanTask, storage_config::StorageConfig};
+use crate::{
+    ChunkSpec, FileFormatConfig, ParquetSourceConfig, PartitionField, Pushdowns, ScanOperator,
+    ScanSource, ScanTask, ScanTaskRef, SourceConfig, storage_config::StorageConfig,
+};
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
     files: Vec<String>,
@@ -80,9 +81,9 @@ impl ScanOperator for AnonymousScanOperator {
         lines
     }
 
-    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskLikeRef>> {
+    fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskRef>> {
         let files = self.files.clone();
-        let file_format_config = self.file_format_config.clone();
+        let source_config = Arc::new(SourceConfig::File(self.file_format_config.as_ref().clone()));
         let schema = self.schema.clone();
         let storage_config = self.storage_config.clone();
 
@@ -103,7 +104,7 @@ impl ScanOperator for AnonymousScanOperator {
             .map(|(f, rg)| {
                 let chunk_spec = rg.map(ChunkSpec::Parquet);
                 Arc::new(ScanTask::new(
-                    vec![DataSource::File {
+                    vec![ScanSource::File {
                         path: f,
                         chunk_spec,
                         size_bytes: None,
@@ -113,14 +114,13 @@ impl ScanOperator for AnonymousScanOperator {
                         statistics: None,
                         parquet_metadata: None,
                     }],
-                    file_format_config.clone(),
+                    source_config.clone(),
                     schema.clone(),
                     storage_config.clone(),
                     pushdowns.clone(),
                     None,
                 ))
             })
-            .map(|st| st as Arc<dyn ScanTaskLike>)
             .collect())
     }
 }

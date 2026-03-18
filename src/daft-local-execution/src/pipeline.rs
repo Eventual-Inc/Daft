@@ -13,19 +13,19 @@ use common_metrics::{
     ATTR_QUERY_ID, QueryID,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
-use common_scan_info::ScanTaskLikeRef;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
-    HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
-    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Sample, Sort,
-    SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
-    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
+    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, FlightShuffleReadInput,
+    GlobScan, HashAggregate, HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext,
+    LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
+    Sample, Sort, SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot,
+    VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
     WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
+use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
 use opentelemetry::{InstrumentationScope, KeyValue, global, metrics::Meter};
@@ -318,18 +318,18 @@ fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan {
             source_id,
-            file_format_config,
+            source_config,
             pushdowns,
             schema,
             stats_state,
             context,
         }) => {
-            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<ScanTaskLikeRef>)>();
+            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<ScanTaskRef>)>();
             input_senders.insert(*source_id, InputSender::ScanTasks(tx));
 
             let scan_task_source = ScanTaskSource::new(
                 rx,
-                file_format_config.clone(),
+                source_config.clone(),
                 pushdowns.clone(),
                 schema.clone(),
                 cfg,
@@ -1417,21 +1417,14 @@ fn physical_plan_to_pipeline(
             .boxed()
         }
         LocalPhysicalPlan::FlightShuffleRead(daft_local_plan::FlightShuffleRead {
-            shuffle_id,
-            partition_idx,
-            server_addresses,
-            server_cache_mapping,
+            source_id,
             schema,
             stats_state,
             context,
         }) => {
-            let source = FlightShuffleReadSource::new(
-                *shuffle_id,
-                *partition_idx,
-                server_addresses.clone(),
-                server_cache_mapping.clone(),
-                schema.clone(),
-            );
+            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
+            input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
+            let source = FlightShuffleReadSource::new(rx, schema.clone(), cfg);
             SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
         }
         LocalPhysicalPlan::VLLMProject(VLLMProject {

@@ -10,7 +10,7 @@ use daft_dsl::{
 use itertools::Itertools;
 
 use super::OptimizerRule;
-use crate::{LogicalPlan, ops::Project};
+use crate::{LogicalPlan, ops::Project, stats::StatsState};
 
 /// This rule will split projections into multiple projections such that expressions that
 /// need their own granular morsel sizing will be isolated. Right now it will be any async function that has a preferred batch size,
@@ -186,9 +186,11 @@ impl SplitGranularProjection {
                 }
             }
 
-            last_child = Arc::new(LogicalPlan::Project(
-                Project::try_new(last_child, out_exprs).unwrap(),
-            ));
+            let mut project = Project::try_new(last_child, out_exprs).unwrap();
+            if matches!(project.input.stats_state(), StatsState::Materialized(_)) {
+                project = project.with_materialized_stats();
+            }
+            last_child = Arc::new(LogicalPlan::Project(project));
         }
 
         // Only expose the columns that are in the original projection, not the inputs
@@ -201,9 +203,11 @@ impl SplitGranularProjection {
             .map(|c| resolved_col(Arc::from(c.0)).alias(Arc::from(c.1)))
             .collect_vec();
 
-        last_child = Arc::new(LogicalPlan::Project(
-            Project::try_new(last_child, last_fields).unwrap(),
-        ));
+        let mut project = Project::try_new(last_child, last_fields).unwrap();
+        if matches!(project.input.stats_state(), StatsState::Materialized(_)) {
+            project = project.with_materialized_stats();
+        }
+        last_child = Arc::new(LogicalPlan::Project(project));
 
         Ok(Transformed::yes(last_child))
     }
@@ -213,12 +217,12 @@ impl SplitGranularProjection {
 mod tests {
     use std::any::TypeId;
 
-    use common_scan_info::Pushdowns;
     use daft_core::prelude::Operator;
     use daft_dsl::{Column, ExprRef, ResolvedColumn, lit};
     use daft_functions_binary::{BinaryDecode, Codec};
     use daft_functions_uri::download::UrlDownload;
     use daft_functions_utf8::{Capitalize, capitalize, lower};
+    use daft_scan::Pushdowns;
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::*;

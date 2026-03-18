@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any
 from daft.context import get_context
 from daft.daft import (
     DatabaseSourceConfig,
-    FileFormatConfig,
     PyPartitionField,
     PyPushdowns,
     PyRecordBatch,
@@ -269,14 +268,14 @@ class SQLScanOperator(ScanOperator):
         else:
             sql = self.conn.construct_sql_query(self.sql, partition_bounds=partition_bounds)
 
-        file_format_config = FileFormatConfig.from_database_config(DatabaseSourceConfig(sql, self.conn))
+        db_config = DatabaseSourceConfig(sql, self.conn)
 
         # keep column pushdowns because they are used for deriving the materialized schema
         remaining_pushdowns = pushdowns if not apply_pushdowns_to_sql else PyPushdowns(columns=pushdowns.columns)
 
         return ScanTask.sql_scan_task(
             url=self.conn.url,
-            file_format=file_format_config,
+            config=db_config,
             schema=self._schema._schema,
             storage_config=self.storage_config,
             num_rows=num_rows,

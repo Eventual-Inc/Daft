@@ -131,6 +131,7 @@ pub struct DaftExecutionConfig {
     pub default_morsel_size: NonZeroUsize,
     pub shuffle_algorithm: String,
     pub pre_shuffle_merge_threshold: usize,
+    pub pre_shuffle_merge_partition_threshold: usize,
     pub scantask_max_parallel: usize,
     pub native_parquet_writer: bool,
     pub min_cpu_per_task: f64,
@@ -139,6 +140,7 @@ pub struct DaftExecutionConfig {
     pub enable_dynamic_batching: bool,
     pub dynamic_batching_strategy: String,
     pub flight_shuffle_dirs: Vec<String>,
+    pub enable_multi_glob_path_tasks: bool,
 }
 
 #[cfg(not(debug_assertions))]
@@ -175,6 +177,7 @@ impl Default for DaftExecutionConfig {
             default_morsel_size: NonZeroUsize::new(128 * 1024).unwrap(),
             shuffle_algorithm: "auto".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
+            pre_shuffle_merge_partition_threshold: 200,
             scantask_max_parallel: 8,
             native_parquet_writer: true,
             min_cpu_per_task: 0.5,
@@ -183,6 +186,7 @@ impl Default for DaftExecutionConfig {
             enable_dynamic_batching: false,
             dynamic_batching_strategy: "auto".to_string(),
             flight_shuffle_dirs: vec!["/tmp".to_string()],
+            enable_multi_glob_path_tasks: false,
         }
     }
 }

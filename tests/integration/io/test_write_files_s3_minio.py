@@ -6,7 +6,7 @@ import pytest
 import s3fs
 
 import daft
-from tests.conftest import get_tests_daft_runner_name, minio_create_public_bucket
+from tests.conftest import minio_create_public_bucket
 
 
 @pytest.fixture(scope="function")
@@ -71,9 +71,6 @@ def test_writing_parquet_anonymous_mode(anonymous_minio_io_config, minio_io_conf
 
 
 @pytest.mark.integration()
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
-)
 @pytest.mark.parametrize("protocol", ["s3://", "s3a://", "s3n://"])
 def test_writing_json(minio_io_config, bucket, protocol):
     data = {
