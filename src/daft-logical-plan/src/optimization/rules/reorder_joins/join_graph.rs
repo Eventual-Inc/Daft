@@ -13,6 +13,7 @@ use daft_dsl::{
     right_col,
 };
 
+use super::relation_set::RelationSet;
 use crate::{
     LogicalPlan, LogicalPlanBuilder, LogicalPlanRef,
     ops::{Filter, Join, Project, join::JoinPredicate},
@@ -50,10 +51,10 @@ impl JoinOrderTree {
         }
     }
 
-    fn iter(&self) -> Box<dyn Iterator<Item = usize> + '_> {
+    pub(super) fn relation_set(&self) -> RelationSet {
         match self {
-            Self::Relation(id, ..) => Box::new(std::iter::once(*id)),
-            Self::Join(left, right, ..) => Box::new(left.iter().chain(right.iter())),
+            Self::Relation(id, ..) => RelationSet::singleton(*id),
+            Self::Join(left, right, ..) => left.relation_set().union(right.relation_set()),
         }
     }
 
@@ -381,9 +382,9 @@ impl JoinAdjList {
         let mut added_equivalence_set_id_for_conds = HashSet::new();
         let mut double_counted_equivalence_set_ids = HashSet::new();
         let mut td = 1;
-        for left_node in left.iter() {
+        for left_node in left.relation_set().iter() {
             if let Some(neighbors) = self.edges.get(&left_node) {
-                for right_node in right.iter() {
+                for right_node in right.relation_set().iter() {
                     if let Some(edges) = neighbors.get(&right_node) {
                         // When there is only one join condition, we multiply the total domain by the domain of the equivalence set.
                         // However, when there's more than one join condition between two nodes, then we know that this is not a pk-fk join

@@ -1,4 +1,7 @@
-use super::join_graph::{JoinGraph, JoinOrderTree, JoinOrderer};
+use super::{
+    join_graph::{JoinGraph, JoinOrderTree, JoinOrderer},
+    relation_set::RelationSet,
+};
 
 // The brute force join orderer is a simple algorithm that recursively enumerates all possible join
 // orders (including deep and bushy joins) and picks the one with the lowest summed cardinality.
@@ -9,112 +12,14 @@ use super::join_graph::{JoinGraph, JoinOrderTree, JoinOrderer};
 pub(crate) struct BruteForceJoinOrderer {}
 
 impl BruteForceJoinOrderer {
-    // Takes the following arguments:
-    // - graph: The join graph we're evaluating on.
-    // - elements: The list of elements to choose from.
-    // - cur_idx: The current index (out of the `k_to_pick` elements we're choosing) to swap into.
-    // - pick_idx: The current index in the list of elements to pick from.
-    // - k_to_pick: The number of elements to pick.
-    // - min_cost: The current minimum cost (if any) of all the generated combinations.
-    // - chosen_plan: The current join order tree (if any) that corresponds to the minimum cost.
-    //
-    // Loops through all (n choose k) combinations of elements, where n = length of elements and k = k_to_pick, and computes
-    // the minimum cost order where the chosen elements go into the left subtree and the non-chosen elements go into the right
-    // subtree. Updates min_cost and chosen_plan if some combination produces a plan with a lower cost than the current minimum cost.
-    fn evaluate_combinations(
-        graph: &JoinGraph,
-        elements: &mut [usize],
-        cur_idx: usize,
-        pick_idx: usize,
-        k_to_pick: usize,
-        min_cost: &mut Option<usize>,
-        chosen_plan: &mut Option<JoinOrderTree>,
-    ) {
-        if cur_idx >= k_to_pick {
-            let (left, right) = elements.split_at_mut(cur_idx);
-            if let Some((left_cost, left_join_order_tree)) = Self::find_min_cost_order(graph, left)
-                && let Some((right_cost, right_join_order_tree)) =
-                    Self::find_min_cost_order(graph, right)
-            {
-                let left_cardinality = left_join_order_tree.get_cardinality();
-                let right_cardinality = right_join_order_tree.get_cardinality();
-                // Ensure that the left subtree always has the smaller cardinality.
-                let (left, right, left_cardinality, right_cardinality) =
-                    if left_cardinality > right_cardinality {
-                        (
-                            right_join_order_tree,
-                            left_join_order_tree,
-                            right_cardinality,
-                            left_cardinality,
-                        )
-                    } else {
-                        (
-                            left_join_order_tree,
-                            right_join_order_tree,
-                            left_cardinality,
-                            right_cardinality,
-                        )
-                    };
-                let (connections, total_domain) = graph.adj_list.get_connections(&left, &right);
-                if !connections.is_empty() {
-                    // If there is a connection between the left and right subgraphs, we compute the cardinality of the
-                    // joined graph as the product of all the cardinalities of the relations in the left and right subgraphs,
-                    // divided by the selectivity of the join.
-                    // Assuming that join keys are uniformly distributed and independent, the selectivity is computed as the reciprocal
-                    // of the product of the largest total domains that form a minimum spanning tree of the relations.
-                    let cardinality = left_cardinality * right_cardinality / total_domain;
-                    // The cost of the join is the sum of the cardinalities of the left and right subgraphs, plus the cardinality of the joined graph.
-                    let cur_cost = cardinality + left_cost + right_cost;
-                    // Take the join with the lowest summed cardinality.
-                    if let Some(cur_min_cost) = min_cost {
-                        if *cur_min_cost > cur_cost {
-                            *cur_min_cost = cur_cost;
-                            *chosen_plan = Some(left.join(right, connections, cardinality));
-                        }
-                    } else {
-                        *min_cost = Some(cur_cost);
-                        *chosen_plan = Some(left.join(right, connections, cardinality));
-                    }
-                }
-            }
-            return;
-        }
-        if pick_idx >= elements.len() {
-            return;
-        }
-        // Case 1: Include the current element.
-        elements.swap(cur_idx, pick_idx);
-        Self::evaluate_combinations(
-            graph,
-            elements,
-            cur_idx + 1,
-            pick_idx + 1,
-            k_to_pick,
-            min_cost,
-            chosen_plan,
-        );
-        elements.swap(cur_idx, pick_idx); // Backtrack.
-
-        // Case 2: Exclude the current element in the chosen set.
-        Self::evaluate_combinations(
-            graph,
-            elements,
-            cur_idx,
-            pick_idx + 1,
-            k_to_pick,
-            min_cost,
-            chosen_plan,
-        );
-    }
-
     // Enumerates all possible join orders and returns the one with the lowest summed cardinality.
     fn find_min_cost_order(
         graph: &JoinGraph,
-        available: &mut [usize],
+        available: RelationSet,
     ) -> Option<(usize, JoinOrderTree)> {
         if available.len() == 1 {
             // Base case: if there is only one element, we return the cost of the relation and the join order tree.
-            let id = available[0];
+            let id = available.iter().next().unwrap();
             let plan = graph
                 .adj_list
                 .id_to_plan
@@ -124,23 +29,45 @@ impl BruteForceJoinOrderer {
             let cost = stats.approx_stats.num_rows;
             return Some((cost, JoinOrderTree::Relation(id, cost)));
         }
-        // Recursive case: we split the available elements into two groups and recursively find the minimum cost join order for each group.
-        // We only need to consider splits where the left group has at most half the number of elements as the right group, because the
-        // cardinality of the join is commutative. Determining probe/build sides happens later in the physical planner.
-        let max_left_size = available.len() / 2;
+        // Enumerate all non-empty proper subsets as the left side.
+        // Use `left.bits() < right.bits()` to avoid evaluating both (A,B) and (B,A).
         let mut min_cost = None;
         let mut chosen_plan = None;
-        for left_split_size in 1..=max_left_size {
-            // Evaluate the cost of all possible combinations and keep the plan with the lowest cost.
-            Self::evaluate_combinations(
-                graph,
-                available,
-                0,
-                0,
-                left_split_size,
-                &mut min_cost,
-                &mut chosen_plan,
-            );
+        for left in available.subsets() {
+            let right = available.difference(left);
+            // Only consider each unordered partition once.
+            if left.bits() > right.bits() {
+                continue;
+            }
+            if let Some((left_cost, left_tree)) = Self::find_min_cost_order(graph, left)
+                && let Some((right_cost, right_tree)) = Self::find_min_cost_order(graph, right)
+            {
+                let left_cardinality = left_tree.get_cardinality();
+                let right_cardinality = right_tree.get_cardinality();
+                // Ensure that the left subtree always has the smaller cardinality.
+                let (left_tree, right_tree, left_cardinality, right_cardinality) =
+                    if left_cardinality > right_cardinality {
+                        (right_tree, left_tree, right_cardinality, left_cardinality)
+                    } else {
+                        (left_tree, right_tree, left_cardinality, right_cardinality)
+                    };
+                let (connections, total_domain) =
+                    graph.adj_list.get_connections(&left_tree, &right_tree);
+                if !connections.is_empty() {
+                    let cardinality = left_cardinality * right_cardinality / total_domain;
+                    let cur_cost = cardinality + left_cost + right_cost;
+                    if let Some(cur_min_cost) = min_cost {
+                        if cur_min_cost > cur_cost {
+                            min_cost = Some(cur_cost);
+                            chosen_plan =
+                                Some(left_tree.join(right_tree, connections, cardinality));
+                        }
+                    } else {
+                        min_cost = Some(cur_cost);
+                        chosen_plan = Some(left_tree.join(right_tree, connections, cardinality));
+                    }
+                }
+            }
         }
         if let Some(min_cost) = min_cost
             && let Some(chosen_plan) = chosen_plan
@@ -154,9 +81,8 @@ impl BruteForceJoinOrderer {
 
 impl JoinOrderer for BruteForceJoinOrderer {
     fn order(&self, graph: &JoinGraph) -> JoinOrderTree {
-        let mut available: Vec<usize> = (0..graph.adj_list.max_id).collect();
-        if let Some((_cost, join_order_tree)) = Self::find_min_cost_order(graph, &mut available[..])
-        {
+        let available = RelationSet::from_range(graph.adj_list.max_id);
+        if let Some((_cost, join_order_tree)) = Self::find_min_cost_order(graph, available) {
             join_order_tree
         } else {
             panic!("Tried to get join order from non-fully connected join graph")
@@ -602,16 +528,18 @@ mod tests {
                 total_domain: 250,
             }, // Pretend there was a filter on dim4.
         ];
+        // Both plans below have the same total cost. The subset enumeration order
+        // determines which equally-optimal plan is selected.
         let optimal_order = test_join(
-            test_relation(name_to_id["dim1"]),
             test_join(
                 test_join(
-                    test_join(
-                        test_relation(name_to_id["dim4"]),
-                        test_relation(name_to_id["dim2"]),
-                    ),
-                    test_relation(name_to_id["dim3"]),
+                    test_relation(name_to_id["dim4"]),
+                    test_relation(name_to_id["dim2"]),
                 ),
+                test_relation(name_to_id["dim3"]),
+            ),
+            test_join(
+                test_relation(name_to_id["dim1"]),
                 test_relation(name_to_id["fact"]),
             ),
         );
