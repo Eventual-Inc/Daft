@@ -1,6 +1,7 @@
 use daft_dsl::functions::FunctionModule;
 
 pub mod attribute;
+pub mod center_crop;
 pub mod crop;
 pub mod decode;
 pub mod encode;
@@ -19,5 +20,6 @@ impl FunctionModule for ImageFunctions {
         parent.add_fn(to_tensor::ImageToTensor);
         parent.add_fn(to_mode::ImageToMode);
         parent.add_fn(attribute::ImageAttribute);
+        parent.add_fn(center_crop::ImageCenterCrop);
     }
 }
