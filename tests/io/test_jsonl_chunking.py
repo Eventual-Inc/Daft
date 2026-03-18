@@ -72,6 +72,33 @@ def test_jsonl_chunk_size_one_reads_correctly(tmp_path: os.PathLike[str]) -> Non
     assert df.to_pylist() == rows
 
 
+def test_jsonl_chunk_size_mid_line_splits_correctly(tmp_path: os.PathLike[str]) -> None:
+    """chunk_size smaller than a single line forces every split point to land mid-line.
+
+    The reader must align each chunk to the next line boundary so
+    that no row is lost or truncated.
+    """
+    file_path = os.fspath(tmp_path / "mid.jsonl")
+    # Each line is 21-23 bytes; chunk_size=10 forces every split point to land
+    # mid-line (e.g. byte 10 is inside `{"id":1,"v|al":"hello"}\n`).
+    rows = [
+        {"id": 1, "val": "hello"},
+        {"id": 2, "val": "world"},
+        {"id": 3, "val": "foo"},
+        {"id": 4, "val": "bar"},
+        {"id": 5, "val": "baz"},
+    ]
+    with open(file_path, "w", encoding="utf-8", newline="") as f:
+        for row in rows:
+            f.write(f'{{"id":{row["id"]},"val":"{row["val"]}"}}\n')
+
+    df = daft.read_json(file_path, _chunk_size=10)
+    partitions = list(df.iter_partitions())
+    assert len(partitions) == len(rows), "each line should become its own partition"
+    assert df.to_pylist() == rows
+    assert df.count_rows() == len(rows)
+
+
 def test_jsonl_gzip_chunk_size_controls_partitioning(tmp_path: os.PathLike[str]) -> None:
     file_path = os.fspath(tmp_path / "data.jsonl.gz")
     rows = 20_000

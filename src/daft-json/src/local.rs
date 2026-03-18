@@ -420,7 +420,9 @@ impl<'a> JsonReader<'a> {
             last_pos = end_pos;
         }
 
-        offsets.push((last_pos, total_len));
+        if last_pos < total_len {
+            offsets.push((last_pos, total_len));
+        }
 
         offsets
     }
