@@ -1077,8 +1077,15 @@ pub async fn read_parquet_single_arrowrs(
             .collect()
     };
 
-    // Fallback: few columns -> use original single-stream approach.
-    if all_col_indices.len() < MIN_COLS_FOR_COL_PARALLELISM {
+    // Fallback: few columns or small RGs -> use original single-stream approach.
+    let max_rg_bytes = rg_indices
+        .iter()
+        .map(|&idx| parquet_metadata.row_group(idx).total_byte_size())
+        .max()
+        .unwrap_or(0);
+    if all_col_indices.len() < MIN_COLS_FOR_COL_PARALLELISM
+        || max_rg_bytes < MIN_RG_BYTES_FOR_COL_PARALLELISM
+    {
         // Rebuild single stream (original code path).
         let reader2 = DaftAsyncFileReader::new(
             uri.to_string(),
@@ -1757,9 +1764,9 @@ pub fn local_parquet_read_arrowrs(
 
     // Column parallelism decision:
     // - For single-RG reads, column splitting is the only way to parallelize, so use it
-    //   whenever we have >= 2 columns and the RG is large enough.
+    //   whenever we have >= MIN_COLS_FOR_COL_PARALLELISM columns and the RG is large enough.
     // - For multi-RG reads, per-RG decode provides parallelism on its own. Only add column
-    //   splitting when we have enough columns (>= 4) AND RGs don't already saturate cores.
+    //   splitting when we have enough columns AND RGs don't already saturate cores.
     let num_cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(2);
@@ -1768,7 +1775,7 @@ pub fn local_parquet_read_arrowrs(
             >= MIN_RG_BYTES_FOR_COL_PARALLELISM
     });
     let use_col_parallelism = has_large_rg
-        && all_col_indices.len() >= 3
+        && all_col_indices.len() >= MIN_COLS_FOR_COL_PARALLELISM
         && (setup.rg_tasks.len() == 1
             || (all_col_indices.len() >= MIN_COLS_FOR_COL_PARALLELISM
                 && setup.rg_tasks.len() < num_cpus * 2));
@@ -2233,8 +2240,15 @@ pub async fn stream_parquet_single_arrowrs(
             .collect()
     };
 
-    // Fallback: few columns -> use original single-stream approach.
-    if all_col_indices.len() < MIN_COLS_FOR_COL_PARALLELISM {
+    // Fallback: few columns or small RGs -> use original single-stream approach.
+    let max_rg_bytes = rg_indices
+        .iter()
+        .map(|&idx| parquet_metadata.row_group(idx).total_byte_size())
+        .max()
+        .unwrap_or(0);
+    if all_col_indices.len() < MIN_COLS_FOR_COL_PARALLELISM
+        || max_rg_bytes < MIN_RG_BYTES_FOR_COL_PARALLELISM
+    {
         let reader2 = DaftAsyncFileReader::new(
             uri.to_string(),
             io_client_saved,
