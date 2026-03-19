@@ -501,8 +501,7 @@ impl GCSSource {
         }
         client_config.http = Some({
             use reqwest_middleware::ClientBuilder;
-            use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
-            use retry_policies::Jitter;
+            use reqwest_retry::{Jitter, RetryTransientMiddleware, policies::ExponentialBackoff};
             let retry_policy = ExponentialBackoff::builder()
                 .base(2)
                 .jitter(Jitter::Bounded)

@@ -377,13 +377,16 @@ impl RecordBatch {
             return Ok(self.clone());
         }
 
-        use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
+        use rand::{Rng, SeedableRng, distr::Uniform, rngs::StdRng};
         let mut rng = match seed {
             Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::from_rng(rand::thread_rng()).unwrap(),
+            None => {
+                let mut thread_rng = rand::rng();
+                StdRng::from_rng(&mut thread_rng)
+            }
         };
         let values: Vec<u64> = if with_replacement {
-            let range = Uniform::from(0..len as u64);
+            let range = Uniform::try_from(0..len as u64).unwrap();
             rng.sample_iter(&range).take(num).collect()
         } else {
             // https://docs.rs/rand/latest/rand/seq/index/fn.sample.html

@@ -165,7 +165,7 @@ mod tests {
             // Check if we have a minimum spanning tree.
             if edges.len() >= num_nodes - 1 {
                 // Once we have a minimum spanning tree, we let a random number of extra edges be added to the graph.
-                if rng.gen_bool(0.3) {
+                if rng.random_bool(0.3) {
                     break;
                 }
                 edges.push((a, b));
