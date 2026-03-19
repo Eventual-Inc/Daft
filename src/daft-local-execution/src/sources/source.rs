@@ -14,20 +14,23 @@ use daft_io::IOStatsRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
+// MicroPartition is used in PipelineMessage
 use futures::{StreamExt, stream::BoxStream};
 use opentelemetry::{KeyValue, metrics::Meter};
 use snafu::ResultExt;
 
 use crate::{
     ExecutionRuntimeContext, PipelineExecutionSnafu,
+    channel::create_channel,
     pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
+    pipeline_message::PipelineMessage,
     runtime_stats::RuntimeStats,
 };
 
-pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
+pub type SourceStream<'a> = BoxStream<'a, DaftResult<PipelineMessage>>;
 
 pub(crate) struct SourceStats {
-    duration_us: Counter,
+    cpu_us: Counter,
     rows_out: Counter,
     io_stats: IOStatsRef,
 
@@ -35,11 +38,11 @@ pub(crate) struct SourceStats {
 }
 
 impl SourceStats {
-    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
-        let node_kv = node_info.to_key_values();
+    pub fn new(meter: &Meter, id: usize) -> Self {
+        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            cpu_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
             rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
             io_stats: IOStatsRef::default(),
 
@@ -54,7 +57,7 @@ impl RuntimeStats for SourceStats {
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        let cpu_us = self.duration_us.load(ordering);
+        let cpu_us = self.cpu_us.load(ordering);
         let rows_out = self.rows_out.load(ordering);
         let bytes_read = self.io_stats.load_bytes_read() as u64;
         StatSnapshot::Source(SourceSnapshot {
@@ -73,7 +76,7 @@ impl RuntimeStats for SourceStats {
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.duration_us.add(cpu_us, self.node_kv.as_slice());
+        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
@@ -81,8 +84,8 @@ impl RuntimeStats for SourceStats {
 pub trait Source: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
-    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<SourceStats> {
-        Arc::new(SourceStats::new(meter, node_info))
+    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<SourceStats> {
+        Arc::new(SourceStats::new(meter, id))
     }
     fn multiline_display(&self) -> Vec<String>;
     fn get_data(
@@ -115,7 +118,7 @@ impl SourceNode {
             NodeCategory::Source,
             context,
         );
-        let runtime_stats = source.make_runtime_stats(&ctx.meter, &info);
+        let runtime_stats = source.make_runtime_stats(&ctx.meter, info.id);
         Self {
             source,
             runtime_stats,
@@ -203,12 +206,12 @@ impl PipelineNode for SourceNode {
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<crate::channel::Receiver<PipelineMessage>> {
         let io_stats = self.runtime_stats.io_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
 
-        let (destination_sender, destination_receiver) = crate::channel::create_channel(1);
+        let (destination_sender, destination_receiver) = create_channel(1);
         let chunk_size = match self.morsel_size_requirement {
             MorselSizeRequirement::Strict(size) => size,
             MorselSizeRequirement::Flexible(_, upper) => upper,
@@ -227,17 +230,27 @@ impl PipelineNode for SourceNode {
                 let mut has_data = false;
                 stats_manager.activate_node(node_id);
 
-                while let Some(part) = source_stream.next().await {
+                while let Some(msg) = source_stream.next().await {
                     has_data = true;
-                    let part = part?;
-                    runtime_stats.add_rows_out(part.len() as u64);
-                    if destination_sender.send(part).await.is_err() {
+                    let msg = msg?;
+                    match &msg {
+                        PipelineMessage::Morsel { partition, .. } => {
+                            runtime_stats.add_rows_out(partition.len() as u64);
+                        }
+                        PipelineMessage::Flush(_) => {}
+                    }
+                    if destination_sender.send(msg).await.is_err() {
                         break;
                     }
                 }
                 if !has_data {
                     let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
-                    let _ = destination_sender.send(empty).await;
+                    let _ = destination_sender
+                        .send(PipelineMessage::Morsel {
+                            input_id: 0,
+                            partition: empty,
+                        })
+                        .await;
                     runtime_stats.add_rows_out(0);
                 }
 
