@@ -21,6 +21,7 @@ mod anonymous;
 pub use anonymous::AnonymousScanOperator;
 mod expr_rewriter;
 mod file_format_config;
+pub mod source;
 #[cfg(feature = "python")]
 pub use file_format_config::DatabaseSourceConfig;
 pub use file_format_config::{
@@ -45,6 +46,9 @@ pub use scan_state::{PhysicalScanInfo, ScanState};
 pub use sharder::{Sharder, ShardingStrategy};
 pub use source_config::SourceConfig;
 pub mod test_utils;
+
+// Re-export source module for DataSource and DataSourceTask traits.
+pub use source::{DataSource, DataSourceStatistics, DataSourceTask, Precision};
 
 #[cfg(feature = "python")]
 pub mod python;

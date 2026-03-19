@@ -6,7 +6,7 @@ use common_metrics::{
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::stats::{PlanStats, StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
@@ -297,12 +297,16 @@ impl LimitNode {
                     if next_tasks.is_empty() {
                         // If all rows need to be skipped, send an empty scan task to allow downstream tasks to
                         // continue running, such as aggregate tasks
-                        let empty_plan = LocalPhysicalPlan::empty_scan(
+                        let empty_plan = LocalPhysicalPlan::in_memory_scan(
+                            self.node_id(),
                             self.config.schema.clone(),
+                            0,
+                            StatsState::Materialized(PlanStats::empty().into()),
                             LocalNodeContext::new(Some(self.node_id() as usize)),
                         );
                         let empty_scan_builder =
-                            SwordfishTaskBuilder::new(empty_plan, self.as_ref());
+                            SwordfishTaskBuilder::new(empty_plan, self.as_ref())
+                                .with_psets(self.node_id(), vec![]);
                         if result_tx.send(empty_scan_builder).await.is_err() {
                             return Ok(());
                         }

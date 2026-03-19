@@ -1125,7 +1125,7 @@ mod tests {
 
     use bytes::Bytes;
     use common_io_config::ObfuscatedString;
-    use rand::{RngCore, thread_rng};
+    use rand::RngCore;
 
     use super::*;
     use crate::integrations::test_full_get;
@@ -1384,7 +1384,7 @@ mod tests {
 
     fn random_vec(n: usize) -> Bytes {
         let mut buf = vec![0u8; n];
-        thread_rng().fill_bytes(&mut buf);
+        rand::rng().fill_bytes(&mut buf);
         Bytes::from(buf)
     }
 
