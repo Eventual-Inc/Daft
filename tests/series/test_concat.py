@@ -236,3 +236,64 @@ def test_series_concat_dtype_mismatch() -> None:
 
     with pytest.raises(ValueError, match="concat requires all data types to match"):
         Series.concat(mix_types_series)
+
+
+# --- Union array concat tests ---
+
+
+def _make_sparse_union() -> pa.Array:
+    type_ids = pa.array([0, 1, 2, 0, 1, 2], type=pa.int8())
+    int_child = pa.array([10, 0, 0, 40, 0, 0], type=pa.int32())
+    float_child = pa.array([0.0, 2.2, 0.0, 0.0, 5.5, 0.0], type=pa.float64())
+    str_child = pa.array(["", "", "c", "", "", "f"], type=pa.large_utf8())
+    return pa.UnionArray.from_sparse(type_ids, [int_child, float_child, str_child], field_names=["i", "f", "s"])
+
+
+def _make_dense_union() -> pa.Array:
+    type_ids = pa.array([0, 1, 0, 0, 1], type=pa.int8())
+    offsets = pa.array([0, 0, 1, 2, 1], type=pa.int32())
+    int_child = pa.array([10, 30, 40], type=pa.int32())
+    float_child = pa.array([2.2, 5.5], type=pa.float64())
+    return pa.UnionArray.from_dense(type_ids, offsets, [int_child, float_child], field_names=["i", "f"])
+
+
+@pytest.mark.parametrize("chunks", [1, 2, 3])
+def test_series_concat_sparse_union(chunks) -> None:
+    series = [Series.from_arrow(_make_sparse_union()) for _ in range(chunks)]
+
+    result = Series.concat(series)
+
+    assert result.datatype() == series[0].datatype()
+    assert result.to_pylist() == [10, 2.2, "c", 40, 5.5, "f"] * chunks
+
+
+@pytest.mark.parametrize("chunks", [1, 2, 3])
+def test_series_concat_dense_union(chunks) -> None:
+    series = [Series.from_arrow(_make_dense_union()) for _ in range(chunks)]
+
+    result = Series.concat(series)
+
+    assert result.datatype() == series[0].datatype()
+    assert result.to_pylist() == [10, 2.2, 30, 40, 5.5] * chunks
+
+
+def test_series_concat_sparse_union_with_slice() -> None:
+    """Concatenating sliced sparse union Series works correctly."""
+    s = Series.from_arrow(_make_sparse_union())
+    sliced = s.slice(1, 4)  # [2.2, 'c', 40]
+
+    result = Series.concat([sliced, sliced])
+
+    assert result.datatype() == s.datatype()
+    assert result.to_pylist() == [2.2, "c", 40, 2.2, "c", 40]
+
+
+def test_series_concat_dense_union_with_slice() -> None:
+    """Concatenating sliced dense union Series works correctly."""
+    s = Series.from_arrow(_make_dense_union())
+    sliced = s.slice(1, 4)  # [2.2, 30, 40]
+
+    result = Series.concat([sliced, sliced])
+
+    assert result.datatype() == s.datatype()
+    assert result.to_pylist() == [2.2, 30, 40, 2.2, 30, 40]

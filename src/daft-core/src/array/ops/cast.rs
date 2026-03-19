@@ -18,7 +18,7 @@ use crate::lit::Literal;
 use crate::prelude::PythonArray;
 use crate::{
     array::{
-        DataArray, FixedSizeListArray, ListArray, StructArray,
+        DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray,
         growable::make_growable,
         image_array::ImageArraySidecarData,
         ops::{DaftCompare, full::FullNull},
@@ -1765,6 +1765,12 @@ impl StructArray {
                 dtype
             ),
         }
+    }
+}
+
+impl UnionArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        unimplemented!("Union casting not implemented for dtype: {}", dtype)
     }
 }
 

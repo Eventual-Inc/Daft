@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from packaging.version import parse
 
-from daft.daft import ImageMode, PyDataType, PyMediaType, PyTimeUnit, sql_datatype
+from daft.daft import ImageMode, PyDataType, PyMediaType, PyTimeUnit, UnionMode, sql_datatype
 from daft.dependencies import np, pa
 from daft.runners import get_or_create_runner
 
@@ -854,6 +854,15 @@ class DataType:
         elif isinstance(arrow_type, pa.FixedShapeTensorType):
             scalar_dtype = cls.from_arrow_type(arrow_type.value_type, python_fallback)
             return cls.tensor(scalar_dtype, tuple(arrow_type.shape))
+        elif pa.types.is_union(arrow_type):
+            assert isinstance(arrow_type, pa.UnionType)
+            mode = "dense" if arrow_type.mode == "dense" else "sparse"
+            field_dict = {
+                arrow_type.field(i).name: cls.from_arrow_type(arrow_type.field(i).type, python_fallback)
+                for i in range(arrow_type.num_fields)
+            }
+            type_ids = list(arrow_type.type_codes)
+            return cls.union(field_dict, type_ids, mode)
         # Only check for PyExtensionType if pyarrow version is < 21.0.0
         if hasattr(pa, "PyExtensionType") and isinstance(arrow_type, getattr(pa, "PyExtensionType")):
             # TODO(Clark): Add a native cross-lang extension type representation for PyExtensionTypes.
@@ -916,6 +925,33 @@ class DataType:
     def file(cls, media_type: MediaType = MediaType.unknown()) -> DataType:
         """Create a File DataType: a type which refers to a file object."""
         return cls._from_pydatatype(PyDataType.file(media_type._media_type))
+
+    @datatype_constructor
+    @classmethod
+    def union(
+        cls,
+        fields: dict[str, DataType],
+        type_ids: builtins.list[int],
+        mode: str | UnionMode = "sparse",
+    ) -> DataType:
+        """Create a Union DataType: a union of named fields, each with its own type.
+
+        Args:
+            fields: Mapping of field names to their DataTypes
+            type_ids: Type IDs (one per field) used to identify which variant is stored
+            mode: Union mode, either ``"sparse"`` or ``"dense"`` (default: ``"sparse"``)
+
+        Examples:
+            >>> import daft
+            >>> union_type = daft.DataType.union(
+            ...     {"i": daft.DataType.int32(), "f": daft.DataType.float64()},
+            ...     type_ids=[0, 1],
+            ...     mode="sparse",
+            ... )
+        """
+        if isinstance(mode, str):
+            mode = UnionMode.from_str(mode)
+        return cls._from_pydatatype(PyDataType.union({name: dt._dtype for name, dt in fields.items()}, type_ids, mode))
 
     def is_null(self) -> builtins.bool:
         """Check if this is a null type.
@@ -1167,6 +1203,16 @@ class DataType:
             >>> assert dtype.is_map()
         """
         return self._dtype.is_map()
+
+    def is_union(self) -> builtins.bool:
+        """Check if this is a union type.
+
+        Examples:
+            >>> import daft
+            >>> dtype = daft.DataType.union({"i": daft.DataType.int32(), "f": daft.DataType.float64()}, type_ids=[0, 1])
+            >>> assert dtype.is_union()
+        """
+        return self._dtype.is_union()
 
     def is_extension(self) -> builtins.bool:
         """Check if this is an extension type.
@@ -1502,6 +1548,55 @@ class DataType:
             ...     pass
         """
         return DataType._from_pydatatype(self._dtype.value_type())
+
+    @property
+    def union_mode(self) -> UnionMode:
+        """If this is a union type, return the union mode, otherwise an attribute error is raised.
+
+        Examples:
+            >>> import daft
+            >>> dtype = daft.DataType.union({"i": daft.DataType.int32()}, type_ids=[0], mode="dense")
+            >>> assert str(dtype.union_mode) == "Dense"
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.union_mode
+            ... except AttributeError:
+            ...     pass
+        """
+        return self._dtype.union_mode()
+
+    @property
+    def type_ids(self) -> builtins.list[int]:
+        """If this is a union type, return the type IDs, otherwise an attribute error is raised.
+
+        Examples:
+            >>> import daft
+            >>> dtype = daft.DataType.union({"i": daft.DataType.int32(), "f": daft.DataType.float64()}, type_ids=[0, 1])
+            >>> assert dtype.type_ids == [0, 1]
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.type_ids
+            ... except AttributeError:
+            ...     pass
+        """
+        return self._dtype.type_ids()
+
+    @property
+    def union_fields(self) -> dict[str, DataType]:
+        """If this is a union type, return the fields, otherwise an attribute error is raised.
+
+        Examples:
+            >>> import daft
+            >>> dtype = daft.DataType.union({"i": daft.DataType.int32(), "f": daft.DataType.float64()}, type_ids=[0, 1])
+            >>> fields = dtype.union_fields
+            >>> assert fields["i"] == daft.DataType.int32()
+            >>> dtype = daft.DataType.int64()
+            >>> try:
+            ...     dtype.union_fields
+            ... except AttributeError:
+            ...     pass
+        """
+        return {field.name(): DataType._from_pydatatype(field.dtype()) for field in self._dtype.union_fields()}
 
     def _should_cast_to_python(self) -> builtins.bool:
         # NOTE: This is used to determine if we should cast a column to a Python object type when converting to PyList.

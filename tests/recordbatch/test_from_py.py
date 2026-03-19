@@ -666,3 +666,108 @@ def test_to_arrow_iterator() -> None:
     df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
     it = df.to_arrow_iter()
     assert isinstance(next(it), pa.RecordBatch)
+
+
+# --- Union array roundtrip tests ---
+
+
+def _make_sparse_union() -> pa.Array:
+    """Sparse union: int32 | float64 | large_string, 6 elements.
+
+    Uses large_string (not string) because Daft normalises string -> large_string
+    on ingest, so the roundtrip comparison stays exact.
+    """
+    type_ids = pa.array([0, 1, 2, 0, 1, 2], type=pa.int8())
+    int_child = pa.array([10, 0, 0, 40, 0, 0], type=pa.int32())
+    float_child = pa.array([0.0, 2.2, 0.0, 0.0, 5.5, 0.0], type=pa.float64())
+    str_child = pa.array(["", "", "c", "", "", "f"], type=pa.large_utf8())
+    return pa.UnionArray.from_sparse(
+        type_ids,
+        [int_child, float_child, str_child],
+        field_names=["i", "f", "s"],
+    )
+
+
+def _make_dense_union() -> pa.Array:
+    """Dense union: int32 | float64, 5 elements."""
+    type_ids = pa.array([0, 1, 0, 0, 1], type=pa.int8())
+    offsets = pa.array([0, 0, 1, 2, 1], type=pa.int32())
+    int_child = pa.array([10, 30, 40], type=pa.int32())
+    float_child = pa.array([2.2, 5.5], type=pa.float64())
+    return pa.UnionArray.from_dense(
+        type_ids,
+        offsets,
+        [int_child, float_child],
+        field_names=["i", "f"],
+    )
+
+
+def test_from_pydict_sparse_union_roundtrip() -> None:
+    arrow_arr = _make_sparse_union()
+    daft_recordbatch = MicroPartition.from_pydict({"a": arrow_arr})
+    assert "a" in daft_recordbatch.column_names()
+    result = daft_recordbatch.to_arrow()["a"].combine_chunks()
+    assert result.equals(arrow_arr)
+
+
+def test_from_pydict_dense_union_roundtrip() -> None:
+    arrow_arr = _make_dense_union()
+    daft_recordbatch = MicroPartition.from_pydict({"a": arrow_arr})
+    assert "a" in daft_recordbatch.column_names()
+    result = daft_recordbatch.to_arrow()["a"].combine_chunks()
+    assert result.equals(arrow_arr)
+
+
+def test_from_arrow_sparse_union_roundtrip() -> None:
+    arrow_arr = _make_sparse_union()
+    daft_recordbatch = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
+    assert "a" in daft_recordbatch.column_names()
+    result = daft_recordbatch.to_arrow()["a"].combine_chunks()
+    assert result.equals(arrow_arr)
+
+
+def test_from_arrow_dense_union_roundtrip() -> None:
+    arrow_arr = _make_dense_union()
+    daft_recordbatch = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
+    assert "a" in daft_recordbatch.column_names()
+    result = daft_recordbatch.to_arrow()["a"].combine_chunks()
+    assert result.equals(arrow_arr)
+
+
+def test_union_dtype_inferred() -> None:
+    """DataType.from_arrow_type correctly identifies sparse and dense union types."""
+    sparse_type = _make_sparse_union().type
+    dense_type = _make_dense_union().type
+
+    sparse_daft = DataType.from_arrow_type(sparse_type)
+    dense_daft = DataType.from_arrow_type(dense_type)
+
+    assert sparse_daft.is_union()
+    assert str(sparse_daft.union_mode) == "Sparse"
+
+    assert dense_daft.is_union()
+    assert str(dense_daft.union_mode) == "Dense"
+
+
+@pytest.mark.parametrize("make_arr,label", [(_make_dense_union, "dense")])
+@pytest.mark.parametrize("slice_", list(itertools.combinations(range(6), 2)))
+def test_union_sliced_roundtrip(make_arr, label, slice_) -> None:
+    offset, end = slice_
+    length = end - offset
+    arrow_arr = make_arr().slice(offset, length)
+    print("arrow_arr:", arrow_arr)
+    daft_recordbatch = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
+    result = daft_recordbatch.to_arrow()["a"].combine_chunks()
+    assert result.equals(arrow_arr)
+
+
+@pytest.mark.parametrize("make_arr,label", [(_make_sparse_union, "sparse")])
+@pytest.mark.parametrize("slice_", list(itertools.combinations(range(3), 2)))
+def test_union_sparse_sliced_roundtrip(make_arr, label, slice_) -> None:
+    offset, end = slice_
+    length = end - offset
+    arrow_arr = make_arr().slice(offset, length)
+    print("arrow_arr:", arrow_arr)
+    daft_recordbatch = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
+    result = daft_recordbatch.to_arrow()["a"].combine_chunks()
+    assert result.equals(arrow_arr)

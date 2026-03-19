@@ -54,6 +54,27 @@ impl StructArray {
     }
 }
 
+impl UnionArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+
+        let type_id = self.ids[idx] as usize;
+        let value_offset = if let Some(offsets) = self.offsets() {
+            offsets[idx] as usize
+        } else {
+            idx
+        };
+
+        let child = &self.children[type_id];
+        child.get_lit(value_offset)
+    }
+}
+
 impl TensorArray {
     pub fn get_lit(&self, idx: usize) -> Literal {
         assert!(

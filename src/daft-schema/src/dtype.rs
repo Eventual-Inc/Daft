@@ -7,7 +7,10 @@ use arrow_schema::IntervalUnit;
 use common_error::{DaftError, DaftResult};
 use serde::{Deserialize, Serialize};
 
-use crate::{field::Field, image_mode::ImageMode, media_type::MediaType, time_unit::TimeUnit};
+use crate::{
+    field::Field, image_mode::ImageMode, media_type::MediaType, time_unit::TimeUnit,
+    union_mode::UnionMode,
+};
 pub type DaftDataType = DataType;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -138,6 +141,8 @@ pub enum DataType {
 
     Unknown,
     File(MediaType),
+
+    Union(Vec<Field>, Vec<i8>, UnionMode),
 }
 
 impl Display for DataType {
@@ -213,6 +218,23 @@ impl Display for DataType {
             Self::Python => write!(f, "Python"),
             Self::Unknown => write!(f, "Unknown"),
             Self::File(format) => write!(f, "File[{format}]"),
+            Self::Union(fields, ids, mode) => {
+                let mut contents = String::default();
+                for (index, field) in fields.iter().enumerate() {
+                    if index != 0 {
+                        write!(&mut contents, ", ")?;
+                    }
+                    if !(field.name.is_empty() && field.dtype.is_null()) {
+                        write!(&mut contents, "{}: {}", field.name, field.dtype)?;
+                    }
+                }
+
+                write!(
+                    f,
+                    "Union[{}; type_ids: {:?}; mode: {}]",
+                    contents, ids, mode
+                )
+            }
         }
     }
 }
@@ -308,7 +330,16 @@ impl DataType {
             }
             Self::Date => arrow_schema::DataType::Date32,
             Self::Time(time_unit) => arrow_schema::DataType::Time64(time_unit.to_arrow()),
-
+            Self::Union(fields, ids, mode) => arrow_schema::DataType::Union(
+                arrow_schema::UnionFields::try_new(
+                    ids.clone(),
+                    fields
+                        .iter()
+                        .map(|f| f.to_arrow())
+                        .collect::<DaftResult<Vec<arrow_schema::Field>>>()?,
+                )?,
+                mode.to_arrow(),
+            ),
             _ => {
                 return Err(DaftError::TypeError(format!(
                     "Can not convert {self:?} into arrow type"
@@ -698,6 +729,11 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_union(&self) -> bool {
+        matches!(self, Self::Union(..))
+    }
+
+    #[inline]
     pub fn to_floating_representation(&self) -> DaftResult<Self> {
         let data_type = match self {
             // All numeric types that coerce to `f32`
@@ -1034,6 +1070,18 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
                 let value = Box::new(value);
 
                 Self::Map { key, value }
+            }
+            arrow_schema::DataType::Union(union_fields, mode) => {
+                let fields = union_fields
+                    .iter()
+                    .map(|(_, f)| Field::try_from(f.as_ref()))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let ids = union_fields.iter().map(|(id, _)| id).collect::<Vec<i8>>();
+                let mode = match mode {
+                    arrow_schema::UnionMode::Sparse => UnionMode::Sparse,
+                    arrow_schema::UnionMode::Dense => UnionMode::Dense,
+                };
+                Self::Union(fields, ids, mode)
             }
             other => {
                 return Err(DaftError::ValueError(format!(

@@ -227,6 +227,54 @@ def test_series_extension_type_size_bytes(uuid_ext_type, size, with_nulls) -> No
     assert size_bytes == get_total_buffer_size(post_daft_cast_data)
 
 
+# --- Union array size_bytes tests ---
+
+
+def test_series_sparse_union_size_bytes() -> None:
+    type_ids = pa.array([0, 1, 2, 0, 1, 2], type=pa.int8())
+    int_child = pa.array([10, 0, 0, 40, 0, 0], type=pa.int32())
+    float_child = pa.array([0.0, 2.2, 0.0, 0.0, 5.5, 0.0], type=pa.float64())
+    str_child = pa.array(["", "", "c", "", "", "f"], type=pa.large_utf8())
+    arrow_arr = pa.UnionArray.from_sparse(type_ids, [int_child, float_child, str_child], field_names=["i", "f", "s"])
+    s = Series.from_arrow(arrow_arr)
+    assert s.size_bytes() == get_total_buffer_size(arrow_arr)
+
+
+def test_series_dense_union_size_bytes() -> None:
+    type_ids = pa.array([0, 1, 0, 0, 1], type=pa.int8())
+    offsets = pa.array([0, 0, 1, 2, 1], type=pa.int32())
+    int_child = pa.array([10, 30, 40], type=pa.int32())
+    float_child = pa.array([2.2, 5.5], type=pa.float64())
+    arrow_arr = pa.UnionArray.from_dense(type_ids, offsets, [int_child, float_child], field_names=["i", "f"])
+    s = Series.from_arrow(arrow_arr)
+    assert s.size_bytes() == get_total_buffer_size(arrow_arr)
+
+
+def test_series_empty_sparse_union_size_bytes() -> None:
+    arrow_arr = pa.UnionArray.from_sparse(
+        pa.array([], type=pa.int8()),
+        [pa.array([], type=pa.int32()), pa.array([], type=pa.float64())],
+        field_names=["i", "f"],
+    )
+    s = Series.from_arrow(arrow_arr)
+    assert s.size_bytes() == get_total_buffer_size(arrow_arr)
+
+
+def test_series_sliced_sparse_union_size_bytes() -> None:
+    """size_bytes on a sliced sparse union reflects only the slice, not the full buffers."""
+    type_ids = pa.array([0, 1, 2, 0, 1, 2], type=pa.int8())
+    int_child = pa.array([10, 0, 0, 40, 0, 0], type=pa.int32())
+    float_child = pa.array([0.0, 2.2, 0.0, 0.0, 5.5, 0.0], type=pa.float64())
+    str_child = pa.array(["", "", "c", "", "", "f"], type=pa.large_utf8())
+    arrow_arr = pa.UnionArray.from_sparse(type_ids, [int_child, float_child, str_child], field_names=["i", "f", "s"])
+    s = Series.from_arrow(arrow_arr)
+    sliced = s.slice(1, 4)  # 3-element series
+    full = s
+
+    assert sliced.size_bytes() < full.size_bytes()
+    assert sliced.size_bytes() > 0
+
+
 @pytest.mark.parametrize("dtype, size", itertools.product(ARROW_INT_TYPES + ARROW_FLOAT_TYPES, [0, 1, 2, 8, 9, 16]))
 @pytest.mark.parametrize("with_nulls", [True, False])
 def test_series_canonical_tensor_extension_type_size_bytes(dtype, size, with_nulls) -> None:
