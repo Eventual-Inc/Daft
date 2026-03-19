@@ -105,6 +105,7 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
         };
 
         if should_initialize {
+            #[cfg(feature = "cli")]
             match daft_context::subscribers::dashboard::DashboardSubscriber::try_new() {
                 Ok(Some(sub)) => {
                     context.attach_subscriber("_dashboard".to_string(), Arc::new(sub));

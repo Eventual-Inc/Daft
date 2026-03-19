@@ -8,7 +8,7 @@ daft-core = {path = "../daft-core", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
-daft-dashboard = {path = "../daft-dashboard", default-features = false}
+daft-dashboard = {path = "../daft-dashboard", default-features = false, optional = true}
 daft-runners = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 log = {workspace = true}
@@ -22,6 +22,7 @@ tokio = {workspace = true}
 uuid = {workspace = true, features = ["v4"]}
 
 [features]
+cli = ["dep:daft-dashboard"]
 python = [
   "dep:pyo3",
   "common-daft-config/python",

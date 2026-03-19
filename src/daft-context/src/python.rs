@@ -100,6 +100,7 @@ impl<'a> From<&'a PyQueryMetadata> for &'a Arc<QueryMetadata> {
 }
 
 #[pyfunction]
+#[cfg(feature = "cli")]
 pub fn refresh_dashboard_subscriber() -> PyResult<()> {
     let ctx = crate::get_context();
     // Try to create the dashboard subscriber
@@ -119,6 +120,12 @@ pub fn refresh_dashboard_subscriber() -> PyResult<()> {
             e
         ))),
     }
+}
+
+#[pyfunction]
+#[cfg(not(feature = "cli"))]
+pub fn refresh_dashboard_subscriber() -> PyResult<()> {
+    Ok(())
 }
 
 impl From<Arc<QueryResult>> for PyQueryResult {

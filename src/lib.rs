@@ -150,7 +150,9 @@ pub mod pylib {
         m.add_wrapped(wrap_pyfunction!(get_max_log_level))?;
         m.add_wrapped(wrap_pyfunction!(set_compute_runtime_num_worker_threads))?;
 
+        #[cfg(feature = "cli")]
         daft_dashboard::register_modules(m)?;
+        #[cfg(feature = "cli")]
         daft_cli::register_modules(m)?;
 
         // We need to do this here because it's the only point in the rust codebase that we have access to all crates.

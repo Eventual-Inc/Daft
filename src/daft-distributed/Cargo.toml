@@ -34,6 +34,9 @@ itertools = {workspace = true}
 opentelemetry = {workspace = true}
 
 [features]
+cli = [
+  "daft-context/cli"
+]
 python = [
   "dep:pyo3",
   "dep:pyo3-async-runtimes",

@@ -52,15 +52,19 @@ hooks: .venv
 
 .PHONY: build
 build: check-toolchain .venv  ## Compile and install Daft for development
-	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --uv
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --uv --all-features
 
 .PHONY: build-release
-build-release: check-toolchain .venv  ## Compile and install a faster Daft binary
-	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --release --uv
+build-release: check-toolchain .venv  ## Compile and install a release Daft binary
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --release --uv --all-features
+
+.PHONY: build-bench
+build-bench: check-toolchain .venv  ## Compile and install using dev-bench profile
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --release --uv --features "python"
 
 .PHONY: build-whl
 build-whl: check-toolchain .venv  ## Compile Daft for development, only generate whl file without installation
-	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin build --release
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin build --release --all-features
 
 .PHONY: test
 test: .venv build  ## Run tests

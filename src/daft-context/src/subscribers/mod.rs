@@ -1,3 +1,4 @@
+#[cfg(feature = "cli")]
 pub mod dashboard;
 mod debug;
 #[cfg(feature = "python")]
@@ -65,18 +66,21 @@ pub trait Subscriber: Send + Sync + std::fmt::Debug + 'static {
 pub fn default_subscribers() -> HashMap<String, Arc<dyn Subscriber>> {
     let mut subscribers: HashMap<String, Arc<dyn Subscriber>> = HashMap::new();
 
-    // Dashboard subscriber
-    match dashboard::DashboardSubscriber::try_new() {
-        Ok(Some(s)) => {
-            subscribers.insert("_dashboard".to_string(), Arc::new(s));
-        }
-        Err(e) => match e {
-            DaftError::NotImplemented(msg) => {
-                panic!("{}", msg);
+    #[cfg(feature = "cli")]
+    {
+        // Dashboard subscriber
+        match dashboard::DashboardSubscriber::try_new() {
+            Ok(Some(s)) => {
+                subscribers.insert("_dashboard".to_string(), Arc::new(s));
             }
-            _ => log::error!("Failed to connect to the daft dashboard: {}", e),
-        },
-        _ => {}
+            Err(e) => match e {
+                DaftError::NotImplemented(msg) => {
+                    panic!("{}", msg);
+                }
+                _ => log::error!("Failed to connect to the daft dashboard: {}", e),
+            },
+            _ => {}
+        }
     }
 
     #[cfg(debug_assertions)]
