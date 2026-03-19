@@ -6,7 +6,8 @@ import warnings
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from daft.dependencies import requests
+from daft.dependencies import pafs, requests
+from daft.filesystem import _infer_filesystem
 from daft.io import AzureConfig, GravitinoConfig, IOConfig, S3Config
 
 
@@ -266,7 +267,12 @@ class GravitinoClient:
             if storage_location.startswith("file:/") and not storage_location.startswith("file:///"):
                 storage_location = storage_location.replace("file:/", "file:///", 1)
 
-            table_info = GravitinoTableInfo(
+            # For Iceberg tables, resolve the metadata file location
+            table_format = properties.get("format", "ICEBERG").upper()
+            table_uri = storage_location
+
+            # Create IO config early so it can be used for S3 metadata resolution
+            table_info_temp = GravitinoTableInfo(
                 name=table_data.get("name", table_name_only),
                 catalog=catalog_name,
                 schema=schema_name,
@@ -275,6 +281,122 @@ class GravitinoClient:
                 format=properties.get("format", "ICEBERG"),
                 properties=properties,
             )
+            io_config = _io_config_from_storage_location(table_info_temp.storage_location, table_info_temp.properties)
+
+            if table_format.startswith("ICEBERG"):
+                # For Iceberg tables, we need the metadata file path, not the table directory
+                # For local filesystem, construct the metadata file path
+                # For remote storage (S3, etc.), keep the table directory and let PyIceberg handle it
+                import os
+                from urllib.parse import urlparse
+
+                parsed_url = urlparse(storage_location)
+                if parsed_url.scheme == "file":
+                    # Local filesystem - we can access the metadata directory
+                    table_path = parsed_url.path
+                    metadata_dir = os.path.join(table_path, "metadata")
+
+                    # Check for version-hint.text file first (Iceberg standard)
+                    version_hint_path = os.path.join(metadata_dir, "version-hint.text")
+                    if os.path.exists(version_hint_path):
+                        try:
+                            with open(version_hint_path) as f:
+                                version = int(f.read().strip())
+                            # Find the metadata file with this version
+                            # Format: <version>-<uuid>.metadata.json
+                            version_prefix = f"{version:05d}-"
+                            for filename in os.listdir(metadata_dir):
+                                if filename.startswith(version_prefix) and filename.endswith(".metadata.json"):
+                                    table_uri = f"file://{os.path.join(metadata_dir, filename)}"
+                                    break
+                        except (OSError, ValueError):
+                            pass
+
+                    # Fallback: find the highest version number
+                    if table_uri == storage_location and os.path.exists(metadata_dir):
+                        metadata_files = [
+                            f
+                            for f in os.listdir(metadata_dir)
+                            if f.endswith(".metadata.json") and not f.startswith(".")
+                        ]
+                        if metadata_files:
+                            # Sort by version number (first part before dash)
+                            metadata_files.sort(key=lambda x: int(x.split("-")[0]), reverse=True)
+                            latest_metadata = metadata_files[0]
+                            table_uri = f"file://{os.path.join(metadata_dir, latest_metadata)}"
+
+                elif parsed_url.scheme == "s3" or parsed_url.scheme == "s3a":
+                    # S3 storage - implement metadata file resolution for S3
+                    try:
+                        # Construct the metadata directory path
+                        # S3 paths are in format: s3://bucket/path/to/table
+                        bucket_and_path = parsed_url.netloc + parsed_url.path
+                        metadata_dir = f"s3://{bucket_and_path}/metadata"
+
+                        # Try to read version-hint.text first
+                        version_hint_path = f"{metadata_dir}/version-hint.text"
+                        try:
+                            resolved_hint_path, fs, _ = _infer_filesystem(version_hint_path, io_config)
+                            with fs.open_input_file(resolved_hint_path) as f:
+                                version = int(f.read().decode("utf-8").strip())
+
+                            # List metadata files to find the one with this version
+                            resolved_metadata_dir, fs, _ = _infer_filesystem(metadata_dir, io_config)
+                            file_selector = pafs.FileSelector(resolved_metadata_dir, recursive=False)
+                            file_infos = fs.get_file_info(file_selector)
+
+                            version_prefix = f"{version:05d}-"
+                            for file_info in file_infos:
+                                if file_info.type == pafs.FileType.File:
+                                    filename = os.path.basename(file_info.path)
+                                    if filename.startswith(version_prefix) and filename.endswith(".metadata.json"):
+                                        table_uri = f"s3://{bucket_and_path}/metadata/{filename}"
+                                        break
+                        except (ValueError, OSError):
+                            # version-hint.text doesn't exist or can't be read, fall back to listing
+                            pass
+
+                        # Fallback: list metadata files and find the highest version
+                        if table_uri == storage_location:
+                            try:
+                                resolved_metadata_dir, fs, _ = _infer_filesystem(metadata_dir, io_config)
+                                file_selector = pafs.FileSelector(resolved_metadata_dir, recursive=False)
+                                file_infos = fs.get_file_info(file_selector)
+
+                                metadata_files = []
+                                for file_info in file_infos:
+                                    if file_info.type == pafs.FileType.File:
+                                        filename = os.path.basename(file_info.path)
+                                        if filename.endswith(".metadata.json") and not filename.startswith("."):
+                                            metadata_files.append(filename)
+
+                                if metadata_files:
+                                    # Sort by version number (first part before dash)
+                                    metadata_files.sort(key=lambda x: int(x.split("-")[0]), reverse=True)
+                                    latest_metadata = metadata_files[0]
+                                    table_uri = f"s3://{bucket_and_path}/metadata/{latest_metadata}"
+                            except OSError:
+                                # If we can't list files, keep the table directory
+                                # and let PyIceberg handle it
+                                pass
+                    except ImportError:
+                        # If dependencies are missing, fall back to PyIceberg
+                        pass
+
+                elif parsed_url.scheme == "hdfs":
+                    # HDFS storage - TODO: implement metadata file resolution for HDFS
+                    # For now, keep the table directory and let PyIceberg handle it
+                    # Future implementation should:
+                    # 1. Use io_config to access HDFS
+                    # 2. Read version-hint.text from hdfs://<namenode>/<path>/metadata/version-hint.text
+                    # 3. Construct metadata file path: hdfs://<namenode>/<path>/metadata/<version>-<uuid>.metadata.json
+                    pass
+
+                # For other storage schemes (gcs, abfs, etc.), keep the table directory
+                # and let PyIceberg handle the metadata resolution
+
+            # Use the already created table_info_temp
+            table_info = table_info_temp
 
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
@@ -284,12 +406,9 @@ class GravitinoClient:
         except Exception as e:
             raise Exception(f"Failed to load table {table_name}: {e}")
 
-        # Create IO config from table properties
-        io_config = _io_config_from_storage_location(table_info.storage_location, table_info.properties)
-
         return GravitinoTable(
             table_info=table_info,
-            table_uri=table_info.storage_location,
+            table_uri=table_uri,  # Use the resolved metadata file path for Iceberg tables
             io_config=io_config,
         )
 

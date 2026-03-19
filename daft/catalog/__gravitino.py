@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
 from daft.gravitino import GravitinoClient as InnerCatalog
 from daft.gravitino import GravitinoTable as InnerTable
+from daft.io._parquet import read_parquet
 from daft.io.iceberg._iceberg import read_iceberg
 
 if TYPE_CHECKING:
@@ -155,55 +156,169 @@ class GravitinoTable(Table):
             return t
         raise ValueError(f"Unsupported gravitino table type: {type(obj)}")
 
+    def _detect_format(self) -> str:
+        """Detect table format from metadata.
+
+        Returns:
+            Format string: "ICEBERG" or "PARQUET"
+
+        Raises:
+            ValueError: If format cannot be determined or is unsupported
+        """
+        format_str = self._inner.table_info.format.upper()
+
+        # Iceberg tables: format is "ICEBERG" or "ICEBERG/PARQUET"
+        if format_str.startswith("ICEBERG"):
+            return "ICEBERG"
+
+        # Parquet tables: format is "PARQUET" with Hive table_type
+        if format_str == "PARQUET":
+            table_type = self._inner.table_info.table_type.upper()
+            if "HIVE" in table_type or table_type == "":
+                return "PARQUET"
+
+        # Unsupported format
+        supported = ["ICEBERG", "PARQUET (Hive)"]
+        raise ValueError(
+            f"Unsupported table format: {format_str} (table_type: {self._inner.table_info.table_type}). "
+            f"Supported formats: {', '.join(supported)}"
+        )
+
+    def _read_iceberg(self, **options: Any) -> DataFrame:
+        """Read an Iceberg table.
+
+        Args:
+            snapshot_id: Optional snapshot ID to read from
+
+        Returns:
+            DataFrame containing table data
+
+        Raises:
+            ImportError: If pyiceberg is not installed
+        """
+        try:
+            return read_iceberg(
+                table=self._inner.table_uri,
+                snapshot_id=options.get("snapshot_id"),
+                io_config=self._inner.io_config,
+            )
+        except ImportError as e:
+            if "pyiceberg" in str(e):
+                raise ImportError(
+                    "PyIceberg is required to read Iceberg tables. "
+                    "Install it with: pip install 'daft[iceberg]' or pip install pyiceberg"
+                ) from e
+            raise
+
+    def _read_parquet(self, **options: Any) -> DataFrame:
+        """Read a Hive/Parquet table.
+
+        The storage_location points to a directory containing Parquet files.
+        Uses Daft's read_parquet with hive_partitioning enabled to handle
+        Hive-style partitioned tables.
+
+        Returns:
+            DataFrame containing table data
+        """
+        # For Hive tables, storage_location is the data directory
+        path = self._inner.table_info.storage_location
+
+        # Enable hive partitioning to handle partitioned tables
+        # This will automatically detect partition columns from directory structure
+        return read_parquet(
+            path=path,
+            io_config=self._inner.io_config,
+            hive_partitioning=True,
+        )
+
     ###
     # read methods
     ###
 
     def read(self, **options: Any) -> DataFrame:
+        """Read table data into a DataFrame.
+
+        Automatically detects the table format and uses the appropriate
+        read method. Supports format-specific options.
+
+        Args:
+            **options: Format-specific options
+                For Iceberg:
+                    - snapshot_id: Read from a specific snapshot
+
+        Returns:
+            DataFrame containing table data
+
+        Raises:
+            ValueError: If table format is unsupported
+            ImportError: If required dependencies are missing
+        """
         Table._validate_options("Gravitino read", options, GravitinoTable._read_options)
 
-        # For Iceberg tables, use the storage location (metadata path)
-        if self._inner.table_info.format.upper().startswith("ICEBERG"):
-            try:
-                return read_iceberg(
-                    table=self._inner.table_uri,
-                    snapshot_id=options.get("snapshot_id"),
-                    io_config=self._inner.io_config,
-                )
-            except ImportError as e:
-                if "pyiceberg" in str(e):
-                    raise ImportError(
-                        "PyIceberg is required to read Iceberg tables. "
-                        "Install it with: pip install 'daft[iceberg]' or pip install pyiceberg"
-                    ) from e
-                raise
+        format_type = self._detect_format()
+
+        if format_type == "ICEBERG":
+            return self._read_iceberg(**options)
+        elif format_type == "PARQUET":
+            return self._read_parquet(**options)
         else:
-            # For other formats, we might need different handling
-            raise NotImplementedError(
-                f"Reading {self._inner.table_info.format} format tables is not yet supported. "
-                f"Currently only ICEBERG format (and variants like ICEBERG/PARQUET) are supported."
-            )
+            # This should never happen if _detect_format() is correct
+            raise ValueError(f"Unsupported format: {format_type}")
 
     ###
     # write methods
     ###
 
     def append(self, df: DataFrame, **options: Any) -> None:
-        self._validate_options("Gravitino write", options, GravitinoTable._write_options)
+        """Append data to the table.
 
-        if self._inner.table_info.format.upper().startswith("ICEBERG"):
-            # For Iceberg tables, we need to create a PyIceberg table object
-            # This is more complex and may require additional Gravitino integration
-            raise NotImplementedError("Writing to Iceberg tables through Gravitino is not yet supported")
+        Args:
+            df: DataFrame to append
+            **options: Format-specific write options
+
+        Raises:
+            NotImplementedError: Write operations are not yet supported
+        """
+        Table._validate_options("Gravitino write", options, GravitinoTable._write_options)
+
+        format_type = self._detect_format()
+
+        if format_type == "ICEBERG":
+            raise NotImplementedError(
+                "Writing to Iceberg tables through Gravitino requires PyIceberg catalog integration. "
+                "This will be implemented in a future update."
+            )
+        elif format_type == "PARQUET":
+            raise NotImplementedError(
+                "Writing to Hive/Parquet tables through Gravitino is not yet supported. "
+                "Note: This would not update the Hive metastore."
+            )
         else:
-            raise NotImplementedError(f"Writing {self._inner.table_info.format} format tables is not yet supported")
+            raise NotImplementedError(f"Writing {format_type} format tables is not yet supported")
 
     def overwrite(self, df: DataFrame, **options: Any) -> None:
-        self._validate_options("Gravitino write", options, GravitinoTable._write_options)
+        """Overwrite the table with new data.
 
-        if self._inner.table_info.format.upper().startswith("ICEBERG"):
-            # For Iceberg tables, we need to create a PyIceberg table object
-            # This is more complex and may require additional Gravitino integration
-            raise NotImplementedError("Writing to Iceberg tables through Gravitino is not yet supported")
+        Args:
+            df: DataFrame to overwrite with
+            **options: Format-specific write options
+
+        Raises:
+            NotImplementedError: Write operations are not yet supported
+        """
+        Table._validate_options("Gravitino write", options, GravitinoTable._write_options)
+
+        format_type = self._detect_format()
+
+        if format_type == "ICEBERG":
+            raise NotImplementedError(
+                "Writing to Iceberg tables through Gravitino requires PyIceberg catalog integration. "
+                "This will be implemented in a future update."
+            )
+        elif format_type == "PARQUET":
+            raise NotImplementedError(
+                "Writing to Hive/Parquet tables through Gravitino is not yet supported. "
+                "Note: This would not update the Hive metastore."
+            )
         else:
-            raise NotImplementedError(f"Writing {self._inner.table_info.format} format tables is not yet supported")
+            raise NotImplementedError(f"Writing {format_type} format tables is not yet supported")

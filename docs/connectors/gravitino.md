@@ -15,6 +15,7 @@ pip install daft[gravitino]
 ## Features
 
 - **Catalog Navigation**: List catalogs, schemas, and tables
+- **Multi-Format Table Support**: Read tables in multiple formats (Iceberg, Hive/Parquet)
 - **Table Management**: Load existing tables or create new external tables
 - **Fileset Support**: Access Gravitino filesets for file storage
 - **GVFS Protocol**: Read and write files using `gvfs://` URLs for seamless fileset access
@@ -25,7 +26,7 @@ pip install daft[gravitino]
 
 ### Using Daft Catalog Integration (Recommended)
 
-The easiest way to use Gravitino with Daft is through the integrated catalog system:
+The easiest way to use Gravitino with Daft is through the integrated catalog system. This provides automatic format detection and a unified API:
 
 === "🐍 Python"
 
@@ -46,12 +47,15 @@ The easiest way to use Gravitino with Daft is through the integrated catalog sys
     catalog = Catalog.from_gravitino(client)
 
     # Use standard Daft catalog operations
-    tables = catalog.list_tables()
+    # Automatically detects format (Iceberg, Parquet, etc.)
+    table = catalog.get_table("my_catalog.my_schema.my_table")
+    df = table.read()
+    df.show()
     ```
 
-### Using Direct Client
+### Using Direct Client (Advanced)
 
-For more advanced use cases, you can use the GravitinoClient directly:
+For more control or when you need direct access to Gravitino metadata, you can use the GravitinoClient directly:
 
 === "🐍 Python"
 
@@ -67,6 +71,17 @@ For more advanced use cases, you can use the GravitinoClient directly:
         username="admin",
     )
 
+    # Load table directly from client
+    gravitino_table = client.load_table("my_catalog.my_schema.my_table")
+
+    # For Iceberg tables, read directly
+    df = daft.read_iceberg(gravitino_table)
+
+    # Or use Table.from_gravitino() for automatic format handling
+    from daft.catalog import Table
+    table = Table.from_gravitino(gravitino_table)
+    df = table.read()
+
     # See all available catalogs
     print(client.list_catalogs())
 
@@ -76,6 +91,11 @@ For more advanced use cases, you can use the GravitinoClient directly:
     # See available tables in a given schema
     print(client.list_tables("my_catalog.my_schema"))
     ```
+
+**When to use each approach:**
+
+- **Catalog Integration** (Recommended): Use when you want automatic format detection, unified API, and integration with Daft's catalog features
+- **Direct Client**: Use when you need direct access to Gravitino metadata, want to inspect table properties, or need fine-grained control
 
 ## Configuration
 
@@ -91,6 +111,42 @@ The client supports two authentication methods:
 Gravitino manages storage credentials through table and fileset properties. The client automatically extracts and configures:
 
 - **S3**: Access key, secret key, and session token
+
+### Supported Table Formats
+
+Daft's Gravitino integration supports reading tables in multiple formats:
+
+- **Iceberg**: Tables with format "ICEBERG" or "ICEBERG/PARQUET"
+- **Hive/Parquet**: Tables with format "PARQUET" and Hive table type
+
+The format is automatically detected from table metadata, so you can use the same `read()` method for all supported formats.
+
+=== "🐍 Python"
+
+    ```python
+    from daft.gravitino import GravitinoClient
+    from daft.catalog import Catalog
+
+    client = GravitinoClient(
+        endpoint="http://localhost:8090",
+        metalake_name="my_metalake",
+        username="admin"
+    )
+    catalog = Catalog.from_gravitino(client)
+
+    # Read Iceberg table
+    iceberg_table = catalog.get_table("my_catalog.my_schema.iceberg_table")
+    df1 = iceberg_table.read()
+    df1.show()
+
+    # Read Hive/Parquet table (same API!)
+    parquet_table = catalog.get_table("my_catalog.my_schema.hive_table")
+    df2 = parquet_table.read()
+    df2.show()
+
+    # Read Iceberg table with snapshot_id
+    df3 = iceberg_table.read(snapshot_id=12345)
+    ```
 
 ## GVFS Protocol Support
 
@@ -313,9 +369,12 @@ The client automatically detects and handles both formats for seamless compatibi
 
 ## Roadmap
 
-1. Support for read/write Iceberg tables from Gravitino
-2. Support for additional table formats (Hive, Hudi)
-3. Support for more storages (gcs, azure adls, oss, etc)
-4. Support for credential vending
+1. ✅ Support for reading Iceberg tables from Gravitino
+2. ✅ Support for reading Hive/Parquet tables from Gravitino
+3. Support for writing to Iceberg tables through Gravitino (requires PyIceberg catalog integration)
+4. Support for writing to Hive/Parquet tables through Gravitino
+5. Support for additional table formats (Delta Lake, Hudi)
+6. Support for more storages (GCS, Azure ADLS, OSS, etc)
+7. Support for credential vending
 
 Please open issues on the [Daft repository](https://github.com/Eventual-Inc/Daft) or [Gravitino repository](https://github.com/apache/gravitino) if you have any use-cases that Daft Gravitino connector does not currently cover!
