@@ -75,7 +75,6 @@ impl RecordBatch {
             ));
         }
         use rand::{Rng, distr::Uniform};
-        // `rand` 0.9 uses `try_from(range)` for building `Uniform` from ranges.
         let range = Uniform::try_from(0..num_partitions as u64).unwrap();
 
         let rng = rand::rngs::StdRng::seed_from_u64(seed);
