@@ -59,8 +59,8 @@ impl ExponentialBackoff {
                 return res.map_err(RetryError::into_inner);
             }
 
-            let jitter = rand::thread_rng()
-                .gen_range(0..((1 << attempts) * self.jitter_ms))
+            let jitter = rand::rng()
+                .random_range(0..((1 << attempts) * self.jitter_ms))
                 .min(self.max_backoff_ms);
 
             tokio::time::sleep(Duration::from_millis(jitter)).await;

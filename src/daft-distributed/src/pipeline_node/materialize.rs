@@ -245,7 +245,7 @@ mod tests {
 
         let mut rng = rand::rngs::StdRng::from_os_rng();
         let task_iter = (0..num_partitions).map(move |i| {
-            let sleep_duration = Duration::from_millis(rng.gen_range(100..300));
+            let sleep_duration = Duration::from_millis(rng.random_range(100..300));
             SubmittableTask::task_only(
                 MockTaskBuilder::new(partitions[i].clone())
                     .with_task_id(i as u32)

@@ -33,7 +33,7 @@ opendal = {workspace = true, features = [
   "services-github"  # GitHub repository contents
 ]}
 pyo3 = {workspace = true, optional = true}
-rand = "0.8.5"
+rand = {workspace = true}
 regex = {version = "1.12.2"}
 reqwest-middleware = "0.4.2"
 reqwest-retry = "0.7.0"
