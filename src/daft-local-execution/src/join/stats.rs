@@ -52,12 +52,15 @@ impl RuntimeStats for JoinStats {
         })
     }
 
+    // TODO: Remove these properties from RuntimeStats trait
     fn add_rows_in(&self, _rows: u64) {
-        unimplemented!()
+        unreachable!(
+            "Join Nodes shouldn't receive rows. Use add_build_rows_inserted or add_probe_rows_in instead."
+        )
     }
 
     fn add_rows_out(&self, _rows: u64) {
-        unimplemented!()
+        unreachable!("Join Nodes shouldn't receive rows. Use add_probe_rows_out instead.")
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
