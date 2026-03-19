@@ -5,7 +5,7 @@ use common_error::DaftResult;
 use fnv::FnvHasher;
 use serde::{Deserialize, Serialize};
 
-use crate::ScanTaskLikeRef;
+use crate::ScanTaskRef;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ShardingStrategy {
@@ -71,7 +71,6 @@ impl Sharder {
     }
 
     /// Computes hash for any hashable item and returns which shard should handle it.
-    /// By default, we use FNV hash.
     fn shard_for_item<T: Hash>(&self, item: &T) -> usize {
         let hash = fnv_hash(item);
         self.shard_for_hash(hash)
@@ -82,54 +81,10 @@ impl Sharder {
         self.shard_for_item(item) == self.rank
     }
 
-    /// Currently, we only support file-based sharding. In the future, we may support other sharding strategies and
-    /// these sharding methods will be moved to the sharding trait.
-    fn filter_scan_tasks_by_file(
-        &self,
-        scan_tasks: &[ScanTaskLikeRef],
-    ) -> DaftResult<Vec<ScanTaskLikeRef>> {
-        let tasks: Vec<_> = scan_tasks
-            .iter()
-            .filter(|scan_task| {
-                let paths = scan_task.get_file_paths();
-                self.should_handle_item(&paths[0])
-            })
-            .cloned()
-            .collect();
-        Ok(tasks)
-    }
-
-    fn sort_scan_tasks_by_file(
-        &self,
-        mut scan_tasks: Vec<ScanTaskLikeRef>,
-    ) -> Vec<ScanTaskLikeRef> {
-        scan_tasks.sort_by(|a, b| {
-            let path_a = &a.get_file_paths()[0];
-            let path_b = &b.get_file_paths()[0];
-            path_a.cmp(path_b)
-        });
-        scan_tasks
-    }
-
-    fn shard_scan_tasks_by_file(
-        &self,
-        scan_tasks: &[ScanTaskLikeRef],
-    ) -> DaftResult<Vec<ScanTaskLikeRef>> {
-        debug_assert!(
-            scan_tasks
-                .iter()
-                .all(|task| task.get_file_paths().len() == 1),
-            "All physical scan tasks have exactly one file path during logical plan optimization"
-        );
-        Ok(self.sort_scan_tasks_by_file(self.filter_scan_tasks_by_file(scan_tasks)?))
-    }
-
-    pub fn shard_scan_tasks(
-        &self,
-        scan_tasks: &[ScanTaskLikeRef],
-    ) -> DaftResult<Vec<ScanTaskLikeRef>> {
-        match self.strategy {
-            ShardingStrategy::File => self.shard_scan_tasks_by_file(scan_tasks),
+    /// Shards scan tasks according to the configured strategy.
+    pub fn shard_scan_tasks(&self, scan_tasks: &[ScanTaskRef]) -> DaftResult<Vec<ScanTaskRef>> {
+        match &self.strategy {
+            ShardingStrategy::File => shard_scan_tasks_by_file(self, scan_tasks),
         }
     }
 }
@@ -149,4 +104,43 @@ fn fnv_hash<T: Hash>(item: &T) -> u64 {
     let mut hasher = FnvHasher::default();
     item.hash(&mut hasher);
     hasher.finish()
+}
+
+fn filter_scan_tasks_by_file(
+    sharder: &Sharder,
+    scan_tasks: &[ScanTaskRef],
+) -> DaftResult<Vec<ScanTaskRef>> {
+    let tasks: Vec<_> = scan_tasks
+        .iter()
+        .filter(|scan_task| {
+            let paths = scan_task.get_file_paths();
+            paths.first().is_some_and(|p| sharder.should_handle_item(p))
+        })
+        .cloned()
+        .collect();
+    Ok(tasks)
+}
+
+fn sort_scan_tasks_by_file(mut scan_tasks: Vec<ScanTaskRef>) -> Vec<ScanTaskRef> {
+    scan_tasks.sort_by(|a, b| {
+        let path_a = a.get_file_paths();
+        let path_b = b.get_file_paths();
+        path_a.first().cmp(&path_b.first())
+    });
+    scan_tasks
+}
+
+fn shard_scan_tasks_by_file(
+    sharder: &Sharder,
+    scan_tasks: &[ScanTaskRef],
+) -> DaftResult<Vec<ScanTaskRef>> {
+    debug_assert!(
+        scan_tasks
+            .iter()
+            .all(|task| task.get_file_paths().len() == 1),
+        "All physical scan tasks have exactly one file path during logical plan optimization"
+    );
+    Ok(sort_scan_tasks_by_file(filter_scan_tasks_by_file(
+        sharder, scan_tasks,
+    )?))
 }

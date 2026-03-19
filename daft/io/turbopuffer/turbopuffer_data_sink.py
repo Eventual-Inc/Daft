@@ -151,7 +151,6 @@ class TurbopufferDataSink(DataSink[dict[str, Any]]):
                 )
             arrow_table = arrow_table.rename_columns({self._vector_column: "vector"})
 
-        # Use compute function approach for pyarrow 8.0.0 compatibility
         id_column = arrow_table.column("id")
         mask = pc.invert(pc.is_null(id_column))
         return arrow_table.filter(mask)

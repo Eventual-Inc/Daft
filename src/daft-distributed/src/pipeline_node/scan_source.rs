@@ -1,16 +1,14 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_display::{DisplayAs, DisplayLevel};
-#[cfg(feature = "python")]
-use common_file_formats::FileFormatConfig;
 use common_metrics::{
     BYTES_READ_KEY, Counter, Meter, StatSnapshot, UNIT_BYTES,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::SourceSnapshot,
 };
-use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
+use daft_scan::{Pushdowns, ScanTaskRef, SourceConfig};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
 use opentelemetry::KeyValue;
@@ -72,7 +70,7 @@ pub(crate) struct ScanSourceNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     pushdowns: Pushdowns,
-    scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+    scan_tasks: Arc<Vec<ScanTaskRef>>,
 }
 
 impl ScanSourceNode {
@@ -82,7 +80,7 @@ impl ScanSourceNode {
         node_id: NodeID,
         plan_config: &PlanConfig,
         pushdowns: Pushdowns,
-        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+        scan_tasks: Arc<Vec<ScanTaskRef>>,
         schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -112,10 +110,10 @@ impl ScanSourceNode {
         DistributedPipelineNode::new(Arc::new(self))
     }
 
-    fn make_source_task(self: &Arc<Self>, scan_task: ScanTaskLikeRef) -> SwordfishTaskBuilder {
+    fn make_source_task(self: &Arc<Self>, scan_task: ScanTaskRef) -> SwordfishTaskBuilder {
         let physical_scan = LocalPhysicalPlan::physical_scan(
             self.node_id(),
-            Some(scan_task.file_format_config()),
+            Some(scan_task.source_config.clone()),
             self.pushdowns.clone(),
             self.config.schema.clone(),
             StatsState::NotMaterialized,
@@ -156,15 +154,15 @@ impl PipelineNodeImpl for ScanSourceNode {
         res.push(format!("Num Scan Tasks = {num_scan_tasks}"));
         res.push(format!("Estimated Scan Bytes = {total_bytes}"));
 
-        if let Some(ffc) = self
+        if let Some(sc) = self
             .scan_tasks
             .first()
-            .map(|s| s.file_format_config())
+            .map(|s| s.source_config.clone())
             .as_deref()
         {
-            match ffc {
+            match sc {
                 #[cfg(feature = "python")]
-                FileFormatConfig::Database(config) => {
+                SourceConfig::Database(config) => {
                     if num_scan_tasks == 1 {
                         res.push(format!("SQL Query = {}", &config.sql));
                     } else {
@@ -172,7 +170,7 @@ impl PipelineNodeImpl for ScanSourceNode {
                     }
                 }
                 #[cfg(feature = "python")]
-                FileFormatConfig::PythonFunction { source_name, .. } => {
+                SourceConfig::PythonFunction { source_name, .. } => {
                     res.push(format!(
                         "Source = {}",
                         source_name.clone().unwrap_or_else(|| "None".to_string())

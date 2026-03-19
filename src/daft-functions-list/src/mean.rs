@@ -39,7 +39,7 @@ impl ScalarUDF for ListMean {
         let input = inputs.required((0, "input"))?;
         let inner_field = input.to_field(schema)?.to_exploded_field()?;
         Ok(Field::new(
-            inner_field.name.as_str(),
+            inner_field.name.as_ref(),
             try_mean_aggregation_supertype(&inner_field.dtype)?,
         ))
     }

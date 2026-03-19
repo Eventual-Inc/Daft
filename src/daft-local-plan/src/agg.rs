@@ -103,7 +103,7 @@ pub fn populate_aggregation_stages_bound_with_schema(
 
     for agg_expr in aggregations {
         let output_field = agg_expr.as_ref().to_field(schema)?;
-        let output_name = output_field.name.as_str();
+        let output_name = output_field.name.as_ref();
 
         let mut final_stage = |expr: ExprRef| {
             final_exprs.push(BoundExpr::new_unchecked(expr.alias(output_name)));

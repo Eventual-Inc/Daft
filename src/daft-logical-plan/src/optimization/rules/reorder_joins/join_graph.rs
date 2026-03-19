@@ -777,16 +777,34 @@ impl JoinGraphBuilder {
                 LogicalPlan::Project(Project {
                     input, projection, ..
                 }) => {
-                    // TODO(desmond): Currently we only support reordering through Project nodes that only project columns. Ideally we should
-                    // perform a projection pushup at the start of join reordering in order to separate out this logic from join graph construction,
-                    // and so that we can reorder joins that have more complex projections in between them.
-                    let reorderable_project = projection
+                    // Walk through projects that are pure column references
+                    // (original behavior) or non-narrowing alias renames.
+                    //
+                    // Pure column selects (even narrowing) are safe because they
+                    // add no renames to `final_name_map`.
+                    //
+                    // Alias renames require a non-narrowing check: narrowing
+                    // alias projects cause `final_name_map` renames to leak
+                    // across join boundaries when the same source appears on
+                    // multiple sides of a join (e.g. self-joins).
+                    let all_columns = projection
                         .iter()
                         .all(|e| matches!(e.as_ref(), Expr::Column(_)));
-                    if reorderable_project {
+                    let reorderable = all_columns || {
+                        let all_simple = projection.iter().all(|e| e.input_mapping().is_some());
+                        all_simple && {
+                            let input_names: HashSet<String> =
+                                input.schema().names().into_iter().collect();
+                            let mapped_inputs: HashSet<String> = projection
+                                .iter()
+                                .filter_map(|e| e.input_mapping())
+                                .collect();
+                            input_names.is_subset(&mapped_inputs)
+                        }
+                    };
+                    if reorderable {
                         plan = input;
                     } else {
-                        // Encountered a non-reorderable Project. Add the root plan at the top of the current linear chain as a relation to join.
                         self.add_relation(root_plan);
                         break;
                     }
@@ -1014,10 +1032,10 @@ mod tests {
     use std::sync::Arc;
 
     use common_daft_config::DaftExecutionConfig;
-    use common_scan_info::Pushdowns;
     use common_treenode::TransformedResult;
     use daft_core::prelude::*;
     use daft_dsl::{AggExpr, Expr, resolved_col, unresolved_col};
+    use daft_scan::Pushdowns;
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::JoinGraphBuilder;
@@ -1164,7 +1182,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Temporarily skipped - Join reordering algorithm needs to be updated to do a projection pushup"]
     fn test_create_join_graph_multiple_renames() {
         //                InnerJoin (a_beta = c)
         //                 /          \
@@ -1302,7 +1319,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Temporarily skipped - Join reordering algorithm needs to be updated to do a projection pushup"]
+    #[ignore = "Requires scoped final_name_map to walk through narrowing projections"]
     fn test_create_join_graph_with_non_join_projections_and_filters() {
         //                InnerJoin (a = d)
         //                    /        \

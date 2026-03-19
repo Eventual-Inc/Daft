@@ -245,7 +245,7 @@ fn prune_fields_from_schema(
         }
         let filtered_columns = schema
             .into_iter()
-            .filter(|field| names_to_keep.contains(field.name.as_str()))
+            .filter(|field| names_to_keep.contains(field.name.as_ref()))
             .cloned();
         Ok(Arc::new(Schema::new(filtered_columns)))
     } else {

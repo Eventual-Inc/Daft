@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use daft_logical_plan::LogicalPlanBuilder;
-use daft_scan::builder::CsvScanBuilder;
+use daft_logical_plan::{LogicalPlanBuilder, scan_builder::CsvScanBuilder};
 use sqlparser::ast::TableFunctionArgs;
 
 use super::{SQLTableFunction, try_coerce_list};

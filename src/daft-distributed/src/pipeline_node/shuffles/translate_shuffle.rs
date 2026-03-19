@@ -28,7 +28,6 @@ impl LogicalPlanToPipelineNodeTranslator {
             RepartitionSpec::Range(config) => config
                 .num_partitions
                 .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
-            RepartitionSpec::IntoPartitions(config) => config.num_partitions,
         };
 
         // Check if we should use flight shuffle
@@ -98,8 +97,11 @@ impl LogicalPlanToPipelineNodeTranslator {
             "auto" => {
                 let total_num_partitions = input_num_partitions * target_num_partitions;
                 let geometric_mean = (total_num_partitions as f64).sqrt() as usize;
-                const PARTITION_THRESHOLD_TO_USE_PRE_SHUFFLE_MERGE: usize = 200;
-                Ok(geometric_mean > PARTITION_THRESHOLD_TO_USE_PRE_SHUFFLE_MERGE)
+                Ok(geometric_mean
+                    > self
+                        .plan_config
+                        .config
+                        .pre_shuffle_merge_partition_threshold)
             }
             _ => Ok(false), // Default to naive map_reduce for unknown strategies
         }

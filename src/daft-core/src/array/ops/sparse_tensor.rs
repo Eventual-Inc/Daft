@@ -127,7 +127,7 @@ mod tests {
                 assert_eq!(fields.len(), 2, "Expected exactly 2 fields in Struct");
 
                 let indices_field = &fields[INDICES_IDX];
-                assert_eq!(indices_field.name, "indices");
+                assert_eq!(&*indices_field.name, "indices");
                 assert_eq!(
                     indices_field.dtype,
                     DataType::List(Box::new(minimal_dtype.clone()))

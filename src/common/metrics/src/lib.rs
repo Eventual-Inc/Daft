@@ -28,7 +28,7 @@ pub type QueryPlan = Arc<str>;
 /// Unique identifier for a node in the execution plan.
 pub type NodeID = usize;
 
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, from_py_object))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum QueryEndState {
     Finished,

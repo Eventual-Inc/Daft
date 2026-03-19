@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 
 /// Type of a join operation.
 #[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", eq, eq_int, from_py_object)
+)]
 pub enum JoinType {
     Inner,
     Left,
@@ -87,7 +90,10 @@ impl FromStr for JoinType {
 }
 
 #[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", eq, eq_int, from_py_object)
+)]
 pub enum JoinStrategy {
     Hash,
     SortMerge,
@@ -143,7 +149,10 @@ impl FromStr for JoinStrategy {
 }
 
 #[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", eq, eq_int, from_py_object)
+)]
 pub enum JoinSide {
     #[display("left")]
     Left,

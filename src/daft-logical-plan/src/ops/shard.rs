@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_scan_info::Sharder;
+use daft_scan::Sharder;
 use serde::{Deserialize, Serialize};
 
 use crate::{

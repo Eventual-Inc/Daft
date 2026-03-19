@@ -394,7 +394,6 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use common_error::DaftResult;
-    use common_scan_info::Pushdowns;
     use common_treenode::{Transformed, TreeNode};
     use daft_core::prelude::*;
     use daft_dsl::{
@@ -402,6 +401,7 @@ mod tests {
         functions::{FunctionExpr, python::LegacyPythonUDF},
         lit, resolved_col, unresolved_col,
     };
+    use daft_scan::Pushdowns;
 
     use super::{Optimizer, OptimizerBuilder, OptimizerConfig, RuleBatch, RuleExecutionStrategy};
     use crate::{
@@ -757,8 +757,8 @@ mod tests {
             .build();
         let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
         assert_eq!(
-            opt_plan,
-            expected,
+            opt_plan.repr_ascii(false),
+            expected.repr_ascii(false),
             "\n\nOptimized plan not equal to expected.\n\nOptimized:\n{}\n\nExpected:\n{}",
             opt_plan.repr_ascii(false),
             expected.repr_ascii(false)
@@ -819,8 +819,8 @@ mod tests {
             .build();
         let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
         assert_eq!(
-            opt_plan,
-            expected,
+            opt_plan.repr_ascii(false),
+            expected.repr_ascii(false),
             "\n\nOptimized plan not equal to expected.\n\nOptimized:\n{}\n\nExpected:\n{}",
             opt_plan.repr_ascii(false),
             expected.repr_ascii(false)
@@ -877,8 +877,8 @@ mod tests {
         let opt_plan = optimizer.optimize(plan, |_, _, _, _, _| {})?;
 
         assert_eq!(
-            opt_plan,
-            expected,
+            opt_plan.repr_ascii(false),
+            expected.repr_ascii(false),
             "\n\nOptimized plan not equal to expected.\n\nOptimized:\n{}\n\nExpected:\n{}",
             opt_plan.repr_ascii(false),
             expected.repr_ascii(false)

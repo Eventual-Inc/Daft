@@ -87,7 +87,7 @@ pub fn rewrite_predicate_for_partitioning(
 ) -> DaftResult<PredicateGroups> {
     let pfields_map: HashMap<&str, &PartitionField> = pfields
         .iter()
-        .map(|pfield| (pfield.field.name.as_str(), pfield))
+        .map(|pfield| (pfield.field.name.as_ref(), pfield))
         .collect();
 
     // Before rewriting predicate for partition filter pushdown, partition predicate clauses into groups that will need
@@ -155,7 +155,7 @@ pub fn rewrite_predicate_for_partitioning(
         let mut map = HashMap::with_capacity(pfields.len());
         for pf in pfields {
             if let Some(ref source_field) = pf.source_field {
-                let prev_value = map.insert(source_field.name.as_str(), pf);
+                let prev_value = map.insert(source_field.name.as_ref(), pf);
                 if let Some(prev_value) = prev_value {
                     return Err(common_error::DaftError::ValueError(format!(
                         "Duplicate Partitioning Columns found on same source field: {source_field}\n1: {prev_value}\n2: {pf}"
@@ -192,7 +192,7 @@ pub fn rewrite_predicate_for_partitioning(
                         return Ok(Transformed::yes(
                             Expr::BinaryOp {
                                 op: Eq,
-                                left: resolved_col(pfield.field.name.as_str()),
+                                left: resolved_col(pfield.field.name.as_ref()),
                                 right: new_expr,
                             }
                             .arced(),
@@ -207,7 +207,7 @@ pub fn rewrite_predicate_for_partitioning(
                         Expr::BinaryOp {
                             op: Eq,
                             left: new_expr,
-                            right: resolved_col(pfield.field.name.as_str()),
+                            right: resolved_col(pfield.field.name.as_ref()),
                         }
                         .arced(),
                     ));
@@ -230,7 +230,7 @@ pub fn rewrite_predicate_for_partitioning(
                         return Ok(Transformed::yes(
                             Expr::BinaryOp {
                                 op: NotEq,
-                                left: resolved_col(pfield.field.name.as_str()),
+                                left: resolved_col(pfield.field.name.as_ref()),
                                 right: new_expr,
                             }
                             .arced(),
@@ -245,7 +245,7 @@ pub fn rewrite_predicate_for_partitioning(
                         Expr::BinaryOp {
                             op: NotEq,
                             left: new_expr,
-                            right: resolved_col(pfield.field.name.as_str()),
+                            right: resolved_col(pfield.field.name.as_ref()),
                         }
                         .arced(),
                     ));
@@ -270,7 +270,7 @@ pub fn rewrite_predicate_for_partitioning(
                         return Ok(Transformed::yes(
                             Expr::BinaryOp {
                                 op: relaxed_op,
-                                left: resolved_col(pfield.field.name.as_str()),
+                                left: resolved_col(pfield.field.name.as_ref()),
                                 right: new_expr,
                             }
                             .arced(),
@@ -285,7 +285,7 @@ pub fn rewrite_predicate_for_partitioning(
                         Expr::BinaryOp {
                             op: relaxed_op,
                             left: new_expr,
-                            right: resolved_col(pfield.field.name.as_str()),
+                            right: resolved_col(pfield.field.name.as_ref()),
                         }
                         .arced(),
                     ));
@@ -295,10 +295,10 @@ pub fn rewrite_predicate_for_partitioning(
             }
 
             Expr::IsNull(expr) if let Some(pfield) = get_pfield_for_col(expr) => Ok(
-                Transformed::yes(Expr::IsNull(resolved_col(pfield.field.name.as_str())).arced()),
+                Transformed::yes(Expr::IsNull(resolved_col(pfield.field.name.as_ref())).arced()),
             ),
             Expr::NotNull(expr) if let Some(pfield) = get_pfield_for_col(expr) => Ok(
-                Transformed::yes(Expr::NotNull(resolved_col(pfield.field.name.as_str())).arced()),
+                Transformed::yes(Expr::NotNull(resolved_col(pfield.field.name.as_ref())).arced()),
             ),
             _ => Ok(Transformed::no(expr)),
         }

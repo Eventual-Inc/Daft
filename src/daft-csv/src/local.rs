@@ -164,7 +164,6 @@ pub async fn read_csv_local(
             &convert_options.unwrap_or_default(),
             &parse_options,
             io_client,
-            io_stats,
         )
         .await?;
         return Ok(RecordBatch::empty(Some(Arc::new(Schema::try_from(
@@ -226,8 +225,7 @@ pub async fn stream_csv_local(
 
     // Get schema and row estimations.
     let (schema, estimated_mean_row_size, estimated_std_row_size) =
-        get_schema_and_estimators(uri, &convert_options, &parse_options, io_client, io_stats)
-            .await?;
+        get_schema_and_estimators(uri, &convert_options, &parse_options, io_client).await?;
     let fields: Vec<ArrowField> = schema.fields().iter().map(|f| f.as_ref().clone()).collect();
     let num_fields = fields.len();
     let projection_indices =
@@ -237,7 +235,7 @@ pub async fn stream_csv_local(
         .map(|i| {
             let f = fields.get(*i).unwrap();
             daft_core::datatypes::Field::new(
-                f.name(),
+                f.name().as_str(),
                 daft_schema::dtype::DataType::try_from(f.data_type()).unwrap(),
             )
         })
@@ -276,6 +274,7 @@ pub async fn stream_csv_local(
         .into();
     stream_csv_as_tables(
         file,
+        io_stats,
         buffer_pool,
         num_fields,
         parse_options,
@@ -296,7 +295,6 @@ async fn get_schema_and_estimators(
     convert_options: &CsvConvertOptions,
     parse_options: &CsvParseOptions,
     io_client: Arc<IOClient>,
-    io_stats: Option<IOStatsRef>,
 ) -> DaftResult<(arrow_schema::Schema, f64, f64)> {
     let (inferred_schema, read_stats) = read_csv_schema_single(
         uri,
@@ -304,7 +302,7 @@ async fn get_schema_and_estimators(
         // Read at most 1 MiB to estimate stats.
         Some(1024 * 1024),
         io_client.clone(),
-        io_stats.clone(),
+        None,
     )
     .await?;
 
@@ -339,15 +337,15 @@ async fn get_schema_and_estimators(
 struct SlabIterator {
     file: std::fs::File,
     slabpool: Arc<FileSlabPool>,
-    total_bytes_read: usize,
+    io_stats: Option<IOStatsRef>,
 }
 
 impl SlabIterator {
-    fn new(file: std::fs::File, slabpool: Arc<FileSlabPool>) -> Self {
+    fn new(file: std::fs::File, slabpool: Arc<FileSlabPool>, io_stats: Option<IOStatsRef>) -> Self {
         Self {
             file,
             slabpool,
-            total_bytes_read: 0,
+            io_stats,
         }
     }
 }
@@ -364,7 +362,9 @@ impl Iterator for SlabIterator {
             if bytes_read == 0 {
                 return None;
             }
-            self.total_bytes_read += bytes_read;
+            if let Some(io_stats) = &self.io_stats {
+                io_stats.mark_bytes_read(bytes_read);
+            }
             guard.valid_bytes = bytes_read;
             bytes_read
         };
@@ -542,6 +542,7 @@ where
 #[allow(clippy::too_many_arguments)]
 fn stream_csv_as_tables(
     file: std::fs::File,
+    io_stats: Option<IOStatsRef>,
     buffer_pool: Arc<CsvBufferPool>,
     num_fields: usize,
     parse_options: CsvParseOptions,
@@ -556,7 +557,7 @@ fn stream_csv_as_tables(
 ) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>> + Send> {
     // Create a slab iterator over the file.
     let slabpool = FileSlabPool::new();
-    let slab_iterator = SlabIterator::new(file, slabpool);
+    let slab_iterator = SlabIterator::new(file, slabpool, io_stats);
 
     // Create a chunk iterator over the slab iterator.
     let csv_validator = CsvValidator::new(
