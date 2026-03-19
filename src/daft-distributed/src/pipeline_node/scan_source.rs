@@ -2,8 +2,7 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_display::{DisplayAs, DisplayLevel};
 use common_metrics::{
-    BYTES_READ_KEY, Counter, DURATION_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_BYTES,
-    UNIT_MICROSECONDS, UNIT_ROWS,
+    BYTES_READ_KEY, Counter, Meter, StatSnapshot, UNIT_BYTES,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::SourceSnapshot,
 };
@@ -12,7 +11,7 @@ use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_scan::{Pushdowns, ScanTaskRef, SourceConfig};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::KeyValue;
 
 use super::{PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
@@ -33,9 +32,13 @@ impl SourceStats {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
         let node_kv = key_values_from_context(context);
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
-            bytes_read: Counter::new(meter, BYTES_READ_KEY, None, Some(UNIT_BYTES.into())),
+            duration_us: meter.duration_us_metric(),
+            rows_out: meter.rows_out_metric(),
+            bytes_read: meter.u64_counter_with_desc_and_unit(
+                BYTES_READ_KEY,
+                None,
+                Some(UNIT_BYTES.into()),
+            ),
             node_kv,
         }
     }
