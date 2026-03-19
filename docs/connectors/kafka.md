@@ -58,6 +58,9 @@ Read all messages from a topic (earliest to latest):
 
     df = daft.read_kafka(bootstrap_servers="localhost:9092", topics="my-topic")
     df.show()
+    ```
+
+### Timestamp Bounds
 
 Read messages within a time range:
 
