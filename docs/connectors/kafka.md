@@ -67,6 +67,7 @@ Read messages within a time range:
 === "🐍 Python"
 
     ```python
+    import daft
     from datetime import datetime, timezone
 
     start = datetime(2024, 1, 1, tzinfo=timezone.utc)
