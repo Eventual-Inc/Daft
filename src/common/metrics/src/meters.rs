@@ -134,7 +134,7 @@ impl Meter {
         Self { otel }
     }
 
-    pub fn test_scope(name: &'static str) -> Self {
+    pub fn noop_scope(name: &'static str) -> Self {
         let otel = global::meter(name);
         Self { otel }
     }

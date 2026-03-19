@@ -62,10 +62,6 @@ impl IntoPartitionsNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     async fn coalesce_tasks(
         self: Arc<Self>,
         builders: Vec<SwordfishTaskBuilder>,

@@ -165,10 +165,6 @@ impl SinkNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     fn create_sink_plan(
         &self,
         input: LocalPhysicalPlanRef,
@@ -297,7 +293,7 @@ impl PipelineNodeImpl for SinkNode {
         res
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(WriteStats::new(meter, self.context()))
     }
 

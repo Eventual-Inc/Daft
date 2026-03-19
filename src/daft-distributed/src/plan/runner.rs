@@ -8,7 +8,7 @@ use std::{
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-use common_metrics::QueryID;
+use common_metrics::{Meter, QueryID};
 use common_partitioning::PartitionRef;
 use common_runtime::{JoinSet, create_join_set};
 use futures::{Stream, StreamExt};
@@ -182,11 +182,11 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         let logical_plan = plan.logical_plan().clone();
         let plan_config = PlanConfig::new(query_idx, query_id.clone(), config);
 
+        let meter = Meter::query_scope(query_id, "daft.execution.distributed");
         let pipeline_node =
-            logical_plan_to_pipeline_node(plan_config, logical_plan, Arc::new(psets))?;
-
+            logical_plan_to_pipeline_node(plan_config, logical_plan, Arc::new(psets), &meter)?;
         let statistics_manager =
-            StatisticsManager::from_pipeline_node(query_id, &pipeline_node, subscribers)?;
+            StatisticsManager::from_pipeline_node(&pipeline_node, subscribers, &meter)?;
 
         let runtime = get_or_init_runtime();
         let (result_sender, result_receiver) = create_channel(1);

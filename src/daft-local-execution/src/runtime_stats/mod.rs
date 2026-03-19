@@ -432,7 +432,7 @@ mod tests {
         let mock_state = mock_subscriber.state.clone();
 
         let node_stat = Arc::new(DefaultRuntimeStats::new(
-            &Meter::test_scope("test_stats"),
+            &Meter::noop_scope("test_stats"),
             &node_info_from_id(0),
         )) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
@@ -497,7 +497,7 @@ mod tests {
         let state2 = subscriber2.state.clone();
 
         let node_stat = Arc::new(DefaultRuntimeStats::new(
-            &Meter::test_scope("test_stats"),
+            &Meter::noop_scope("test_stats"),
             &node_info_from_id(0),
         )) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
@@ -574,7 +574,7 @@ mod tests {
         let state = mock_subscriber.state.clone();
 
         let node_stat = Arc::new(DefaultRuntimeStats::new(
-            &Meter::test_scope("test_stats"),
+            &Meter::noop_scope("test_stats"),
             &node_info_from_id(0),
         )) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
@@ -600,7 +600,7 @@ mod tests {
     #[tokio::test]
     async fn test_runtime_stats_context_operations() {
         let node_stat = Arc::new(DefaultRuntimeStats::new(
-            &Meter::test_scope("test_stats"),
+            &Meter::noop_scope("test_stats"),
             &node_info_from_id(0),
         ));
 
@@ -634,7 +634,7 @@ mod tests {
         let state = mock_subscriber.state.clone();
 
         let node_stat = Arc::new(DefaultRuntimeStats::new(
-            &Meter::test_scope("test_stats"),
+            &Meter::noop_scope("test_stats"),
             &node_info_from_id(0),
         )) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
@@ -672,7 +672,7 @@ mod tests {
         // Use 500ms for the throttle interval.
         let throttle_interval = Duration::from_millis(500);
         let node_stat = Arc::new(DefaultRuntimeStats::new(
-            &Meter::test_scope("test_stats"),
+            &Meter::noop_scope("test_stats"),
             &node_info_from_id(0),
         )) as Arc<dyn RuntimeStats>;
         let stats_manager = RuntimeStatsManager::new_impl(
