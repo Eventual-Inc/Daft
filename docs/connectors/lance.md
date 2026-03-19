@@ -415,7 +415,7 @@ Daft's distributed implementation currently supports `INVERTED`, `FTS`, and `BTR
     df.show()
     ```
 
-#### Build a BTREE index for faster range filters
+#### Build a BTREE index for faster point-lookup filters
 
 === "🐍 Python"
 
@@ -431,8 +431,12 @@ Daft's distributed implementation currently supports `INVERTED`, `FTS`, and `BTR
         name="price_btree",
     )
 
+    # BTREE index accelerates equality / IS IN / IS NULL point lookups.
+    # Range filters (>, <, BETWEEN) fall back to per-fragment scanning in Daft's
+    # current scanner layer and do not use the index.
     df = daft.read_lance(uri)
-    df.where(df["price"] > 30).show()
+    df.where(df["price"] == 30).show()
+    ```
     ```
 
 ### Data Evolution
