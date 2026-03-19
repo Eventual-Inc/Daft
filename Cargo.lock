@@ -2981,6 +2981,7 @@ dependencies = [
  "daft-recordbatch",
  "daft-scan",
  "daft-shuffles",
+ "daft-stats",
  "daft-text",
  "daft-warc",
  "daft-writers",

@@ -440,7 +440,7 @@ async fn forward_scan_task_stream(
     Ok(input_id)
 }
 
-async fn stream_scan_task(
+pub(crate) async fn stream_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: IOStatsRef,
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
