@@ -1,6 +1,8 @@
 #![feature(if_let_guard)]
+#[cfg(feature = "azure")]
 mod azure_blob;
 mod counting_reader;
+#[cfg(feature = "gcs")]
 mod google_cloud;
 #[cfg(feature = "python")]
 mod gravitino;
@@ -23,9 +25,11 @@ mod unity;
 
 use std::sync::LazyLock;
 
+#[cfg(feature = "azure")]
 use azure_blob::AzureBlobSource;
 use common_file_formats::FileFormat;
 pub use counting_reader::CountingReader;
+#[cfg(feature = "gcs")]
 use google_cloud::GCSSource;
 #[cfg(feature = "python")]
 use gravitino::GravitinoSource;
@@ -268,12 +272,30 @@ impl IOClient {
                 S3LikeSource::get_client(&self.config.s3).await? as Arc<dyn ObjectSource>
             }
             SourceType::AzureBlob => {
-                AzureBlobSource::get_client(&self.config.azure, &path).await?
-                    as Arc<dyn ObjectSource>
+                #[cfg(feature = "azure")]
+                {
+                    AzureBlobSource::get_client(&self.config.azure, &path).await?
+                        as Arc<dyn ObjectSource>
+                }
+                #[cfg(not(feature = "azure"))]
+                {
+                    return Err(Error::NotImplementedSource {
+                        store: "az".to_string(),
+                    });
+                }
             }
 
             SourceType::GCS => {
-                GCSSource::get_client(&self.config.gcs).await? as Arc<dyn ObjectSource>
+                #[cfg(feature = "gcs")]
+                {
+                    GCSSource::get_client(&self.config.gcs).await? as Arc<dyn ObjectSource>
+                }
+                #[cfg(not(feature = "gcs"))]
+                {
+                    return Err(Error::NotImplementedSource {
+                        store: "gcs".to_string(),
+                    });
+                }
             }
             SourceType::HF => {
                 HFSource::get_client(&self.config.hf, &self.config.http).await?
@@ -499,8 +521,14 @@ impl std::fmt::Display for SourceType {
             Self::File => write!(f, "file"),
             Self::Http => write!(f, "http"),
             Self::S3 => write!(f, "s3"),
+            #[cfg(feature = "azure")]
             Self::AzureBlob => write!(f, "AzureBlob"),
+            #[cfg(not(feature = "azure"))]
+            Self::AzureBlob => write!(f, "AzureBlob(disabled)"),
+            #[cfg(feature = "gcs")]
             Self::GCS => write!(f, "gcs"),
+            #[cfg(not(feature = "gcs"))]
+            Self::GCS => write!(f, "gcs(disabled)"),
             Self::HF => write!(f, "hf"),
             Self::Unity => write!(f, "UnityCatalog"),
             #[cfg(feature = "tos")]
@@ -603,8 +631,30 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
             _ => Ok((SourceType::Http, fixed_input)),
         },
         "s3" | "s3a" | "s3n" => Ok((SourceType::S3, fixed_input)),
-        "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
-        "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
+        "az" | "abfs" | "abfss" => {
+            #[cfg(feature = "azure")]
+            {
+                Ok((SourceType::AzureBlob, fixed_input))
+            }
+            #[cfg(not(feature = "azure"))]
+            {
+                Err(Error::NotImplementedSource {
+                    store: "az".to_string(),
+                })
+            }
+        }
+        "gcs" | "gs" => {
+            #[cfg(feature = "gcs")]
+            {
+                Ok((SourceType::GCS, fixed_input))
+            }
+            #[cfg(not(feature = "gcs"))]
+            {
+                Err(Error::NotImplementedSource {
+                    store: "gcs".to_string(),
+                })
+            }
+        }
         "hf" => Ok((SourceType::HF, fixed_input)),
         "tos" => {
             #[cfg(feature = "tos")]

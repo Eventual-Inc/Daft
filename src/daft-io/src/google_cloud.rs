@@ -616,7 +616,7 @@ impl ObjectSource for GCSSource {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gcs"))]
 mod tests {
     use common_io_config::GCSConfig;
 

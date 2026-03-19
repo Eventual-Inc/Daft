@@ -62,7 +62,7 @@ pyo3-log = {workspace = true, optional = true}
 sysinfo = {workspace = true}
 
 [features]
-default = ["tos"]
+default = ["tos", "azure", "gcs"]
 cli = [
   "python",
   "dep:daft-cli",
@@ -112,6 +112,8 @@ python = [
   "daft-recordbatch/python",
   "daft-writers/python"
 ]
+azure = ["daft-io/azure"]
+gcs = ["daft-io/gcs"]
 tos = ["daft-io/tos"]
 
 [lib]
