@@ -237,10 +237,17 @@ impl RuntimeStatsManager {
 
                     _ = interval.tick() => {
                         if let Some(ps) = &mut process_stats {
-                            snapshot_container.push((common_metrics::PROCESS_STATS_NODE_ID, ps.sample()));
+                            let ps_stats = ps.sample();
+                            for res in future::join_all(subscribers.iter().map(|subscriber| {
+                                subscriber.on_process_stats(query_id.clone(), ps_stats.clone())
+                            })).await {
+                                if let Err(e) = res {
+                                    log::error!("Failed to emit process stats: {}", e);
+                                }
+                            }
                         }
 
-                        if active_nodes.is_empty() && snapshot_container.is_empty() {
+                        if active_nodes.is_empty() {
                             continue;
                         }
 

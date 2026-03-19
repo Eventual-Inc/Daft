@@ -27,8 +27,6 @@ pub type QueryID = Arc<str>;
 pub type QueryPlan = Arc<str>;
 /// Unique identifier for a node in the execution plan.
 pub type NodeID = usize;
-/// Sentinel NodeID for process-level stats (not tied to any operator).
-pub const PROCESS_STATS_NODE_ID: NodeID = usize::MAX;
 
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, from_py_object))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -165,6 +163,5 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<StatType>()?;
     parent.add_class::<PyOperatorMetrics>()?;
     parent.add_class::<QueryEndState>()?;
-    parent.add("PROCESS_STATS_NODE_ID", PROCESS_STATS_NODE_ID)?;
     Ok(())
 }
