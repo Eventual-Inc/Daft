@@ -1,6 +1,10 @@
 use std::sync::atomic::Ordering;
 
-use common_metrics::{Counter, Meter, StatSnapshot, ops::NodeInfo, snapshot::JoinSnapshot};
+use common_metrics::{
+    Counter, Meter, StatSnapshot,
+    ops::NodeInfo,
+    snapshot::{JoinSnapshot, StatSnapshotImpl as _},
+};
 use opentelemetry::KeyValue;
 
 use crate::{
@@ -31,12 +35,12 @@ impl BasicJoinStats {
 
 impl RuntimeStats for BasicJoinStats {
     fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
+        self.duration_us
+            .add(snapshot.duration_us(), self.node_kv.as_slice());
         let StatSnapshot::Join(snapshot) = snapshot else {
             return;
         };
 
-        self.duration_us
-            .add(snapshot.cpu_us, self.node_kv.as_slice());
         self.build_rows_inserted
             .add(snapshot.build_rows_inserted, self.node_kv.as_slice());
         self.probe_rows_in

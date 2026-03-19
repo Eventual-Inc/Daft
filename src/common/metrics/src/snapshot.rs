@@ -22,6 +22,7 @@ macro_rules! stats {
 
 #[enum_dispatch]
 pub trait StatSnapshotImpl: Send + Sync + Serialize + Deserialize<'static> {
+    fn duration_us(&self) -> u64;
     fn to_stats(&self) -> Stats;
     fn to_message(&self) -> String;
 }
@@ -34,6 +35,10 @@ pub struct DefaultSnapshot {
 }
 
 impl StatSnapshotImpl for DefaultSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
             DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
@@ -59,6 +64,10 @@ pub struct SourceSnapshot {
 }
 
 impl StatSnapshotImpl for SourceSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
             DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
@@ -85,6 +94,10 @@ pub struct FilterSnapshot {
 }
 
 impl StatSnapshotImpl for FilterSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
             DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
@@ -113,6 +126,10 @@ pub struct ExplodeSnapshot {
 }
 
 impl StatSnapshotImpl for ExplodeSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
             DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
@@ -141,6 +158,10 @@ pub struct UdfSnapshot {
 }
 
 impl StatSnapshotImpl for UdfSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         let mut entries = SmallVec::with_capacity(3 + self.custom_counters.len());
 
@@ -188,6 +209,10 @@ pub struct JoinSnapshot {
 }
 
 impl StatSnapshotImpl for JoinSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
             DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
@@ -216,6 +241,10 @@ pub struct WriteSnapshot {
 }
 
 impl StatSnapshotImpl for WriteSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
             DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),

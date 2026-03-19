@@ -3,14 +3,12 @@ use std::sync::Arc;
 use arrow_array::{
     ArrayRef,
     builder::{
-        DurationMicrosecondBuilder, Float64Builder, LargeStringBuilder, MapBuilder, StructBuilder,
+        DurationMillisecondBuilder, Float64Builder, LargeStringBuilder, MapBuilder, StructBuilder,
         UInt64Builder,
     },
 };
 use common_error::{DaftError, DaftResult};
-use common_metrics::{
-    DURATION_KEY, QueryID, Stat, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl,
-};
+use common_metrics::{QueryID, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl};
 use daft_core::prelude::{DataType, Field, Schema, TimeUnit};
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
@@ -82,7 +80,7 @@ impl ExecutionStats {
         let mut names = LargeStringBuilder::new();
         let mut types = LargeStringBuilder::new();
         let mut categories = LargeStringBuilder::new();
-        let mut duration_values = DurationMicrosecondBuilder::new();
+        let mut duration_values = DurationMillisecondBuilder::new();
         let stats_values = StructBuilder::from_fields(
             vec![
                 arrow_schema::Field::new("value", arrow_schema::DataType::Float64, false),
@@ -97,17 +95,8 @@ impl ExecutionStats {
             names.append_value(&node_info.name);
             types.append_value(node_info.node_type.to_string());
             categories.append_value(node_info.node_category.to_string());
+            duration_values.append_value((stat_snapshot.duration_us() / 1000) as i64);
             for (name, value) in stat_snapshot.to_stats() {
-                // Note: Always expect one stat for duration by the execution engine
-                // TODO: Add checks just in case
-                if name.as_ref() == DURATION_KEY {
-                    let Stat::Duration(duration) = value else {
-                        panic!("`duration` metric is always a Stat::Duration in stats");
-                    };
-                    duration_values.append_value(duration.as_micros() as i64);
-                    continue;
-                }
-
                 stats.keys().append_value(name);
                 let values = stats.values();
                 let (value, unit) = value.into_f64_and_unit();

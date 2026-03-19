@@ -4,6 +4,7 @@ use common_error::DaftResult;
 use common_metrics::{
     Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::StatSnapshotImpl as _,
 };
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::{PlanStats, StatsState};
@@ -42,9 +43,9 @@ impl LimitStats {
 
 impl RuntimeStats for LimitStats {
     fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot) {
+        self.base.add_duration_us(snapshot.duration_us());
         match snapshot {
             StatSnapshot::Default(snapshot) => {
-                self.base.add_duration_us(snapshot.cpu_us);
                 if let Some(phase) = &node_info.node_phase {
                     // The first limit is used for pruning, the second limit is for the final output
                     if phase == FIRST_LIMIT_PHASE {
@@ -55,7 +56,6 @@ impl RuntimeStats for LimitStats {
                 }
             }
             StatSnapshot::Source(snapshot) => {
-                self.base.add_duration_us(snapshot.cpu_us);
                 if let Some(phase) = &node_info.node_phase
                     && phase == SECOND_LIMIT_PHASE
                 {
