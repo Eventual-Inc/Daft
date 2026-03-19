@@ -54,9 +54,6 @@ impl RayWorkerManagerState {
         })?;
 
         if !ray_workers.is_empty() {
-            for worker in &ray_workers {
-                tracing::debug!(worker_id = %worker.id(), "New worker joined");
-            }
             for worker in ray_workers {
                 self.ray_workers.insert(worker.id().clone(), worker);
             }
