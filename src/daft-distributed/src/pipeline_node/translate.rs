@@ -21,10 +21,10 @@ use daft_schema::schema::Schema;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, concat::ConcatNode,
-        distinct::DistinctNode, explode::ExplodeNode, filter::FilterNode,
-        glob_scan_source::GlobScanSourceNode, in_memory_source::InMemorySourceNode,
-        into_batches::IntoBatchesNode, into_partitions::IntoPartitionsNode, limit::LimitNode,
+        DistributedPipelineNode, NodeID, concat::ConcatNode, distinct::DistinctNode,
+        explode::ExplodeNode, filter::FilterNode, glob_scan_source::GlobScanSourceNode,
+        in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode,
+        into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
         project::ProjectNode, sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode,
         sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode, vllm::VLLMNode,
@@ -353,7 +353,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 }
             },
             LogicalPlan::IntoPartitions(into_partitions) => DistributedPipelineNode::new(
-                    Arc::new(IntoPartitionsNode::new(
+                Arc::new(IntoPartitionsNode::new(
                     self.get_next_pipeline_node_id(),
                     &self.plan_config,
                     into_partitions.num_partitions,
