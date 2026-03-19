@@ -336,7 +336,7 @@ def rstrip(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("rstrip", expr)
 
 
-def trim(expr: Expression) -> Expression:
+def strip(expr: Expression) -> Expression:
     """Strip whitespace from both sides of string.
 
     Returns:
@@ -344,43 +344,9 @@ def trim(expr: Expression) -> Expression:
 
     Examples:
         >>> import daft
-        >>> from daft.functions import trim
-        >>> df = daft.from_pydict({"x": ["foo", "bar", "  baz   "]})
-        >>> df = df.select(trim(df["x"]))
-        >>> df.show()
-        ╭────────╮
-        │ x      │
-        │ ---    │
-        │ String │
-        ╞════════╡
-        │ foo    │
-        ├╌╌╌╌╌╌╌╌┤
-        │ bar    │
-        ├╌╌╌╌╌╌╌╌┤
-        │ baz    │
-        ╰────────╯
-        <BLANKLINE>
-        (Showing first 3 of 3 rows)
-
-    """
-    return Expression._call_builtin_scalar_fn("trim", expr)
-
-
-def strip(expr: Expression, mode: Literal["left", "right", "both"] = "both") -> Expression:
-    """Strip whitespace from string.
-
-    Args:
-        expr: The expression to strip whitespace from.
-        mode: The mode to use for stripping whitespace. Can be "left", "right", or "both". Defaults to "both".
-
-    Returns:
-        Expression: a String expression which is `self` with whitespace stripped according to the mode
-
-    Examples:
-        >>> import daft
         >>> from daft.functions import strip
         >>> df = daft.from_pydict({"x": ["foo", "bar", "  baz   "]})
-        >>> df = df.select(strip(df["x"], mode="both"))
+        >>> df = df.select(strip(df["x"]))
         >>> df.show()
         ╭────────╮
         │ x      │
@@ -397,14 +363,7 @@ def strip(expr: Expression, mode: Literal["left", "right", "both"] = "both") -> 
         (Showing first 3 of 3 rows)
 
     """
-    if mode == "left":
-        return lstrip(expr)
-    elif mode == "right":
-        return rstrip(expr)
-    elif mode == "both":
-        return trim(expr)
-    else:
-        raise ValueError(f"Invalid mode: {mode}. Must be one of 'left', 'right', or 'both'.")
+    return Expression._call_builtin_scalar_fn("strip", expr)
 
 
 def reverse(expr: Expression) -> Expression:

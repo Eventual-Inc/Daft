@@ -12,12 +12,12 @@ use serde::{Deserialize, Serialize};
 use crate::utils::{Utf8ArrayUtils, unary_utf8_evaluate, unary_utf8_to_field};
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct Trim;
+pub struct Strip;
 
 #[typetag::serde]
-impl ScalarUDF for Trim {
+impl ScalarUDF for Strip {
     fn name(&self) -> &'static str {
-        "trim"
+        "strip"
     }
 
     fn call(
@@ -47,6 +47,6 @@ impl ScalarUDF for Trim {
 }
 
 #[must_use]
-pub fn trim(input: ExprRef) -> ExprRef {
-    ScalarFn::builtin(Trim {}, vec![input]).into()
+pub fn strip(input: ExprRef) -> ExprRef {
+    ScalarFn::builtin(Strip {}, vec![input]).into()
 }

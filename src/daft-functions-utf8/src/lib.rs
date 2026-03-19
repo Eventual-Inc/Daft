@@ -25,10 +25,10 @@ mod rpad;
 mod rstrip;
 mod split;
 mod startswith;
+mod strip;
 mod substr;
 mod to_date;
 mod to_datetime;
-mod trim;
 mod upper;
 pub(crate) mod utils;
 
@@ -58,10 +58,10 @@ pub use rpad::*;
 pub use rstrip::*;
 pub use split::*;
 pub use startswith::*;
+pub use strip::*;
 pub use substr::*;
 pub use to_date::*;
 pub use to_datetime::*;
-pub use trim::*;
 pub use upper::*;
 
 pub struct Utf8Functions;
@@ -95,7 +95,7 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
         parent.add_fn(Right);
         parent.add_fn(RPad);
         parent.add_fn(RStrip);
-        parent.add_fn(Trim);
+        parent.add_fn(Strip);
         parent.add_fn(SnakeCase);
         parent.add_fn(Split);
         parent.add_fn(StartsWith);
