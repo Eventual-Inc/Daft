@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from io import TextIOWrapper
 
 from daft.context import get_context
-from daft.daft import PyMicroPartition, PyQueryMetadata, PyQueryResult, QueryEndState, StatType
+from daft.daft import PROCESS_STATS_NODE_ID, PyMicroPartition, PyQueryMetadata, PyQueryResult, QueryEndState, StatType
 from daft.subscribers.abc import Subscriber
 
 _EVENT_LOG_ALIAS = "_daft_event_log"
@@ -208,14 +208,17 @@ class EventLogSubscriber(Subscriber):
             metrics: dict[str, Any] = {}
             for name, (_stat_type, value) in node_stats.items():
                 metrics[name] = value
-            self._write_event(
-                query_id,
-                "stats",
-                {
-                    "node_id": node_id,
-                    "metrics": metrics,
-                },
-            )
+            if node_id == PROCESS_STATS_NODE_ID:
+                self._write_event(query_id, "process_stats", {"metrics": metrics})
+            else:
+                self._write_event(
+                    query_id,
+                    "stats",
+                    {
+                        "node_id": node_id,
+                        "metrics": metrics,
+                    },
+                )
 
     def on_exec_operator_end(self, query_id: str, node_id: int) -> None:
         start = self._operator_starts.pop((query_id, node_id), None)

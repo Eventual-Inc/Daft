@@ -27,6 +27,8 @@ pub type QueryID = Arc<str>;
 pub type QueryPlan = Arc<str>;
 /// Unique identifier for a node in the execution plan.
 pub type NodeID = usize;
+/// Sentinel NodeID for process-level stats (not tied to any operator).
+pub const PROCESS_STATS_NODE_ID: NodeID = usize::MAX;
 
 #[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, from_py_object))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -141,11 +143,18 @@ pub const ATTR_NODE_ID: &str = "node.id";
 pub const ATTR_NODE_TYPE: &str = "node.type";
 pub const ATTR_NODE_PHASE: &str = "node.phase";
 
+// Process-level metrics
+pub const PROCESS_JEMALLOC_ALLOCATED_KEY: &str = "process.memory.jemalloc.allocated";
+pub const PROCESS_JEMALLOC_RESIDENT_KEY: &str = "process.memory.jemalloc.resident";
+pub const PROCESS_RSS_KEY: &str = "process.memory.rss";
+pub const PROCESS_CPU_PERCENT_KEY: &str = "process.cpu.percent";
+
 // Units (UCUM)
 pub const UNIT_ROWS: &str = "{row}";
 pub const UNIT_BYTES: &str = "By";
 pub const UNIT_MICROSECONDS: &str = "us";
 pub const UNIT_TASKS: &str = "{task}";
+pub const UNIT_PERCENT: &str = "%";
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
@@ -156,5 +165,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<StatType>()?;
     parent.add_class::<PyOperatorMetrics>()?;
     parent.add_class::<QueryEndState>()?;
+    parent.add("PROCESS_STATS_NODE_ID", PROCESS_STATS_NODE_ID)?;
     Ok(())
 }

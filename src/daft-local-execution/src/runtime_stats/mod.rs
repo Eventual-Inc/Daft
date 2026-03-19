@@ -1,3 +1,4 @@
+mod process_stats;
 mod progress_bar;
 mod values;
 
@@ -27,6 +28,14 @@ use tracing::{Instrument, instrument::Instrumented};
 pub use values::{DefaultRuntimeStats, RuntimeStats};
 
 use crate::pipeline::PipelineNode;
+
+fn should_enable_process_monitor() -> bool {
+    if let Ok(val) = std::env::var("DAFT_PROCESS_MONITOR_ENABLED") {
+        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+    } else {
+        false // Disabled by default; enable with DAFT_PROCESS_MONITOR_ENABLED=true
+    }
+}
 
 fn should_enable_progress_bar() -> bool {
     if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
@@ -169,6 +178,13 @@ impl RuntimeStatsManager {
         let node_tx = Arc::new(node_tx);
         let (finish_tx, mut finish_rx) = oneshot::channel::<QueryEndState>();
 
+        let mut process_stats = if should_enable_process_monitor() {
+            let meter = opentelemetry::global::meter("daft");
+            process_stats::ProcessStatsCollector::new(&meter)
+        } else {
+            None
+        };
+
         let event_loop = async move {
             let mut interval = interval(throttle_interval);
             let mut active_nodes = HashSet::with_capacity(node_map.len());
@@ -220,7 +236,11 @@ impl RuntimeStatsManager {
                     }
 
                     _ = interval.tick() => {
-                        if active_nodes.is_empty() {
+                        if let Some(ps) = &mut process_stats {
+                            snapshot_container.push((common_metrics::PROCESS_STATS_NODE_ID, ps.sample()));
+                        }
+
+                        if active_nodes.is_empty() && snapshot_container.is_empty() {
                             continue;
                         }
 

@@ -2356,6 +2356,8 @@ class StatType(Enum):
     FLOAT = 3
     DURATION = 5
 
+PROCESS_STATS_NODE_ID: int
+
 # TODO(void001): Implement Dead state
 class QueryEndState(Enum):
     Finished = 0
