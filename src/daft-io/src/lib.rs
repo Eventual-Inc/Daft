@@ -16,6 +16,7 @@ mod retry;
 pub mod s3_like;
 mod stats;
 mod stream_utils;
+#[cfg(feature = "tos")]
 mod tos;
 #[cfg(feature = "python")]
 mod unity;
@@ -30,6 +31,7 @@ use google_cloud::GCSSource;
 use gravitino::GravitinoSource;
 use huggingface::HFSource;
 use opendal_source::OpenDALSource;
+#[cfg(feature = "tos")]
 use tos::TosSource;
 #[cfg(feature = "python")]
 use unity::UnitySource;
@@ -288,7 +290,16 @@ impl IOClient {
                 }
             }
             SourceType::Tos => {
-                TosSource::get_client(&self.config.tos).await? as Arc<dyn ObjectSource>
+                #[cfg(feature = "tos")]
+                {
+                    TosSource::get_client(&self.config.tos).await? as Arc<dyn ObjectSource>
+                }
+                #[cfg(not(feature = "tos"))]
+                {
+                    return Err(Error::NotImplementedSource {
+                        store: "tos".to_string(),
+                    });
+                }
             }
             SourceType::Gravitino => {
                 #[cfg(feature = "python")]
@@ -492,7 +503,10 @@ impl std::fmt::Display for SourceType {
             Self::GCS => write!(f, "gcs"),
             Self::HF => write!(f, "hf"),
             Self::Unity => write!(f, "UnityCatalog"),
+            #[cfg(feature = "tos")]
             Self::Tos => write!(f, "tos"),
+            #[cfg(not(feature = "tos"))]
+            Self::Tos => write!(f, "tos(disabled)"),
             Self::Gravitino => write!(f, "Gravitino"),
             Self::OpenDAL { scheme } => write!(f, "opendal({})", scheme),
         }
@@ -503,10 +517,20 @@ impl SourceType {
     /// Whether source support write parquet/json/csv files via native IO,
     /// if the source is object store, it should support multipart part upload currently.
     pub fn supports_native_writer(&self) -> bool {
-        matches!(
-            self,
-            Self::File | Self::S3 | Self::Tos | Self::Gravitino | Self::OpenDAL { .. }
-        )
+        #[cfg(feature = "tos")]
+        {
+            matches!(
+                self,
+                Self::File | Self::S3 | Self::Tos | Self::Gravitino | Self::OpenDAL { .. }
+            )
+        }
+        #[cfg(not(feature = "tos"))]
+        {
+            matches!(
+                self,
+                Self::File | Self::S3 | Self::Gravitino | Self::OpenDAL { .. }
+            )
+        }
     }
 }
 
@@ -582,7 +606,18 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         "hf" => Ok((SourceType::HF, fixed_input)),
-        "tos" => Ok((SourceType::Tos, fixed_input)),
+        "tos" => {
+            #[cfg(feature = "tos")]
+            {
+                Ok((SourceType::Tos, fixed_input))
+            }
+            #[cfg(not(feature = "tos"))]
+            {
+                Err(Error::NotImplementedSource {
+                    store: "tos".to_string(),
+                })
+            }
+        }
         "cos" | "cosn" => Ok((
             SourceType::OpenDAL {
                 scheme: "cos".to_string(),

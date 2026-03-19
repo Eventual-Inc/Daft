@@ -45,7 +45,7 @@ tokio-stream = {workspace = true}
 tracing = {workspace = true}
 url = {workspace = true}
 uuid = {workspace = true}
-ve-tos-rust-sdk = "2.9.9"
+ve-tos-rust-sdk = {version = "2.9.9", optional = true}
 
 [dependencies.reqwest]
 default-features = false
@@ -57,6 +57,8 @@ md5 = "0.8.0"
 tempfile = "3.23.0"
 
 [features]
+default = ["tos"]
+tos = ["dep:ve-tos-rust-sdk"]
 python = [
   "dep:pyo3",
   "common-error/python",

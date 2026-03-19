@@ -62,7 +62,7 @@ pyo3-log = {workspace = true, optional = true}
 sysinfo = {workspace = true}
 
 [features]
-# need to manually turn on
+default = ["tos"]
 cli = [
   "python",
   "dep:daft-cli",
@@ -112,6 +112,7 @@ python = [
   "daft-recordbatch/python",
   "daft-writers/python"
 ]
+tos = ["daft-io/tos"]
 
 [lib]
 crate-type = ["cdylib"]
