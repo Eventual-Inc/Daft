@@ -106,14 +106,13 @@ impl Source for FlightShuffleReadSource {
                 // Build local stream (in same process)
                 let local_stream = if has_local {
                     Some(
-                        local_server
-                            .get_partition_local(
-                                shuffle_id,
-                                partition_idx,
-                                local_cache_ids.as_deref(),
-                                schema.clone(),
-                            )
-                            .await?,
+                        futures::stream::iter(local_server.get_partition_local(
+                            shuffle_id,
+                            partition_idx,
+                            local_cache_ids.as_deref(),
+                        )?)
+                        .map(Ok)
+                        .boxed(),
                     )
                 } else {
                     None
