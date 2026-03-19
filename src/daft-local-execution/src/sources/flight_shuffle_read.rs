@@ -19,8 +19,8 @@ pub struct FlightShuffleReadSource {
     partition_idx: usize,
     server_addresses: Vec<String>,
     server_cache_mapping: HashMap<String, Vec<u32>>,
-    schema: SchemaRef,
     local_server: Arc<ShuffleFlightServer>,
+    schema: SchemaRef,
 }
 
 impl FlightShuffleReadSource {
@@ -29,16 +29,16 @@ impl FlightShuffleReadSource {
         partition_idx: usize,
         server_addresses: Vec<String>,
         server_cache_mapping: HashMap<String, Vec<u32>>,
-        schema: SchemaRef,
         local_server: Arc<ShuffleFlightServer>,
+        schema: SchemaRef,
     ) -> Self {
         Self {
             shuffle_id,
             partition_idx,
             server_addresses,
             server_cache_mapping,
-            schema,
             local_server,
+            schema,
         }
     }
 }
@@ -79,67 +79,73 @@ impl Source for FlightShuffleReadSource {
         let schema = self.schema.clone();
         let local_server = self.local_server.clone();
 
+        let local_address = &local_server.ip_address;
+        let (has_local, remote_addresses) = if server_addresses.contains(local_address) {
+            (
+                true,
+                server_addresses
+                    .iter()
+                    .filter(|a| a.as_str() != local_address)
+                    .cloned()
+                    .collect(),
+            )
+        } else {
+            (false, server_addresses)
+        };
+
+        let local_cache_ids = server_cache_mapping.get(local_address).cloned();
+        let remote_server_cache_mapping: HashMap<String, Vec<u32>> = server_cache_mapping
+            .into_iter()
+            .filter(|(addr, _)| addr.as_str() != local_address)
+            .collect();
+
         let io_runtime = common_runtime::get_io_runtime(true);
         let (tx, rx) = create_channel(1);
         let task = io_runtime
             .spawn(async move {
-                let local_address = &local_server.ip_address;
-
-                let (has_local, remote_addresses) = if server_addresses.contains(local_address) {
-                    (
-                        true,
-                        server_addresses
-                            .iter()
-                            .filter(|a| a.as_str() != local_address)
-                            .cloned()
-                            .collect(),
+                // Build local stream (in same process)
+                let local_stream = if has_local {
+                    Some(
+                        local_server
+                            .get_partition_local(
+                                shuffle_id,
+                                partition_idx,
+                                local_cache_ids.as_deref(),
+                                schema.clone(),
+                            )
+                            .await?,
                     )
                 } else {
-                    (false, server_addresses)
+                    None
                 };
 
-                let local_cache_ids = server_cache_mapping.get(local_address).cloned();
-                let remote_server_cache_mapping: HashMap<String, Vec<u32>> = server_cache_mapping
-                    .into_iter()
-                    .filter(|(addr, _)| addr.as_str() != local_address)
-                    .collect();
-
-                // Build optional local stream (in-process) and remote stream (gRPC), then merge.
-                let mut streams: Vec<
-                    futures::stream::BoxStream<'static, DaftResult<daft_recordbatch::RecordBatch>>,
-                > = Vec::new();
-
-                if has_local {
-                    match local_server
-                        .get_partition_local(
-                            shuffle_id,
-                            partition_idx,
-                            local_cache_ids.as_deref(),
-                            schema.clone(),
-                        )
-                        .await
-                    {
-                        Ok(s) => streams.push(s.boxed()),
-                        Err(e) => return Err(e),
-                    }
-                }
-
-                if !remote_addresses.is_empty() {
+                // Build remote stream (gRPC)
+                let remote_stream = if !remote_addresses.is_empty() {
                     let mut client_manager = FlightClientManager::new(remote_addresses);
-                    let remote_stream = client_manager
-                        .fetch_partition(
-                            shuffle_id,
-                            partition_idx,
-                            &remote_server_cache_mapping,
-                            schema.clone(),
-                        )
-                        .await?;
-                    streams.push(remote_stream);
-                }
+                    Some(
+                        client_manager
+                            .fetch_partition(
+                                shuffle_id,
+                                partition_idx,
+                                &remote_server_cache_mapping,
+                                schema.clone(),
+                            )
+                            .await?,
+                    )
+                } else {
+                    None
+                };
 
-                let merged = futures::stream::iter(streams).flatten_unordered(None);
-                futures::pin_mut!(merged);
-                while let Some(batch) = merged.next().await {
+                let mut output_stream = match (local_stream, remote_stream) {
+                    (Some(local_stream), Some(remote_stream)) => {
+                        tokio_stream::StreamExt::merge(local_stream, remote_stream).boxed()
+                    }
+                    (Some(local_stream), None) => local_stream.boxed(),
+                    (None, Some(remote_stream)) => remote_stream,
+                    (None, None) => futures::stream::empty().boxed(),
+                };
+
+                while let Some(batch) = output_stream.next().await {
                     let mp = MicroPartition::new_loaded(schema.clone(), vec![batch?].into(), None);
                     if tx.send(Arc::new(mp)).await.is_err() {
                         break;

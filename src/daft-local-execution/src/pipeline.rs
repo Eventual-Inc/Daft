@@ -1445,8 +1445,8 @@ fn physical_plan_to_pipeline(
                 *partition_idx,
                 server_addresses.clone(),
                 server_cache_mapping.clone(),
-                schema.clone(),
                 ctx.shuffle_server().expect("Flight shuffle server must be initialized for FlightShuffleRead plans when using flight_shuffle algorithm"),
+                schema.clone(),
             );
             SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
         }
