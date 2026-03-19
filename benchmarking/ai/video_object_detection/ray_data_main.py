@@ -9,7 +9,7 @@ import io
 NUM_GPU_NODES = 8
 YOLO_MODEL = "yolo11n.pt"
 INPUT_PATH = (
-    "s3://daft-public-data/videos/Hollywood2-actions-videos/Hollywood2/AVIClips/"
+    "s3://daft-oss-public-data/videos/Hollywood2-actions-videos/Hollywood2/AVIClips/"
 )
 OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/video-object-detection-result"
 IMAGE_HEIGHT = 640

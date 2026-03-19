@@ -13,7 +13,7 @@ from daft import col
 EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
 NUM_GPU_NODES = 8
-INPUT_PATH = "s3://daft-public-datasets/digitalcorpora_metadata"
+INPUT_PATH = "s3://daft-oss-public-datasets/digitalcorpora_metadata"
 OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/document-embedding-results"
 MAX_PDF_PAGES = 100
 CHUNK_SIZE = 2048

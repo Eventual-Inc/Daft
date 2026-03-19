@@ -11,7 +11,7 @@ import daft
 from daft import col
 
 NUM_GPU_NODES = 8
-INPUT_PATH = "s3://daft-public-datasets/imagenet/benchmark"
+INPUT_PATH = "s3://daft-oss-public-datasets/imagenet/benchmark"
 OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/image-classification-results"
 BATCH_SIZE = 100
 IMAGE_DIM = (3, 224, 224)

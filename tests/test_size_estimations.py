@@ -135,7 +135,7 @@ def test_canonical_files_in_hf(path):
 @pytest.mark.parametrize(
     "path",
     [
-        "s3://daft-public-datasets/tpch_iceberg_sf1000.db/lineitem/data/L_SHIPDATE_month=1992-01/00000-6694-fa4594d5-f624-407c-8640-5b6db8150470-00001.parquet",
+        "s3://daft-oss-public-datasets/tpch_iceberg_sf1000.db/lineitem/data/L_SHIPDATE_month=1992-01/00000-6694-fa4594d5-f624-407c-8640-5b6db8150470-00001.parquet",
     ],
     ids=[
         "lineitem",

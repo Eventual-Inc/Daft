@@ -15,7 +15,7 @@ import daft
 TRANSCRIPTION_MODEL = "openai/whisper-tiny"
 NUM_GPUS = 8
 NEW_SAMPLING_RATE = 16000
-INPUT_PATH = "s3://daft-public-datasets/common_voice_17"
+INPUT_PATH = "s3://daft-oss-public-datasets/common_voice_17"
 OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/audio-transcription"
 
 daft.set_runner_ray()
