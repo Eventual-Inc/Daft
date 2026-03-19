@@ -206,10 +206,10 @@ def test_kafka_source_task_terminates_on_empty_consume(monkeypatch: pytest.Monke
 
     # Broker-free simulation:
     # We inject a minimal `confluent_kafka` module into `sys.modules` so that `_kafka.py` imports this stub
-    # at runtime inside `KafkaSourceTask.get_micro_partitions()`.
+    # at runtime inside `KafkaSourceTask.read()`.
     #
     # Behavior under test: if `consume()` returns an empty list immediately, the task should terminate
-    # without yielding any MicroPartitions and without retrying/spinning.
+    # without yielding any RecordBatches and without retrying/spinning.
     class _Consumer:
         consume_calls: int = 0
 
@@ -249,7 +249,7 @@ def test_kafka_source_task_terminates_on_empty_consume(monkeypatch: pytest.Monke
         _limit=None,
     )
 
-    assert list(task.get_micro_partitions()) == []
+    assert list(task.read()) == []
     assert _Consumer.consume_calls == 1
 
 
@@ -318,7 +318,7 @@ def test_kafka_source_task_ignores_partition_eof(monkeypatch: pytest.MonkeyPatch
         _limit=None,
     )
 
-    assert list(task.get_micro_partitions()) == []
+    assert list(task.read()) == []
 
 
 def test_kafka_source_task_respects_chunk_size(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -388,9 +388,9 @@ def test_kafka_source_task_respects_chunk_size(monkeypatch: pytest.MonkeyPatch) 
         _limit=None,
     )
 
-    micro_partitions = list(task.get_micro_partitions())
-    assert len(micro_partitions) == 3
-    assert [rows[0]["offset"] for rows in (mp.to_pylist() for mp in micro_partitions)] == [0, 1, 2]
+    record_batches = list(task.read())
+    assert len(record_batches) == 3
+    assert [rows[0]["offset"] for rows in (rb.to_pylist() for rb in record_batches)] == [0, 1, 2]
 
 
 def test_kafka_source_task_respects_limit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -455,6 +455,6 @@ def test_kafka_source_task_respects_limit(monkeypatch: pytest.MonkeyPatch) -> No
         _limit=3,
     )
 
-    micro_partitions = list(task.get_micro_partitions())
-    total_rows = sum(len(mp.to_pylist()) for mp in micro_partitions)
+    record_batches = list(task.read())
+    total_rows = sum(len(rb.to_pylist()) for rb in record_batches)
     assert total_rows == 3

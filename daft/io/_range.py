@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 from daft import DataType
 from daft.api_annotations import PublicAPI
 from daft.io.source import DataSource, DataSourceTask
-from daft.recordbatch import MicroPartition
+from daft.recordbatch import RecordBatch
 from daft.schema import Schema
 
 if TYPE_CHECKING:
@@ -223,5 +223,5 @@ class RangeSourceTask(DataSourceTask):
     def schema(self) -> Schema:
         return RangeSource._schema
 
-    def get_micro_partitions(self) -> Iterator[MicroPartition]:
-        yield MicroPartition.from_pydict({"id": list(range(self._start, self._end, self._step))})
+    def read(self) -> Iterator[RecordBatch]:
+        yield RecordBatch.from_pydict({"id": list(range(self._start, self._end, self._step))})

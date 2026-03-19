@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from daft.dataframe import DataFrame
     from daft.io.partitioning import PartitionField
     from daft.io.pushdowns import Pushdowns
-    from daft.recordbatch import MicroPartition
+    from daft.recordbatch import RecordBatch
     from daft.schema import Schema
 
 
@@ -80,14 +80,14 @@ class DataSourceTask(ABC):
     @property
     @abstractmethod
     def schema(self) -> Schema:
-        """Returns the schema shared by each MicroPartition."""
+        """Returns the schema shared by each RecordBatch."""
         ...
 
     @abstractmethod
-    def get_micro_partitions(self) -> Iterator[MicroPartition]:
-        """Executes this task to produce MicroPartitions.
+    def read(self) -> Iterator[RecordBatch]:
+        """Executes this task, producing a stream of RecordBatches.
 
         Returns:
-            An iterable of MicroPartition objects containing the data for this task.
+            An iterable of RecordBatch objects containing the data for this task.
         """
         ...

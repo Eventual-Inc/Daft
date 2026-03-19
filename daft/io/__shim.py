@@ -75,4 +75,4 @@ class _DataSourceShim(ScanOperator):
 
 def _get_record_batches(task: DataSourceTask) -> Iterator[PyRecordBatch]:
     """The task instance has been pickled then sent to this stateless method."""
-    yield from (rb._recordbatch for mp in task.get_micro_partitions() for rb in mp.get_record_batches())
+    yield from (rb._recordbatch for rb in task.read())

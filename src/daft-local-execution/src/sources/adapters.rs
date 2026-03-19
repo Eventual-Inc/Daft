@@ -36,16 +36,16 @@ impl ScanOperatorAdapter {
 }
 
 impl DataSource for ScanOperatorAdapter {
-    fn name(&self) -> &str {
-        self.0.0.name()
+    fn name(&self) -> String {
+        self.0.0.name().to_string()
     }
 
     fn schema(&self) -> SchemaRef {
         self.0.0.schema()
     }
 
-    fn partition_fields(&self) -> &[PartitionField] {
-        self.0.0.partitioning_keys()
+    fn partition_fields(&self) -> Vec<PartitionField> {
+        self.0.0.partitioning_keys().to_vec()
     }
 
     fn statistics(&self) -> Option<DataSourceStatistics> {

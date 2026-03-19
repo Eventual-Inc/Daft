@@ -177,6 +177,7 @@ pub mod pylib {
     use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
     use daft_schema::{python::schema::PySchema, schema::SchemaRef};
     use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+    use futures::stream::BoxStream;
     use pyo3::{prelude::*, pyclass, types::PyIterator};
     use serde::{Deserialize, Serialize};
 
@@ -187,6 +188,7 @@ pub mod pylib {
         anonymous::AnonymousScanOperator,
         glob::GlobScanOperator,
         python::pylib_scan_info::{PyPartitionField, PyPushdowns},
+        source::{DataSource, DataSourceTask, ReadOptions},
         storage_config::StorageConfig,
     };
 
@@ -505,6 +507,142 @@ pub mod pylib {
             } else {
                 None
             }
+        }
+    }
+
+    // ── PythonDataSource ──────────────────────────────────────────────────────
+
+    /// Wraps a Python `DataSource` object as a Rust [`DataSource`].
+    ///
+    /// Eliminates the `_DataSourceShim` → factory-function → pickle indirection
+    /// used by the legacy [`ScanOperator`] path. All trait methods call Python
+    /// directly — no fields are cached.
+    #[cfg_attr(debug_assertions, derive(Debug))]
+    pub struct PythonDataSource(pyo3::Py<pyo3::PyAny>);
+
+    impl PythonDataSource {
+        pub fn new(inner: pyo3::Py<pyo3::PyAny>) -> Self {
+            Self(inner)
+        }
+    }
+
+    impl DataSource for PythonDataSource {
+        fn name(&self) -> String {
+            Python::attach(|py| {
+                self.0
+                    .bind(py)
+                    .getattr(pyo3::intern!(py, "name"))
+                    .expect("DataSource.name should not fail")
+                    .extract()
+                    .expect("DataSource.name must be a string")
+            })
+        }
+
+        fn schema(&self) -> SchemaRef {
+            Python::attach(|py| {
+                self.0
+                    .bind(py)
+                    .getattr(pyo3::intern!(py, "schema"))
+                    .expect("DataSource.schema should not fail")
+                    .getattr(pyo3::intern!(py, "_schema"))
+                    .expect("Schema._schema should not fail")
+                    .extract::<PySchema>()
+                    .expect("_schema must be a PySchema")
+                    .schema
+            })
+        }
+
+        fn partition_fields(&self) -> Vec<PartitionField> {
+            Python::attach(|py| {
+                self.0
+                    .bind(py)
+                    .call_method0(pyo3::intern!(py, "get_partition_fields"))
+                    .expect("DataSource.get_partition_fields should not fail")
+                    .try_iter()
+                    .expect("get_partition_fields must return an iterable")
+                    .map(|p| {
+                        p.expect("partition field item should not fail")
+                            .extract::<PyPartitionField>()
+                            .expect("must be a PartitionField")
+                            .0
+                            .as_ref()
+                            .clone()
+                    })
+                    .collect()
+            })
+        }
+
+        fn get_tasks(&self, pushdowns: &Pushdowns) -> DaftResult<Vec<Arc<dyn DataSourceTask>>> {
+            Python::attach(|py| {
+                let pypd = PyPushdowns(Arc::new(pushdowns.clone())).into_pyobject(py)?;
+                self.0
+                    .bind(py)
+                    .call_method1(pyo3::intern!(py, "get_tasks"), (pypd,))?
+                    .try_iter()?
+                    .map(|item| {
+                        let task = item?.unbind();
+                        Ok(Arc::new(PythonDataSourceTask(task)) as Arc<dyn DataSourceTask>)
+                    })
+                    .collect::<PyResult<Vec<_>>>()
+            })
+            .map_err(|e: PyErr| common_error::DaftError::External(e.into()))
+        }
+    }
+
+    // ── PythonDataSourceTask ──────────────────────────────────────────────────
+
+    /// Wraps a Python `DataSourceTask` object as a Rust [`DataSourceTask`].
+    #[cfg_attr(debug_assertions, derive(Debug))]
+    pub struct PythonDataSourceTask(pyo3::Py<pyo3::PyAny>);
+
+    #[async_trait::async_trait]
+    impl DataSourceTask for PythonDataSourceTask {
+        fn schema(&self) -> SchemaRef {
+            Python::attach(|py| {
+                self.0
+                    .bind(py)
+                    .getattr(pyo3::intern!(py, "schema"))
+                    .expect("DataSourceTask.schema should not fail")
+                    .getattr(pyo3::intern!(py, "_schema"))
+                    .expect("Schema._schema should not fail")
+                    .extract::<PySchema>()
+                    .expect("_schema must be a PySchema")
+                    .schema
+            })
+        }
+
+        async fn read(
+            &self,
+            _opts: ReadOptions,
+        ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+            // clone_ref requires the GIL; do it here before entering spawn_blocking.
+            let task = Python::attach(|py| self.0.clone_ref(py));
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<DaftResult<RecordBatch>>();
+
+            // Python iteration is blocking; run on the blocking thread pool.
+            // The GIL is held for the duration — Python sources are inherently
+            // single-threaded. Use a result closure so errors propagate with `?`.
+            tokio::task::spawn_blocking(move || {
+                let result: PyResult<()> = Python::attach(|py| {
+                    let task = task.bind(py);
+                    let read = task.getattr(pyo3::intern!(py, "read"))?;
+                    for rb in read.call0()?.try_iter()? {
+                        let py_rb = rb?.extract::<PyRecordBatch>().map_err(PyErr::from)?;
+                        if tx.send(Ok(py_rb.record_batch)).is_err() {
+                            return Ok(()); // consumer dropped, stop early
+                        }
+                    }
+                    Ok(())
+                });
+
+                if let Err(e) = result {
+                    let _ = tx.send(Err(common_error::DaftError::External(e.into())));
+                }
+            });
+
+            Ok(Box::pin(
+                tokio_stream::wrappers::UnboundedReceiverStream::new(rx),
+            ))
         }
     }
 

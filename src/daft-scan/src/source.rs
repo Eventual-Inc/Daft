@@ -11,15 +11,15 @@ use crate::{partitioning::PartitionField, pushdowns::Pushdowns};
 
 /// Base trait for reading tabular data; new sources implement this trait.
 pub trait DataSource: Send + Sync + Debug {
-    /// The name of the data source, typically a `'static` string, useful for debugging.
-    fn name(&self) -> &str;
+    /// The name of the data source, useful for debugging.
+    fn name(&self) -> String;
 
     /// The schema of the data source.
     fn schema(&self) -> SchemaRef;
 
     /// The partitioning fields of the data source, used in pushdown splitting.
-    fn partition_fields(&self) -> &[PartitionField] {
-        &[]
+    fn partition_fields(&self) -> Vec<PartitionField> {
+        vec![]
     }
 
     /// Pre-computed statistics for query optimization.

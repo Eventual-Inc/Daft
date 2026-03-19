@@ -228,6 +228,11 @@ enable_error_code = ["attr-defined"]
 module = 'daft.*'
 warn_return_any = false
 
+[[tool.mypy.overrides]]
+# `_range as range` intentionally shadows the builtin to expose daft.range.
+disable_error_code = ["no-redef"]
+module = 'daft'
+
 [tool.pyright]
 typeCheckingMode = "off"
 venv = ".venv"

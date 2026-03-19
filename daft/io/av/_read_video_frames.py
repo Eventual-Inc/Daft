@@ -13,7 +13,7 @@ from daft.daft import FileInfos, ImageMode
 from daft.datatype import DataType
 from daft.filesystem import _infer_filesystem, glob_path_with_stats
 from daft.io import DataSource, DataSourceTask
-from daft.recordbatch import MicroPartition
+from daft.recordbatch import RecordBatch
 from daft.schema import Schema
 
 if TYPE_CHECKING:
@@ -269,7 +269,7 @@ class _VideoFramesSourceTask(DataSourceTask):
             if os.path.exists(temp_file):
                 os.remove(temp_file)
 
-    def get_micro_partitions(self) -> Iterator[MicroPartition]:
+    def read(self) -> Iterator[RecordBatch]:
         with self._open() as file:
             buffer = _VideoFramesBuffer(
                 image_height=self.image_height,
@@ -279,11 +279,11 @@ class _VideoFramesSourceTask(DataSourceTask):
                 buffer.append(frame)
                 # yield when full
                 if buffer.size() >= self._max_partition_size:
-                    yield buffer.to_micropartition()
+                    yield buffer.to_record_batch()
                     buffer.clear()
             # yield if non-empty
             if buffer and buffer.size() > 0:
-                yield buffer.to_micropartition()
+                yield buffer.to_record_batch()
 
 
 class _VideoFramesBuffer:
@@ -352,9 +352,9 @@ class _VideoFramesBuffer:
         self._arr_data.append(frame.data)
         self._size_in_bytes += frame.data.nbytes + self._size_of_metadata
 
-    def to_micropartition(self) -> MicroPartition:
-        """Returns a MicroPartition for this builder."""
-        return MicroPartition.from_pydict(
+    def to_record_batch(self) -> RecordBatch:
+        """Returns a RecordBatch for this builder."""
+        return RecordBatch.from_pydict(
             {
                 "path": self._arr_path,
                 "frame_index": self._arr_frame_index,

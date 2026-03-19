@@ -10,7 +10,7 @@ from daft.dependencies import pafs
 from daft.filesystem import _resolve_paths_and_filesystem, get_protocol_from_path
 from daft.io.source import DataSource, DataSourceTask
 from daft.logical.schema import Schema
-from daft.recordbatch.micropartition import MicroPartition
+from daft.recordbatch import RecordBatch
 
 if TYPE_CHECKING:
     import pathlib
@@ -234,7 +234,7 @@ class MCAPSourceTask(DataSourceTask):
     _topics: list[str] | None = None
     _io_config: IOConfig | None = None
 
-    def execute(self) -> Iterator[MicroPartition]:
+    def execute(self) -> Iterator[RecordBatch]:
         import importlib
 
         make_reader = importlib.import_module("mcap.reader").make_reader
@@ -299,21 +299,21 @@ class MCAPSourceTask(DataSourceTask):
                 )
 
                 if len(buffer) >= self._batch_size:
-                    yield self._create_micropartition(buffer)
+                    yield self._create_record_batch(buffer)
                     buffer.clear()
 
             if buffer:
-                yield self._create_micropartition(buffer)
+                yield self._create_record_batch(buffer)
         finally:
             pass
 
-    def _create_micropartition(self, data: list[dict[str, object]]) -> MicroPartition:
+    def _create_record_batch(self, data: list[dict[str, object]]) -> RecordBatch:
         import pyarrow as pa
 
         arrow_batch = pa.RecordBatch.from_pylist(data, schema=self._schema.to_pyarrow_schema())
-        return MicroPartition.from_arrow_record_batches([arrow_batch], arrow_schema=self._schema.to_pyarrow_schema())
+        return RecordBatch.from_arrow_record_batches([arrow_batch], arrow_schema=self._schema.to_pyarrow_schema())
 
-    def get_micro_partitions(self) -> Iterator[MicroPartition]:
+    def read(self) -> Iterator[RecordBatch]:
         yield from self.execute()
 
     @property
