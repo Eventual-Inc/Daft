@@ -257,6 +257,7 @@ async fn read_text(
     let convert_options = TextConvertOptions::new(
         &cfg.encoding,
         cfg.skip_blank_lines,
+        cfg.whole_text,
         Some(schema_of_file),
         scan_task.pushdowns.limit,
     );

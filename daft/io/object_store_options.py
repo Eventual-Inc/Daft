@@ -7,7 +7,6 @@ from urllib.parse import urlparse
 if TYPE_CHECKING:
     from daft.daft import AzureConfig, GCSConfig, IOConfig, S3Config, GravitinoConfig
 
-
 def io_config_to_storage_options(io_config: IOConfig, table_uri: str | pathlib.Path) -> dict[str, str] | None:
     """Converts the Daft IOConfig to a storage options dict that the object_store crate understands.
 
