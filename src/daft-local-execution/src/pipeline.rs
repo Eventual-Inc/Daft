@@ -63,6 +63,7 @@ use crate::{
         write::{WriteFormat, WriteSink},
     },
     sources::{
+        adapters::ScanOperatorAdapter, data_source::DataSourceSource,
         empty_scan::EmptyScanSource, flight_shuffle_read::FlightShuffleReadSource,
         glob_scan::GlobScanSource, in_memory::InMemorySource, scan_task::ScanTaskSource,
         source::SourceNode,
@@ -318,29 +319,48 @@ fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan {
             source_id,
+            scan_op,
             source_config,
             pushdowns,
             schema,
             stats_state,
             context,
+            ..
         }) => {
-            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<ScanTaskRef>)>();
-            input_senders.insert(*source_id, InputSender::ScanTasks(tx));
-
-            let scan_task_source = ScanTaskSource::new(
-                rx,
-                source_config.clone(),
-                pushdowns.clone(),
-                schema.clone(),
-                cfg,
-            );
-            SourceNode::new(
-                Box::new(scan_task_source),
-                stats_state.clone(),
-                ctx,
-                context,
-            )
-            .boxed()
+            if let Some(scan_op) = scan_op {
+                // Check if this ScanOperator carries a DataSource directly.
+                let ds: Arc<dyn daft_scan::DataSource> =
+                    if let Some(ds) = scan_op.0.as_data_source() {
+                        ds
+                    } else {
+                        Arc::new(ScanOperatorAdapter::new(scan_op.clone()))
+                    };
+                let source = DataSourceSource::new(
+                    ds,
+                    pushdowns.clone(),
+                    schema.clone(),
+                    cfg,
+                );
+                SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
+            } else {
+                // Legacy path: receive pre-materialized scan tasks through channel
+                let (tx, rx) = create_unbounded_channel::<(InputId, Vec<ScanTaskRef>)>();
+                input_senders.insert(*source_id, InputSender::ScanTasks(tx));
+                let scan_task_source = ScanTaskSource::new(
+                    rx,
+                    source_config.clone(),
+                    pushdowns.clone(),
+                    schema.clone(),
+                    cfg,
+                );
+                SourceNode::new(
+                    Box::new(scan_task_source),
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed()
+            }
         }
         LocalPhysicalPlan::InMemoryScan(InMemoryScan {
             source_id,

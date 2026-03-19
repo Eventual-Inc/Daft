@@ -283,6 +283,24 @@ pub mod pylib {
             )?));
             Ok(Self { scan_op })
         }
+
+        /// Creates a handle from a Python `DataSource` object.
+        ///
+        /// Wraps it as [`PythonDataSource`] (Rust `DataSource` trait) inside a
+        /// [`DataSourceScanOperator`] carrier. The execution engine extracts the
+        /// `DataSource` via [`ScanOperator::as_data_source`] and uses it directly.
+        #[staticmethod]
+        pub fn from_python_data_source(py_source: pyo3::Py<pyo3::PyAny>) -> PyResult<Self> {
+            let data_source: Arc<dyn DataSource> =
+                Arc::new(PythonDataSource::new(Python::attach(|py| {
+                    py_source.clone_ref(py)
+                })));
+            let scan_op = ScanOperatorRef(Arc::new(
+                crate::DataSourceScanOperator::new(data_source),
+            ));
+            Ok(Self { scan_op })
+        }
+
     }
 
     #[pyclass(module = "daft.daft")]
@@ -627,7 +645,9 @@ pub mod pylib {
                     let task = task.bind(py);
                     let read = task.getattr(pyo3::intern!(py, "read"))?;
                     for rb in read.call0()?.try_iter()? {
-                        let py_rb = rb?.extract::<PyRecordBatch>().map_err(PyErr::from)?;
+                        let py_rb = rb?
+                            .getattr(pyo3::intern!(py, "_recordbatch"))?
+                            .extract::<PyRecordBatch>()?;
                         if tx.send(Ok(py_rb.record_batch)).is_err() {
                             return Ok(()); // consumer dropped, stop early
                         }

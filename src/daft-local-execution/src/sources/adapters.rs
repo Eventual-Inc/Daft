@@ -1,6 +1,3 @@
-// Adapters are defined here but wired into the execution pipeline in a subsequent PR.
-#![allow(dead_code)]
-
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use common_error::DaftResult;

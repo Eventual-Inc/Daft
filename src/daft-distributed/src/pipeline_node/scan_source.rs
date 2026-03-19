@@ -110,6 +110,7 @@ impl ScanSourceNode {
     fn make_source_task(self: &Arc<Self>, scan_task: ScanTaskRef) -> SwordfishTaskBuilder {
         let physical_scan = LocalPhysicalPlan::physical_scan(
             self.node_id(),
+            None, // scan_op: distributed path uses pre-materialized scan tasks
             Some(scan_task.source_config.clone()),
             self.pushdowns.clone(),
             self.config.schema.clone(),

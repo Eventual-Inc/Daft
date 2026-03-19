@@ -7,7 +7,7 @@ use std::{
 use common_error::DaftResult;
 use daft_schema::schema::SchemaRef;
 
-use crate::{PartitionField, Pushdowns, ScanTaskRef, SupportsPushdownFilters};
+use crate::{PartitionField, Pushdowns, ScanTaskRef, SupportsPushdownFilters, source::DataSource};
 
 pub trait ScanOperator: Send + Sync + Debug {
     fn name(&self) -> &str;
@@ -46,6 +46,12 @@ pub trait ScanOperator: Send + Sync + Debug {
     fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskRef>>;
 
     fn as_pushdown_filter(&self) -> Option<&dyn SupportsPushdownFilters> {
+        None
+    }
+
+    /// If this operator carries a [`DataSource`], return it for direct use
+    /// by the execution engine (bypassing `to_scan_tasks`).
+    fn as_data_source(&self) -> Option<Arc<dyn DataSource>> {
         None
     }
 }

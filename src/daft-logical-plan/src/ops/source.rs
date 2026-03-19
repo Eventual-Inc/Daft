@@ -50,6 +50,15 @@ impl Source {
     // should also hold a ScanState::Operator and not a ScanState::Tasks (which would indicate that we're
     // materializing this physical scan node multiple times).
     pub(crate) fn build_materialized_scan_source(mut self) -> DaftResult<Self> {
+        // If this operator carries a DataSource, skip materialization entirely.
+        // The execution engine uses as_data_source() directly.
+        if let SourceInfo::Physical(info) = self.source_info.as_ref() {
+            if let ScanState::Operator(scan_op) = &info.scan_state {
+                if scan_op.0.as_data_source().is_some() {
+                    return Ok(self);
+                }
+            }
+        }
         let new_physical_scan_info = match Arc::unwrap_or_clone(self.source_info) {
             SourceInfo::Physical(mut physical_scan_info) => {
                 let scan_tasks = match &physical_scan_info.scan_state {
@@ -81,6 +90,16 @@ impl Source {
                 acc_selectivity: 1.0,
             },
             SourceInfo::Physical(physical_scan_info) => match &physical_scan_info.scan_state {
+                ScanState::Operator(scan_op) if scan_op.0.as_data_source().is_some() => {
+                    // DataSource-backed operators skip materialization; use conservative
+                    // estimates so the optimizer doesn't make incorrect assumptions
+                    // (e.g., removing limits because num_rows appears to be 0).
+                    ApproxStats {
+                        num_rows: usize::MAX,
+                        size_bytes: 0,
+                        acc_selectivity: 1.0,
+                    }
+                }
                 ScanState::Operator(_) => {
                     panic!("Scan nodes should be materialized before stats are materialized")
                 }

@@ -24,7 +24,7 @@ use daft_logical_plan::{
     partitioning::RepartitionSpec,
     stats::{PlanStats, StatsState},
 };
-use daft_scan::{Pushdowns, SourceConfig};
+use daft_scan::{Pushdowns, ScanOperatorRef, SourceConfig};
 use serde::{Deserialize, Serialize};
 
 use crate::SourceId;
@@ -236,6 +236,7 @@ impl LocalPhysicalPlan {
 
     pub fn physical_scan(
         source_id: SourceId,
+        scan_op: Option<ScanOperatorRef>,
         source_config: Option<Arc<SourceConfig>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
@@ -244,6 +245,7 @@ impl LocalPhysicalPlan {
     ) -> LocalPhysicalPlanRef {
         Self::PhysicalScan(PhysicalScan {
             source_id,
+            scan_op,
             source_config,
             pushdowns,
             schema,
@@ -1778,6 +1780,13 @@ impl DynTreeNode for LocalPhysicalPlan {
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PhysicalScan {
     pub source_id: SourceId,
+    /// When present, the execution engine uses this directly via the
+    /// [`DataSource`] trait. For Rust `ScanOperator`s, wrapped in
+    /// `ScanOperatorAdapter`. For Python `DataSource`s, extracted via
+    /// [`ScanOperator::as_data_source`] from `DataSourceScanOperator`.
+    /// When absent, falls back to the legacy [`ScanTaskSource`] path.
+    #[serde(skip)]
+    pub scan_op: Option<ScanOperatorRef>,
     pub source_config: Option<Arc<SourceConfig>>,
     pub pushdowns: Pushdowns,
     pub schema: SchemaRef,

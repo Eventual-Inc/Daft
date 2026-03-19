@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 
 mod anonymous;
 pub use anonymous::AnonymousScanOperator;
+mod data_source_scan_operator;
+pub use data_source_scan_operator::DataSourceScanOperator;
 mod expr_rewriter;
 mod file_format_config;
 pub mod source;

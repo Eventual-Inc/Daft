@@ -12,7 +12,7 @@ use daft_dsl::{
 };
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState};
 use daft_micropartition::MicroPartitionRef;
-use daft_scan::{ScanState, ScanTaskRef};
+use daft_scan::ScanState;
 
 use super::plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 use crate::{Input, SourceId, SourceIdCounter};
@@ -49,27 +49,38 @@ fn translate_helper(
                     )
                 }
                 SourceInfo::Physical(info) => {
-                    let scan_tasks: Vec<ScanTaskRef> = match &info.scan_state {
-                        ScanState::Operator(scan_op) => {
-                            scan_op.0.to_scan_tasks(info.pushdowns.clone())?
-                        }
-                        ScanState::Tasks(scan_tasks) => (**scan_tasks).clone(),
-                    };
-
-                    let source_config = scan_tasks
-                        .first()
-                        .map(|scan_task| scan_task.source_config.clone());
                     let source_id = source_counter.next();
-                    inputs.insert(source_id, Input::ScanTasks(scan_tasks));
-
-                    LocalPhysicalPlan::physical_scan(
-                        source_id,
-                        source_config,
-                        info.pushdowns.clone(),
-                        source.output_schema.clone(),
-                        source.stats_state.clone(),
-                        LocalNodeContext::default(),
-                    )
+                    match &info.scan_state {
+                        ScanState::Operator(scan_op) => {
+                            // Pass the ScanOperator through to the execution engine.
+                            // The engine uses as_data_source() or ScanOperatorAdapter.
+                            LocalPhysicalPlan::physical_scan(
+                                source_id,
+                                Some(scan_op.clone()),
+                                None,
+                                info.pushdowns.clone(),
+                                source.output_schema.clone(),
+                                source.stats_state.clone(),
+                                LocalNodeContext::default(),
+                            )
+                        }
+                        ScanState::Tasks(scan_tasks) => {
+                            let scan_tasks = (**scan_tasks).clone();
+                            let source_config = scan_tasks
+                                .first()
+                                .map(|scan_task| scan_task.source_config.clone());
+                            inputs.insert(source_id, Input::ScanTasks(scan_tasks));
+                            LocalPhysicalPlan::physical_scan(
+                                source_id,
+                                None,
+                                source_config,
+                                info.pushdowns.clone(),
+                                source.output_schema.clone(),
+                                source.stats_state.clone(),
+                                LocalNodeContext::default(),
+                            )
+                        }
+                    }
                 }
                 SourceInfo::GlobScan(info) => {
                     let source_id = source_counter.next();

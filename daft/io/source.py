@@ -61,11 +61,9 @@ class DataSource(ABC):
         """Reads a DataSource as a DataFrame."""
         from daft.daft import ScanOperatorHandle
         from daft.dataframe import DataFrame
-        from daft.io.__shim import _DataSourceShim
         from daft.logical.builder import LogicalPlanBuilder
 
-        scan = _DataSourceShim(self)
-        handle = ScanOperatorHandle.from_python_scan_operator(scan)
+        handle = ScanOperatorHandle.from_python_data_source(self)
         builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
         return DataFrame(builder)
 
