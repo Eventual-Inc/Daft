@@ -183,7 +183,7 @@ impl RuntimeStatsManager {
         let (finish_tx, mut finish_rx) = oneshot::channel::<QueryEndState>();
 
         let mut process_stats = if enable_process_monitor {
-            let meter = opentelemetry::global::meter("daft");
+            let meter = common_metrics::Meter::global_scope("daft-process-monitor");
             process_stats::ProcessStatsCollector::new(&meter)
         } else {
             None
@@ -816,7 +816,7 @@ mod tests {
         let subscriber = Arc::new(ProcessStatsMockSubscriber::new());
         let throttle_interval = Duration::from_millis(50);
         let node_stat = Arc::new(DefaultRuntimeStats::new(
-            &global::meter("test_process_stats_enabled"),
+            &Meter::test_scope("test_process_stats_enabled"),
             &node_info_from_id(0),
         )) as Arc<dyn RuntimeStats>;
 
@@ -848,7 +848,7 @@ mod tests {
         let subscriber = Arc::new(ProcessStatsMockSubscriber::new());
         let throttle_interval = Duration::from_millis(50);
         let node_stat = Arc::new(DefaultRuntimeStats::new(
-            &global::meter("test_process_stats_disabled"),
+            &Meter::test_scope("test_process_stats_disabled"),
             &node_info_from_id(0),
         )) as Arc<dyn RuntimeStats>;
 

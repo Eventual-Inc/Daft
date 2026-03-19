@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use common_metrics::{
-    Gauge, PROCESS_CPU_PERCENT_KEY, PROCESS_JEMALLOC_ALLOCATED_KEY, PROCESS_JEMALLOC_RESIDENT_KEY,
-    PROCESS_RSS_KEY, Stat, Stats,
+    Gauge, Meter, PROCESS_CPU_PERCENT_KEY, PROCESS_JEMALLOC_ALLOCATED_KEY,
+    PROCESS_JEMALLOC_RESIDENT_KEY, PROCESS_RSS_KEY, Stat, Stats, UNIT_BYTES, UNIT_PERCENT,
 };
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::KeyValue;
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, get_current_pid};
 
 pub struct ProcessStatsCollector {
@@ -41,26 +41,26 @@ impl ProcessStatsCollector {
 
         Some(Self {
             #[cfg(not(target_env = "msvc"))]
-            jemalloc_allocated: Gauge::new(
-                meter,
+            jemalloc_allocated: meter.f64_gauge_with_desc_and_unit(
                 PROCESS_JEMALLOC_ALLOCATED_KEY,
                 Some("Bytes currently allocated by the application via jemalloc".into()),
+                Some(UNIT_BYTES.into()),
             ),
             #[cfg(not(target_env = "msvc"))]
-            jemalloc_resident: Gauge::new(
-                meter,
+            jemalloc_resident: meter.f64_gauge_with_desc_and_unit(
                 PROCESS_JEMALLOC_RESIDENT_KEY,
                 Some("Resident bytes from jemalloc's perspective".into()),
+                Some(UNIT_BYTES.into()),
             ),
-            rss: Gauge::new(
-                meter,
+            rss: meter.f64_gauge_with_desc_and_unit(
                 PROCESS_RSS_KEY,
                 Some("OS-level resident set size of the process".into()),
+                Some(UNIT_BYTES.into()),
             ),
-            cpu_percent: Gauge::new(
-                meter,
+            cpu_percent: meter.f64_gauge_with_desc_and_unit(
                 PROCESS_CPU_PERCENT_KEY,
                 Some("Process CPU utilization percentage".into()),
+                Some(UNIT_PERCENT.into()),
             ),
             system: System::new(),
             pid,
@@ -148,13 +148,11 @@ impl ProcessStatsCollector {
 
 #[cfg(test)]
 mod tests {
-    use opentelemetry::global;
-
     use super::*;
 
     #[test]
     fn test_process_stats_collector_creation() {
-        let meter = global::meter("test_process_stats");
+        let meter = Meter::test_scope("test_process_stats");
         let collector = ProcessStatsCollector::new(&meter);
         assert!(
             collector.is_some(),
@@ -164,7 +162,7 @@ mod tests {
 
     #[test]
     fn test_process_stats_sample_returns_stats() {
-        let meter = global::meter("test_process_stats_sample");
+        let meter = Meter::test_scope("test_process_stats_sample");
         let mut collector = ProcessStatsCollector::new(&meter).unwrap();
 
         let stats = collector.sample();
@@ -183,7 +181,7 @@ mod tests {
     #[cfg(not(target_env = "msvc"))]
     #[test]
     fn test_jemalloc_stats_nonzero() {
-        let meter = global::meter("test_jemalloc_stats");
+        let meter = Meter::test_scope("test_jemalloc_stats");
         let collector = ProcessStatsCollector::new(&meter).unwrap();
 
         let (allocated, resident) = collector.sample_jemalloc();
