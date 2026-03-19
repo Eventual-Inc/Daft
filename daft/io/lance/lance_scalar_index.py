@@ -27,7 +27,7 @@ class FragmentIndexHandler:
         column: str,
         index_type: str,
         name: str,
-        fragment_uuid: str,
+        index_uuid: str,
         replace: bool,
         **kwargs: Any,
     ) -> None:
@@ -35,7 +35,7 @@ class FragmentIndexHandler:
         self.column = column
         self.index_type = index_type
         self.name = name
-        self.fragment_uuid = fragment_uuid
+        self.index_uuid = index_uuid
         self.replace = replace
         self.kwargs = kwargs
 
@@ -51,7 +51,7 @@ class FragmentIndexHandler:
             index_type=self.index_type,
             name=self.name,
             replace=self.replace,
-            fragment_uuid=self.fragment_uuid,
+            index_uuid=self.index_uuid,
             fragment_ids=fragment_ids,
             **self.kwargs,
         )
@@ -180,7 +180,7 @@ def create_scalar_index_internal(
         column=column,
         index_type=index_type,
         name=name,
-        fragment_uuid=index_id,
+        index_uuid=index_id,
         replace=replace,
         **kwargs,
     )

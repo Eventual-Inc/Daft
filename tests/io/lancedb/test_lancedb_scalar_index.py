@@ -197,7 +197,7 @@ class TestDistributedIndexing:
 
         with pytest.raises(
             NotImplementedError,
-            match=r'Only "BTREE", "BITMAP", "NGRAM", "ZONEMAP", "LABEL_LIST", or "INVERTED" or "BLOOMFILTER" are supported for scalar columns.  Received INVALID',
+            match=r"Only .BTREE., .BITMAP., .NGRAM., .ZONEMAP., .LABEL_LIST., .INVERTED., .BLOOMFILTER. or .RTREE. are supported for scalar columns.  Received INVALID",
         ):
             create_scalar_index(
                 uri=dataset_uri,

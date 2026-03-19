@@ -187,3 +187,25 @@ def select_required_columns(schema: pa.Schema, required_columns: list[str] | Non
         raise KeyError(f"Required columns missing in schema: {missing}")
     fields = [schema.field(schema.get_field_index(c)) for c in required_columns]
     return pa.schema(fields, metadata=schema.metadata)
+
+
+def check_pylance_version(min_version: str) -> None:
+    """Ensure pylance (lance) provides distributed vector APIs."""
+    try:
+        import lance
+        from packaging import version as packaging_version
+
+        lance_version = packaging_version.parse(lance.__version__)
+        min_required_version = packaging_version.parse(min_version)
+        if lance_version < min_required_version:
+            raise RuntimeError(
+                f"Distributed vector indexing requires pylance >= {min_version}, but found "
+                f"{lance.__version__}. The distributed vector interfaces are not "
+                "available in older versions. Please upgrade pylance by running: "
+                "pip install --upgrade pylance"
+            )
+        logger.info("Pylance version check passed: %s >= %s", lance.__version__, min_version)
+    except ImportError as e:
+        raise ImportError(
+            "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
+        ) from e
