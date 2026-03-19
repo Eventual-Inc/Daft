@@ -3193,6 +3193,7 @@ name = "daft-scan"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-schema 57.3.0",
+ "async-trait",
  "common-daft-config",
  "common-display",
  "common-error",
