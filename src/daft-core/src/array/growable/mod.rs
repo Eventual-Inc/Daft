@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 
 use crate::{
-    array::{FixedSizeListArray, ListArray, StructArray, prelude::*},
+    array::{FixedSizeListArray, ListArray, StructArray, UnionArray, prelude::*},
     datatypes::{FileArray, prelude::*},
     file::DaftMediaType,
     series::Series,
@@ -15,6 +15,7 @@ mod list_growable;
 mod logical_growable;
 mod map_growable;
 mod struct_growable;
+mod union_growable;
 
 #[cfg(feature = "python")]
 mod python_growable;
@@ -58,6 +59,7 @@ pub fn make_growable<'a>(
 /// Describes a struct that can be extended from slices of other pre-existing Series.
 /// This is very useful for abstracting many "physical" operations such as takes, broadcasts,
 /// filters and more.
+#[allow(clippy::len_without_is_empty)]
 pub trait Growable {
     /// Extends this [`Growable`] with elements from the bounded [`Array`] at index `index` from
     /// a slice starting at `start` and length `len`.
@@ -75,6 +77,8 @@ pub trait Growable {
 
     /// Builds an array from the [`Growable`]
     fn build(&mut self) -> DaftResult<Series>;
+
+    fn len(&self) -> usize;
 }
 
 /// Trait that an Array type can implement to provide a Growable factory method
@@ -189,6 +193,7 @@ impl_growable_array!(
     IntervalArray,
     arrow_growable::ArrowGrowable<'a, IntervalType>
 );
+impl_growable_array!(UnionArray, union_growable::UnionGrowable<'a>);
 
 impl_growable_array!(DateArray, logical_growable::LogicalDateGrowable<'a>);
 impl_growable_array!(TimeArray, logical_growable::LogicalTimeGrowable<'a>);
@@ -233,3 +238,33 @@ where
 
 #[cfg(feature = "python")]
 impl_growable_array!(PythonArray, python_growable::PythonGrowable<'a>);
+impl_growable_array!(WktArray, logical_growable::LogicalWKTGrowable<'a>);
+impl_growable_array!(WkbArray, logical_growable::LogicalWKBGrowable<'a>);
+impl_growable_array!(PointArray, logical_growable::LogicalPointGrowable<'a>);
+impl_growable_array!(
+    LineStringArray,
+    logical_growable::LogicalLineStringGrowable<'a>
+);
+impl_growable_array!(PolygonArray, logical_growable::LogicalPolygonGrowable<'a>);
+impl_growable_array!(
+    MultiPointArray,
+    logical_growable::LogicalMultiPointGrowable<'a>
+);
+impl_growable_array!(
+    MultiLineStringArray,
+    logical_growable::LogicalMultiLineStringGrowable<'a>
+);
+impl_growable_array!(
+    MultiPolygonArray,
+    logical_growable::LogicalMultiPolygonGrowable<'a>
+);
+impl_growable_array!(
+    GeometryCollectionArray,
+    logical_growable::LogicalGeometryCollectionGrowable<'a>
+);
+impl_growable_array!(GeometryArray, logical_growable::LogicalGeometryGrowable<'a>);
+impl_growable_array!(
+    GeographyArray,
+    logical_growable::LogicalGeographyGrowable<'a>
+);
+impl_growable_array!(RectArray, logical_growable::LogicalRectGrowable<'a>);

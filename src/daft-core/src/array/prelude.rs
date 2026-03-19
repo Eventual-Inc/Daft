@@ -1,9 +1,11 @@
-pub use super::{DataArray, FixedSizeListArray, ListArray, StructArray};
+pub use super::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray};
 // Import logical array types
 pub use crate::datatypes::logical::{
     DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, FixedShapeSparseTensorArray,
-    FixedShapeTensorArray, ImageArray, LogicalArray, MapArray, SparseTensorArray, TensorArray,
-    TimeArray, TimestampArray,
+    FixedShapeTensorArray, GeographyArray, GeometryArray, GeometryCollectionArray, ImageArray,
+    LineStringArray, LogicalArray, MapArray, MultiLineStringArray, MultiPointArray,
+    MultiPolygonArray, PointArray, PolygonArray, RectArray, SparseTensorArray, TensorArray,
+    TimeArray, TimestampArray, WkbArray, WktArray,
 };
 #[cfg(feature = "python")]
 pub use crate::datatypes::python::PythonArray;

@@ -1,0 +1,15 @@
+[package]
+name = "geoarrow-cast"
+version = "0.7.0"
+authors = ["Kyle Barron <kylebarron2@gmail.com>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/geoarrow/geoarrow-rs"
+description = "Functions for converting from one GeoArrow geometry type to another."
+
+[dependencies]
+arrow-schema = {workspace = true}
+geo-traits = {workspace = true}
+geoarrow-array = {workspace = true}
+geoarrow-schema = {workspace = true}
+wkt = {workspace = true}

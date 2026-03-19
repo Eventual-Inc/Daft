@@ -430,6 +430,72 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             image_array_from_img_buffers("literal", iter, image_mode)?.into_series()
         }
 
+        DataType::Union(..) => {
+            return Err(common_error::DaftError::NotImplemented(
+                "Union literal to Series is not yet implemented".to_string(),
+            ));
+
+        }
+        DataType::WKT(_) => {
+            return Err(common_error::DaftError::NotImplemented(
+                "WKT literal to Series is not yet implemented".to_string(),
+            ));
+        }
+        DataType::WKB(_) => {
+            return Err(common_error::DaftError::NotImplemented(
+                "WKB literal to Series is not yet implemented".to_string(),
+            ));
+        }
+        DataType::Point(_) => {
+            return Err(common_error::DaftError::NotImplemented(
+                "Point literal to Series is not yet implemented".to_string(),
+            ));
+        }
+        DataType::LineString(_) => {
+            return Err(common_error::DaftError::NotImplemented(
+                "LineString literal to Series is not yet implemented".to_string(),
+            ));
+        }
+        DataType::Polygon(_) => {
+            return Err(common_error::DaftError::NotImplemented(
+                "Polygon literal to Series is not yet implemented".to_string(),
+            ));
+        }
+        DataType::MultiPoint(_) => {
+            return Err(common_error::DaftError::NotImplemented(
+                "MultiPoint literal to Series is not yet implemented".to_string(),
+            ));
+        }
+        DataType::MultiLineString(_) => {
+            return Err(common_error::DaftError::NotImplemented(
+                "MultiLineString literal to Series is not yet implemented".to_string(),
+            ));
+        }
+        DataType::MultiPolygon(_) => {
+            return Err(common_error::DaftError::NotImplemented(
+                "MultiPolygon literal to Series is not yet implemented".to_string(),
+            ));
+        }
+        DataType::GeometryCollection(_) => {
+            return Err(common_error::DaftError::NotImplemented(
+                "GeometryCollection literal to Series is not yet implemented".to_string(),
+            ));
+        }
+        DataType::Geometry(_) => {
+            return Err(common_error::DaftError::NotImplemented(
+                "Geometry literal to Series is not yet implemented".to_string(),
+            ));
+        }
+        DataType::Rect(_) => {
+            return Err(common_error::DaftError::NotImplemented(
+                "Rect literal to Series is not yet implemented".to_string(),
+            ));
+        }
+        DataType::Geography => {
+            return Err(common_error::DaftError::NotImplemented(
+                "Geography literal to Series is not yet implemented".to_string(),
+            ));
+        }
         DataType::FixedSizeBinary(..)
         | DataType::FixedSizeList(..)
         | DataType::Extension(..)

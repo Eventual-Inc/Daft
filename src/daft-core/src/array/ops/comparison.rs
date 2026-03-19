@@ -162,7 +162,6 @@ trait RowCompareFastPath {
             }
             arrow::datatypes::DataType::Dictionary(_, _) => true,
             arrow::datatypes::DataType::Map(_, _) => true,
-            arrow::datatypes::DataType::Union(_, _) => true,
             arrow::datatypes::DataType::RunEndEncoded(_, _) => true,
             _ => false,
         }

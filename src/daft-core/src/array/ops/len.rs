@@ -3,7 +3,7 @@ use arrow::buffer::{NullBuffer, OffsetBuffer};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray},
     datatypes::{DaftArrowBackedType, FileArray},
     file::DaftMediaType,
 };
@@ -112,6 +112,16 @@ impl StructArray {
     pub fn size_bytes(&self) -> usize {
         let children_size_bytes: usize = self.children.iter().map(|s| s.size_bytes()).sum();
         children_size_bytes + null_buffer_size(self.nulls())
+    }
+}
+
+impl UnionArray {
+    pub fn size_bytes(&self) -> usize {
+        let children_size_bytes: usize = self.children.iter().map(|s| s.size_bytes()).sum();
+        let offset_bytes =
+            self.offsets().clone().map(|b| b.len()).unwrap_or(0) * std::mem::size_of::<i32>();
+        let ids_bytes = self.ids().len() * std::mem::size_of::<i8>();
+        children_size_bytes + offset_bytes + ids_bytes
     }
 }
 

@@ -1,0 +1,20 @@
+[package]
+name = "geoarrow-expr-geo"
+version = "0.7.0"
+authors = ["Kyle Barron <kylebarron2@gmail.com>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/geoarrow/geoarrow-rs"
+description = "Rust implementation of GeoArrow"
+
+[dependencies]
+arrow-array = {workspace = true}
+arrow-buffer = {workspace = true}
+geo = {workspace = true}
+geo-traits = {workspace = true}
+geoarrow-array = {workspace = true}
+geoarrow-schema = {workspace = true}
+
+[dev-dependencies]
+geo = {workspace = true}
+geoarrow-array = {workspace = true}

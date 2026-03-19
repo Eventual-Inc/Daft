@@ -7,12 +7,14 @@ use arrow::{
 use serde::{Deserializer, de::Visitor};
 
 use crate::{
-    array::{ListArray, StructArray, ops::full::FullNull},
+    array::{ListArray, StructArray, UnionArray, ops::full::FullNull},
     datatypes::{
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, GeographyArray, GeometryArray,
+            GeometryCollectionArray, ImageArray, LineStringArray, MapArray, MultiLineStringArray,
+            MultiPointArray, MultiPolygonArray, PointArray, PolygonArray, RectArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray, WkbArray, WktArray,
         },
         *,
     },
@@ -180,6 +182,34 @@ impl<'d> serde::Deserialize<'d> for Series {
                         let nulls = nulls.map(|v| v.bool().unwrap().to_bitmap().into());
                         Ok(StructArray::new(Arc::new(field), children, nulls).into_series())
                     }
+                    DataType::Union(..) => {
+                        let mut all_series = map.next_value::<Vec<Option<Series>>>()?;
+                        let offsets_series = all_series
+                            .pop()
+                            .ok_or_else(|| serde::de::Error::missing_field("offsets"))?;
+
+                        let offsets = if let Some(offsets) = offsets_series {
+                            let offsets_array = offsets.i32().unwrap();
+                            Some(offsets_array.values())
+                        } else {
+                            None
+                        };
+
+                        let ids = all_series
+                            .pop()
+                            .ok_or_else(|| serde::de::Error::missing_field("ids"))?
+                            .unwrap();
+
+                        let ids_array = ids.i8().unwrap();
+
+                        let ids = ids_array.values();
+
+                        let children = all_series
+                            .into_iter()
+                            .map(|s| s.unwrap())
+                            .collect::<Vec<_>>();
+                        Ok(UnionArray::new(Arc::new(field), ids, children, offsets).into_series())
+                    }
                     DataType::List(..) => {
                         let mut all_series = map.next_value::<Vec<Option<Series>>>()?;
                         let nulls = all_series
@@ -336,6 +366,113 @@ impl<'d> serde::Deserialize<'d> for Series {
                     }
                     DataType::File(_) => {
                         panic!("Unable to deserialize File DataType");
+                    }
+                    DataType::WKT(..) => {
+                        type PType =
+                            <<WKTType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(
+                            WktArray::new(field, physical.downcast::<PType>().unwrap().clone())
+                                .into_series(),
+                        )
+                    }
+                    DataType::WKB(..) => {
+                        type PType =
+                            <<WKBType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(
+                            WkbArray::new(field, physical.downcast::<PType>().unwrap().clone())
+                                .into_series(),
+                        )
+                    }
+                    DataType::Point(..) => {
+                        type PType = <<PointType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(
+                            PointArray::new(field, physical.downcast::<PType>().unwrap().clone())
+                                .into_series(),
+                        )
+                    }
+                    DataType::LineString(..) => {
+                        type PType = <<LineStringType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(LineStringArray::new(
+                            field,
+                            physical.downcast::<PType>().unwrap().clone(),
+                        )
+                        .into_series())
+                    }
+                    DataType::Polygon(..) => {
+                        type PType = <<PolygonType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(
+                            PolygonArray::new(field, physical.downcast::<PType>().unwrap().clone())
+                                .into_series(),
+                        )
+                    }
+                    DataType::MultiPoint(..) => {
+                        type PType = <<MultiPointType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(MultiPointArray::new(
+                            field,
+                            physical.downcast::<PType>().unwrap().clone(),
+                        )
+                        .into_series())
+                    }
+                    DataType::MultiLineString(..) => {
+                        type PType = <<MultiLineStringType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(MultiLineStringArray::new(
+                            field,
+                            physical.downcast::<PType>().unwrap().clone(),
+                        )
+                        .into_series())
+                    }
+                    DataType::MultiPolygon(..) => {
+                        type PType = <<MultiPolygonType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(MultiPolygonArray::new(
+                            field,
+                            physical.downcast::<PType>().unwrap().clone(),
+                        )
+                        .into_series())
+                    }
+                    DataType::GeometryCollection(..) => {
+                        type PType = <<GeometryCollectionType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(GeometryCollectionArray::new(
+                            field,
+                            physical.downcast::<PType>().unwrap().clone(),
+                        )
+                        .into_series())
+                    }
+                    DataType::Geometry(..) => {
+                        type PType = <<GeometryType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(
+                            GeometryArray::new(
+                                field,
+                                physical.downcast::<PType>().unwrap().clone(),
+                            )
+                            .into_series(),
+                        )
+                    }
+                    DataType::Geography => {
+                        type PType = <<GeographyType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(GeographyArray::new(
+                            field,
+                            physical.downcast::<PType>().unwrap().clone(),
+                        )
+                        .into_series())
+                    }
+                    DataType::Rect(..) => {
+                        type PType = <<RectType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(
+                            RectArray::new(field, physical.downcast::<PType>().unwrap().clone())
+                                .into_series(),
+                        )
                     }
                 }
             }

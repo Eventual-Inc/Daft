@@ -1,13 +1,28 @@
 use std::{
+    collections::HashMap,
     ops::{Div, Mul},
     sync::Arc,
 };
 
 use arrow::{
-    array::Array as ArrowArray,
+    array::{Array as ArrowArray, AsArray},
     buffer::{OffsetBuffer, ScalarBuffer},
 };
 use common_error::{DaftError, DaftResult};
+use daft_schema::geospatial_mode::{
+    Crs as DaftCrs, CrsType as DaftCrsType, Dimension as DaftDimension, Edges as DaftEdges,
+    Metadata as DaftMetadata,
+};
+use geoarrow_array::{
+    GeoArrowArray,
+    array::{PointArray as GeoarrowPointArray, from_arrow_array},
+};
+use geoarrow_cast::cast::cast as geoarrow_cast;
+use geoarrow_schema::{
+    CoordType as GeoarrowCoordType, Dimension as GeoarrowDimension, Edges as GeoarrowEdges,
+    GeoArrowType, Metadata as GeoarrowMetadata, PointType as GeoarrowPointType,
+    crs::{Crs as GeoarrowCrs, CrsType as GeoarrowCrsType},
+};
 use indexmap::IndexMap;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -18,18 +33,20 @@ use crate::lit::Literal;
 use crate::prelude::PythonArray;
 use crate::{
     array::{
-        DataArray, FixedSizeListArray, ListArray, StructArray,
+        DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray,
         growable::make_growable,
         image_array::ImageArraySidecarData,
         ops::{DaftCompare, full::FullNull},
     },
     datatypes::{
-        DaftArrayType, DaftArrowBackedType, DataType, Field, FileArray, ImageMode, Int64Array,
-        NullArray, TimeUnit, UInt64Array, Utf8Array,
+        DaftArrayType, DaftArrowBackedType, DataType, Field, FileArray, GeospatialMode, ImageMode,
+        Int64Array, NullArray, TimeUnit, UInt64Array, Utf8Array,
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, GeographyArray, GeometryArray,
+            GeometryCollectionArray, ImageArray, LineStringArray, MapArray, MultiLineStringArray,
+            MultiPointArray, MultiPolygonArray, PointArray, PolygonArray, RectArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray, WkbArray, WktArray,
         },
     },
     file::{DaftMediaType, MediaTypeAudio, MediaTypeUnknown, MediaTypeVideo},
@@ -78,6 +95,11 @@ where
             _ => {
                 // Cast from DataArray to the target DataType
                 // by using Arrow's casting mechanisms.
+
+                if self.data_type().is_string() && dtype.is_wkt() {
+                    let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
+                    return Series::from_arrow(new_field, self.to_arrow());
+                }
 
                 if !dtype.is_arrow() || !self.data_type().is_arrow() {
                     return Err(DaftError::TypeError(format!(
@@ -1765,6 +1787,338 @@ impl StructArray {
                 dtype
             ),
         }
+    }
+}
+
+impl UnionArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        unimplemented!("Union casting not implemented for dtype: {}", dtype)
+    }
+}
+
+fn geoarrow_crs_type_from_crs_type(crs_type: &DaftCrsType) -> GeoarrowCrsType {
+    match crs_type {
+        DaftCrsType::Projjson => GeoarrowCrsType::Projjson,
+        DaftCrsType::Wkt2_2019 => GeoarrowCrsType::Wkt2_2019,
+        DaftCrsType::AuthorityCode => GeoarrowCrsType::AuthorityCode,
+        DaftCrsType::Srid => GeoarrowCrsType::Srid,
+    }
+}
+
+fn geoarrow_crs_from_crs(crs: &DaftCrs) -> GeoarrowCrs {
+    match (crs.crs.as_ref(), crs.crs_type.as_ref()) {
+        (Some(value), Some(crs_type)) => {
+            let geoarrow_crs_type = geoarrow_crs_type_from_crs_type(crs_type);
+            match geoarrow_crs_type {
+                GeoarrowCrsType::Projjson => GeoarrowCrs::from_projjson(value.clone()),
+                GeoarrowCrsType::Wkt2_2019 => GeoarrowCrs::from_wkt2_2019(value.to_string()),
+                GeoarrowCrsType::AuthorityCode => {
+                    GeoarrowCrs::from_authority_code(value.to_string())
+                }
+                GeoarrowCrsType::Srid => GeoarrowCrs::from_srid(value.to_string()),
+            }
+        }
+        (Some(value), None) => GeoarrowCrs::from_unknown_crs_type(value.to_string()),
+        (None, _) => GeoarrowCrs::default(),
+    }
+}
+
+fn geoarrow_edges_from_edges(edges: &DaftEdges) -> GeoarrowEdges {
+    match edges {
+        DaftEdges::Andoyer => GeoarrowEdges::Andoyer,
+        DaftEdges::Karney => GeoarrowEdges::Karney,
+        DaftEdges::Spherical => GeoarrowEdges::Spherical,
+        DaftEdges::Thomas => GeoarrowEdges::Thomas,
+        DaftEdges::Vincenty => GeoarrowEdges::Vincenty,
+    }
+}
+
+fn geoarrow_metadata_from_metadata(metadata: &DaftMetadata) -> Arc<GeoarrowMetadata> {
+    let geoarrow_crs = geoarrow_crs_from_crs(&metadata.crs);
+    let geoarrow_edges = metadata.edges.as_ref().map(geoarrow_edges_from_edges);
+    Arc::new(GeoarrowMetadata::new(geoarrow_crs, geoarrow_edges))
+}
+
+fn geoarrow_dimension_from_dimension(dimension: &DaftDimension) -> GeoarrowDimension {
+    match dimension {
+        DaftDimension::XY => GeoarrowDimension::XY,
+        DaftDimension::XYZ => GeoarrowDimension::XYZ,
+        DaftDimension::XYM => GeoarrowDimension::XYM,
+        DaftDimension::XYZM => GeoarrowDimension::XYZM,
+    }
+}
+
+fn geoarrow_wkt_type_from_mode(mode: &GeospatialMode) -> geoarrow_schema::WktType {
+    let metadata = geoarrow_metadata_from_metadata(&mode.metadata);
+
+    geoarrow_schema::WktType::new(metadata)
+}
+
+fn geoarrow_point_type_from_mode(mode: &GeospatialMode) -> GeoarrowPointType {
+    let dimension = geoarrow_dimension_from_dimension(&mode.dimension);
+    let metadata = geoarrow_metadata_from_metadata(&mode.metadata);
+
+    GeoarrowPointType::new(dimension, metadata).with_coord_type(GeoarrowCoordType::Separated)
+}
+
+fn geoarrow_linestring_type_from_mode(mode: &GeospatialMode) -> geoarrow_schema::LineStringType {
+    let dimension = geoarrow_dimension_from_dimension(&mode.dimension);
+    let metadata = geoarrow_metadata_from_metadata(&mode.metadata);
+
+    geoarrow_schema::LineStringType::new(dimension, metadata)
+        .with_coord_type(GeoarrowCoordType::Separated)
+}
+
+fn geoarrow_polygon_type_from_mode(mode: &GeospatialMode) -> geoarrow_schema::PolygonType {
+    let dimension = geoarrow_dimension_from_dimension(&mode.dimension);
+    let metadata = geoarrow_metadata_from_metadata(&mode.metadata);
+
+    geoarrow_schema::PolygonType::new(dimension, metadata)
+        .with_coord_type(GeoarrowCoordType::Separated)
+}
+
+fn geoarrow_multipoint_type_from_mode(mode: &GeospatialMode) -> geoarrow_schema::MultiPointType {
+    let dimension = geoarrow_dimension_from_dimension(&mode.dimension);
+    let metadata = geoarrow_metadata_from_metadata(&mode.metadata);
+
+    geoarrow_schema::MultiPointType::new(dimension, metadata)
+        .with_coord_type(GeoarrowCoordType::Separated)
+}
+
+fn geoarrow_multilinestring_type_from_mode(
+    mode: &GeospatialMode,
+) -> geoarrow_schema::MultiLineStringType {
+    let dimension = geoarrow_dimension_from_dimension(&mode.dimension);
+    let metadata = geoarrow_metadata_from_metadata(&mode.metadata);
+
+    geoarrow_schema::MultiLineStringType::new(dimension, metadata)
+        .with_coord_type(GeoarrowCoordType::Separated)
+}
+
+fn geoarrow_multipolygon_type_from_mode(
+    mode: &GeospatialMode,
+) -> geoarrow_schema::MultiPolygonType {
+    let dimension = geoarrow_dimension_from_dimension(&mode.dimension);
+    let metadata = geoarrow_metadata_from_metadata(&mode.metadata);
+
+    geoarrow_schema::MultiPolygonType::new(dimension, metadata)
+        .with_coord_type(GeoarrowCoordType::Separated)
+}
+
+fn geoarrow_geometry_collection_type_from_mode(
+    mode: &GeospatialMode,
+) -> geoarrow_schema::GeometryCollectionType {
+    let dimension = geoarrow_dimension_from_dimension(&mode.dimension);
+    let metadata = geoarrow_metadata_from_metadata(&mode.metadata);
+
+    geoarrow_schema::GeometryCollectionType::new(dimension, metadata)
+        .with_coord_type(GeoarrowCoordType::Separated)
+}
+
+fn geoarrow_geometry_type_from_mode(mode: &GeospatialMode) -> geoarrow_schema::GeometryType {
+    let metadata = geoarrow_metadata_from_metadata(&mode.metadata);
+    geoarrow_schema::GeometryType::new(metadata).with_coord_type(GeoarrowCoordType::Separated)
+}
+
+fn geoarrow_rect_type_from_mode(mode: &GeospatialMode) -> geoarrow_schema::RectType {
+    let dimension = geoarrow_dimension_from_dimension(&mode.dimension);
+    let metadata = geoarrow_metadata_from_metadata(&mode.metadata);
+    geoarrow_schema::RectType::new(dimension, metadata)
+}
+
+impl WktArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        if dtype.is_geospatial() {
+            let metadata = self.field.metadata.as_ref().clone();
+            let metadata_hashmap = metadata.into_iter().collect::<HashMap<_, _>>();
+            let arrow_field = arrow_schema::Field::new(
+                self.field.name.as_ref(),
+                arrow_schema::DataType::LargeUtf8,
+                true,
+            )
+            .with_metadata(metadata_hashmap);
+
+            let arrow_array_ref = self.physical.to_arrow();
+            let geoarrow_array = from_arrow_array(
+                arrow_array_ref.as_string_opt::<i64>().unwrap(),
+                &arrow_field,
+            )
+            .unwrap();
+
+            let geoarrow_type = match dtype {
+                DataType::Point(mode) => GeoArrowType::Point(geoarrow_point_type_from_mode(mode)),
+                DataType::LineString(mode) => {
+                    GeoArrowType::LineString(geoarrow_linestring_type_from_mode(mode))
+                }
+                DataType::Polygon(mode) => {
+                    GeoArrowType::Polygon(geoarrow_polygon_type_from_mode(mode))
+                }
+                DataType::MultiPoint(mode) => {
+                    GeoArrowType::MultiPoint(geoarrow_multipoint_type_from_mode(mode))
+                }
+                DataType::MultiLineString(mode) => {
+                    GeoArrowType::MultiLineString(geoarrow_multilinestring_type_from_mode(mode))
+                }
+                DataType::MultiPolygon(mode) => {
+                    GeoArrowType::MultiPolygon(geoarrow_multipolygon_type_from_mode(mode))
+                }
+                DataType::GeometryCollection(mode) => GeoArrowType::GeometryCollection(
+                    geoarrow_geometry_collection_type_from_mode(mode),
+                ),
+                _ => unimplemented!(
+                    "Unsupported cast from {:?} to {:?}",
+                    self.data_type(),
+                    dtype
+                ),
+            };
+
+            let geoarrow_casted = geoarrow_cast(&geoarrow_array, &geoarrow_type);
+            let casted_array = match geoarrow_casted {
+                Ok(casted) => casted,
+                Err(e) => {
+                    panic!("Error casting geoarrow array: {}", e);
+                }
+            };
+
+            let casted_arrow_array = casted_array.to_array_ref();
+            let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
+            return Series::from_arrow(new_field, casted_arrow_array);
+        } else if dtype.is_string() {
+            let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
+            return Series::from_arrow(new_field, self.physical.to_arrow());
+        }
+        unimplemented!("Wkt casting not implemented for dtype: {}", dtype)
+    }
+}
+
+impl WkbArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        unimplemented!("Wkb casting not implemented for dtype: {}", dtype)
+    }
+}
+
+impl PointArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::WKT(mode) => {
+                let curr_mode = match self.data_type() {
+                    DataType::Point(mode) => mode.clone(),
+                    _ => unreachable!(),
+                };
+
+                let geotype = geoarrow_point_type_from_mode(&curr_mode);
+
+                let arrow_array_ref = self.physical.to_arrow()?;
+                let geoarrow_array =
+                    GeoarrowPointArray::try_from((arrow_array_ref.as_struct(), geotype)).unwrap();
+                let geoarrow_type = GeoArrowType::LargeWkt(geoarrow_wkt_type_from_mode(mode));
+                let geoarrow_casted = geoarrow_cast(&geoarrow_array, &geoarrow_type);
+                let casted_array = match geoarrow_casted {
+                    Ok(casted) => casted,
+                    Err(e) => {
+                        panic!("Error casting geoarrow array: {}", e);
+                    }
+                };
+
+                let casted_arrow_array = casted_array.to_array_ref();
+                let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
+                Series::from_arrow(new_field, casted_arrow_array)
+            }
+            _ => unimplemented!(
+                "Unsupported cast from {:?} to {:?}",
+                self.data_type(),
+                dtype
+            ),
+        }
+    }
+}
+
+macro_rules! impl_geo_to_wkt_cast {
+    ($array_ty:ty, $daft_variant:ident, $geo_type_fn:ident, $geoarrow_variant:ident) => {
+        impl $array_ty {
+            pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+                match dtype {
+                    DataType::WKT(mode) => {
+                        let curr_mode = match self.data_type() {
+                            DataType::$daft_variant(m) => m.clone(),
+                            _ => unreachable!(),
+                        };
+                        let arrow_field = GeoArrowType::$geoarrow_variant($geo_type_fn(&curr_mode))
+                            .to_field(self.name(), true);
+                        let arrow_array_ref = self.physical.to_arrow()?;
+                        let geoarrow_array =
+                            from_arrow_array(arrow_array_ref.as_ref(), &arrow_field)
+                                .unwrap_or_else(|e| panic!("Error creating geoarrow array: {e}"));
+                        let casted = geoarrow_cast(
+                            geoarrow_array.as_ref(),
+                            &GeoArrowType::LargeWkt(geoarrow_wkt_type_from_mode(mode)),
+                        )
+                        .unwrap_or_else(|e| panic!("Error casting geoarrow array: {e}"));
+                        let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
+                        Series::from_arrow(new_field, casted.to_array_ref())
+                    }
+                    _ => unimplemented!(
+                        "Daft casting from {} to {} not implemented",
+                        self.data_type(),
+                        dtype
+                    ),
+                }
+            }
+        }
+    };
+}
+
+impl_geo_to_wkt_cast!(
+    LineStringArray,
+    LineString,
+    geoarrow_linestring_type_from_mode,
+    LineString
+);
+impl_geo_to_wkt_cast!(
+    PolygonArray,
+    Polygon,
+    geoarrow_polygon_type_from_mode,
+    Polygon
+);
+impl_geo_to_wkt_cast!(
+    MultiPointArray,
+    MultiPoint,
+    geoarrow_multipoint_type_from_mode,
+    MultiPoint
+);
+impl_geo_to_wkt_cast!(
+    MultiLineStringArray,
+    MultiLineString,
+    geoarrow_multilinestring_type_from_mode,
+    MultiLineString
+);
+impl_geo_to_wkt_cast!(
+    MultiPolygonArray,
+    MultiPolygon,
+    geoarrow_multipolygon_type_from_mode,
+    MultiPolygon
+);
+impl_geo_to_wkt_cast!(
+    GeometryCollectionArray,
+    GeometryCollection,
+    geoarrow_geometry_collection_type_from_mode,
+    GeometryCollection
+);
+impl_geo_to_wkt_cast!(
+    GeometryArray,
+    Geometry,
+    geoarrow_geometry_type_from_mode,
+    Geometry
+);
+impl_geo_to_wkt_cast!(RectArray, Rect, geoarrow_rect_type_from_mode, Rect);
+
+impl GeographyArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        unimplemented!(
+            "Daft casting from {} to {} not implemented",
+            self.data_type(),
+            dtype
+        )
     }
 }
 

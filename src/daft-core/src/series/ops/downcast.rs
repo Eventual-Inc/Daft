@@ -1,14 +1,16 @@
 use common_error::{DaftError, DaftResult};
 use logical::{
-    EmbeddingArray, FixedShapeSparseTensorArray, FixedShapeTensorArray, SparseTensorArray,
-    TensorArray,
+    EmbeddingArray, FixedShapeSparseTensorArray, FixedShapeTensorArray, GeographyArray,
+    GeometryArray, GeometryCollectionArray, LineStringArray, MultiLineStringArray, MultiPointArray,
+    MultiPolygonArray, PointArray, PolygonArray, RectArray, SparseTensorArray, TensorArray,
+    WkbArray, WktArray,
 };
 
 use self::logical::{DurationArray, ImageArray, MapArray};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{ListArray, StructArray},
+    array::{ListArray, StructArray, UnionArray},
     datatypes::{
         logical::{DateArray, FixedShapeImageArray, TimeArray, TimestampArray},
         *,
@@ -170,6 +172,58 @@ impl Series {
         self.downcast()
     }
     pub fn file<T: DaftMediaType>(&self) -> DaftResult<&FileArray<T>> {
+        self.downcast()
+    }
+
+    pub fn union(&self) -> DaftResult<&UnionArray> {
+        self.downcast()
+    }
+
+    pub fn wkt(&self) -> DaftResult<&WktArray> {
+        self.downcast()
+    }
+
+    pub fn wkb(&self) -> DaftResult<&WkbArray> {
+        self.downcast()
+    }
+
+    pub fn point(&self) -> DaftResult<&PointArray> {
+        self.downcast()
+    }
+
+    pub fn multi_point(&self) -> DaftResult<&MultiPointArray> {
+        self.downcast()
+    }
+
+    pub fn line_string(&self) -> DaftResult<&LineStringArray> {
+        self.downcast()
+    }
+
+    pub fn multi_line_string(&self) -> DaftResult<&MultiLineStringArray> {
+        self.downcast()
+    }
+
+    pub fn polygon(&self) -> DaftResult<&PolygonArray> {
+        self.downcast()
+    }
+
+    pub fn multi_polygon(&self) -> DaftResult<&MultiPolygonArray> {
+        self.downcast()
+    }
+
+    pub fn geometry_collection(&self) -> DaftResult<&GeometryCollectionArray> {
+        self.downcast()
+    }
+
+    pub fn geometry(&self) -> DaftResult<&GeometryArray> {
+        self.downcast()
+    }
+
+    pub fn geography(&self) -> DaftResult<&GeographyArray> {
+        self.downcast()
+    }
+
+    pub fn rect(&self) -> DaftResult<&RectArray> {
         self.downcast()
     }
 }

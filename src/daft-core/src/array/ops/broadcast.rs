@@ -10,7 +10,7 @@ use super::full::FullNull;
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray},
     datatypes::{DaftPrimitiveType, Field, NumericNative},
     prelude::{
         AsArrow, BinaryType, BooleanArray, ExtensionArray, FixedSizeBinaryType, IntervalType,
@@ -201,6 +201,13 @@ macro_rules! impl_broadcast_via_concat {
 impl_broadcast_via_concat!(FixedSizeListArray);
 impl_broadcast_via_concat!(ListArray);
 impl_broadcast_via_concat!(ExtensionArray);
+
+impl Broadcastable for UnionArray {
+    fn broadcast(&self, _num: usize) -> DaftResult<Self> {
+        todo!("implement broadcast for UnionArray")
+    }
+}
+
 #[cfg(feature = "python")]
 impl_broadcast_via_concat!(PythonArray);
 

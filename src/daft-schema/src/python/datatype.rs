@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 
 use super::field::PyField;
 use crate::{
-    dtype::DataType, field::Field, image_mode::ImageMode, media_type::MediaType,
-    time_unit::TimeUnit,
+    dtype::DataType, field::Field, geospatial_mode::GeospatialMode, image_mode::ImageMode,
+    media_type::MediaType, time_unit::TimeUnit,
 };
 
 #[pyclass(from_py_object)]
@@ -343,6 +343,132 @@ impl PyDataType {
     #[staticmethod]
     pub fn file(ff: MediaType) -> PyResult<Self> {
         Ok(DataType::File(ff).into())
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (mode=None))]
+    pub fn wkt(mode: Option<GeospatialMode>) -> PyResult<Self> {
+        if let Some(mode) = mode {
+            Ok(DataType::WKT(mode).into())
+        } else {
+            let mode = GeospatialMode::default();
+            Ok(DataType::WKT(mode).into())
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (mode=None))]
+    pub fn wkb(mode: Option<GeospatialMode>) -> PyResult<Self> {
+        if let Some(mode) = mode {
+            Ok(DataType::WKB(mode).into())
+        } else {
+            let mode = GeospatialMode::default();
+            Ok(DataType::WKB(mode).into())
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (mode=None))]
+    pub fn point(mode: Option<GeospatialMode>) -> PyResult<Self> {
+        if let Some(mode) = mode {
+            Ok(DataType::Point(mode).into())
+        } else {
+            let mode = GeospatialMode::default();
+            Ok(DataType::Point(mode).into())
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (mode=None))]
+    pub fn linestring(mode: Option<GeospatialMode>) -> PyResult<Self> {
+        if let Some(mode) = mode {
+            Ok(DataType::LineString(mode).into())
+        } else {
+            let mode = GeospatialMode::default();
+            Ok(DataType::LineString(mode).into())
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (mode=None))]
+    pub fn polygon(mode: Option<GeospatialMode>) -> PyResult<Self> {
+        if let Some(mode) = mode {
+            Ok(DataType::Polygon(mode).into())
+        } else {
+            let mode = GeospatialMode::default();
+            Ok(DataType::Polygon(mode).into())
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (mode=None))]
+    pub fn multipoint(mode: Option<GeospatialMode>) -> PyResult<Self> {
+        if let Some(mode) = mode {
+            Ok(DataType::MultiPoint(mode).into())
+        } else {
+            let mode = GeospatialMode::default();
+            Ok(DataType::MultiPoint(mode).into())
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (mode=None))]
+    pub fn multilinestring(mode: Option<GeospatialMode>) -> PyResult<Self> {
+        if let Some(mode) = mode {
+            Ok(DataType::MultiLineString(mode).into())
+        } else {
+            let mode = GeospatialMode::default();
+            Ok(DataType::MultiLineString(mode).into())
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (mode=None))]
+    pub fn multipolygon(mode: Option<GeospatialMode>) -> PyResult<Self> {
+        if let Some(mode) = mode {
+            Ok(DataType::MultiPolygon(mode).into())
+        } else {
+            let mode = GeospatialMode::default();
+            Ok(DataType::MultiPolygon(mode).into())
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (mode=None))]
+    pub fn geometry_collection(mode: Option<GeospatialMode>) -> PyResult<Self> {
+        if let Some(mode) = mode {
+            Ok(DataType::GeometryCollection(mode).into())
+        } else {
+            let mode = GeospatialMode::default();
+            Ok(DataType::GeometryCollection(mode).into())
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (mode=None))]
+    pub fn geometry(mode: Option<GeospatialMode>) -> PyResult<Self> {
+        if let Some(mode) = mode {
+            Ok(DataType::Geometry(mode).into())
+        } else {
+            let mode = GeospatialMode::default();
+            Ok(DataType::Geometry(mode).into())
+        }
+    }
+
+    #[staticmethod]
+    pub fn geography() -> PyResult<Self> {
+        Ok(DataType::Geography.into())
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (mode=None))]
+    pub fn rect(mode: Option<GeospatialMode>) -> PyResult<Self> {
+        if let Some(mode) = mode {
+            Ok(DataType::Rect(mode).into())
+        } else {
+            let mode = GeospatialMode::default();
+            Ok(DataType::Rect(mode).into())
+        }
     }
 
     pub fn to_arrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

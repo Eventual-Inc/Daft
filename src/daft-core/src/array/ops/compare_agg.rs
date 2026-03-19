@@ -7,7 +7,7 @@ use super::{DaftCompareAggable, GroupIndices, full::FullNull};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{ListArray, StructArray},
+    array::{ListArray, StructArray, UnionArray},
     datatypes::*,
 };
 
@@ -407,6 +407,7 @@ impl_todo_daft_comparable!(FixedSizeListArray);
 impl_todo_daft_comparable!(ListArray);
 impl_todo_daft_comparable!(ExtensionArray);
 impl_todo_daft_comparable!(IntervalArray);
+impl_todo_daft_comparable!(UnionArray);
 
 #[cfg(feature = "python")]
 impl_todo_daft_comparable!(PythonArray);

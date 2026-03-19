@@ -29,6 +29,12 @@ impl NullArray {
     }
 }
 
+impl UnionArray {
+    pub fn get_lit(&self, _idx: usize) -> Literal {
+        todo!("Implement UnionArray::get_lit")
+    }
+}
+
 impl StructArray {
     pub fn get_lit(&self, idx: usize) -> Literal {
         assert!(
@@ -276,3 +282,75 @@ impl_array_get_lit!(FixedShapeTensorArray, DataType::FixedShapeTensor(_, shape) 
 
 impl_image_array_get_lit!(ImageArray);
 impl_image_array_get_lit!(FixedShapeImageArray);
+
+impl WktArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        self.physical.get_lit(idx)
+    }
+}
+
+impl WkbArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        self.physical.get_lit(idx)
+    }
+}
+
+impl PointArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        self.physical.get_lit(idx)
+    }
+}
+
+impl LineStringArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        self.physical.get_lit(idx)
+    }
+}
+
+impl PolygonArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        self.physical.get_lit(idx)
+    }
+}
+
+impl MultiPointArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        self.physical.get_lit(idx)
+    }
+}
+
+impl MultiLineStringArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        self.physical.get_lit(idx)
+    }
+}
+
+impl MultiPolygonArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        self.physical.get_lit(idx)
+    }
+}
+
+impl GeometryCollectionArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        self.physical.get_lit(idx)
+    }
+}
+
+impl GeometryArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        self.physical.get_lit(idx)
+    }
+}
+
+impl GeographyArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        self.physical.get_lit(idx)
+    }
+}
+
+impl RectArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        self.physical.get_lit(idx)
+    }
+}

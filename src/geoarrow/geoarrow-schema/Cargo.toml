@@ -1,0 +1,15 @@
+[package]
+name = "geoarrow-schema"
+version = "0.7.0"
+authors = ["Kyle Barron <kylebarron2@gmail.com>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/geoarrow/geoarrow-rs"
+description = "GeoArrow geometry type and metadata definitions."
+
+[dependencies]
+arrow-schema = {workspace = true}
+geo-traits = {workspace = true}
+serde = {workspace = true}
+serde_json = {workspace = true}
+thiserror = {workspace = true}

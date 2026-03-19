@@ -11,7 +11,7 @@ use xxhash_rust::{const_xxh3, xxh3::xxh3_64_with_seed, xxh32::xxh32, xxh64::xxh6
 
 use super::as_arrow::AsArrow;
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftPrimitiveType, Decimal128Array, FixedSizeBinaryArray,
         Int8Array, Int16Array, Int32Array, Int64Array, NullArray, UInt8Array, UInt16Array,
@@ -460,6 +460,12 @@ fn hash_list(
         let mut result = UInt64Array::from_arrow(field, Arc::new(arrow_arr))?;
         result = result.with_nulls(combined_validity)?;
         Ok(result)
+    }
+}
+
+impl UnionArray {
+    pub fn hash(&self, _seed: Option<&UInt64Array>) -> DaftResult<UInt64Array> {
+        todo!("implement hash for UnionArray")
     }
 }
 

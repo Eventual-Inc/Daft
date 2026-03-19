@@ -7,7 +7,7 @@ use arrow::{
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray},
     datatypes::{
         DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field, FieldRef,
         logical::LogicalArray,
@@ -163,6 +163,68 @@ impl FromArrow for StructArray {
     }
 }
 
+impl FromArrow for UnionArray {
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        let field: FieldRef = field.into();
+
+        match (&field.dtype, arrow_arr.data_type()) {
+            (
+                DataType::Union(fields, ids, mode),
+                arrow::datatypes::DataType::Union(arrow_fields, arrow_mode),
+            ) => {
+                if fields.len() != arrow_fields.len() {
+                    return Err(DaftError::ValueError(format!(
+                        "Attempting to create Daft UnionArray with {} fields from Arrow array with {} fields: {} vs {:?}",
+                        fields.len(),
+                        arrow_fields.len(),
+                        &field.dtype,
+                        arrow_arr.data_type(),
+                    )));
+                }
+
+                for (id, (arrow_id, _)) in ids.iter().zip(arrow_fields.iter()) {
+                    if *id != arrow_id {
+                        return Err(DaftError::ValueError(format!(
+                            "Attempting to create Daft UnionArray with id {} from Arrow array with id {:?}",
+                            id, arrow_id,
+                        )));
+                    }
+                }
+
+                let arrow_arr = arrow_arr
+                    .as_any()
+                    .downcast_ref::<arrow::array::UnionArray>()
+                    .unwrap();
+
+                if mode.is_dense() != arrow_arr.is_dense() {
+                    return Err(DaftError::ValueError(format!(
+                        "Attempting to create Daft UnionArray with mode {} from Arrow array with mode {:?}",
+                        mode, arrow_mode,
+                    )));
+                }
+
+                let child_series = fields
+                    .iter()
+                    .zip(ids.iter())
+                    .map(|(field, id)| {
+                        let arrow_arr = arrow_arr.child(*id);
+                        Series::from_arrow(Arc::new(field.clone()), arrow_arr.clone())
+                    })
+                    .collect::<DaftResult<Vec<Series>>>()?;
+
+                let ids = arrow_arr.type_ids().clone();
+                let offsets = arrow_arr.offsets().cloned();
+
+                Ok(Self::new(field, ids, child_series, offsets))
+            }
+            (d, a) => Err(DaftError::TypeError(format!(
+                "Attempting to create Daft UnionArray with type {} from arrow array with type {:?}",
+                d, a
+            ))),
+        }
+    }
+}
+
 impl FromArrow for MapArray {
     fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
         let field: FieldRef = field.into();
@@ -248,7 +310,6 @@ macro_rules! impl_logical_from_arrow {
                 let field: FieldRef = field.into();
                   let target_convert = field.to_physical();
                   let target_convert_arrow = target_convert.dtype.to_arrow()?;
-
                   let physical_arrow_array = arrow::compute::cast(
                       arrow_arr.as_ref(),
                       &target_convert_arrow,
@@ -328,6 +389,40 @@ where
         Ok(Self::new(field, physical))
     }
 }
+
+impl_logical_from_arrow!(WKTType);
+impl_logical_from_arrow!(WKBType);
+impl_logical_from_arrow!(PointType);
+impl_logical_from_arrow!(LineStringType);
+impl_logical_from_arrow!(PolygonType);
+impl_logical_from_arrow!(MultiPointType);
+impl_logical_from_arrow!(MultiLineStringType);
+impl_logical_from_arrow!(MultiPolygonType);
+
+impl FromArrow for LogicalArray<GeometryCollectionType> {
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        let field: FieldRef = field.into();
+        let target_convert = field.to_physical();
+        // Skip arrow::compute::cast — it doesn't support Union child types.
+        // ListArray::from_arrow handles the Union child recursively via Series::from_arrow.
+        let physical = ListArray::from_arrow(Arc::new(target_convert), arrow_arr)?;
+        Ok(Self::new(field, physical))
+    }
+}
+
+impl FromArrow for LogicalArray<GeometryType> {
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        let field: FieldRef = field.into();
+        let target_convert = field.to_physical();
+        // Skip arrow::compute::cast — it doesn't support Union child types.
+        // ListArray::from_arrow handles the Union child recursively via Series::from_arrow.
+        let physical = UnionArray::from_arrow(Arc::new(target_convert), arrow_arr)?;
+        Ok(Self::new(field, physical))
+    }
+}
+
+impl_logical_from_arrow!(GeographyType);
+impl_logical_from_arrow!(RectType);
 
 #[cfg(test)]
 mod tests {
