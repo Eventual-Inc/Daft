@@ -234,6 +234,7 @@ impl DataTypePayload {
     }
 }
 pub const DAFT_SUPER_EXTENSION_NAME: &str = "daft.super_extension";
+pub const DAFT_USER_EXTENSION_NAME: &str = "daft.user_extension";
 
 impl DataType {
     pub fn new_null() -> Self {
@@ -379,6 +380,7 @@ impl DataType {
                     Field::new("indices", List(Box::new(minimal_indices_dtype)))
                 },
             ]),
+            Extension(_, storage, _) => storage.to_physical(),
             File(..) => Struct(vec![
                 Field::new("url", Utf8),
                 Field::new("io_config", Binary),
