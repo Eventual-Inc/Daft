@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_metrics::{
     Counter, Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
-    snapshot::JoinSnapshot,
+    snapshot::{JoinSnapshot, StatSnapshotImpl as _},
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
@@ -53,12 +53,12 @@ impl BroadcastJoinStats {
 
 impl RuntimeStats for BroadcastJoinStats {
     fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
+        self.duration_us
+            .add(snapshot.duration_us(), self.node_kv.as_slice());
         let StatSnapshot::Join(snapshot) = snapshot else {
             return;
         };
 
-        self.duration_us
-            .add(snapshot.cpu_us, self.node_kv.as_slice());
         self.probe_rows_in
             .add(snapshot.probe_rows_in, self.node_kv.as_slice());
         self.probe_rows_out

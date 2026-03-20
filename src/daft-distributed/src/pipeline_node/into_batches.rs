@@ -4,6 +4,7 @@ use common_error::DaftResult;
 use common_metrics::{
     Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::StatSnapshotImpl as _,
 };
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
@@ -45,15 +46,15 @@ impl IntoBatchesStats {
 
 impl RuntimeStats for IntoBatchesStats {
     fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot) {
-        if let StatSnapshot::Default(snapshot) = snapshot {
-            self.base.add_duration_us(snapshot.cpu_us);
-            if let Some(phase) = &node_info.node_phase {
-                // Track input rows for the initial local batching pass and output rows for the rebatch pass.
-                if phase == INITIAL_BATCH_PHASE {
-                    self.base.add_rows_in(snapshot.rows_in);
-                } else if phase == REBATCH_PHASE {
-                    self.base.add_rows_out(snapshot.rows_out);
-                }
+        self.base.add_duration_us(snapshot.duration_us());
+        if let StatSnapshot::Default(snapshot) = snapshot
+            && let Some(phase) = &node_info.node_phase
+        {
+            // Track input rows for the initial local batching pass and output rows for the rebatch pass.
+            if phase == INITIAL_BATCH_PHASE {
+                self.base.add_rows_in(snapshot.rows_in);
+            } else if phase == REBATCH_PHASE {
+                self.base.add_rows_out(snapshot.rows_out);
             }
         }
     }

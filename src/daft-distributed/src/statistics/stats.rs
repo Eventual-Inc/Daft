@@ -2,7 +2,9 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_metrics::{
     Counter, Meter, StatSnapshot, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY, TASK_COMPLETED_KEY,
-    TASK_FAILED_KEY, UNIT_TASKS, UpDownCounter, ops::NodeInfo, snapshot::DefaultSnapshot,
+    TASK_FAILED_KEY, UNIT_TASKS, UpDownCounter,
+    ops::NodeInfo,
+    snapshot::{DefaultSnapshot, StatSnapshotImpl as _},
 };
 use opentelemetry::KeyValue;
 
@@ -147,12 +149,13 @@ impl DefaultRuntimeStats {
 
 impl RuntimeStats for DefaultRuntimeStats {
     fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
+        self.base.add_duration_us(snapshot.duration_us());
+
         let StatSnapshot::Default(snapshot) = snapshot else {
             // TODO: Return immediately for now, but ideally should error
             return;
         };
 
-        self.base.add_duration_us(snapshot.cpu_us);
         self.base.add_rows_in(snapshot.rows_in);
         self.base.add_rows_out(snapshot.rows_out);
     }
