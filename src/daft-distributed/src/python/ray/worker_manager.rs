@@ -180,11 +180,7 @@ impl WorkerManager for RayWorkerManager {
                     acc.0 + worker.total_num_cpus() - worker.active_num_cpus(),
                     acc.1 + worker.total_num_gpus() - worker.active_num_gpus(),
                     acc.2 + worker.total_memory_bytes() as isize
-                        - worker
-                            .active_task_details()
-                            .values()
-                            .map(|d| d.memory_bytes() as isize)
-                            .sum::<isize>(),
+                        - worker.active_memory_bytes() as isize,
                 )
             });
 

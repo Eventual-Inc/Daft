@@ -22,6 +22,12 @@ pub(crate) trait Worker: Send + Sync + Debug + 'static {
     fn active_num_cpus(&self) -> f64;
     #[allow(dead_code)]
     fn active_num_gpus(&self) -> f64;
+    fn active_memory_bytes(&self) -> usize {
+        self.active_task_details()
+            .values()
+            .map(|d| d.memory_bytes())
+            .sum()
+    }
     #[allow(dead_code)]
     fn available_num_cpus(&self) -> f64 {
         self.total_num_cpus() - self.active_num_cpus()

@@ -731,7 +731,7 @@ mod tests {
     }
 
     #[test]
-    fn test_autoscaling_with_sufficient_capacity_includes_dispatched_count() {
+    fn test_autoscaling_not_triggered_when_ratio_below_threshold_with_pending_tasks() {
         let worker_1: WorkerId = Arc::from("worker1");
         let worker_2: WorkerId = Arc::from("worker2");
 
@@ -739,17 +739,17 @@ mod tests {
         let workers = setup_workers(&[(worker_1.clone(), 5), (worker_2.clone(), 5)]);
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
 
-        // Enqueue 10 tasks, all dispatched, 0 pending
-        let tasks = (0..10).map(|i| create_spread_task(Some(i))).collect();
+        // Enqueue 12 tasks; 10 dispatched, 2 pending
+        // total_demand = 2 + 10 = 12, ratio = 12/10 = 1.2 < 1.25 -> no autoscale
+        let tasks = (0..12).map(|i| create_spread_task(Some(i))).collect();
         scheduler.enqueue_tasks(tasks);
         let result = scheduler.schedule_tasks();
         assert_eq!(result.len(), 10);
-        assert_eq!(scheduler.num_pending_tasks(), 0);
+        assert_eq!(scheduler.num_pending_tasks(), 2);
 
-        // Ratio = (0+10)/10 = 1.0 < 1.25 -> autoscale should NOT fire
         assert!(
             scheduler.get_autoscaling_request().is_none(),
-            "Autoscaling should not fire: ratio is 10/10 = 1.0 < 1.25 threshold"
+            "Autoscaling should not fire: ratio is 12/10 = 1.2 < 1.25 threshold"
         );
     }
 
