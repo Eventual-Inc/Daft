@@ -8,9 +8,7 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
-import daft
 from daft import col, lit
-from daft.functions import bin, hex, unhex
 from daft.recordbatch import MicroPartition
 from tests.recordbatch import daft_numeric_types
 
@@ -845,30 +843,3 @@ def test_table_shift_right_syntactic_sugar() -> None:
     table = MicroPartition.from_pydict({"a": [1, 2, 4]})
     shift_table = table.eval_expression_list([col("a").shift_right(1)])
     assert [1 >> 1, 2 >> 1, 4 >> 1] == shift_table.get_column_by_name("a").to_pylist()
-
-
-def test_table_bin() -> None:
-    table = MicroPartition.from_pydict({"a": [0, 1, 2, 3, 4, 5, None]})
-    bin_table = table.eval_expression_list([bin(col("a"))])
-    expected = ["0", "1", "10", "11", "100", "101", None]
-    assert expected == bin_table.get_column_by_name("a").to_pylist()
-
-
-def test_table_hex() -> None:
-    table = MicroPartition.from_pydict({"a": [0, 1, 10, 15, 16, 255, None]})
-    hex_table = table.eval_expression_list([hex(col("a"))])
-    expected = ["0", "1", "A", "F", "10", "FF", None]
-    assert expected == hex_table.get_column_by_name("a").to_pylist()
-
-
-def test_table_unhex() -> None:
-    table = MicroPartition.from_pydict({"a": ["00", "01", "ff", "1a2b", "0x1234", None]})
-    unhex_table = table.eval_expression_list([unhex(col("a"))])
-    assert unhex_table.get_column_by_name("a").datatype() == daft.DataType.binary()
-    result = unhex_table.get_column_by_name("a").to_pylist()
-    assert result[0] == b"\x00"
-    assert result[1] == b"\x01"
-    assert result[2] == b"\xff"
-    assert result[3] == b"\x1a+"
-    assert result[4] == b"\x124"
-    assert result[5] is None

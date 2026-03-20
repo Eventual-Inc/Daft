@@ -2699,7 +2699,6 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-hash",
- "hex",
  "num-traits",
  "pyo3",
  "serde",
