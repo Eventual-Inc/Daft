@@ -107,7 +107,8 @@ def test_read_video_frames_s3(pytestconfig):
 
     # Verify path column contains correct S3 path for all rows
     assert all(
-        path == "s3://daft-oss-public-datasets/Hollywood2-actions/actionclipautoautotrain00002.avi" for path in df["path"]
+        path == "s3://daft-oss-public-datasets/Hollywood2-actions/actionclipautoautotrain00002.avi"
+        for path in df["path"]
     )
 
     # Verify frame_index is sequential starting from 0

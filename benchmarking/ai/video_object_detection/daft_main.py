@@ -12,18 +12,20 @@ from daft.expressions import col
 
 NUM_GPU_NODES = 8
 YOLO_MODEL = "yolo11n.pt"
-INPUT_PATH = (
-    "s3://daft-oss-public-data/videos/Hollywood2-actions-videos/Hollywood2/AVIClips/"
-)
+INPUT_PATH = "s3://daft-oss-public-data/videos/Hollywood2-actions-videos/Hollywood2/AVIClips/"
 OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/video-object-detection-result"
 IMAGE_HEIGHT = 640
 IMAGE_WIDTH = 640
+
 
 # Wait for Ray cluster to be ready
 @ray.remote
 def warmup():
     pass
+
+
 ray.get([warmup.remote() for _ in range(64)])
+
 
 @daft.cls(
     max_concurrency=NUM_GPU_NODES,

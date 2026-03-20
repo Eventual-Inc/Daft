@@ -18,10 +18,13 @@ IMAGE_DIM = (3, 224, 224)
 
 daft.set_runner_ray()
 
+
 # Wait for Ray cluster to be ready
 @ray.remote
 def warmup():
     pass
+
+
 ray.get([warmup.remote() for _ in range(64)])
 
 weights = ResNet18_Weights.DEFAULT
@@ -52,6 +55,7 @@ class ResNetModel:
             predicted_classes = prediction.argmax(dim=1).detach().cpu()
             predicted_labels = [self.weights.meta["categories"][i] for i in predicted_classes]
             return predicted_labels
+
 
 daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.from_env()))
 

@@ -11,9 +11,7 @@ EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
 NUM_GPU_NODES = 8
 INPUT_PATH = "s3://daft-oss-public-datasets/digitalcorpora_metadata"
-OUTPUT_PATH = (
-    "s3://eventual-dev-benchmarking-results/ai-benchmark-results/document-embedding-results"
-)
+OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/document-embedding-results"
 MAX_PDF_PAGES = 100
 CHUNK_SIZE = 2048
 CHUNK_OVERLAP = 200
@@ -26,14 +24,14 @@ def extract_text_from_pdf(row):
     try:
         doc = pymupdf.Document(stream=row["bytes"], filetype="pdf")
         if len(doc) > MAX_PDF_PAGES:
-            print(f"Skipping PDF {row["path"]} because it has {len(doc)} pages")
+            print(f"Skipping PDF {row['path']} because it has {len(doc)} pages")
             return
         for page in doc:
             row["page_text"] = page.get_text()
             row["page_number"] = page.number
             yield row
     except Exception as e:
-        print(f"Error extracting text from PDF {row["path"]}: {e}")
+        print(f"Error extracting text from PDF {row['path']}: {e}")
         return
 
 

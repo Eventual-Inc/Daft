@@ -20,10 +20,13 @@ OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/audio
 
 daft.set_runner_ray()
 
+
 # Wait for Ray cluster to be ready
 @ray.remote
 def warmup():
     pass
+
+
 ray.get([warmup.remote() for _ in range(64)])
 
 
@@ -76,6 +79,7 @@ class Transcriber:
 def decoder(token_ids):
     transcription = processor.batch_decode(token_ids, skip_special_tokens=True)
     return transcription
+
 
 daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.from_env()))
 

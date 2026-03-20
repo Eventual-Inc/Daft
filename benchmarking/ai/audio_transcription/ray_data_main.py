@@ -16,6 +16,7 @@ INPUT_PATH = "s3://daft-oss-public-datasets/common_voice_17"
 OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/audio-transcription"
 BATCH_SIZE = 64
 
+
 ### This is a workaround to avoid the error:
 ### Casting from 'extension<ray.data.arrow_tensor_v2<ArrowTensorTypeV2>>' to different extension type 'extension<ray.data.arrow_variable_shaped_tensor<ArrowVariableShapedTensorType>>' not permitted.
 ### One can first cast to the storage type, then to the extension type.
