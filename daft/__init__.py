@@ -150,13 +150,13 @@ from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
 from daft.file import File, VideoFile, AudioFile
-
 from daft import context
 from daft import io
 from daft import runners
 from daft import datasets
 from daft import functions
 from daft import gravitino
+from daft import testing
 
 
 # Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.
@@ -280,6 +280,7 @@ __all__ = [
     "set_session",
     "sql",
     "sql_expr",
+    "testing",
     "udf",
     "write_table",
 ]
