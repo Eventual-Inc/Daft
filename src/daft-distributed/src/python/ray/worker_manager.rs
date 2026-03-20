@@ -223,9 +223,8 @@ impl WorkerManager for RayWorkerManager {
 
         // Only autoscale if pending demand exceeds available capacity AND this is a new
         // peak since the last topology change. The watermark deduplicates requests within
-        // a stable topology (Ray's request_resources is idempotent, but avoiding redundant
-        // calls is cheap). It resets in refresh_workers/mark_worker_died so that demand
-        // can be re-evaluated when the cluster changes shape.
+        // a stable topology. It resets in refresh_workers/mark_worker_died so that if the
+        // cluster shrinks, we can re-evaluate demand and autoscale again.
         if resource_request_greater_than_available_capacity
             && resource_request_greater_than_max_requested
         {
