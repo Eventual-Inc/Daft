@@ -493,7 +493,7 @@ impl RecordBatch {
     ) -> DaftResult<Self> {
         // Use the optimized implementation with incremental state updates
         // Initialize the state for incremental aggregation
-        let order_by_col = self.eval_expression(order_by)?;
+        let order_by_col = self.eval_expression(order_by)?.take_materialized_series();
         let mut null_builder = NullBufferBuilder::new(total_rows);
 
         // Track previous window boundaries
@@ -570,7 +570,7 @@ impl RecordBatch {
         min_periods: usize,
         total_rows: usize,
     ) -> DaftResult<Self> {
-        let order_by_col = self.eval_expression(order_by)?;
+        let order_by_col = self.eval_expression(order_by)?.take_materialized_series();
         let null_series = Series::full_null(name, dtype, 1);
 
         // Use the non-optimized implementation (recalculate for each row)
@@ -708,13 +708,13 @@ impl RecordBatch {
     ) -> DaftResult<Self> {
         // Short-circuit if offset is 0 - just return the value itself
         if offset == 0 {
-            let expr_col = self.eval_expression(&expr)?;
+            let expr_col = self.eval_expression(&expr)?.take_materialized_series();
             let renamed_col = expr_col.rename(&name);
             let result_batch = Self::from_nonempty_columns(vec![renamed_col])?;
             return self.union(&result_batch);
         }
 
-        let expr_col = self.eval_expression(&expr)?;
+        let expr_col = self.eval_expression(&expr)?.take_materialized_series();
         let abs_offset = offset.unsigned_abs();
 
         let process_default = |default_opt: &Option<BoundExpr>,
@@ -734,11 +734,12 @@ impl RecordBatch {
                     def_col
                 };
 
-                if def_col.len() != target_length {
-                    def_col.broadcast(target_length)
+                let def_col = if def_col.len() != target_length {
+                    def_col.broadcast(target_length)?
                 } else {
-                    Ok(def_col)
-                }
+                    def_col
+                };
+                Ok(def_col.take_materialized_series())
             } else {
                 // Otherwise, create a column of nulls
                 Ok(Series::full_null(

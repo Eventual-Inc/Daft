@@ -110,7 +110,10 @@ pub(crate) async fn finalize_anti_semi(
     let leftovers = merged_bitmap
         .convert_to_boolean_arrays()
         .zip(first_tables.iter())
-        .map(|(bitmap, table)| table.mask_filter(&bitmap.into_series()))
+        .map(|(bitmap, table)| {
+            let mask = daft_recordbatch::column::Column::from(bitmap.into_series());
+            table.mask_filter(&mask)
+        })
         .collect::<DaftResult<Vec<_>>>()?;
     let build_side_table = RecordBatch::concat(&leftovers)?;
 

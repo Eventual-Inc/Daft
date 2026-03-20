@@ -273,6 +273,13 @@ impl Column {
         }
     }
 
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        match self {
+            Self::Series(s) => s.get_lit(idx),
+            Self::Scalar(s) => s.scalar().clone(),
+        }
+    }
+
     pub fn null_count(&self) -> usize {
         match self {
             Self::Series(s) => s.null_count(),

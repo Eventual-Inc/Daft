@@ -183,7 +183,8 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                                     Arc::new(Expr::Agg(agg_expr.clone())),
                                                 ))?
                                                 .broadcast(partition.len())?
-                                                .rename(name.clone());
+                                                .with_name(name)
+                                                .take_materialized_series();
                                             let agg_batch =
                                                 RecordBatch::from_nonempty_columns(vec![new_col])?;
                                             partition.union(&agg_batch)?
