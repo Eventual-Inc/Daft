@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_file_formats::FileFormatConfig;
 use daft_dsl::ExprRef;
 use daft_schema::schema::SchemaRef;
 use daft_stats::TableMetadata;
 
 use crate::{
-    DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
-    SupportsPushdownFilters, storage_config::StorageConfig,
+    FileFormatConfig, PartitionField, Pushdowns, ScanOperator, ScanSource, ScanTask, ScanTaskRef,
+    SourceConfig, SupportsPushdownFilters, storage_config::StorageConfig,
 };
 
 #[derive(Debug)]
@@ -69,7 +68,7 @@ impl ScanOperator for DummyScanOperator {
             .map(|i| {
                 let metadata = self.num_rows_per_task.map(|n| TableMetadata { length: n });
                 Arc::new(ScanTask::new(
-                    vec![DataSource::File {
+                    vec![ScanSource::File {
                         path: format!("dummy_file_{}.txt", i),
                         chunk_spec: None,
                         size_bytes: None,
@@ -79,7 +78,9 @@ impl ScanOperator for DummyScanOperator {
                         statistics: None,
                         parquet_metadata: None,
                     }],
-                    Arc::new(FileFormatConfig::Parquet(Default::default())),
+                    Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
+                        Default::default(),
+                    ))),
                     self.schema.clone(),
                     Arc::new(StorageConfig::default()),
                     pushdowns.clone(),

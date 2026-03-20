@@ -100,7 +100,7 @@ mod tests {
 
     #[test]
     fn test_order_basic_join_graph() {
-        let nodes = vec!["a", "b", "c", "d"];
+        let nodes = ["a", "b", "c", "d"];
         let edges = vec![
             (0, 2), // node_a <-> node_c
             (1, 2), // node_b <-> node_c
@@ -116,7 +116,7 @@ mod tests {
 
     impl UnionFind {
         pub fn create(num_nodes: usize) -> Self {
-            UnionFind {
+            Self {
                 parent: (0..num_nodes).collect(),
                 size: vec![1; num_nodes],
             }
@@ -165,7 +165,7 @@ mod tests {
             // Check if we have a minimum spanning tree.
             if edges.len() >= num_nodes - 1 {
                 // Once we have a minimum spanning tree, we let a random number of extra edges be added to the graph.
-                if rng.gen_bool(0.3) {
+                if rng.random_bool(0.3) {
                     break;
                 }
                 edges.push((a, b));

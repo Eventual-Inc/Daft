@@ -1,11 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    Meter,
+    ops::{NodeCategory, NodeType},
+};
 use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
 use futures::{StreamExt, stream};
-use opentelemetry::metrics::Meter;
 
 use super::{PipelineNodeContext, PipelineNodeImpl, scan_source::SourceStats};
 use crate::{

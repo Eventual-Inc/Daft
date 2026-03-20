@@ -2,14 +2,16 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_io_config::IOConfig;
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    Meter,
+    ops::{NodeCategory, NodeType},
+};
 use daft_io::utils::group_glob_paths;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_scan::Pushdowns;
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
-use opentelemetry::metrics::Meter;
 
 use super::{
     DistributedPipelineNode, PipelineNodeConfig, PipelineNodeContext, scan_source::SourceStats,

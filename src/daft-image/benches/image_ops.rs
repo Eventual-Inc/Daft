@@ -30,18 +30,17 @@ fn make_pixel_data(width: u32, height: u32, channels: u8, seed: usize) -> Vec<u8
 
 /// Build an `ImageArray` (variable-shape) Series of RGB images.
 fn make_rgb_image_series(width: u32, height: u32, count: usize) -> Series {
-    let buffers: Vec<Option<CowImage>> = (0..count)
-        .map(|i| {
-            let pixels = make_pixel_data(width, height, 3, i);
-            Some(CowImage::from_raw(
-                &ImageMode::RGB,
-                width,
-                height,
-                Cow::Owned(pixels),
-            ))
-        })
-        .collect();
-    image_array_from_img_buffers("image", buffers.into_iter(), Some(ImageMode::RGB))
+    let buffers = (0..count).map(|i| {
+        let pixels = make_pixel_data(width, height, 3, i);
+        Some(CowImage::from_raw(
+            &ImageMode::RGB,
+            width,
+            height,
+            Cow::Owned(pixels),
+        ))
+    });
+
+    image_array_from_img_buffers("image", buffers, Some(ImageMode::RGB))
         .unwrap()
         .into_series()
 }
@@ -66,18 +65,17 @@ fn make_fixed_rgb_image_series(width: u32, height: u32, count: usize) -> Series 
 
 /// Build an `ImageArray` Series of RGBA images.
 fn make_rgba_image_series(width: u32, height: u32, count: usize) -> Series {
-    let buffers: Vec<Option<CowImage>> = (0..count)
-        .map(|i| {
-            let pixels = make_pixel_data(width, height, 4, i);
-            Some(CowImage::from_raw(
-                &ImageMode::RGBA,
-                width,
-                height,
-                Cow::Owned(pixels),
-            ))
-        })
-        .collect();
-    image_array_from_img_buffers("image", buffers.into_iter(), Some(ImageMode::RGBA))
+    let buffers = (0..count).map(|i| {
+        let pixels = make_pixel_data(width, height, 4, i);
+        Some(CowImage::from_raw(
+            &ImageMode::RGBA,
+            width,
+            height,
+            Cow::Owned(pixels),
+        ))
+    });
+
+    image_array_from_img_buffers("image", buffers, Some(ImageMode::RGBA))
         .unwrap()
         .into_series()
 }
@@ -95,8 +93,8 @@ fn make_encoded_series(width: u32, height: u32, count: usize, format: ImageForma
             Some(buf)
         })
         .collect();
-    let refs: Vec<Option<&[u8]>> = encoded.iter().map(|v| v.as_deref()).collect();
-    BinaryArray::from_iter("image", refs.into_iter()).into_series()
+    let refs = encoded.iter().map(|v| v.as_deref());
+    BinaryArray::from_iter("image", refs).into_series()
 }
 
 /// Build a bounding box Series for crop benchmarks.
@@ -123,12 +121,12 @@ fn bench_decode(c: &mut Criterion) {
 
     let jpeg_series = make_encoded_series(224, 224, BATCH_SIZE, ImageFormat::JPEG);
     group.bench_function("jpeg_224x224", |b| {
-        b.iter(|| series::decode(&jpeg_series, true, Some(ImageMode::RGB)).unwrap())
+        b.iter(|| series::decode(&jpeg_series, true, Some(ImageMode::RGB)).unwrap());
     });
 
     let png_series = make_encoded_series(224, 224, BATCH_SIZE, ImageFormat::PNG);
     group.bench_function("png_224x224", |b| {
-        b.iter(|| series::decode(&png_series, true, Some(ImageMode::RGB)).unwrap())
+        b.iter(|| series::decode(&png_series, true, Some(ImageMode::RGB)).unwrap());
     });
 
     group.finish();
@@ -141,12 +139,12 @@ fn bench_resize(c: &mut Criterion) {
 
     let images_512 = make_rgb_image_series(512, 512, BATCH_SIZE);
     group.bench_function("512_to_224", |b| {
-        b.iter(|| series::resize(&images_512, 224, 224).unwrap())
+        b.iter(|| series::resize(&images_512, 224, 224).unwrap());
     });
 
     let images_224 = make_rgb_image_series(224, 224, BATCH_SIZE);
     group.bench_function("224_to_64", |b| {
-        b.iter(|| series::resize(&images_224, 64, 64).unwrap())
+        b.iter(|| series::resize(&images_224, 64, 64).unwrap());
     });
 
     group.finish();
@@ -162,7 +160,7 @@ fn bench_crop(c: &mut Criterion) {
     let bboxes = make_bbox_series(144, 144, 224, 224, BATCH_SIZE);
 
     group.bench_function("512_center_crop_224", |b| {
-        b.iter(|| series::crop(&images, &bboxes).unwrap())
+        b.iter(|| series::crop(&images, &bboxes).unwrap());
     });
 
     group.finish();
@@ -175,12 +173,12 @@ fn bench_to_mode(c: &mut Criterion) {
 
     let rgba_images = make_rgba_image_series(224, 224, BATCH_SIZE);
     group.bench_function("rgba_to_rgb", |b| {
-        b.iter(|| series::to_mode(&rgba_images, ImageMode::RGB).unwrap())
+        b.iter(|| series::to_mode(&rgba_images, ImageMode::RGB).unwrap());
     });
 
     let rgb_images = make_rgb_image_series(224, 224, BATCH_SIZE);
     group.bench_function("rgb_to_l", |b| {
-        b.iter(|| series::to_mode(&rgb_images, ImageMode::L).unwrap())
+        b.iter(|| series::to_mode(&rgb_images, ImageMode::L).unwrap());
     });
 
     group.finish();
@@ -194,11 +192,11 @@ fn bench_encode(c: &mut Criterion) {
     let images = make_rgb_image_series(224, 224, BATCH_SIZE);
 
     group.bench_function("png_224x224", |b| {
-        b.iter(|| series::encode(&images, ImageFormat::PNG).unwrap())
+        b.iter(|| series::encode(&images, ImageFormat::PNG).unwrap());
     });
 
     group.bench_function("jpeg_224x224", |b| {
-        b.iter(|| series::encode(&images, ImageFormat::JPEG).unwrap())
+        b.iter(|| series::encode(&images, ImageFormat::JPEG).unwrap());
     });
 
     group.finish();
@@ -212,7 +210,7 @@ fn bench_to_tensor(c: &mut Criterion) {
     let images = make_fixed_rgb_image_series(224, 224, BATCH_SIZE);
 
     group.bench_function("fixed_rgb_224x224", |b| {
-        b.iter(|| series::to_tensor(&images).unwrap())
+        b.iter(|| series::to_tensor(&images).unwrap());
     });
 
     group.finish();

@@ -288,3 +288,27 @@ def test_csv_partitioned_write_with_some_empty_partitions(tmp_path, with_morsel_
 
     read_back = daft.read_csv(tmp_path.as_posix() + "/**/*.csv").sort("x").to_pydict()
     assert read_back == data
+
+
+@pytest.fixture()
+def smaller_json_target_filesize():
+    with daft.execution_config_ctx(json_target_filesize=1024):
+        yield
+
+
+def test_json_write_multifile(tmp_path, smaller_json_target_filesize):
+    data = {"x": list(range(1_000))}
+    df = daft.from_pydict(data)
+    df2 = df.write_json(tmp_path)
+    assert len(df2) > 1
+    read_back = daft.read_json(tmp_path.as_posix() + "/*.json").sort(by="x").to_pydict()
+    assert read_back == data
+
+
+def test_json_write_multifile_with_partitioning(tmp_path, smaller_json_target_filesize):
+    data = {"x": list(range(1_000))}
+    df = daft.from_pydict(data)
+    df2 = df.write_json(tmp_path, partition_cols=[df["x"].alias("y") % 2])
+    assert len(df2) >= 4
+    read_back = daft.read_json(tmp_path.as_posix() + "/**/*.json").sort(by="x").to_pydict()
+    assert read_back["x"] == data["x"]

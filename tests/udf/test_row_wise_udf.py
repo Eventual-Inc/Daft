@@ -93,6 +93,61 @@ def test_row_wise_udf_override_return_dtype():
     assert actual.to_pydict() == expected
 
 
+def test_row_wise_udf_with_ray_options():
+    try:
+        import ray
+
+        if not ray.is_initialized():
+            ray.init(num_cpus=2)
+        has_gpu = ray.cluster_resources().get("GPU", 0) > 0
+    except Exception:
+        has_gpu = False
+
+    gpus_req = 0.5 if has_gpu else 0
+
+    @daft.func(cpus=0.1, gpus=gpus_req)
+    def my_udf(x: int) -> int:
+        return x
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+
+    # We can only verify that the options are passed correctly via explain
+    import io
+
+    f = io.StringIO()
+    df.select(my_udf(col("x"))).explain(file=f, show_all=True)
+    explanation = f.getvalue()
+
+    assert "num_cpus = 0.1" in explanation
+    if has_gpu:
+        assert f"num_gpus = {gpus_req}" in explanation
+
+    # Also verify execution
+    actual = df.select(my_udf(col("x"))).to_pydict()
+    expected = {"x": [1, 2, 3]}
+    assert actual == expected
+
+
+def test_row_wise_udf_override_concurrency():
+    @daft.func(return_dtype=DataType.int64(), max_concurrency=10)
+    async def my_udf(x):
+        return x
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+
+    import io
+
+    f = io.StringIO()
+    df.select(my_udf(col("x"))).explain(file=f, show_all=True)
+    explanation = f.getvalue()
+
+    assert "concurrency = 10" in explanation
+
+    actual = df.select(my_udf(col("x"))).to_pydict()
+    expected = {"x": [1, 2, 3]}
+    assert actual == expected
+
+
 def test_row_wise_udf_literal_eval():
     @daft.func
     def my_stringify_and_sum(a: int, b: int) -> str:

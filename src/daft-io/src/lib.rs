@@ -652,12 +652,13 @@ mod resolve_alias_tests {
     use super::*;
 
     fn config_with_aliases(aliases: &[(&str, &str)]) -> IOConfig {
-        let mut config = IOConfig::default();
-        config.protocol_aliases = aliases
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect::<BTreeMap<_, _>>();
-        config
+        IOConfig {
+            protocol_aliases: aliases
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                .collect::<BTreeMap<_, _>>(),
+            ..Default::default()
+        }
     }
 
     #[test]

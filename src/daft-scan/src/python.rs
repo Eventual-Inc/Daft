@@ -3,11 +3,113 @@ use std::{
     sync::Arc,
 };
 
-use common_py_serde::{deserialize_py_object, serialize_py_object};
+use common_py_serde::{
+    deserialize_py_object, impl_bincode_py_state_serialization, serialize_py_object,
+};
 use pyo3::{prelude::*, types::PyTuple};
 use serde::{Deserialize, Serialize};
 
-use crate::storage_config::StorageConfig;
+use crate::{
+    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, TextSourceConfig,
+    WarcSourceConfig, storage_config::StorageConfig,
+};
+
+/// Configuration for parsing a particular file format.
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[serde(transparent)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", name = "FileFormatConfig", from_py_object)
+)]
+pub struct PyFileFormatConfig(Arc<FileFormatConfig>);
+
+#[pymethods]
+impl PyFileFormatConfig {
+    /// Create a Parquet file format config.
+    #[staticmethod]
+    fn from_parquet_config(config: ParquetSourceConfig) -> Self {
+        Self(Arc::new(FileFormatConfig::Parquet(config)))
+    }
+
+    /// Create a CSV file format config.
+    #[staticmethod]
+    fn from_csv_config(config: CsvSourceConfig) -> Self {
+        Self(Arc::new(FileFormatConfig::Csv(config)))
+    }
+
+    /// Create a JSON file format config.
+    #[staticmethod]
+    fn from_json_config(config: JsonSourceConfig) -> Self {
+        Self(Arc::new(FileFormatConfig::Json(config)))
+    }
+
+    /// Create a Warc file format config.
+    #[staticmethod]
+    fn from_warc_config(config: WarcSourceConfig) -> Self {
+        Self(Arc::new(FileFormatConfig::Warc(config)))
+    }
+
+    /// Create a TEXT file format config.
+    #[staticmethod]
+    fn from_text_config(config: TextSourceConfig) -> Self {
+        Self(Arc::new(FileFormatConfig::Text(config)))
+    }
+
+    /// Get the underlying data source config.
+    #[getter]
+    fn get_config(&self, py: Python) -> PyResult<Py<PyAny>> {
+        match self.0.as_ref() {
+            FileFormatConfig::Parquet(config) => config
+                .clone()
+                .into_pyobject(py)
+                .map(|c| c.unbind().into_any()),
+            FileFormatConfig::Csv(config) => config
+                .clone()
+                .into_pyobject(py)
+                .map(|c| c.unbind().into_any()),
+            FileFormatConfig::Json(config) => config
+                .clone()
+                .into_pyobject(py)
+                .map(|c| c.unbind().into_any()),
+            FileFormatConfig::Warc(config) => config
+                .clone()
+                .into_pyobject(py)
+                .map(|c| c.unbind().into_any()),
+            FileFormatConfig::Text(config) => config
+                .clone()
+                .into_pyobject(py)
+                .map(|c| c.unbind().into_any()),
+        }
+    }
+
+    /// Get the file format for this file format config.
+    fn file_format(&self) -> common_file_formats::FileFormat {
+        self.0.as_ref().into()
+    }
+
+    fn __richcmp__(&self, other: &Self, op: pyo3::basic::CompareOp) -> bool {
+        match op {
+            pyo3::basic::CompareOp::Eq => self.0 == other.0,
+            pyo3::basic::CompareOp::Ne => !self.__richcmp__(other, pyo3::basic::CompareOp::Eq),
+            _ => unimplemented!("not implemented"),
+        }
+    }
+}
+
+impl_bincode_py_state_serialization!(PyFileFormatConfig);
+
+impl From<PyFileFormatConfig> for Arc<FileFormatConfig> {
+    fn from(file_format_config: PyFileFormatConfig) -> Self {
+        file_format_config.0
+    }
+}
+
+impl From<Arc<FileFormatConfig>> for PyFileFormatConfig {
+    fn from(file_format_config: Arc<FileFormatConfig>) -> Self {
+        Self(file_format_config)
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PyObjectSerializableWrapper(
@@ -70,7 +172,6 @@ pub mod pylib {
 
     use common_daft_config::PyDaftExecutionConfig;
     use common_error::DaftResult;
-    use common_file_formats::{FileFormatConfig, python::PyFileFormatConfig};
     use common_py_serde::impl_bincode_py_state_serialization;
     use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, python::PyExpr};
     use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
@@ -79,10 +180,10 @@ pub mod pylib {
     use pyo3::{prelude::*, pyclass, types::PyIterator};
     use serde::{Deserialize, Serialize};
 
-    use super::PythonTablesFactoryArgs;
+    use super::{PyFileFormatConfig, PythonTablesFactoryArgs};
     use crate::{
-        DataSource, PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTask,
-        ScanTaskRef, SupportsPushdownFilters,
+        DatabaseSourceConfig, FileFormatConfig, PartitionField, Pushdowns, ScanOperator,
+        ScanOperatorRef, ScanSource, ScanTask, ScanTaskRef, SourceConfig, SupportsPushdownFilters,
         anonymous::AnonymousScanOperator,
         glob::GlobScanOperator,
         python::pylib_scan_info::{PyPartitionField, PyPushdowns},
@@ -499,7 +600,7 @@ pub mod pylib {
 
             let metadata = num_rows.map(|n| TableMetadata { length: n as usize });
 
-            let data_source = DataSource::File {
+            let data_source = ScanSource::File {
                 path: file,
                 chunk_spec: None,
                 size_bytes,
@@ -510,9 +611,10 @@ pub mod pylib {
                 parquet_metadata: None,
             };
 
+            let file_format_config: Arc<FileFormatConfig> = file_format.into();
             let scan_task = ScanTask::new(
                 vec![data_source],
-                file_format.into(),
+                Arc::new(SourceConfig::File(Arc::unwrap_or_clone(file_format_config))),
                 schema.schema,
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
@@ -525,7 +627,7 @@ pub mod pylib {
         #[staticmethod]
         #[pyo3(signature = (
             url,
-            file_format,
+            config,
             schema,
             storage_config,
             num_rows=None,
@@ -535,7 +637,7 @@ pub mod pylib {
         ))]
         pub fn sql_scan_task(
             url: String,
-            file_format: PyFileFormatConfig,
+            config: DatabaseSourceConfig,
             schema: PySchema,
             storage_config: StorageConfig,
             num_rows: Option<i64>,
@@ -546,7 +648,7 @@ pub mod pylib {
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.record_batch))
                 .transpose()?;
-            let data_source = DataSource::Database {
+            let data_source = ScanSource::Database {
                 path: url,
                 size_bytes,
                 metadata: num_rows.map(|n| TableMetadata { length: n as usize }),
@@ -555,7 +657,7 @@ pub mod pylib {
 
             let scan_task = ScanTask::new(
                 vec![data_source],
-                file_format.into(),
+                Arc::new(SourceConfig::Database(config)),
                 schema.schema,
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
@@ -591,7 +693,7 @@ pub mod pylib {
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.record_batch))
                 .transpose()?;
-            let data_source = DataSource::PythonFactoryFunction {
+            let data_source = ScanSource::PythonFactoryFunction {
                 module: module.clone(),
                 func_name: func_name.clone(),
                 func_args: PythonTablesFactoryArgs::new(
@@ -605,8 +707,7 @@ pub mod pylib {
                 partition_spec: None,
             };
 
-            // Create enhanced FileFormatConfig with context information
-            let file_format_config = Arc::new(FileFormatConfig::PythonFunction {
+            let source_config = Arc::new(SourceConfig::PythonFunction {
                 source_name,
                 module_name: Some(module),
                 function_name: Some(func_name),
@@ -614,7 +715,7 @@ pub mod pylib {
 
             let scan_task = ScanTask::new(
                 vec![data_source],
-                file_format_config,
+                source_config,
                 schema.schema,
                 // HACK: StorageConfig isn't used when running the Python function but this is a non-optional arg for
                 // ScanTask creation, so we just put in a placeholder here
@@ -680,7 +781,7 @@ pub mod pylib {
                 None,
             ),
         )?;
-        let data_source = DataSource::File {
+        let data_source = ScanSource::File {
             path: uri.to_string(),
             chunk_spec: None,
             size_bytes: Some(file_size),
@@ -698,7 +799,9 @@ pub mod pylib {
         };
         let st = ScanTask::new(
             vec![data_source],
-            Arc::new(FileFormatConfig::Parquet(default::Default::default())),
+            Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
+                default::Default::default(),
+            ))),
             Arc::new(schema),
             Arc::new(Default::default()),
             Pushdowns::new(None, None, columns.map(Arc::new), None, None, None),
@@ -971,6 +1074,7 @@ pub mod pylib_scan_info {
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<StorageConfig>()?;
+    parent.add_class::<PyFileFormatConfig>()?;
 
     parent.add_class::<pylib::ScanOperatorHandle>()?;
     parent.add_class::<pylib::PyScanTask>()?;

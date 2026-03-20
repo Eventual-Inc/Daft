@@ -2,14 +2,13 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::{
-    StatSnapshot,
+    Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
-use opentelemetry::metrics::Meter;
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{

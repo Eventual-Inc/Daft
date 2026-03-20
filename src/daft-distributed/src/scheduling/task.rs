@@ -4,7 +4,9 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftError;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
-use daft_local_plan::{ExecutionStats, Input, LocalPhysicalPlanRef, SourceId};
+use daft_local_plan::{
+    ExecutionStats, FlightShuffleReadInput, Input, LocalPhysicalPlanRef, SourceId,
+};
 use daft_scan::ScanTaskRef;
 use tokio_util::sync::CancellationToken;
 
@@ -374,6 +376,16 @@ impl SwordfishTaskBuilder {
         self
     }
 
+    /// Add flight shuffle read inputs with source_id to the builder.
+    pub fn with_flight_shuffle_reads(
+        mut self,
+        source_id: SourceId,
+        inputs: Vec<FlightShuffleReadInput>,
+    ) -> Self {
+        self.inputs.insert(source_id, Input::FlightShuffle(inputs));
+        self
+    }
+
     /// Add a notify token to the builder. Returns the builder and the receiver for the token.
     pub fn add_notify_token(mut self) -> (Self, OneshotReceiver<()>) {
         let (notify_token, notify_rx) = create_oneshot_channel();
@@ -567,14 +579,14 @@ pub(super) mod tests {
             let task_id = task_context.task_id;
             Self {
                 task_context,
-                task_name: "".into(),
+                task_name: String::new(),
                 priority: MockTaskPriority { priority: 0 },
                 scheduling_strategy: SchedulingStrategy::Spread,
                 resource_request: TaskResourceRequest::new(ResourceRequest::default()),
                 task_result: MaterializedOutput::new(
                     vec![partition_ref],
                     "".into(),
-                    "".into(),
+                    String::new(),
                     task_id,
                 ),
                 cancel_notifier: Arc::new(Mutex::new(None)),
@@ -686,7 +698,7 @@ pub(super) mod tests {
                     match failure {
                         MockTaskFailure::Error(error_message) => {
                             return TaskStatus::Failed {
-                                error: DaftError::InternalError(error_message.clone()),
+                                error: DaftError::InternalError(error_message),
                             };
                         }
                         MockTaskFailure::Panic(error_message) => {

@@ -1655,7 +1655,7 @@ jobs:
     - name: Python And Rust Style Check
       run: |
         source .venv/bin/activate
-        pre-commit run --all-files -v
+        pre-commit run --all-files -v --hook-stage pre-commit --hook-stage manual
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1

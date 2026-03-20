@@ -10,7 +10,6 @@ use std::{
 
 use common_display::DisplayAs;
 use common_error::DaftError;
-use common_file_formats::FileFormatConfig;
 use daft_parquet::DaftParquetMetadata;
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
@@ -21,6 +20,14 @@ use serde::{Deserialize, Serialize};
 mod anonymous;
 pub use anonymous::AnonymousScanOperator;
 mod expr_rewriter;
+mod file_format_config;
+pub mod source;
+#[cfg(feature = "python")]
+pub use file_format_config::DatabaseSourceConfig;
+pub use file_format_config::{
+    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, TextSourceConfig,
+    WarcSourceConfig,
+};
 pub mod glob;
 mod hive;
 mod partitioning;
@@ -30,14 +37,18 @@ mod scan_operator;
 pub mod scan_state;
 pub mod scan_task_iters;
 mod sharder;
-
+mod source_config;
 pub use expr_rewriter::{PredicateGroups, rewrite_predicate_for_partitioning};
 pub use partitioning::{PartitionField, PartitionTransform};
 pub use pushdowns::{Pushdowns, SupportsPushdownFilters};
 pub use scan_operator::{ScanOperator, ScanOperatorRef};
 pub use scan_state::{PhysicalScanInfo, ScanState};
 pub use sharder::{Sharder, ShardingStrategy};
+pub use source_config::SourceConfig;
 pub mod test_utils;
+
+// Re-export source module for DataSource and DataSourceTask traits.
+pub use source::{DataSource, DataSourceStatistics, DataSourceTask, Precision};
 
 #[cfg(feature = "python")]
 pub mod python;
@@ -67,13 +78,13 @@ pub enum Error {
     DifferingSchemasInScanTaskMerge { s1: SchemaRef, s2: SchemaRef },
 
     #[snafu(display(
-        "FileFormatConfigs were different during ScanTask::merge: {:?} vs {:?}",
-        ffc1,
-        ffc2
+        "SourceConfigs were different during ScanTask::merge: {:?} vs {:?}",
+        sc_cfg1,
+        sc_cfg2
     ))]
-    DifferingFileFormatConfigsInScanTaskMerge {
-        ffc1: Arc<FileFormatConfig>,
-        ffc2: Arc<FileFormatConfig>,
+    DifferingSourceConfigsInScanTaskMerge {
+        sc_cfg1: Arc<SourceConfig>,
+        sc_cfg2: Arc<SourceConfig>,
     },
 
     #[snafu(display(
@@ -147,7 +158,7 @@ impl ChunkSpec {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum DataSource {
+pub enum ScanSource {
     File {
         path: String,
         chunk_spec: Option<ChunkSpec>,
@@ -176,7 +187,7 @@ pub enum DataSource {
     },
 }
 
-impl Hash for DataSource {
+impl Hash for ScanSource {
     fn hash<H: Hasher>(&self, state: &mut H) {
         // Hash everything except for cached parquet metadata.
         match self {
@@ -233,7 +244,7 @@ impl Hash for DataSource {
     }
 }
 
-impl DataSource {
+impl ScanSource {
     #[must_use]
     pub fn get_path(&self) -> &str {
         match self {
@@ -411,7 +422,7 @@ impl DataSource {
     }
 }
 
-impl DisplayAs for DataSource {
+impl DisplayAs for ScanSource {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         match level {
             common_display::DisplayLevel::Compact | common_display::DisplayLevel::Default => {
@@ -436,7 +447,7 @@ impl DisplayAs for DataSource {
 #[derive(PartialEq, Serialize, Deserialize, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ScanTask {
-    pub sources: Vec<DataSource>,
+    pub sources: Vec<ScanSource>,
 
     /// Schema to use when reading the DataSources.
     ///
@@ -447,7 +458,7 @@ pub struct ScanTask {
     /// which can be obtained with [`ScanTask::materialized_schema`] instead.
     pub schema: SchemaRef,
 
-    pub file_format_config: Arc<FileFormatConfig>,
+    pub source_config: Arc<SourceConfig>,
     pub storage_config: Arc<StorageConfig>,
     pub pushdowns: Pushdowns,
     pub size_bytes_on_disk: Option<u64>,
@@ -485,8 +496,8 @@ fn warc_column_sizes() -> &'static HashMap<&'static str, usize> {
 impl ScanTask {
     #[must_use]
     pub fn new(
-        sources: Vec<DataSource>,
-        file_format_config: Arc<FileFormatConfig>,
+        sources: Vec<ScanSource>,
+        source_config: Arc<SourceConfig>,
         schema: SchemaRef,
         storage_config: Arc<StorageConfig>,
         pushdowns: Pushdowns,
@@ -536,7 +547,7 @@ impl ScanTask {
         Self {
             sources,
             schema,
-            file_format_config,
+            source_config,
             storage_config,
             pushdowns,
             size_bytes_on_disk,
@@ -553,10 +564,10 @@ impl ScanTask {
                 ps2: sc2.partition_spec().cloned(),
             });
         }
-        if sc1.file_format_config != sc2.file_format_config {
-            return Err(Error::DifferingFileFormatConfigsInScanTaskMerge {
-                ffc1: sc1.file_format_config.clone(),
-                ffc2: sc2.file_format_config.clone(),
+        if sc1.source_config != sc2.source_config {
+            return Err(Error::DifferingSourceConfigsInScanTaskMerge {
+                sc_cfg1: sc1.source_config.clone(),
+                sc_cfg2: sc2.source_config.clone(),
             });
         }
         if sc1.schema != sc2.schema {
@@ -589,7 +600,7 @@ impl ScanTask {
                 .into_iter()
                 .chain(sc2.sources.clone())
                 .collect(),
-            sc1.file_format_config.clone(),
+            sc1.source_config.clone(),
             sc1.schema.clone(),
             sc1.storage_config.clone(),
             sc1.pushdowns.clone(),
@@ -606,7 +617,7 @@ impl ScanTask {
             Either::Right(self.sources.clone().into_iter().map(move |source| {
                 Arc::new(Self::new(
                     vec![source],
-                    self.file_format_config.clone(),
+                    self.source_config.clone(),
                     self.schema.clone(),
                     self.storage_config.clone(),
                     self.pushdowns.clone(),
@@ -686,7 +697,7 @@ impl ScanTask {
         self.sources
             .iter()
             .filter_map(|s| match s {
-                DataSource::File { path, .. } => Some(path.clone()),
+                ScanSource::File { path, .. } => Some(path.clone()),
                 _ => None,
             })
             .collect()
@@ -708,22 +719,22 @@ impl ScanTask {
                 self.size_bytes_on_disk.map(|file_size| {
                     let config = config
                         .map_or_else(|| Cow::Owned(DaftExecutionConfig::default()), Cow::Borrowed);
-                    let inflation_factor = match self.file_format_config.as_ref() {
-                        FileFormatConfig::Parquet(_) => config.parquet_inflation_factor,
-                        FileFormatConfig::Csv(_) => config.csv_inflation_factor,
-                        FileFormatConfig::Json(_) => config.json_inflation_factor,
-                        FileFormatConfig::Text(_) => config.text_inflation_factor,
-                        FileFormatConfig::Warc(_) => {
-                            if self.is_gzipped() {
-                                5.0
-                            } else {
-                                1.0
+                    let inflation_factor = match self.source_config.as_ref() {
+                        SourceConfig::File(ffc) => match ffc {
+                            FileFormatConfig::Parquet(_) => config.parquet_inflation_factor,
+                            FileFormatConfig::Csv(_) => config.csv_inflation_factor,
+                            FileFormatConfig::Json(_) => config.json_inflation_factor,
+                            FileFormatConfig::Text(_) => config.text_inflation_factor,
+                            FileFormatConfig::Warc(_) => {
+                                if self.is_gzipped() {
+                                    5.0
+                                } else {
+                                    1.0
+                                }
                             }
-                        }
+                        },
                         #[cfg(feature = "python")]
-                        FileFormatConfig::Database(_) | FileFormatConfig::PythonFunction { .. } => {
-                            1.0
-                        }
+                        SourceConfig::Database(_) | SourceConfig::PythonFunction { .. } => 1.0,
                     };
                     let in_mem_size: f64 = (file_size as f64) * inflation_factor;
                     let read_row_size = if self.is_warc() {
@@ -771,14 +782,17 @@ impl ScanTask {
     }
 
     fn is_warc(&self) -> bool {
-        matches!(self.file_format_config.as_ref(), FileFormatConfig::Warc(_))
+        matches!(
+            self.source_config.as_ref(),
+            SourceConfig::File(FileFormatConfig::Warc(_))
+        )
     }
 
     fn is_gzipped(&self) -> bool {
         self.sources
             .first()
             .and_then(|s| match s {
-                DataSource::File { path, .. } => {
+                ScanSource::File { path, .. } => {
                     let filename = std::path::Path::new(path);
                     Some(
                         filename
@@ -879,12 +893,12 @@ impl ScanTask {
                 .join("; ")
         ));
         res.push(format!("Schema = {}", self.schema.short_string()));
-        let file_format = self.file_format_config.multiline_display();
-        if !file_format.is_empty() {
+        let source_config_display = self.source_config.multiline_display();
+        if !source_config_display.is_empty() {
             res.push(format!(
                 "{} config= {}",
-                self.file_format_config.var_name(),
-                file_format.join(", ")
+                self.source_config.var_name(),
+                source_config_display.join(", ")
             ));
         }
         let storage_config = self.storage_config.multiline_display();
@@ -931,7 +945,7 @@ impl DisplayAs for ScanTask {
         };
 
         #[cfg(feature = "python")]
-        if let FileFormatConfig::PythonFunction { .. } = self.file_format_config.as_ref() {
+        if let SourceConfig::PythonFunction { .. } = self.source_config.as_ref() {
             // For Python Function, only display the first source, which makes it more readable
             if self.sources.len() > 1 {
                 condensed_sources = format!("{}, ...", self.sources[0].display_as(level));
@@ -966,19 +980,18 @@ mod test {
 
     use common_display::{DisplayAs, DisplayLevel};
     use common_error::DaftResult;
-    use common_file_formats::{FileFormatConfig, ParquetSourceConfig, WarcSourceConfig};
     use daft_schema::{dtype::DataType, field::Field, schema::Schema, time_unit::TimeUnit};
     use daft_stats::TableMetadata;
     use itertools::Itertools;
 
     use crate::{
-        DataSource, Pushdowns, ScanOperator, ScanTask, glob::GlobScanOperator,
-        storage_config::StorageConfig,
+        FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanOperator, ScanSource, ScanTask,
+        SourceConfig, WarcSourceConfig, glob::GlobScanOperator, storage_config::StorageConfig,
     };
 
     fn make_scan_task(num_sources: usize) -> ScanTask {
         let sources = (0..num_sources)
-            .map(|i| DataSource::File {
+            .map(|i| ScanSource::File {
                 path: format!("test{i}"),
                 chunk_spec: None,
                 size_bytes: None,
@@ -990,16 +1003,16 @@ mod test {
             })
             .collect_vec();
 
-        let file_format_config = FileFormatConfig::Parquet(ParquetSourceConfig {
+        let source_config = SourceConfig::File(FileFormatConfig::Parquet(ParquetSourceConfig {
             coerce_int96_timestamp_unit: TimeUnit::Seconds,
             field_id_mapping: None,
             row_groups: None,
             chunk_size: None,
-        });
+        }));
 
         ScanTask::new(
             sources,
-            Arc::new(file_format_config),
+            Arc::new(source_config),
             Arc::new(Schema::empty()),
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
@@ -1125,7 +1138,7 @@ mod test {
 
     #[test]
     fn test_warc_memory_estimation_with_extremely_large_row_count() {
-        let sources = vec![DataSource::File {
+        let sources = vec![ScanSource::File {
             path: "test.warc.gz".to_string(),
             chunk_spec: None,
             size_bytes: Some(1_000_000),
@@ -1145,7 +1158,9 @@ mod test {
 
         let scan_task = ScanTask::new(
             sources,
-            Arc::new(FileFormatConfig::Warc(WarcSourceConfig {})),
+            Arc::new(SourceConfig::File(FileFormatConfig::Warc(
+                WarcSourceConfig {},
+            ))),
             schema,
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
@@ -1165,7 +1180,7 @@ mod test {
 
     #[test]
     fn test_warc_memory_estimation_with_large_row_count_f64() {
-        let sources = vec![DataSource::File {
+        let sources = vec![ScanSource::File {
             path: "test.warc.gz".to_string(),
             chunk_spec: None,
             size_bytes: Some(1_000_000_000_000), // 1TB file
@@ -1184,7 +1199,9 @@ mod test {
 
         let scan_task = ScanTask::new(
             sources,
-            Arc::new(FileFormatConfig::Warc(WarcSourceConfig {})),
+            Arc::new(SourceConfig::File(FileFormatConfig::Warc(
+                WarcSourceConfig {},
+            ))),
             schema,
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
@@ -1204,7 +1221,7 @@ mod test {
 
     #[test]
     fn test_warc_memory_estimation_valid_edge_case() {
-        let sources = vec![DataSource::File {
+        let sources = vec![ScanSource::File {
             path: "test.warc.gz".to_string(),
             chunk_spec: None,
             size_bytes: Some(10_000_000), // 10MB
@@ -1224,7 +1241,9 @@ mod test {
 
         let scan_task = ScanTask::new(
             sources,
-            Arc::new(FileFormatConfig::Warc(WarcSourceConfig {})),
+            Arc::new(SourceConfig::File(FileFormatConfig::Warc(
+                WarcSourceConfig {},
+            ))),
             schema,
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
@@ -1243,7 +1262,7 @@ mod test {
 
     #[test]
     fn test_schema_row_size_estimation_with_extremely_large_row_count() {
-        let sources = vec![DataSource::File {
+        let sources = vec![ScanSource::File {
             path: "test.parquet".to_string(),
             chunk_spec: None,
             size_bytes: Some(1_000_000),
@@ -1265,12 +1284,14 @@ mod test {
 
         let scan_task = ScanTask::new(
             sources,
-            Arc::new(FileFormatConfig::Parquet(ParquetSourceConfig {
-                coerce_int96_timestamp_unit: TimeUnit::Seconds,
-                field_id_mapping: None,
-                row_groups: None,
-                chunk_size: None,
-            })),
+            Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
+                ParquetSourceConfig {
+                    coerce_int96_timestamp_unit: TimeUnit::Seconds,
+                    field_id_mapping: None,
+                    row_groups: None,
+                    chunk_size: None,
+                },
+            ))),
             schema,
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
@@ -1288,7 +1309,7 @@ mod test {
 
     #[test]
     fn test_schema_row_size_estimation_with_nested_schema() {
-        let sources = vec![DataSource::File {
+        let sources = vec![ScanSource::File {
             path: "test.parquet".to_string(),
             chunk_spec: None,
             size_bytes: Some(100_000_000), // 100MB
@@ -1312,12 +1333,14 @@ mod test {
 
         let scan_task = ScanTask::new(
             sources,
-            Arc::new(FileFormatConfig::Parquet(ParquetSourceConfig {
-                coerce_int96_timestamp_unit: TimeUnit::Seconds,
-                field_id_mapping: None,
-                row_groups: None,
-                chunk_size: None,
-            })),
+            Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
+                ParquetSourceConfig {
+                    coerce_int96_timestamp_unit: TimeUnit::Seconds,
+                    field_id_mapping: None,
+                    row_groups: None,
+                    chunk_size: None,
+                },
+            ))),
             schema,
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
@@ -1334,7 +1357,7 @@ mod test {
 
     #[test]
     fn test_schema_row_size_estimation_with_large_file_no_metadata() {
-        let sources = vec![DataSource::File {
+        let sources = vec![ScanSource::File {
             path: "test.parquet".to_string(),
             chunk_spec: None,
             size_bytes: Some(u64::MAX / 100), // Very large file
@@ -1352,12 +1375,14 @@ mod test {
 
         let scan_task = ScanTask::new(
             sources,
-            Arc::new(FileFormatConfig::Parquet(ParquetSourceConfig {
-                coerce_int96_timestamp_unit: TimeUnit::Seconds,
-                field_id_mapping: None,
-                row_groups: None,
-                chunk_size: None,
-            })),
+            Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
+                ParquetSourceConfig {
+                    coerce_int96_timestamp_unit: TimeUnit::Seconds,
+                    field_id_mapping: None,
+                    row_groups: None,
+                    chunk_size: None,
+                },
+            ))),
             schema,
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
@@ -1376,7 +1401,7 @@ mod test {
 
     #[test]
     fn test_schema_row_size_estimation_valid_case() {
-        let sources = vec![DataSource::File {
+        let sources = vec![ScanSource::File {
             path: "test.parquet".to_string(),
             chunk_spec: None,
             size_bytes: Some(1_000_000),
@@ -1394,12 +1419,14 @@ mod test {
 
         let scan_task = ScanTask::new(
             sources,
-            Arc::new(FileFormatConfig::Parquet(ParquetSourceConfig {
-                coerce_int96_timestamp_unit: TimeUnit::Seconds,
-                field_id_mapping: None,
-                row_groups: None,
-                chunk_size: None,
-            })),
+            Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
+                ParquetSourceConfig {
+                    coerce_int96_timestamp_unit: TimeUnit::Seconds,
+                    field_id_mapping: None,
+                    row_groups: None,
+                    chunk_size: None,
+                },
+            ))),
             schema,
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),
@@ -1418,7 +1445,7 @@ mod test {
 
     #[test]
     fn test_overflow_protection_with_infinity() {
-        let sources = vec![DataSource::File {
+        let sources = vec![ScanSource::File {
             path: "test.parquet".to_string(),
             chunk_spec: None,
             size_bytes: Some(u64::MAX), // Maximum possible file size
@@ -1433,12 +1460,14 @@ mod test {
 
         let scan_task = ScanTask::new(
             sources,
-            Arc::new(FileFormatConfig::Parquet(ParquetSourceConfig {
-                coerce_int96_timestamp_unit: TimeUnit::Seconds,
-                field_id_mapping: None,
-                row_groups: None,
-                chunk_size: None,
-            })),
+            Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
+                ParquetSourceConfig {
+                    coerce_int96_timestamp_unit: TimeUnit::Seconds,
+                    field_id_mapping: None,
+                    row_groups: None,
+                    chunk_size: None,
+                },
+            ))),
             schema,
             Arc::new(StorageConfig::new_internal(false, None)),
             Pushdowns::default(),

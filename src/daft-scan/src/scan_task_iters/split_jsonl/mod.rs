@@ -2,13 +2,15 @@ use std::{convert::TryFrom, fs, path::PathBuf};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
-use common_file_formats::{FileFormatConfig, JsonSourceConfig};
 use daft_compression::CompressionCodec;
 use daft_io::{GetRange, SourceType, parse_url, strip_file_uri_to_path};
 use url::Url;
 use urlencoding::decode;
 
-use crate::{ChunkSpec, DataSource, ScanTask, ScanTaskRef, StorageConfig};
+use crate::{
+    ChunkSpec, FileFormatConfig, JsonSourceConfig, ScanSource, ScanTask, ScanTaskRef, SourceConfig,
+    StorageConfig,
+};
 
 type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
 const JSONL_SUFFIXES: &[&str] = &[".jsonl", ".ndjson"];
@@ -23,10 +25,14 @@ pub fn split_by_jsonl_ranges<'a>(
         scan_tasks
             .map(move |t| -> DaftResult<BoxScanTaskIter<'a>> {
                 let t = t?;
-                if let (FileFormatConfig::Json(JsonSourceConfig { .. }), [source], Some(None)) = (
-                    t.file_format_config.as_ref(),
+                if let (
+                    SourceConfig::File(FileFormatConfig::Json(JsonSourceConfig { .. })),
+                    [source],
+                    Some(None),
+                ) = (
+                    t.source_config.as_ref(),
                     &t.sources[..],
-                    t.sources.first().map(DataSource::get_chunk_spec),
+                    t.sources.first().map(ScanSource::get_chunk_spec),
                 ) {
                     let path = source.get_path();
                     if !supports_split(path) {
@@ -103,12 +109,12 @@ pub fn split_by_jsonl_ranges<'a>(
                         let end = w[1];
                         assert!(end > start, "Invalid chunk range: start={start}, end={end}");
                         let mut new_source = source.clone();
-                        if let DataSource::File { chunk_spec, .. } = &mut new_source {
+                        if let ScanSource::File { chunk_spec, .. } = &mut new_source {
                             *chunk_spec = Some(ChunkSpec::Bytes { start, end });
                         }
                         let new_task = ScanTask::new(
                             vec![new_source],
-                            t.file_format_config.clone(),
+                            t.source_config.clone(),
                             t.schema.clone(),
                             t.storage_config.clone(),
                             t.pushdowns.clone(),
@@ -218,19 +224,19 @@ fn ends_with_ignore_ascii_case(value: &str, suffix: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use std::{
-        env, fs,
+        env,
+        fmt::Write as _,
+        fs,
         sync::Arc,
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use common_file_formats::JsonSourceConfig;
-
     use super::*;
-    use crate::{ScanTask, StorageConfig};
+    use crate::{JsonSourceConfig, ScanTask, StorageConfig};
 
     fn make_scan_task(path: &str, size_bytes: u64) -> ScanTask {
         ScanTask::new(
-            vec![DataSource::File {
+            vec![ScanSource::File {
                 path: path.to_string(),
                 chunk_spec: None,
                 size_bytes: Some(size_bytes),
@@ -240,7 +246,9 @@ mod tests {
                 statistics: None,
                 parquet_metadata: None,
             }],
-            Arc::new(FileFormatConfig::Json(JsonSourceConfig::default())),
+            Arc::new(SourceConfig::File(FileFormatConfig::Json(
+                JsonSourceConfig::default(),
+            ))),
             Arc::new(daft_schema::schema::Schema::empty()),
             StorageConfig::default().into(),
             crate::Pushdowns::default(),
@@ -263,15 +271,22 @@ mod tests {
         // Construct a JSONL payload with an extremely long first line and irregular line lengths
         let mut payload = String::new();
         // Extremely long first line (> 1MB window would expand; here we only simulate the logic and avoid actual IO)
-        payload.push_str(&format!("{{\"id\":0,\"val\":\"{}\"}}\n", "x".repeat(1024)));
+        writeln!(
+            &mut payload,
+            "{{\"id\":0,\"val\":\"{}\"}}",
+            "x".repeat(1024)
+        )
+        .unwrap();
         // Several irregular line lengths
         for i in 1..50 {
             let len = (i * 13) % 257; // irregular length
-            payload.push_str(&format!(
-                "{{\"id\":{},\"val\":\"{}\"}}\n",
+            writeln!(
+                &mut payload,
+                "{{\"id\":{},\"val\":\"{}\"}}",
                 i,
                 "y".repeat(len)
-            ));
+            )
+            .unwrap();
         }
 
         // Write to a temporary file to obtain size_bytes
@@ -287,10 +302,12 @@ mod tests {
 
         // Build a ScanTask and run split_by_jsonl_ranges
         let st = make_scan_task(&uri, size_bytes);
-        let mut cfg = common_daft_config::DaftExecutionConfig::default();
-        // Lower thresholds to force splitting
-        cfg.scan_tasks_max_size_bytes = 4 * 1024; // 4KB
-        cfg.scan_tasks_min_size_bytes = 0;
+        let cfg = common_daft_config::DaftExecutionConfig {
+            // Lower thresholds to force splitting
+            scan_tasks_max_size_bytes: 4 * 1024,
+            scan_tasks_min_size_bytes: 0,
+            ..Default::default()
+        };
         let iter = split_by_jsonl_ranges(Box::new(std::iter::once(Ok(Arc::new(st).into()))), &cfg);
         let tasks = iter.collect::<Vec<_>>();
 
@@ -303,7 +320,7 @@ mod tests {
         for t in tasks {
             let t = t.unwrap();
             let src = &t.sources[0];
-            if let crate::DataSource::File {
+            if let crate::ScanSource::File {
                 chunk_spec: Some(crate::ChunkSpec::Bytes { start, end }),
                 ..
             } = src
@@ -484,7 +501,7 @@ mod tests {
     fn test_local_path_from_uri_with_query() {
         let result = local_path_from_uri("file:///tmp/file?foo=bar").unwrap();
         // Should strip query params
-        assert!(!result.to_string_lossy().contains("?"));
+        assert!(!result.to_string_lossy().contains('?'));
     }
 
     #[test]

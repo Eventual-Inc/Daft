@@ -153,3 +153,98 @@ def test_read_with_encoding_setting(tmp_path):
 
     with pytest.raises(Exception, match=r"(?i)utf-?8"):
         daft.read_text(str(path)).to_pydict()
+
+
+def test_read_whole_text_from_single_file(tmp_path):
+    path = tmp_path / "sample.txt"
+    path.write_text("hello\nworld\nfoo", encoding="utf-8")
+
+    df = daft.read_text(str(path), whole_text=True)
+    assert df.schema() == Schema.from_pyarrow_schema(pa.schema([("text", pa.string())]))
+    result = df.to_pydict()
+    assert result["text"] == ["hello\nworld\nfoo"]
+
+
+def test_read_whole_text_from_multiple_files(tmp_path):
+    file_a = tmp_path / "a.txt"
+    file_b = tmp_path / "b.txt"
+    file_a.write_text("content of file a\nwith multiple lines", encoding="utf-8")
+    file_b.write_text("content of file b", encoding="utf-8")
+
+    df = daft.read_text([str(file_a), str(file_b)], whole_text=True)
+    result = df.to_pydict()
+    assert len(result["text"]) == 2
+    assert "content of file a\nwith multiple lines" in result["text"]
+    assert "content of file b" in result["text"]
+
+
+def test_read_whole_text_with_path_column(tmp_path):
+    file_a = tmp_path / "a.txt"
+    file_b = tmp_path / "b.txt"
+    file_a.write_text("content a", encoding="utf-8")
+    file_b.write_text("content b", encoding="utf-8")
+
+    df = daft.read_text([str(file_a), str(file_b)], whole_text=True, file_path_column="path")
+    assert df.schema() == Schema.from_pyarrow_schema(pa.schema([("text", pa.string()), ("path", pa.string())]))
+
+    data = df.to_pydict()
+    assert len(data["text"]) == 2
+    assert len(data["path"]) == 2
+
+    rows = {(t, p) for t, p in zip(data["text"], data["path"])}
+    assert rows == {
+        ("content a", f"{tmp_path}/a.txt"),
+        ("content b", f"{tmp_path}/b.txt"),
+    }
+
+
+def test_read_whole_text_from_empty_file(tmp_path):
+    path = tmp_path / "empty.txt"
+    path.write_text("", encoding="utf-8")
+
+    df = daft.read_text(str(path), whole_text=True, skip_blank_lines=False)
+    result = df.to_pydict()
+    assert result["text"] == [""]
+
+    df = daft.read_text(str(path), whole_text=True, skip_blank_lines=True)
+    result = df.to_pydict()
+    assert result["text"] == []
+
+
+def test_read_whole_text_with_glob_patterns(tmp_path):
+    file_a = tmp_path / "a.txt"
+    file_b = tmp_path / "b.txt"
+    file_c = tmp_path / "c.txt"
+    file_d = tmp_path / "d.txt"
+    file_a.write_text("content a1", encoding="utf-8")
+    file_b.write_text("content b1\ncontent b2\t", encoding="utf-8")
+    file_c.write_text("content c1\ncontent c2\ncontent c3\n\t", encoding="utf-8")
+    file_d.write_text("", encoding="utf-8")
+
+    df = daft.read_text(
+        str(tmp_path / "*.txt"),
+        skip_blank_lines=True,
+        whole_text=True,
+        file_path_column="path",
+    )
+    data = df.to_pydict()
+    assert len(data["text"]) == 3
+    assert len(data["path"]) == 3
+
+    file_to_content = {p: t for p, t in zip(data["path"], data["text"])}
+    assert file_to_content[str(file_a)] == "content a1"
+    assert file_to_content[str(file_b)] == "content b1\ncontent b2\t"
+    assert file_to_content[str(file_c)] == "content c1\ncontent c2\ncontent c3\n\t"
+
+
+def test_read_whole_text_with_gzip(tmp_path):
+    def _write_gzip(path: Path, content: bytes) -> None:
+        with gzip.open(path, "wb") as f:
+            f.write(content)
+
+    path = tmp_path / "compressed.txt.gz"
+    _write_gzip(path, b"line1\nline2\nline3")
+
+    df = daft.read_text(str(path), whole_text=True)
+    result = df.to_pydict()
+    assert result["text"] == ["line1\nline2\nline3"]

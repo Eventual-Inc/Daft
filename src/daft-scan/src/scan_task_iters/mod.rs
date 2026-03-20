@@ -4,12 +4,14 @@ mod split_jsonl;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use daft_io::IOStatsContext;
 use daft_parquet::{RowGroupList, read::read_parquet_metadata};
 use indexmap::IndexMap;
 
-use crate::{ChunkSpec, DataSource, Pushdowns, ScanTask, ScanTaskRef};
+use crate::{
+    ChunkSpec, FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanSource, ScanTask, ScanTaskRef,
+    SourceConfig,
+};
 
 type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
 
@@ -120,7 +122,7 @@ impl MergeByFileSize<'_> {
         }
 
         let child_matches_accumulator = other.partition_spec() == accumulator.partition_spec()
-            && other.file_format_config == accumulator.file_format_config
+            && other.source_config == accumulator.source_config
             && other.schema == accumulator.schema
             && other.storage_config == accumulator.storage_config
             && other.pushdowns == accumulator.pushdowns;
@@ -213,16 +215,16 @@ fn split_by_row_groups(
                         - no iceberg delete files
                     */
                     if let (
-                        FileFormatConfig::Parquet(ParquetSourceConfig {
+                        SourceConfig::File(FileFormatConfig::Parquet(ParquetSourceConfig {
                             field_id_mapping, ..
-                        }),
+                        })),
                         [source],
                         Some(None),
                         None,
                     ) = (
-                        t.file_format_config.as_ref(),
+                        t.source_config.as_ref(),
                         &t.sources[..],
-                        t.sources.first().map(DataSource::get_chunk_spec),
+                        t.sources.first().map(ScanSource::get_chunk_spec),
                         t.pushdowns.limit,
                     ) && source
                         .get_size_bytes()
@@ -264,7 +266,7 @@ fn split_by_row_groups(
                             if curr_size_bytes >= min_size_bytes || Some(i) == last_original_index {
                                 let mut new_source = source.clone();
 
-                                if let DataSource::File {
+                                if let ScanSource::File {
                                     chunk_spec,
                                     size_bytes,
                                     parquet_metadata,
@@ -278,10 +280,10 @@ fn split_by_row_groups(
                                     *chunk_spec = Some(ChunkSpec::Parquet(curr_row_group_indices));
                                     *size_bytes = Some(curr_size_bytes as u64);
                                 } else {
-                                    unreachable!("Parquet file format should only be used with DataSource::File");
+                                    unreachable!("Parquet file format should only be used with ScanSource::File");
                                 }
 
-                                if let DataSource::File {
+                                if let ScanSource::File {
                                     metadata: Some(metadata),
                                     ..
                                 } = &mut new_source
@@ -297,7 +299,7 @@ fn split_by_row_groups(
 
                                 new_tasks.push(Ok(ScanTask::new(
                                     vec![new_source],
-                                    t.file_format_config.clone(),
+                                    t.source_config.clone(),
                                     t.schema.clone(),
                                     t.storage_config.clone(),
                                     t.pushdowns.clone(),
@@ -322,10 +324,12 @@ pub fn split_and_merge_pass(
     pushdowns: &Pushdowns,
     cfg: &DaftExecutionConfig,
 ) -> DaftResult<Arc<Vec<ScanTaskRef>>> {
-    if scan_tasks
-        .iter()
-        .any(|st| matches!(st.file_format_config.as_ref(), FileFormatConfig::Warc(_)))
-    {
+    if scan_tasks.iter().any(|st| {
+        matches!(
+            st.source_config.as_ref(),
+            SourceConfig::File(FileFormatConfig::Warc(_))
+        )
+    }) {
         return Ok(scan_tasks);
     }
 
