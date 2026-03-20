@@ -7,11 +7,11 @@ use super::{DataArray, FixedSizeListArray, ListArray, StructArray};
 use crate::prelude::PythonArray;
 use crate::{
     datatypes::{
-        BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, DataType, ExtensionArray,
-        Field, FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, ExtensionArray,
+        FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray, Utf8Array,
         logical::LogicalArray,
     },
-    series::{IntoSeries, Series},
+    series::IntoSeries,
 };
 
 pub struct IterSer<I>
@@ -102,15 +102,7 @@ impl serde::Serialize for ExtensionArray {
     {
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field())?;
-        let DataType::Extension(_, inner, _) = self.data_type() else {
-            panic!("Expected Extension Type!")
-        };
-        let values = Series::from_arrow(
-            Field::new("physical", inner.as_ref().clone()),
-            self.to_arrow(),
-        )
-        .unwrap();
-        s.serialize_entry("values", &values)?;
+        s.serialize_entry("values", &self.physical)?;
         s.end()
     }
 }

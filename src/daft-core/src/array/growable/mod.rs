@@ -1,7 +1,10 @@
 use common_error::DaftResult;
+use extension_growable::ExtensionGrowable;
 
 use crate::{
-    array::{FixedSizeListArray, ListArray, StructArray, prelude::*},
+    array::{
+        FixedSizeListArray, ListArray, StructArray, extension_array::ExtensionArray, prelude::*,
+    },
     datatypes::{FileArray, prelude::*},
     file::DaftMediaType,
     series::Series,
@@ -10,6 +13,7 @@ use crate::{
 
 mod arrow_growable;
 mod bitmap_growable;
+mod extension_growable;
 mod fixed_size_list_growable;
 mod list_growable;
 mod logical_growable;
@@ -170,10 +174,19 @@ impl_growable_array!(
     arrow_growable::ArrowGrowable<'a, FixedSizeBinaryType>
 );
 impl_growable_array!(Utf8Array, arrow_growable::ArrowGrowable<'a, Utf8Type>);
-impl_growable_array!(
-    ExtensionArray,
-    arrow_growable::ArrowGrowable<'a, ExtensionType>
-);
+impl GrowableArray for ExtensionArray {
+    type GrowableType<'a> = ExtensionGrowable<'a>;
+
+    fn make_growable<'a>(
+        name: &str,
+        dtype: &DataType,
+        arrays: Vec<&'a Self>,
+        use_validity: bool,
+        capacity: usize,
+    ) -> Self::GrowableType<'a> {
+        ExtensionGrowable::new(name, dtype, arrays, use_validity, capacity)
+    }
+}
 impl_growable_array!(
     FixedSizeListArray,
     fixed_size_list_growable::FixedSizeListGrowable<'a>

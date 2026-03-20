@@ -200,3 +200,12 @@ impl StructArray {
         }
     }
 }
+impl ExtensionArray {
+    #[inline]
+    pub fn is_valid(&self, idx: usize) -> bool {
+        match self.nulls() {
+            None => true,
+            Some(nulls) => nulls.is_valid(idx),
+        }
+    }
+}

@@ -184,16 +184,3 @@ impl_series_like_for_data_array!(Float64Array);
 impl_series_like_for_data_array!(Utf8Array);
 impl_series_like_for_data_array!(IntervalArray);
 impl_series_like_for_data_array!(Decimal128Array);
-impl_series_like_for_data_array!(ExtensionArray, {
-    fn to_arrow(&self) -> DaftResult<ArrayRef> {
-        let arr: ArrayRef = self.0.to_arrow();
-        // Reverse the coercion applied during from_arrow (e.g. LargeBinary → Binary)
-        // so callers see the original storage type.
-        let target_field = self.0.field.to_arrow()?;
-        if arr.data_type() != target_field.data_type() {
-            Ok(arrow::compute::cast(&arr, target_field.data_type())?)
-        } else {
-            Ok(arr)
-        }
-    }
-});

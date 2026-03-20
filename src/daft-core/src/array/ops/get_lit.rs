@@ -180,7 +180,7 @@ impl ExtensionArray {
             self.len()
         );
 
-        if self.is_valid(idx) {
+        if self.physical.is_valid(idx) {
             Literal::Extension(self.slice(idx, idx + 1).unwrap().into_series())
         } else {
             Literal::Null

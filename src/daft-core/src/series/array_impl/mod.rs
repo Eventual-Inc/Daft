@@ -1,4 +1,5 @@
 pub mod data_array;
+pub mod extension_array;
 pub mod logical_array;
 pub mod nested_array;
 #[cfg(feature = "python")]

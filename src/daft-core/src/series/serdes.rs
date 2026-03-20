@@ -153,11 +153,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                     .into_series()),
                     DataType::Extension(..) => {
                         let physical = map.next_value::<Series>()?;
-                        let physical = physical.to_arrow().unwrap();
-
-                        Ok(ExtensionArray::from_arrow(Arc::new(field), physical)
-                            .unwrap()
-                            .into_series())
+                        Ok(ExtensionArray::new(Arc::new(field), physical).into_series())
                     }
                     DataType::Map { .. } => {
                         let physical = map.next_value::<Series>()?;
