@@ -172,28 +172,48 @@ impl WorkerManager for RayWorkerManager {
             .lock()
             .expect("Failed to lock RayWorkerManagerState");
 
-        let (cluster_num_cpus, cluster_num_gpus, cluster_memory_bytes) = state
+        let (available_num_cpus, available_num_gpus, available_memory_bytes) = state
             .ray_workers
             .values()
-            .fold((0.0, 0.0, 0), |acc, worker| {
+            .fold((0.0, 0.0, 0isize), |acc, worker| {
                 (
-                    acc.0 + worker.total_num_cpus(),
-                    acc.1 + worker.total_num_gpus(),
-                    acc.2 + worker.total_memory_bytes(),
+                    acc.0 + worker.total_num_cpus() - worker.active_num_cpus(),
+                    acc.1 + worker.total_num_gpus() - worker.active_num_gpus(),
+                    acc.2 + worker.total_memory_bytes() as isize
+                        - worker.active_memory_bytes() as isize,
                 )
             });
 
-        let resource_request_greater_than_current_capacity = requested_num_cpus > cluster_num_cpus
-            || requested_num_gpus > cluster_num_gpus
-            || requested_memory_bytes > cluster_memory_bytes;
+        let resource_request_greater_than_available_capacity = requested_num_cpus
+            > available_num_cpus
+            || requested_num_gpus > available_num_gpus
+            || requested_memory_bytes as isize > available_memory_bytes;
 
         let resource_request_greater_than_max_requested = requested_num_cpus
             > state.max_resources_requested.num_cpus().unwrap_or(0.0)
             || requested_num_gpus > state.max_resources_requested.num_gpus().unwrap_or(0.0)
             || requested_memory_bytes > state.max_resources_requested.memory_bytes().unwrap_or(0);
 
-        // Only autoscale if we need more capacity AND this is greater than we've seen before
-        if resource_request_greater_than_current_capacity
+        tracing::debug!(
+            requested_num_cpus,
+            requested_num_gpus,
+            requested_memory_bytes,
+            available_num_cpus,
+            available_num_gpus,
+            available_memory_bytes,
+            watermark_cpus = state.max_resources_requested.num_cpus().unwrap_or(0.0),
+            watermark_gpus = state.max_resources_requested.num_gpus().unwrap_or(0.0),
+            watermark_memory = state.max_resources_requested.memory_bytes().unwrap_or(0),
+            exceeds_available = resource_request_greater_than_available_capacity,
+            exceeds_watermark = resource_request_greater_than_max_requested,
+            "Autoscaling decision"
+        );
+
+        // Only autoscale if pending demand exceeds available capacity AND this is a new
+        // all-time peak. The watermark deduplicates requests so we don't spam Ray with
+        // repeated request_resources calls for the same demand level.
+        // TODO: Reset the watermark when the cluster shrinks (if we start supporting downscaling).
+        if resource_request_greater_than_available_capacity
             && resource_request_greater_than_max_requested
         {
             state.max_resources_requested = ResourceRequest::try_new_internal(
@@ -206,8 +226,14 @@ impl WorkerManager for RayWorkerManager {
                 .map(|bundle| {
                     let mut dict = HashMap::new();
                     dict.insert("CPU", bundle.num_cpus().ceil() as i64);
-                    dict.insert("GPU", bundle.num_gpus().ceil() as i64);
-                    dict.insert("memory", bundle.memory_bytes() as i64);
+                    let gpu = bundle.num_gpus().ceil() as i64;
+                    if gpu > 0 {
+                        dict.insert("GPU", gpu);
+                    }
+                    let memory = bundle.memory_bytes() as i64;
+                    if memory > 0 {
+                        dict.insert("memory", memory);
+                    }
                     dict
                 })
                 .collect::<Vec<_>>();

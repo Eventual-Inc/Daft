@@ -127,6 +127,13 @@ impl Worker for RaySwordfishWorker {
             .sum()
     }
 
+    fn active_memory_bytes(&self) -> usize {
+        self.active_task_details
+            .values()
+            .map(|details| details.memory_bytes())
+            .sum()
+    }
+
     fn active_task_details(&self) -> HashMap<TaskContext, TaskDetails> {
         self.active_task_details.clone()
     }
