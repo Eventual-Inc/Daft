@@ -1,8 +1,8 @@
 use std::{iter::repeat_n, sync::Arc};
 
 use arrow::array::{
-    Array as _, BooleanBuilder, FixedSizeBinaryBuilder, IntervalMonthDayNanoBuilder,
-    LargeBinaryBuilder, LargeStringBuilder, PrimitiveBuilder,
+    Array as _, ArrowPrimitiveType, BooleanBuilder, FixedSizeBinaryBuilder,
+    IntervalMonthDayNanoBuilder, LargeBinaryBuilder, LargeStringBuilder,
 };
 use common_error::{DaftError, DaftResult};
 
@@ -46,8 +46,10 @@ impl Broadcastable for BooleanArray {
         }
 
         if self.is_valid(0) {
+            let arrow_array = self.as_arrow()?;
+            let value = arrow_array.value(0);
             let mut builder = BooleanBuilder::with_capacity(num);
-            builder.append_n(num, self.get(0).unwrap());
+            builder.append_n(num, value);
             Self::from_arrow(self.field.clone(), Arc::new(builder.finish()))
         } else {
             Ok(Self::full_null(self.name(), self.data_type(), num))
@@ -70,15 +72,20 @@ where
         if self.is_valid(0) {
             let arrow_array = self.as_arrow()?;
             let value = arrow_array.value(0);
-            let mut builder =
-                PrimitiveBuilder::<<T::Native as NumericNative>::ARROWTYPE>::with_capacity(num);
-            builder.append_value_n(value, num);
-
-            // Preserve the original arrow data type (important for Decimal128 precision/scale).
-            let result = builder
-                .finish()
+            let inner = vec![value; num];
+            let buffer = arrow::buffer::Buffer::from_vec(inner);
+            let len = buffer.len() / std::mem::size_of::<T::Native>();
+            let scalar_buffer = arrow::buffer::ScalarBuffer::<
+                <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native,
+            >::new(buffer, 0, len);
+            let arrow_arr =
+                arrow::array::PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::new(
+                    scalar_buffer,
+                    None,
+                )
+                // Preserve the original arrow data type (important for Decimal128 precision/scale).
                 .with_data_type(arrow_array.data_type().clone());
-            Self::from_arrow(self.field.clone(), Arc::new(result))
+            Self::from_arrow(self.field.clone(), Arc::new(arrow_arr))
         } else {
             Ok(Self::full_null(self.name(), self.data_type(), num))
         }

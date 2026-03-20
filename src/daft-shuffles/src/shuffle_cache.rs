@@ -269,6 +269,7 @@ async fn writer_task(
             // IPC writer should always return a RecordBatch of one path column
             let path = file_path_table
                 .get_column(0)
+                .as_materialized_series()
                 .utf8()?
                 .get(0)
                 .expect("path column should have one path");

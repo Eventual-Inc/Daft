@@ -20,7 +20,7 @@ use common_metrics::{
 };
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
-use daft_core::{prelude::SchemaRef, series::Series};
+use daft_core::prelude::SchemaRef;
 #[cfg(feature = "python")]
 use daft_dsl::python::PyExpr;
 use daft_dsl::{
@@ -29,6 +29,8 @@ use daft_dsl::{
 };
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
+#[cfg(feature = "python")]
+use daft_recordbatch::column::{Column, ScalarColumn};
 use itertools::Itertools;
 use opentelemetry::KeyValue;
 #[cfg(feature = "python")]
@@ -208,7 +210,7 @@ impl UdfHandle {
         udf_name: &str,
         worker_idx: usize,
         runtime_stats: &UdfRuntimeStats,
-    ) -> DaftResult<Series> {
+    ) -> DaftResult<Column> {
         use common_metrics::python::PyOperatorMetrics;
         use daft_recordbatch::python::PyRecordBatch;
 
@@ -249,7 +251,7 @@ impl UdfHandle {
         udf_expr: &mut BoundExpr,
         func_input: RecordBatch,
         runtime_stats: &UdfRuntimeStats,
-    ) -> DaftResult<Series> {
+    ) -> DaftResult<Column> {
         use daft_dsl::functions::python::initialize_udfs;
 
         // Only actually initialized the first time
@@ -276,7 +278,7 @@ impl UdfHandle {
             let func_input = batch.get_columns(params.required_cols.as_slice());
 
             // Call the UDF
-            let mut result_series = match self {
+            let mut result = match self {
                 Self::Thread => self.eval_input_inline(expr, func_input, &runtime_stats)?,
                 #[cfg(feature = "python")]
                 Self::Process(_) => self.eval_input_with_handle(
@@ -289,15 +291,23 @@ impl UdfHandle {
             };
 
             // If result.len() == 1 (because it was a 0-column UDF), broadcast to right size
-            if result_series.len() == 1 {
-                result_series = result_series.broadcast(batch.num_rows())?;
+            if result.len() == 1 {
+                // Convert the single value series into a ScalarColumn and broadcast
+                if let Column::Series(s) = result {
+                    result = Column::Scalar(ScalarColumn::from_single_value_series(
+                        &s,
+                        batch.num_rows(),
+                    )?);
+                } else {
+                    result = result.broadcast(batch.num_rows())?;
+                }
             }
 
             // Append result to passthrough
             let passthrough_input =
                 batch.eval_expression_list(params.passthrough_columns.as_slice())?;
             let output_batch =
-                passthrough_input.append_column(params.output_schema.clone(), result_series)?;
+                passthrough_input.append_column(params.output_schema.clone(), result)?;
             output_batches.push(output_batch);
         }
 

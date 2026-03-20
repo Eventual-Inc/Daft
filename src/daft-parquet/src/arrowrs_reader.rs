@@ -140,6 +140,7 @@ fn build_row_filter(
 
         // Extract the arrow-rs BooleanArray.
         let bool_arr = result
+            .as_materialized_series()
             .bool()
             .map_err(|e| arrow::error::ArrowError::ExternalError(e.into()))?;
         let arrow_bool = bool_arr

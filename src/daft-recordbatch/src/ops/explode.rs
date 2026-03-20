@@ -78,7 +78,8 @@ impl RecordBatch {
                             let ignore_empty_and_null_expr =
                                 BoundExpr::new_unchecked(inputs.get(1).unwrap().clone());
                             let val = self.eval_expression(&ignore_empty_and_null_expr)?;
-                            let current_ignore_empty_and_null = val.bool()?.get(0).unwrap_or(false);
+                            let current_ignore_empty_and_null =
+                                val.get_lit(0).as_bool().unwrap_or(false);
                             if i == 0 {
                                 ignore_empty_and_null = current_ignore_empty_and_null;
                             } else {
@@ -92,7 +93,7 @@ impl RecordBatch {
 
                         let expr = BoundExpr::new_unchecked(inputs.first().unwrap().clone());
                         let exploded_name = expr.inner().get_name(&self.schema)?;
-                        let evaluated = self.eval_expression(&expr)?;
+                        let evaluated = self.eval_expression(&expr)?.take_materialized_series();
                         if !matches!(
                             evaluated.data_type(),
                             DataType::List(..) | DataType::FixedSizeList(..)

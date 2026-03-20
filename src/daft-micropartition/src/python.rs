@@ -52,7 +52,7 @@ impl PyMicroPartition {
         let tables = py.detach(|| self.inner.concat_or_get())?;
         match tables {
             None => Ok(Series::empty(name, &self.inner.schema.get_field(name)?.dtype).into()),
-            Some(t) => Ok(t.get_column(index).clone().into()),
+            Some(t) => Ok(t.get_column(index).as_materialized_series().clone().into()),
         }
     }
 
@@ -64,7 +64,7 @@ impl PyMicroPartition {
                 let field = &self.inner.schema()[idx];
                 Ok(Series::empty(&field.name, &field.dtype).into())
             }
-            Some(t) => Ok(t.get_column(idx).clone().into()),
+            Some(t) => Ok(t.get_column(idx).as_materialized_series().clone().into()),
         }
     }
 

@@ -76,11 +76,7 @@ impl ScalarColumn {
         }
     }
 
-    /// Constructs a new [`Series`] from the scalar value.
-    ///
-    /// This always allocates; prefer [`as_materialized_series`][Self::as_materialized_series]
-    /// to reuse a cached result.
-    pub fn to_series(&self) -> Series {
+    fn to_series(&self) -> Series {
         Self::_to_series(&self.name, &self.scalar, &self.dtype, self.length)
     }
 
@@ -126,6 +122,9 @@ impl ScalarColumn {
     /// Returns `true` if the scalar is null and the length is non-zero.
     pub fn has_nulls(&self) -> bool {
         self.length != 0 && matches!(self.scalar, Literal::Null)
+    }
+    pub fn null_count(&self) -> usize {
+        if self.has_nulls() { self.length } else { 0 }
     }
 
     /// Returns the approximate in-memory size in bytes (scalar storage only,

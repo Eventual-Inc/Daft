@@ -250,7 +250,7 @@ impl RecordBatch {
 /// Once we refactor joins to not do column merging, we should remove this function.
 pub fn get_column_by_name<'a>(recordbatch: &'a RecordBatch, name: &str) -> DaftResult<&'a Series> {
     let index = recordbatch.schema.get_index(name)?;
-    Ok(recordbatch.get_column(index))
+    Ok(recordbatch.get_column(index).as_materialized_series())
 }
 
 #[deprecated(since = "TBD", note = "name-referenced columns")]

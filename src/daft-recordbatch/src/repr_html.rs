@@ -1,9 +1,13 @@
-use daft_core::{
-    datatypes::ExtensionArray, prelude::DataType, series::Series, with_match_file_types,
-};
+use daft_core::{datatypes::ExtensionArray, prelude::DataType, with_match_file_types};
 
-pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
-    match s.data_type() {
+use crate::column::Column;
+
+pub fn html_value(c: &Column, idx: usize, truncate: bool) -> String {
+    let (s, idx) = match c {
+        Column::Series(series) => (series.clone(), idx),
+        Column::Scalar(scalar) => (scalar.resize(1).as_materialized_series().clone(), 0),
+    };
+    match c.data_type() {
         DataType::Image(_) => {
             let arr = s.image().unwrap();
             daft_image::ops::image_html_value(arr, idx, truncate)
