@@ -219,19 +219,18 @@ impl Column {
             ));
         }
 
-        if let Some(Self::Scalar(first_scalar)) = columns.first() {
-            if columns
+        if let Some(Self::Scalar(first_scalar)) = columns.first()
+            && columns
                 .iter()
                 .all(|c| matches!(c, Self::Scalar(s) if s.scalar() == first_scalar.scalar()))
-            {
-                let total_len: usize = columns.iter().map(|c| c.len()).sum();
-                return Ok(Self::Scalar(ScalarColumn::new(
-                    Arc::from(first_scalar.name()),
-                    first_scalar.data_type().clone(),
-                    first_scalar.scalar().clone(),
-                    total_len,
-                )));
-            }
+        {
+            let total_len: usize = columns.iter().map(|c| c.len()).sum();
+            return Ok(Self::Scalar(ScalarColumn::new(
+                Arc::from(first_scalar.name()),
+                first_scalar.data_type().clone(),
+                first_scalar.scalar().clone(),
+                total_len,
+            )));
         }
 
         let series: Vec<&Series> = columns.iter().map(|c| c.as_materialized_series()).collect();
@@ -713,10 +712,8 @@ mod tests {
     fn column_filter_with_nulls_in_mask() -> DaftResult<()> {
         // null in mask should be treated as false
         let col = Column::new_scalar("x", DataType::Int64, Literal::Int64(1), 4);
-        let mask = BooleanArray::from_iter(
-            "mask",
-            vec![Some(true), None, Some(true), None].into_iter(),
-        );
+        let mask =
+            BooleanArray::from_iter("mask", vec![Some(true), None, Some(true), None].into_iter());
         let filtered = col.filter(&mask)?;
         assert!(filtered.is_scalar());
         assert_eq!(filtered.len(), 2);

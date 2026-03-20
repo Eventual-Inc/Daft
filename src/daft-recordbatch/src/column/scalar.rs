@@ -69,7 +69,6 @@ impl ScalarColumn {
         if length == 0 {
             Series::empty(name, dtype)
         } else if matches!(scalar, Literal::Null) {
-            use daft_core::array::ops::full::FullNull;
             Series::full_null(name, dtype, length)
         } else {
             let s: Series = scalar.clone().into();
