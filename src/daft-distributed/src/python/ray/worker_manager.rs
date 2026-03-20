@@ -216,7 +216,7 @@ impl WorkerManager for RayWorkerManager {
         // Only autoscale if pending demand exceeds available capacity AND this is a new
         // all-time peak. The watermark deduplicates requests so we don't spam Ray with
         // repeated request_resources calls for the same demand level.
-        // TODO: Reset the watermark when the cluster shrinks (requires tracking downscaling).
+        // TODO: Reset the watermark when the cluster shrinks (if we start supporting downscaling).
         if resource_request_greater_than_available_capacity
             && resource_request_greater_than_max_requested
         {
