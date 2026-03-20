@@ -1960,6 +1960,16 @@ class Expression:
 
         return rstrip(self)
 
+    def strip(self) -> Expression:
+        """Strip whitespace from both sides of a UTF-8 string.
+
+        Tip: See Also
+            [`daft.functions.strip`](https://docs.daft.ai/en/stable/api/functions/strip/)
+        """
+        from daft.functions import strip
+
+        return strip(self)
+
     def reverse(self) -> Expression:
         """Reverse a UTF-8 string.
 

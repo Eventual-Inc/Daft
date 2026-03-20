@@ -927,6 +927,9 @@ class SeriesStringNamespace(SeriesNamespace):
     def rstrip(self) -> Series:
         return self._eval_expressions("rstrip")
 
+    def strip(self) -> Series:
+        return self._eval_expressions("strip")
+
     def reverse(self) -> Series:
         return self._eval_expressions("reverse")
 
