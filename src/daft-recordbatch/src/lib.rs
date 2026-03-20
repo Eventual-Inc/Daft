@@ -19,7 +19,7 @@ use daft_core::{
     prelude::*,
 };
 use daft_dsl::{
-    AggExpr, ApproxPercentileParams, Expr, ExprRef, SketchType,
+    AggExpr, ApproxPercentileParams, Column as DslColumn, Expr, ExprRef, SketchType,
     expr::{
         BoundColumn,
         bound_expr::{BoundAggExpr, BoundExpr},
@@ -491,6 +491,13 @@ impl RecordBatch {
     }
 
     pub fn mask_filter(&self, mask: &column::Column) -> DaftResult<Self> {
+        if mask.len() != self.len() && mask.len() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "mask_filter requires mask length ({}) to match table length ({}) or be 1",
+                mask.len(),
+                self.len()
+            )));
+        }
         if let column::Column::Scalar(s) = mask {
             return if matches!(s.scalar(), Literal::Boolean(true)) {
                 Ok(self.clone())
@@ -742,7 +749,6 @@ impl RecordBatch {
         expr: BoundExpr,
         metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<column::Column> {
-        use daft_dsl::Column as DslColumn;
         let expected_field = expr.inner().to_field(self.schema.as_ref())?;
 
         async fn materialize_async(
@@ -1094,7 +1100,6 @@ impl RecordBatch {
         expr: &BoundExpr,
         metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<column::Column> {
-        use daft_dsl::Column as DslColumn;
         let expected_field = expr.inner().to_field(self.schema.as_ref())?;
         let result = match expr.as_ref() {
             Expr::Alias(child, name) => self
