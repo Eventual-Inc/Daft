@@ -299,18 +299,10 @@ impl Eq for Column {}
 
 impl Hash for Column {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
-            Self::Series(s) => {
-                let hashes = s.hash(None).expect("Failed to hash Series");
-                for h in &hashes {
-                    h.hash(state);
-                }
-            }
-            Self::Scalar(s) => {
-                s.name().hash(state);
-                s.scalar().hash(state);
-                s.len().hash(state);
-            }
+        let s = self.as_materialized_series();
+        let hashes = s.hash(None).expect("Failed to hash Column");
+        for h in &hashes {
+            h.hash(state);
         }
     }
 }
@@ -728,5 +720,26 @@ mod tests {
         assert!(result.is_scalar());
         assert_eq!(result.len(), 10);
         Ok(())
+    }
+
+    #[test]
+    fn column_hash_eq_contract() {
+        use std::{
+            collections::hash_map::DefaultHasher,
+            hash::{Hash as _, Hasher as _},
+        };
+
+        fn hash_column(col: &Column) -> u64 {
+            let mut hasher = DefaultHasher::new();
+            col.hash(&mut hasher);
+            hasher.finish()
+        }
+
+        let scalar = Column::new_scalar("x", DataType::Int64, Literal::Int64(42), 3);
+        let series = Column::from(make_int_series("x", vec![42, 42, 42]));
+
+        // If they're equal, their hashes must match
+        assert_eq!(scalar, series);
+        assert_eq!(hash_column(&scalar), hash_column(&series));
     }
 }
