@@ -50,11 +50,21 @@ pub(super) fn hash_inner_join(
 
         let r_hashes = rkeys.hash_rows()?;
         use daft_core::array::ops::arrow::comparison::build_multi_array_is_equal;
+        let lcols: Vec<Series> = lkeys
+            .as_materialized_series()
+            .into_iter()
+            .cloned()
+            .collect();
+        let rcols: Vec<Series> = rkeys
+            .as_materialized_series()
+            .into_iter()
+            .cloned()
+            .collect();
         let is_equal = build_multi_array_is_equal(
-            lkeys.columns.as_slice(),
-            rkeys.columns.as_slice(),
+            lcols.as_slice(),
+            rcols.as_slice(),
             null_equals_nulls,
-            vec![false; lkeys.columns.len()].as_slice(),
+            vec![false; lcols.len()].as_slice(),
         )?;
 
         let mut left_idx = vec![];
@@ -86,11 +96,14 @@ pub(super) fn hash_inner_join(
 
     let common_cols: Vec<_> = get_common_join_cols(&left.schema, &right.schema).collect();
 
-    let mut join_series = Arc::unwrap_or_clone(
+    let mut join_series: Vec<Series> = Arc::unwrap_or_clone(
         get_columns_by_name(left, &common_cols)?
             .take(&lidx)?
             .columns,
-    );
+    )
+    .into_iter()
+    .map(|c| c.take_materialized_series())
+    .collect();
 
     drop(lkeys);
     drop(rkeys);
@@ -137,11 +150,21 @@ pub(super) fn hash_left_right_join(
 
         let r_hashes = rkeys.hash_rows()?;
 
+        let lcols: Vec<Series> = lkeys
+            .as_materialized_series()
+            .into_iter()
+            .cloned()
+            .collect();
+        let rcols: Vec<Series> = rkeys
+            .as_materialized_series()
+            .into_iter()
+            .cloned()
+            .collect();
         let is_equal = build_multi_array_is_equal(
-            lkeys.columns.as_slice(),
-            rkeys.columns.as_slice(),
+            lcols.as_slice(),
+            rcols.as_slice(),
             null_equals_nulls,
-            vec![false; lkeys.columns.len()].as_slice(),
+            vec![false; lcols.len()].as_slice(),
         )?;
 
         // we will have at least as many rows in the join table as the right table
@@ -192,11 +215,14 @@ pub(super) fn hash_left_right_join(
         (right, &ridx)
     };
 
-    let mut join_series = Arc::unwrap_or_clone(
+    let mut join_series: Vec<Series> = Arc::unwrap_or_clone(
         get_columns_by_name(common_cols_tbl, &common_cols)?
             .take(common_cols_idx)?
             .columns,
-    );
+    )
+    .into_iter()
+    .map(|c| c.take_materialized_series())
+    .collect();
 
     drop(lkeys);
     drop(rkeys);
@@ -234,11 +260,21 @@ pub(super) fn hash_semi_anti_join(
 
         let l_hashes = lkeys.hash_rows()?;
 
+        let lcols: Vec<Series> = lkeys
+            .as_materialized_series()
+            .into_iter()
+            .cloned()
+            .collect();
+        let rcols: Vec<Series> = rkeys
+            .as_materialized_series()
+            .into_iter()
+            .cloned()
+            .collect();
         let is_equal = build_multi_array_is_equal(
-            lkeys.columns.as_slice(),
-            rkeys.columns.as_slice(),
+            lcols.as_slice(),
+            rcols.as_slice(),
             null_equals_nulls,
-            vec![false; lkeys.columns.len()].as_slice(),
+            vec![false; lcols.len()].as_slice(),
         )?;
         let rows = rkeys.len();
 
@@ -307,11 +343,21 @@ pub(super) fn hash_outer_join(
 
         let r_hashes = rkeys.hash_rows()?;
 
+        let lcols: Vec<Series> = lkeys
+            .as_materialized_series()
+            .into_iter()
+            .cloned()
+            .collect();
+        let rcols: Vec<Series> = rkeys
+            .as_materialized_series()
+            .into_iter()
+            .cloned()
+            .collect();
         let is_equal = build_multi_array_is_equal(
-            lkeys.columns.as_slice(),
-            rkeys.columns.as_slice(),
+            lcols.as_slice(),
+            rcols.as_slice(),
             null_equals_nulls,
-            vec![false; lkeys.columns.len()].as_slice(),
+            vec![false; lcols.len()].as_slice(),
         )?;
 
         // we will have at least as many rows in the join table as the max of the left and right tables

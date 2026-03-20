@@ -82,7 +82,11 @@ impl PyMicroPartition {
                     .collect::<Vec<_>>();
                 Ok(series)
             }
-            Some(t) => Ok(t.columns().iter().map(|s| s.clone().into()).collect()),
+            Some(t) => Ok(t
+                .columns()
+                .iter()
+                .map(|s| s.as_materialized_series().clone().into())
+                .collect()),
         }
     }
 

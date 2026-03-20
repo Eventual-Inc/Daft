@@ -36,6 +36,7 @@ use daft_functions_list::SeriesListExtension;
 use file_info::FileInfos;
 use futures::{StreamExt, TryStreamExt, future::try_join_all};
 use num_traits::ToPrimitive;
+pub mod column;
 #[cfg(feature = "python")]
 pub mod ffi;
 mod file_info;
@@ -66,7 +67,7 @@ macro_rules! value_err {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct RecordBatch {
     pub schema: SchemaRef,
-    columns: Arc<Vec<Series>>,
+    columns: Arc<Vec<column::Column>>,
     num_rows: usize,
 }
 
@@ -74,8 +75,7 @@ impl Hash for RecordBatch {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.schema.hash(state);
         for col in &*self.columns {
-            let hashes = col.hash(None).expect("Failed to hash column");
-            hashes.into_iter().for_each(|h| h.hash(state));
+            col.hash(state);
         }
         self.num_rows.hash(state);
     }
@@ -148,7 +148,9 @@ impl RecordBatch {
     }
 
     pub fn get_inner_arrow_arrays(&self) -> impl Iterator<Item = ArrayRef> + '_ {
-        self.columns.iter().map(|s| s.to_arrow().unwrap())
+        self.columns
+            .iter()
+            .map(|c| c.as_materialized_series().to_arrow().unwrap())
     }
 
     /// Create a new [`RecordBatch`] and validate against `num_rows`
@@ -196,6 +198,18 @@ impl RecordBatch {
     ) -> Self {
         Self {
             schema: schema.into(),
+            columns: Arc::new(columns.into_iter().map(column::Column::from).collect()),
+            num_rows,
+        }
+    }
+
+    pub fn new_unchecked_with_columns<S: Into<SchemaRef>>(
+        schema: S,
+        columns: Vec<column::Column>,
+        num_rows: usize,
+    ) -> Self {
+        Self {
+            schema: schema.into(),
             columns: Arc::new(columns),
             num_rows,
         }
@@ -218,8 +232,7 @@ impl RecordBatch {
     /// # Arguments
     ///
     /// * `columns` - Columns to create a table from as [`Series`] objects
-    pub fn from_nonempty_columns(columns: impl Into<Arc<Vec<Series>>>) -> DaftResult<Self> {
-        let columns = columns.into();
+    pub fn from_nonempty_columns(columns: Vec<Series>) -> DaftResult<Self> {
         assert!(
             !columns.is_empty(),
             "Cannot call RecordBatch::new() with empty columns. This indicates an internal error, please file an issue."
@@ -245,11 +258,7 @@ impl RecordBatch {
             }
         }
 
-        Ok(Self {
-            schema,
-            columns,
-            num_rows,
-        })
+        Ok(Self::new_unchecked(schema, columns, num_rows))
     }
 
     pub fn from_arrow<S: Into<SchemaRef>>(schema: S, arrays: Vec<ArrayRef>) -> DaftResult<Self> {
@@ -288,13 +297,20 @@ impl RecordBatch {
 
         Ok(Self {
             schema,
-            columns: Arc::new(columns),
+            columns: Arc::new(columns.into_iter().map(column::Column::from).collect()),
             num_rows,
         })
     }
 
     pub fn num_columns(&self) -> usize {
         self.columns.len()
+    }
+
+    pub fn as_materialized_series(&self) -> Vec<&Series> {
+        self.columns
+            .iter()
+            .map(|c| c.as_materialized_series())
+            .collect()
     }
 
     pub fn len(&self) -> usize {
@@ -310,10 +326,14 @@ impl RecordBatch {
     }
 
     pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
-        let new_series: DaftResult<Vec<_>> =
-            self.columns.iter().map(|s| s.slice(start, end)).collect();
+        let new_columns: DaftResult<Vec<_>> =
+            self.columns.iter().map(|c| c.slice(start, end)).collect();
         let new_num_rows = self.len().min(end - start);
-        Self::new_with_size(self.schema.clone(), new_series?, new_num_rows)
+        Ok(Self::new_unchecked_with_columns(
+            self.schema.clone(),
+            new_columns?,
+            new_num_rows,
+        ))
     }
 
     pub fn head(&self, num: usize) -> DaftResult<Self> {
@@ -412,7 +432,11 @@ impl RecordBatch {
         let end = start + self.len() as u64;
         let ids = (start..end).step_by(1).collect::<Vec<_>>();
         let id_series = UInt64Array::from_vec(column_name, ids).into_series();
-        Self::from_nonempty_columns([&[id_series], &self.columns[..]].concat())
+        let mut all_series = vec![id_series];
+        for c in self.columns.iter() {
+            all_series.push(c.as_materialized_series().clone());
+        }
+        Self::from_nonempty_columns(all_series)
     }
 
     pub fn quantiles(&self, num: usize) -> DaftResult<Self> {
@@ -468,10 +492,10 @@ impl RecordBatch {
 
     pub fn mask_filter(&self, mask: &Series) -> DaftResult<Self> {
         let mask = mask.bool()?;
-        let new_series = self
+        let new_columns = self
             .columns
             .iter()
-            .map(|s| s.filter(mask))
+            .map(|c| c.filter(mask))
             .collect::<DaftResult<Vec<_>>>()?;
 
         // The number of rows post-filter should be the number of 'true' values in the mask
@@ -489,16 +513,24 @@ impl RecordBatch {
             mask.len() - num_filtered
         };
 
-        Self::new_with_size(self.schema.clone(), new_series, num_rows)
+        Ok(Self::new_unchecked_with_columns(
+            self.schema.clone(),
+            new_columns,
+            num_rows,
+        ))
     }
 
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let new_series = self
+        let new_columns = self
             .columns
             .iter()
-            .map(|s| s.take(idx))
+            .map(|c| c.take(idx))
             .collect::<DaftResult<Vec<_>>>()?;
-        Self::new_with_size(self.schema.clone(), new_series, idx.len())
+        Ok(Self::new_unchecked_with_columns(
+            self.schema.clone(),
+            new_columns,
+            idx.len(),
+        ))
     }
 
     pub fn concat_or_empty<T: AsRef<Self>>(
@@ -532,18 +564,19 @@ impl RecordBatch {
             }
         }
         let num_columns = first_table.num_columns();
-        let mut new_series = Vec::with_capacity(num_columns);
+        let total_rows: usize = tables.iter().map(|t| t.as_ref().len()).sum();
+        let mut new_columns = Vec::with_capacity(num_columns);
         for i in 0..num_columns {
-            let series_to_cat: Vec<&Series> =
-                tables.iter().map(|s| s.as_ref().get_column(i)).collect();
-            new_series.push(Series::concat(series_to_cat.as_slice())?);
+            let cols: Vec<&column::Column> =
+                tables.iter().map(|t| &t.as_ref().columns[i]).collect();
+            new_columns.push(column::Column::concat(cols.as_slice())?);
         }
 
-        Self::new_with_size(
+        Ok(Self::new_unchecked_with_columns(
             first_table.schema.clone(),
-            new_series,
-            tables.iter().map(|t| t.as_ref().len()).sum(),
-        )
+            new_columns,
+            total_rows,
+        ))
     }
 
     pub fn union(&self, other: &Self) -> DaftResult<Self> {
@@ -553,31 +586,34 @@ impl RecordBatch {
                 self.num_rows, other.num_rows
             )));
         }
-        let unioned = self
+        let unioned: Vec<column::Column> = self
             .columns
             .iter()
             .chain(other.columns.iter())
             .cloned()
-            .collect::<Vec<_>>();
-        Self::from_nonempty_columns(unioned)
+            .collect();
+        let schema = Schema::new(unioned.iter().map(|c| c.field()));
+        Ok(Self::new_unchecked_with_columns(
+            schema,
+            unioned,
+            self.num_rows,
+        ))
     }
 
     pub fn get_column(&self, idx: usize) -> &Series {
-        &self.columns[idx]
+        self.columns[idx].as_materialized_series()
     }
 
     pub fn get_columns(&self, indices: &[usize]) -> Self {
-        let new_columns = indices
-            .iter()
-            .map(|i| self.columns[*i].clone())
-            .collect::<Vec<_>>();
+        let new_columns: Vec<column::Column> =
+            indices.iter().map(|i| self.columns[*i].clone()).collect();
 
         let new_schema = Schema::new(indices.iter().map(|i| self.schema[*i].clone()));
 
-        Self::new_unchecked(new_schema, new_columns, self.num_rows)
+        Self::new_unchecked_with_columns(new_schema, new_columns, self.num_rows)
     }
 
-    pub fn columns(&self) -> &[Series] {
+    pub fn columns(&self) -> &[column::Column] {
         &self.columns
     }
 
@@ -591,9 +627,13 @@ impl RecordBatch {
         }
 
         let mut new_columns = self.columns.as_ref().clone();
-        new_columns.push(series);
+        new_columns.push(column::Column::from(series));
 
-        Ok(Self::new_unchecked(new_schema, new_columns, self.num_rows))
+        Ok(Self::new_unchecked_with_columns(
+            new_schema,
+            new_columns,
+            self.num_rows,
+        ))
     }
 
     /// Evaluates an expression and broadcasts the result to match `self.len()` if needed.
@@ -722,7 +762,7 @@ impl RecordBatch {
                 .await?
                 .cast(dtype),
             Expr::Column(Column::Bound(BoundColumn { index, .. })) => {
-                Ok(self.columns[*index].clone())
+                Ok(self.columns[*index].as_materialized_series().clone())
             }
             Expr::Not(child) => !(self
                 .eval_expression_async_with_metrics(
@@ -1053,7 +1093,7 @@ impl RecordBatch {
                 .eval_expression_internal(&BoundExpr::new_unchecked(child.clone()), metrics)?
                 .cast(dtype),
             Expr::Column(Column::Bound(BoundColumn { index, .. })) => {
-                Ok(self.columns[*index].clone())
+                Ok(self.columns[*index].as_materialized_series().clone())
             }
             Expr::Not(child) => !(self.eval_expression_internal(
                 &BoundExpr::new_unchecked(child.clone()),
@@ -1413,13 +1453,17 @@ impl RecordBatch {
     }
 
     pub fn as_physical(&self) -> DaftResult<Self> {
-        let new_series: Vec<Series> = self
+        let new_columns: Vec<column::Column> = self
             .columns
             .iter()
-            .map(|s| s.as_physical())
+            .map(|c| c.as_physical())
             .collect::<DaftResult<Vec<_>>>()?;
-        let new_schema = Schema::new(new_series.iter().map(|s| s.field().clone()));
-        Self::new_with_size(new_schema, new_series, self.len())
+        let new_schema = Schema::new(new_columns.iter().map(|c| c.field()));
+        Ok(Self::new_unchecked_with_columns(
+            new_schema,
+            new_columns,
+            self.len(),
+        ))
     }
 
     #[deprecated(note = "name-referenced columns")]
@@ -1516,7 +1560,7 @@ impl RecordBatch {
                     "<td data-row=\"{}\" data-col=\"{}\"><div style=\"{}\">",
                     i, col_idx, body_style
                 ));
-                res.push_str(&html_value(col, i, true));
+                res.push_str(&html_value(col.as_materialized_series(), i, true));
                 res.push_str("</div></td>");
             }
 
@@ -1534,7 +1578,7 @@ impl RecordBatch {
         let str_values = self
             .columns
             .iter()
-            .map(|s| s as &dyn StrValue)
+            .map(|c| c.as_materialized_series() as &dyn StrValue)
             .collect::<Vec<_>>();
 
         make_comfy_table(
@@ -1591,7 +1635,7 @@ impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
         let columns = record_batch
             .columns
             .iter()
-            .map(|s| s.to_arrow())
+            .map(|c| c.as_materialized_series().to_arrow())
             .collect::<DaftResult<Vec<_>>>()?;
 
         Self::try_new(schema, columns).map_err(DaftError::ArrowRsError)
