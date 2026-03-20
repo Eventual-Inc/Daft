@@ -13,7 +13,7 @@ from daft.io.lance.lance_merge_column import merge_columns_internal
 from daft.io.lance.lance_scan import LanceDBScanOperator
 from daft.io.lance.rest_config import LanceRestConfig, parse_lance_uri
 from daft.io.lance.rest_scan import LanceRestScanOperator
-from daft.io.lance.utils import construct_lance_dataset
+from daft.io.lance.utils import check_pylance_version, construct_lance_dataset
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.builder import LogicalPlanBuilder
 
@@ -465,24 +465,7 @@ def create_scalar_index(
         Create an index without replacing existing ones:
         >>> daft.io.lance.create_scalar_index("s3://my-bucket/dataset/", column="title", replace=False)
     """
-    try:
-        import lance
-        from packaging import version as packaging_version
-
-        from daft.io.lance.lance_scalar_index import create_scalar_index_internal
-
-        lance_version = packaging_version.parse(lance.__version__)
-        min_required_version = packaging_version.parse("0.37.0")
-        if lance_version < min_required_version:
-            raise RuntimeError(
-                f"Distributed indexing requires pylance >= 0.37.0, but found {lance.__version__}. "
-                "The distributed indexing interfaces are not available in older versions. "
-                "Please upgrade lance by running: pip install --upgrade pylance"
-            )
-    except ImportError as e:
-        raise ImportError(
-            "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
-        ) from e
+    check_pylance_version("0.37.0")
 
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
     storage_options = storage_options or io_config_to_storage_options(io_config, str(uri))
@@ -499,6 +482,8 @@ def create_scalar_index(
         metadata_cache_size_bytes=metadata_cache_size_bytes,
     )
 
+    from daft.io.lance.lance_scalar_index import create_scalar_index_internal
+
     create_scalar_index_internal(
         lance_ds=lance_ds,
         uri=uri,
@@ -510,6 +495,148 @@ def create_scalar_index(
         fragment_group_size=fragment_group_size,
         num_partitions=num_partitions,
         max_concurrency=max_concurrency,
+        **kwargs,
+    )
+
+
+@PublicAPI
+def create_index(
+    uri: str | pathlib.Path,
+    io_config: IOConfig | None = None,
+    *,
+    column: str,
+    index_type: str = "IVF_PQ",
+    name: str | None = None,
+    replace: bool = True,
+    metric: str = "l2",
+    storage_options: dict[str, Any] | None = None,
+    daft_remote_args: dict[str, Any] | None = None,
+    concurrency: int | None = None,
+    version: int | str | None = None,
+    asof: str | None = None,
+    block_size: int | None = None,
+    commit_lock: Any | None = None,
+    index_cache_size: int | None = None,
+    default_scan_options: dict[str, Any] | None = None,
+    metadata_cache_size_bytes: int | None = None,
+    ivf_num_partitions: int | None = None,
+    num_sub_vectors: int | None = None,
+    pq_codebook: Any | None = None,
+    **kwargs: Any,
+) -> None:
+    """Build a distributed IVF-based vector index using Daft's distributed computing.
+
+    This is the single public entrypoint for vector index creation in Daft.
+    It builds IVF / PQ-based indices on a LanceDB table by first training
+    models on the driver and then delegating fragment-level index building
+    to Daft workers via UDFs.
+
+    Args:
+        uri: The URI of the Lance table (supports remote URLs to object stores such as `s3://` or `gs://`)
+        io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
+        column: Column name containing the vector data to index.
+        index_type: Type of vector index to build. Supported types include "IVF_PQ", "IVF_HNSW_PQ",
+            "IVF_FLAT", "IVF_SQ", "IVF_HNSW_SQ", and "IVF_HNSW_FLAT". Defaults to "IVF_PQ".
+        name: Name of the index (generated if None).
+        replace: Whether to replace an existing index with the same name. Defaults to True.
+        metric: Distance metric to use for the index. Supported values include "l2", "cosine", "euclidean", and "dot".
+            Defaults to "l2".
+        storage_options: Storage options for the dataset.
+        daft_remote_args: Remote execution arguments for Daft, including GPU configuration.
+            For example: {"num_gpus": 2} to use 2 GPUs.
+        concurrency: Number of concurrent workers to use for distributed index building.
+            If None, defaults to min(4, number of fragments).
+        version: Version of the dataset to use.
+        asof: Timestamp to use for time travel queries.
+        block_size: Block size for the index.
+        commit_lock: Commit lock for the dataset.
+        index_cache_size: Size of the index cache.
+        default_scan_options: Default scan options for the dataset.
+        metadata_cache_size_bytes: Size of the metadata cache in bytes.
+        ivf_num_partitions: Number of IVF partitions to use. If None, the system will
+            automatically determine an appropriate number based on the dataset size.
+        num_sub_vectors: Number of sub-vectors for PQ (Product Quantization) compression.
+            Only applicable for PQ-based index types. If None, the system will
+            automatically determine an appropriate number based on the vector dimension.
+        pq_codebook: Pre-trained PQ codebook to use. If provided, this will be used
+            instead of training a new codebook. Only applicable for PQ-based index types.
+        **kwargs: Additional keyword arguments forwarded to ``lance.indices.builder.IndicesBuilder``.
+
+    Returns:
+        None
+
+    Raises:
+        ValueError
+            If ``index_type`` is not a supported IVF-based vector index type.
+        RuntimeError
+            If the installed pylance / lance version is too old.
+        ImportError
+            If the ``lance`` package is not available.
+
+    Notes:
+    -----
+    * This API is **vector-only**. If you want to build scalar indices
+      (for example ``INVERTED`` / ``FTS``), please use
+      :func:`create_scalar_index` instead.
+    * The underlying vector pipeline requires pylance / lance
+      ``>= 2.0.1``. If an older version is installed, a ``RuntimeError``
+      with a clear upgrade hint will be raised.
+
+    Examples:
+        Create a basic IVF_PQ vector index:
+        >>> import daft
+        >>> daft.io.lance.create_index("s3://my-bucket/dataset/", column="vector", index_type="IVF_PQ")
+
+        Create a vector index with custom parameters:
+        >>> daft.io.lance.create_index(
+        ...     "s3://my-bucket/dataset/",
+        ...     column="vector",
+        ...     index_type="IVF_PQ",
+        ...     metric="cosine",
+        ...     ivf_num_partitions=256,
+        ...     num_sub_vectors=16,
+        ...     concurrency=4,
+        ... )
+
+        Create a vector index with GPU acceleration:
+        >>> daft.io.lance.create_index(
+        ...     "s3://my-bucket/dataset/", column="vector", index_type="IVF_PQ", daft_remote_args={"num_gpus": 2}
+        ... )
+    """
+    from daft.io.lance.lance_vector_index import _normalize_index_type, create_vector_index_internal
+
+    check_pylance_version("2.0.1")
+
+    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+    storage_options = storage_options or io_config_to_storage_options(io_config, uri)
+
+    index_type_name = _normalize_index_type(index_type)
+
+    lance_ds = construct_lance_dataset(
+        uri,
+        storage_options=storage_options,
+        version=version,
+        asof=asof,
+        block_size=block_size,
+        commit_lock=commit_lock,
+        index_cache_size=index_cache_size,
+        default_scan_options=default_scan_options,
+        metadata_cache_size_bytes=metadata_cache_size_bytes,
+    )
+    create_vector_index_internal(
+        lance_ds=lance_ds,
+        uri=uri,
+        column=column,
+        index_type=index_type_name,
+        name=name,
+        replace=replace,
+        metric=metric,
+        storage_options=storage_options,
+        daft_remote_args=daft_remote_args,
+        concurrency=concurrency,
+        ivf_num_partitions=ivf_num_partitions,
+        num_sub_vectors=num_sub_vectors,
+        pq_codebook=pq_codebook,
         **kwargs,
     )
 

@@ -42,7 +42,7 @@ hudi = ["pyarrow >= 15.0.0,<22.1.0"]
 huggingface = ["huggingface-hub<1.5.0", "datasets<4.6.0"]
 iceberg = ["pyiceberg >= 0.7.0, <= 0.11.0, != 0.9.1, != 0.10.0"]
 kafka = ["confluent-kafka>=2.6.0,<3.0.0"]
-lance = ["pylance<0.40.0"]
+lance = ["pylance>=2.0.1,<3.0.0"]
 numpy = ["numpy<2.4.0"]
 openai = ["openai<2.21.0", "numpy<2.4.0", "pillow==12.1.1"]
 pandas = ["pandas<2.4.0"]
@@ -109,7 +109,7 @@ dev = [
   # Ray
   "ray[data, client]==2.53.0",
   # Lance
-  "pylance==0.39.0",
+  "pylance==2.0.1",
   # Iceberg
   "pyiceberg==0.11.0",
   "pydantic==2.12.4",
