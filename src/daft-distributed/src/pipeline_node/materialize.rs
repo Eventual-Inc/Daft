@@ -222,9 +222,7 @@ mod tests {
         verify_materialized_results(
             &results,
             &partition_specs,
-            &std::iter::repeat(false)
-                .take(partition_specs.len())
-                .collect::<Vec<_>>(),
+            &std::iter::repeat_n(false, partition_specs.len()).collect::<Vec<_>>(),
         );
         test_context.cleanup().await?;
         Ok(())
@@ -265,9 +263,7 @@ mod tests {
         verify_materialized_results(
             &results,
             &partition_specs,
-            &std::iter::repeat(false)
-                .take(partition_specs.len())
-                .collect::<Vec<_>>(),
+            &std::iter::repeat_n(false, partition_specs.len()).collect::<Vec<_>>(),
         );
         test_context.cleanup().await?;
         Ok(())

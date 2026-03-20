@@ -1159,7 +1159,7 @@ mod tests {
         let inner2 = Int64Array::from_slice("item", &[3, 4]).into_series();
 
         let left_rows = vec![Some(
-            ListArray::from_series("inner", vec![Some(inner1.clone())])?.into_series(),
+            ListArray::from_series("inner", vec![Some(inner1)])?.into_series(),
         )];
         let right_rows = vec![Some(
             ListArray::from_series("inner", vec![Some(inner2)])?.into_series(),

@@ -259,7 +259,7 @@ mod tests {
         // Verify distribution - worker3 should have 2 tasks (most slots), worker2 should have 1 task, worker1 should have 0 tasks
         assert_eq!(*worker_task_counts.get(&worker_3).unwrap(), 2);
         assert_eq!(*worker_task_counts.get(&worker_2).unwrap(), 1);
-        assert!(worker_task_counts.get(&worker_1).is_none());
+        assert!(!worker_task_counts.contains_key(&worker_1));
     }
 
     #[test]
@@ -385,8 +385,8 @@ mod tests {
         let worker_2: WorkerId = Arc::from("worker2");
 
         let workers = setup_workers(&[
-            (worker_1.clone(), 1), // 1 slot available
-            (worker_2.clone(), 1), // 1 slot available
+            (worker_1, 1), // 1 slot available
+            (worker_2, 1), // 1 slot available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
@@ -495,7 +495,7 @@ mod tests {
     // 2. Task 2 (2 CPUs) to worker 2 or 3 (2 slots available)
     // 3. Task 3 (3 CPUs) is unscheduled (no worker has 3 slots available)
     #[test]
-    #[ignore]
+    #[ignore = "This test is currently failing because the scheduler is currently not optimal, we should fix this by using a bin packing algorithm."]
     fn test_default_scheduler_with_resource_request_scheduling_small_tasks_first() {
         let worker_1: WorkerId = Arc::from("worker1");
         let worker_2: WorkerId = Arc::from("worker2");
@@ -628,7 +628,7 @@ mod tests {
 
         // Create a worker with only 1 slot available
         let workers = setup_workers(&[
-            (worker_1.clone(), 1), // 1 slot available
+            (worker_1, 1), // 1 slot available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
@@ -660,8 +660,8 @@ mod tests {
 
         // Create workers with sufficient capacity
         let workers = setup_workers(&[
-            (worker_1.clone(), 2), // 2 slots available
-            (worker_2.clone(), 3), // 3 slots available
+            (worker_1, 2), // 2 slots available
+            (worker_2, 3), // 3 slots available
         ]);
 
         let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);

@@ -382,22 +382,22 @@ mod tests {
 
     #[async_trait]
     impl Subscriber for MockSubscriber {
-        fn on_query_start(&self, _: QueryID, __: Arc<QueryMetadata>) -> DaftResult<()> {
+        fn on_query_start(&self, _: QueryID, _: Arc<QueryMetadata>) -> DaftResult<()> {
             Ok(())
         }
-        fn on_query_end(&self, _: QueryID, __: QueryResult) -> DaftResult<()> {
+        fn on_query_end(&self, _: QueryID, _: QueryResult) -> DaftResult<()> {
             Ok(())
         }
-        fn on_result_out(&self, _: QueryID, __: MicroPartitionRef) -> DaftResult<()> {
+        fn on_result_out(&self, _: QueryID, _: MicroPartitionRef) -> DaftResult<()> {
             Ok(())
         }
         fn on_optimization_start(&self, _: QueryID) -> DaftResult<()> {
             Ok(())
         }
-        fn on_optimization_end(&self, _: QueryID, __: QueryPlan) -> DaftResult<()> {
+        fn on_optimization_end(&self, _: QueryID, _: QueryPlan) -> DaftResult<()> {
             Ok(())
         }
-        fn on_exec_start(&self, _: QueryID, __: QueryPlan) -> DaftResult<()> {
+        fn on_exec_start(&self, _: QueryID, _: QueryPlan) -> DaftResult<()> {
             Ok(())
         }
 
@@ -407,7 +407,7 @@ mod tests {
         async fn on_exec_operator_start(&self, _: QueryID, _: NodeID) -> DaftResult<()> {
             Ok(())
         }
-        async fn on_exec_operator_end(&self, _: QueryID, __: NodeID) -> DaftResult<()> {
+        async fn on_exec_operator_end(&self, _: QueryID, _: NodeID) -> DaftResult<()> {
             Ok(())
         }
 
@@ -529,22 +529,22 @@ mod tests {
 
         #[async_trait]
         impl Subscriber for FailingSubscriber {
-            fn on_query_start(&self, _: QueryID, __: Arc<QueryMetadata>) -> DaftResult<()> {
+            fn on_query_start(&self, _: QueryID, _: Arc<QueryMetadata>) -> DaftResult<()> {
                 Ok(())
             }
-            fn on_query_end(&self, _: QueryID, __: QueryResult) -> DaftResult<()> {
+            fn on_query_end(&self, _: QueryID, _: QueryResult) -> DaftResult<()> {
                 Ok(())
             }
-            fn on_result_out(&self, _: QueryID, __: MicroPartitionRef) -> DaftResult<()> {
+            fn on_result_out(&self, _: QueryID, _: MicroPartitionRef) -> DaftResult<()> {
                 Ok(())
             }
             fn on_optimization_start(&self, _: QueryID) -> DaftResult<()> {
                 Ok(())
             }
-            fn on_optimization_end(&self, _: QueryID, __: QueryPlan) -> DaftResult<()> {
+            fn on_optimization_end(&self, _: QueryID, _: QueryPlan) -> DaftResult<()> {
                 Ok(())
             }
-            fn on_exec_start(&self, _: QueryID, __: QueryPlan) -> DaftResult<()> {
+            fn on_exec_start(&self, _: QueryID, _: QueryPlan) -> DaftResult<()> {
                 Ok(())
             }
 
@@ -554,14 +554,14 @@ mod tests {
             async fn on_exec_operator_start(&self, _: QueryID, _: NodeID) -> DaftResult<()> {
                 Ok(())
             }
-            async fn on_exec_operator_end(&self, _: QueryID, __: NodeID) -> DaftResult<()> {
+            async fn on_exec_operator_end(&self, _: QueryID, _: NodeID) -> DaftResult<()> {
                 Ok(())
             }
 
             async fn on_exec_emit_stats(
                 &self,
                 _: QueryID,
-                __: std::sync::Arc<Vec<(NodeID, Stats)>>,
+                _: std::sync::Arc<Vec<(NodeID, Stats)>>,
             ) -> DaftResult<()> {
                 Err(common_error::DaftError::InternalError(
                     "Test error".to_string(),
