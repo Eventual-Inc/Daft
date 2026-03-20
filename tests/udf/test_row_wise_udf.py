@@ -231,6 +231,65 @@ def test_row_wise_udf_unnest():
     assert result == expected
 
 
+def test_row_wise_udf_unnest_with_column():
+    @daft.func(
+        return_dtype=daft.DataType.struct(
+            {
+                "id": daft.DataType.int64(),
+                "name": daft.DataType.string(),
+                "score": daft.DataType.float64(),
+            }
+        ),
+        unnest=True,
+    )
+    def create_record(value: int):
+        return {"id": value, "name": f"item_{value}", "score": value * 1.5}
+
+    df = daft.from_pydict({"value": [1, 2, 3]})
+    result = df.with_column("result", create_record(col("value"))).to_pydict()
+
+    expected = {
+        "value": [1, 2, 3],
+        "id": [1, 2, 3],
+        "name": ["item_1", "item_2", "item_3"],
+        "score": [1.5, 3.0, 4.5],
+    }
+    assert result == expected
+
+
+def test_row_wise_udf_unnest_with_column_cls():
+    @daft.cls()
+    class Foo:
+        def __init__(self, suffix: str):
+            self.suffix = suffix
+
+        @daft.method(
+            return_dtype=daft.DataType.struct(
+                {
+                    "bar": daft.DataType.string(),
+                    "some_int": daft.DataType.int64(),
+                }
+            ),
+            unnest=True,
+        )
+        def do_something(self, input: str):
+            return {
+                "bar": input + self.suffix,
+                "some_int": 3,
+            }
+
+    foobar = Foo("bar")
+    df = daft.from_pydict({"input": ["daft is cool"]})
+    result = df.with_column("result", foobar.do_something(col("input"))).to_pydict()
+
+    expected = {
+        "input": ["daft is cool"],
+        "bar": ["daft is coolbar"],
+        "some_int": [3],
+    }
+    assert result == expected
+
+
 def test_row_wise_udf_unnest_error_non_struct():
     with pytest.raises(
         ValueError,
