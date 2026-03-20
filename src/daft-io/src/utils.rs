@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn test_group_no_overlapping_glob_paths() {
-        let mut groups = group_glob_paths(&vec![
+        let mut groups = group_glob_paths(&[
             "tos://ai/data/a.csv".to_string(),
             "s3://ai/data/a.csv".to_string(),
             "tos://ai/data/[x,y,z].csv".to_string(),
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_group_all_overlapping_glob_paths() {
-        let mut groups = group_glob_paths(&vec![
+        let mut groups = group_glob_paths(&[
             "/data/**/*".to_string(),
             "/data/[x,y,z].csv".to_string(),
             "/data/test?/*.parquet".to_string(),

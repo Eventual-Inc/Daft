@@ -100,7 +100,7 @@ mod tests {
 
     #[test]
     fn test_order_basic_join_graph() {
-        let nodes = vec!["a", "b", "c", "d"];
+        let nodes = ["a", "b", "c", "d"];
         let edges = vec![
             (0, 2), // node_a <-> node_c
             (1, 2), // node_b <-> node_c
@@ -116,7 +116,7 @@ mod tests {
 
     impl UnionFind {
         pub fn create(num_nodes: usize) -> Self {
-            UnionFind {
+            Self {
                 parent: (0..num_nodes).collect(),
                 size: vec![1; num_nodes],
             }

@@ -272,7 +272,7 @@ pub(super) mod test_utils {
         scheduler.update_worker_state(
             workers
                 .values()
-                .map(|w| WorkerSnapshot::from(w))
+                .map(WorkerSnapshot::from)
                 .collect::<Vec<_>>()
                 .as_slice(),
         );

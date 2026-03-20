@@ -224,7 +224,9 @@ fn ends_with_ignore_ascii_case(value: &str, suffix: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use std::{
-        env, fs,
+        env,
+        fmt::Write as _,
+        fs,
         sync::Arc,
         time::{SystemTime, UNIX_EPOCH},
     };
@@ -269,15 +271,22 @@ mod tests {
         // Construct a JSONL payload with an extremely long first line and irregular line lengths
         let mut payload = String::new();
         // Extremely long first line (> 1MB window would expand; here we only simulate the logic and avoid actual IO)
-        payload.push_str(&format!("{{\"id\":0,\"val\":\"{}\"}}\n", "x".repeat(1024)));
+        writeln!(
+            &mut payload,
+            "{{\"id\":0,\"val\":\"{}\"}}",
+            "x".repeat(1024)
+        )
+        .unwrap();
         // Several irregular line lengths
         for i in 1..50 {
             let len = (i * 13) % 257; // irregular length
-            payload.push_str(&format!(
-                "{{\"id\":{},\"val\":\"{}\"}}\n",
+            writeln!(
+                &mut payload,
+                "{{\"id\":{},\"val\":\"{}\"}}",
                 i,
                 "y".repeat(len)
-            ));
+            )
+            .unwrap();
         }
 
         // Write to a temporary file to obtain size_bytes
@@ -293,10 +302,12 @@ mod tests {
 
         // Build a ScanTask and run split_by_jsonl_ranges
         let st = make_scan_task(&uri, size_bytes);
-        let mut cfg = common_daft_config::DaftExecutionConfig::default();
-        // Lower thresholds to force splitting
-        cfg.scan_tasks_max_size_bytes = 4 * 1024; // 4KB
-        cfg.scan_tasks_min_size_bytes = 0;
+        let cfg = common_daft_config::DaftExecutionConfig {
+            // Lower thresholds to force splitting
+            scan_tasks_max_size_bytes: 4 * 1024,
+            scan_tasks_min_size_bytes: 0,
+            ..Default::default()
+        };
         let iter = split_by_jsonl_ranges(Box::new(std::iter::once(Ok(Arc::new(st).into()))), &cfg);
         let tasks = iter.collect::<Vec<_>>();
 
@@ -490,7 +501,7 @@ mod tests {
     fn test_local_path_from_uri_with_query() {
         let result = local_path_from_uri("file:///tmp/file?foo=bar").unwrap();
         // Should strip query params
-        assert!(!result.to_string_lossy().contains("?"));
+        assert!(!result.to_string_lossy().contains('?'));
     }
 
     #[test]
