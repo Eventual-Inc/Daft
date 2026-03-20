@@ -88,8 +88,8 @@ impl<T: Task> DefaultScheduler<T> {
     }
 
     fn needs_autoscaling(&self) -> bool {
-        // If there are no pending tasks and nothing was just dispatched, we don't need to autoscale
-        if self.pending_tasks.is_empty() && self.last_scheduled_count == 0 {
+        // If there are no pending tasks, we don't need to autoscale
+        if self.pending_tasks.is_empty() {
             return false;
         }
 
