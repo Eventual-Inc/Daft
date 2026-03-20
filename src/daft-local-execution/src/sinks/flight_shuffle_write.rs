@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
+use common_runtime::get_compute_pool_num_threads;
 use daft_core::{
     prelude::{Int32Array, Schema},
     series::IntoSeries,
@@ -42,14 +43,14 @@ impl FlightShuffleWriteSink {
     ) -> DaftResult<Self> {
         const TARGET_TOTAL_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 2000; // 2000MB = ~2GB
 
-        let shuffle_cache = InProgressShuffleCache::try_new(
+        let shuffle_cache = shuffle_server.get_or_create_in_progress_shuffle_cache(
             num_partitions,
             &shuffle_dirs,
-            cache_id.clone(),
             shuffle_id,
-            (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES / num_partitions)
+            (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES * get_compute_pool_num_threads() / num_partitions)
                 .clamp(1024 * 1024 * 8, 1024 * 1024 * 128), // Min 8MB, Max 128MB
             compression.as_deref(),
+            cache_id.clone(),
         )?;
 
         Ok(Self {
@@ -57,7 +58,7 @@ impl FlightShuffleWriteSink {
             shuffle_id,
             cache_id,
             partition_by,
-            shuffle_cache: Arc::new(shuffle_cache),
+            shuffle_cache,
             shuffle_server,
         })
     }
@@ -108,20 +109,23 @@ impl BlockingSink for FlightShuffleWriteSink {
     ) -> BlockingSinkFinalizeResult<Self> {
         let num_partitions = self.num_partitions;
         let shuffle_id = self.shuffle_id;
-        let shuffle_cache = self.shuffle_cache.clone();
+        let cache_id = self.cache_id.clone();
         let shuffle_server = self.shuffle_server.clone();
         spawner
             .spawn(
                 async move {
-                    // Close the shuffle cache to finalize it
-                    let finalized_cache = shuffle_cache.close().await?;
-                    let rows_per_partition = finalized_cache.rows_per_partition();
-                    let bytes_per_partition = finalized_cache.bytes_per_partition();
-
-                    // Register the shuffle cache with the flight server
-                    shuffle_server
-                        .register_shuffle_cache(shuffle_id, finalized_cache.into())
+                    let finalized_cache = shuffle_server
+                        .release_in_progress_shuffle_cache(shuffle_id, &cache_id)
                         .await?;
+                    let (rows_per_partition, bytes_per_partition) =
+                        if let Some(finalized_cache) = finalized_cache {
+                            (
+                                finalized_cache.rows_per_partition(),
+                                finalized_cache.bytes_per_partition(),
+                            )
+                        } else {
+                            (vec![0; num_partitions], vec![0; num_partitions])
+                        };
 
                     let rows_per_partition = Int32Array::from_values(
                         "rows_per_partition",

@@ -1,4 +1,8 @@
-use std::{collections::HashMap, pin::Pin, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    pin::Pin,
+    sync::Arc,
+};
 
 use arrow_flight::{
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
@@ -14,12 +18,12 @@ use tokio::{io::BufReader, sync::Mutex};
 use tonic::{Request, Response, Status, transport::Server};
 
 use super::stream::FlightDataStreamReader;
-use crate::shuffle_cache::ShuffleCache;
+use crate::shuffle_cache::{InProgressShuffleCache, ShuffleCache};
 
 struct ParsedTicket {
     shuffle_id: u64,
     partition_idx: usize,
-    cache_ids: Option<Vec<u32>>,
+    _cache_ids: Option<Vec<u32>>,
 }
 
 impl ParsedTicket {
@@ -57,15 +61,21 @@ impl ParsedTicket {
         Ok(Self {
             shuffle_id,
             partition_idx,
-            cache_ids,
+            _cache_ids: cache_ids,
         })
     }
+}
+
+struct InProgressShuffleEntry {
+    cache: Arc<InProgressShuffleCache>,
+    active_cache_ids: HashSet<String>,
 }
 
 #[derive(Clone)]
 pub struct ShuffleFlightServer {
     pub ip_address: String,
     shuffle_caches: Arc<Mutex<HashMap<u64, Vec<Arc<ShuffleCache>>>>>,
+    in_progress_shuffle_caches: Arc<std::sync::Mutex<HashMap<u64, InProgressShuffleEntry>>>,
 }
 
 impl ShuffleFlightServer {
@@ -74,6 +84,70 @@ impl ShuffleFlightServer {
         Self {
             ip_address,
             shuffle_caches: Default::default(),
+            in_progress_shuffle_caches: Default::default(),
+        }
+    }
+
+    pub fn get_or_create_in_progress_shuffle_cache(
+        &self,
+        num_partitions: usize,
+        shuffle_dirs: &[String],
+        shuffle_id: u64,
+        target_filesize: usize,
+        compression: Option<&str>,
+        cache_id: String,
+    ) -> DaftResult<Arc<InProgressShuffleCache>> {
+        {
+            let mut in_progress = self.in_progress_shuffle_caches.lock().unwrap();
+            if let Some(entry) = in_progress.get_mut(&shuffle_id) {
+                entry.active_cache_ids.insert(cache_id);
+                return Ok(entry.cache.clone());
+            }
+        };
+
+        let cache = Arc::new(InProgressShuffleCache::try_new(
+            num_partitions,
+            shuffle_dirs,
+            shuffle_id,
+            target_filesize,
+            compression,
+        )?);
+
+        let mut in_progress = self.in_progress_shuffle_caches.lock().unwrap();
+        let entry = in_progress
+            .entry(shuffle_id)
+            .or_insert_with(|| InProgressShuffleEntry {
+                cache: cache.clone(),
+                active_cache_ids: HashSet::new(),
+            });
+        entry.active_cache_ids.insert(cache_id);
+        Ok(entry.cache.clone())
+    }
+
+    pub async fn release_in_progress_shuffle_cache(
+        &self,
+        shuffle_id: u64,
+        cache_id: &str,
+    ) -> DaftResult<Option<Arc<ShuffleCache>>> {
+        let cache_to_finalize = {
+            let mut in_progress = self.in_progress_shuffle_caches.lock().unwrap();
+            let Some(entry) = in_progress.get_mut(&shuffle_id) else {
+                return Ok(None);
+            };
+            entry.active_cache_ids.remove(cache_id);
+            if !entry.active_cache_ids.is_empty() {
+                return Ok(None);
+            }
+            in_progress.remove(&shuffle_id).map(|entry| entry.cache)
+        };
+
+        if let Some(cache) = cache_to_finalize {
+            let finalized = Arc::new(cache.close().await?);
+            self.register_shuffle_cache(shuffle_id, finalized.clone())
+                .await?;
+            Ok(Some(finalized))
+        } else {
+            Ok(None)
         }
     }
 
@@ -98,28 +172,12 @@ impl ShuffleFlightServer {
         &self,
         shuffle_id: u64,
         partition_idx: usize,
-        cache_ids: Option<&[u32]>,
+        _cache_ids: Option<&[u32]>,
     ) -> DaftResult<Vec<RecordBatch>> {
         let caches = self.shuffle_caches.blocking_lock();
-        let shuffle_caches = caches.get(&shuffle_id).cloned().ok_or_else(|| {
+        let filtered_caches = caches.get(&shuffle_id).cloned().ok_or_else(|| {
             DaftError::ValueError(format!("Shuffle cache not found for id: {}", shuffle_id))
         })?;
-
-        let filtered_caches: Vec<_> = if let Some(ids) = cache_ids {
-            shuffle_caches
-                .iter()
-                .filter(|cache| {
-                    cache
-                        .cache_id()
-                        .parse::<u32>()
-                        .map(|cid| ids.contains(&cid))
-                        .unwrap_or(false)
-                })
-                .cloned()
-                .collect()
-        } else {
-            shuffle_caches
-        };
 
         if filtered_caches.is_empty() {
             return Err(DaftError::ValueError("No caches for partition".to_string()));
@@ -242,23 +300,7 @@ impl FlightService for ShuffleFlightServer {
                 ))
             })?;
 
-        // Filter caches by cache_ids if provided
-        let filtered_caches: Vec<_> = if let Some(ref ids) = ticket.cache_ids {
-            shuffle_caches
-                .iter()
-                .filter(|cache| {
-                    // Parse cache_id from cache and check if it's in the requested ids
-                    cache
-                        .cache_id()
-                        .parse::<u32>()
-                        .map(|cache_id| ids.contains(&cache_id))
-                        .unwrap_or(false)
-                })
-                .cloned()
-                .collect()
-        } else {
-            shuffle_caches
-        };
+        let filtered_caches = shuffle_caches;
 
         let file_paths = filtered_caches
             .iter()
