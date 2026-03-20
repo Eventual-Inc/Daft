@@ -68,6 +68,9 @@ impl ScalarColumn {
     fn _to_series(name: &str, scalar: &Literal, dtype: &DataType, length: usize) -> Series {
         if length == 0 {
             Series::empty(name, dtype)
+        } else if matches!(scalar, Literal::Null) {
+            use daft_core::array::ops::full::FullNull;
+            Series::full_null(name, dtype, length)
         } else {
             let s: Series = scalar.clone().into();
             s.rename(name).broadcast(length).expect("broadcast scalar")
@@ -151,7 +154,7 @@ impl ScalarColumn {
         let lit = Literal::try_from_single_value_series(series)?;
         Ok(Self::new(
             Arc::from(series.name()),
-            lit.get_type(),
+            series.data_type().clone(),
             lit,
             length,
         ))

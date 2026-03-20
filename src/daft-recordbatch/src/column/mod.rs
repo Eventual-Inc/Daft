@@ -165,7 +165,8 @@ impl Column {
         match self {
             Self::Series(s) => s.slice(start, end).map(Self::Series),
             Self::Scalar(s) => {
-                let new_len = s.len().min(end.saturating_sub(start));
+                let clamped_end = end.min(s.len());
+                let new_len = clamped_end.saturating_sub(start);
                 Ok(Self::Scalar(s.resize(new_len)))
             }
         }
@@ -218,14 +219,7 @@ impl Column {
             ));
         }
 
-        if let Some(ScalarColumn { .. }) = columns.first().and_then(|c| match c {
-            Self::Scalar(s) => Some(s),
-            _ => None,
-        }) {
-            let first_scalar = match columns.first().unwrap() {
-                Self::Scalar(s) => s,
-                _ => unreachable!(),
-            };
+        if let Some(Self::Scalar(first_scalar)) = columns.first() {
             if columns
                 .iter()
                 .all(|c| matches!(c, Self::Scalar(s) if s.scalar() == first_scalar.scalar()))
@@ -267,6 +261,13 @@ impl Column {
 
     /// Returns the display string for the value at `idx`.
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        if idx >= self.len() {
+            return Err(common_error::DaftError::ValueError(format!(
+                "index {} out of bounds for Column of length {}",
+                idx,
+                self.len()
+            )));
+        }
         match self {
             Self::Series(s) => Ok(s.str_value(idx)),
             Self::Scalar(s) => Ok(s.resize(1).as_materialized_series().str_value(0)),
@@ -608,5 +609,127 @@ mod tests {
         let col = Column::new_scalar("old", DataType::Int64, Literal::Int64(1), 5);
         let renamed = col.with_name("new");
         assert_eq!(renamed.name(), "new");
+    }
+
+    #[test]
+    fn column_slice_scalar_end_past_length() -> DaftResult<()> {
+        // len=25, slice(10, 30) should give 15 rows (rows 10..25), not 20
+        let col = Column::new_scalar("x", DataType::Int64, Literal::Int64(1), 25);
+        let sliced = col.slice(10, 30)?;
+        assert!(sliced.is_scalar());
+        assert_eq!(sliced.len(), 15);
+        Ok(())
+    }
+
+    #[test]
+    fn column_slice_scalar_start_past_length() -> DaftResult<()> {
+        // len=5, slice(10, 20) should give 0 rows
+        let col = Column::new_scalar("x", DataType::Int64, Literal::Int64(1), 5);
+        let sliced = col.slice(10, 20)?;
+        assert!(sliced.is_scalar());
+        assert_eq!(sliced.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn column_str_value_scalar_bounds_check() {
+        // str_value on a scalar with idx >= length should fail, not silently succeed
+        let col = Column::new_scalar("x", DataType::Int64, Literal::Int64(42), 5);
+        assert!(col.str_value(10).is_err());
+    }
+
+    #[test]
+    fn scalar_column_null_preserves_dtype() {
+        // A null ScalarColumn with dtype Int64 should materialize as Int64, not Null
+        let sc = ScalarColumn::new(Arc::from("x"), DataType::Int64, Literal::Null, 3);
+        let s = sc.as_materialized_series();
+        assert_eq!(s.data_type(), &DataType::Int64);
+        assert_eq!(s.len(), 3);
+        assert_eq!(s.null_count(), 3);
+    }
+
+    #[test]
+    fn scalar_column_from_single_value_series_preserves_dtype() -> DaftResult<()> {
+        // A null Series with Int64 dtype should produce a ScalarColumn with Int64 dtype
+        let s = Int64Array::from_iter(
+            Field::new("x", DataType::Int64),
+            vec![None::<i64>].into_iter(),
+        )
+        .into_series();
+        assert_eq!(s.data_type(), &DataType::Int64);
+        let sc = ScalarColumn::from_single_value_series(&s, 10)?;
+        assert_eq!(sc.data_type(), &DataType::Int64);
+        Ok(())
+    }
+
+    #[test]
+    fn column_is_valid_scalar_no_bounds_check() {
+        // is_valid on scalar doesn't bounds-check (it's the same value everywhere),
+        // but verify it returns correct values
+        let col = Column::new_scalar("x", DataType::Int64, Literal::Int64(1), 5);
+        assert!(col.is_valid(0));
+        // idx past length — for scalar this is still "valid" since the value is non-null
+        // (debatable whether this should panic, but documenting current behavior)
+        assert!(col.is_valid(100));
+    }
+
+    #[test]
+    fn column_head_past_length() -> DaftResult<()> {
+        let col = Column::new_scalar("x", DataType::Int64, Literal::Int64(1), 5);
+        let headed = col.head(100)?;
+        assert!(headed.is_scalar());
+        assert_eq!(headed.len(), 5);
+        Ok(())
+    }
+
+    #[test]
+    fn column_take_null_indices() -> DaftResult<()> {
+        // take with null indices on a scalar — should still produce the right length
+        let col = Column::new_scalar("x", DataType::Int64, Literal::Int64(42), 100);
+        let idx = UInt64Array::from_iter(
+            Field::new("idx", DataType::UInt64),
+            vec![Some(0u64), None, Some(2)].into_iter(),
+        );
+        let taken = col.take(&idx)?;
+        assert!(taken.is_scalar());
+        assert_eq!(taken.len(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn column_filter_all_false_scalar() -> DaftResult<()> {
+        let col = Column::new_scalar("x", DataType::Int64, Literal::Int64(1), 3);
+        let mask = BooleanArray::from_iter(
+            "mask",
+            vec![Some(false), Some(false), Some(false)].into_iter(),
+        );
+        let filtered = col.filter(&mask)?;
+        assert!(filtered.is_scalar());
+        assert_eq!(filtered.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn column_filter_with_nulls_in_mask() -> DaftResult<()> {
+        // null in mask should be treated as false
+        let col = Column::new_scalar("x", DataType::Int64, Literal::Int64(1), 4);
+        let mask = BooleanArray::from_iter(
+            "mask",
+            vec![Some(true), None, Some(true), None].into_iter(),
+        );
+        let filtered = col.filter(&mask)?;
+        assert!(filtered.is_scalar());
+        assert_eq!(filtered.len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn column_concat_scalar_simplified_match() -> DaftResult<()> {
+        // Ensure concat with a single scalar works (exercises the match path)
+        let a = Column::new_scalar("x", DataType::Int64, Literal::Int64(1), 10);
+        let result = Column::concat(&[&a])?;
+        assert!(result.is_scalar());
+        assert_eq!(result.len(), 10);
+        Ok(())
     }
 }
