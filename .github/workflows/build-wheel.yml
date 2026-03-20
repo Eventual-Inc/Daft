@@ -39,7 +39,7 @@ defaults:
 
 jobs:
   build:
-    runs-on: ${{ inputs.os == 'ubuntu' && 'ubuntu-latest' || format('{0}-latest', inputs.os) }}
+    runs-on: ${{ inputs.os == 'ubuntu' && 'blacksmith-16vcpu-ubuntu-2204' || format('{0}-latest', inputs.os) }}
 
     steps:
     - uses: actions/checkout@v6

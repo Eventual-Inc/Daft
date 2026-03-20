@@ -1219,7 +1219,7 @@ jobs:
   benchmark-codspeed:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2204
     timeout-minutes: 45
     env:
       package-name: daft
