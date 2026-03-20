@@ -9,7 +9,7 @@ use parquet::{
     file::metadata::ParquetMetaData,
 };
 
-use crate::read_planner::{CoalescePass, ReadPlanner, SplitLargeRequestPass};
+use crate::read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass};
 
 // IO coalescing/splitting constants for the read planner.
 
@@ -102,6 +102,37 @@ impl DaftAsyncFileReader {
     }
 }
 
+/// Build a `ReadPlanner` with our standard coalescing and splitting passes,
+/// add ranges, run passes, and collect into an `Arc<RangesContainer>`.
+///
+/// This is the shared logic used by both `DaftAsyncFileReader::get_byte_ranges`
+/// and the pre-fetch path for column-parallel S3 reads.
+pub fn build_read_planner_and_collect(
+    uri: &str,
+    ranges: &[Range<usize>],
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+) -> Result<Arc<RangesContainer>, ParquetError> {
+    let mut planner = ReadPlanner::new(uri);
+    for range in ranges {
+        planner.add_range(range.start, range.end);
+    }
+    planner.add_pass(Box::new(SplitLargeRequestPass {
+        max_request_size: SPLIT_MAX_REQUEST_SIZE,
+        split_threshold: SPLIT_THRESHOLD,
+    }));
+    planner.add_pass(Box::new(CoalescePass {
+        max_hole_size: COALESCE_MAX_HOLE_SIZE,
+        max_request_size: COALESCE_MAX_REQUEST_SIZE,
+    }));
+    planner
+        .run_passes()
+        .map_err(|e| ParquetError::External(Box::new(e)))?;
+    planner
+        .collect(io_client, io_stats)
+        .map_err(|e| ParquetError::External(Box::new(e)))
+}
+
 impl AsyncFileReader for DaftAsyncFileReader {
     fn get_bytes(&mut self, range: Range<u64>) -> BoxFuture<'_, Result<Bytes, ParquetError>> {
         let io_client = self.io_client.clone();
@@ -126,35 +157,14 @@ impl AsyncFileReader for DaftAsyncFileReader {
                 return Ok(vec![]);
             }
 
-            // Convert u64 ranges to usize ranges for the ReadPlanner.
             let usize_ranges: Vec<Range<usize>> = ranges
                 .iter()
                 .map(|r| r.start as usize..r.end as usize)
                 .collect();
 
-            // Build a ReadPlanner with coalescing and splitting passes.
-            let mut planner = ReadPlanner::new(&uri);
-            for range in &usize_ranges {
-                planner.add_range(range.start, range.end);
-            }
-            planner.add_pass(Box::new(SplitLargeRequestPass {
-                max_request_size: SPLIT_MAX_REQUEST_SIZE,
-                split_threshold: SPLIT_THRESHOLD,
-            }));
-            planner.add_pass(Box::new(CoalescePass {
-                max_hole_size: COALESCE_MAX_HOLE_SIZE,
-                max_request_size: COALESCE_MAX_REQUEST_SIZE,
-            }));
-            planner
-                .run_passes()
-                .map_err(|e| ParquetError::External(Box::new(e)))?;
+            let ranges_container =
+                build_read_planner_and_collect(&uri, &usize_ranges, io_client, io_stats)?;
 
-            let ranges_container = planner
-                .collect(io_client, io_stats)
-                .map_err(|e| ParquetError::External(Box::new(e)))?;
-
-            // For each originally requested range, extract the bytes from the
-            // coalesced/split container.
             let mut results = Vec::with_capacity(usize_ranges.len());
             for range in &usize_ranges {
                 let bytes = ranges_container
@@ -276,5 +286,66 @@ impl AsyncFileReader for DaftAsyncFileReader {
             Ok(metadata)
         }
         .boxed()
+    }
+}
+
+/// An `AsyncFileReader` backed by a pre-fetched `RangesContainer`.
+///
+/// All byte range requests are served from the already-fetched cache with zero
+/// additional HTTP requests. This enables cross-column and cross-RG coalescing:
+/// compute ALL needed byte ranges upfront in a single `ReadPlanner`, then hand
+/// each per-column reader a `PrefetchedAsyncFileReader` that serves from cache.
+pub struct PrefetchedAsyncFileReader {
+    ranges_container: Arc<RangesContainer>,
+    metadata: Arc<ParquetMetaData>,
+}
+
+impl PrefetchedAsyncFileReader {
+    pub fn new(ranges_container: Arc<RangesContainer>, metadata: Arc<ParquetMetaData>) -> Self {
+        Self {
+            ranges_container,
+            metadata,
+        }
+    }
+}
+
+impl AsyncFileReader for PrefetchedAsyncFileReader {
+    fn get_bytes(&mut self, range: Range<u64>) -> BoxFuture<'_, Result<Bytes, ParquetError>> {
+        let container = self.ranges_container.clone();
+        let usize_range = range.start as usize..range.end as usize;
+        async move {
+            container
+                .get_range_bytes(usize_range)
+                .await
+                .map_err(|e| ParquetError::External(Box::new(e)))
+        }
+        .boxed()
+    }
+
+    fn get_byte_ranges(
+        &mut self,
+        ranges: Vec<Range<u64>>,
+    ) -> BoxFuture<'_, Result<Vec<Bytes>, ParquetError>> {
+        let container = self.ranges_container.clone();
+        async move {
+            let mut results = Vec::with_capacity(ranges.len());
+            for range in ranges {
+                let bytes = container
+                    .get_range_bytes(range.start as usize..range.end as usize)
+                    .await
+                    .map_err(|e| ParquetError::External(Box::new(e)))?;
+                results.push(bytes);
+            }
+            Ok(results)
+        }
+        .boxed()
+    }
+
+    fn get_metadata(
+        &mut self,
+        _options: Option<&ArrowReaderOptions>,
+    ) -> BoxFuture<'_, Result<Arc<ParquetMetaData>, ParquetError>> {
+        let metadata = self.metadata.clone();
+        async move { Ok(metadata) }.boxed()
     }
 }
