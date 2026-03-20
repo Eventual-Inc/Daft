@@ -290,7 +290,16 @@ impl Column {
 
 impl From<Series> for Column {
     fn from(s: Series) -> Self {
-        Self::Series(s)
+        if s.len() == 1 {
+            Self::Scalar(ScalarColumn::new(
+                Arc::from(s.name()),
+                s.data_type().clone(),
+                s.get_lit(0),
+                1,
+            ))
+        } else {
+            Self::Series(s)
+        }
     }
 }
 
