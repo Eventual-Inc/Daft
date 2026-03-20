@@ -126,7 +126,6 @@ from .misc import (
 )
 from .numeric import (
     abs,
-    bin,
     ceil,
     floor,
     clip,
@@ -167,8 +166,6 @@ from .numeric import (
     is_inf,
     not_nan,
     fill_nan,
-    hex,
-    unhex,
 )
 from .partition import (
     partition_days,
@@ -252,7 +249,6 @@ __all__ = [
     "audio_metadata",
     "avg",
     "between",
-    "bin",
     "bitwise_and",
     "bitwise_or",
     "bitwise_xor",
@@ -320,7 +316,6 @@ __all__ = [
     "get",
     "guess_mime_type",
     "hash",
-    "hex",
     "hour",
     "ilike",
     "image_attribute",
@@ -460,7 +455,6 @@ __all__ = [
     "try_decompress",
     "try_deserialize",
     "try_encode",
-    "unhex",
     "unix_date",
     "unnest",
     "upload",
