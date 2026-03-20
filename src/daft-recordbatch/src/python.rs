@@ -425,7 +425,11 @@ impl PyRecordBatch {
     }
 
     pub fn get_column(&self, idx: usize) -> PySeries {
-        self.record_batch.get_column(idx).clone().into()
+        self.record_batch
+            .get_column(idx)
+            .as_materialized_series()
+            .clone()
+            .into()
     }
 
     pub fn columns(&self) -> Vec<PySeries> {

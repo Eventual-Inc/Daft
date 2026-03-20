@@ -600,8 +600,8 @@ impl RecordBatch {
         ))
     }
 
-    pub fn get_column(&self, idx: usize) -> &Series {
-        self.columns[idx].as_materialized_series()
+    pub fn get_column(&self, idx: usize) -> &column::Column {
+        &self.columns[idx]
     }
 
     pub fn get_columns(&self, indices: &[usize]) -> Self {
@@ -617,17 +617,22 @@ impl RecordBatch {
         &self.columns
     }
 
-    pub fn append_column(&self, new_schema: SchemaRef, series: Series) -> DaftResult<Self> {
-        if self.num_rows != series.len() {
+    pub fn append_column<C: Into<column::Column>>(
+        &self,
+        new_schema: SchemaRef,
+        column: C,
+    ) -> DaftResult<Self> {
+        let column = column.into();
+        if self.num_rows != column.len() {
             return Err(DaftError::ValueError(format!(
                 "Cannot append column to RecordBatch of length {} with column of length {}",
                 self.num_rows,
-                series.len()
+                column.len()
             )));
         }
 
         let mut new_columns = self.columns.as_ref().clone();
-        new_columns.push(column::Column::from(series));
+        new_columns.push(column);
 
         Ok(Self::new_unchecked_with_columns(
             new_schema,
@@ -1560,7 +1565,7 @@ impl RecordBatch {
                     "<td data-row=\"{}\" data-col=\"{}\"><div style=\"{}\">",
                     i, col_idx, body_style
                 ));
-                res.push_str(&html_value(col.as_materialized_series(), i, true));
+                res.push_str(&html_value(col, i, true));
                 res.push_str("</div></td>");
             }
 
@@ -1657,7 +1662,7 @@ impl TryFrom<RecordBatch> for FileInfos {
     fn try_from(record_batch: RecordBatch) -> DaftResult<Self> {
         let get_column_by_name = |name| {
             if let [(idx, _)] = record_batch.schema.get_fields_with_name(name)[..] {
-                Ok(record_batch.get_column(idx))
+                Ok(record_batch.get_column(idx).as_materialized_series())
             } else {
                 Err(DaftError::SchemaMismatch(format!(
                     "RecordBatch requires columns \"path\", \"size\", and \"num_rows\" to convert to FileInfos, found: {}",

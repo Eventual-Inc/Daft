@@ -197,8 +197,10 @@ pub fn tables_concat(mut tables: Vec<RecordBatch>) -> DaftResult<RecordBatch> {
     let new_series = (0..num_columns)
         .into_par_iter()
         .map(|i| {
-            let series_to_cat: Vec<&Series> =
-                tables.iter().map(|s| s.as_ref().get_column(i)).collect();
+            let series_to_cat: Vec<&Series> = tables
+                .iter()
+                .map(|s| s.as_ref().get_column(i).as_materialized_series())
+                .collect();
             Series::concat(series_to_cat.as_slice())
         })
         .collect::<DaftResult<Vec<_>>>()?;
@@ -1614,7 +1616,7 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.null().unwrap(),
+            null_column.as_materialized_series().null().unwrap(),
             &NullArray::full_null("petal.length", &DataType::Null, 6)
         );
 
@@ -1667,7 +1669,7 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.null().unwrap(),
+            null_column.as_materialized_series().null().unwrap(),
             &NullArray::full_null("petal.length", &DataType::Null, 6)
         );
         Ok(())
@@ -1931,7 +1933,7 @@ mod tests {
         assert_eq!(table.len(), 3);
 
         assert_eq!(
-            table.get_column(4).utf8().unwrap(),
+            table.get_column(4).as_materialized_series().utf8().unwrap(),
             &Utf8Array::from_iter("variety", vec![None, Some("Seratosa"), None,])
         );
 

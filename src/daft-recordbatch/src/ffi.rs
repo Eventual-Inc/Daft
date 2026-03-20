@@ -45,7 +45,7 @@ pub fn record_batch_to_arrow(
 
     for i in 0..table.num_columns() {
         let s = table.get_column(i);
-        let pyarrow_array = s.to_pyarrow(py)?;
+        let pyarrow_array = s.as_materialized_series().to_pyarrow(py)?;
 
         arrays.push(pyarrow_array);
         names.push(s.name().to_string());

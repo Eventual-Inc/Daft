@@ -241,7 +241,7 @@ impl UdfHandle {
             result.num_columns() == 1,
             "UDF should return a single column"
         );
-        Ok(result.get_column(0).clone())
+        Ok(result.get_column(0).as_materialized_series().clone())
     }
 
     fn eval_input_inline(

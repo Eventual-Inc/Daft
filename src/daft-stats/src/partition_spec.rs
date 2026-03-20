@@ -51,8 +51,8 @@ impl PartialEq for PartitionSpec {
 
         // Assuming exact matches in field names and types, now compare each field's values
         for i in 0..self.keys.num_columns() {
-            let self_column = self.keys.get_column(i);
-            let other_column = other.keys.get_column(i);
+            let self_column = self.keys.get_column(i).as_materialized_series();
+            let other_column = other.keys.get_column(i).as_materialized_series();
             if let Some(value_eq) = self_column.equal(other_column).unwrap().get(0) {
                 if !value_eq {
                     return false;

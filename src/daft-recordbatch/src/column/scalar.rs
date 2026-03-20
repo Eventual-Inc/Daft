@@ -69,7 +69,6 @@ impl ScalarColumn {
         if length == 0 {
             Series::empty(name, dtype)
         } else if matches!(scalar, Literal::Null) {
-            use daft_core::array::ops::full::FullNull;
             Series::full_null(name, dtype, length)
         } else {
             let s: Series = scalar.clone().into();
@@ -127,6 +126,9 @@ impl ScalarColumn {
     /// Returns `true` if the scalar is null and the length is non-zero.
     pub fn has_nulls(&self) -> bool {
         self.length != 0 && matches!(self.scalar, Literal::Null)
+    }
+    pub fn null_count(&self) -> usize {
+        if self.has_nulls() { self.length } else { 0 }
     }
 
     /// Returns the approximate in-memory size in bytes (scalar storage only,

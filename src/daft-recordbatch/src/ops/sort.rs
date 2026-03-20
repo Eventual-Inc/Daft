@@ -32,6 +32,7 @@ impl RecordBatch {
         if sort_values.num_columns() == 1 {
             sort_values
                 .get_column(0)
+                .as_materialized_series()
                 .argsort(*descending.first().unwrap(), *nulls_first.first().unwrap())
         } else {
             let cols: Vec<Series> = sort_values
