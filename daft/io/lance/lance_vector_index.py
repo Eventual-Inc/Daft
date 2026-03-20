@@ -5,6 +5,8 @@ import math
 import uuid
 from typing import TYPE_CHECKING, Any
 
+if TYPE_CHECKING:
+    import pathlib
 import lance
 from lance.dataset import Index, LanceDataset
 from lance.indices import IndicesBuilder
@@ -206,7 +208,7 @@ class VectorFragmentIndexHandler:
 
 def create_vector_index_internal(
     lance_ds: LanceDataset,
-    uri: str,
+    uri: str | pathlib.Path,
     *,
     column: str,
     index_type: str,
@@ -261,7 +263,7 @@ def create_vector_index_internal(
         logger.info("Adjusted concurrency to %d to match fragment count", concurrency)
     index_id = str(uuid.uuid4())
     logger.info(
-        "Starting distributed vector index creation: column=%s, type=%s, name=%s, metric=%s, ivf_num_partitions=%s",
+        "Starting distributed vector index creation: column=%s, type=%s, name=%s, metric=%s, concurrency=%s, ivf_num_partitions=%s",
         column,
         index_type_name,
         name,
@@ -278,11 +280,15 @@ def create_vector_index_internal(
         ivf_num_partitions,
         num_rows,
     )
-    sample_rate = kwargs.get("sample_rate", 4)
+
+    train_kwargs = {}
+    if "sample_rate" in kwargs:
+        train_kwargs["sample_rate"] = kwargs["sample_rate"]
+
     ivf_model = builder.train_ivf(
-        num_partitions=computed_num_partitions,
         distance_type=metric_lower,
-        sample_rate=sample_rate,
+        num_partitions=computed_num_partitions,
+        **train_kwargs,
     )
     ivf_centroids_artifact = ivf_model.centroids
     num_partitions = ivf_model.num_partitions
@@ -295,7 +301,7 @@ def create_vector_index_internal(
         pq_model = builder.train_pq(
             ivf_model,
             computed_num_sub_vectors,
-            sample_rate=sample_rate,
+            **train_kwargs,
         )
         pq_codebook_artifact = pq_model.codebook
         num_sub_vectors = computed_num_sub_vectors

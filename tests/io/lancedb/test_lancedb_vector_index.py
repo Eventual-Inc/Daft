@@ -100,7 +100,7 @@ class TestDistributedVectorIndexing:
         )
         # Build distributed vector index using the high-level Daft entrypoint.
         create_index(
-            url=dataset_uri,
+            uri=dataset_uri,
             column="vector",
             index_type="IVF_PQ",
             name="idx_IVF_PQ",
@@ -132,7 +132,7 @@ class TestDistributedVectorIndexing:
 
     def test_create_index_rejects_scalar_index_type(self) -> None:
         with pytest.raises(ValueError, match="create_scalar_index"):
-            create_index(url="dummy", column="vector", index_type="BTREE")
+            create_index(uri="dummy", column="vector", index_type="BTREE")
 
     def test_invalid_metric_raises(self, tmp_path: Path) -> None:
         dataset_uri = generate_multi_fragment_vector_dataset(
@@ -144,7 +144,7 @@ class TestDistributedVectorIndexing:
         )
         with pytest.raises(ValueError, match="Metric"):
             create_index(
-                url=dataset_uri,
+                uri=dataset_uri,
                 column="vector",
                 index_type="IVF_FLAT",
                 name="idx_invalid_metric",
@@ -162,17 +162,18 @@ class TestDistributedVectorIndexing:
             seed=2,
         )
         create_index(
-            url=dataset_uri,
+            uri=dataset_uri,
             column="vector",
             index_type="IVF_FLAT",
             name="idx_IVF_FLAT",
             metric="l2",
             concurrency=2,
             ivf_num_partitions=2,
+            sample_rate=4,
         )
         with pytest.raises(ValueError, match="already exists"):
             create_index(
-                url=dataset_uri,
+                uri=dataset_uri,
                 column="vector",
                 index_type="IVF_FLAT",
                 name="idx_IVF_FLAT",
@@ -204,13 +205,14 @@ class TestDistributedVectorIndexing:
         for metric in metrics:
             index_name = f"idx_{metric}"
             create_index(
-                url=dataset_uri,
+                uri=dataset_uri,
                 column="vector",
                 index_type="IVF_FLAT",
                 name=index_name,
                 metric=metric,
                 concurrency=1,
                 ivf_num_partitions=2,
+                sample_rate=4,
             )
 
             updated_dataset = lance.dataset(dataset_uri)
@@ -232,13 +234,14 @@ class TestDistributedVectorIndexing:
         for index_type in index_types:
             index_name = f"idx_{index_type}"
             create_index(
-                url=dataset_uri,
+                uri=dataset_uri,
                 column="vector",
                 index_type=index_type,
                 name=index_name,
                 metric="l2",
                 concurrency=1,
                 ivf_num_partitions=2,
+                sample_rate=4,
             )
 
             updated_dataset = lance.dataset(dataset_uri)
@@ -258,17 +261,18 @@ class TestDistributedVectorIndexing:
         )
 
         create_index(
-            url=dataset_uri,
+            uri=dataset_uri,
             column="vector",
             index_type="IVF_FLAT",
             name="idx_replace",
             metric="l2",
             concurrency=1,
             ivf_num_partitions=2,
+            sample_rate=4,
         )
 
         create_index(
-            url=dataset_uri,
+            uri=dataset_uri,
             column="vector",
             index_type="IVF_FLAT",
             name="idx_replace",
@@ -276,6 +280,7 @@ class TestDistributedVectorIndexing:
             metric="l2",
             concurrency=1,
             ivf_num_partitions=2,
+            sample_rate=4,
         )
 
         updated_dataset = lance.dataset(dataset_uri)
@@ -295,13 +300,14 @@ class TestDistributedVectorIndexing:
 
         custom_name = "my_custom_vector_index"
         create_index(
-            url=dataset_uri,
+            uri=dataset_uri,
             column="vector",
             index_type="IVF_FLAT",
             name=custom_name,
             metric="l2",
             concurrency=1,
             ivf_num_partitions=2,
+            sample_rate=4,
         )
 
         updated_dataset = lance.dataset(dataset_uri)
@@ -320,12 +326,13 @@ class TestDistributedVectorIndexing:
         )
 
         create_index(
-            url=dataset_uri,
+            uri=dataset_uri,
             column="vector",
             index_type="IVF_FLAT",
             metric="l2",
             concurrency=1,
             ivf_num_partitions=2,
+            sample_rate=4,
         )
 
         updated_dataset = lance.dataset(dataset_uri)
@@ -345,13 +352,14 @@ class TestDistributedVectorIndexing:
         for concurrency in [1, 2]:
             index_name = f"idx_concurrency_{concurrency}"
             create_index(
-                url=dataset_uri,
+                uri=dataset_uri,
                 column="vector",
                 index_type="IVF_FLAT",
                 name=index_name,
                 metric="l2",
                 concurrency=concurrency,
                 ivf_num_partitions=2,
+                sample_rate=4,
             )
 
             updated_dataset = lance.dataset(dataset_uri)
@@ -372,13 +380,14 @@ class TestDistributedVectorIndexing:
         for num_partitions in [2, 4]:
             index_name = f"idx_partitions_{num_partitions}"
             create_index(
-                url=dataset_uri,
+                uri=dataset_uri,
                 column="vector",
                 index_type="IVF_FLAT",
                 name=index_name,
                 metric="l2",
                 concurrency=1,
                 ivf_num_partitions=num_partitions,
+                sample_rate=4,
             )
 
             updated_dataset = lance.dataset(dataset_uri)

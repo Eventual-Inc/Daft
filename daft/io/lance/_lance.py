@@ -465,8 +465,6 @@ def create_scalar_index(
         Create an index without replacing existing ones:
         >>> daft.io.lance.create_scalar_index("s3://my-bucket/dataset/", column="title", replace=False)
     """
-    from daft.io.lance.lance_scalar_index import create_scalar_index_internal
-
     check_pylance_version("0.37.0")
 
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
@@ -483,6 +481,8 @@ def create_scalar_index(
         default_scan_options=default_scan_options,
         metadata_cache_size_bytes=metadata_cache_size_bytes,
     )
+
+    from daft.io.lance.lance_scalar_index import create_scalar_index_internal
 
     create_scalar_index_internal(
         lance_ds=lance_ds,
@@ -501,7 +501,7 @@ def create_scalar_index(
 
 @PublicAPI
 def create_index(
-    url: str,
+    uri: str | pathlib.Path,
     io_config: IOConfig | None = None,
     *,
     column: str,
@@ -532,7 +532,7 @@ def create_index(
     to Daft workers via UDFs.
 
     Args:
-        url: The URI of the Lance table (supports remote URLs to object stores such as `s3://` or `gs://`)
+        uri: The URI of the Lance table (supports remote URLs to object stores such as `s3://` or `gs://`)
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
         column: Column name containing the vector data to index.
         index_type: Type of vector index to build. Supported types include "IVF_PQ", "IVF_HNSW_PQ",
@@ -608,12 +608,12 @@ def create_index(
     check_pylance_version("2.0.1")
 
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    storage_options = storage_options or io_config_to_storage_options(io_config, url)
+    storage_options = storage_options or io_config_to_storage_options(io_config, uri)
 
     index_type_name = _normalize_index_type(index_type)
 
     lance_ds = construct_lance_dataset(
-        url,
+        uri,
         storage_options=storage_options,
         version=version,
         asof=asof,
@@ -625,7 +625,7 @@ def create_index(
     )
     create_vector_index_internal(
         lance_ds=lance_ds,
-        uri=url,
+        uri=uri,
         column=column,
         index_type=index_type_name,
         name=name,
