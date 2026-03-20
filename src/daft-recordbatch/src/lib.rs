@@ -377,13 +377,16 @@ impl RecordBatch {
             return Ok(self.clone());
         }
 
-        use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
+        use rand::{Rng, SeedableRng, distr::Uniform, rngs::StdRng};
         let mut rng = match seed {
             Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::from_rng(rand::thread_rng()).unwrap(),
+            None => {
+                let mut thread_rng = rand::rng();
+                StdRng::from_rng(&mut thread_rng)
+            }
         };
         let values: Vec<u64> = if with_replacement {
-            let range = Uniform::from(0..len as u64);
+            let range = Uniform::try_from(0..len as u64).unwrap();
             rng.sample_iter(&range).take(num).collect()
         } else {
             // https://docs.rs/rand/latest/rand/seq/index/fn.sample.html
@@ -1719,7 +1722,7 @@ mod test {
         let e2 = resolved_col("a")
             .add(resolved_col("b"))
             .cast(&DataType::Int64);
-        let result = table.eval_expression(&&BoundExpr::try_new(e2, &table.schema)?)?;
+        let result = table.eval_expression(&BoundExpr::try_new(e2, &table.schema)?)?;
         assert_eq!(*result.data_type(), DataType::Int64);
         assert_eq!(result.len(), 3);
 

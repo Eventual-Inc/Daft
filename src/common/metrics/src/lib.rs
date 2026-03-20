@@ -8,7 +8,7 @@ pub mod snapshot;
 use std::{ops::Index, sync::Arc, time::Duration};
 
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
-pub use meters::{Counter, Gauge, normalize_name};
+pub use meters::{Counter, Gauge, Meter, UpDownCounter, normalize_name};
 pub use operator_metrics::{
     MetricsCollector, NoopMetricsCollector, OperatorCounter, OperatorMetrics,
 };
@@ -141,11 +141,18 @@ pub const ATTR_NODE_ID: &str = "node.id";
 pub const ATTR_NODE_TYPE: &str = "node.type";
 pub const ATTR_NODE_PHASE: &str = "node.phase";
 
+// Process-level metrics
+pub const PROCESS_JEMALLOC_ALLOCATED_KEY: &str = "process.memory.jemalloc.allocated";
+pub const PROCESS_JEMALLOC_RESIDENT_KEY: &str = "process.memory.jemalloc.resident";
+pub const PROCESS_RSS_KEY: &str = "process.memory.rss";
+pub const PROCESS_CPU_PERCENT_KEY: &str = "process.cpu.percent";
+
 // Units (UCUM)
 pub const UNIT_ROWS: &str = "{row}";
 pub const UNIT_BYTES: &str = "By";
 pub const UNIT_MICROSECONDS: &str = "us";
 pub const UNIT_TASKS: &str = "{task}";
+pub const UNIT_PERCENT: &str = "%";
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {

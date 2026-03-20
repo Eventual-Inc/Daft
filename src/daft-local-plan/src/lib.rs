@@ -10,7 +10,7 @@ use daft_scan::ScanTaskRef;
 #[cfg(feature = "python")]
 pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject, LanceWrite};
 pub use plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, FlightShuffleRead,
+    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleRead,
     FlightShuffleReadInput, FlightShuffleWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan,
     IntoBatches, IntoPartitions, Limit, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,
     MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Repartition, Sample,

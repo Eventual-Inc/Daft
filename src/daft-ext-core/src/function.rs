@@ -140,7 +140,7 @@ mod tests {
             Ok(export_schema(&Schema::new(vec![field])))
         }
 
-        fn call(&self, mut args: Vec<ArrowData>) -> DaftResult<ArrowData> {
+        fn call(&self, args: Vec<ArrowData>) -> DaftResult<ArrowData> {
             let input_array = import_array(args.into_iter().next().unwrap());
             let input = input_array
                 .as_any()

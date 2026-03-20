@@ -1,8 +1,7 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_metrics::{
-    Counter, DURATION_KEY, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS,
-    UNIT_ROWS,
+    Counter, Gauge, Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::ExplodeSnapshot,
 };
@@ -10,7 +9,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::KeyValue;
 
 use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
@@ -33,10 +32,10 @@ impl ExplodeStats {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
         let node_kv = key_values_from_context(context);
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
-            amplification: Gauge::new(meter, "amplification", None),
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
+            amplification: meter.f64_gauge("amplification"),
             node_kv,
         }
     }

@@ -66,6 +66,7 @@ See also [Iceberg](iceberg.md) for detailed integration.
 |------------------------------------|------------------------------------------------------|
 | [`read_kafka`][daft.io.read_kafka] | Read messages from Kafka topic(s) into a DataFrame   |
 
+See also [Kafka](kafka.md) for detailed integration.
 
 ## Lance
 

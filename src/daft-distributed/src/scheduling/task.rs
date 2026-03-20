@@ -579,14 +579,14 @@ pub(super) mod tests {
             let task_id = task_context.task_id;
             Self {
                 task_context,
-                task_name: "".into(),
+                task_name: String::new(),
                 priority: MockTaskPriority { priority: 0 },
                 scheduling_strategy: SchedulingStrategy::Spread,
                 resource_request: TaskResourceRequest::new(ResourceRequest::default()),
                 task_result: MaterializedOutput::new(
                     vec![partition_ref],
                     "".into(),
-                    "".into(),
+                    String::new(),
                     task_id,
                 ),
                 cancel_notifier: Arc::new(Mutex::new(None)),
@@ -698,7 +698,7 @@ pub(super) mod tests {
                     match failure {
                         MockTaskFailure::Error(error_message) => {
                             return TaskStatus::Failed {
-                                error: DaftError::InternalError(error_message.clone()),
+                                error: DaftError::InternalError(error_message),
                             };
                         }
                         MockTaskFailure::Panic(error_message) => {

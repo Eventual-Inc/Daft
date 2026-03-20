@@ -8,6 +8,7 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
+    Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::StatSnapshotImpl,
 };
@@ -15,7 +16,6 @@ use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_com
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
-use opentelemetry::metrics::Meter;
 use snafu::ResultExt;
 use tracing::info_span;
 
