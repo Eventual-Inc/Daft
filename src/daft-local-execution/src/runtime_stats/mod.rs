@@ -1,3 +1,4 @@
+mod process_stats;
 mod progress_bar;
 mod values;
 
@@ -27,6 +28,14 @@ use tracing::{Instrument, instrument::Instrumented};
 pub use values::{DefaultRuntimeStats, RuntimeStats};
 
 use crate::pipeline::PipelineNode;
+
+fn should_enable_process_monitor() -> bool {
+    if let Ok(val) = std::env::var("DAFT_PROCESS_MONITOR_ENABLED") {
+        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
+    } else {
+        false // Disabled by default; enable with DAFT_PROCESS_MONITOR_ENABLED=true
+    }
+}
 
 fn should_enable_progress_bar() -> bool {
     if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
@@ -144,6 +153,7 @@ impl RuntimeStatsManager {
         };
 
         let throttle_interval = Duration::from_millis(200);
+        let enable_process_monitor = should_enable_process_monitor();
         Ok(Self::new_impl(
             handle,
             query_id,
@@ -152,10 +162,12 @@ impl RuntimeStatsManager {
             progress_bar,
             node_map,
             throttle_interval,
+            enable_process_monitor,
         ))
     }
 
     // Mostly used for testing purposes so we can inject our own subscribers and throttling interval
+    #[allow(clippy::too_many_arguments)]
     fn new_impl(
         handle: &Handle,
         query_id: QueryID,
@@ -164,10 +176,18 @@ impl RuntimeStatsManager {
         progress_bar: Option<Box<dyn ProgressBar>>,
         node_map: HashMap<NodeID, (Arc<NodeInfo>, Arc<dyn RuntimeStats>)>,
         throttle_interval: Duration,
+        enable_process_monitor: bool,
     ) -> Self {
         let (node_tx, mut node_rx) = mpsc::unbounded_channel::<(usize, bool)>();
         let node_tx = Arc::new(node_tx);
         let (finish_tx, mut finish_rx) = oneshot::channel::<QueryEndState>();
+
+        let mut process_stats = if enable_process_monitor {
+            let meter = common_metrics::Meter::global_scope("daft-process-monitor");
+            process_stats::ProcessStatsCollector::new(&meter)
+        } else {
+            None
+        };
 
         let event_loop = async move {
             let mut interval = interval(throttle_interval);
@@ -220,6 +240,17 @@ impl RuntimeStatsManager {
                     }
 
                     _ = interval.tick() => {
+                        if let Some(ps) = &mut process_stats {
+                            let ps_stats = ps.sample();
+                            for res in future::join_all(subscribers.iter().map(|subscriber| {
+                                subscriber.on_process_stats(query_id.clone(), ps_stats.clone())
+                            })).await {
+                                if let Err(e) = res {
+                                    log::error!("Failed to emit process stats: {}", e);
+                                }
+                            }
+                        }
+
                         if active_nodes.is_empty() {
                             continue;
                         }
@@ -444,6 +475,7 @@ mod tests {
             None,
             HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat.clone()))]),
             throttle_interval,
+            false,
         );
         let handle = stats_manager.handle();
 
@@ -509,6 +541,7 @@ mod tests {
             None,
             HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat.clone()))]),
             throttle_interval,
+            false,
         );
         let handle = stats_manager.handle();
 
@@ -586,6 +619,7 @@ mod tests {
             None,
             HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat.clone()))]),
             throttle_interval,
+            false,
         );
         let handle = stats_manager.handle();
 
@@ -646,6 +680,7 @@ mod tests {
             None,
             HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat.clone()))]),
             throttle_interval,
+            false,
         );
         let handle = stats_manager.handle();
 
@@ -683,6 +718,7 @@ mod tests {
             None,
             HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat.clone()))]),
             throttle_interval,
+            false,
         );
         let handle = stats_manager.handle();
 
@@ -711,5 +747,131 @@ mod tests {
         );
         assert_eq!(event[1], (ROWS_IN_KEY.into(), Stat::Count(100)));
         assert_eq!(event[2], (ROWS_OUT_KEY.into(), Stat::Count(50)));
+    }
+
+    /// Mock subscriber that tracks on_process_stats calls.
+    #[derive(Debug)]
+    struct ProcessStatsMockSubscriber {
+        process_stats_calls: AtomicU64,
+    }
+
+    impl ProcessStatsMockSubscriber {
+        fn new() -> Self {
+            Self {
+                process_stats_calls: AtomicU64::new(0),
+            }
+        }
+
+        fn get_process_stats_calls(&self) -> u64 {
+            self.process_stats_calls
+                .load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl Subscriber for ProcessStatsMockSubscriber {
+        fn on_query_start(&self, _: QueryID, _: Arc<QueryMetadata>) -> DaftResult<()> {
+            Ok(())
+        }
+        fn on_query_end(&self, _: QueryID, _: QueryResult) -> DaftResult<()> {
+            Ok(())
+        }
+        fn on_result_out(&self, _: QueryID, _: MicroPartitionRef) -> DaftResult<()> {
+            Ok(())
+        }
+        fn on_optimization_start(&self, _: QueryID) -> DaftResult<()> {
+            Ok(())
+        }
+        fn on_optimization_end(&self, _: QueryID, _: QueryPlan) -> DaftResult<()> {
+            Ok(())
+        }
+        fn on_exec_start(&self, _: QueryID, _: QueryPlan) -> DaftResult<()> {
+            Ok(())
+        }
+        async fn on_exec_end(&self, _: QueryID) -> DaftResult<()> {
+            Ok(())
+        }
+        async fn on_exec_operator_start(&self, _: QueryID, _: NodeID) -> DaftResult<()> {
+            Ok(())
+        }
+        async fn on_exec_operator_end(&self, _: QueryID, _: NodeID) -> DaftResult<()> {
+            Ok(())
+        }
+        async fn on_exec_emit_stats(
+            &self,
+            _: QueryID,
+            _: Arc<Vec<(NodeID, Stats)>>,
+        ) -> DaftResult<()> {
+            Ok(())
+        }
+        async fn on_process_stats(&self, _: QueryID, _: Stats) -> DaftResult<()> {
+            self.process_stats_calls
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_process_stats_delivered_to_subscriber_when_enabled() {
+        let subscriber = Arc::new(ProcessStatsMockSubscriber::new());
+        let throttle_interval = Duration::from_millis(50);
+        let node_stat = Arc::new(DefaultRuntimeStats::new(
+            &Meter::test_scope("test_process_stats_enabled"),
+            &node_info_from_id(0),
+        )) as Arc<dyn RuntimeStats>;
+
+        let stats_manager = RuntimeStatsManager::new_impl(
+            &tokio::runtime::Handle::current(),
+            "test_ps_enabled".into(),
+            serde_json::Value::Null,
+            vec![subscriber.clone()],
+            None,
+            HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat))]),
+            throttle_interval,
+            true, // enable process monitor
+        );
+
+        // Let a few ticks fire
+        sleep(Duration::from_millis(150)).await;
+
+        assert!(
+            subscriber.get_process_stats_calls() >= 1,
+            "on_process_stats should be called at least once, got {}",
+            subscriber.get_process_stats_calls()
+        );
+
+        stats_manager.finish(QueryEndState::Finished).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_process_stats_not_delivered_when_disabled() {
+        let subscriber = Arc::new(ProcessStatsMockSubscriber::new());
+        let throttle_interval = Duration::from_millis(50);
+        let node_stat = Arc::new(DefaultRuntimeStats::new(
+            &Meter::test_scope("test_process_stats_disabled"),
+            &node_info_from_id(0),
+        )) as Arc<dyn RuntimeStats>;
+
+        let stats_manager = RuntimeStatsManager::new_impl(
+            &tokio::runtime::Handle::current(),
+            "test_ps_disabled".into(),
+            serde_json::Value::Null,
+            vec![subscriber.clone()],
+            None,
+            HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat))]),
+            throttle_interval,
+            false, // disable process monitor
+        );
+
+        // Let a few ticks fire
+        sleep(Duration::from_millis(150)).await;
+
+        assert_eq!(
+            subscriber.get_process_stats_calls(),
+            0,
+            "on_process_stats should not be called when monitor is disabled"
+        );
+
+        stats_manager.finish(QueryEndState::Finished).await;
     }
 }

@@ -44,6 +44,7 @@ pin-project = "1"
 pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {workspace = true, optional = true}
 rand = {workspace = true}
+smallvec = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true, features = ["test-util"]}
 tokio-stream = {workspace = true}
@@ -52,6 +53,10 @@ tracing = {workspace = true}
 serde_json = {workspace = true}
 opentelemetry = {workspace = true}
 dashmap = {workspace = true}
+sysinfo = {workspace = true}
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemalloc-ctl = {version = "0.6.0", features = ["stats"]}
 
 [features]
 python = [
