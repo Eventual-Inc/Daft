@@ -9,7 +9,7 @@ from daft import col, lit
 
 def test_url_download():
     df = daft.from_pydict({"one": [1]})  # just have a single row, doesn't matter what it is
-    url = "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/small_images/rickroll0.jpg"
+    url = "https://daft-oss-public-data.s3.us-west-2.amazonaws.com/test_fixtures/small_images/rickroll0.jpg"
 
     # download one
     df_actual = daft.sql(f"SELECT url_download('{url}') as downloaded FROM df").collect().to_pydict()
@@ -22,8 +22,8 @@ def test_url_download_multi():
     df = daft.from_pydict(
         {
             "urls": [
-                "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/small_images/rickroll0.jpg",
-                "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/small_images/rickroll1.jpg",
+                "https://daft-oss-public-data.s3.us-west-2.amazonaws.com/test_fixtures/small_images/rickroll0.jpg",
+                "https://daft-oss-public-data.s3.us-west-2.amazonaws.com/test_fixtures/small_images/rickroll1.jpg",
             ]
         }
     )
