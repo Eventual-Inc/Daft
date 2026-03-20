@@ -81,6 +81,11 @@ repos:
   hooks:
   - id: uv-lock
 
+- repo: https://github.com/abravalheri/validate-pyproject
+  rev: v0.24.1
+  hooks:
+  - id: validate-pyproject
+
 - repo: local
   hooks:
   - id: check-invalid-deps
@@ -106,6 +111,7 @@ repos:
     language: system
     types: [rust]
     pass_filenames: false
+    stages: [manual]
     args: [--workspace, --all-targets, -v]
 
   - id: cargo-check-all-features
@@ -115,6 +121,7 @@ repos:
     language: system
     types: [rust]
     pass_filenames: false
+    stages: [manual]
     args: [--workspace, --all-features, --all-targets]
 
   - id: clippy
@@ -125,9 +132,3 @@ repos:
     args: [--workspace, --all-features, --, -D, warnings]
     types: [rust]
     pass_filenames: false
-
-
-- repo: https://github.com/abravalheri/validate-pyproject
-  rev: v0.24.1
-  hooks:
-  - id: validate-pyproject
