@@ -53,13 +53,8 @@ impl RayWorkerManagerState {
             DaftResult::Ok(ray_workers)
         })?;
 
-        if !ray_workers.is_empty() {
-            for worker in ray_workers {
-                self.ray_workers.insert(worker.id().clone(), worker);
-            }
-            // Reset watermark so autoscaling can re-evaluate demand against the new topology
-            self.max_resources_requested = ResourceRequest::default();
-            tracing::debug!("Reset autoscaling watermark after new workers joined");
+        for worker in ray_workers {
+            self.ray_workers.insert(worker.id().clone(), worker);
         }
         self.last_refresh = Some(Instant::now());
         DaftResult::Ok(())
@@ -147,9 +142,6 @@ impl WorkerManager for RayWorkerManager {
             .lock()
             .expect("Failed to lock RayWorkerManagerState");
         state.ray_workers.remove(&worker_id);
-        // Reset watermark so autoscaling can re-evaluate demand against reduced capacity
-        state.max_resources_requested = ResourceRequest::default();
-        tracing::debug!(%worker_id, "Reset autoscaling watermark after worker died");
     }
 
     fn shutdown(&self) -> DaftResult<()> {
@@ -222,9 +214,9 @@ impl WorkerManager for RayWorkerManager {
         );
 
         // Only autoscale if pending demand exceeds available capacity AND this is a new
-        // peak since the last topology change. The watermark deduplicates requests within
-        // a stable topology. It resets in refresh_workers/mark_worker_died so that if the
-        // cluster shrinks, we can re-evaluate demand and autoscale again.
+        // all-time peak. The watermark deduplicates requests so we don't spam Ray with
+        // repeated request_resources calls for the same demand level.
+        // TODO: Reset the watermark when the cluster shrinks (requires tracking downscaling).
         if resource_request_greater_than_available_capacity
             && resource_request_greater_than_max_requested
         {
