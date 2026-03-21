@@ -69,9 +69,10 @@ def test_row_wise_udf_should_infer_dtype_from_function():
 
 def test_func_requires_return_dtype_when_no_annotation():
     with pytest.raises(
-            ValueError,
-            match="Daft functions require either a return type hint or the `return_dtype` argument to be specified.",
+        ValueError,
+        match="Daft functions require either a return type hint or the `return_dtype` argument to be specified.",
     ):
+
         @daft.func()
         def my_func(a: int, b: int):
             return f"{a + b}"
@@ -199,6 +200,7 @@ def test_row_wise_async_udf_max_concurrency(max_concurrency):
 
 def test_sync_func_max_concurrency_raises():
     with pytest.raises(ValueError, match="max_concurrency.*synchronous"):
+
         @daft.func(max_concurrency=2)
         def my_sync_add(a: int, b: int) -> int:
             return a + b
@@ -233,6 +235,7 @@ def test_row_wise_udf_unnest():
 def test_row_wise_udf_unnest_with_column(use_cls):
     struct_dtype = daft.DataType.struct({"bar": daft.DataType.string(), "some_int": daft.DataType.int64()})
     if use_cls:
+
         @daft.cls()
         class Foo:
             @daft.method(return_dtype=struct_dtype, unnest=True)
@@ -241,6 +244,7 @@ def test_row_wise_udf_unnest_with_column(use_cls):
 
         udf_expr = Foo().create_record(col("value"))
     else:
+
         @daft.func(return_dtype=struct_dtype, unnest=True)
         def create_record(value: str):
             return {"bar": value + "_suffix", "some_int": len(value)}
@@ -260,9 +264,10 @@ def test_row_wise_udf_unnest_with_column(use_cls):
 
 def test_row_wise_udf_unnest_error_non_struct():
     with pytest.raises(
-            ValueError,
-            match=re.escape("Expected Daft function `return_dtype` to be `DataType.struct(..)` when `unnest=True`"),
+        ValueError,
+        match=re.escape("Expected Daft function `return_dtype` to be `DataType.struct(..)` when `unnest=True`"),
     ):
+
         @daft.func(return_dtype=daft.DataType.int64(), unnest=True)
         def invalid_unnest(a: int):
             return a
