@@ -92,10 +92,18 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
     })?;
 
     if let Some(expansion) = wildcard_expansion {
+        // Strip top-level Alias before expanding wildcards, because if  `with_column("name", expr.unnest())` is used,
+        // the expression tree looks like `Alias(StructGet("*", ...), "name")`. If we keep the Alias during expansion, every
+        // expanded field would inherit the same alias instead of using its struct field name.
+        let expr_to_expand = match expr.as_ref() {
+            Expr::Alias(inner, _) => inner.clone(),
+            _ => expr.clone(),
+        };
+
         expansion
             .into_iter()
             .map(|new_name| {
-                Ok(expr
+                Ok(expr_to_expand
                     .clone()
                     .transform(|e| match e.as_ref() {
                         Expr::Column(Column::Unresolved(UnresolvedColumn {
