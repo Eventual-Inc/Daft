@@ -23,8 +23,8 @@ pub struct IOConfig {
     pub tos: TosConfig,
     pub cos: CosConfig,
     /// Additional backends configured via OpenDAL.
-    /// Keys are scheme names (e.g. "oss", "cos"), values are key-value config maps.
-    pub opendal_backends: BTreeMap<String, BTreeMap<String, String>>,
+    /// Key-value configurations for specific OpenDAL backends (e.g., oss, cos).
+    pub opendal_backends: BTreeMap<String, String>,
     /// Protocol aliases: maps custom scheme names to existing scheme names.
     /// For example, {"my-s3": "s3"} rewrites "my-s3://bucket/path" to "s3://bucket/path".
     pub protocol_aliases: BTreeMap<String, String>,

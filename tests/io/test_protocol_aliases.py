@@ -85,7 +85,7 @@ def parquet_data(tmp_path):
 def _alias_fs_io_config(root_dir: Path) -> IOConfig:
     """Create IOConfig that aliases 'myfs' -> 'fs' with OpenDAL fs backend."""
     return IOConfig(
-        opendal_backends={"fs": {"root": str(root_dir)}},
+        opendal_backends={"root": str(root_dir)},
         protocol_aliases={"myfs": "fs"},
     )
 

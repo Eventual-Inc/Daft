@@ -34,13 +34,7 @@ def csv_data(tmp_path):
 
 def _fs_io_config(root_dir: Path) -> IOConfig:
     """Create an IOConfig using OpenDAL's 'fs' (filesystem) backend."""
-    return IOConfig(
-        opendal_backends={
-            "fs": {
-                "root": str(root_dir),
-            }
-        }
-    )
+    return IOConfig(opendal_backends={"root": str(root_dir)})
 
 
 def test_opendal_fs_read_parquet(parquet_data):
@@ -82,10 +76,7 @@ def test_opendal_ioconfig_roundtrip():
     import pickle
 
     config = IOConfig(
-        opendal_backends={
-            "oss": {"bucket": "my-bucket", "access_key_id": "test"},
-            "cos": {"bucket": "other-bucket"},
-        }
+        opendal_backends={"bucket": "my-bucket", "access_key_id": "test"},
     )
 
     restored = pickle.loads(pickle.dumps(config))
@@ -95,11 +86,11 @@ def test_opendal_ioconfig_roundtrip():
 
 def test_opendal_ioconfig_replace():
     """Test that IOConfig.replace works with opendal_backends."""
-    config = IOConfig(opendal_backends={"oss": {"bucket": "original"}})
-    replaced = config.replace(opendal_backends={"cos": {"bucket": "new"}})
+    config = IOConfig(opendal_backends={"bucket": "original"})
+    replaced = config.replace(opendal_backends={"bucket": "new"})
 
-    assert replaced.opendal_backends == {"cos": {"bucket": "new"}}
-    assert config.opendal_backends == {"oss": {"bucket": "original"}}
+    assert replaced.opendal_backends == {"bucket": "new"}
+    assert config.opendal_backends == {"bucket": "original"}
 
 
 def test_opendal_fs_write_parquet(tmp_path):

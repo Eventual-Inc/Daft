@@ -1014,7 +1014,7 @@ class IOConfig:
     tos: TosConfig
     gravitino: GravitinoConfig
     cos: CosConfig
-    opendal_backends: dict[str, dict[str, str]]
+    opendal_backends: dict[str, str]
     protocol_aliases: dict[str, str]
 
     def __init__(
@@ -1029,7 +1029,7 @@ class IOConfig:
         tos: TosConfig | None = None,
         gravitino: GravitinoConfig | None = None,
         cos: CosConfig | None = None,
-        opendal_backends: dict[str, dict[str, str]] | None = None,
+        opendal_backends: dict[str, str] | None = None,
         protocol_aliases: dict[str, str] | None = None,
     ): ...
     def replace(
@@ -1044,7 +1044,7 @@ class IOConfig:
         tos: TosConfig | None = None,
         gravitino: GravitinoConfig | None = None,
         cos: CosConfig | None = None,
-        opendal_backends: dict[str, dict[str, str]] | None = None,
+        opendal_backends: dict[str, str] | None = None,
         protocol_aliases: dict[str, str] | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""

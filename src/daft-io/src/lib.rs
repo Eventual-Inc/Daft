@@ -302,7 +302,6 @@ impl IOClient {
                 }
             }
             SourceType::OpenDAL { scheme } => {
-                let empty_config = std::collections::BTreeMap::new();
                 let backend_config = if scheme == "cos" {
                     // Extract bucket from the URL for COS config
                     let parsed_url =
@@ -311,18 +310,10 @@ impl IOClient {
                     let cos_config = self.config.cos.to_opendal_config(bucket);
                     // Merge user-provided opendal_backends on top (if any)
                     let mut merged = cos_config;
-                    if let Some(extra) = self.config.opendal_backends.get(scheme) {
-                        for (k, v) in extra {
-                            merged.insert(k.clone(), v.clone());
-                        }
-                    }
+                    merged.extend(self.config.opendal_backends.clone());
                     merged
                 } else {
-                    self.config
-                        .opendal_backends
-                        .get(scheme)
-                        .unwrap_or(&empty_config)
-                        .clone()
+                    self.config.opendal_backends.clone()
                 };
                 OpenDALSource::get_client(scheme, &backend_config).await? as Arc<dyn ObjectSource>
             }

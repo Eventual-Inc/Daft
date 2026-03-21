@@ -241,7 +241,7 @@ impl IOConfig {
         tos: Option<TosConfig>,
         gravitino: Option<GravitinoConfig>,
         cos: Option<CosConfig>,
-        opendal_backends: Option<HashMap<String, HashMap<String, String>>>,
+        opendal_backends: Option<HashMap<String, String>>,
         protocol_aliases: Option<HashMap<String, String>>,
     ) -> PyResult<Self> {
         let cfg = config::IOConfig {
@@ -255,11 +255,7 @@ impl IOConfig {
             tos: tos.unwrap_or_default().config,
             gravitino: gravitino.unwrap_or_default().config,
             cos: cos.unwrap_or_default().config,
-            opendal_backends: opendal_backends
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(k, v)| (k, v.into_iter().collect()))
-                .collect(),
+            opendal_backends: opendal_backends.unwrap_or_default().into_iter().collect(),
             protocol_aliases: protocol_aliases
                 .unwrap_or_default()
                 .into_iter()
@@ -299,7 +295,7 @@ impl IOConfig {
         tos: Option<TosConfig>,
         gravitino: Option<GravitinoConfig>,
         cos: Option<CosConfig>,
-        opendal_backends: Option<HashMap<String, HashMap<String, String>>>,
+        opendal_backends: Option<HashMap<String, String>>,
         protocol_aliases: Option<HashMap<String, String>>,
     ) -> PyResult<Self> {
         let cfg = config::IOConfig {
@@ -332,11 +328,7 @@ impl IOConfig {
                 .map(|cos| cos.config)
                 .unwrap_or_else(|| self.config.cos.clone()),
             opendal_backends: opendal_backends
-                .map(|b| {
-                    b.into_iter()
-                        .map(|(k, v)| (k, v.into_iter().collect()))
-                        .collect()
-                })
+                .map(|b| b.into_iter().collect())
                 .unwrap_or_else(|| self.config.opendal_backends.clone()),
             protocol_aliases: protocol_aliases
                 .map(|a| {
@@ -417,17 +409,12 @@ impl IOConfig {
 
     /// Additional backends configured via OpenDAL
     #[getter]
-    pub fn opendal_backends(&self) -> PyResult<HashMap<String, HashMap<String, String>>> {
+    pub fn opendal_backends(&self) -> PyResult<HashMap<String, String>> {
         Ok(self
             .config
             .opendal_backends
             .iter()
-            .map(|(k, v)| {
-                (
-                    k.clone(),
-                    v.iter().map(|(k2, v2)| (k2.clone(), v2.clone())).collect(),
-                )
-            })
+            .map(|(k, v)| (k.clone(), v.clone()))
             .collect())
     }
 
