@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fs::File, sync::Arc};
 
 use arrow_ipc::reader::FileReader;
 use common_error::{DaftError, DaftResult};
@@ -65,8 +65,11 @@ async fn read_from_local(
 
     tokio::task::spawn_blocking(move || {
         let inner = || -> DaftResult<()> {
-            let file = std::fs::File::open(&path)?;
-            let reader = FileReader::try_new_buffered(file, None)?;
+            let file = File::open(&path)?;
+            let mut reader = FileReader::try_new_buffered(file, None)?;
+            unsafe {
+                reader = reader.with_skip_validation(!cfg!(debug_assertions));
+            }
             send_ipc_record_batches(reader, options, tx)?;
             Ok(())
         };
