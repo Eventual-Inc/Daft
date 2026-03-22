@@ -205,6 +205,7 @@ impl PipelineNode for SourceNode {
     ) {
         self.morsel_size_requirement = downstream_requirement;
     }
+
     fn start(
         self: Box<Self>,
         maintain_order: bool,
@@ -243,6 +244,7 @@ impl PipelineNode for SourceNode {
                         break;
                     }
                 }
+
                 if !has_data {
                     let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
                     let _ = destination_sender.send(empty).await;
@@ -256,6 +258,7 @@ impl PipelineNode for SourceNode {
         );
         Ok(destination_receiver)
     }
+
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
     }
