@@ -20,6 +20,7 @@ use crate::LogicalPlanRef;
 /// Duplicate an expression tree for each wildcard match in a column or struct get.
 fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRef>> {
     let mut wildcard_expansion = None;
+    let mut is_struct_wildcard = false;
 
     fn set_wildcard_expansion<'a>(
         wildcard_expansion: &mut Option<Vec<String>>,
@@ -83,6 +84,7 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
                     )));
                 };
 
+                is_struct_wildcard = true;
                 set_wildcard_expansion(&mut wildcard_expansion, &expr, struct_fields.iter().map(|f| f.name.as_ref()))?;
             }
             _ => {}
@@ -92,12 +94,19 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
     })?;
 
     if let Some(expansion) = wildcard_expansion {
-        // Strip top-level Alias before expanding wildcards, because if  `with_column("name", expr.unnest())` is used,
-        // the expression tree looks like `Alias(StructGet("*", ...), "name")`. If we keep the Alias during expansion, every
+        // For struct wildcard expansion (unnest), strip top-level Alias before expanding.
+        // When `with_column("name", expr.unnest())` is used, the expression tree looks like
+        // `Alias(StructGet("*", ...), "name")`. If we keep the Alias during expansion, every
         // expanded field would inherit the same alias instead of using its struct field name.
-        let expr_to_expand = match expr.as_ref() {
-            Expr::Alias(inner, _) => inner.clone(),
-            _ => expr.clone(),
+        // For column wildcard expansion (e.g. `count(*).alias("name")`), the alias should be
+        // preserved on each expanded expression.
+        let expr_to_expand = if is_struct_wildcard {
+            match expr.as_ref() {
+                Expr::Alias(inner, _) => inner.clone(),
+                _ => expr.clone(),
+            }
+        } else {
+            expr
         };
 
         expansion
