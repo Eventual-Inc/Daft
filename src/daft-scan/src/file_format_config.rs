@@ -20,6 +20,7 @@ pub enum FileFormatConfig {
     Json(JsonSourceConfig),
     Warc(WarcSourceConfig),
     Text(TextSourceConfig),
+    ArrowIpc(ArrowIpcSourceConfig),
 }
 #[cfg(not(debug_assertions))]
 impl std::fmt::Debug for FileFormatConfig {
@@ -42,6 +43,7 @@ impl FileFormatConfig {
             Self::Json(_) => "Json".to_string(),
             Self::Warc(_) => "Warc".to_string(),
             Self::Text(_) => "Text".to_string(),
+            Self::ArrowIpc(_) => "ArrowIpc".to_string(),
         }
     }
 
@@ -53,6 +55,7 @@ impl FileFormatConfig {
             Self::Json(source) => source.multiline_display(),
             Self::Warc(source) => source.multiline_display(),
             Self::Text(source) => source.multiline_display(),
+            Self::ArrowIpc(source) => source.multiline_display(),
         }
     }
 }
@@ -65,6 +68,7 @@ impl From<&FileFormatConfig> for FileFormat {
             FileFormatConfig::Json(_) => Self::Json,
             FileFormatConfig::Warc(_) => Self::Warc,
             FileFormatConfig::Text(_) => Self::Text,
+            FileFormatConfig::ArrowIpc(_) => Self::ArrowIpc,
         }
     }
 }
@@ -507,3 +511,32 @@ impl Default for TextSourceConfig {
 }
 
 impl_bincode_py_state_serialization!(TextSourceConfig);
+
+/// Configuration for an Arrow IPC file data source (Apache Arrow IPC file format).
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", get_all, from_py_object)
+)]
+pub struct ArrowIpcSourceConfig {}
+
+impl ArrowIpcSourceConfig {
+    #[must_use]
+    pub fn multiline_display(&self) -> Vec<String> {
+        vec![]
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl ArrowIpcSourceConfig {
+    /// Create a config for an Arrow IPC file data source.
+    #[new]
+    #[pyo3(signature = ())]
+    fn new() -> PyResult<Self> {
+        Ok(Self {})
+    }
+}
+
+impl_bincode_py_state_serialization!(ArrowIpcSourceConfig);

@@ -16,6 +16,7 @@ from daft.daft import (
     HuggingFaceConfig,
 )
 from daft.lazy_import import LazyImport
+from daft.io._arrow import read_arrow_ipc
 from daft.io._csv import read_csv
 from daft.io._text import read_text
 from daft.io.delta_lake._deltalake import read_deltalake
@@ -67,6 +68,7 @@ __all__ = [
     "UnityConfig",
     "_range",
     "from_glob_path",
+    "read_arrow_ipc",
     "read_csv",
     "read_deltalake",
     "read_hudi",

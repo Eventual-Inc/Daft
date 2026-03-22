@@ -10,8 +10,8 @@ use pyo3::{prelude::*, types::PyTuple};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, TextSourceConfig,
-    WarcSourceConfig, storage_config::StorageConfig,
+    ArrowIpcSourceConfig, CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig,
+    TextSourceConfig, WarcSourceConfig, storage_config::StorageConfig,
 };
 
 /// Configuration for parsing a particular file format.
@@ -56,6 +56,12 @@ impl PyFileFormatConfig {
         Self(Arc::new(FileFormatConfig::Text(config)))
     }
 
+    /// Create an Arrow IPC file format config.
+    #[staticmethod]
+    fn from_arrow_ipc_config(config: ArrowIpcSourceConfig) -> Self {
+        Self(Arc::new(FileFormatConfig::ArrowIpc(config)))
+    }
+
     /// Get the underlying data source config.
     #[getter]
     fn get_config(&self, py: Python) -> PyResult<Py<PyAny>> {
@@ -77,6 +83,10 @@ impl PyFileFormatConfig {
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),
             FileFormatConfig::Text(config) => config
+                .clone()
+                .into_pyobject(py)
+                .map(|c| c.unbind().into_any()),
+            FileFormatConfig::ArrowIpc(config) => config
                 .clone()
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),

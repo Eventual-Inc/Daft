@@ -71,6 +71,8 @@ def test_create_dataframe_empty_list() -> None:
         daft.read_csv([])
     with pytest.raises(ValueError):
         daft.read_json([])
+    with pytest.raises(ValueError):
+        daft.read_arrow_ipc([])
 
 
 ###

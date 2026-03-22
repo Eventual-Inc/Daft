@@ -317,6 +317,15 @@ impl GlobScanOperator {
                         (first_schema, None, first_filepath)
                     }
                 }
+                FileFormatConfig::ArrowIpc(_) => {
+                    let schema = daft_ipc::read_arrow_ipc_file_schema(
+                        first_filepath.as_str(),
+                        io_client.clone(),
+                        Some(io_stats.clone()),
+                    )
+                    .await?;
+                    (schema.as_ref().clone(), None, first_filepath)
+                }
                 FileFormatConfig::Warc(_) => {
                     return Err(DaftError::ValueError(
                         "Warc schemas do not need to be inferred".to_string(),

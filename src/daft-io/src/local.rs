@@ -385,6 +385,7 @@ impl ObjectSource for LocalSource {
     }
 }
 
+/// Load the entire contents of the local file (by range) into a in-memory buffer.
 pub async fn collect_file(local_file: LocalFile) -> Result<Bytes> {
     let path = &local_file.path;
     let mut file = tokio::fs::File::open(path)

@@ -4,6 +4,7 @@ use common_error::DaftResult;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
+use daft_ipc::ArrowIpcReadOptions;
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_recordbatch::RecordBatch;
@@ -73,6 +74,9 @@ pub(crate) async fn read_scan_task(
             FileFormatConfig::Warc(_) => read_warc(scan_task, url, io_client, io_stats).await,
             FileFormatConfig::Text(cfg) => {
                 read_text(scan_task, cfg, url, io_client, io_stats, chunk_size).await
+            }
+            FileFormatConfig::ArrowIpc(_) => {
+                read_arrow_ipc(scan_task, url, io_client, io_stats).await
             }
         },
         #[cfg(feature = "python")]
@@ -271,6 +275,17 @@ async fn read_text(
         Some(io_stats),
     )
     .await
+}
+
+async fn read_arrow_ipc(
+    scan_task: &ScanTask,
+    url: &str,
+    io_client: Arc<daft_io::IOClient>,
+    io_stats: IOStatsRef,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let options = ArrowIpcReadOptions::new(scan_task.schema.clone(), scan_task.pushdowns.limit);
+
+    daft_ipc::stream_arrow_ipc_file(url.to_string(), options, io_client, Some(io_stats)).await
 }
 
 #[cfg(feature = "python")]

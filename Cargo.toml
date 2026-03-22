@@ -39,6 +39,7 @@ daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = fals
 daft-hash = {path = "src/daft-hash", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
+daft-ipc = {path = "src/daft-ipc", default-features = false}
 daft-json = {path = "src/daft-json", default-features = false}
 daft-local-execution = {path = "src/daft-local-execution", default-features = false}
 daft-local-plan = {path = "src/daft-local-plan", default-features = false}
@@ -207,6 +208,7 @@ members = [
   "src/daft-image",
   "src/daft-io",
   "src/daft-json",
+  "src/daft-ipc",
   "src/daft-local-execution",
   "src/daft-local-plan",
   "src/daft-logical-plan",

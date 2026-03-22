@@ -2300,6 +2300,7 @@ dependencies = [
  "daft-hash",
  "daft-image",
  "daft-io",
+ "daft-ipc",
  "daft-json",
  "daft-local-execution",
  "daft-local-plan",
@@ -2889,6 +2890,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-ipc"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow-array",
+ "arrow-ipc",
+ "arrow-schema 57.3.0",
+ "bytes",
+ "common-error",
+ "daft-io",
+ "daft-recordbatch",
+ "daft-schema",
+ "flatbuffers",
+ "futures",
+ "libc",
+ "snafu",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
 name = "daft-json"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2949,6 +2970,7 @@ dependencies = [
  "daft-functions-list",
  "daft-functions-uri",
  "daft-io",
+ "daft-ipc",
  "daft-json",
  "daft-local-plan",
  "daft-logical-plan",
@@ -3187,6 +3209,7 @@ dependencies = [
  "daft-decoding",
  "daft-dsl",
  "daft-io",
+ "daft-ipc",
  "daft-json",
  "daft-parquet",
  "daft-recordbatch",

@@ -25,8 +25,8 @@ pub mod source;
 #[cfg(feature = "python")]
 pub use file_format_config::DatabaseSourceConfig;
 pub use file_format_config::{
-    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, TextSourceConfig,
-    WarcSourceConfig,
+    ArrowIpcSourceConfig, CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig,
+    TextSourceConfig, WarcSourceConfig,
 };
 pub mod glob;
 mod hive;
@@ -725,6 +725,7 @@ impl ScanTask {
                             FileFormatConfig::Csv(_) => config.csv_inflation_factor,
                             FileFormatConfig::Json(_) => config.json_inflation_factor,
                             FileFormatConfig::Text(_) => config.text_inflation_factor,
+                            FileFormatConfig::ArrowIpc(_) => config.arrow_ipc_inflation_factor,
                             FileFormatConfig::Warc(_) => {
                                 if self.is_gzipped() {
                                     5.0

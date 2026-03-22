@@ -1,0 +1,26 @@
+[dependencies]
+arrow-array = {workspace = true}
+arrow-ipc = {workspace = true}
+arrow-schema = {workspace = true}
+common-error = {path = "../common/error", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
+daft-schema = {path = "../daft-schema", default-features = false}
+futures = {workspace = true}
+snafu = {workspace = true}
+tokio = {workspace = true}
+tokio-stream = {workspace = true}
+bytes = {workspace = true}
+flatbuffers = "*"
+
+# O_DIRECT on Linux
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = {workspace = true}
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-ipc"
+version = {workspace = true}

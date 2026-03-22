@@ -123,6 +123,7 @@ pub struct DaftExecutionConfig {
     pub csv_inflation_factor: f64,
     pub json_target_filesize: usize,
     pub json_inflation_factor: f64,
+    pub arrow_ipc_inflation_factor: f64,
     pub text_inflation_factor: f64,
     pub shuffle_aggregation_default_partitions: usize,
     pub partial_aggregation_threshold: usize,
@@ -169,6 +170,7 @@ impl Default for DaftExecutionConfig {
             csv_inflation_factor: 0.5,
             json_target_filesize: 512 * 1024 * 1024, // 512MB
             json_inflation_factor: 0.25,
+            arrow_ipc_inflation_factor: 2.0,
             text_inflation_factor: 1.0,
             shuffle_aggregation_default_partitions: 200,
             partial_aggregation_threshold: 10000,
@@ -200,6 +202,7 @@ impl DaftExecutionConfig {
     const ENV_PARQUET_INFLATION_FACTOR: &'static str = "DAFT_PARQUET_INFLATION_FACTOR";
     const ENV_CSV_INFLATION_FACTOR: &'static str = "DAFT_CSV_INFLATION_FACTOR";
     const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
+    const ENV_ARROW_IPC_INFLATION_FACTOR: &'static str = "DAFT_ARROW_IPC_INFLATION_FACTOR";
     const ENV_TEXT_INFLATION_FACTOR: &'static str = "DAFT_TEXT_INFLATION_FACTOR";
     const ENV_DAFT_MAINTAIN_ORDER: &'static str = "DAFT_MAINTAIN_ORDER";
 
@@ -259,6 +262,13 @@ impl DaftExecutionConfig {
             parse_number_from_env(Self::ENV_JSON_INFLATION_FACTOR, cfg.json_inflation_factor)
         {
             cfg.json_inflation_factor = val;
+        }
+
+        if let Some(val) = parse_number_from_env(
+            Self::ENV_ARROW_IPC_INFLATION_FACTOR,
+            cfg.arrow_ipc_inflation_factor,
+        ) {
+            cfg.arrow_ipc_inflation_factor = val;
         }
 
         if let Some(val) =

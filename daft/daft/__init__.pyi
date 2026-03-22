@@ -237,6 +237,7 @@ class FileFormat(Enum):
     Parquet = 1
     Csv = 2
     Json = 3
+    ArrowIpc = 6
 
     def ext(self) -> str: ...
 
@@ -337,10 +338,22 @@ class TextSourceConfig:
         chunk_size: int | None,
     ): ...
 
+class ArrowIpcSourceConfig:
+    """Configuration of an Arrow IPC file data source (Apache Arrow IPC file format)."""
+
+    def __init__(self) -> None: ...
+
 class FileFormatConfig:
     """Configuration for parsing a particular file format (Parquet, CSV, JSON)."""
 
-    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | WarcSourceConfig
+    config: (
+        ParquetSourceConfig
+        | CsvSourceConfig
+        | JsonSourceConfig
+        | WarcSourceConfig
+        | TextSourceConfig
+        | ArrowIpcSourceConfig
+    )
 
     @staticmethod
     def from_parquet_config(config: ParquetSourceConfig) -> FileFormatConfig:
@@ -365,6 +378,11 @@ class FileFormatConfig:
     @staticmethod
     def from_text_config(config: TextSourceConfig) -> FileFormatConfig:
         """Create a Text file format config."""
+        ...
+
+    @staticmethod
+    def from_arrow_ipc_config(config: ArrowIpcSourceConfig) -> FileFormatConfig:
+        """Create an Arrow IPC file format config."""
         ...
 
     def file_format(self) -> FileFormat:
@@ -2252,6 +2270,7 @@ class PyDaftExecutionConfig:
         csv_inflation_factor: float | None = None,
         json_target_filesize: int | None = None,
         json_inflation_factor: float | None = None,
+        arrow_ipc_inflation_factor: float | None = None,
         text_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
         partial_aggregation_threshold: int | None = None,
@@ -2303,6 +2322,8 @@ class PyDaftExecutionConfig:
     def json_target_filesize(self) -> int: ...
     @property
     def json_inflation_factor(self) -> float: ...
+    @property
+    def arrow_ipc_inflation_factor(self) -> float: ...
     @property
     def text_inflation_factor(self) -> float: ...
     @property
