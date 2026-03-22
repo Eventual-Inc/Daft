@@ -94,6 +94,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.window_partition_and_dynamic_frame_params.clone();

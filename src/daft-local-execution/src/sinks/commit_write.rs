@@ -63,6 +63,7 @@ impl BlockingSink for CommitWriteSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         state.append(input.record_batches().iter().cloned());

@@ -67,6 +67,7 @@ impl BlockingSink for FlightShuffleWriteSink {
         &self,
         input: Arc<MicroPartition>,
         _state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let num_partitions = self.num_partitions;

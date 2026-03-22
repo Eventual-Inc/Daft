@@ -20,9 +20,7 @@ use pyo3::prelude::*;
 use rand::Rng;
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{MorselSizeRequirement, NodeName},
@@ -159,6 +157,7 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         &self,
         input: Arc<MicroPartition>,
         state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         #[cfg(feature = "python")]
@@ -225,13 +224,11 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
 
                     Ok((
                         state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
-                            MicroPartition::new_loaded(
-                                output_schema.clone(),
-                                Arc::new(output_batches),
-                                None,
-                            ),
-                        ))),
+                        Arc::new(MicroPartition::new_loaded(
+                            output_schema.clone(),
+                            Arc::new(output_batches),
+                            None,
+                        )),
                     ))
                 },
                 Span::current(),

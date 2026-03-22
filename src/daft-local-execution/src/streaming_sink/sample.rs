@@ -259,6 +259,7 @@ impl StreamingSink for SampleSink {
         &self,
         input: Arc<MicroPartition>,
         state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self> {
         let method = self.params.sampling_method;

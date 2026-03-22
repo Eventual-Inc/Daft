@@ -57,6 +57,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self> {
         let params = self.params.clone();

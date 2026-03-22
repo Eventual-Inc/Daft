@@ -86,6 +86,7 @@ impl BlockingSink for TopNSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.params.clone();

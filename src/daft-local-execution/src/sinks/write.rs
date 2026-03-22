@@ -19,7 +19,7 @@ use super::blocking_sink::{
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
-struct WriteStats {
+pub(crate) struct WriteStats {
     duration_us: Counter,
     rows_in: Counter,
     rows_written: Counter,
@@ -29,7 +29,16 @@ struct WriteStats {
 }
 
 impl WriteStats {
-    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+    fn add_write_result(&self, write_result: WriteResult) {
+        self.rows_written
+            .add(write_result.rows_written as u64, self.node_kv.as_slice());
+        self.bytes_written
+            .add(write_result.bytes_written as u64, self.node_kv.as_slice());
+    }
+}
+
+impl RuntimeStats for WriteStats {
+    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
         let node_kv = node_info.to_key_values();
 
         Self {
@@ -48,21 +57,6 @@ impl WriteStats {
 
             node_kv,
         }
-    }
-}
-
-impl WriteStats {
-    fn add_write_result(&self, write_result: WriteResult) {
-        self.rows_written
-            .add(write_result.rows_written as u64, self.node_kv.as_slice());
-        self.bytes_written
-            .add(write_result.bytes_written as u64, self.node_kv.as_slice());
-    }
-}
-
-impl RuntimeStats for WriteStats {
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
-        self
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
@@ -86,7 +80,7 @@ impl RuntimeStats for WriteStats {
     // so there's no benefit to adding it in runtime stats as it is not real time.
     fn add_rows_out(&self, _rows: u64) {}
 
-    fn add_cpu_us(&self, cpu_us: u64) {
+    fn add_duration_us(&self, cpu_us: u64) {
         self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
@@ -146,27 +140,21 @@ impl WriteSink {
 
 impl BlockingSink for WriteSink {
     type State = WriteState;
+    type Stats = WriteStats;
 
     #[instrument(skip_all, name = "WriteSink::sink")]
     fn sink(
         &self,
         input: Arc<MicroPartition>,
         mut state: Self::State,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
-        let builder = spawner.runtime_stats.clone();
-
         spawner
             .spawn(
                 async move {
                     let write_result = state.writer.write(input).await?;
-
-                    builder
-                        .as_any_arc()
-                        .downcast_ref::<WriteStats>()
-                        .expect("WriteStats should be the additional stats builder")
-                        .add_write_result(write_result);
-
+                    runtime_stats.add_write_result(write_result);
                     Ok(state)
                 },
                 Span::current(),
@@ -224,10 +212,6 @@ impl BlockingSink for WriteSink {
     fn make_state(&self) -> DaftResult<Self::State> {
         let writer = self.writer_factory.create_writer(0, None)?;
         Ok(WriteState::new(writer))
-    }
-
-    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
-        Arc::new(WriteStats::new(meter, node_info))
     }
 
     fn multiline_display(&self) -> Vec<String> {

@@ -59,6 +59,7 @@ impl BlockingSink for RepartitionSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let repartition_spec = self.repartition_spec.clone();

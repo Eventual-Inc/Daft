@@ -75,6 +75,7 @@ impl BlockingSink for WindowOrderByOnlySink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let sink_name = self.name().to_string();

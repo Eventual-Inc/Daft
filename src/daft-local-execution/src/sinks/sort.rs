@@ -66,6 +66,7 @@ impl BlockingSink for SortSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         state.push(input);

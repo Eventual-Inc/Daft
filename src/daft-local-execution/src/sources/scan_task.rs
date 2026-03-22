@@ -28,7 +28,7 @@ use crate::{
 };
 
 pub struct ScanTaskSource {
-    receiver: Option<UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>>,
+    receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
     source_config: Option<Arc<SourceConfig>>,
     pushdowns: Pushdowns,
     schema: SchemaRef,
@@ -50,7 +50,7 @@ impl ScanTaskSource {
             num_cpus
         };
         Self {
-            receiver: Some(receiver),
+            receiver,
             source_config,
             pushdowns,
             schema,
@@ -59,7 +59,7 @@ impl ScanTaskSource {
     }
 
     fn spawn_scan_task_processor(
-        &self,
+        num_parallel_tasks: usize,
         mut receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
         output_sender: Sender<Arc<MicroPartition>>,
         io_stats: IOStatsRef,
@@ -68,7 +68,6 @@ impl ScanTaskSource {
         maintain_order: bool,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
-        let num_parallel_tasks = self.num_parallel_tasks;
 
         // When maintain_order is true, spawn flattener outside so it drains stream outputs in order.
         let mut flattener_state = if maintain_order {
@@ -182,15 +181,17 @@ impl ScanTaskSource {
 impl Source for ScanTaskSource {
     #[instrument(name = "ScanTaskSource::get_data", level = "info", skip_all)]
     fn get_data(
-        &mut self,
+        self: Box<Self>,
         maintain_order: bool,
         io_stats: IOStatsRef,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
-        let input_receiver = self.receiver.take().expect("Receiver not found");
+        let input_receiver = self.receiver;
+        let num_parallel_tasks = self.num_parallel_tasks;
 
-        let processor_task = self.spawn_scan_task_processor(
+        let processor_task = Self::spawn_scan_task_processor(
+            num_parallel_tasks,
             input_receiver,
             output_sender,
             io_stats,

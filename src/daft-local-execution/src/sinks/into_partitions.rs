@@ -58,6 +58,7 @@ impl BlockingSink for IntoPartitionsSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         state.push(input);
@@ -98,8 +99,7 @@ impl BlockingSink for IntoPartitionsSink {
                             outputs.push(Arc::new(sliced_table));
                         } else {
                             // Empty partition
-                            let mp =
-                                MicroPartition::new_loaded(schema.clone(), Arc::new(vec![]), None);
+                            let mp = MicroPartition::empty(Some(schema.clone()));
                             outputs.push(Arc::new(mp));
                         }
                     }

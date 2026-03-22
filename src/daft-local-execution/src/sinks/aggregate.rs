@@ -84,6 +84,7 @@ impl BlockingSink for AggregateSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.agg_sink_params.clone();

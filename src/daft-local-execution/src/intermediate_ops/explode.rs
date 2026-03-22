@@ -14,9 +14,7 @@ use itertools::Itertools;
 use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 pub struct ExplodeStats {
@@ -26,8 +24,8 @@ pub struct ExplodeStats {
     node_kv: Vec<KeyValue>,
 }
 
-impl ExplodeStats {
-    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+impl RuntimeStats for ExplodeStats {
+    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
         let node_kv = node_info.to_key_values();
 
         Self {
@@ -36,12 +34,6 @@ impl ExplodeStats {
             rows_out: meter.rows_out_metric(),
             node_kv,
         }
-    }
-}
-
-impl RuntimeStats for ExplodeStats {
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
-        self
     }
 
     fn build_snapshot(&self, ordering: std::sync::atomic::Ordering) -> StatSnapshot {
@@ -71,7 +63,7 @@ impl RuntimeStats for ExplodeStats {
         self.rows_out.add(rows, self.node_kv.as_slice());
     }
 
-    fn add_cpu_us(&self, cpu_us: u64) {
+    fn add_duration_us(&self, cpu_us: u64) {
         self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
@@ -106,12 +98,14 @@ impl ExplodeOperator {
 
 impl IntermediateOperator for ExplodeOperator {
     type State = ();
+    type Stats = ExplodeStats;
     type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "ExplodeOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
         state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         let to_explode = self.to_explode.clone();
@@ -120,10 +114,7 @@ impl IntermediateOperator for ExplodeOperator {
             .spawn(
                 async move {
                     let out = input.explode(&to_explode, index_column.as_deref())?;
-                    Ok((
-                        state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                    ))
+                    Ok((state, Arc::new(out)))
                 },
                 Span::current(),
             )
@@ -151,9 +142,6 @@ impl IntermediateOperator for ExplodeOperator {
         NodeType::Explode
     }
 
-    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
-        Arc::new(ExplodeStats::new(meter, node_info))
-    }
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
             self.morsel_size_requirement().unwrap_or_default(),

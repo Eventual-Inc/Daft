@@ -7,9 +7,7 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 struct UnpivotParams {
@@ -48,6 +46,7 @@ impl IntermediateOperator for UnpivotOperator {
         &self,
         input: Arc<MicroPartition>,
         state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         let params = self.params.clone();
@@ -60,10 +59,7 @@ impl IntermediateOperator for UnpivotOperator {
                         &params.variable_name,
                         &params.value_name,
                     )?;
-                    Ok((
-                        state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                    ))
+                    Ok((state, Arc::new(out)))
                 },
                 Span::current(),
             )

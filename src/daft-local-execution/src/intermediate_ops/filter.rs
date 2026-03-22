@@ -11,9 +11,7 @@ use daft_micropartition::MicroPartition;
 use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 pub struct FilterStats {
@@ -25,18 +23,6 @@ pub struct FilterStats {
 }
 
 impl FilterStats {
-    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
-        let node_kv = node_info.to_key_values();
-
-        Self {
-            duration_us: meter.duration_us_metric(),
-            rows_in: meter.rows_in_metric(),
-            rows_out: meter.rows_out_metric(),
-            selectivity: meter.f64_gauge("selectivity"),
-            node_kv,
-        }
-    }
-
     fn update_selectivity(&self, rows_in: u64, rows_out: u64) {
         let selectivity = if rows_in == 0 {
             100.0
@@ -49,8 +35,16 @@ impl FilterStats {
 }
 
 impl RuntimeStats for FilterStats {
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
-        self
+    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = node_info.to_key_values();
+
+        Self {
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
+            selectivity: meter.f64_gauge("selectivity"),
+            node_kv,
+        }
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
@@ -77,7 +71,7 @@ impl RuntimeStats for FilterStats {
         self.update_selectivity(self.rows_in.load(Ordering::Relaxed), rows_out);
     }
 
-    fn add_cpu_us(&self, cpu_us: u64) {
+    fn add_duration_us(&self, cpu_us: u64) {
         self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
@@ -94,12 +88,14 @@ impl FilterOperator {
 
 impl IntermediateOperator for FilterOperator {
     type State = ();
+    type Stats = FilterStats;
     type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "FilterOperator::execute")]
     fn execute(
         &self,
         input: Arc<MicroPartition>,
         state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         let predicate = self.predicate.clone();
@@ -107,10 +103,7 @@ impl IntermediateOperator for FilterOperator {
             .spawn(
                 async move {
                     let out = input.filter(&[predicate])?;
-                    Ok((
-                        state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                    ))
+                    Ok((state, Arc::new(out)))
                 },
                 Span::current(),
             )
@@ -127,10 +120,6 @@ impl IntermediateOperator for FilterOperator {
 
     fn op_type(&self) -> NodeType {
         NodeType::Filter
-    }
-
-    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
-        Arc::new(FilterStats::new(meter, node_info))
     }
 
     fn make_state(&self) -> Self::State {}

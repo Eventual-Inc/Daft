@@ -20,7 +20,7 @@ use crate::{
 };
 
 pub struct FlightShuffleReadSource {
-    receiver: Option<UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>>,
+    receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
     schema: SchemaRef,
     num_parallel_tasks: usize,
 }
@@ -38,20 +38,19 @@ impl FlightShuffleReadSource {
             num_cpus
         };
         Self {
-            receiver: Some(receiver),
+            receiver,
             schema,
             num_parallel_tasks,
         }
     }
 
     fn spawn_flight_shuffle_processor(
-        &self,
+        num_parallel_tasks: usize,
         mut receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
         output_sender: Sender<Arc<MicroPartition>>,
         schema: SchemaRef,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
-        let num_parallel_tasks = self.num_parallel_tasks;
 
         io_runtime.spawn(async move {
             let mut client_manager = FlightClientManager::new();
@@ -150,16 +149,21 @@ impl Source for FlightShuffleReadSource {
 
     #[instrument(skip_all, name = "FlightShuffleReadSource::get_data")]
     fn get_data(
-        &mut self,
+        self: Box<Self>,
         _maintain_order: bool,
         _io_stats: IOStatsRef,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
-        let input_receiver = self.receiver.take().expect("Receiver not found");
+        let input_receiver = self.receiver;
+        let num_parallel_tasks = self.num_parallel_tasks;
 
-        let processor_task =
-            self.spawn_flight_shuffle_processor(input_receiver, output_sender, self.schema.clone());
+        let processor_task = Self::spawn_flight_shuffle_processor(
+            num_parallel_tasks,
+            input_receiver,
+            output_sender,
+            self.schema.clone(),
+        );
 
         let result_stream = output_receiver.into_stream().map(Ok);
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));

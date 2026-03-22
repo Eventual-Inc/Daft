@@ -85,6 +85,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.window_partition_and_order_by_params.clone();

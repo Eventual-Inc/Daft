@@ -136,7 +136,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
                 // Branch 1: Join completed task (only if tasks exist)
                 Some(result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
                     let BuildTaskResult { state, elapsed } = result??;
-                    ctx.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+                    ctx.runtime_stats.add_duration_us(elapsed.as_micros() as u64);
 
                     // Return state
                     ctx.build_state = Some(state);
@@ -483,19 +483,16 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         let build_task_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("JoinNode::Build"),
         );
         let probe_task_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("JoinNode::Probe"),
         );
         let finalize_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("JoinNode::FinalizeProbe"),
         );
 

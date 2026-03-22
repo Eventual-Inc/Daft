@@ -317,6 +317,7 @@ impl BlockingSink for GroupedAggregateSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.grouped_aggregate_params.clone();

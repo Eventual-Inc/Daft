@@ -5,9 +5,7 @@ use common_metrics::ops::NodeType;
 use daft_micropartition::MicroPartition;
 use tracing::Span;
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{MorselSizeRequirement, NodeName},
@@ -33,6 +31,7 @@ impl IntermediateOperator for IntoBatchesOperator {
         &self,
         input: Arc<MicroPartition>,
         state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         task_spawner
@@ -46,7 +45,7 @@ impl IntermediateOperator for IntoBatchesOperator {
                         )),
                         None => Arc::new(MicroPartition::empty(Some(input.schema()))),
                     };
-                    Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(out))))
+                    Ok((state, out))
                 },
                 Span::current(),
             )

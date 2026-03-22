@@ -366,6 +366,7 @@ impl StreamingSink for VLLMSink {
         &self,
         input: Arc<MicroPartition>,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self> {
         let this = self.clone();

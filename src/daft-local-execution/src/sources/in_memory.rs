@@ -19,7 +19,7 @@ use crate::{
 };
 
 pub struct InMemorySource {
-    receiver: Option<UnboundedReceiver<(InputId, Vec<MicroPartitionRef>)>>,
+    receiver: UnboundedReceiver<(InputId, Vec<MicroPartitionRef>)>,
     schema: SchemaRef,
     size_bytes: usize,
 }
@@ -31,14 +31,13 @@ impl InMemorySource {
         size_bytes: usize,
     ) -> Self {
         Self {
-            receiver: Some(receiver),
+            receiver,
             schema,
             size_bytes,
         }
     }
 
     fn spawn_partition_set_processor(
-        &self,
         mut receiver: UnboundedReceiver<(InputId, Vec<MicroPartitionRef>)>,
         output_sender: Sender<Arc<MicroPartition>>,
         schema: SchemaRef,
@@ -106,17 +105,17 @@ async fn forward_partition_batch(
 impl Source for InMemorySource {
     #[instrument(name = "InMemorySource::get_data", level = "info", skip_all)]
     fn get_data(
-        &mut self,
+        self: Box<Self>,
         _maintain_order: bool,
         io_stats: IOStatsRef,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         io_stats.mark_bytes_read(self.size_bytes);
         let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
-        let input_receiver = self.receiver.take().expect("Receiver not found");
+        let input_receiver = self.receiver;
 
         let processor_task =
-            self.spawn_partition_set_processor(input_receiver, output_sender, self.schema.clone());
+            Self::spawn_partition_set_processor(input_receiver, output_sender, self.schema.clone());
 
         let result_stream = output_receiver.into_stream().map(Ok);
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));

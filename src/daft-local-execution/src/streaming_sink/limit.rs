@@ -53,6 +53,7 @@ impl StreamingSink for LimitSink {
         &self,
         mut input: Arc<MicroPartition>,
         mut state: LimitSinkState,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self> {
         let mut input_num_rows = input.len();
