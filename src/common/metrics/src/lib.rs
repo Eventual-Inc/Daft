@@ -123,6 +123,11 @@ pub const ROWS_IN_KEY: &str = "rows.in";
 pub const ROWS_OUT_KEY: &str = "rows.out";
 pub const ROWS_WRITTEN_KEY: &str = "rows.written";
 
+// Join metrics
+pub const JOIN_BUILD_ROWS_INSERTED_KEY: &str = "rows.join.build_inserted";
+pub const JOIN_PROBE_ROWS_IN_KEY: &str = "rows.join.probe_in";
+pub const JOIN_PROBE_ROWS_OUT_KEY: &str = "rows.join.probe_out";
+
 // Task metrics
 pub const TASK_ACTIVE_KEY: &str = "task.active";
 pub const TASK_COMPLETED_KEY: &str = "task.completed";
@@ -141,11 +146,18 @@ pub const ATTR_NODE_ID: &str = "node.id";
 pub const ATTR_NODE_TYPE: &str = "node.type";
 pub const ATTR_NODE_PHASE: &str = "node.phase";
 
+// Process-level metrics
+pub const PROCESS_JEMALLOC_ALLOCATED_KEY: &str = "process.memory.jemalloc.allocated";
+pub const PROCESS_JEMALLOC_RESIDENT_KEY: &str = "process.memory.jemalloc.resident";
+pub const PROCESS_RSS_KEY: &str = "process.memory.rss";
+pub const PROCESS_CPU_PERCENT_KEY: &str = "process.cpu.percent";
+
 // Units (UCUM)
 pub const UNIT_ROWS: &str = "{row}";
 pub const UNIT_BYTES: &str = "By";
 pub const UNIT_MICROSECONDS: &str = "us";
 pub const UNIT_TASKS: &str = "{task}";
+pub const UNIT_PERCENT: &str = "%";
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {

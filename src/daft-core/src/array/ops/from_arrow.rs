@@ -702,7 +702,7 @@ mod tests {
     #[test]
     fn test_arrow_roundtrip_logical_fixed_shape_tensor() -> DaftResult<()> {
         let shape = vec![3u64, 224u64, 224u64];
-        let size: usize = shape.clone().iter().map(|v| *v as usize).product();
+        let size: usize = shape.iter().map(|v| *v as usize).product();
 
         let data = Series::from_literals(vec![Literal::Float32(0.0f32); size])?;
 

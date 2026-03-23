@@ -485,7 +485,7 @@ mod tests {
             shuffle_cache
                 .file_paths_per_partition
                 .iter()
-                .all(|paths| paths.len() == 0),
+                .all(|paths| paths.is_empty()),
             "All partitions should have no file paths: {:?}",
             shuffle_cache.file_paths_per_partition
         );

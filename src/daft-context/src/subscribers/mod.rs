@@ -57,6 +57,11 @@ pub trait Subscriber: Send + Sync + std::fmt::Debug + 'static {
     }
     async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()>;
     async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()>;
+    /// Called with process-level stats (memory, CPU) on each tick.
+    /// Default no-op; only subscribers interested in process stats need to override.
+    async fn on_process_stats(&self, _query_id: QueryID, _stats: Stats) -> DaftResult<()> {
+        Ok(())
+    }
     async fn on_exec_end_with_id(&self, query_id: QueryID, _execution_id: &str) -> DaftResult<()> {
         self.on_exec_end(query_id).await
     }

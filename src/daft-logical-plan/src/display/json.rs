@@ -378,7 +378,7 @@ mod tests {
             }
          "#;
 
-        let expected: serde_json::Value = serde_json::from_str(&expected).unwrap();
+        let expected: serde_json::Value = serde_json::from_str(expected).unwrap();
         let actual: serde_json::Value = serde_json::from_str(&output).unwrap();
 
         assert_eq!(actual, expected);

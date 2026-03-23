@@ -217,6 +217,12 @@ class EventLogSubscriber(Subscriber):
                 },
             )
 
+    def on_process_stats(self, query_id: str, stats: Mapping[str, tuple[StatType, Any]]) -> None:
+        metrics: dict[str, Any] = {}
+        for name, (_stat_type, value) in stats.items():
+            metrics[name] = value
+        self._write_event(query_id, "process_stats", {"metrics": metrics})
+
     def on_exec_operator_end(self, query_id: str, node_id: int) -> None:
         start = self._operator_starts.pop((query_id, node_id), None)
         duration_ms = round(_mono_ms() - start) if start is not None else None
