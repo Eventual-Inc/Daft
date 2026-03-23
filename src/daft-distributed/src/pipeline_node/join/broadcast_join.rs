@@ -1,8 +1,12 @@
-use std::sync::{Arc, atomic::Ordering};
+use std::{
+    borrow::Cow,
+    sync::{Arc, atomic::Ordering},
+};
 
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, Meter, StatSnapshot,
+    Counter, JOIN_BUILD_ROWS_INSERTED_KEY, JOIN_PROBE_ROWS_IN_KEY, JOIN_PROBE_ROWS_OUT_KEY, Meter,
+    StatSnapshot, UNIT_ROWS,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::JoinSnapshot,
 };
@@ -39,9 +43,21 @@ impl BroadcastJoinStats {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
         Self {
             duration_us: meter.duration_us_metric(),
-            build_rows_inserted: meter.u64_counter("build rows inserted"),
-            probe_rows_in: meter.u64_counter("probe rows in"),
-            probe_rows_out: meter.u64_counter("probe rows out"),
+            build_rows_inserted: meter.u64_counter_with_desc_and_unit(
+                JOIN_BUILD_ROWS_INSERTED_KEY,
+                None,
+                Some(Cow::Borrowed(UNIT_ROWS)),
+            ),
+            probe_rows_in: meter.u64_counter_with_desc_and_unit(
+                JOIN_PROBE_ROWS_IN_KEY,
+                None,
+                Some(Cow::Borrowed(UNIT_ROWS)),
+            ),
+            probe_rows_out: meter.u64_counter_with_desc_and_unit(
+                JOIN_PROBE_ROWS_OUT_KEY,
+                None,
+                Some(Cow::Borrowed(UNIT_ROWS)),
+            ),
             node_kv: key_values_from_context(context),
         }
     }
