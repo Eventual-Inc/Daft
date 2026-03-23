@@ -224,3 +224,78 @@ def test_read_paimon_pk_table_deduplication(pk_table):
     ]
     assert len(id1_row) == 1
     assert id1_row[0][1] == "new_a"
+
+
+# ---------------------------------------------------------------------------
+# Filter pushdown
+# ---------------------------------------------------------------------------
+
+
+def test_read_paimon_partition_filter(append_only_table):
+    """Partition filter should prune partitions at scan time."""
+    table, _ = append_only_table
+    data = pa.table(
+        {
+            "id": pa.array([1, 2, 3, 4], pa.int64()),
+            "name": pa.array(["a", "b", "c", "d"], pa.string()),
+            "value": pa.array([1.0, 2.0, 3.0, 4.0], pa.float64()),
+            "dt": pa.array(["2024-01-01", "2024-01-01", "2024-01-02", "2024-01-02"], pa.string()),
+        }
+    )
+    _write_to_paimon(table, data)
+
+    # Filter on partition column
+    df = daft.read_paimon(table).where(daft.col("dt") == "2024-01-01")
+    result = df.sort("id").to_arrow()
+
+    assert result.num_rows == 2
+    assert result.column("id").to_pylist() == [1, 2]
+    assert all(dt == "2024-01-01" for dt in result.column("dt").to_pylist())
+
+
+def test_read_paimon_row_filter(append_only_table):
+    """Row-level filter should be applied after reading data."""
+    table, _ = append_only_table
+    data = pa.table(
+        {
+            "id": pa.array([1, 2, 3, 4], pa.int64()),
+            "name": pa.array(["alice", "bob", "charlie", "dave"], pa.string()),
+            "value": pa.array([10.0, 20.0, 30.0, 40.0], pa.float64()),
+            "dt": pa.array(["2024-01-01", "2024-01-01", "2024-01-01", "2024-01-01"], pa.string()),
+        }
+    )
+    _write_to_paimon(table, data)
+
+    # Filter on non-partition column
+    df = daft.read_paimon(table).where(daft.col("id") > 2)
+    result = df.sort("id").to_arrow()
+
+    assert result.num_rows == 2
+    assert result.column("id").to_pylist() == [3, 4]
+
+
+def test_read_paimon_combined_filter(append_only_table):
+    """Combined partition + row filter should work together."""
+    table, _ = append_only_table
+    data = pa.table(
+        {
+            "id": pa.array([1, 2, 3, 4, 5, 6], pa.int64()),
+            "name": pa.array(["a", "b", "c", "d", "e", "f"], pa.string()),
+            "value": pa.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], pa.float64()),
+            "dt": pa.array(
+                ["2024-01-01", "2024-01-01", "2024-01-02", "2024-01-02", "2024-01-03", "2024-01-03"],
+                pa.string(),
+            ),
+        }
+    )
+    _write_to_paimon(table, data)
+
+    # Filter on both partition and non-partition columns
+    df = daft.read_paimon(table).where(
+        (daft.col("dt") == "2024-01-01") & (daft.col("id") == 2)
+    )
+    result = df.to_arrow()
+
+    assert result.num_rows == 1
+    assert result.column("id").to_pylist() == [2]
+    assert result.column("dt").to_pylist() == ["2024-01-01"]
