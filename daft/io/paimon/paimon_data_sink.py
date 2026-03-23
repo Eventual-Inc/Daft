@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa  # noqa: TID253
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from pypaimon.table.file_store_table import FileStoreTable
 
 
-class PaimonDataSink(DataSink[list]):
+class PaimonDataSink(DataSink[list[Any]]):
     """DataSink for writing data to an Apache Paimon table.
 
     Delegates all file I/O and commit logic to pypaimon's BatchTableWrite /
@@ -27,9 +27,7 @@ class PaimonDataSink(DataSink[list]):
 
     def __init__(self, table: FileStoreTable, mode: str = "append") -> None:
         if mode not in ("append", "overwrite"):
-            raise ValueError(
-                f"Only 'append' or 'overwrite' mode is supported for write_paimon, got: {mode!r}"
-            )
+            raise ValueError(f"Only 'append' or 'overwrite' mode is supported for write_paimon, got: {mode!r}")
         self._table = table
         self._mode = mode
 
@@ -53,7 +51,7 @@ class PaimonDataSink(DataSink[list]):
             ]
         )
 
-    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[list]]:
+    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[list[Any]]]:
         table_write = self._write_builder.new_write()
 
         # Lazily compute which fields need type casting on the first batch.
@@ -89,7 +87,7 @@ class PaimonDataSink(DataSink[list]):
             rows_written=total_rows,
         )
 
-    def finalize(self, write_results: list[WriteResult[list]]) -> MicroPartition:
+    def finalize(self, write_results: list[WriteResult[list[Any]]]) -> MicroPartition:
         all_commit_messages = [msg for wr in write_results for msg in wr.result]
 
         table_commit = self._write_builder.new_commit()

@@ -4,6 +4,7 @@ All tests run without Docker or external services. Data written via Daft is
 verified by reading back with both daft.read_paimon() and pypaimon's native
 reader to ensure correctness.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -64,12 +65,8 @@ def test_write_paimon_append_returns_summary(append_only_table):
 def test_write_paimon_append_multiple_times(append_only_table):
     """Multiple append writes should accumulate rows."""
     table, _ = append_only_table
-    df1 = daft.from_pydict(
-        {"id": [1], "name": ["a"], "value": [1.0], "dt": ["2024-01-01"]}
-    )
-    df2 = daft.from_pydict(
-        {"id": [2], "name": ["b"], "value": [2.0], "dt": ["2024-01-02"]}
-    )
+    df1 = daft.from_pydict({"id": [1], "name": ["a"], "value": [1.0], "dt": ["2024-01-01"]})
+    df2 = daft.from_pydict({"id": [2], "name": ["b"], "value": [2.0], "dt": ["2024-01-02"]})
     df1.write_paimon(table)
     df2.write_paimon(table)
 
@@ -116,9 +113,7 @@ def test_write_paimon_overwrite_full(append_only_table):
     )
     initial.write_paimon(table)
 
-    replacement = daft.from_pydict(
-        {"id": [100], "name": ["z"], "value": [99.0], "dt": ["2024-06-01"]}
-    )
+    replacement = daft.from_pydict({"id": [100], "name": ["z"], "value": [99.0], "dt": ["2024-06-01"]})
     result = replacement.write_paimon(table, mode="overwrite")
     result_dict = result.to_pydict()
     assert all(op == "OVERWRITE" for op in result_dict["operation"])

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from pypaimon.table.table import Table as PaimonTable
 
 
-def _convert_paimon_catalog_options_to_io_config(catalog_options: dict) -> IOConfig | None:
+def _convert_paimon_catalog_options_to_io_config(catalog_options: dict[str, str]) -> IOConfig | None:
     """Convert pypaimon catalog options to Daft IOConfig.
 
     pypaimon supports only S3-like (s3://, s3a://, s3n://, oss://), HDFS, and local (file://).
@@ -63,7 +63,7 @@ def _convert_paimon_catalog_options_to_io_config(catalog_options: dict) -> IOCon
     # S3-compatible (s3://, s3a://, s3n://)
     any_props_set = False
 
-    def get(key: str):
+    def get(key: str) -> str | None:
         nonlocal any_props_set
         val = catalog_options.get(key)
         if val is not None:
@@ -120,11 +120,13 @@ def read_paimon(
 
         >>> from daft.io import S3Config, IOConfig
         >>> io_config = IOConfig(s3=S3Config(endpoint_url="http://oss-cn-hangzhou.aliyuncs.com"))
-        >>> catalog = pypaimon.CatalogFactory.create({
-        ...     "warehouse": "oss://my-bucket/warehouse",
-        ...     "fs.oss.accessKeyId": "...",
-        ...     "fs.oss.accessKeySecret": "...",
-        ... })
+        >>> catalog = pypaimon.CatalogFactory.create(
+        ...     {
+        ...         "warehouse": "oss://my-bucket/warehouse",
+        ...         "fs.oss.accessKeyId": "...",
+        ...         "fs.oss.accessKeySecret": "...",
+        ...     }
+        ... )
         >>> table = catalog.get_table("mydb.mytable")
         >>> df = daft.read_paimon(table, io_config=io_config)
         >>> df.show()
@@ -132,10 +134,7 @@ def read_paimon(
     try:
         import pypaimon  # noqa: F401
     except ImportError:
-        raise ImportError(
-            "pypaimon is required to use read_paimon. "
-            "Install it with: `pip install pypaimon`"
-        )
+        raise ImportError("pypaimon is required to use read_paimon. Install it with: `pip install pypaimon`")
 
     from daft.io.paimon.paimon_scan import PaimonScanOperator
 

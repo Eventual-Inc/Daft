@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import daft
@@ -36,7 +36,7 @@ def _paimon_read_split(
     table: FileStoreTable,
     split: Split,
     schema: Schema,
-) -> Iterator:
+) -> Iterator[Any]:
     """Fall-back reader for splits that cannot be handled by Daft's native Parquet reader.
 
     This includes:
@@ -67,7 +67,7 @@ class PaimonScanOperator(ScanOperator):
         self,
         table: FileStoreTable,
         storage_config: StorageConfig,
-        catalog_options: dict,
+        catalog_options: dict[str, str],
     ) -> None:
         super().__init__()
         self._table = table
@@ -75,6 +75,7 @@ class PaimonScanOperator(ScanOperator):
         self._catalog_options = catalog_options
 
         from pypaimon.schema.data_types import PyarrowFieldParser
+
         pa_schema = PyarrowFieldParser.from_paimon_schema(table.fields)
         self._schema = Schema.from_pyarrow_schema(pa_schema)
 
@@ -92,9 +93,7 @@ class PaimonScanOperator(ScanOperator):
 
         partition_key_names = set(table.partition_keys)
         self._partition_keys: list[PyPartitionField] = [
-            PyPartitionField(f._field)
-            for f in self._schema
-            if f.name in partition_key_names
+            PyPartitionField(f._field) for f in self._schema if f.name in partition_key_names
         ]
 
     def schema(self) -> Schema:
@@ -149,7 +148,7 @@ class PaimonScanOperator(ScanOperator):
 
         plan = read_builder.new_scan().plan()
 
-        pv_cache: dict[tuple, daft.recordbatch.RecordBatch | None] = {}
+        pv_cache: dict[tuple[Any, ...], daft.recordbatch.RecordBatch | None] = {}
 
         for split in plan.splits():
             # Native path: use Daft's Rust Parquet reader when:
@@ -160,7 +159,8 @@ class PaimonScanOperator(ScanOperator):
                     pv_key = tuple(sorted(split.partition.to_dict().items()))
                     if pv_key not in pv_cache:
                         pv_cache[pv_key] = self._build_partition_values(split)
-                    pv_recordbatch = pv_cache[pv_key]._recordbatch if pv_cache[pv_key] is not None else None
+                    pv = pv_cache[pv_key]
+                    pv_recordbatch = pv._recordbatch if pv is not None else None
                 else:
                     pv_recordbatch = None
                 for data_file in split.files:
@@ -213,13 +213,11 @@ class PaimonScanOperator(ScanOperator):
             return None
 
         partition_dict = split.partition.to_dict()
-        arrays: dict = {}
+        arrays: dict[str, daft.Series] = {}
         for pfield in self._table.partition_keys_fields:
             value = partition_dict.get(pfield.name)
             arrow_type = self._partition_field_arrow_types[pfield.name]
-            arrays[pfield.name] = daft.Series.from_arrow(
-                pa.array([value], type=arrow_type), name=pfield.name
-            )
+            arrays[pfield.name] = daft.Series.from_arrow(pa.array([value], type=arrow_type), name=pfield.name)
 
         if not arrays:
             return None

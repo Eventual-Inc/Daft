@@ -3,6 +3,7 @@
 All tests run without Docker or external services; pypaimon is used directly
 to create and populate test tables, then Daft's read_paimon() is validated.
 """
+
 from __future__ import annotations
 
 import pyarrow as pa
@@ -219,9 +220,7 @@ def test_read_paimon_pk_table_deduplication(pk_table):
 
     # After merge, id=1 should show the latest value
     assert result.num_rows == 2
-    id1_row = [
-        row for row in zip(result.column("id").to_pylist(), result.column("name").to_pylist()) if row[0] == 1
-    ]
+    id1_row = [row for row in zip(result.column("id").to_pylist(), result.column("name").to_pylist()) if row[0] == 1]
     assert len(id1_row) == 1
     assert id1_row[0][1] == "new_a"
 
@@ -291,9 +290,7 @@ def test_read_paimon_combined_filter(append_only_table):
     _write_to_paimon(table, data)
 
     # Filter on both partition and non-partition columns
-    df = daft.read_paimon(table).where(
-        (daft.col("dt") == "2024-01-01") & (daft.col("id") == 2)
-    )
+    df = daft.read_paimon(table).where((daft.col("dt") == "2024-01-01") & (daft.col("id") == 2))
     result = df.to_arrow()
 
     assert result.num_rows == 1
