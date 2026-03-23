@@ -2,7 +2,10 @@ use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend, ShuffleWriteBackend};
+use daft_local_plan::{
+    FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend,
+    ShuffleWriteBackend,
+};
 use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
@@ -117,7 +120,7 @@ impl FlightShuffleNode {
 
         for partition_idx in 0..self.num_partitions {
             let shuffle_read_plan = LocalPhysicalPlan::shuffle_read(
-                partition_idx,
+                self.context.node_id,
                 self.config.schema.clone(),
                 ShuffleReadBackend::Flight {
                     shuffle_id: self.shuffle_id,
@@ -132,7 +135,11 @@ impl FlightShuffleNode {
                 LocalNodeContext::new(Some(self.context.node_id as usize)),
             );
 
-            let task = SwordfishTaskBuilder::new(shuffle_read_plan, self.as_ref(), self.node_id());
+            let task = SwordfishTaskBuilder::new(shuffle_read_plan, self.as_ref(), self.node_id())
+                .with_flight_shuffle_reads(
+                    self.context.node_id,
+                    vec![FlightShuffleReadInput { partition_idx }],
+                );
 
             let _ = result_tx.send(task).await;
         }

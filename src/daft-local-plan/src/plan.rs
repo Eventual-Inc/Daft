@@ -999,14 +999,14 @@ impl LocalPhysicalPlan {
     }
 
     pub fn shuffle_read(
-        partition_idx: usize,
+        source_id: SourceId,
         schema: SchemaRef,
         backend: ShuffleReadBackend,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::ShuffleRead(ShuffleRead {
-            partition_idx,
+            source_id,
             schema,
             backend,
             stats_state,
@@ -2213,9 +2213,14 @@ pub struct ShuffleWrite {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ShuffleRead {
-    pub partition_idx: usize,
+    pub source_id: SourceId,
     pub schema: SchemaRef,
     pub backend: ShuffleReadBackend,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlightShuffleReadInput {
+    pub partition_idx: usize,
 }

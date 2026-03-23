@@ -16,12 +16,12 @@ use common_metrics::{
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, GlobScan, HashAggregate, HashJoin,
-    InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
-    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Sample,
-    ShuffleReadBackend, ShuffleWriteBackend, Sort, SortMergeJoin, SourceId, TopN, UDFProject,
-    UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
-    WindowPartitionAndOrderBy, WindowPartitionOnly,
+    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
+    HashAggregate, HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext,
+    LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
+    Sample, ShuffleReadBackend, ShuffleWriteBackend, Sort, SortMergeJoin, SourceId, TopN,
+    UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
+    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -1407,7 +1407,7 @@ fn physical_plan_to_pipeline(
             .boxed()
         }
         LocalPhysicalPlan::ShuffleRead(daft_local_plan::ShuffleRead {
-            partition_idx,
+            source_id,
             backend,
             schema,
             stats_state,
@@ -1417,11 +1417,14 @@ fn physical_plan_to_pipeline(
                 shuffle_id,
                 server_cache_mapping,
             } = backend;
+            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
+            input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
             let source = FlightShuffleReadSource::new(
+                rx,
                 *shuffle_id,
-                *partition_idx,
                 server_cache_mapping.clone(),
                 schema.clone(),
+                cfg,
             );
             SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
         }
