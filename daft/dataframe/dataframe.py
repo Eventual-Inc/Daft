@@ -1342,6 +1342,48 @@ class DataFrame:
         return df
 
     @DataframePublicAPI
+    def write_paimon(
+        self,
+        table: "pypaimon.table.Table",
+        mode: str = "append",
+    ) -> "DataFrame":
+        """Writes the DataFrame to an `Apache Paimon <https://paimon.apache.org/>`_ table,
+        returning a new DataFrame with the operations that occurred.
+
+        Args:
+            table (pypaimon.table.Table): Destination Paimon table obtained via
+                ``pypaimon.CatalogFactory.create(options).get_table(identifier)``.
+            mode (str, optional): Write mode – ``"append"`` adds new data,
+                ``"overwrite"`` replaces existing data. Defaults to ``"append"``.
+
+        Returns:
+            DataFrame: A summary DataFrame with columns ``operation``, ``rows``,
+            ``file_size``, and ``file_name`` describing each written file.
+
+        Note:
+            This call is **blocking** and will execute the DataFrame when called.
+
+        Examples:
+            >>> import pypaimon, daft
+            >>>
+            >>> catalog = pypaimon.CatalogFactory.create({"warehouse": "/tmp/warehouse"})
+            >>> table = catalog.get_table("mydb.mytable")  # doctest: +SKIP
+            >>> df = daft.from_pydict({"id": [1, 2, 3], "name": ["a", "b", "c"]})
+            >>> df.write_paimon(table)  # doctest: +SKIP
+        """
+        try:
+            import pypaimon  # noqa: F401
+        except ImportError:
+            raise ImportError(
+                "pypaimon is required to use write_paimon. "
+                "Install it with: pip install 'daft[paimon]' or pip install pypaimon"
+            )
+
+        from daft.io.paimon.paimon_data_sink import PaimonDataSink
+
+        return self.write_sink(PaimonDataSink(table, mode))
+
+    @DataframePublicAPI
     def write_deltalake(
         self,
         table: Union[str, pathlib.Path, "DataCatalogTable", "deltalake.DeltaTable", "UnityCatalogTable"],
