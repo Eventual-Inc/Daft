@@ -233,7 +233,7 @@ impl DaftScalarFunction for Greet {
     /// Use `.into()` to convert to/from arrow-rs FFI types.
     /// All data flows through Arrow arrays — no per-row Python overhead.
     fn call(&self, args: Vec<ArrowData>) -> DaftResult<ArrowData> {
-        let data = args.into_iter().next().unwrap();
+        let data = args.into_iter().next().ok_or_else(|| DaftError::TypeError("greet: expected 1 argument, got 0".into()))?;
         let ffi_array: arrow::ffi::FFI_ArrowArray = data.array.into();
         let ffi_schema: arrow::ffi::FFI_ArrowSchema = data.schema.into();
         let arrow_data = unsafe { arrow::ffi::from_ffi(ffi_array, &ffi_schema) }?;
