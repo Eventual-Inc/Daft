@@ -16,6 +16,7 @@ use crate::{
 };
 
 pub struct SQLModuleAggs;
+struct SQLMedian;
 
 impl SQLModule for SQLModuleAggs {
     fn register(parent: &mut SQLFunctions) {
@@ -29,7 +30,7 @@ impl SQLModule for SQLModuleAggs {
         parent.add_fn("avg", AggExpr::Mean(nil.clone()));
         parent.add_fn("mean", AggExpr::Mean(nil.clone()));
         parent.add_fn("percentile", AggExpr::Percentile(nil.clone(), float_nil));
-        parent.add_fn("median", AggExpr::Median(nil.clone()));
+        parent.add_fn("median", SQLMedian);
         parent.add_fn("min", AggExpr::Min(nil.clone()));
         parent.add_fn("max", AggExpr::Max(nil.clone()));
         parent.add_fn("bool_and", AggExpr::BoolAnd(nil.clone()));
@@ -64,7 +65,6 @@ impl SQLFunction for AggExpr {
             Self::Product(_) => static_docs::PRODUCT_DOCSTRING.to_string(),
             Self::Mean(_) => static_docs::AVG_DOCSTRING.replace("{}", alias),
             Self::Percentile(_, _) => static_docs::PERCENTILE_DOCSTRING.to_string(),
-            Self::Median(_) => static_docs::MEDIAN_DOCSTRING.to_string(),
             Self::Min(_) => static_docs::MIN_DOCSTRING.to_string(),
             Self::Max(_) => static_docs::MAX_DOCSTRING.to_string(),
             Self::Stddev(_, _) => static_docs::STDDEV_DOCSTRING.to_string(),
@@ -82,7 +82,6 @@ impl SQLFunction for AggExpr {
             | Self::Sum(_)
             | Self::Product(_)
             | Self::Mean(_)
-            | Self::Median(_)
             | Self::Min(_)
             | Self::Max(_)
             | Self::Stddev(_, _)
@@ -178,6 +177,22 @@ fn handle_percentile(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlanner
     Ok(input.percentile(percentage))
 }
 
+impl SQLFunction for SQLMedian {
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        ensure!(inputs.len() == 1, "median takes exactly one argument");
+        let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+        Ok(input.percentile(0.5))
+    }
+
+    fn docstrings(&self, _: &str) -> String {
+        static_docs::MEDIAN_DOCSTRING.to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input"]
+    }
+}
+
 fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
     match expr {
         AggExpr::Count(_, _) => unreachable!("count should be handled by by this point"),
@@ -202,10 +217,6 @@ fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             Ok(args[0].clone().mean())
         }
         AggExpr::Percentile(_, _) => unreachable!("percentile should be handled by this point"),
-        AggExpr::Median(_) => {
-            ensure!(args.len() == 1, "median takes exactly one argument");
-            Ok(args[0].clone().median())
-        }
         AggExpr::Stddev(_, ddof) => {
             ensure!(args.len() == 1, "stddev takes exactly one argument");
             Ok(args[0].clone().stddev(*ddof))
