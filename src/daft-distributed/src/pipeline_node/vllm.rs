@@ -55,10 +55,6 @@ impl VLLMNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     #[cfg(feature = "python")]
     async fn execution_loop(
         self: Arc<Self>,

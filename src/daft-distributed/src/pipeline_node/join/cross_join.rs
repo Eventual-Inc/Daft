@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    Meter,
+    ops::{NodeCategory, NodeType},
+};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
@@ -14,6 +17,7 @@ use crate::{
     },
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
+    statistics::stats::RuntimeStatsRef,
     utils::channel::{Sender, create_channel},
 };
 
@@ -56,10 +60,6 @@ impl CrossJoinNode {
             left_node,
             right_node,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop(
@@ -135,6 +135,10 @@ impl PipelineNodeImpl for CrossJoinNode {
 
     fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.left_node.clone(), self.right_node.clone()]
+    }
+
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(super::stats::BasicJoinStats::new(meter, self.context()))
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {

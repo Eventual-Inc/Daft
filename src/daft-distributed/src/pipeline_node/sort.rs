@@ -251,10 +251,6 @@ impl SortNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     async fn execution_loop(
         self: Arc<Self>,
         input_node: TaskBuilderStream,
