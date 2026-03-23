@@ -1152,6 +1152,7 @@ mod tests {
             let client = self.client.clone();
             let uris = self.uris.clone();
             // Try the best effort to clean up the object after the test.
+            #[allow(clippy::let_underscore_future)]
             let _ = Handle::current().spawn(async move {
                 for uri in uris {
                     let _ = client.delete(&uri, None).await;
@@ -1174,22 +1175,27 @@ mod tests {
         let access_key = env::var("TOS_ACCESS_KEY").ok();
         let secret_key = env::var("TOS_SECRET_KEY").ok();
 
-        if bucket.is_none() || access_key.is_none() || secret_key.is_none() {
-            None
-        } else {
+        if let Some(bucket) = bucket
+            && access_key.is_some()
+            && secret_key.is_some()
+        {
             Some((
                 TosConfig {
-                    region: Some(env::var("TOS_REGION").unwrap_or("cn-beijing".to_string())),
+                    region: Some(
+                        env::var("TOS_REGION").unwrap_or_else(|_| "cn-beijing".to_string()),
+                    ),
                     endpoint: Some(
                         env::var("TOS_ENDPOINT")
-                            .unwrap_or("https://tos-cn-beijing.volces.com".to_string()),
+                            .unwrap_or_else(|_| "https://tos-cn-beijing.volces.com".to_string()),
                     ),
                     access_key,
-                    secret_key: secret_key.map(|s| ObfuscatedString::from(s)),
+                    secret_key: secret_key.map(ObfuscatedString::from),
                     ..Default::default()
                 },
-                bucket.unwrap(),
+                bucket,
             ))
+        } else {
+            None
         }
     }
 
@@ -1257,7 +1263,7 @@ mod tests {
         let res = test_full_get(guard.client.clone(), &uri, &data).await;
 
         guard.cleanup().await;
-        res.unwrap()
+        res.unwrap();
     }
 
     #[tokio::test]
@@ -1371,7 +1377,7 @@ mod tests {
                 .contains("Your proposed upload is smaller than the minimum allowed size")
         );
 
-        guard.cleanup().await
+        guard.cleanup().await;
     }
 
     fn generate_test_object_prefix() -> String {
@@ -1389,7 +1395,7 @@ mod tests {
     }
 
     async fn build_client_guard(cfg: &TosConfig, uris: Vec<&str>) -> ClientGuard {
-        let client = TosSource::get_client(&cfg).await.unwrap();
-        ClientGuard::new(client, uris.iter().map(|s| s.to_string()).collect())
+        let client = TosSource::get_client(cfg).await.unwrap();
+        ClientGuard::new(client, uris.iter().map(|s| (*s).to_string()).collect())
     }
 }

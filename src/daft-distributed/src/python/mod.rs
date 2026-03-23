@@ -107,7 +107,7 @@ impl PyDistributedPhysicalPlan {
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
-            &Meter::noop_scope("daft.execution.distributed.num_partitions"),
+            &Meter::test_scope("daft.execution.distributed.num_partitions"),
         )?;
 
         Ok(pipeline_node.num_partitions())
@@ -125,7 +125,7 @@ impl PyDistributedPhysicalPlan {
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
-            &Meter::noop_scope("daft.execution.distributed.repr_ascii"),
+            &Meter::test_scope("daft.execution.distributed.repr_ascii"),
         )?;
 
         Ok(viz_distributed_pipeline_ascii(&pipeline_node, simple))
@@ -143,7 +143,7 @@ impl PyDistributedPhysicalPlan {
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
-            &Meter::noop_scope("daft.execution.distributed.repr_mermaid"),
+            &Meter::test_scope("daft.execution.distributed.repr_mermaid"),
         )?;
 
         let display_level = if simple {
@@ -169,7 +169,7 @@ impl PyDistributedPhysicalPlan {
             plan_config,
             self.plan.logical_plan().clone(),
             Arc::new(HashMap::new()), // No psets needed for repr_json
-            &Meter::noop_scope("daft.execution.distributed.repr_json"),
+            &Meter::test_scope("daft.execution.distributed.repr_json"),
         )
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 

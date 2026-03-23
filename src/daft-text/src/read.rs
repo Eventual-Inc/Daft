@@ -269,9 +269,7 @@ mod tests {
                 None,
             )
             .await
-            .expect(&format!(
-                "read_into_whole_text_stream should succeed for {name}"
-            ));
+            .unwrap_or_else(|_| panic!("read_into_whole_text_stream should succeed for {name}"));
 
             let results: Vec<_> = stream.collect::<Vec<_>>().await;
 
@@ -286,7 +284,7 @@ mod tests {
 
                 let actual_content = results[0]
                     .as_ref()
-                    .expect(&format!("[{name}] stream yielded error"))
+                    .unwrap_or_else(|_| panic!("[{name}] stream yielded error"))
                     .clone();
                 assert_eq!(
                     actual_content, expected_content,
@@ -329,9 +327,7 @@ mod tests {
                 None,
             )
             .await
-            .expect(&format!(
-                "read_into_line_chunk_stream should succeed for {name}"
-            ));
+            .unwrap_or_else(|_| panic!("read_into_line_chunk_stream should succeed for {name}"));
 
             let chunks: Vec<_> = stream.collect::<Vec<_>>().await;
 
@@ -340,7 +336,7 @@ mod tests {
                 .flat_map(|chunk_res| {
                     chunk_res
                         .as_ref()
-                        .expect(&format!("[{name}] stream yielded error"))
+                        .unwrap_or_else(|_| panic!("[{name}] stream yielded error"))
                         .clone()
                 })
                 .collect();

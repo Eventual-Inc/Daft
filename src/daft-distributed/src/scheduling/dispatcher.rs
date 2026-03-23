@@ -520,7 +520,7 @@ mod tests {
             .iter()
             .map(|task| task.task_context().task_id)
             .collect();
-        failed_task_ids.sort();
+        failed_task_ids.sort_unstable();
         assert_eq!(failed_task_ids, vec![1, 2, 3]);
 
         // Verify worker state: Workers 1 and 3 should be dead, worker 2 should be alive

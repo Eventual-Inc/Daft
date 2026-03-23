@@ -130,7 +130,7 @@ mod tests {
             Field::new("b", DataType::Int64),
         ]);
 
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .aggregate(
                 vec![
                     unresolved_col("a").sum(),
@@ -156,7 +156,7 @@ mod tests {
             Field::new("b", DataType::Int64),
         ]);
 
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .aggregate(
                 vec![
                     unresolved_col("a").count_distinct(),
@@ -178,7 +178,7 @@ mod tests {
             Field::new("b", DataType::Int64),
         ]);
 
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .aggregate(
                 vec![unresolved_col("a").count_distinct()],
                 vec![unresolved_col("b")],

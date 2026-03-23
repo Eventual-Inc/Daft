@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn selectivity_updates_after_rows_events() {
-        let stats = FilterStats::new(&Meter::noop_scope("test_stats"), &node_info_from_id(42));
+        let stats = FilterStats::new(&Meter::test_scope("test_stats"), &node_info_from_id(42));
 
         stats.add_rows_in(200);
         stats.add_rows_out(50);
@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn selectivity_defaults_to_100_percent_on_zero_rows_in() {
-        let stats = FilterStats::new(&Meter::noop_scope("test_stats"), &node_info_from_id(1));
+        let stats = FilterStats::new(&Meter::test_scope("test_stats"), &node_info_from_id(1));
 
         stats.add_rows_out(10);
 
@@ -189,7 +189,7 @@ mod tests {
 
     #[test]
     fn selectivity_handles_multiple_updates() {
-        let stats = FilterStats::new(&Meter::noop_scope("test_stats"), &node_info_from_id(99));
+        let stats = FilterStats::new(&Meter::test_scope("test_stats"), &node_info_from_id(99));
 
         stats.add_rows_in(100);
         stats.add_rows_out(40);

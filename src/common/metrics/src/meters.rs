@@ -70,11 +70,17 @@ impl Gauge {
         meter: &opentelemetry::metrics::Meter,
         name: impl Into<Cow<'static, str>>,
         description: Option<Cow<'static, str>>,
+        unit: Option<Cow<'static, str>>,
     ) -> Self {
         let normalized_name = normalize_name(name);
         let builder = meter.f64_gauge(normalized_name);
         let builder = if let Some(description) = description {
             builder.with_description(description)
+        } else {
+            builder
+        };
+        let builder = if let Some(unit) = unit {
+            builder.with_unit(unit)
         } else {
             builder
         };
@@ -134,9 +140,13 @@ impl Meter {
         Self { otel }
     }
 
-    pub fn noop_scope(name: &'static str) -> Self {
+    pub fn global_scope(name: &'static str) -> Self {
         let otel = global::meter(name);
         Self { otel }
+    }
+
+    pub fn test_scope(name: &'static str) -> Self {
+        Self::global_scope(name)
     }
 
     pub fn u64_counter(&self, name: impl Into<Cow<'static, str>>) -> Counter {
@@ -153,7 +163,16 @@ impl Meter {
     }
 
     pub fn f64_gauge(&self, name: impl Into<Cow<'static, str>>) -> Gauge {
-        Gauge::new(&self.otel, name, None)
+        Gauge::new(&self.otel, name, None, None)
+    }
+
+    pub fn f64_gauge_with_desc_and_unit(
+        &self,
+        name: impl Into<Cow<'static, str>>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Cow<'static, str>>,
+    ) -> Gauge {
+        Gauge::new(&self.otel, name, description, unit)
     }
 
     pub fn i64_up_down_counter(&self, name: impl Into<Cow<'static, str>>) -> UpDownCounter {

@@ -2323,6 +2323,7 @@ dependencies = [
  "pyo3",
  "pyo3-log",
  "sysinfo",
+ "tikv-jemalloc-ctl",
  "tikv-jemallocator",
 ]
 
@@ -2972,7 +2973,10 @@ dependencies = [
  "pyo3-async-runtimes",
  "rand 0.9.2",
  "serde_json",
+ "smallvec",
  "snafu",
+ "sysinfo",
+ "tikv-jemalloc-ctl",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -7725,6 +7729,17 @@ dependencies = [
  "lazy_static",
  "regex",
  "rustc-hash 1.1.0",
+]
+
+[[package]]
+name = "tikv-jemalloc-ctl"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "661f1f6a57b3a36dc9174a2c10f19513b4866816e13425d3e418b11cc37bc24c"
+dependencies = [
+ "libc",
+ "paste",
+ "tikv-jemalloc-sys",
 ]
 
 [[package]]

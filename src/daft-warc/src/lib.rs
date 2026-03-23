@@ -661,7 +661,7 @@ mod tests {
         let warc_gz_file = format!("{}/test/example.warc.gz", env!("CARGO_MANIFEST_DIR"),);
 
         let convert_options = WarcConvertOptions {
-            schema: schema.clone(),
+            schema,
             predicate: None,
             include_columns: None,
             limit: None,

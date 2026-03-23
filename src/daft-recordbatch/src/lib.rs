@@ -1722,7 +1722,7 @@ mod test {
         let e2 = resolved_col("a")
             .add(resolved_col("b"))
             .cast(&DataType::Int64);
-        let result = table.eval_expression(&&BoundExpr::try_new(e2, &table.schema)?)?;
+        let result = table.eval_expression(&BoundExpr::try_new(e2, &table.schema)?)?;
         assert_eq!(*result.data_type(), DataType::Int64);
         assert_eq!(result.len(), 3);
 
