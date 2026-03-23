@@ -63,8 +63,8 @@ class PaimonDataSink(DataSink[list]):
         total_bytes = 0
         try:
             for mp in micropartitions:
-                arrow_table = mp.to_arrow()
-                for batch in arrow_table.to_batches():
+                for rb in mp.get_record_batches():
+                    batch = rb.to_arrow_record_batch()
                     if cast_fields is None:
                         cast_fields = [
                             (i, field.type)
