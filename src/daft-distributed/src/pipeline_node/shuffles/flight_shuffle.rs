@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
-use daft_local_plan::{FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend, ShuffleWriteBackend};
 use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
@@ -10,12 +10,12 @@ use futures::TryStreamExt;
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
-        TaskBuilderStream,
+        ShufflePartitionRef, TaskBuilderStream, TaskOutput,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SchedulerHandle,
-        task::{SwordfishTask, SwordfishTaskBuilder, TaskID},
+        task::{SwordfishTask, SwordfishTaskBuilder},
     },
     utils::channel::{Sender, create_channel},
 };
@@ -81,14 +81,13 @@ impl FlightShuffleNode {
     // Async execution to handle flight shuffle write and read operations
     async fn execution_loop(
         self: Arc<Self>,
-        local_flight_shuffle_write_node: TaskBuilderStream,
+        local_shuffle_write_node: TaskBuilderStream,
         task_id_counter: TaskIDCounter,
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
-        // Trigger materialization of the partitions with flight shuffle write operations
-        let outputs = local_flight_shuffle_write_node
-            .materialize(
+        let outputs = local_shuffle_write_node
+            .task_outputs(
                 scheduler_handle.clone(),
                 self.context.query_idx,
                 task_id_counter,
@@ -96,38 +95,45 @@ impl FlightShuffleNode {
             .try_collect::<Vec<_>>()
             .await?;
 
-        // Collect server addresses and their corresponding task_ids (cache_ids)
-        let mut server_cache_mapping: std::collections::HashMap<String, Vec<TaskID>> =
+        let mut server_cache_mapping: std::collections::HashMap<String, HashSet<u32>> =
             std::collections::HashMap::new();
-        for output in &outputs {
-            let server_address = output.ip_address().clone();
-            let task_id = output.task_id();
-            server_cache_mapping
-                .entry(server_address)
-                .or_default()
-                .push(task_id);
+        for output in outputs {
+            let TaskOutput::ShuffleWrite(output) = output else {
+                return Err(common_error::DaftError::InternalError(
+                    "Expected shuffle write task output for Flight shuffle write stage".to_string(),
+                ));
+            };
+            for partition in output.partitions {
+                match partition {
+                    ShufflePartitionRef::Flight(partition) => {
+                        server_cache_mapping
+                            .entry(partition.server_address)
+                            .or_default()
+                            .insert(partition.cache_id);
+                    }
+                }
+            }
         }
 
-        // For each partition group, create tasks that read from flight servers
-        let source_id = self.context.node_id;
-
         for partition_idx in 0..self.num_partitions {
-            let flight_shuffle_read_plan = LocalPhysicalPlan::flight_shuffle_read(
-                source_id,
+            let shuffle_read_plan = LocalPhysicalPlan::shuffle_read(
+                partition_idx,
                 self.config.schema.clone(),
+                ShuffleReadBackend::Flight {
+                    shuffle_id: self.shuffle_id,
+                    server_addresses: server_cache_mapping.keys().cloned().collect(),
+                    server_cache_mapping: server_cache_mapping
+                        .iter()
+                        .map(|(server, cache_ids)| {
+                            (server.clone(), cache_ids.iter().copied().collect())
+                        })
+                        .collect(),
+                },
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(self.context.node_id as usize)),
             );
 
-            let input = FlightShuffleReadInput {
-                shuffle_id: self.shuffle_id,
-                partition_idx,
-                server_cache_mapping: server_cache_mapping.clone(),
-            };
-
-            let task =
-                SwordfishTaskBuilder::new(flight_shuffle_read_plan, self.as_ref(), self.node_id())
-                    .with_flight_shuffle_reads(source_id, vec![input]);
+            let task = SwordfishTaskBuilder::new(shuffle_read_plan, self.as_ref(), self.node_id());
 
             let _ = result_tx.send(task).await;
         }
@@ -171,16 +177,18 @@ impl PipelineNodeImpl for FlightShuffleNode {
                 unreachable!("Range repartition is not supported for flight shuffle")
             }
         };
-        let local_flight_shuffle_write_node =
+        let local_shuffle_write_node =
             input_node.pipeline_instruction(self.clone(), move |input| {
-                LocalPhysicalPlan::flight_shuffle_write(
+                LocalPhysicalPlan::shuffle_write(
                     input,
                     partition_by.clone(),
                     self.num_partitions,
                     self.config.schema.clone(),
-                    self.shuffle_id,
-                    self.shuffle_dirs.clone(),
-                    self.compression.clone(),
+                    ShuffleWriteBackend::Flight {
+                        shuffle_id: self.shuffle_id,
+                        shuffle_dirs: self.shuffle_dirs.clone(),
+                        compression: self.compression.clone(),
+                    },
                     StatsState::NotMaterialized,
                     LocalNodeContext::new(Some(self.context.node_id as usize)),
                 )
@@ -194,7 +202,7 @@ impl PipelineNodeImpl for FlightShuffleNode {
         let flight_shuffle_execution = async move {
             self_arc
                 .execution_loop(
-                    local_flight_shuffle_write_node,
+                    local_shuffle_write_node,
                     task_id_counter,
                     result_tx,
                     scheduler_handle,

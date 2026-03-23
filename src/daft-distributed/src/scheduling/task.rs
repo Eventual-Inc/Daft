@@ -4,17 +4,13 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftError;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
-use daft_local_plan::{
-    ExecutionStats, FlightShuffleReadInput, Input, LocalPhysicalPlanRef, SourceId,
-};
+use daft_local_plan::{ExecutionStats, Input, LocalPhysicalPlanRef, SourceId};
 use daft_scan::ScanTaskRef;
 use tokio_util::sync::CancellationToken;
 
 use super::worker::WorkerId;
 use crate::{
-    pipeline_node::{
-        MaterializedOutput, NodeID, PipelineNodeContext, PipelineNodeImpl, PlanFingerprint,
-    },
+    pipeline_node::{NodeID, PipelineNodeContext, PipelineNodeImpl, PlanFingerprint, TaskOutput},
     plan::{QueryIdx, TaskIDCounter},
     scheduling::scheduler::SubmittableTask,
     utils::channel::{OneshotReceiver, OneshotSender, create_oneshot_channel},
@@ -427,16 +423,6 @@ impl SwordfishTaskBuilder {
         self
     }
 
-    /// Add flight shuffle read inputs with source_id to the builder.
-    pub fn with_flight_shuffle_reads(
-        mut self,
-        source_id: SourceId,
-        inputs: Vec<FlightShuffleReadInput>,
-    ) -> Self {
-        self.inputs.insert(source_id, Input::FlightShuffle(inputs));
-        self
-    }
-
     /// Add a notify token to the builder. Returns the builder and the receiver for the token.
     pub fn add_notify_token(mut self) -> (Self, OneshotReceiver<()>) {
         let (notify_token, notify_rx) = create_oneshot_channel();
@@ -492,7 +478,7 @@ impl SwordfishTaskBuilder {
 #[derive(Debug)]
 pub(crate) enum TaskStatus {
     Success {
-        result: MaterializedOutput,
+        result: TaskOutput,
         stats: ExecutionStats,
     },
     Failed {
@@ -593,7 +579,7 @@ pub(super) mod tests {
         priority: MockTaskPriority,
         scheduling_strategy: SchedulingStrategy,
         resource_request: TaskResourceRequest,
-        task_result: MaterializedOutput,
+        task_result: TaskOutput,
         cancel_notifier: Arc<Mutex<Option<OneshotSender<()>>>>,
         sleep_duration: Option<std::time::Duration>,
         failure: Option<MockTaskFailure>,
@@ -613,7 +599,7 @@ pub(super) mod tests {
         task_name: TaskName,
         priority: MockTaskPriority,
         scheduling_strategy: SchedulingStrategy,
-        task_result: MaterializedOutput,
+        task_result: TaskOutput,
         resource_request: TaskResourceRequest,
         cancel_notifier: Arc<Mutex<Option<OneshotSender<()>>>>,
         sleep_duration: Option<Duration>,
@@ -637,11 +623,13 @@ pub(super) mod tests {
                 priority: MockTaskPriority { priority: 0 },
                 scheduling_strategy: SchedulingStrategy::Spread,
                 resource_request: TaskResourceRequest::new(ResourceRequest::default()),
-                task_result: MaterializedOutput::new(
-                    vec![partition_ref],
-                    "".into(),
-                    String::new(),
-                    task_id,
+                task_result: TaskOutput::Materialized(
+                    crate::pipeline_node::MaterializedOutput::new(
+                        vec![partition_ref],
+                        "".into(),
+                        "".into(),
+                        task_id,
+                    ),
                 ),
                 cancel_notifier: Arc::new(Mutex::new(None)),
                 sleep_duration: None,

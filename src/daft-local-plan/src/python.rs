@@ -7,9 +7,9 @@ use daft_recordbatch::python::PyRecordBatch;
 use pyo3::{prelude::*, types::PyDict};
 use serde::{Deserialize, Serialize};
 
-use crate::Input;
 #[cfg(feature = "python")]
 use crate::{ExecutionStats, LocalPhysicalPlanRef, translate};
+use crate::{Input, LocalPhysicalPlan, ShuffleWriteBackend};
 
 #[pyclass(module = "daft.daft", name = "LocalPhysicalPlan")]
 #[derive(Debug, Serialize, Deserialize)]
@@ -55,6 +55,17 @@ impl PyLocalPhysicalPlan {
             },
             dict.into(),
         ))
+    }
+
+    fn flight_shuffle_write_info(&self) -> Option<(u64, usize)> {
+        match self.plan.as_ref() {
+            LocalPhysicalPlan::ShuffleWrite(shuffle_write) => match &shuffle_write.backend {
+                ShuffleWriteBackend::Flight { shuffle_id, .. } => {
+                    Some((*shuffle_id, shuffle_write.num_partitions))
+                }
+            },
+            _ => None,
+        }
     }
 }
 

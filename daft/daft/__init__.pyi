@@ -2164,6 +2164,24 @@ class RayPartitionRef:
 
     def __init__(self, object_ref: ray.ObjectRef, num_rows: int, size_bytes: int): ...
 
+class FlightShufflePartitionRef:
+    shuffle_id: int
+    partition_idx: int
+    server_address: str
+    cache_id: int
+    num_rows: int
+    size_bytes: int
+
+    def __init__(
+        self,
+        shuffle_id: int,
+        partition_idx: int,
+        server_address: str,
+        cache_id: int,
+        num_rows: int,
+        size_bytes: int,
+    ): ...
+
 class RaySwordfishTask:
     def name(self) -> str: ...
     def id(self) -> int: ...
@@ -2176,6 +2194,8 @@ class RaySwordfishTask:
 class RayTaskResult:
     @staticmethod
     def success(ray_part_refs: list[RayPartitionRef], stats: bytes) -> RayTaskResult: ...
+    @staticmethod
+    def shuffle_success(shuffle_part_refs: list[FlightShufflePartitionRef], stats: bytes) -> RayTaskResult: ...
     @staticmethod
     def worker_died() -> RayTaskResult: ...
     @staticmethod
@@ -2208,6 +2228,7 @@ class LocalPhysicalPlan:
         builder: LogicalPlanBuilder,
         psets: dict[str, list[PyMicroPartition]],
     ) -> tuple[LocalPhysicalPlan, dict[int, Input]]: ...
+    def flight_shuffle_write_info(self) -> tuple[int, int] | None: ...
 
 class Input:
     """Input for NativeExecutor execution. Holds ScanTasks or GlobPaths."""

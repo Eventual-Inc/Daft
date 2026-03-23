@@ -16,12 +16,12 @@ use common_metrics::{
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
-    HashAggregate, HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext,
-    LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
-    Sample, Sort, SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot,
-    VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
-    WindowPartitionOnly,
+    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, GlobScan, HashAggregate, HashJoin,
+    InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
+    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Sample,
+    ShuffleReadBackend, ShuffleWriteBackend, Sort, SortMergeJoin, SourceId, TopN, UDFProject,
+    UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
+    WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -1364,13 +1364,11 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
-        LocalPhysicalPlan::FlightShuffleWrite(daft_local_plan::FlightShuffleWrite {
+        LocalPhysicalPlan::ShuffleWrite(daft_local_plan::ShuffleWrite {
             input,
             num_partitions,
             partition_by,
-            shuffle_id,
-            shuffle_dirs,
-            compression,
+            backend,
             stats_state,
             context,
             ..
@@ -1382,6 +1380,11 @@ fn physical_plan_to_pipeline(
                 .get("task_id")
                 .cloned()
                 .expect("task_id must be set in context");
+            let ShuffleWriteBackend::Flight {
+                shuffle_id,
+                shuffle_dirs,
+                compression,
+            } = backend;
             let flight_shuffle_write_sink = FlightShuffleWriteSink::try_new(
                 *num_partitions,
                 partition_by.clone(),
@@ -1403,15 +1406,25 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
-        LocalPhysicalPlan::FlightShuffleRead(daft_local_plan::FlightShuffleRead {
-            source_id,
+        LocalPhysicalPlan::ShuffleRead(daft_local_plan::ShuffleRead {
+            partition_idx,
+            backend,
             schema,
             stats_state,
             context,
         }) => {
-            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
-            input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
-            let source = FlightShuffleReadSource::new(rx, schema.clone(), cfg);
+            let ShuffleReadBackend::Flight {
+                shuffle_id,
+                server_addresses,
+                server_cache_mapping,
+            } = backend;
+            let source = FlightShuffleReadSource::new(
+                *shuffle_id,
+                *partition_idx,
+                server_addresses.clone(),
+                server_cache_mapping.clone(),
+                schema.clone(),
+            );
             SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
         }
         LocalPhysicalPlan::VLLMProject(VLLMProject {
