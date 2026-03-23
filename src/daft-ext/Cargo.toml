@@ -25,7 +25,7 @@ arrow-57 = ["dep:arrow-schema-57", "dep:arrow-data-57"]
 arrow-58 = ["dep:arrow-schema-58", "dep:arrow-data-58"]
 
 [dependencies]
-daft-ext-macros = {path = "../daft-ext-macros", version = "0.1.0"}
+daft-ext-macros = {path = "../daft-ext-macros", version = "0.1.1"}
 # Arrow C Data Interface compatibility (optional, feature-gated)
 arrow-schema-56 = {package = "arrow-schema", version = "56", features = ["ffi"], optional = true}
 arrow-data-56 = {package = "arrow-data", version = "56", features = ["ffi"], optional = true}
