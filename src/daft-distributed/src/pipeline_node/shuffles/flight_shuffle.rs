@@ -78,10 +78,6 @@ impl FlightShuffleNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     // Async execution to handle flight shuffle write and read operations
     async fn execution_loop(
         self: Arc<Self>,

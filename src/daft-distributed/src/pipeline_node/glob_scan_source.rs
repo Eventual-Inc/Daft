@@ -69,10 +69,6 @@ impl GlobScanSourceNode {
             io_config,
         })
     }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
 }
 
 impl PipelineNodeImpl for GlobScanSourceNode {
@@ -133,7 +129,7 @@ impl PipelineNodeImpl for GlobScanSourceNode {
         res
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(SourceStats::new(meter, self.context()))
     }
 }

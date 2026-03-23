@@ -55,10 +55,6 @@ impl GatherNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     // Async execution to get all partitions out
     async fn execution_loop(
         self: Arc<Self>,
