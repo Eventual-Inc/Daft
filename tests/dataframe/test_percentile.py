@@ -6,14 +6,32 @@ import daft
 from daft import DataType, col
 
 
-def test_percentile_global():
+@pytest.mark.parametrize(
+    ("percentage", "expected"),
+    [
+        (0.0, 1.0),
+        (0.25, 1.75),
+        (0.5, 2.5),
+        (0.75, 3.25),
+        (1.0, 4.0),
+    ],
+)
+def test_percentile_global(percentage, expected):
     df = daft.from_pydict({"values": [1.0, 2.0, 3.0, 4.0]})
 
-    actual = df.agg(col("values").percentile(0.5).alias("p50")).collect().to_pydict()
-    assert actual == {"p50": [2.5]}
+    actual = df.agg(col("values").percentile(percentage).alias("percentile")).collect().to_pydict()
+    assert actual == {"percentile": [expected]}
 
 
-def test_percentile_groupby():
+@pytest.mark.parametrize(
+    ("percentage", "expected"),
+    [
+        (0.25, {"id": [1, 2], "percentile": [1.5, 4.5]}),
+        (0.5, {"id": [1, 2], "percentile": [2.0, 5.0]}),
+        (0.75, {"id": [1, 2], "percentile": [6.0, 5.5]}),
+    ],
+)
+def test_percentile_groupby(percentage, expected):
     df = daft.from_pydict(
         {
             "id": [1, 1, 1, 2, 2],
@@ -21,8 +39,17 @@ def test_percentile_groupby():
         }
     )
 
-    actual = df.groupby("id").agg(col("values").percentile(0.5).alias("p50")).sort("id").collect().to_pydict()
-    assert actual == {"id": [1, 2], "p50": [2.0, 5.0]}
+    actual = (
+        df.groupby("id").agg(col("values").percentile(percentage).alias("percentile")).sort("id").collect().to_pydict()
+    )
+    assert actual == expected
+
+
+def test_percentile_integer_input_casts_to_float64():
+    df = daft.from_pydict({"values": [1, 2, 3, 4]})
+
+    actual = df.agg(col("values").percentile(0.25).alias("p25")).collect().to_pydict()
+    assert actual == {"p25": [1.75]}
 
 
 def test_percentile_50_is_median():
