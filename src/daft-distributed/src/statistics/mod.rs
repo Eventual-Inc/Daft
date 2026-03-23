@@ -6,7 +6,7 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{Meter, QueryID, ops::NodeInfo};
+use common_metrics::{Meter, ops::NodeInfo};
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_local_plan::ExecutionStats;
 pub use stats::RuntimeStats;
@@ -99,12 +99,10 @@ pub struct StatisticsManager {
 
 impl StatisticsManager {
     pub fn from_pipeline_node(
-        query_id: QueryID,
         pipeline_node: &DistributedPipelineNode,
         subscribers: Vec<Box<dyn StatisticsSubscriber>>,
+        meter: &Meter,
     ) -> DaftResult<StatisticsManagerRef> {
-        let meter = Meter::query_scope(query_id, "daft.execution.distributed");
-
         let mut runtime_node_managers = HashMap::new();
         pipeline_node.apply(|node| {
             let node_info = Arc::new(NodeInfo {
@@ -118,7 +116,7 @@ impl StatisticsManager {
             });
             runtime_node_managers.insert(
                 node.node_id(),
-                RuntimeNodeManager::new(&meter, node.runtime_stats(&meter), node_info),
+                RuntimeNodeManager::new(meter, node.runtime_stats(), node_info),
             );
             Ok(TreeNodeRecursion::Continue)
         })?;

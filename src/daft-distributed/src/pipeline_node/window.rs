@@ -322,10 +322,6 @@ impl WindowNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     fn base(&self) -> &WindowNodeBase {
         match self {
             Self::PartitionOnly(node) => &node.base,

@@ -158,87 +158,66 @@ impl ChunkSpec {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ScanSource {
+pub struct ScanSource {
+    pub size_bytes: Option<u64>,
+    pub metadata: Option<TableMetadata>,
+    pub statistics: Option<TableStatistics>,
+    pub partition_spec: Option<PartitionSpec>,
+    pub kind: ScanSourceKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ScanSourceKind {
     File {
         path: String,
         chunk_spec: Option<ChunkSpec>,
-        size_bytes: Option<u64>,
         iceberg_delete_files: Option<Vec<String>>,
-        metadata: Option<TableMetadata>,
-        partition_spec: Option<PartitionSpec>,
-        statistics: Option<TableStatistics>,
         parquet_metadata: Option<Arc<DaftParquetMetadata>>,
     },
     Database {
         path: String,
-        size_bytes: Option<u64>,
-        metadata: Option<TableMetadata>,
-        statistics: Option<TableStatistics>,
     },
     #[cfg(feature = "python")]
     PythonFactoryFunction {
         module: String,
         func_name: String,
         func_args: python::PythonTablesFactoryArgs,
-        size_bytes: Option<u64>,
-        metadata: Option<TableMetadata>,
-        statistics: Option<TableStatistics>,
-        partition_spec: Option<PartitionSpec>,
     },
 }
 
 impl Hash for ScanSource {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        // Hash everything except for cached parquet metadata.
-        match self {
-            Self::File {
+        self.size_bytes.hash(state);
+        self.metadata.hash(state);
+        self.statistics.hash(state);
+        self.partition_spec.hash(state);
+        // Hash the kind, skipping parquet_metadata (cached, not identity).
+        match &self.kind {
+            ScanSourceKind::File {
                 path,
                 chunk_spec,
-                size_bytes,
                 iceberg_delete_files,
-                metadata,
-                partition_spec,
-                statistics,
                 ..
             } => {
+                0u8.hash(state);
                 path.hash(state);
-                if let Some(chunk_spec) = chunk_spec {
-                    chunk_spec.hash(state);
-                }
-                size_bytes.hash(state);
+                chunk_spec.hash(state);
                 iceberg_delete_files.hash(state);
-                metadata.hash(state);
-                partition_spec.hash(state);
-                statistics.hash(state);
             }
-            Self::Database {
-                path,
-                size_bytes,
-                metadata,
-                statistics,
-            } => {
+            ScanSourceKind::Database { path } => {
+                1u8.hash(state);
                 path.hash(state);
-                size_bytes.hash(state);
-                metadata.hash(state);
-                statistics.hash(state);
             }
             #[cfg(feature = "python")]
-            Self::PythonFactoryFunction {
+            ScanSourceKind::PythonFactoryFunction {
                 module,
                 func_name,
                 func_args,
-                size_bytes,
-                metadata,
-                statistics,
-                partition_spec,
             } => {
+                2u8.hash(state);
                 module.hash(state);
                 func_name.hash(state);
                 func_args.hash(state);
-                size_bytes.hash(state);
-                metadata.hash(state);
-                statistics.hash(state);
-                partition_spec.hash(state);
             }
         }
     }
@@ -247,17 +226,17 @@ impl Hash for ScanSource {
 impl ScanSource {
     #[must_use]
     pub fn get_path(&self) -> &str {
-        match self {
-            Self::File { path, .. } | Self::Database { path, .. } => path,
+        match &self.kind {
+            ScanSourceKind::File { path, .. } | ScanSourceKind::Database { path, .. } => path,
             #[cfg(feature = "python")]
-            Self::PythonFactoryFunction { module, .. } => module,
+            ScanSourceKind::PythonFactoryFunction { module, .. } => module,
         }
     }
 
     #[must_use]
     pub fn get_parquet_metadata(&self) -> Option<&Arc<DaftParquetMetadata>> {
-        match self {
-            Self::File {
+        match &self.kind {
+            ScanSourceKind::File {
                 parquet_metadata, ..
             } => parquet_metadata.as_ref(),
             _ => None,
@@ -266,57 +245,16 @@ impl ScanSource {
 
     #[must_use]
     pub fn get_chunk_spec(&self) -> Option<&ChunkSpec> {
-        match self {
-            Self::File { chunk_spec, .. } => chunk_spec.as_ref(),
-            Self::Database { .. } => None,
-            #[cfg(feature = "python")]
-            Self::PythonFactoryFunction { .. } => None,
-        }
-    }
-
-    #[must_use]
-    pub fn get_size_bytes(&self) -> Option<u64> {
-        match self {
-            Self::File { size_bytes, .. } | Self::Database { size_bytes, .. } => *size_bytes,
-            #[cfg(feature = "python")]
-            Self::PythonFactoryFunction { size_bytes, .. } => *size_bytes,
-        }
-    }
-
-    #[must_use]
-    pub fn get_metadata(&self) -> Option<&TableMetadata> {
-        match self {
-            Self::File { metadata, .. } | Self::Database { metadata, .. } => metadata.as_ref(),
-            #[cfg(feature = "python")]
-            Self::PythonFactoryFunction { metadata, .. } => metadata.as_ref(),
-        }
-    }
-
-    #[must_use]
-    pub fn get_statistics(&self) -> Option<&TableStatistics> {
-        match self {
-            Self::File { statistics, .. } | Self::Database { statistics, .. } => {
-                statistics.as_ref()
-            }
-            #[cfg(feature = "python")]
-            Self::PythonFactoryFunction { statistics, .. } => statistics.as_ref(),
-        }
-    }
-
-    #[must_use]
-    pub fn get_partition_spec(&self) -> Option<&PartitionSpec> {
-        match self {
-            Self::File { partition_spec, .. } => partition_spec.as_ref(),
-            Self::Database { .. } => None,
-            #[cfg(feature = "python")]
-            Self::PythonFactoryFunction { partition_spec, .. } => partition_spec.as_ref(),
+        match &self.kind {
+            ScanSourceKind::File { chunk_spec, .. } => chunk_spec.as_ref(),
+            _ => None,
         }
     }
 
     #[must_use]
     pub fn get_iceberg_delete_files(&self) -> Option<&Vec<String>> {
-        match self {
-            Self::File {
+        match &self.kind {
+            ScanSourceKind::File {
                 iceberg_delete_files,
                 ..
             } => iceberg_delete_files.as_ref(),
@@ -327,16 +265,12 @@ impl ScanSource {
     #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        match self {
-            Self::File {
+        match &self.kind {
+            ScanSourceKind::File {
                 path,
                 chunk_spec,
-                size_bytes,
                 iceberg_delete_files,
-                metadata,
-                partition_spec,
-                statistics,
-                parquet_metadata: _,
+                ..
             } => {
                 res.push(format!("Path = {path}"));
                 if let Some(chunk_spec) = chunk_spec {
@@ -345,78 +279,38 @@ impl ScanSource {
                         chunk_spec.multiline_display().join(", ")
                     ));
                 }
-                if let Some(size_bytes) = size_bytes {
-                    res.push(format!("Size bytes = {size_bytes}"));
-                }
                 if let Some(iceberg_delete_files) = iceberg_delete_files {
                     res.push(format!("Iceberg delete files = {iceberg_delete_files:?}"));
                 }
-                if let Some(metadata) = metadata {
-                    res.push(format!(
-                        "Metadata = {}",
-                        metadata.multiline_display().join(", ")
-                    ));
-                }
-                if let Some(partition_spec) = partition_spec {
-                    res.push(format!(
-                        "Partition spec = {}",
-                        partition_spec.multiline_display().join(", ")
-                    ));
-                }
-                if let Some(statistics) = statistics {
-                    res.push(format!("Statistics = {statistics}"));
-                }
             }
-            Self::Database {
-                path,
-                size_bytes,
-                metadata,
-                statistics,
-            } => {
+            ScanSourceKind::Database { path } => {
                 res.push(format!("Path = {path}"));
-                if let Some(size_bytes) = size_bytes {
-                    res.push(format!("Size bytes = {size_bytes}"));
-                }
-                if let Some(metadata) = metadata {
-                    res.push(format!(
-                        "Metadata = {}",
-                        metadata.multiline_display().join(", ")
-                    ));
-                }
-                if let Some(statistics) = statistics {
-                    res.push(format!("Statistics = {statistics}"));
-                }
             }
             #[cfg(feature = "python")]
-            Self::PythonFactoryFunction {
-                module,
-                func_name,
-                func_args: _func_args,
-                size_bytes,
-                metadata,
-                statistics,
-                partition_spec,
+            ScanSourceKind::PythonFactoryFunction {
+                module, func_name, ..
             } => {
                 res.push(format!("Function = {module}.{func_name}"));
-                if let Some(size_bytes) = size_bytes {
-                    res.push(format!("Size bytes = {size_bytes}"));
-                }
-                if let Some(metadata) = metadata {
-                    res.push(format!(
-                        "Metadata = {}",
-                        metadata.multiline_display().join(", ")
-                    ));
-                }
-                if let Some(partition_spec) = partition_spec {
-                    res.push(format!(
-                        "Partition spec = {}",
-                        partition_spec.multiline_display().join(", ")
-                    ));
-                }
-                if let Some(statistics) = statistics {
-                    res.push(format!("Statistics = {statistics}"));
-                }
             }
+        }
+        // Common fields.
+        if let Some(size_bytes) = self.size_bytes {
+            res.push(format!("Size bytes = {size_bytes}"));
+        }
+        if let Some(metadata) = &self.metadata {
+            res.push(format!(
+                "Metadata = {}",
+                metadata.multiline_display().join(", ")
+            ));
+        }
+        if let Some(partition_spec) = &self.partition_spec {
+            res.push(format!(
+                "Partition spec = {}",
+                partition_spec.multiline_display().join(", ")
+            ));
+        }
+        if let Some(statistics) = &self.statistics {
+            res.push(format!("Statistics = {statistics}"));
         }
         res
     }
@@ -426,13 +320,13 @@ impl DisplayAs for ScanSource {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         match level {
             common_display::DisplayLevel::Compact | common_display::DisplayLevel::Default => {
-                match self {
-                    Self::File { path, .. } => {
+                match &self.kind {
+                    ScanSourceKind::File { path, .. } => {
                         format!("File {{{path}}}")
                     }
-                    Self::Database { path, .. } => format!("Database {{{path}}}"),
+                    ScanSourceKind::Database { path, .. } => format!("Database {{{path}}}"),
                     #[cfg(feature = "python")]
-                    Self::PythonFactoryFunction {
+                    ScanSourceKind::PythonFactoryFunction {
                         module, func_name, ..
                     } => {
                         format!("{module}:{func_name}")
@@ -507,16 +401,16 @@ impl ScanTask {
         debug_assert!(
             sources
                 .iter()
-                .all(|s| s.get_partition_spec() == sources.first().unwrap().get_partition_spec()),
+                .all(|s| s.partition_spec == sources.first().unwrap().partition_spec),
             "ScanTask sources must all have the same PartitionSpec at construction",
         );
         let (length, size_bytes_on_disk, statistics) = sources
             .iter()
             .map(|s| {
                 (
-                    s.get_metadata().map(|m| m.length),
-                    s.get_size_bytes(),
-                    s.get_statistics().cloned(),
+                    s.metadata.as_ref().map(|m| m.length),
+                    s.size_bytes,
+                    s.statistics.clone(),
                 )
             })
             .reduce(
@@ -696,8 +590,8 @@ impl ScanTask {
     pub fn get_file_paths(&self) -> Vec<String> {
         self.sources
             .iter()
-            .filter_map(|s| match s {
-                ScanSource::File { path, .. } => Some(path.clone()),
+            .filter_map(|s| match &s.kind {
+                ScanSourceKind::File { path, .. } => Some(path.clone()),
                 _ => None,
             })
             .collect()
@@ -791,8 +685,8 @@ impl ScanTask {
     fn is_gzipped(&self) -> bool {
         self.sources
             .first()
-            .and_then(|s| match s {
-                ScanSource::File { path, .. } => {
+            .and_then(|s| match &s.kind {
+                ScanSourceKind::File { path, .. } => {
                     let filename = std::path::Path::new(path);
                     Some(
                         filename
@@ -875,10 +769,7 @@ impl ScanTask {
 
     #[must_use]
     pub fn partition_spec(&self) -> Option<&PartitionSpec> {
-        match self.sources.first() {
-            None => None,
-            Some(source) => source.get_partition_spec(),
-        }
+        self.sources.first().and_then(|s| s.partition_spec.as_ref())
     }
 
     #[must_use]
@@ -985,21 +876,24 @@ mod test {
     use itertools::Itertools;
 
     use crate::{
-        FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanOperator, ScanSource, ScanTask,
-        SourceConfig, WarcSourceConfig, glob::GlobScanOperator, storage_config::StorageConfig,
+        FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanOperator, ScanSource, ScanSourceKind,
+        ScanTask, SourceConfig, WarcSourceConfig, glob::GlobScanOperator,
+        storage_config::StorageConfig,
     };
 
     fn make_scan_task(num_sources: usize) -> ScanTask {
         let sources = (0..num_sources)
-            .map(|i| ScanSource::File {
-                path: format!("test{i}"),
-                chunk_spec: None,
+            .map(|i| ScanSource {
                 size_bytes: None,
-                iceberg_delete_files: None,
                 metadata: None,
-                partition_spec: None,
                 statistics: None,
-                parquet_metadata: None,
+                partition_spec: None,
+                kind: ScanSourceKind::File {
+                    path: format!("test{i}"),
+                    chunk_spec: None,
+                    iceberg_delete_files: None,
+                    parquet_metadata: None,
+                },
             })
             .collect_vec();
 
@@ -1138,17 +1032,19 @@ mod test {
 
     #[test]
     fn test_warc_memory_estimation_with_extremely_large_row_count() {
-        let sources = vec![ScanSource::File {
-            path: "test.warc.gz".to_string(),
-            chunk_spec: None,
+        let sources = vec![ScanSource {
             size_bytes: Some(1_000_000),
-            iceberg_delete_files: None,
             metadata: Some(TableMetadata {
                 length: usize::MAX, // Extremely large row count
             }),
-            partition_spec: None,
             statistics: None,
-            parquet_metadata: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: "test.warc.gz".to_string(),
+                chunk_spec: None,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+            },
         }];
 
         let schema = Arc::new(Schema::new(vec![
@@ -1180,15 +1076,17 @@ mod test {
 
     #[test]
     fn test_warc_memory_estimation_with_large_row_count_f64() {
-        let sources = vec![ScanSource::File {
-            path: "test.warc.gz".to_string(),
-            chunk_spec: None,
+        let sources = vec![ScanSource {
             size_bytes: Some(1_000_000_000_000), // 1TB file
-            iceberg_delete_files: None,
-            metadata: None, // No metadata, will use file size estimation
-            partition_spec: None,
+            metadata: None,                      // No metadata, will use file size estimation
             statistics: None,
-            parquet_metadata: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: "test.warc.gz".to_string(),
+                chunk_spec: None,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+            },
         }];
 
         let schema = Arc::new(Schema::new(vec![
@@ -1221,17 +1119,19 @@ mod test {
 
     #[test]
     fn test_warc_memory_estimation_valid_edge_case() {
-        let sources = vec![ScanSource::File {
-            path: "test.warc.gz".to_string(),
-            chunk_spec: None,
+        let sources = vec![ScanSource {
             size_bytes: Some(10_000_000), // 10MB
-            iceberg_delete_files: None,
             metadata: Some(TableMetadata {
                 length: 1000, // 1000 rows
             }),
-            partition_spec: None,
             statistics: None,
-            parquet_metadata: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: "test.warc.gz".to_string(),
+                chunk_spec: None,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+            },
         }];
 
         let schema = Arc::new(Schema::new(vec![
@@ -1262,17 +1162,19 @@ mod test {
 
     #[test]
     fn test_schema_row_size_estimation_with_extremely_large_row_count() {
-        let sources = vec![ScanSource::File {
-            path: "test.parquet".to_string(),
-            chunk_spec: None,
+        let sources = vec![ScanSource {
             size_bytes: Some(1_000_000),
-            iceberg_delete_files: None,
             metadata: Some(TableMetadata {
                 length: usize::MAX, // Extremely large row count
             }),
-            partition_spec: None,
             statistics: None,
-            parquet_metadata: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: "test.parquet".to_string(),
+                chunk_spec: None,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+            },
         }];
 
         // Create a schema with multiple fields
@@ -1309,15 +1211,17 @@ mod test {
 
     #[test]
     fn test_schema_row_size_estimation_with_nested_schema() {
-        let sources = vec![ScanSource::File {
-            path: "test.parquet".to_string(),
-            chunk_spec: None,
+        let sources = vec![ScanSource {
             size_bytes: Some(100_000_000), // 100MB
-            iceberg_delete_files: None,
-            metadata: None, // Will use approx_num_rows
-            partition_spec: None,
+            metadata: None,                // Will use approx_num_rows
             statistics: None,
-            parquet_metadata: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: "test.parquet".to_string(),
+                chunk_spec: None,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+            },
         }];
 
         // Create a deeply nested schema
@@ -1357,15 +1261,17 @@ mod test {
 
     #[test]
     fn test_schema_row_size_estimation_with_large_file_no_metadata() {
-        let sources = vec![ScanSource::File {
-            path: "test.parquet".to_string(),
-            chunk_spec: None,
+        let sources = vec![ScanSource {
             size_bytes: Some(u64::MAX / 100), // Very large file
-            iceberg_delete_files: None,
             metadata: None,
-            partition_spec: None,
             statistics: None,
-            parquet_metadata: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: "test.parquet".to_string(),
+                chunk_spec: None,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+            },
         }];
 
         let schema = Arc::new(Schema::new(vec![
@@ -1401,15 +1307,17 @@ mod test {
 
     #[test]
     fn test_schema_row_size_estimation_valid_case() {
-        let sources = vec![ScanSource::File {
-            path: "test.parquet".to_string(),
-            chunk_spec: None,
+        let sources = vec![ScanSource {
             size_bytes: Some(1_000_000),
-            iceberg_delete_files: None,
             metadata: Some(TableMetadata { length: 10_000 }),
-            partition_spec: None,
             statistics: None,
-            parquet_metadata: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: "test.parquet".to_string(),
+                chunk_spec: None,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+            },
         }];
 
         let schema = Arc::new(Schema::new(vec![
@@ -1445,15 +1353,17 @@ mod test {
 
     #[test]
     fn test_overflow_protection_with_infinity() {
-        let sources = vec![ScanSource::File {
-            path: "test.parquet".to_string(),
-            chunk_spec: None,
+        let sources = vec![ScanSource {
             size_bytes: Some(u64::MAX), // Maximum possible file size
-            iceberg_delete_files: None,
             metadata: None,
-            partition_spec: None,
             statistics: None,
-            parquet_metadata: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: "test.parquet".to_string(),
+                chunk_spec: None,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+            },
         }];
 
         let schema = Arc::new(Schema::new(vec![Field::new("col1", DataType::Int64)]));

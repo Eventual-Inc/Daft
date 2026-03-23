@@ -114,10 +114,6 @@ impl IntoBatchesNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     async fn execute_into_batches(
         self: Arc<Self>,
         input_node: TaskBuilderStream,
@@ -201,7 +197,7 @@ impl PipelineNodeImpl for IntoBatchesNode {
         vec![self.child.clone()]
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(IntoBatchesStats::new(meter, self.context()))
     }
 
