@@ -153,7 +153,7 @@ pub(crate) fn create_sample_tasks(
                     additional: None,
                 },
             );
-            let builder = SwordfishTaskBuilder::new(plan, pipeline_node)
+            let builder = SwordfishTaskBuilder::new(plan, pipeline_node, pipeline_node.node_id())
                 .with_psets(pipeline_node.node_id(), psets);
             let submittable_task = builder.build(context.query_idx, task_id_counter);
             let submitted_task = submittable_task.submit(scheduler_handle)?;
@@ -207,7 +207,7 @@ pub(crate) fn create_range_repartition_tasks(
                     additional: None,
                 },
             );
-            let builder = SwordfishTaskBuilder::new(plan, pipeline_node)
+            let builder = SwordfishTaskBuilder::new(plan, pipeline_node, pipeline_node.node_id())
                 .with_psets(node_id, mo.into_inner().0);
             let submittable_task = builder.build(context.query_idx, task_id_counter);
             let submitted_task = submittable_task.submit(scheduler_handle)?;
@@ -305,8 +305,8 @@ impl SortNode {
                     additional: None,
                 },
             );
-            let task =
-                SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
+            let task = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+                .with_psets(self.node_id(), psets);
             let _ = result_tx.send(task).await;
             return Ok(());
         }
@@ -377,8 +377,8 @@ impl SortNode {
                     additional: None,
                 },
             );
-            let task =
-                SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
+            let task = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+                .with_psets(self.node_id(), psets);
             let _ = result_tx.send(task).await;
         }
         Ok(())

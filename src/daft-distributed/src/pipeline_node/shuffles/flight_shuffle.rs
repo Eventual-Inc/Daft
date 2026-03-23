@@ -129,7 +129,8 @@ impl FlightShuffleNode {
 
             // For flight shuffle, we create a task directly with the flight shuffle read plan
             // instead of using make_in_memory_task_from_materialized_outputs
-            let task = SwordfishTaskBuilder::new(flight_shuffle_read_plan, self.as_ref());
+            let task =
+                SwordfishTaskBuilder::new(flight_shuffle_read_plan, self.as_ref(), self.node_id());
 
             let _ = result_tx.send(task).await;
         }

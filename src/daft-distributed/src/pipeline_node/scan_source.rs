@@ -126,7 +126,7 @@ impl ScanSourceNode {
             },
         );
 
-        SwordfishTaskBuilder::new(physical_scan, self.as_ref())
+        SwordfishTaskBuilder::new(physical_scan, self.as_ref(), self.node_id())
             .with_scan_tasks(self.node_id(), vec![scan_task])
     }
 }
@@ -233,7 +233,8 @@ impl PipelineNodeImpl for ScanSourceNode {
                     additional: None,
                 },
             );
-            let empty_scan_task = SwordfishTaskBuilder::new(transformed_plan, self.as_ref());
+            let empty_scan_task =
+                SwordfishTaskBuilder::new(transformed_plan, self.as_ref(), self.node_id());
             TaskBuilderStream::new(stream::iter(std::iter::once(empty_scan_task)).boxed())
         } else {
             let slf = self.clone();

@@ -95,7 +95,7 @@ impl PipelineNodeImpl for GlobScanSourceNode {
             },
         );
         let glob_paths = self.glob_paths.clone().to_vec();
-        let builder = SwordfishTaskBuilder::new(glob_scan_plan, self.as_ref())
+        let builder = SwordfishTaskBuilder::new(glob_scan_plan, self.as_ref(), self.node_id())
             .with_glob_paths(self.node_id(), glob_paths);
         TaskBuilderStream::new(stream::iter(std::iter::once(builder)).boxed())
     }

@@ -2172,7 +2172,6 @@ class PyExecutionEngineResult:
     async def finish(self) -> PyExecutionEngineFinalResult: ...
 
 class LocalPhysicalPlan:
-    def fingerprint(self) -> int: ...
     @staticmethod
     def from_logical_plan_builder(
         builder: LogicalPlanBuilder,

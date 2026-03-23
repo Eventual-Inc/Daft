@@ -4,6 +4,7 @@ use common_metrics::ops::{NodeCategory, NodeType};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
+use futures::StreamExt;
 
 use crate::{
     pipeline_node::{
@@ -92,21 +93,30 @@ impl PipelineNodeImpl for MonotonicallyIncreasingIdNode {
         let next_starting_offset = AtomicU64::new(0);
         let node_id = self.node_id();
 
-        input_node.pipeline_instruction(self, move |input| {
-            LocalPhysicalPlan::monotonically_increasing_id(
-                input,
-                column_name.clone(),
-                Some(
-                    next_starting_offset
-                        .fetch_add(MAX_ROWS_PER_PARTITION, std::sync::atomic::Ordering::SeqCst),
-                ),
-                schema.clone(),
-                StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
-            )
-        })
+        let task_builder_stream = input_node
+            .enumerate()
+            .map(move |(partition_idx, builder)| {
+                let offset = next_starting_offset
+                    .fetch_add(MAX_ROWS_PER_PARTITION, std::sync::atomic::Ordering::SeqCst);
+                let column_name = column_name.clone();
+                let schema = schema.clone();
+                builder
+                    .map_plan(self.as_ref(), move |input| {
+                        LocalPhysicalPlan::monotonically_increasing_id(
+                            input,
+                            column_name,
+                            Some(offset),
+                            schema,
+                            StatsState::NotMaterialized,
+                            LocalNodeContext {
+                                origin_node_id: Some(node_id as usize),
+                                additional: None,
+                            },
+                        )
+                    })
+                    .extend_fingerprint(partition_idx as u32)
+            })
+            .boxed();
+        TaskBuilderStream::new(task_builder_stream)
     }
 }

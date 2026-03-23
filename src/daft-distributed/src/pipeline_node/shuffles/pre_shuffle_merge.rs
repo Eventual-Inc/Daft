@@ -140,12 +140,13 @@ impl PreShuffleMergeNode {
                             self.config.schema.clone(),
                             self.node_id(),
                         );
-                    let builder = SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())
-                        .with_psets(self.node_id(), psets)
-                        .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
-                            worker_id,
-                            soft: false,
-                        }));
+                    let builder =
+                        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref(), self.node_id())
+                            .with_psets(self.node_id(), psets)
+                            .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
+                                worker_id,
+                                soft: false,
+                            }));
 
                     // Send the builder directly to result_tx
                     if result_tx.send(builder).await.is_err() {
@@ -163,12 +164,13 @@ impl PreShuffleMergeNode {
                     self.config.schema.clone(),
                     self.node_id(),
                 );
-                let builder = SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())
-                    .with_psets(self.node_id(), psets)
-                    .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
-                        worker_id,
-                        soft: false,
-                    }));
+                let builder =
+                    SwordfishTaskBuilder::new(in_memory_scan, self.as_ref(), self.node_id())
+                        .with_psets(self.node_id(), psets)
+                        .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
+                            worker_id,
+                            soft: false,
+                        }));
 
                 if result_tx.send(builder).await.is_err() {
                     break;

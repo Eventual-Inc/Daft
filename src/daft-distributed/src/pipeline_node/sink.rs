@@ -207,8 +207,8 @@ impl SinkNode {
                 additional: None,
             },
         );
-        let builder =
-            SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
+        let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+            .with_psets(self.node_id(), psets);
         let _ = sender.send(builder).await;
         Ok(())
     }

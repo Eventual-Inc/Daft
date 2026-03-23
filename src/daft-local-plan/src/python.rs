@@ -19,10 +19,6 @@ pub struct PyLocalPhysicalPlan {
 
 #[pymethods]
 impl PyLocalPhysicalPlan {
-    fn fingerprint(&self) -> u64 {
-        self.plan.fingerprint()
-    }
-
     fn single_line_display(&self) -> String {
         self.plan.single_line_display()
     }
