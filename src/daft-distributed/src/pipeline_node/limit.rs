@@ -183,7 +183,7 @@ impl LimitNode {
                     limit_state.decrement_take(num_rows);
                     let materialized_outputs = vec![next_input];
 
-                    let (plan, psets) = if skip_num_rows > 0 {
+                    if skip_num_rows > 0 {
                         let (in_memory_scan, psets) =
                             MaterializedOutput::into_in_memory_scan_with_psets(
                                 materialized_outputs,
@@ -191,18 +191,20 @@ impl LimitNode {
                                 self.node_id(),
                             );
 
-                        (
-                            LocalPhysicalPlan::limit(
-                                in_memory_scan,
-                                num_rows as u64,
-                                Some(skip_num_rows as u64),
-                                StatsState::NotMaterialized,
-                                LocalNodeContext::new(Some(self.node_id() as usize))
-                                    .with_phase(SECOND_LIMIT_PHASE),
-                            ),
-                            psets,
-                        )
+                        let plan = LocalPhysicalPlan::limit(
+                            in_memory_scan,
+                            num_rows as u64,
+                            Some(skip_num_rows as u64),
+                            StatsState::NotMaterialized,
+                            LocalNodeContext::new(Some(self.node_id() as usize))
+                                .with_phase(SECOND_LIMIT_PHASE),
+                        );
+                        SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+                            .with_psets(self.node_id(), psets)
+                            .extend_fingerprint(num_rows as u32)
+                            .extend_fingerprint(skip_num_rows as u32)
                     } else {
+                        // No limit applied, just pass-through
                         let (in_memory_scan, psets) =
                             MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
                                 materialized_outputs,
@@ -211,9 +213,9 @@ impl LimitNode {
                                 SECOND_LIMIT_PHASE,
                             );
 
-                        (in_memory_scan, psets)
-                    };
-                    SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets)
+                        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref(), self.node_id())
+                            .with_psets(self.node_id(), psets)
+                    }
                 }
                 Ordering::Greater => {
                     let remaining = limit_state.remaining_take();
@@ -232,8 +234,10 @@ impl LimitNode {
                         LocalNodeContext::new(Some(self.node_id() as usize))
                             .with_phase(SECOND_LIMIT_PHASE),
                     );
-                    let task = SwordfishTaskBuilder::new(plan, self.as_ref())
-                        .with_psets(self.node_id(), psets);
+                    let task = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+                        .with_psets(self.node_id(), psets)
+                        .extend_fingerprint(remaining as u32)
+                        .extend_fingerprint(skip_num_rows as u32);
                     limit_state.decrement_take(remaining);
                     task
                 }
@@ -266,16 +270,19 @@ impl LimitNode {
             // Submit tasks until we have max_concurrent_tasks or we run out of input
             for _ in 0..max_concurrent_tasks {
                 if let Some(builder) = input.next().await {
-                    let builder_with_limit = builder.map_plan(self.as_ref(), move |input| {
-                        LocalPhysicalPlan::limit(
-                            input,
-                            local_limit_per_task as u64,
-                            Some(0),
-                            StatsState::NotMaterialized,
-                            LocalNodeContext::new(Some(node_id as usize))
-                                .with_phase(FIRST_LIMIT_PHASE),
-                        )
-                    });
+                    let builder_with_limit = builder
+                        .map_plan(self.as_ref(), move |input| {
+                            LocalPhysicalPlan::limit(
+                                input,
+                                local_limit_per_task as u64,
+                                Some(0),
+                                StatsState::NotMaterialized,
+                                LocalNodeContext::new(Some(node_id as usize))
+                                    .with_phase(FIRST_LIMIT_PHASE),
+                            )
+                        })
+                        .extend_fingerprint(local_limit_per_task as u32)
+                        .extend_fingerprint(0);
                     let submittable =
                         builder_with_limit.build(self.context.query_idx, &task_id_counter);
                     let future = submittable.submit(&scheduler_handle)?;
@@ -305,7 +312,7 @@ impl LimitNode {
                             LocalNodeContext::new(Some(self.node_id() as usize)),
                         );
                         let empty_scan_builder =
-                            SwordfishTaskBuilder::new(empty_plan, self.as_ref())
+                            SwordfishTaskBuilder::new(empty_plan, self.as_ref(), self.node_id())
                                 .with_psets(self.node_id(), vec![]);
                         if result_tx.send(empty_scan_builder).await.is_err() {
                             return Ok(());

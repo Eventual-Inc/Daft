@@ -69,7 +69,7 @@ impl InMemorySourceNode {
             LocalNodeContext::new(Some(self.node_id() as usize)),
         );
 
-        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())
+        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref(), self.node_id())
             .with_psets(self.node_id(), vec![partition_ref])
     }
 }

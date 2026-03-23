@@ -125,8 +125,9 @@ impl FlightShuffleNode {
                 server_cache_mapping: server_cache_mapping.clone(),
             };
 
-            let task = SwordfishTaskBuilder::new(flight_shuffle_read_plan, self.as_ref())
-                .with_flight_shuffle_reads(source_id, vec![input]);
+            let task =
+                SwordfishTaskBuilder::new(flight_shuffle_read_plan, self.as_ref(), self.node_id())
+                    .with_flight_shuffle_reads(source_id, vec![input]);
 
             let _ = result_tx.send(task).await;
         }

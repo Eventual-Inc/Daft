@@ -101,7 +101,7 @@ impl PipelineNodeImpl for GlobScanSourceNode {
                     LocalNodeContext::new(Some(self.node_id() as usize)),
                 );
 
-                SwordfishTaskBuilder::new(glob_scan_plan, self.as_ref())
+                SwordfishTaskBuilder::new(glob_scan_plan, self.as_ref(), self.node_id())
                     .with_glob_paths(self.node_id(), paths.clone())
             })
             .collect::<Vec<_>>();
