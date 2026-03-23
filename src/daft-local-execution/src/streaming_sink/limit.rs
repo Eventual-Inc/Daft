@@ -51,7 +51,7 @@ impl StreamingSink for LimitSink {
     #[instrument(skip_all, name = "LimitSink::sink")]
     fn execute(
         &self,
-        mut input: Arc<MicroPartition>,
+        mut input: MicroPartition,
         mut state: LimitSinkState,
         _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,

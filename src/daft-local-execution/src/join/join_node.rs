@@ -65,7 +65,7 @@ struct ProbeExecutionContext<Op: JoinOperator> {
     task_spawner: ExecutionTaskSpawner,
     task_set: OrderingAwareJoinSet<DaftResult<ProbeTaskResult<Op>>>,
     state_pool: HashMap<StateId, Op::ProbeState>,
-    output_sender: Sender<Arc<MicroPartition>>,
+    output_sender: Sender<MicroPartition>,
     batch_manager: Arc<BatchManager<StaticBatchingStrategy>>,
     runtime_stats: Arc<dyn RuntimeStats>,
 }
@@ -101,7 +101,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
 
     fn spawn_build_task(
         ctx: &mut BuildExecutionContext<Op>,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Op::BuildState,
     ) {
         let op = ctx.op.clone();
@@ -120,7 +120,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
 
     async fn process_build_input(
         node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
+        mut receiver: Receiver<MicroPartition>,
         ctx: &mut BuildExecutionContext<Op>,
         stats_manager: &RuntimeStatsManagerHandle,
         finalized_build_state_sender: oneshot::Sender<Op::FinalizedBuildState>,
@@ -182,7 +182,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
 
     fn spawn_probe_task(
         ctx: &mut ProbeExecutionContext<Op>,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Op::ProbeState,
         state_id: StateId,
     ) {
@@ -272,7 +272,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
 
     async fn process_probe_input(
         node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
+        mut receiver: Receiver<MicroPartition>,
         ctx: &mut ProbeExecutionContext<Op>,
         stats_manager: &RuntimeStatsManagerHandle,
         finalized_build_state_receiver: oneshot::Receiver<Op::FinalizedBuildState>,
@@ -470,7 +470,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<Receiver<MicroPartition>> {
         let node_id = self.node_id();
         let op_name = self.op.name().to_string();
 

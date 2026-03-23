@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, num::NonZeroUsize, sync::Arc};
+use std::{collections::VecDeque, num::NonZeroUsize};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
@@ -12,7 +12,7 @@ enum BufferState {
 
 // A buffer that accumulates morsels until a threshold is reached
 pub struct RowBasedBuffer {
-    buffer: VecDeque<Arc<MicroPartition>>,
+    buffer: VecDeque<MicroPartition>,
     curr_len: usize,
     lower_bound: usize,
     upper_bound: NonZeroUsize,
@@ -45,7 +45,7 @@ impl RowBasedBuffer {
     }
 
     // Push a morsel to the buffer
-    pub fn push(&mut self, part: Arc<MicroPartition>) {
+    pub fn push(&mut self, part: MicroPartition) {
         self.curr_len += part.len();
         self.buffer.push_back(part);
     }
@@ -63,16 +63,17 @@ impl RowBasedBuffer {
     }
 
     // Pop all morsels in the buffer regardless of the threshold
-    pub fn pop_all(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
+    pub fn pop_all(&mut self) -> DaftResult<Option<MicroPartition>> {
         if self.buffer.is_empty() {
             Ok(None)
         } else {
-            let concated = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
+            let taken = std::mem::take(&mut self.buffer);
+            let concated = MicroPartition::concat(taken.iter())?;
             self.curr_len = 0;
-            Ok(Some(concated.into()))
+            Ok(Some(concated))
         }
     }
-    pub fn next_batch_if_ready(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
+    pub fn next_batch_if_ready(&mut self) -> DaftResult<Option<MicroPartition>> {
         if self.buffer.is_empty() {
             Ok(None)
         } else {
@@ -85,14 +86,16 @@ impl RowBasedBuffer {
                         self.curr_len = 0;
                         Ok(Some(part))
                     } else {
-                        let chunk = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
+                        let taken = std::mem::take(&mut self.buffer);
+                        let chunk = MicroPartition::concat(taken.iter())?;
                         self.curr_len = 0;
-                        Ok(Some(chunk.into()))
+                        Ok(Some(chunk))
                     }
                 }
                 BufferState::AboveUpperBound => {
                     // Return one batch of target size, keep rest
-                    let concated = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
+                    let taken = std::mem::take(&mut self.buffer);
+                    let concated = MicroPartition::concat(taken.iter())?;
 
                     let batch = concated.slice(0, self.upper_bound.get())?;
 
@@ -100,12 +103,12 @@ impl RowBasedBuffer {
                     if self.upper_bound.get() < concated.len() {
                         let remainder = concated.slice(self.upper_bound.get(), concated.len())?;
                         self.curr_len = remainder.len();
-                        self.buffer.push_back(remainder.into());
+                        self.buffer.push_back(remainder);
                     } else {
                         self.curr_len = 0;
                     }
 
-                    Ok(Some(batch.into()))
+                    Ok(Some(batch))
                 }
             }
         }
@@ -126,12 +129,12 @@ mod tests {
         assert_eq!(buffer.buffer_state(), BufferState::BelowLowerBound);
 
         // Add small chunk - should stay below lower bound
-        buffer.push(make_dummy_mp(5).into());
+        buffer.push(make_dummy_mp(5));
         assert_eq!(buffer.buffer_state(), BufferState::BelowLowerBound);
         assert!(buffer.next_batch_if_ready()?.is_none());
 
         // Add more to get within range
-        buffer.push(make_dummy_mp(10).into());
+        buffer.push(make_dummy_mp(10));
         assert_eq!(buffer.buffer_state(), BufferState::WithinRange);
 
         // Should return combined chunks as one batch
@@ -140,7 +143,7 @@ mod tests {
         assert_eq!(buffer.buffer_state(), BufferState::BelowLowerBound);
 
         // Add chunks to exceed upper bound
-        buffer.push(make_dummy_mp(25).into());
+        buffer.push(make_dummy_mp(25));
         assert_eq!(buffer.buffer_state(), BufferState::AboveUpperBound);
 
         // Should return one batch of upper_bound size
@@ -162,8 +165,8 @@ mod tests {
         assert!(buffer.pop_all()?.is_none());
 
         // Add some chunks below upper bound
-        buffer.push(make_dummy_mp(5).into());
-        buffer.push(make_dummy_mp(5).into());
+        buffer.push(make_dummy_mp(5));
+        buffer.push(make_dummy_mp(5));
 
         // pop_all should return combined chunks
         let popped = buffer.pop_all()?.unwrap();
@@ -177,7 +180,7 @@ mod tests {
     #[test]
     fn test_single_empty_partition() -> DaftResult<()> {
         let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1).unwrap());
-        buffer.push(Arc::new(MicroPartition::empty(None)));
+        buffer.push(MicroPartition::empty(None));
         assert!(buffer.next_batch_if_ready()?.is_some());
         assert!(buffer.next_batch_if_ready()?.is_none());
         assert!(buffer.pop_all()?.is_none());
@@ -187,8 +190,8 @@ mod tests {
     #[test]
     fn test_multiple_empty_partitions() -> DaftResult<()> {
         let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1).unwrap());
-        buffer.push(Arc::new(MicroPartition::empty(None)));
-        buffer.push(Arc::new(MicroPartition::empty(None)));
+        buffer.push(MicroPartition::empty(None));
+        buffer.push(MicroPartition::empty(None));
         assert!(buffer.next_batch_if_ready()?.is_some());
         assert!(buffer.next_batch_if_ready()?.is_none());
         assert!(buffer.pop_all()?.is_none());
@@ -198,8 +201,8 @@ mod tests {
     #[test]
     fn test_multiple_empty_partitions_pop_all() -> DaftResult<()> {
         let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1).unwrap());
-        buffer.push(Arc::new(MicroPartition::empty(None)));
-        buffer.push(Arc::new(MicroPartition::empty(None)));
+        buffer.push(MicroPartition::empty(None));
+        buffer.push(MicroPartition::empty(None));
         assert!(buffer.pop_all()?.is_some());
         assert!(buffer.pop_all()?.is_none());
         Ok(())

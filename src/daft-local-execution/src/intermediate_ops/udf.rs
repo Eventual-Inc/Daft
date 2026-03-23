@@ -259,9 +259,9 @@ impl UdfHandle {
         expr: &mut BoundExpr,
         params: &UdfParams,
         worker_idx: usize,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         runtime_stats: Arc<UdfRuntimeStats>,
-    ) -> DaftResult<Arc<MicroPartition>> {
+    ) -> DaftResult<MicroPartition> {
         let input_batches = input.record_batches();
         let mut output_batches = Vec::with_capacity(input_batches.len());
 
@@ -295,11 +295,11 @@ impl UdfHandle {
             output_batches.push(output_batch);
         }
 
-        Ok(Arc::new(MicroPartition::new_loaded(
+        Ok(MicroPartition::new_loaded(
             params.output_schema.clone(),
             Arc::new(output_batches),
             None,
-        )))
+        ))
     }
 }
 
@@ -422,7 +422,7 @@ impl IntermediateOperator for UdfOperator {
     #[instrument(skip_all, name = "UdfOperator::execute")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
         runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,

@@ -147,7 +147,7 @@ impl IntermediateOperator for ProjectOperator {
     #[instrument(skip_all, name = "ProjectOperator::execute")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
@@ -167,7 +167,7 @@ impl IntermediateOperator for ProjectOperator {
                             .eval_expression_list_async(Arc::unwrap_or_clone(projection))
                             .await?
                     };
-                    Ok((state, Arc::new(out)))
+                    Ok((state, out))
                 },
                 Span::current(),
             )

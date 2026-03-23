@@ -40,7 +40,7 @@ pub(crate) struct VLLMSink {
 
 pub(crate) struct VLLMState {
     executor: VLLMExecutor,
-    buffer: Vec<Arc<MicroPartition>>,
+    buffer: Vec<MicroPartition>,
     buffer_size: usize,
     finished_submitting: bool,
 }
@@ -194,7 +194,7 @@ impl VLLMSink {
         }
     }
 
-    fn poll_tasks(&self, state: &VLLMState) -> DaftResult<Option<Arc<MicroPartition>>> {
+    fn poll_tasks(&self, state: &VLLMState) -> DaftResult<Option<MicroPartition>> {
         Ok(state.executor.poll()?.map(|(outputs, rows)| {
             let output_series =
                 Utf8Array::from_slice(self.output_column_name.as_ref(), outputs.as_slice())
@@ -204,11 +204,7 @@ impl VLLMSink {
                 .append_column(self.schema.clone(), output_series)
                 .unwrap();
 
-            Arc::new(MicroPartition::new_loaded(
-                self.schema.clone(),
-                Arc::new(vec![rb]),
-                None,
-            ))
+            MicroPartition::new_loaded(self.schema.clone(), Arc::new(vec![rb]), None)
         }))
     }
 
@@ -364,7 +360,7 @@ impl StreamingSink for VLLMSink {
 
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,

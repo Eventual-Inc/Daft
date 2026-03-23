@@ -103,7 +103,7 @@ impl IntermediateOperator for ExplodeOperator {
     #[instrument(skip_all, name = "ExplodeOperator::execute")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
@@ -114,7 +114,7 @@ impl IntermediateOperator for ExplodeOperator {
             .spawn(
                 async move {
                     let out = input.explode(&to_explode, index_column.as_deref())?;
-                    Ok((state, Arc::new(out)))
+                    Ok((state, out))
                 },
                 Span::current(),
             )

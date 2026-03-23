@@ -55,7 +55,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
     #[instrument(skip_all, name = "MonotonicallyIncreasingIdSink::sink")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
@@ -84,10 +84,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
                         None,
                     );
 
-                    Ok((
-                        state,
-                        StreamingSinkOutput::NeedMoreInput(Some(Arc::new(out))),
-                    ))
+                    Ok((state, StreamingSinkOutput::NeedMoreInput(Some(out))))
                 },
                 Span::current(),
             )

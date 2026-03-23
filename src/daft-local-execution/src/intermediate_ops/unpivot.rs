@@ -44,7 +44,7 @@ impl IntermediateOperator for UnpivotOperator {
     #[instrument(skip_all, name = "UnpivotOperator::execute")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
@@ -59,7 +59,7 @@ impl IntermediateOperator for UnpivotOperator {
                         &params.variable_name,
                         &params.value_name,
                     )?;
-                    Ok((state, Arc::new(out)))
+                    Ok((state, out))
                 },
                 Span::current(),
             )

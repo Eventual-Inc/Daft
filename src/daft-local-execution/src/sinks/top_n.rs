@@ -26,7 +26,7 @@ struct TopNParams {
 /// Current status of the TopN operation
 pub(crate) enum TopNState {
     /// Operator is still collecting input
-    Building(Vec<Arc<MicroPartition>>),
+    Building(Vec<MicroPartition>),
     /// Operator has finished collecting all input and ready to produce output
     /// by doing a final sort + limit
     Done,
@@ -34,7 +34,7 @@ pub(crate) enum TopNState {
 
 impl TopNState {
     /// Process a new micro-partition and update the top N values
-    fn append(&mut self, part: Arc<MicroPartition>) {
+    fn append(&mut self, part: MicroPartition) {
         let Self::Building(top_values) = self else {
             panic!("TopNSink should be in Building state");
         };
@@ -43,7 +43,7 @@ impl TopNState {
     }
 
     /// Finalize the TopN operation and return the top N values
-    fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
+    fn finalize(&mut self) -> Vec<MicroPartition> {
         let Self::Building(top_values) = self else {
             panic!("TopNSink should be in Building state");
         };
@@ -84,7 +84,7 @@ impl BlockingSink for TopNSink {
     #[instrument(skip_all, name = "TopNSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
@@ -105,7 +105,7 @@ impl BlockingSink for TopNSink {
                     )?;
 
                     // Append to the collection of existing top N values
-                    state.append(Arc::new(top_input_rows));
+                    state.append(top_input_rows);
                     Ok(state)
                 },
                 Span::current(),
@@ -123,15 +123,18 @@ impl BlockingSink for TopNSink {
         spawner
             .spawn(
                 async move {
-                    let parts = states.into_iter().flat_map(|mut state| state.finalize());
-                    let concated = MicroPartition::concat(parts)?;
-                    let final_output = Arc::new(concated.top_n(
+                    let parts: Vec<MicroPartition> = states
+                        .into_iter()
+                        .flat_map(|mut state| state.finalize())
+                        .collect();
+                    let concated = MicroPartition::concat(parts.iter())?;
+                    let final_output = concated.top_n(
                         &params.sort_by,
                         &params.descending,
                         &params.nulls_first,
                         params.limit,
                         params.offset,
-                    )?);
+                    )?;
                     Ok(BlockingSinkFinalizeOutput::Finished(vec![final_output]))
                 },
                 Span::current(),

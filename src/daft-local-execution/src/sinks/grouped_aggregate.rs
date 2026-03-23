@@ -33,7 +33,7 @@ impl AggStrategy {
     fn execute_strategy(
         &self,
         inner_states: &mut [Option<SinglePartitionAggregateState>],
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         params: &GroupedAggregateParams,
     ) -> DaftResult<()> {
         match self {
@@ -47,7 +47,7 @@ impl AggStrategy {
 
     fn execute_agg_then_partition(
         inner_states: &mut [Option<SinglePartitionAggregateState>],
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         params: &GroupedAggregateParams,
     ) -> DaftResult<()> {
         let agged = input.agg(
@@ -65,7 +65,7 @@ impl AggStrategy {
 
     fn execute_partition_then_agg(
         inner_states: &mut [Option<SinglePartitionAggregateState>],
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         params: &GroupedAggregateParams,
         partial_agg_threshold: usize,
     ) -> DaftResult<()> {
@@ -92,7 +92,7 @@ impl AggStrategy {
 
     fn execute_partition_only(
         inner_states: &mut [Option<SinglePartitionAggregateState>],
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         params: &GroupedAggregateParams,
     ) -> DaftResult<()> {
         let partitioned =
@@ -140,7 +140,7 @@ impl GroupedAggregateState {
 
     fn push(
         &mut self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         params: &GroupedAggregateParams,
         global_strategy_lock: &Arc<Mutex<Option<AggStrategy>>>,
     ) -> DaftResult<()> {
@@ -173,7 +173,7 @@ impl GroupedAggregateState {
     }
 
     fn determine_agg_strategy(
-        input: &Arc<MicroPartition>,
+        input: &MicroPartition,
         params: &GroupedAggregateParams,
         high_cardinality_threshold_ratio: f64,
         partial_agg_threshold: usize,
@@ -315,7 +315,7 @@ impl BlockingSink for GroupedAggregateSink {
     #[instrument(skip_all, name = "GroupedAggregateSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
@@ -407,10 +407,8 @@ impl BlockingSink for GroupedAggregateSink {
                         .await
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
-                    let concated = MicroPartition::concat(&results)?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        concated,
-                    )]))
+                    let concated = MicroPartition::concat(results.iter())?;
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![concated]))
                 },
                 Span::current(),
             )

@@ -71,7 +71,7 @@ impl BlockingSink for WindowPartitionOnlySink {
     #[instrument(skip_all, name = "WindowPartitionOnlySink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
@@ -148,9 +148,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                     if results.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                            empty_result,
-                        )]));
+                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![empty_result]));
                     }
 
                     let final_result = MicroPartition::new_loaded(
@@ -159,9 +157,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                         None,
                     );
 
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        final_result,
-                    )]))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![final_result]))
                 },
                 Span::current(),
             )

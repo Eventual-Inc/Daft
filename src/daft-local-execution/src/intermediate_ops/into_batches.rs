@@ -29,7 +29,7 @@ impl IntermediateOperator for IntoBatchesOperator {
     type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
@@ -38,12 +38,12 @@ impl IntermediateOperator for IntoBatchesOperator {
             .spawn(
                 async move {
                     let out = match input.concat_or_get()? {
-                        Some(record_batch) => Arc::new(MicroPartition::new_loaded(
+                        Some(record_batch) => MicroPartition::new_loaded(
                             input.schema(),
                             Arc::new(vec![record_batch]),
                             None,
-                        )),
-                        None => Arc::new(MicroPartition::empty(Some(input.schema()))),
+                        ),
+                        None => MicroPartition::empty(Some(input.schema())),
                     };
                     Ok((state, out))
                 },

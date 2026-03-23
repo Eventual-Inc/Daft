@@ -61,7 +61,7 @@ impl BlockingSink for CommitWriteSink {
     #[instrument(skip_all, name = "CommitWriteSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         _spawner: &ExecutionTaskSpawner,
@@ -103,11 +103,11 @@ impl BlockingSink for CommitWriteSink {
                                     )?;
                                 let mut writer = writer_factory.create_writer(0, None)?;
                                 let empty_rb = RecordBatch::empty(Some(data_schema.clone()));
-                                let empty_mp = Arc::new(MicroPartition::new_loaded(
+                                let empty_mp = MicroPartition::new_loaded(
                                     data_schema.clone(),
                                     vec![empty_rb].into(),
                                     None,
-                                ));
+                                );
                                 writer.write(empty_mp).await?;
                                 if let Some(rb) = writer.close().await? {
                                     written_file_path_record_batches.push(rb);
@@ -162,9 +162,7 @@ impl BlockingSink for CommitWriteSink {
                         written_file_path_record_batches.into(),
                         None,
                     );
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        written_file_paths_mp,
-                    )]))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![written_file_paths_mp]))
                 },
                 Span::current(),
             )

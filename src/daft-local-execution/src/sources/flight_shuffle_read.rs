@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::collections::VecDeque;
 
 use async_trait::async_trait;
 use common_daft_config::DaftExecutionConfig;
@@ -47,7 +47,7 @@ impl FlightShuffleReadSource {
     fn spawn_flight_shuffle_processor(
         num_parallel_tasks: usize,
         mut receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
-        output_sender: Sender<Arc<MicroPartition>>,
+        output_sender: Sender<MicroPartition>,
         schema: SchemaRef,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
@@ -82,7 +82,7 @@ impl FlightShuffleReadSource {
                     recv_result = receiver.recv(), if !receiver_exhausted => {
                         match recv_result {
                             Some((_input_id, inputs)) if inputs.is_empty() => {
-                                let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
+                                let empty = MicroPartition::empty(Some(schema.clone()));
                                 if output_sender.send(empty).await.is_err() {
                                     return Ok(());
                                 }
@@ -118,11 +118,11 @@ impl FlightShuffleReadSource {
 async fn forward_partition_stream(
     mut stream: BoxStream<'static, DaftResult<daft_recordbatch::RecordBatch>>,
     schema: SchemaRef,
-    sender: Sender<Arc<MicroPartition>>,
+    sender: Sender<MicroPartition>,
 ) -> DaftResult<()> {
     while let Some(batch) = stream.next().await {
         let mp = MicroPartition::new_loaded(schema.clone(), vec![batch?].into(), None);
-        if sender.send(Arc::new(mp)).await.is_err() {
+        if sender.send(mp).await.is_err() {
             break;
         }
     }
@@ -154,7 +154,7 @@ impl Source for FlightShuffleReadSource {
         _io_stats: IOStatsRef,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
+        let (output_sender, output_receiver) = create_channel::<MicroPartition>(1);
         let input_receiver = self.receiver;
         let num_parallel_tasks = self.num_parallel_tasks;
 

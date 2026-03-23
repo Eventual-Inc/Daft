@@ -29,9 +29,9 @@ pub enum BlockingSinkFinalizeOutput<Op: BlockingSink> {
     #[allow(dead_code)]
     HasMoreOutput {
         states: Vec<Op::State>,
-        output: Vec<Arc<MicroPartition>>,
+        output: Vec<MicroPartition>,
     },
-    Finished(Vec<Arc<MicroPartition>>),
+    Finished(Vec<MicroPartition>),
 }
 
 pub(crate) type BlockingSinkSinkResult<Op> =
@@ -44,7 +44,7 @@ pub(crate) trait BlockingSink: Send + Sync {
 
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
         runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
@@ -80,7 +80,7 @@ struct ExecutionContext<Op: BlockingSink> {
     task_spawner: ExecutionTaskSpawner,
     task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
     state_pool: HashMap<StateId, Op::State>,
-    output_sender: Sender<Arc<MicroPartition>>,
+    output_sender: Sender<MicroPartition>,
     runtime_stats: Arc<Op::Stats>,
     stats_manager: RuntimeStatsManagerHandle,
 }
@@ -121,7 +121,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
 
     fn spawn_execution_task(
         ctx: &mut ExecutionContext<Op>,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Op::State,
         state_id: StateId,
     ) {
@@ -145,7 +145,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
 
     async fn process_input(
         node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
+        mut receiver: Receiver<MicroPartition>,
         ctx: &mut ExecutionContext<Op>,
     ) -> DaftResult<()> {
         let mut input_closed = false;
@@ -287,7 +287,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<Receiver<MicroPartition>> {
         let node_id = self.node_id();
         let name = self.name();
 

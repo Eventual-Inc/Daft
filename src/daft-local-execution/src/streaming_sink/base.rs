@@ -29,21 +29,21 @@ use crate::{
 };
 
 pub enum StreamingSinkOutput {
-    NeedMoreInput(Option<Arc<MicroPartition>>),
+    NeedMoreInput(Option<MicroPartition>),
     #[allow(dead_code)]
     HasMoreOutput {
-        input: Arc<MicroPartition>,
-        output: Option<Arc<MicroPartition>>,
+        input: MicroPartition,
+        output: Option<MicroPartition>,
     },
-    Finished(Option<Arc<MicroPartition>>),
+    Finished(Option<MicroPartition>),
 }
 
 pub enum StreamingSinkFinalizeOutput<Op: StreamingSink> {
     HasMoreOutput {
         states: Vec<Op::State>,
-        output: Option<Arc<MicroPartition>>,
+        output: Option<MicroPartition>,
     },
-    Finished(Option<Arc<MicroPartition>>),
+    Finished(Option<MicroPartition>),
 }
 
 pub(crate) type StreamingSinkExecuteResult<Op> =
@@ -60,7 +60,7 @@ pub(crate) trait StreamingSink: Send + Sync {
     /// with the given state.
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
         runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
@@ -121,7 +121,7 @@ struct ExecutionContext<Op: StreamingSink> {
     task_spawner: ExecutionTaskSpawner,
     task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
     state_pool: HashMap<StateId, Op::State>,
-    output_sender: Sender<Arc<MicroPartition>>,
+    output_sender: Sender<MicroPartition>,
     batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
     runtime_stats: Arc<Op::Stats>,
     stats_manager: RuntimeStatsManagerHandle,
@@ -159,7 +159,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
 
     fn spawn_execution_task(
         ctx: &mut ExecutionContext<Op>,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Op::State,
         state_id: StateId,
     ) {
@@ -275,7 +275,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
 
     async fn process_input(
         node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
+        mut receiver: Receiver<MicroPartition>,
         ctx: &mut ExecutionContext<Op>,
     ) -> DaftResult<OperatorControlFlow> {
         let (lower, upper) = ctx.batch_manager.initial_requirements().values();
@@ -452,7 +452,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<Receiver<MicroPartition>> {
         let node_id = self.node_id();
         let name = self.name();
 

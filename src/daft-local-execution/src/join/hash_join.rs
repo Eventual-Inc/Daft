@@ -55,11 +55,7 @@ impl HashJoinBuildState {
         })
     }
 
-    fn add_tables(
-        &mut self,
-        input: &Arc<MicroPartition>,
-        params: &HashJoinParams,
-    ) -> DaftResult<()> {
+    fn add_tables(&mut self, input: &MicroPartition, params: &HashJoinParams) -> DaftResult<()> {
         let input_tables = input.record_batches();
         if input_tables.is_empty() {
             let empty_table = RecordBatch::empty(Some(input.schema()));
@@ -149,7 +145,7 @@ impl JoinOperator for HashJoinOperator {
 
     fn build(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::BuildState,
         spawner: &ExecutionTaskSpawner,
     ) -> BuildStateResult<Self> {
@@ -195,14 +191,12 @@ impl JoinOperator for HashJoinOperator {
 
     fn probe(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::ProbeState,
         spawner: &ExecutionTaskSpawner,
     ) -> ProbeResult<Self> {
         if input.is_empty() {
-            let empty = Arc::new(MicroPartition::empty(Some(
-                self.params.output_schema.clone(),
-            )));
+            let empty = MicroPartition::empty(Some(self.params.output_schema.clone()));
             return Ok((state, ProbeOutput::NeedMoreInput(Some(empty)))).into();
         }
 

@@ -29,7 +29,7 @@ impl LanceWriter {
 
 #[async_trait]
 impl AsyncFileWriter for LanceWriter {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Vec<RecordBatch>;
 
     async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
@@ -85,7 +85,7 @@ impl AsyncFileWriter for LanceWriter {
 
 pub fn make_lance_writer_factory(
     lance_info: LanceCatalogInfo,
-) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>> {
+) -> Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>> {
     Arc::new(LanceWriterFactory { lance_info })
 }
 
@@ -94,8 +94,7 @@ pub struct LanceWriterFactory {
 }
 
 impl WriterFactory for LanceWriterFactory {
-    type Input = Arc<MicroPartition>;
-
+    type Input = MicroPartition;
     type Result = Vec<RecordBatch>;
 
     fn create_writer(

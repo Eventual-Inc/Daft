@@ -22,7 +22,7 @@ pub(crate) struct SortMergeJoinBuildState {
 
 pub(crate) struct SortMergeJoinProbeState {
     build_contents: Vec<Arc<MicroPartition>>,
-    probe_contents: Vec<Arc<MicroPartition>>,
+    probe_contents: Vec<MicroPartition>,
 }
 
 pub struct SortMergeJoinOperator {
@@ -58,12 +58,12 @@ impl JoinOperator for SortMergeJoinOperator {
 
     fn build(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::BuildState,
         _spawner: &ExecutionTaskSpawner,
     ) -> BuildStateResult<Self> {
         if !input.is_empty() {
-            state.tables.push(input);
+            state.tables.push(Arc::new(input));
         }
         Ok(state).into()
     }
@@ -88,7 +88,7 @@ impl JoinOperator for SortMergeJoinOperator {
 
     fn probe(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::ProbeState,
         _spawner: &ExecutionTaskSpawner,
     ) -> ProbeResult<Self> {
@@ -124,7 +124,7 @@ impl JoinOperator for SortMergeJoinOperator {
                     // TODO: Handle pre-sorted?
                     let joined = left_mp
                         .sort_merge_join(&right_mp, &left_on, &right_on, join_type, false)?;
-                    Ok(Some(Arc::new(joined)))
+                    Ok(Some(joined))
                 },
                 Span::current(),
             )

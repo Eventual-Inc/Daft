@@ -24,7 +24,7 @@ use crate::{
     runtime_stats::RuntimeStats,
 };
 
-pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
+pub type SourceStream<'a> = BoxStream<'a, DaftResult<MicroPartition>>;
 
 pub(crate) struct SourceStats {
     duration_us: Counter,
@@ -203,7 +203,7 @@ impl PipelineNode for SourceNode {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<crate::channel::Receiver<MicroPartition>> {
         let io_stats = self.runtime_stats.io_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
@@ -237,7 +237,7 @@ impl PipelineNode for SourceNode {
                     }
                 }
                 if !has_data {
-                    let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
+                    let empty = MicroPartition::empty(Some(schema.clone()));
                     let _ = destination_sender.send(empty).await;
                     runtime_stats.add_rows_out(0);
                 }

@@ -14,10 +14,8 @@ struct TargetFileSizeWriter {
     current_in_memory_bytes_written: usize,
     total_physical_bytes_written: usize,
     bytes_per_file: Vec<usize>,
-    current_writer:
-        Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
-    writer_factory:
-        Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
+    current_writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>,
+    writer_factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Option<RecordBatch>>>,
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
     results: Vec<RecordBatch>,
     partition_values: Option<RecordBatch>,
@@ -27,14 +25,13 @@ struct TargetFileSizeWriter {
 impl TargetFileSizeWriter {
     fn new(
         writer_factory: Arc<
-            dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>,
+            dyn WriterFactory<Input = MicroPartition, Result = Option<RecordBatch>>,
         >,
         partition_values: Option<RecordBatch>,
         size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
     ) -> DaftResult<Self> {
-        let writer: Box<
-            dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>,
-        > = writer_factory.create_writer(0, partition_values.as_ref())?;
+        let writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>> =
+            writer_factory.create_writer(0, partition_values.as_ref())?;
         let estimate = size_calculator.calculate_target_in_memory_size_bytes();
         Ok(Self {
             current_in_memory_size_estimate: estimate,
@@ -57,7 +54,7 @@ impl TargetFileSizeWriter {
 
     async fn write_and_update_bytes(
         &mut self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         size_bytes: usize,
     ) -> DaftResult<WriteResult> {
         self.current_in_memory_bytes_written += size_bytes;
@@ -97,10 +94,10 @@ impl TargetFileSizeWriter {
 
 #[async_trait]
 impl AsyncFileWriter for TargetFileSizeWriter {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Vec<RecordBatch>;
 
-    async fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<WriteResult> {
+    async fn write(&mut self, input: MicroPartition) -> DaftResult<WriteResult> {
         assert!(
             !self.is_closed,
             "Cannot write to a closed TargetFileSizeWriter"
@@ -182,15 +179,14 @@ impl AsyncFileWriter for TargetFileSizeWriter {
 }
 
 pub(crate) struct TargetFileSizeWriterFactory {
-    writer_factory:
-        Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
+    writer_factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Option<RecordBatch>>>,
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
 }
 
 impl TargetFileSizeWriterFactory {
     pub(crate) fn new(
         writer_factory: Arc<
-            dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>,
+            dyn WriterFactory<Input = MicroPartition, Result = Option<RecordBatch>>,
         >,
         size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
     ) -> Self {
@@ -202,7 +198,7 @@ impl TargetFileSizeWriterFactory {
 }
 
 impl WriterFactory for TargetFileSizeWriterFactory {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Vec<RecordBatch>;
 
     fn create_writer(

@@ -57,8 +57,8 @@ impl ConcatNode {
 
     async fn process_child(
         node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
-        sender: Sender<Arc<MicroPartition>>,
+        mut receiver: Receiver<MicroPartition>,
+        sender: Sender<MicroPartition>,
         runtime_stats: Arc<dyn RuntimeStats>,
         stats_manager: &RuntimeStatsManagerHandle,
         node_initialized: &mut bool,
@@ -169,7 +169,7 @@ impl PipelineNode for ConcatNode {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<Receiver<MicroPartition>> {
         let node_id = self.node_id();
         let name = self.name();
 

@@ -102,12 +102,12 @@ pub enum WriteFormat {
 }
 
 pub(crate) struct WriteState {
-    writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+    writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
 }
 
 impl WriteState {
     pub fn new(
-        writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+        writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
     ) -> Self {
         Self { writer }
     }
@@ -115,7 +115,7 @@ impl WriteState {
 
 pub(crate) struct WriteSink {
     write_format: WriteFormat,
-    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+    writer_factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>>,
     partition_by: Option<Vec<BoundExpr>>,
     file_schema: SchemaRef,
 }
@@ -123,9 +123,7 @@ pub(crate) struct WriteSink {
 impl WriteSink {
     pub(crate) fn new(
         write_format: WriteFormat,
-        writer_factory: Arc<
-            dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>,
-        >,
+        writer_factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>>,
         partition_by: Option<Vec<BoundExpr>>,
         file_schema: SchemaRef,
     ) -> Self {
@@ -145,7 +143,7 @@ impl BlockingSink for WriteSink {
     #[instrument(skip_all, name = "WriteSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
         runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
@@ -176,11 +174,7 @@ impl BlockingSink for WriteSink {
                     for mut state in states {
                         results.extend(state.writer.close().await?);
                     }
-                    let mp = Arc::new(MicroPartition::new_loaded(
-                        file_schema,
-                        results.into(),
-                        None,
-                    ));
+                    let mp = MicroPartition::new_loaded(file_schema, results.into(), None);
                     Ok(BlockingSinkFinalizeOutput::Finished(vec![mp]))
                 },
                 Span::current(),

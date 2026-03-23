@@ -39,7 +39,7 @@ impl InMemorySource {
 
     fn spawn_partition_set_processor(
         mut receiver: UnboundedReceiver<(InputId, Vec<MicroPartitionRef>)>,
-        output_sender: Sender<Arc<MicroPartition>>,
+        output_sender: Sender<MicroPartition>,
         schema: SchemaRef,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
@@ -88,14 +88,15 @@ impl InMemorySource {
 async fn forward_partition_batch(
     partitions: Vec<MicroPartitionRef>,
     schema: SchemaRef,
-    sender: Sender<Arc<MicroPartition>>,
+    sender: Sender<MicroPartition>,
 ) -> DaftResult<()> {
     if partitions.is_empty() {
-        let empty = Arc::new(MicroPartition::empty(Some(schema)));
+        let empty = MicroPartition::empty(Some(schema));
         let _ = sender.send(empty).await;
     } else {
         for partition in partitions {
-            let _ = sender.send(partition).await;
+            let owned = Arc::try_unwrap(partition).unwrap_or_else(|a| (*a).clone());
+            let _ = sender.send(owned).await;
         }
     }
     Ok(())
@@ -111,7 +112,7 @@ impl Source for InMemorySource {
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         io_stats.mark_bytes_read(self.size_bytes);
-        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
+        let (output_sender, output_receiver) = create_channel::<MicroPartition>(1);
         let input_receiver = self.receiver;
 
         let processor_task =

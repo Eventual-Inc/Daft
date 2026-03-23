@@ -50,7 +50,7 @@ impl GlobScanSource {
     /// Spawns the background task that continuously reads glob paths from receiver and processes them
     fn spawn_glob_path_processor(
         mut receiver: UnboundedReceiver<(InputId, Vec<String>)>,
-        output_sender: Sender<Arc<MicroPartition>>,
+        output_sender: Sender<MicroPartition>,
         io_stats: IOStatsRef,
         chunk_size: usize,
         pushdowns: Pushdowns,
@@ -125,11 +125,11 @@ impl GlobScanSource {
                                     vec![path_array, size_array, rows_array],
                                     num_rows,
                                 );
-                                Ok(Arc::new(MicroPartition::new_loaded(
+                                Ok(MicroPartition::new_loaded(
                                     schema.clone(),
                                     Arc::new(vec![record_batch]),
                                     None,
-                                )))
+                                ))
                             });
 
                         while let Some(result) = stream.next().await {
@@ -191,7 +191,7 @@ impl Source for GlobScanSource {
         io_stats: IOStatsRef,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
+        let (output_sender, output_receiver) = create_channel::<MicroPartition>(1);
         let input_receiver = self.receiver;
         let pushdowns = self.pushdowns;
         let schema = self.schema;

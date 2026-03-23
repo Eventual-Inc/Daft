@@ -57,7 +57,7 @@ impl BlockingSink for RepartitionSink {
     #[instrument(skip_all, name = "RepartitionSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
@@ -127,7 +127,7 @@ impl BlockingSink for RepartitionSink {
                                 }),
                                 None,
                             );
-                            Ok(Arc::new(mp))
+                            Ok(mp)
                         });
                         outputs.push(fut);
                     }

@@ -175,7 +175,7 @@ impl StreamingSink for AsyncUdfSink {
     #[instrument(skip_all, name = "AsyncUdfSink::execute")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
         runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
@@ -253,11 +253,11 @@ impl StreamingSink for AsyncUdfSink {
                             if ready_batches.is_empty() {
                                 Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
                             } else {
-                                let output = Arc::new(MicroPartition::new_loaded(
+                                let output = MicroPartition::new_loaded(
                                     params.output_schema.clone(),
                                     Arc::new(ready_batches),
                                     None,
-                                ));
+                                );
                                 Ok((state, StreamingSinkOutput::NeedMoreInput(Some(output))))
                             }
                         }
@@ -287,11 +287,11 @@ impl StreamingSink for AsyncUdfSink {
                         let batch = join_res??;
                         Ok(StreamingSinkFinalizeOutput::HasMoreOutput {
                             states,
-                            output: Some(Arc::new(MicroPartition::new_loaded(
+                            output: Some(MicroPartition::new_loaded(
                                 params.output_schema.clone(),
                                 Arc::new(vec![batch]),
                                 None,
-                            ))),
+                            )),
                         })
                     } else {
                         Ok(StreamingSinkFinalizeOutput::Finished(None))

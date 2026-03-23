@@ -93,7 +93,7 @@ impl IntermediateOperator for FilterOperator {
     #[instrument(skip_all, name = "FilterOperator::execute")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
@@ -103,7 +103,7 @@ impl IntermediateOperator for FilterOperator {
             .spawn(
                 async move {
                     let out = input.filter(&[predicate])?;
-                    Ok((state, Arc::new(out)))
+                    Ok((state, out))
                 },
                 Span::current(),
             )

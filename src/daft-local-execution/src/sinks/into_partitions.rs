@@ -12,12 +12,12 @@ use super::blocking_sink::{
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) enum IntoPartitionsState {
-    Building(Vec<Arc<MicroPartition>>),
+    Building(Vec<MicroPartition>),
     Done,
 }
 
 impl IntoPartitionsState {
-    fn push(&mut self, part: Arc<MicroPartition>) {
+    fn push(&mut self, part: MicroPartition) {
         if let Self::Building(parts) = self {
             parts.push(part);
         } else {
@@ -25,7 +25,7 @@ impl IntoPartitionsState {
         }
     }
 
-    fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
+    fn finalize(&mut self) -> Vec<MicroPartition> {
         let res = if let Self::Building(parts) = self {
             std::mem::take(parts)
         } else {
@@ -56,7 +56,7 @@ impl BlockingSink for IntoPartitionsSink {
     #[instrument(skip_all, name = "IntoPartitionsSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         _spawner: &ExecutionTaskSpawner,
@@ -78,13 +78,13 @@ impl BlockingSink for IntoPartitionsSink {
             .spawn(
                 async move {
                     // Collect all data from all states
-                    let all_parts: Vec<Arc<MicroPartition>> = states
+                    let all_parts: Vec<MicroPartition> = states
                         .into_iter()
                         .flat_map(|mut state| state.finalize())
                         .collect();
 
                     // Concatenate all data
-                    let concatenated = MicroPartition::concat(all_parts)?;
+                    let concatenated = MicroPartition::concat(all_parts.iter())?;
 
                     let total_rows = concatenated.len();
                     let rows_per_partition = total_rows.div_ceil(num_partitions);
@@ -96,11 +96,11 @@ impl BlockingSink for IntoPartitionsSink {
 
                         if start_idx < total_rows {
                             let sliced_table = concatenated.slice(start_idx, end_idx)?;
-                            outputs.push(Arc::new(sliced_table));
+                            outputs.push(sliced_table);
                         } else {
                             // Empty partition
                             let mp = MicroPartition::empty(Some(schema.clone()));
-                            outputs.push(Arc::new(mp));
+                            outputs.push(mp);
                         }
                     }
                     Ok(BlockingSinkFinalizeOutput::Finished(outputs))

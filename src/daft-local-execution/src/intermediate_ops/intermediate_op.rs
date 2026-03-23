@@ -28,7 +28,7 @@ use crate::{
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 
-pub type IntermediateOperatorResult = Arc<MicroPartition>;
+pub type IntermediateOperatorResult = MicroPartition;
 
 pub(crate) type IntermediateOpExecuteResult<Op> = OperatorOutput<
     DaftResult<(
@@ -42,7 +42,7 @@ pub(crate) trait IntermediateOperator: Send + Sync {
     type BatchingStrategy: BatchingStrategy + 'static;
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
         runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
@@ -88,7 +88,7 @@ struct ExecutionContext<Op: IntermediateOperator> {
     task_spawner: ExecutionTaskSpawner,
     task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
     state_pool: HashMap<StateId, Op::State>,
-    output_sender: Sender<Arc<MicroPartition>>,
+    output_sender: Sender<MicroPartition>,
     batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
     runtime_stats: Arc<Op::Stats>,
 }
@@ -132,7 +132,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
 
     fn spawn_execution_task(
         ctx: &mut ExecutionContext<Op>,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Op::State,
         state_id: StateId,
     ) {
@@ -206,7 +206,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
 
     async fn process_input(
         node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
+        mut receiver: Receiver<MicroPartition>,
         ctx: &mut ExecutionContext<Op>,
         stats_manager: &RuntimeStatsManagerHandle,
     ) -> DaftResult<()> {
@@ -382,7 +382,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<Receiver<MicroPartition>> {
         let node_id = self.node_id();
         let name = self.name();
 
