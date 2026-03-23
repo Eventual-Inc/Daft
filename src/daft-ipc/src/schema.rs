@@ -22,8 +22,10 @@ pub async fn read_arrow_ipc_file_schema(
         .await?
         .bytes()
         .await?;
-    magic_bytes[..10].copy_from_slice(magic_result.as_ref());
-    let footer_len = read_footer_length(magic_bytes)?;
+    magic_bytes[..].copy_from_slice(magic_result.as_ref());
+    let footer_len = read_footer_length(magic_bytes).map_err(|_| {
+        DaftError::InternalError(format!("Failed to read footer length for file `{uri}`"))
+    })?;
 
     // Read footer
     let footer_data = io_client
