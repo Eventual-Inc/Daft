@@ -270,8 +270,8 @@ daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
 daft-ext-internal = {path = "src/daft-ext-internal"}
-daft-ext-macros = {path = "src/daft-ext-macros", version = "0.1.0"}
-daft-ext = {path = "src/daft-ext", version = "0.1.0"}
+daft-ext-macros = {path = "src/daft-ext-macros", version = "0.1.1"}
+daft-ext = {path = "src/daft-ext", version = "0.1.1"}
 daft-file = {path = "src/daft-file"}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-binary = {path = "src/daft-functions-binary"}
