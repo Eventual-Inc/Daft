@@ -59,6 +59,7 @@ if TYPE_CHECKING:
     import pandas
     import pyarrow
     import pyiceberg
+    import pypaimon
     import ray
     import torch
     from sqlalchemy.engine import Connection
@@ -1376,7 +1377,7 @@ class DataFrame:
         except ImportError:
             raise ImportError(
                 "pypaimon is required to use write_paimon. "
-                "Install it with: pip install 'daft[paimon]' or pip install pypaimon"
+                "Install it with: `pip install pypaimon`"
             )
 
         from daft.io.paimon.paimon_data_sink import PaimonDataSink

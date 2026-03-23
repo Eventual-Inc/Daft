@@ -8,6 +8,7 @@ from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
 from daft.logical.builder import LogicalPlanBuilder
+from daft.io import IOConfig, S3Config
 
 if TYPE_CHECKING:
     from pypaimon.table.table import Table as PaimonTable
@@ -18,7 +19,6 @@ def _convert_paimon_catalog_options_to_io_config(catalog_options: dict) -> IOCon
 
     pypaimon supports only S3-like (s3://, s3a://, s3n://, oss://), HDFS, and local (file://).
     """
-    from daft.io import IOConfig, S3Config
 
     any_props_set = False
 
@@ -93,7 +93,7 @@ def read_paimon(
     except ImportError:
         raise ImportError(
             "pypaimon is required to use read_paimon. "
-            "Install it with: pip install 'daft[paimon]' or pip install pypaimon"
+            "Install it with: `pip install pypaimon`"
         )
 
     from daft.io.paimon.paimon_scan import PaimonScanOperator

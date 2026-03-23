@@ -15,19 +15,6 @@ if TYPE_CHECKING:
     from pypaimon.table.file_store_table import FileStoreTable
 
 
-def _cast_batch_to_paimon_schema(
-    batch: pa.RecordBatch,
-    target_schema: pa.Schema,
-) -> pa.RecordBatch:
-    arrays = []
-    for field in target_schema:
-        col = batch.column(field.name)
-        if col.type != field.type:
-            col = col.cast(field.type)
-        arrays.append(col)
-    return pa.RecordBatch.from_arrays(arrays, schema=target_schema)
-
-
 class PaimonDataSink(DataSink[list]):
     """DataSink for writing data to an Apache Paimon table.
 
@@ -69,14 +56,27 @@ class PaimonDataSink(DataSink[list]):
     def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[list]]:
         table_write = self._write_builder.new_write()
 
+        # Lazily compute which fields need type casting on the first batch.
+        cast_fields: list[tuple[int, pa.DataType]] | None = None
+
         total_rows = 0
         total_bytes = 0
         try:
             for mp in micropartitions:
                 arrow_table = mp.to_arrow()
                 for batch in arrow_table.to_batches():
-                    casted = _cast_batch_to_paimon_schema(batch, self._target_schema)
-                    table_write.write_arrow_batch(casted)
+                    if cast_fields is None:
+                        cast_fields = [
+                            (i, field.type)
+                            for i, field in enumerate(self._target_schema)
+                            if batch.column(i).type != field.type
+                        ]
+                    if cast_fields:
+                        arrays = list(batch.columns)
+                        for i, target_type in cast_fields:
+                            arrays[i] = arrays[i].cast(target_type)
+                        batch = pa.RecordBatch.from_arrays(arrays, schema=self._target_schema)
+                    table_write.write_arrow_batch(batch)
                     total_rows += batch.num_rows
                     total_bytes += batch.nbytes
             commit_messages = table_write.prepare_commit()

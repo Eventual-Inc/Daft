@@ -74,17 +74,21 @@ class PaimonScanOperator(ScanOperator):
         self._storage_config = storage_config
         self._catalog_options = catalog_options
 
-        self._file_format = table.options.get("file.format", PAIMON_FILE_FORMAT_PARQUET).lower()
-        self._use_native_parquet = self._file_format == PAIMON_FILE_FORMAT_PARQUET
+        from pypaimon.schema.data_types import PyarrowFieldParser
+        pa_schema = PyarrowFieldParser.from_paimon_schema(table.fields)
+        self._schema = Schema.from_pyarrow_schema(pa_schema)
 
         warehouse = catalog_options.get("warehouse", "")
         self._warehouse_scheme = urlparse(warehouse).scheme
 
-        # Build Daft schema from Paimon fields
-        from pypaimon.schema.data_types import PyarrowFieldParser
+        self._file_format = table.options.get("file.format", PAIMON_FILE_FORMAT_PARQUET).lower()
+        self._use_native_parquet = self._file_format == PAIMON_FILE_FORMAT_PARQUET
 
-        pa_schema = PyarrowFieldParser.from_paimon_schema(table.fields)
-        self._schema = Schema.from_pyarrow_schema(pa_schema)
+        self._partition_field_arrow_types: dict[str, pa.DataType] = (
+            {f.name: PyarrowFieldParser.from_paimon_type(f.type) for f in table.partition_keys_fields}
+            if table.partition_keys
+            else {}
+        )
 
         partition_key_names = set(table.partition_keys)
         self._partition_keys: list[PyPartitionField] = [
@@ -145,13 +149,20 @@ class PaimonScanOperator(ScanOperator):
 
         plan = read_builder.new_scan().plan()
 
+        pv_cache: dict[tuple, daft.recordbatch.RecordBatch | None] = {}
+
         for split in plan.splits():
             # Native path: use Daft's Rust Parquet reader when:
             # 1. File format is Parquet
             # 2. Either not a PK table, or split is raw-convertible (no LSM merge needed)
             if self._use_native_parquet and (not self._table.is_primary_key_table or split.raw_convertible):
-                partition_values = self._build_partition_values(split)
-                pv_recordbatch = partition_values._recordbatch if partition_values is not None else None
+                if self._partition_keys:
+                    pv_key = tuple(sorted(split.partition.to_dict().items()))
+                    if pv_key not in pv_cache:
+                        pv_cache[pv_key] = self._build_partition_values(split)
+                    pv_recordbatch = pv_cache[pv_key]._recordbatch if pv_cache[pv_key] is not None else None
+                else:
+                    pv_recordbatch = None
                 for data_file in split.files:
                     file_uri = self._build_file_uri(data_file.file_path)
                     st = ScanTask.catalog_scan_task(
@@ -194,20 +205,18 @@ class PaimonScanOperator(ScanOperator):
         """Reconstruct a full URI from a (potentially scheme-stripped) file_path."""
         if self._warehouse_scheme:
             return f"{self._warehouse_scheme}://{file_path}"
-        return file_path
+        return f"file://{file_path}"
 
     def _build_partition_values(self, split: "Split") -> daft.recordbatch.RecordBatch | None:
         """Build a single-row RecordBatch encoding the partition values for a split."""
         if not self._table.partition_keys:
             return None
 
-        from pypaimon.schema.data_types import PyarrowFieldParser
-
         partition_dict = split.partition.to_dict()
         arrays: dict = {}
         for pfield in self._table.partition_keys_fields:
             value = partition_dict.get(pfield.name)
-            arrow_type = PyarrowFieldParser.from_paimon_type(pfield.type)
+            arrow_type = self._partition_field_arrow_types[pfield.name]
             arrays[pfield.name] = daft.Series.from_arrow(
                 pa.array([value], type=arrow_type), name=pfield.name
             )
