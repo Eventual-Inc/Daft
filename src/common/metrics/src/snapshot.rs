@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
 use crate::{
-    BYTES_READ_KEY, BYTES_WRITTEN_KEY, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY,
-    Stat, Stats,
+    BYTES_READ_KEY, BYTES_RETAINED_KEY, BYTES_RETAINED_PEAK_KEY, BYTES_WRITTEN_KEY, DURATION_KEY,
+    ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY, Stat, Stats,
 };
 
 macro_rules! stats {
@@ -32,6 +32,8 @@ pub struct DefaultSnapshot {
     pub cpu_us: u64,
     pub rows_in: u64,
     pub rows_out: u64,
+    pub bytes_retained: u64,
+    pub peak_bytes_retained: u64,
 }
 
 impl StatSnapshotImpl for DefaultSnapshot {
@@ -40,19 +42,47 @@ impl StatSnapshotImpl for DefaultSnapshot {
     }
 
     fn to_stats(&self) -> Stats {
-        stats![
-            DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
-            ROWS_IN_KEY; Stat::Count(self.rows_in),
-            ROWS_OUT_KEY; Stat::Count(self.rows_out),
-        ]
+        let mut entries = SmallVec::with_capacity(5);
+        entries.push((
+            DURATION_KEY.into(),
+            Stat::Duration(Duration::from_micros(self.cpu_us)),
+        ));
+        entries.push((ROWS_IN_KEY.into(), Stat::Count(self.rows_in)));
+        entries.push((ROWS_OUT_KEY.into(), Stat::Count(self.rows_out)));
+        if self.bytes_retained > 0 {
+            entries.push((BYTES_RETAINED_KEY.into(), Stat::Bytes(self.bytes_retained)));
+        }
+        if self.peak_bytes_retained > 0 {
+            entries.push((
+                BYTES_RETAINED_PEAK_KEY.into(),
+                Stat::Bytes(self.peak_bytes_retained),
+            ));
+        }
+        Stats(entries)
     }
 
     fn to_message(&self) -> String {
-        format!(
-            "{} rows in, {} rows out",
-            HumanCount(self.rows_in),
-            HumanCount(self.rows_out)
-        )
+        if self.bytes_retained > 0 {
+            format!(
+                "{} rows in, {} rows out, {} retained",
+                HumanCount(self.rows_in),
+                HumanCount(self.rows_out),
+                HumanBytes(self.bytes_retained)
+            )
+        } else if self.peak_bytes_retained > 0 {
+            format!(
+                "{} rows in, {} rows out, peak {} retained",
+                HumanCount(self.rows_in),
+                HumanCount(self.rows_out),
+                HumanBytes(self.peak_bytes_retained)
+            )
+        } else {
+            format!(
+                "{} rows in, {} rows out",
+                HumanCount(self.rows_in),
+                HumanCount(self.rows_out)
+            )
+        }
     }
 }
 
@@ -206,6 +236,8 @@ pub struct JoinSnapshot {
     pub build_rows_inserted: u64,
     pub probe_rows_in: u64,
     pub probe_rows_out: u64,
+    pub bytes_retained: u64,
+    pub peak_bytes_retained: u64,
 }
 
 impl StatSnapshotImpl for JoinSnapshot {
@@ -214,21 +246,47 @@ impl StatSnapshotImpl for JoinSnapshot {
     }
 
     fn to_stats(&self) -> Stats {
-        stats![
-            DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
-            "build rows inserted"; Stat::Count(self.build_rows_inserted),
-            "probe rows in"; Stat::Count(self.probe_rows_in),
-            "probe rows out"; Stat::Count(self.probe_rows_out),
-        ]
+        let mut entries = SmallVec::with_capacity(6);
+        entries.push((
+            DURATION_KEY.into(),
+            Stat::Duration(Duration::from_micros(self.cpu_us)),
+        ));
+        entries.push((
+            "build rows inserted".into(),
+            Stat::Count(self.build_rows_inserted),
+        ));
+        entries.push(("probe rows in".into(), Stat::Count(self.probe_rows_in)));
+        entries.push(("probe rows out".into(), Stat::Count(self.probe_rows_out)));
+        if self.bytes_retained > 0 {
+            entries.push((BYTES_RETAINED_KEY.into(), Stat::Bytes(self.bytes_retained)));
+        }
+        if self.peak_bytes_retained > 0 {
+            entries.push((
+                BYTES_RETAINED_PEAK_KEY.into(),
+                Stat::Bytes(self.peak_bytes_retained),
+            ));
+        }
+        Stats(entries)
     }
 
     fn to_message(&self) -> String {
-        format!(
+        let base = format!(
             "{} build rows inserted, {} probe rows in, {} probe rows out",
             HumanCount(self.build_rows_inserted),
             HumanCount(self.probe_rows_in),
             HumanCount(self.probe_rows_out)
-        )
+        );
+        if self.bytes_retained > 0 {
+            format!("{}, {} retained", base, HumanBytes(self.bytes_retained))
+        } else if self.peak_bytes_retained > 0 {
+            format!(
+                "{}, peak {} retained",
+                base,
+                HumanBytes(self.peak_bytes_retained)
+            )
+        } else {
+            base
+        }
     }
 }
 

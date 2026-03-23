@@ -68,6 +68,8 @@ impl RuntimeStats for BasicJoinStats {
             build_rows_inserted: self.build_rows_inserted.load(Ordering::SeqCst),
             probe_rows_in: self.probe_rows_in.load(Ordering::SeqCst),
             probe_rows_out: self.probe_rows_out.load(Ordering::SeqCst),
+            bytes_retained: 0,
+            peak_bytes_retained: 0,
         })
     }
 }

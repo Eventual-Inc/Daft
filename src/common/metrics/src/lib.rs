@@ -117,6 +117,8 @@ impl IntoIterator for Stats {
 
 // Common statistic names
 pub const BYTES_READ_KEY: &str = "bytes.read";
+pub const BYTES_RETAINED_KEY: &str = "bytes.retained";
+pub const BYTES_RETAINED_PEAK_KEY: &str = "bytes.retained.peak";
 pub const BYTES_WRITTEN_KEY: &str = "bytes.written";
 pub const DURATION_KEY: &str = "duration";
 pub const ROWS_IN_KEY: &str = "rows.in";

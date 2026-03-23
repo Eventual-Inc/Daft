@@ -7,7 +7,8 @@ use atomic_float::AtomicF64;
 use opentelemetry::{InstrumentationScope, KeyValue, global};
 
 use crate::{
-    ATTR_QUERY_ID, DURATION_KEY, QueryID, ROWS_IN_KEY, ROWS_OUT_KEY, UNIT_MICROSECONDS, UNIT_ROWS,
+    ATTR_QUERY_ID, BYTES_RETAINED_KEY, DURATION_KEY, QueryID, ROWS_IN_KEY, ROWS_OUT_KEY,
+    UNIT_BYTES, UNIT_MICROSECONDS, UNIT_ROWS,
 };
 
 pub fn normalize_name(name: impl Into<Cow<'static, str>>) -> String {
@@ -203,6 +204,15 @@ impl Meter {
             ROWS_OUT_KEY,
             None,
             Some(Cow::Borrowed(UNIT_ROWS)),
+        )
+    }
+
+    pub fn bytes_retained_metric(&self) -> Gauge {
+        Gauge::new(
+            &self.otel,
+            BYTES_RETAINED_KEY,
+            None,
+            Some(Cow::Borrowed(UNIT_BYTES)),
         )
     }
 }
