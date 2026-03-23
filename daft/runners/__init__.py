@@ -18,6 +18,19 @@ def _get_runner() -> Runner[PartitionT] | None:
 
 
 def get_or_create_runner() -> Runner[PartitionT]:
+    """Get or create the current runner instance.
+
+    If a runner has already been set, returns it. Otherwise, creates a new
+    runner using the default configuration (native) and locks it in.
+
+    Returns:
+        Runner[PartitionT]: The current runner instance.
+
+    Note:
+        After calling this function, the runner cannot be changed for the
+        lifetime of the process. Use ``get_or_infer_runner_type`` to check the
+        runner type without this side effect.
+    """
     return _get_or_create_runner()
 
 

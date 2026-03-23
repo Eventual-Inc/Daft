@@ -14,6 +14,18 @@ Control the execution backend that Daft will run on by calling these functions o
     options:
         heading_level: 3
 
+## Checking the Runner
+
+Check the execution backend that Daft is currently using.
+
+::: daft.get_or_infer_runner_type
+    options:
+        heading_level: 3
+
+::: daft.get_or_create_runner
+    options:
+        heading_level: 3
+
 ## Setting Configurations
 
 Configure Daft in various ways during execution.
