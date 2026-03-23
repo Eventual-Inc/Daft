@@ -9,8 +9,8 @@ use daft_parquet::{RowGroupList, read::read_parquet_metadata};
 use indexmap::IndexMap;
 
 use crate::{
-    ChunkSpec, FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanSource, ScanTask, ScanTaskRef,
-    SourceConfig,
+    ChunkSpec, FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanSourceKind, ScanTask,
+    ScanTaskRef, SourceConfig,
 };
 
 type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
@@ -224,10 +224,10 @@ fn split_by_row_groups(
                     ) = (
                         t.source_config.as_ref(),
                         &t.sources[..],
-                        t.sources.first().map(ScanSource::get_chunk_spec),
+                        t.sources.first().map(|s| s.get_chunk_spec()),
                         t.pushdowns.limit,
                     ) && source
-                        .get_size_bytes()
+                        .size_bytes
                         .is_none_or(|s| s > max_size_bytes as u64)
                       && source
                         .get_iceberg_delete_files()
@@ -266,28 +266,23 @@ fn split_by_row_groups(
                             if curr_size_bytes >= min_size_bytes || Some(i) == last_original_index {
                                 let mut new_source = source.clone();
 
-                                if let ScanSource::File {
+                                if let ScanSourceKind::File {
                                     chunk_spec,
-                                    size_bytes,
                                     parquet_metadata,
                                     ..
-                                } = &mut new_source
+                                } = &mut new_source.kind
                                 {
                                     // only keep relevant row groups in the metadata
                                     let new_metadata = file_metadata.clone_with_row_groups(curr_num_rows, curr_row_groups);
                                     *parquet_metadata = Some(Arc::new(new_metadata));
 
                                     *chunk_spec = Some(ChunkSpec::Parquet(curr_row_group_indices));
-                                    *size_bytes = Some(curr_size_bytes as u64);
+                                    new_source.size_bytes = Some(curr_size_bytes as u64);
                                 } else {
-                                    unreachable!("Parquet file format should only be used with ScanSource::File");
+                                    unreachable!("Parquet file format should only be used with ScanSourceKind::File");
                                 }
 
-                                if let ScanSource::File {
-                                    metadata: Some(metadata),
-                                    ..
-                                } = &mut new_source
-                                {
+                                if let Some(metadata) = &mut new_source.metadata {
                                     metadata.length = curr_num_rows;
                                 }
 
