@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -78,6 +77,9 @@ class PaimonScanOperator(ScanOperator):
         self._file_format = table.options.get("file.format", PAIMON_FILE_FORMAT_PARQUET).lower()
         self._use_native_parquet = self._file_format == PAIMON_FILE_FORMAT_PARQUET
 
+        warehouse = catalog_options.get("warehouse", "")
+        self._warehouse_scheme = urlparse(warehouse).scheme
+
         # Build Daft schema from Paimon fields
         from pypaimon.schema.data_types import PyarrowFieldParser
 
@@ -138,20 +140,20 @@ class PaimonScanOperator(ScanOperator):
                 "%s has partition keys %s but no partition filter was specified. "
                 "This will result in a full table scan.",
                 self.display_name(),
-                [k for k in self._table.partition_keys],
+                list(self._table.partition_keys),
             )
 
         plan = read_builder.new_scan().plan()
-        scan_tasks = []
 
         for split in plan.splits():
             # Native path: use Daft's Rust Parquet reader when:
             # 1. File format is Parquet
             # 2. Either not a PK table, or split is raw-convertible (no LSM merge needed)
             if self._use_native_parquet and (not self._table.is_primary_key_table or split.raw_convertible):
+                partition_values = self._build_partition_values(split)
+                pv_recordbatch = partition_values._recordbatch if partition_values is not None else None
                 for data_file in split.files:
                     file_uri = self._build_file_uri(data_file.file_path)
-                    partition_values = self._build_partition_values(split)
                     st = ScanTask.catalog_scan_task(
                         file=file_uri,
                         file_format=FileFormatConfig.from_parquet_config(ParquetSourceConfig()),
@@ -161,12 +163,11 @@ class PaimonScanOperator(ScanOperator):
                         size_bytes=data_file.file_size,
                         iceberg_delete_files=None,
                         pushdowns=pushdowns,
-                        partition_values=partition_values._recordbatch if partition_values is not None else None,
+                        partition_values=pv_recordbatch,
                         stats=None,
                     )
-                    if st is None:
-                        continue
-                    scan_tasks.append(st)
+                    if st is not None:
+                        yield st
             else:
                 # Fallback to pypaimon native reader for:
                 # - Non-parquet formats (ORC, Avro)
@@ -177,7 +178,7 @@ class PaimonScanOperator(ScanOperator):
                     len(split.files),
                     reason,
                 )
-                st = ScanTask.python_factory_func_scan_task(
+                yield ScanTask.python_factory_func_scan_task(
                     module=_paimon_read_split.__module__,
                     func_name=_paimon_read_split.__name__,
                     func_args=(self._table, split, self._schema),
@@ -188,19 +189,11 @@ class PaimonScanOperator(ScanOperator):
                     stats=None,
                     source_name=self.display_name(),
                 )
-                scan_tasks.append(st)
-
-        return iter(scan_tasks)
 
     def _build_file_uri(self, file_path: str) -> str:
-        """Reconstruct a full URI from a (potentially scheme-stripped) file_path.
-        """
-        warehouse = self._catalog_options.get("warehouse", "")
-        parsed = urlparse(warehouse)
-        scheme = parsed.scheme
-
-        if scheme:
-            return f"{scheme}://{file_path}"
+        """Reconstruct a full URI from a (potentially scheme-stripped) file_path."""
+        if self._warehouse_scheme:
+            return f"{self._warehouse_scheme}://{file_path}"
         return file_path
 
     def _build_partition_values(self, split: "Split") -> daft.recordbatch.RecordBatch | None:

@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from daft.datatype import DataType
-from daft.dependencies import pa as daft_pa
 from daft.io.sink import DataSink, WriteResult
 from daft.recordbatch.micropartition import MicroPartition
 from daft.schema import Schema
@@ -24,10 +23,7 @@ def _cast_batch_to_paimon_schema(
     for field in target_schema:
         col = batch.column(field.name)
         if col.type != field.type:
-            try:
-                col = col.cast(field.type)
-            except (pa.ArrowInvalid, pa.ArrowNotImplementedError):
-                pass
+            col = col.cast(field.type)
         arrays.append(col)
     return pa.RecordBatch.from_arrays(arrays, schema=target_schema)
 
@@ -50,6 +46,13 @@ class PaimonDataSink(DataSink[list]):
         self._table = table
         self._mode = mode
 
+        from pypaimon.schema.data_types import PyarrowFieldParser
+
+        self._target_schema: pa.Schema = PyarrowFieldParser.from_paimon_schema(table.fields)
+        self._write_builder = table.new_batch_write_builder()
+        if mode == "overwrite":
+            self._write_builder.overwrite({})
+
     def name(self) -> str:
         return "Paimon Write"
 
@@ -64,14 +67,7 @@ class PaimonDataSink(DataSink[list]):
         )
 
     def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[list]]:
-        from pypaimon.schema.data_types import PyarrowFieldParser
-
-        target_schema = PyarrowFieldParser.from_paimon_schema(self._table.fields)
-
-        write_builder = self._table.new_batch_write_builder()
-        if self._mode == "overwrite":
-            write_builder.overwrite({})
-        table_write = write_builder.new_write()
+        table_write = self._write_builder.new_write()
 
         total_rows = 0
         total_bytes = 0
@@ -79,7 +75,7 @@ class PaimonDataSink(DataSink[list]):
             for mp in micropartitions:
                 arrow_table = mp.to_arrow()
                 for batch in arrow_table.to_batches():
-                    casted = _cast_batch_to_paimon_schema(batch, target_schema)
+                    casted = _cast_batch_to_paimon_schema(batch, self._target_schema)
                     table_write.write_arrow_batch(casted)
                     total_rows += batch.num_rows
                     total_bytes += batch.nbytes
@@ -96,10 +92,7 @@ class PaimonDataSink(DataSink[list]):
     def finalize(self, write_results: list[WriteResult[list]]) -> MicroPartition:
         all_commit_messages = [msg for wr in write_results for msg in wr.result]
 
-        commit_builder = self._table.new_batch_write_builder()
-        if self._mode == "overwrite":
-            commit_builder.overwrite({})
-        table_commit = commit_builder.new_commit()
+        table_commit = self._write_builder.new_commit()
         try:
             table_commit.commit(all_commit_messages)
         finally:

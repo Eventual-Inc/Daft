@@ -921,6 +921,20 @@ jobs:
         DAFT_RUNNER: ray
         GRAVITINO_ENDPOINT: http://127.0.0.1:8090
         GRAVITINO_METALAKE: metalake_demo
+      # Paimon tests
+    - name: Install pypaimon
+      run: |
+        source .venv/bin/activate
+        uv pip install pypaimon==1.3.1
+    - name: Run Paimon integration tests (native)
+      if: always()
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest ./tests/io/paimon --durations=0 | ./tools/capture-durations.sh "paimon_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py paimon_pytest_output.txt
+      env:
+        DAFT_RUNNER: native
 
       # Cleanup docker services
     - name: Cleanup Docker services

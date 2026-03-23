@@ -3,11 +3,12 @@ from __future__ import annotations
 import pytest
 import pyarrow as pa
 
+pypaimon = pytest.importorskip("pypaimon")
+
 
 @pytest.fixture(scope="function")
 def local_paimon_catalog(tmp_path):
     """Create a local filesystem Paimon catalog backed by a tmp directory."""
-    pypaimon = pytest.importorskip("pypaimon")
     catalog = pypaimon.CatalogFactory.create({"warehouse": str(tmp_path)})
     catalog.create_database("test_db", ignore_if_exists=True)
     return catalog, tmp_path
@@ -16,7 +17,6 @@ def local_paimon_catalog(tmp_path):
 @pytest.fixture
 def append_only_table(local_paimon_catalog):
     """Append-only (no primary key) partitioned Paimon table for read/write tests."""
-    pypaimon = pytest.importorskip("pypaimon")
     catalog, tmp_path = local_paimon_catalog
     schema = pypaimon.Schema.from_pyarrow_schema(
         pa.schema(
@@ -37,7 +37,6 @@ def append_only_table(local_paimon_catalog):
 @pytest.fixture
 def append_only_table_no_partition(local_paimon_catalog):
     """Append-only table with no partition columns."""
-    pypaimon = pytest.importorskip("pypaimon")
     catalog, tmp_path = local_paimon_catalog
     schema = pypaimon.Schema.from_pyarrow_schema(
         pa.schema(
@@ -55,7 +54,6 @@ def append_only_table_no_partition(local_paimon_catalog):
 @pytest.fixture
 def pk_table(local_paimon_catalog):
     """Primary-key Paimon table for testing the LSM-merge fall-back path."""
-    pypaimon = pytest.importorskip("pypaimon")
     catalog, tmp_path = local_paimon_catalog
     schema = pypaimon.Schema.from_pyarrow_schema(
         pa.schema(
