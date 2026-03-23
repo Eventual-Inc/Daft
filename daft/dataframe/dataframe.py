@@ -61,7 +61,9 @@ if TYPE_CHECKING:
     import pyiceberg
     import ray
     import torch
+    from sqlalchemy.engine import Connection
 
+    from daft.execution.metadata import ExecutionMetadata
     from daft.io import DataSink
     from daft.io.catalog import DataCatalogTable
     from daft.io.lance.rest_config import LanceRestConfig
@@ -135,7 +137,7 @@ class DataFrame:
         self.__builder = builder
         self._result_cache: PartitionCacheEntry | None = None
         self._preview = Preview(partition=None, total_rows=None)
-        self._metrics: RecordBatch | None = None
+        self._metadata: ExecutionMetadata | None = None
         self._num_preview_rows = get_context().daft_execution_config.num_preview_rows
 
     @property
@@ -176,8 +178,7 @@ class DataFrame:
         if self._result_cache is None:
             raise ValueError("Metrics are not available until the DataFrame has been materialized")
         else:
-            # TODO: Always None from Ray runner
-            return self._metrics
+            return self._metadata.to_recordbatch() if self._metadata else None
 
     def pipe(
         self,
@@ -691,12 +692,15 @@ class DataFrame:
     @classmethod
     def _from_pylist(cls, data: list[dict[str, Any]]) -> "DataFrame":
         """Creates a DataFrame from a list of dictionaries."""
-        headers: set[str] = set()
+        headers_ordered: list[str] = []
+        seen_headers: set[str] = set()
         for row in data:
             if not isinstance(row, dict):
                 raise ValueError(f"Expected list of dictionaries of {{column_name: value}}, received: {type(row)}")
-            headers.update(row.keys())
-        headers_ordered = sorted(list(headers))
+            for key in row.keys():
+                if key not in seen_headers:
+                    seen_headers.add(key)
+                    headers_ordered.append(key)
         return cls._from_pydict(data={header: [row.get(header, None) for row in data] for header in headers_ordered})
 
     @classmethod
@@ -765,7 +769,7 @@ class DataFrame:
 
     @classmethod
     def _from_schema(cls, schema: Schema) -> "DataFrame":
-        """Creates a Daft DataFrom from a Schema.
+        """Creates a Daft DataFrame from a Schema.
 
         Args:
             schema: The Schema to convert into a DataFrame.
@@ -782,6 +786,113 @@ class DataFrame:
     ###
     # Write methods
     ###
+
+    @DataframePublicAPI
+    def write_sql(
+        self,
+        table_name: str,
+        conn: str | Callable[[], "Connection"],
+        write_mode: Literal["append", "overwrite", "fail"] = "append",
+        column_types: dict[str, Any] | None = None,
+        non_primitive_handling: Literal["bytes", "str", "error"] | None = None,
+    ) -> "DataFrame":
+        """Write the DataFrame to a SQL database and return write metrics.
+
+        The write is executed via :meth:`daft.DataFrame.write_sink` using an internal
+        :class:`daft.io._sql.SQLDataSink`.
+
+        Primitive columns (ints, floats, bools, strings, binary, dates, timestamps) are written by converting to a pandas DataFrame and calling :meth:`pandas.DataFrame.to_sql`, letting SQLAlchemy or ``column_types`` choose concrete SQL types.
+
+        Non-primitive columns (lists, structs, maps, tensors, images, embeddings, python objects, etc.) are normalized according to ``non_primitive_handling`` (default ``None`` behaves like ``"str"``): ``"str"`` serializes values to text (JSON for arrays/maps and other containers, ``str(..)`` otherwise), ``"bytes"`` writes UTF-8 bytes of that text, and ``"error"`` fails if such columns are present.
+
+        Args:
+            table_name (str): Name of the table to write to.
+            conn (str | Callable[[], "Connection"]): Connection string or factory.
+            write_mode (str): Mode to write to the table. "append", "overwrite", or "fail". Defaults to "append".
+            column_types (Optional[Dict[str, Any]]): Optional mapping from column names to
+                SQLAlchemy types to use when creating the table or casting columns.
+                Passed through to the underlying SQL engine when creating or writing
+                the table.
+            non_primitive_handling (Literal["bytes", "str", "error"] | None):
+                Controls how non-primitive columns are normalized before reaching SQL; default ``None`` behaves like ``"str"``. Accepted values are ``"str"``, ``"bytes"``, and ``"error"``.
+
+        Returns:
+            DataFrame: A single-row DataFrame containing aggregate write metrics with
+                columns ``total_written_rows`` and ``total_written_bytes``.
+
+        Warning:
+            This features is early in development and will likely experience API changes.
+
+        Note:
+            Primitive columns still rely on pandas/SQLAlchemy (or ``column_types``) for concrete SQL types, while non-primitive columns are pre-normalized in Python according to ``non_primitive_handling`` before reaching the SQL driver.
+
+        Examples:
+            Write to a SQL table using a database URL and explicit SQLAlchemy dtypes:
+
+            >>> from sqlalchemy import DateTime, Integer, String
+            >>> import datetime
+            >>> import daft
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "id": [1, 2],
+            ...         "name": ["Alice", "Bob"],
+            ...         "created_at": [
+            ...             datetime.datetime(2024, 1, 1, 0, 0, 0),
+            ...             datetime.datetime(2024, 1, 2, 0, 0, 0),
+            ...         ],
+            ...     }
+            ... )
+            >>> column_types = {
+            ...     "id": Integer(),
+            ...     "name": String(length=255),
+            ...     "created_at": DateTime(timezone=True),
+            ... }
+            >>> metrics_df = df.write_sql("users", "sqlite:///my_database.db", column_types=column_types)
+
+            Write to a SQL table using a SQLAlchemy connection factory and dtypes:
+
+            >>> import sqlalchemy
+            >>> def create_conn():
+            ...     return sqlalchemy.create_engine("sqlite:///my_database.db").connect()
+            >>> metrics_df = df.write_sql("users", create_conn, column_types=column_types)
+
+            Write to a SQL table using a database URL with column_types=None to rely on inferred types:
+
+            >>> df = daft.from_pydict({"id": [1], "name": ["Alice"]})
+            >>> metrics_df = df.write_sql("users", "sqlite:///my_database.db", column_types=None)
+        """
+        from daft.io._sql import SQLDataSink
+
+        sink = SQLDataSink(
+            table_name=table_name,
+            conn=conn,
+            write_mode=write_mode,
+            column_types=column_types,
+            df_schema=self.schema(),
+            non_primitive_handling=non_primitive_handling,
+        )
+
+        if non_primitive_handling is None:
+            # Check for non-primitive types in the schema and warn if found
+            non_primitive_cols = [
+                field.name
+                for field in self.schema()
+                if field.dtype.is_python()
+                or field.dtype.is_list()
+                or field.dtype.is_struct()
+                or field.dtype.is_map()
+                or field.dtype.is_tensor()
+                or field.dtype.is_image()
+                or field.dtype.is_embedding()
+            ]
+            if non_primitive_cols:
+                warnings.warn(
+                    f"Detected non-primitive columns: {non_primitive_cols}. Writing as text (default). Set `non_primitive_handling` to control or suppress.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+        return self.write_sink(sink)
 
     @DataframePublicAPI
     def write_parquet(
@@ -848,7 +959,7 @@ class DataFrame:
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
-        result_df._metrics = write_df._metrics
+        result_df._metadata = write_df._metadata
         return result_df
 
     @DataframePublicAPI
@@ -961,7 +1072,7 @@ class DataFrame:
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
-        result_df._metrics = write_df._metrics
+        result_df._metadata = write_df._metadata
         return result_df
 
     @DataframePublicAPI
@@ -1023,9 +1134,6 @@ class DataFrame:
 
             >>> df.write_json("output_dir", timestamp_format="%+")  # doctest: +SKIP
             # Output: "2024-01-15T10:30:45+00:00"
-
-        Warning:
-            Currently only supported with the Native runner!
         """
         if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
             raise ValueError(
@@ -1062,7 +1170,7 @@ class DataFrame:
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
-        result_df._metrics = write_df._metrics
+        result_df._metadata = write_df._metadata
         return result_df
 
     @DataframePublicAPI
@@ -1113,11 +1221,6 @@ class DataFrame:
         # Snapshot properties are only supported on pyiceberg >= 0.7.0. See https://github.com/apache/iceberg-python/issues/367
         if snapshot_properties and parse(pyiceberg.__version__) < parse("0.7.0"):
             raise ValueError("Snapshot properties are only supported on pyiceberg>=0.7.0")
-
-        if parse(pa.__version__) < parse("12.0.1"):
-            raise ValueError(
-                f"Write Iceberg is only supported on pyarrow>=12.0.1, found {pa.__version__}. See this issue for more information: https://github.com/apache/arrow/issues/37054#issuecomment-1668644887"
-            )
 
         if mode not in ["append", "overwrite"]:
             raise ValueError(f"Only support `append` or `overwrite` mode. {mode} is unsupported")
@@ -1235,7 +1338,7 @@ class DataFrame:
         # NOTE: We are losing the history of the plan here.
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
         df = from_pydict(with_operations)
-        df._metrics = write_df._metrics
+        df._metadata = write_df._metadata
         return df
 
     @DataframePublicAPI
@@ -1488,7 +1591,7 @@ class DataFrame:
                 "file_name": pa.array([os.path.basename(fp) for fp in paths], type=pa.string()),
             }
         )
-        with_operations._metrics = write_df._metrics
+        with_operations._metadata = write_df._metadata
         return with_operations
 
     @DataframePublicAPI
@@ -1521,7 +1624,7 @@ class DataFrame:
         # plan from the source all the way to the sink to the sink's results. In theory we can do this
         # for all other sinks too.
         df = DataFrame._from_micropartitions(micropartition)
-        df._metrics = write_df._metrics
+        df._metadata = write_df._metadata
         return df
 
     @DataframePublicAPI
@@ -3629,11 +3732,14 @@ class DataFrame:
         return self._apply_agg_fn(Expression.mean, cols)
 
     @DataframePublicAPI
-    def stddev(self, *cols: ColumnInputType) -> "DataFrame":
+    def stddev(self, *cols: ColumnInputType, ddof: int = 1) -> "DataFrame":
         """Performs a global standard deviation on the DataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to stddev
+            ddof (int): Delta degrees of freedom used in the denominator `N - ddof`.
+                Defaults to 1 (sample standard deviation).
+
         Returns:
             DataFrame: Globally aggregated standard deviation. Should be a single row.
 
@@ -3642,18 +3748,18 @@ class DataFrame:
             >>> df = daft.from_pydict({"col_a": [0, 1, 2]})
             >>> df = df.stddev("col_a")
             >>> df.show()
-            ╭───────────────────╮
-            │ col_a             │
-            │ ---               │
-            │ Float64           │
-            ╞═══════════════════╡
-            │ 0.816496580927726 │
-            ╰───────────────────╯
+            ╭─────────╮
+            │ col_a   │
+            │ ---     │
+            │ Float64 │
+            ╞═════════╡
+            │ 1       │
+            ╰─────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
 
         """
-        return self._apply_agg_fn(Expression.stddev, cols)
+        return self._apply_agg_fn(lambda expr: Expression.stddev(expr, ddof), cols)
 
     @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
@@ -4324,10 +4430,11 @@ class DataFrame:
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
         if self._result is None:
-            self._result_cache, self._metrics = get_or_create_runner().run(self._builder)
+            self._result_cache, self._metadata = get_or_create_runner().run(self._builder)
             result = self._result
             assert result is not None
             result.wait()
+            self._metadata.write_mermaid()
 
     @DataframePublicAPI
     def collect(self, num_preview_rows: int | None = 8) -> "DataFrame":
@@ -4809,8 +4916,6 @@ class DataFrame:
     @classmethod
     def _from_ray_dataset(cls, ds: "ray.data.dataset.DataSet") -> "DataFrame":
         """Creates a DataFrame from a [Ray Dataset](https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset)."""
-        from ray.exceptions import RayTaskError
-
         if get_or_create_runner().name != "ray":
             raise ValueError("Daft needs to be running on the Ray Runner for this operation")
 
@@ -4821,17 +4926,7 @@ class DataFrame:
 
         partition_set, schema = ray_runner_io.partition_set_from_ray_dataset(ds)
         cache_entry = get_or_create_runner().put_partition_set_into_cache(partition_set)
-        try:
-            size_bytes = partition_set.size_bytes()
-        except RayTaskError as e:
-            import pyarrow as pa
-            from packaging.version import parse
-
-            if "extension<arrow.fixed_shape_tensor>" in str(e) and parse(pa.__version__) < parse("13.0.0"):
-                raise ValueError(
-                    f"Reading Ray Dataset tensors is only supported with PyArrow >= 13.0.0, found {pa.__version__}. See this issue for more information: https://github.com/apache/arrow/pull/35933"
-                ) from e
-            raise e
+        size_bytes = partition_set.size_bytes()
 
         num_rows = len(partition_set)
         assert size_bytes is not None, "In-memory data should always have non-None size in bytes"
@@ -5010,11 +5105,13 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.mean, cols, self.group_by)
 
-    def stddev(self, *cols: ColumnInputType) -> DataFrame:
+    def stddev(self, *cols: ColumnInputType, ddof: int = 1) -> DataFrame:
         """Performs grouped standard deviation on this GroupedDataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to stddev
+            ddof (int): Delta degrees of freedom used in the denominator `N - ddof`.
+                Defaults to 1 (sample standard deviation).
 
         Returns:
             DataFrame: DataFrame with grouped standard deviation.
@@ -5025,20 +5122,20 @@ class GroupedDataFrame:
             >>> df = df.groupby("keys").stddev()
             >>> df = df.sort("keys")
             >>> df.show()
-            ╭────────┬───────────────────╮
-            │ keys   ┆ col_a             │
-            │ ---    ┆ ---               │
-            │ String ┆ Float64           │
-            ╞════════╪═══════════════════╡
-            │ a      ┆ 0.816496580927726 │
-            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ b      ┆ 0                 │
-            ╰────────┴───────────────────╯
+            ╭────────┬─────────╮
+            │ keys   ┆ col_a   │
+            │ ---    ┆ ---     │
+            │ String ┆ Float64 │
+            ╞════════╪═════════╡
+            │ a      ┆ 1       │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ b      ┆ None    │
+            ╰────────┴─────────╯
             <BLANKLINE>
             (Showing first 2 of 2 rows)
 
         """
-        return self.df._apply_agg_fn(Expression.stddev, cols, self.group_by)
+        return self.df._apply_agg_fn(lambda expr: Expression.stddev(expr, ddof), cols, self.group_by)
 
     def min(self, *cols: ColumnInputType) -> DataFrame:
         """Perform grouped min on this GroupedDataFrame.

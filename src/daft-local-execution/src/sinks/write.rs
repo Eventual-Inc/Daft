@@ -2,8 +2,7 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
 use common_metrics::{
-    BYTES_WRITTEN_KEY, Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_WRITTEN_KEY, StatSnapshot,
-    UNIT_BYTES, UNIT_MICROSECONDS, UNIT_ROWS,
+    BYTES_WRITTEN_KEY, Counter, Meter, ROWS_WRITTEN_KEY, StatSnapshot, UNIT_BYTES, UNIT_ROWS,
     ops::{NodeInfo, NodeType},
     snapshot::WriteSnapshot,
 };
@@ -12,7 +11,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_writers::{AsyncFileWriter, WriteResult, WriterFactory};
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{
@@ -34,10 +33,18 @@ impl WriteStats {
         let node_kv = node_info.to_key_values();
 
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
-            rows_written: Counter::new(meter, ROWS_WRITTEN_KEY, None, Some(UNIT_ROWS.into())),
-            bytes_written: Counter::new(meter, BYTES_WRITTEN_KEY, None, Some(UNIT_BYTES.into())),
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_written: meter.u64_counter_with_desc_and_unit(
+                ROWS_WRITTEN_KEY,
+                None,
+                Some(UNIT_ROWS.into()),
+            ),
+            bytes_written: meter.u64_counter_with_desc_and_unit(
+                BYTES_WRITTEN_KEY,
+                None,
+                Some(UNIT_BYTES.into()),
+            ),
 
             node_kv,
         }
@@ -196,15 +203,15 @@ impl BlockingSink for WriteSink {
     fn name(&self) -> NodeName {
         match &self.write_format {
             WriteFormat::Parquet => "Parquet Write".into(),
-            WriteFormat::PartitionedParquet => "PartitionedParquet Write".into(),
-            WriteFormat::Csv => "Csv Write".into(),
-            WriteFormat::PartitionedCsv => "PartitionedCsv Write".into(),
-            WriteFormat::Json => "Json Write".into(),
-            WriteFormat::PartitionedJson => "PartitionedJson Write".into(),
+            WriteFormat::PartitionedParquet => "Partitioned Parquet Write".into(),
+            WriteFormat::Csv => "CSV Write".into(),
+            WriteFormat::PartitionedCsv => "Partitioned CSV Write".into(),
+            WriteFormat::Json => "JSON Write".into(),
+            WriteFormat::PartitionedJson => "Partitioned JSON Write".into(),
             WriteFormat::Iceberg => "Iceberg Write".into(),
-            WriteFormat::PartitionedIceberg => "PartitionedIceberg Write".into(),
-            WriteFormat::Deltalake => "Deltalake Write".into(),
-            WriteFormat::PartitionedDeltalake => "PartitionedDeltalake Write".into(),
+            WriteFormat::PartitionedIceberg => "Partitioned Iceberg Write".into(),
+            WriteFormat::Deltalake => "DeltaLake Write".into(),
+            WriteFormat::PartitionedDeltalake => "Partitioned DeltaLake Write".into(),
             WriteFormat::Lance => "Lance Write".into(),
             WriteFormat::DataSink(name) => name.clone().into(),
         }

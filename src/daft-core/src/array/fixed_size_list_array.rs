@@ -154,16 +154,6 @@ impl FixedSizeListArray {
         ))
     }
 
-    #[deprecated(note = "arrow2 migration")]
-    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-        let arrow_dtype = self.data_type().to_arrow2().unwrap();
-        Box::new(daft_arrow::array::FixedSizeListArray::new(
-            arrow_dtype,
-            self.flat_child.to_arrow2(),
-            daft_arrow::buffer::wrap_null_buffer(self.nulls.clone()),
-        ))
-    }
-
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
         let field = Arc::new(self.flat_child.field().to_arrow()?);
         let size = self.fixed_element_len() as i32;
@@ -306,10 +296,7 @@ mod tests {
     /// Helper that returns a FixedSizeListArray, with each list element at len=3
     fn get_i32_fixed_size_list_array(nulls: &[bool]) -> FixedSizeListArray {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
-        let flat_child = Int32Array::from_values(
-            "foo",
-            (0i32..(nulls.len() * 3) as i32).collect::<Vec<i32>>(),
-        );
+        let flat_child = Int32Array::from_values("foo", 0i32..(nulls.len() * 3) as i32);
         FixedSizeListArray::new(
             field,
             flat_child.into_series(),

@@ -2,15 +2,15 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+use daft_local_plan::{FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, TaskBuilderStream,
+        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
+        TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -36,7 +36,7 @@ pub(crate) struct FlightShuffleNode {
 }
 
 impl FlightShuffleNode {
-    const NODE_NAME: NodeName = "FlightShuffle";
+    const NODE_NAME: &'static str = "FlightShuffle";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -53,7 +53,7 @@ impl FlightShuffleNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Repartition,
             NodeCategory::BlockingSink,
         );
@@ -76,10 +76,6 @@ impl FlightShuffleNode {
             compression,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 
     // Async execution to handle flight shuffle write and read operations
@@ -113,24 +109,25 @@ impl FlightShuffleNode {
         }
 
         // For each partition group, create tasks that read from flight servers
+        let source_id = self.context.node_id;
+
         for partition_idx in 0..self.num_partitions {
-            // Create a flight shuffle read task for this partition
-            let flight_shuffle_read_plan = LocalPhysicalPlan::flight_shuffle_read_with_cache_ids(
-                self.shuffle_id,
-                partition_idx,
-                server_cache_mapping.clone(),
+            let flight_shuffle_read_plan = LocalPhysicalPlan::flight_shuffle_read(
+                source_id,
                 self.config.schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.context.node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self.context.node_id as usize)),
             );
 
-            // For flight shuffle, we create a task directly with the flight shuffle read plan
-            // instead of using make_in_memory_task_from_materialized_outputs
+            let input = FlightShuffleReadInput {
+                shuffle_id: self.shuffle_id,
+                partition_idx,
+                server_cache_mapping: server_cache_mapping.clone(),
+            };
+
             let task =
-                SwordfishTaskBuilder::new(flight_shuffle_read_plan, self.as_ref(), self.node_id());
+                SwordfishTaskBuilder::new(flight_shuffle_read_plan, self.as_ref(), self.node_id())
+                    .with_flight_shuffle_reads(source_id, vec![input]);
 
             let _ = result_tx.send(task).await;
         }
@@ -173,9 +170,6 @@ impl PipelineNodeImpl for FlightShuffleNode {
             RepartitionSpec::Range(_) => {
                 unreachable!("Range repartition is not supported for flight shuffle")
             }
-            RepartitionSpec::IntoPartitions(_) => {
-                unreachable!("IntoPartitions repartition is not supported for flight shuffle")
-            }
         };
         let local_flight_shuffle_write_node =
             input_node.pipeline_instruction(self.clone(), move |input| {
@@ -188,10 +182,7 @@ impl PipelineNodeImpl for FlightShuffleNode {
                     self.shuffle_dirs.clone(),
                     self.compression.clone(),
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(self.context.node_id as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(self.context.node_id as usize)),
                 )
             });
 

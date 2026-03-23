@@ -1,8 +1,7 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_metrics::{
-    Counter, DURATION_KEY, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS,
-    UNIT_ROWS,
+    Counter, Gauge, Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::ExplodeSnapshot,
 };
@@ -10,12 +9,12 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::KeyValue;
 
 use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, metrics::key_values_from_context,
+        NodeID, PipelineNodeConfig, PipelineNodeContext, metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext},
     statistics::{RuntimeStats, stats::RuntimeStatsRef},
@@ -33,10 +32,10 @@ impl ExplodeStats {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
         let node_kv = key_values_from_context(context);
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
-            amplification: Gauge::new(meter, "amplification", None),
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
+            amplification: meter.f64_gauge("amplification"),
             node_kv,
         }
     }
@@ -89,7 +88,7 @@ pub(crate) struct ExplodeNode {
 }
 
 impl ExplodeNode {
-    const NODE_NAME: NodeName = "Explode";
+    const NODE_NAME: &'static str = "Explode";
 
     pub fn new(
         node_id: NodeID,
@@ -104,7 +103,7 @@ impl ExplodeNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Explode,
             NodeCategory::Intermediate,
         );
@@ -121,10 +120,6 @@ impl ExplodeNode {
             index_column,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
@@ -153,7 +148,7 @@ impl PipelineNodeImpl for ExplodeNode {
         res
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(ExplodeStats::new(meter, self.context()))
     }
 
@@ -175,10 +170,7 @@ impl PipelineNodeImpl for ExplodeNode {
                 index_column.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             )
         })
     }

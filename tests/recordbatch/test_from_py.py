@@ -13,10 +13,7 @@ import daft
 from daft import DataType, TimeUnit
 from daft.recordbatch import MicroPartition
 from daft.series import Series
-from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.conftest import get_tests_daft_runner_name
-
-ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 PYTHON_TYPE_ARRAYS = {
     "int": [1, 2],
@@ -168,15 +165,14 @@ ARROW_ROUNDTRIP_TYPES = {
     "timestamp": pa.timestamp("us"),
 }
 
-if pyarrow_supports_fixed_shape_tensor():
-    arrow_tensor_dtype = pa.fixed_shape_tensor(pa.int64(), (2, 2))
-    # NOTE: We don't infer fixed-shape tensors when constructing a table from Python objects, since
-    # the shapes may be variable across partitions.
-    # PYTHON_TYPE_ARRAYS["canonical_tensor"] = list(np.arange(8).reshape(2, 2, 2))
-    # PYTHON_INFERRED_TYPES["canonical_tensor"] = DataType.tensor(DataType.int64(), (2, 2))
-    # ROUNDTRIP_TYPES["canonical_tensor"] = arrow_tensor_dtype
-    ARROW_ROUNDTRIP_TYPES["canonical_tensor"] = arrow_tensor_dtype
-    ARROW_TYPE_ARRAYS["canonical_tensor"] = pa.FixedShapeTensorArray.from_numpy_ndarray(np.arange(8).reshape(2, 2, 2))
+arrow_tensor_dtype = pa.fixed_shape_tensor(pa.int64(), (2, 2))
+# NOTE: We don't infer fixed-shape tensors when constructing a table from Python objects, since
+# the shapes may be variable across partitions.
+# PYTHON_TYPE_ARRAYS["canonical_tensor"] = list(np.arange(8).reshape(2, 2, 2))
+# PYTHON_INFERRED_TYPES["canonical_tensor"] = DataType.tensor(DataType.int64(), (2, 2))
+# ROUNDTRIP_TYPES["canonical_tensor"] = arrow_tensor_dtype
+ARROW_ROUNDTRIP_TYPES["canonical_tensor"] = arrow_tensor_dtype
+ARROW_TYPE_ARRAYS["canonical_tensor"] = pa.FixedShapeTensorArray.from_numpy_ndarray(np.arange(8).reshape(2, 2, 2))
 
 
 def _with_uuid_ext_type(uuid_ext_type) -> tuple[dict, dict]:

@@ -22,7 +22,7 @@ use daft_schema::{
 use super::PipelineNodeImpl;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,
         TaskBuilderStream, project::ProjectNode, translate::LogicalPlanToPipelineNodeTranslator,
     },
     plan::{PlanConfig, PlanExecutionContext},
@@ -37,13 +37,17 @@ pub(crate) struct AggregateNode {
 }
 
 impl AggregateNode {
-    const GROUPED_NAME: NodeName = "GroupBy Aggregate";
-    const UNGROUPED_NAME: NodeName = "Aggregate";
-    fn node_name(group_by: &[BoundExpr]) -> NodeName {
+    const GROUPED_NAME: &'static str = "GroupedAggregate";
+    const UNGROUPED_NAME: &'static str = "Aggregate";
+    fn node_name(group_by: &[BoundExpr], aggs: &[BoundAggExpr]) -> Arc<str> {
         if group_by.is_empty() {
-            Self::UNGROUPED_NAME
+            if aggs.len() == 1 {
+                Arc::from(aggs[0].as_ref().agg_name())
+            } else {
+                Arc::from(Self::UNGROUPED_NAME)
+            }
         } else {
-            Self::GROUPED_NAME
+            Arc::from(Self::GROUPED_NAME)
         }
     }
     fn node_type(group_by: &[BoundExpr]) -> NodeType {
@@ -67,7 +71,7 @@ impl AggregateNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::node_name(&group_by),
+            Self::node_name(&group_by, &aggs),
             Self::node_type(&group_by),
             NodeCategory::BlockingSink,
         );
@@ -85,10 +89,6 @@ impl AggregateNode {
             aggs,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
@@ -141,10 +141,7 @@ impl PipelineNodeImpl for AggregateNode {
                     self_clone.aggs.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(self_clone.node_id() as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(self_clone.node_id() as usize)),
                 )
             } else {
                 LocalPhysicalPlan::hash_aggregate(
@@ -153,10 +150,7 @@ impl PipelineNodeImpl for AggregateNode {
                     self_clone.group_by.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(self_clone.node_id() as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(self_clone.node_id() as usize)),
                 )
             }
         })
@@ -264,15 +258,18 @@ impl LogicalPlanToPipelineNodeTranslator {
             )?
         };
 
-        Ok(AggregateNode::new(
-            self.get_next_pipeline_node_id(),
-            &self.plan_config,
-            group_by,
-            aggregations,
-            output_schema,
-            shuffle,
-        )
-        .into_node())
+        let node_id = self.get_next_pipeline_node_id();
+        Ok(DistributedPipelineNode::new(
+            Arc::new(AggregateNode::new(
+                node_id,
+                &self.plan_config,
+                group_by,
+                aggregations,
+                output_schema,
+                shuffle,
+            )) as Arc<dyn PipelineNodeImpl>,
+            &self.meter,
+        ))
     }
 
     /// Generate PipelineNodes for aggregates with some pre-aggregation.
@@ -284,15 +281,18 @@ impl LogicalPlanToPipelineNodeTranslator {
         output_schema: SchemaRef,
     ) -> DaftResult<DistributedPipelineNode> {
         let num_partitions = input_node.config().clustering_spec.num_partitions();
-        let initial_agg = AggregateNode::new(
-            self.get_next_pipeline_node_id(),
-            &self.plan_config,
-            split_details.first_stage_group_by,
-            split_details.first_stage_aggs,
-            split_details.first_stage_schema.clone(),
-            input_node,
-        )
-        .into_node();
+        let node_id = self.get_next_pipeline_node_id();
+        let initial_agg = DistributedPipelineNode::new(
+            Arc::new(AggregateNode::new(
+                node_id,
+                &self.plan_config,
+                split_details.first_stage_group_by,
+                split_details.first_stage_aggs,
+                split_details.first_stage_schema.clone(),
+                input_node,
+            )) as Arc<dyn PipelineNodeImpl>,
+            &self.meter,
+        );
 
         // Second stage: Shuffle to distribute the dataset
         let num_partitions = min(
@@ -319,25 +319,31 @@ impl LogicalPlanToPipelineNodeTranslator {
         };
 
         // Third stage re-agg to compute the final result
-        let final_aggregation = AggregateNode::new(
-            self.get_next_pipeline_node_id(),
-            &self.plan_config,
-            split_details.second_stage_group_by,
-            split_details.second_stage_aggs,
-            split_details.second_stage_schema.clone(),
-            shuffle,
-        )
-        .into_node();
+        let node_id = self.get_next_pipeline_node_id();
+        let final_aggregation = DistributedPipelineNode::new(
+            Arc::new(AggregateNode::new(
+                node_id,
+                &self.plan_config,
+                split_details.second_stage_group_by,
+                split_details.second_stage_aggs,
+                split_details.second_stage_schema.clone(),
+                shuffle,
+            )) as Arc<dyn PipelineNodeImpl>,
+            &self.meter,
+        );
 
         // Last stage project to get the final result
-        Ok(ProjectNode::new(
-            self.get_next_pipeline_node_id(),
-            &self.plan_config,
-            split_details.final_exprs,
-            output_schema,
-            final_aggregation,
-        )
-        .into_node())
+        let node_id = self.get_next_pipeline_node_id();
+        Ok(DistributedPipelineNode::new(
+            Arc::new(ProjectNode::new(
+                node_id,
+                &self.plan_config,
+                split_details.final_exprs,
+                output_schema,
+                final_aggregation,
+            )) as Arc<dyn PipelineNodeImpl>,
+            &self.meter,
+        ))
     }
 
     /// Generate PipelineNodes for aggregates
@@ -359,15 +365,18 @@ impl LogicalPlanToPipelineNodeTranslator {
         partition_by: Vec<BoundExpr>,
     ) -> DaftResult<DistributedPipelineNode> {
         if Self::needs_hash_repartition(&input_node, &group_by)? {
-            return Ok(AggregateNode::new(
-                self.get_next_pipeline_node_id(),
-                &self.plan_config,
-                group_by,
-                aggregations,
-                output_schema,
-                input_node,
-            )
-            .into_node());
+            let node_id = self.get_next_pipeline_node_id();
+            return Ok(DistributedPipelineNode::new(
+                Arc::new(AggregateNode::new(
+                    node_id,
+                    &self.plan_config,
+                    group_by,
+                    aggregations,
+                    output_schema,
+                    input_node,
+                )) as Arc<dyn PipelineNodeImpl>,
+                &self.meter,
+            ));
         }
 
         let split_details = split_groupby_aggs(

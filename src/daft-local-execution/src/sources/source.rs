@@ -5,7 +5,7 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, DURATION_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
+    Counter, Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::{SourceSnapshot, StatSnapshotImpl},
 };
@@ -15,7 +15,7 @@ use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{StreamExt, stream::BoxStream};
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::KeyValue;
 use snafu::ResultExt;
 
 use crate::{
@@ -39,8 +39,8 @@ impl SourceStats {
         let node_kv = node_info.to_key_values();
 
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
+            duration_us: meter.duration_us_metric(),
+            rows_out: meter.rows_out_metric(),
             io_stats: IOStatsRef::default(),
 
             node_kv,
@@ -166,12 +166,18 @@ impl TreeDisplay for SourceNode {
     }
 
     fn repr_json(&self) -> serde_json::Value {
-        serde_json::json!({
+        let mut json = serde_json::json!({
             "id": self.node_id(),
             "category": "Source",
             "type": self.source.op_type().to_string(),
             "name": self.name(),
-        })
+        });
+
+        if let StatsState::Materialized(stats) = &self.plan_stats {
+            json["approx_stats"] = serde_json::json!(stats);
+        }
+
+        json
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
@@ -200,7 +206,7 @@ impl PipelineNode for SourceNode {
         self.morsel_size_requirement = downstream_requirement;
     }
     fn start(
-        &mut self,
+        mut self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>> {
@@ -254,10 +260,6 @@ impl PipelineNode for SourceNode {
 
     fn node_id(&self) -> usize {
         self.node_info.id
-    }
-
-    fn plan_id(&self) -> Arc<str> {
-        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
 
     fn node_info(&self) -> Arc<NodeInfo> {

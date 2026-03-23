@@ -593,9 +593,11 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Mean, |_| e)
         }
-        AggExpr::Stddev(ref child) => {
-            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::Stddev, |_| e)
+        AggExpr::Stddev(ref child, ddof) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
+                |transformed_child| AggExpr::Stddev(transformed_child, ddof),
+                |_| e,
+            )
         }
         AggExpr::Var(ref child, ddof) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
@@ -679,7 +681,7 @@ mod tests {
     /// ->
     /// 1. aaaa+aaaa as x
     /// 2. aa+aa as aaaa
-    /// 3: a+a as aa
+    /// 3. a+a as aa
     #[test]
     fn test_nested_subexpression() -> DaftResult<()> {
         let source = dummy_scan_node(dummy_scan_operator(vec![

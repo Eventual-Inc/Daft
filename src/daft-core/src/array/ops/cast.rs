@@ -73,7 +73,7 @@ where
         match dtype {
             #[cfg(feature = "python")]
             DataType::Python => {
-                Series::try_from((self.name(), self.data.clone()))?.cast_to_python()
+                Series::from_arrow(self.field().clone(), self.data.clone())?.cast_to_python()
             }
             _ => {
                 // Cast from DataArray to the target DataType
@@ -191,7 +191,19 @@ where
                             &target_arrow_physical_type,
                         )
                     {
-                        arrow::compute::cast(data_to_cast.as_ref(), &target_arrow_physical_type)?
+                        // Cast to the physical type first (e.g. UInt16 -> Int32), then
+                        // reinterpret as the logical type (e.g. Int32 -> Date32) so that
+                        // downstream from_arrow receives the expected arrow type.
+                        let physical = arrow::compute::cast(
+                            data_to_cast.as_ref(),
+                            &target_arrow_physical_type,
+                        )?;
+                        let data = physical
+                            .into_data()
+                            .into_builder()
+                            .data_type(target_arrow_type)
+                            .build()?;
+                        arrow::array::make_array(data)
                     } else {
                         return Err(DaftError::TypeError(format!(
                             "can not cast {:?} to type: {:?}: Arrow types not castable, {:?}, {:?}",
@@ -1639,14 +1651,14 @@ impl StructArray {
                     self_fields
                         .iter()
                         .enumerate()
-                        .map(|(i, f)| (f.name.as_str(), i)),
+                        .map(|(i, f)| (f.name.as_ref(), i)),
                 );
                 let casted_series = other_fields
                     .iter()
                     .map(
-                        |field| match self_field_names_to_idx.get(field.name.as_str()) {
+                        |field| match self_field_names_to_idx.get(field.name.as_ref()) {
                             None => Ok(Series::full_null(
-                                field.name.as_str(),
+                                field.name.as_ref(),
                                 &field.dtype,
                                 self.len(),
                             )),
@@ -1972,26 +1984,26 @@ mod tests {
     fn test_utf8_to_float64_with_whitespace() {
         let utf8_array = Utf8Array::from_iter(
             "test",
-            vec![Some("  3.14  "), Some("-2.5"), Some("  1e10  "), None].into_iter(),
+            vec![Some("  3.13  "), Some("-2.5"), Some("  1e10  "), None].into_iter(),
         );
         let result = utf8_array
             .cast(&DataType::Float64)
             .expect("Failed to cast Utf8 to Float64");
 
         let values: Vec<Option<f64>> = result.f64().unwrap().into_iter().collect();
-        assert_eq!(values, vec![Some(3.14), Some(-2.5), Some(1e10), None]);
+        assert_eq!(values, vec![Some(3.13), Some(-2.5), Some(1e10), None]);
     }
 
     #[test]
     fn test_utf8_to_float32_with_whitespace() {
         let utf8_array =
-            Utf8Array::from_iter("test", vec![Some("  3.14  "), Some("  -2.5  ")].into_iter());
+            Utf8Array::from_iter("test", vec![Some("  3.13  "), Some("  -2.5  ")].into_iter());
         let result = utf8_array
             .cast(&DataType::Float32)
             .expect("Failed to cast Utf8 to Float32");
 
         let values: Vec<Option<f32>> = result.f32().unwrap().into_iter().collect();
-        assert_eq!(values, vec![Some(3.14_f32), Some(-2.5_f32)]);
+        assert_eq!(values, vec![Some(3.13_f32), Some(-2.5_f32)]);
     }
 
     #[test]

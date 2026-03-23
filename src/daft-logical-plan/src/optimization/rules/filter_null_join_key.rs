@@ -223,7 +223,6 @@ mod tests {
 
         let expected = left_scan
             .filter(unresolved_col("a").is_null().not())?
-            .clone()
             .join(
                 right_scan.filter(unresolved_col("c").is_null().not())?,
                 unresolved_col("a").eq(unresolved_col("c")).into(),
@@ -273,7 +272,6 @@ mod tests {
             .and(unresolved_col("f").is_null().not());
 
         let expected = left_scan
-            .clone()
             .join(
                 right_scan.filter(expected_predicate)?,
                 (unresolved_col("a").eq(unresolved_col("d")))

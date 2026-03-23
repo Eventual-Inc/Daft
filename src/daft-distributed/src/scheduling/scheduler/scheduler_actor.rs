@@ -507,10 +507,10 @@ mod tests {
 
             test_context.joinset.spawn(async move {
                 for task_id in 0..num_tasks_per_submitter {
-                    let num_rows = rand::thread_rng().gen_range(100..1000);
-                    let num_bytes = rand::thread_rng().gen_range(1024..1024 * 10);
+                    let num_rows = rand::rng().random_range(100..1000);
+                    let num_bytes = rand::rng().random_range(1024..1024 * 10);
                     let task_duration =
-                        std::time::Duration::from_millis(rand::thread_rng().gen_range(50..150));
+                        std::time::Duration::from_millis(rand::rng().random_range(50..150));
                     let task = MockTaskBuilder::new(create_mock_partition_ref(num_rows, num_bytes))
                         .with_task_id(submitter_id * num_tasks_per_submitter + task_id)
                         .with_sleep_duration(task_duration)
@@ -578,10 +578,10 @@ mod tests {
 
             test_context.joinset.spawn(async move {
                 for task_id in 0..num_tasks_per_submitter {
-                    let should_cancel = rand::thread_rng().gen_bool(0.5);
+                    let should_cancel = rand::rng().random_bool(0.5);
 
-                    let num_rows = rand::thread_rng().gen_range(100..1000);
-                    let num_bytes = rand::thread_rng().gen_range(1024..1024 * 10);
+                    let num_rows = rand::rng().random_range(100..1000);
+                    let num_bytes = rand::rng().random_range(1024..1024 * 10);
                     let mut task =
                         MockTaskBuilder::new(create_mock_partition_ref(num_rows, num_bytes))
                             .with_task_id(submitter_id * num_tasks_per_submitter + task_id);
@@ -601,7 +601,7 @@ mod tests {
                             .unwrap();
                     } else {
                         let task_duration =
-                            std::time::Duration::from_millis(rand::thread_rng().gen_range(50..150));
+                            std::time::Duration::from_millis(rand::rng().random_range(50..150));
                         let task = task.with_sleep_duration(task_duration);
                         let task = task.build();
                         let submittable_task = SubmittableTask::task_only(task);

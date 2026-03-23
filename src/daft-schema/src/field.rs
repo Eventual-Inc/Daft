@@ -6,7 +6,6 @@ use std::{
 
 use arrow_schema::extension::{EXTENSION_TYPE_METADATA_KEY, EXTENSION_TYPE_NAME_KEY};
 use common_error::{DaftError, DaftResult};
-use daft_arrow::datatypes::Field as ArrowField;
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +22,7 @@ pub type Metadata = std::collections::BTreeMap<String, String>;
 #[derive(Clone, Display, Debug, Eq, Deserialize, Serialize)]
 #[display("{name}#{dtype}")]
 pub struct Field {
-    pub name: String,
+    pub name: Arc<str>,
     pub dtype: DataType,
     pub metadata: Arc<Metadata>,
 }
@@ -75,8 +74,8 @@ impl FieldID {
 }
 
 impl Field {
-    pub fn new<S: Into<String>>(name: S, dtype: DataType) -> Self {
-        let name: String = name.into();
+    pub fn new<S: Into<Arc<str>>>(name: S, dtype: DataType) -> Self {
+        let name: Arc<str> = name.into();
         Self {
             name,
             dtype,
@@ -92,13 +91,6 @@ impl Field {
         }
     }
 
-    #[deprecated(note = "use .to_arrow")]
-    pub fn to_arrow2(&self) -> DaftResult<ArrowField> {
-        Ok(
-            ArrowField::new(self.name.clone(), self.dtype.to_arrow2()?, true)
-                .with_metadata(self.metadata.as_ref().clone()),
-        )
-    }
     pub fn to_arrow(&self) -> DaftResult<arrow_schema::Field> {
         let field = match &self.dtype {
             DataType::Extension(name, dtype, metadata) => {
@@ -111,7 +103,7 @@ impl Field {
                     .cloned()
                     .map_or_else(|| dtype.to_arrow(), Ok)?;
 
-                let physical = arrow_schema::Field::new(self.name.clone(), storage_type, true);
+                let physical = arrow_schema::Field::new(self.name.to_string(), storage_type, true);
                 let mut metadata_map = HashMap::new();
                 metadata_map.insert(EXTENSION_TYPE_NAME_KEY.to_string(), name.clone());
                 if let Some(metadata) = metadata {
@@ -155,7 +147,7 @@ impl Field {
 
                 physical.to_arrow()?.with_metadata(metadata_map)
             }
-            _ => arrow_schema::Field::new(self.name.clone(), self.dtype.to_arrow()?, true),
+            _ => arrow_schema::Field::new(self.name.to_string(), self.dtype.to_arrow()?, true),
         };
 
         let meta = field.metadata().clone();
@@ -177,7 +169,7 @@ impl Field {
         }
     }
 
-    pub fn rename<S: Into<String>>(&self, name: S) -> Self {
+    pub fn rename<S: Into<Arc<str>>>(&self, name: S) -> Self {
         Self {
             name: name.into(),
             dtype: self.dtype.clone(),
@@ -218,16 +210,6 @@ impl Field {
     }
 }
 
-impl From<&ArrowField> for Field {
-    fn from(af: &ArrowField) -> Self {
-        Self {
-            name: af.name.clone(),
-            dtype: af.data_type().into(),
-            metadata: af.metadata.clone().into(),
-        }
-    }
-}
-
 impl TryFrom<&arrow_schema::Field> for Field {
     type Error = DaftError;
 
@@ -242,7 +224,7 @@ impl TryFrom<&arrow_schema::Field> for Field {
             metadata.remove(EXTENSION_TYPE_METADATA_KEY);
 
             Ok(Self {
-                name: field.name().clone(),
+                name: Arc::from(field.name().as_str()),
                 dtype,
                 metadata: Arc::new(metadata.into_iter().collect()),
             })
@@ -263,7 +245,7 @@ impl TryFrom<&arrow_schema::Field> for Field {
             field_metadata.remove(EXTENSION_TYPE_METADATA_KEY);
 
             Ok(Self {
-                name: field.name().clone(),
+                name: Arc::from(field.name().as_str()),
                 dtype: DataType::Extension(
                     extension_name.to_string(),
                     Box::new(physical),
@@ -273,7 +255,7 @@ impl TryFrom<&arrow_schema::Field> for Field {
             })
         } else {
             Ok(Self {
-                name: field.name().clone(),
+                name: Arc::from(field.name().as_str()),
                 dtype: field.try_into()?,
                 metadata: Arc::new(field.metadata().clone().into_iter().collect()),
             })

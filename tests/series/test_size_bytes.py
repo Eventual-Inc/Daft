@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import itertools
-import math
 
 import numpy as np
 import pyarrow as pa
@@ -9,12 +8,8 @@ import pytest
 
 from daft.datatype import DataType
 from daft.series import Series
-from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.conftest import get_tests_daft_runner_name
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES
-
-ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
-PYARROW_GE_7_0_0 = ARROW_VERSION >= (7, 0, 0)
 
 
 def get_total_buffer_size(arr: pa.Array) -> int:
@@ -203,18 +198,7 @@ def test_series_struct_size_bytes(size, with_nulls) -> None:
     # Offset buffer for child array "c" has length (len + 1), and is increased in bit width from 32 to 64 when converting to large_string
     conversion_to_large_string_bytes = (len(data) + 1) * 4
 
-    # If nulls were injected, check validity bitmaps were were properly propagated to children
-    if with_nulls and size > 0:
-        child_arrays = [data.field(i) for i in range(data.type.num_fields)]
-        child_arrays_without_validity_buffer = len(
-            [child for child in child_arrays if any([b is None for b in child.buffers()])]
-        )
-        additional_validity_buffer_bytes = child_arrays_without_validity_buffer * math.ceil(size / 8)
-        assert s.size_bytes() == (
-            get_total_buffer_size(data) + additional_validity_buffer_bytes + conversion_to_large_string_bytes
-        )
-    else:
-        assert s.size_bytes() == get_total_buffer_size(data) + conversion_to_large_string_bytes
+    assert s.size_bytes() == get_total_buffer_size(data) + conversion_to_large_string_bytes
 
 
 @pytest.mark.skipif(
@@ -243,10 +227,6 @@ def test_series_extension_type_size_bytes(uuid_ext_type, size, with_nulls) -> No
     assert size_bytes == get_total_buffer_size(post_daft_cast_data)
 
 
-@pytest.mark.skipif(
-    not pyarrow_supports_fixed_shape_tensor(),
-    reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
-)
 @pytest.mark.parametrize("dtype, size", itertools.product(ARROW_INT_TYPES + ARROW_FLOAT_TYPES, [0, 1, 2, 8, 9, 16]))
 @pytest.mark.parametrize("with_nulls", [True, False])
 def test_series_canonical_tensor_extension_type_size_bytes(dtype, size, with_nulls) -> None:

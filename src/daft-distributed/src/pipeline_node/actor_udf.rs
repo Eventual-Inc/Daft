@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    Meter,
+    ops::{NodeCategory, NodeType},
+};
 use common_py_serde::PyObjectWrapper;
 use common_runtime::JoinSet;
 use daft_dsl::{
@@ -12,12 +15,9 @@ use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
-use opentelemetry::metrics::Meter;
 use pyo3::{Py, PyAny, Python, types::PyAnyMethods};
 
-use super::{
-    NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, udf::UdfStats,
-};
+use super::{NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, udf::UdfStats};
 use crate::{
     pipeline_node::{DistributedPipelineNode, TaskBuilderStream},
     plan::{PlanConfig, PlanExecutionContext},
@@ -128,7 +128,7 @@ pub(crate) struct ActorUDF {
 }
 
 impl ActorUDF {
-    const NODE_NAME: NodeName = "ActorUDF";
+    const NODE_NAME: &'static str = "ActorUDF";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -144,7 +144,7 @@ impl ActorUDF {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::DistributedActorPoolProject,
             NodeCategory::Intermediate,
         );
@@ -164,10 +164,6 @@ impl ActorUDF {
             udf_properties,
             actor_ready_timeout: plan_config.config.actor_udf_ready_timeout,
         })
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop_fused(
@@ -223,10 +219,7 @@ impl ActorUDF {
                 self.passthrough_columns.clone(),
                 self.required_columns.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self.node_id() as usize)),
             )
         })
     }
@@ -273,7 +266,7 @@ impl PipelineNodeImpl for ActorUDF {
         res
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(UdfStats::new(meter, self.context()))
     }
 

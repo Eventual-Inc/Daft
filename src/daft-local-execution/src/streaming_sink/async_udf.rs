@@ -7,7 +7,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
+    Counter, Meter, StatSnapshot,
     operator_metrics::OperatorCounter,
     ops::{NodeInfo, NodeType},
     snapshot::UdfSnapshot,
@@ -21,7 +21,7 @@ use daft_dsl::{
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
 use super::base::{
@@ -89,9 +89,9 @@ impl AsyncUdfRuntimeStats {
 
         Self {
             meter: meter.clone(), // Cheap to clone, Arc under the hood
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
             custom_counters: Mutex::new(HashMap::new()),
             node_kv,
         }
@@ -114,8 +114,11 @@ impl AsyncUdfRuntimeStats {
                     existing.add(value, key_values.as_slice());
                 }
                 None => {
-                    let counter =
-                        Counter::new(&self.meter, name.clone(), description.map(Cow::Owned), None);
+                    let counter = self.meter.u64_counter_with_desc_and_unit(
+                        name.clone(),
+                        description.map(Cow::Owned),
+                        None,
+                    );
                     counter.add(value, key_values.as_slice());
                     counters.insert(name.into(), counter);
                 }
@@ -242,7 +245,11 @@ impl StreamingSink for AsyncUdfSink {
 
                             // Force drain tasks until the number of inflight tasks is less than the concurrency limit
                             let mut num_inflight_tasks = state.task_set.len();
-                            let max_inflight_tasks = get_max_inflight_tasks();
+                            let max_inflight_tasks = params
+                                .udf_properties
+                                .concurrency
+                                .map(|c| c.get())
+                                .unwrap_or_else(get_max_inflight_tasks);
                             while num_inflight_tasks > max_inflight_tasks {
                                 if let Some(join_res) = state.task_set.join_next().await {
                                     let batch = join_res??;

@@ -7,7 +7,7 @@ use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -27,7 +27,7 @@ pub(crate) struct PreShuffleMergeNode {
 }
 
 impl PreShuffleMergeNode {
-    const NODE_NAME: NodeName = "PreShuffleMerge";
+    const NODE_NAME: &'static str = "PreShuffleMerge";
 
     pub fn new(
         node_id: NodeID,
@@ -40,7 +40,7 @@ impl PreShuffleMergeNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Repartition,
             NodeCategory::BlockingSink,
         );
@@ -56,10 +56,6 @@ impl PreShuffleMergeNode {
             pre_shuffle_merge_threshold,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 

@@ -1,16 +1,20 @@
 use std::{future, sync::Arc};
 
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    Meter,
+    ops::{NodeCategory, NodeType},
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{JoinType, stats::StatsState};
+use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
 use futures::{TryStreamExt, future::try_join_all};
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
         sort::{
             create_range_repartition_tasks, create_sample_tasks,
@@ -22,6 +26,7 @@ use crate::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
+    statistics::stats::RuntimeStatsRef,
     utils::{
         channel::{Sender, create_channel},
         transpose::transpose_materialized_outputs_from_vec,
@@ -45,7 +50,7 @@ pub(crate) struct SortMergeJoinNode {
 }
 
 impl SortMergeJoinNode {
-    const NODE_NAME: NodeName = "SortMergeJoin";
+    const NODE_NAME: &'static str = "SortMergeJoin";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -63,7 +68,7 @@ impl SortMergeJoinNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::SortMergeJoin,
             NodeCategory::StreamingSink,
         );
@@ -82,10 +87,6 @@ impl SortMergeJoinNode {
             left,
             right,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -134,10 +135,7 @@ impl SortMergeJoinNode {
             self.join_type,
             self.config.schema.clone(),
             StatsState::NotMaterialized,
-            LocalNodeContext {
-                origin_node_id: Some(self.node_id() as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.node_id() as usize)),
         );
 
         // Create the task
@@ -174,18 +172,35 @@ impl SortMergeJoinNode {
             scheduler_handle,
         )?;
 
+        let left_boundary_key_names = self
+            .left_on
+            .iter()
+            .map(|expr| {
+                expr.inner()
+                    .to_field(&self.left.config().schema)
+                    .map(|f| f.name)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        let right_sample_by_aliased = self
+            .right_on
+            .iter()
+            .zip(left_boundary_key_names.into_iter())
+            .map(|(expr, key_name)| BoundExpr::new_unchecked(expr.inner().alias(key_name)))
+            .collect::<Vec<_>>();
+
         // Sample right side
         let right_sample_tasks = create_sample_tasks(
             right_materialized.clone(),
             self.right.config().schema.clone(),
-            self.right_on.clone(),
+            right_sample_by_aliased,
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
         )?;
 
         // Collect all samples
-        let sampled_outputs = try_join_all(
+        let combined_sampled_outputs = try_join_all(
             left_sample_tasks
                 .into_iter()
                 .chain(right_sample_tasks.into_iter()),
@@ -196,8 +211,8 @@ impl SortMergeJoinNode {
         .collect::<Vec<_>>();
 
         // Compute partition boundaries from combined samples
-        let boundaries = get_partition_boundaries_from_samples(
-            sampled_outputs,
+        let left_partition_boundaries = get_partition_boundaries_from_samples(
+            combined_sampled_outputs,
             &self.left_on,
             descending.clone(),
             nulls_first,
@@ -212,11 +227,30 @@ impl SortMergeJoinNode {
             left_schema,
             self.left_on.clone(),
             descending.clone(),
-            boundaries.clone(),
+            left_partition_boundaries.clone(),
             num_partitions,
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
+        )?;
+
+        let right_boundary_names = self
+            .right_on
+            .iter()
+            .map(|expr| {
+                expr.inner()
+                    .to_field(&self.right.config().schema)
+                    .map(|f| f.name)
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        let right_partition_boundaries = RecordBatch::from_nonempty_columns(
+            left_partition_boundaries
+                .columns()
+                .iter()
+                .zip(right_boundary_names)
+                .map(|(series, name)| series.clone().rename(name))
+                .collect::<Vec<_>>(),
         )?;
 
         // Range repartition right side
@@ -226,7 +260,7 @@ impl SortMergeJoinNode {
             right_schema,
             self.right_on.clone(),
             descending,
-            boundaries,
+            right_partition_boundaries,
             num_partitions,
             self.as_ref(),
             task_id_counter,
@@ -337,6 +371,10 @@ impl PipelineNodeImpl for SortMergeJoinNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         self.multiline_display()
+    }
+
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(super::stats::BasicJoinStats::new(meter, self.context()))
     }
 
     fn produce_tasks(

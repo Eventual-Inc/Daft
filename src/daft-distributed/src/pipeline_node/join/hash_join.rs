@@ -1,19 +1,24 @@
 use std::sync::Arc;
 
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    Meter,
+    ops::{NodeCategory, NodeType},
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{JoinType, partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
+use super::stats::BasicJoinStats;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, TaskBuilderStream,
+        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
+        TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
+    statistics::stats::RuntimeStatsRef,
 };
 
 pub(crate) struct HashJoinNode {
@@ -31,7 +36,7 @@ pub(crate) struct HashJoinNode {
 }
 
 impl HashJoinNode {
-    const NODE_NAME: NodeName = "HashJoin";
+    const NODE_NAME: &'static str = "HashJoin";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -50,8 +55,8 @@ impl HashJoinNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
-            NodeType::DistributedHashJoin,
+            Arc::from(Self::NODE_NAME),
+            NodeType::HashJoin,
             NodeCategory::BlockingSink,
         );
         let partition_cols = left_on
@@ -76,10 +81,6 @@ impl HashJoinNode {
             right,
         }
     }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
 }
 
 impl PipelineNodeImpl for HashJoinNode {
@@ -93,6 +94,10 @@ impl PipelineNodeImpl for HashJoinNode {
 
     fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.left.clone(), self.right.clone()]
+    }
+
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(BasicJoinStats::new(meter, self.context()))
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
@@ -142,10 +147,7 @@ impl PipelineNodeImpl for HashJoinNode {
                                 self.join_type,
                                 self.config.schema.clone(),
                                 StatsState::NotMaterialized,
-                                LocalNodeContext {
-                                    origin_node_id: Some(self.node_id() as usize),
-                                    additional: None,
-                                },
+                                LocalNodeContext::new(Some(self.node_id() as usize)),
                             )
                         },
                     )

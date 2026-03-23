@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    Meter,
+    ops::{NodeCategory, NodeType},
+};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
@@ -9,11 +12,12 @@ use futures::{StreamExt, stream::select};
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, TaskBuilderStream,
+        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
+        TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
+    statistics::stats::RuntimeStatsRef,
     utils::channel::{Sender, create_channel},
 };
 
@@ -25,7 +29,7 @@ pub(crate) struct CrossJoinNode {
 }
 
 impl CrossJoinNode {
-    const NODE_NAME: NodeName = "CrossJoin";
+    const NODE_NAME: &'static str = "CrossJoin";
 
     pub fn new(
         node_id: NodeID,
@@ -39,7 +43,7 @@ impl CrossJoinNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::CrossJoin,
             NodeCategory::Intermediate,
         );
@@ -56,10 +60,6 @@ impl CrossJoinNode {
             left_node,
             right_node,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop(
@@ -90,10 +90,7 @@ impl CrossJoinNode {
                                 right_plan,
                                 self.config.schema.clone(),
                                 StatsState::NotMaterialized,
-                                LocalNodeContext {
-                                    origin_node_id: Some(self.node_id() as usize),
-                                    additional: None,
-                                },
+                                LocalNodeContext::new(Some(self.node_id() as usize)),
                             )
                         },
                     );
@@ -113,10 +110,7 @@ impl CrossJoinNode {
                                 right_plan,
                                 self.config.schema.clone(),
                                 StatsState::NotMaterialized,
-                                LocalNodeContext {
-                                    origin_node_id: Some(self.node_id() as usize),
-                                    additional: None,
-                                },
+                                LocalNodeContext::new(Some(self.node_id() as usize)),
                             )
                         },
                     );
@@ -141,6 +135,10 @@ impl PipelineNodeImpl for CrossJoinNode {
 
     fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.left_node.clone(), self.right_node.clone()]
+    }
+
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(super::stats::BasicJoinStats::new(meter, self.context()))
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {

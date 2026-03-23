@@ -5,18 +5,25 @@ from __future__ import annotations
 from typing import Literal
 
 from daft.daft import CountMode
-from daft.expressions.expressions import Expression
+from daft.expressions.expressions import Expression, col
 
 
-def count(expr: Expression, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
+def count(
+    expr: Expression | None = None, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid
+) -> Expression:
     """Counts the number of values in the expression.
 
     Args:
-        expr (Expression): The input expression to count values from.
+        expr (Expression | None): The input expression to count values from. If not provided, mode must be "all"
+            and count(*) semantics will be used.
         mode: A string ("all", "valid", or "null") that represents whether to count all values, non-null (valid) values, or null values. Defaults to "valid".
     """
     if isinstance(mode, str):
         mode = CountMode.from_count_mode_str(mode)
+    if expr is None:
+        if mode != CountMode.All:
+            raise ValueError("count() without an expression only supports mode='all'.")
+        expr = col("*")
     return Expression._from_pyexpr(expr._expr.count(mode))
 
 
@@ -144,9 +151,19 @@ def avg(expr: Expression) -> Expression:
     return Expression._from_pyexpr(expr._expr.mean())
 
 
-def stddev(expr: Expression) -> Expression:
-    """Calculates the standard deviation of the values in the expression."""
-    return Expression._from_pyexpr(expr._expr.stddev())
+def stddev(expr: Expression, ddof: int = 1) -> Expression:
+    """Calculates the standard deviation of the values in the expression.
+
+    Args:
+        expr: The input expression to calculate standard deviation for.
+        ddof: Delta degrees of freedom. The divisor used in calculations
+            is N - ddof, where N is the number of non-null elements.
+            Defaults to 1 (sample standard deviation).
+
+    Returns:
+        Expression representing the standard deviation.
+    """
+    return Expression._from_pyexpr(expr._expr.stddev(ddof))
 
 
 def var(expr: Expression, ddof: int = 1) -> Expression:

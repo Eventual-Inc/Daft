@@ -196,11 +196,11 @@ impl Column {
                 Field { name, .. },
                 PlanRef::Alias(plan_alias),
             )) => format!("{plan_alias}.{name}"),
-            Self::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _)) => name.clone(),
+            Self::Resolved(ResolvedColumn::OuterRef(Field { name, .. }, _)) => name.to_string(),
             Self::Bound(BoundColumn {
                 field: Field { name, .. },
                 ..
-            }) => name.clone(),
+            }) => name.to_string(),
         }
     }
 }
@@ -218,6 +218,7 @@ impl std::fmt::Display for Column {
 pub type ExprRef = Arc<Expr>;
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[allow(clippy::large_enum_variant)]
 pub enum Expr {
     #[display("{_0}")]
     Column(Column),
@@ -415,8 +416,8 @@ pub enum AggExpr {
     #[display("mean({_0})")]
     Mean(ExprRef),
 
-    #[display("stddev({_0})")]
-    Stddev(ExprRef),
+    #[display("stddev({_0}, ddof={_1})")]
+    Stddev(ExprRef, usize),
 
     #[display("var({_0}, ddof={_1})")]
     Var(ExprRef, usize),
@@ -456,6 +457,7 @@ pub enum AggExpr {
 }
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[allow(clippy::large_enum_variant)]
 pub enum WindowExpr {
     #[display("agg({_0})")]
     Agg(AggExpr),
@@ -540,7 +542,7 @@ impl AggExpr {
             Self::ApproxSketch(_, _) => "Approx Sketch",
             Self::MergeSketch(_, _) => "Merge Sketch",
             Self::Mean(_) => "Mean",
-            Self::Stddev(_) => "Stddev",
+            Self::Stddev(_, _) => "Stddev",
             Self::Var(_, _) => "Var",
             Self::Min(_) => "Min",
             Self::Max(_) => "Max",
@@ -566,7 +568,7 @@ impl AggExpr {
             | Self::ApproxSketch(expr, _)
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
-            | Self::Stddev(expr)
+            | Self::Stddev(expr, _)
             | Self::Var(expr, _)
             | Self::Min(expr)
             | Self::Max(expr)
@@ -630,9 +632,9 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_mean()"))
             }
-            Self::Stddev(expr) => {
+            Self::Stddev(expr, ddof) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.local_stddev()"))
+                FieldID::new(format!("{child_id}.local_stddev(ddof={ddof})"))
             }
             Self::Var(expr, ddof) => {
                 let child_id = expr.semantic_id(schema);
@@ -691,7 +693,7 @@ impl AggExpr {
             | Self::ApproxSketch(expr, _)
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
-            | Self::Stddev(expr)
+            | Self::Stddev(expr, _)
             | Self::Var(expr, _)
             | Self::Min(expr)
             | Self::Max(expr)
@@ -719,7 +721,7 @@ impl AggExpr {
             Self::Sum(_) => Self::Sum(first_child()),
             Self::Product(_) => Self::Product(first_child()),
             Self::Mean(_) => Self::Mean(first_child()),
-            Self::Stddev(_) => Self::Stddev(first_child()),
+            &Self::Stddev(_, ddof) => Self::Stddev(first_child(), ddof),
             &Self::Var(_, ddof) => Self::Var(first_child(), ddof),
             Self::Min(_) => Self::Min(first_child()),
             Self::Max(_) => Self::Max(first_child()),
@@ -753,19 +755,19 @@ impl AggExpr {
         match self {
             Self::Count(expr, ..) | Self::CountDistinct(expr) => {
                 let field = expr.to_field(schema)?;
-                Ok(Field::new(field.name.as_str(), DataType::UInt64))
+                Ok(Field::new(field.name.as_ref(), DataType::UInt64))
             }
             Self::Sum(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
-                    field.name.as_str(),
+                    field.name.as_ref(),
                     try_sum_supertype(&field.dtype)?,
                 ))
             }
             Self::Product(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
-                    field.name.as_str(),
+                    field.name.as_ref(),
                     try_product_supertype(&field.dtype)?,
                 ))
             }
@@ -777,7 +779,7 @@ impl AggExpr {
             }) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
-                    field.name.as_str(),
+                    field.name.as_ref(),
                     match &field.dtype {
                         dt if dt.is_numeric() => {
                             if percentiles.len() > 1 || *force_list_output {
@@ -800,7 +802,7 @@ impl AggExpr {
             }
             Self::ApproxCountDistinct(expr) => {
                 let field = expr.to_field(schema)?;
-                Ok(Field::new(field.name.as_str(), DataType::UInt64))
+                Ok(Field::new(field.name.as_ref(), DataType::UInt64))
             }
             Self::ApproxSketch(expr, sketch_type) => {
                 let field = expr.to_field(schema)?;
@@ -838,35 +840,35 @@ impl AggExpr {
             Self::Mean(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
-                    field.name.as_str(),
+                    field.name.as_ref(),
                     try_mean_aggregation_supertype(&field.dtype)?,
                 ))
             }
-            Self::Stddev(expr) => {
+            Self::Stddev(expr, _) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
-                    field.name.as_str(),
+                    field.name.as_ref(),
                     try_stddev_aggregation_supertype(&field.dtype)?,
                 ))
             }
             Self::Var(expr, _) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
-                    field.name.as_str(),
+                    field.name.as_ref(),
                     try_variance_aggregation_supertype(&field.dtype)?,
                 ))
             }
 
             Self::Min(expr) | Self::Max(expr) | Self::AnyValue(expr, _) => {
                 let field = expr.to_field(schema)?;
-                Ok(Field::new(field.name.as_str(), field.dtype))
+                Ok(Field::new(field.name.as_ref(), field.dtype))
             }
 
             Self::List(expr) | Self::Set(expr) => Ok(expr.to_field(schema)?.to_list_field()),
 
             Self::BoolAnd(expr) | Self::BoolOr(expr) => {
                 let field = expr.to_field(schema)?;
-                Ok(Field::new(field.name.as_str(), DataType::Boolean))
+                Ok(Field::new(field.name.as_ref(), DataType::Boolean))
             }
 
             Self::Concat(expr, delimiter) => {
@@ -894,7 +896,7 @@ impl AggExpr {
             Self::Skew(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
-                    field.name.as_str(),
+                    field.name.as_ref(),
                     try_skew_aggregation_supertype(&field.dtype)?,
                 ))
             }
@@ -1153,8 +1155,8 @@ impl Expr {
         Self::Agg(AggExpr::Mean(self)).into()
     }
 
-    pub fn stddev(self: ExprRef) -> ExprRef {
-        Self::Agg(AggExpr::Stddev(self)).into()
+    pub fn stddev(self: ExprRef, ddof: usize) -> ExprRef {
+        Self::Agg(AggExpr::Stddev(self, ddof)).into()
     }
 
     pub fn var(self: ExprRef, ddof: usize) -> ExprRef {
@@ -1511,7 +1513,7 @@ impl Expr {
             Self::Column(Column::Bound(BoundColumn {
                 field: Field { name, .. },
                 ..
-            })) => Ok(name.clone()),
+            })) => Ok(name.to_string()),
 
             Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => Ok(name.to_string()),
             Self::Column(Column::Resolved(ResolvedColumn::JoinSide(name, side))) => {
@@ -1848,7 +1850,7 @@ impl Expr {
                 let expr_field = expr.to_field(schema)?;
                 let fill_value_field = fill_value.to_field(schema)?;
                 match try_get_supertype(&expr_field.dtype, &fill_value_field.dtype) {
-                    Ok(supertype) => Ok(Field::new(expr_field.name.as_str(), supertype)),
+                    Ok(supertype) => Ok(Field::new(expr_field.name.as_ref(), supertype)),
                     Err(_) => Err(DaftError::TypeError(format!(
                         "Expected expr and fill_value arguments for fill_null to be castable to the same supertype, but received {expr_field} and {fill_value_field}",
                     ))),
@@ -1863,7 +1865,7 @@ impl Expr {
                 let field_type = InferDataType::from(expr_type)
                     .membership_op(&(&list_dtype).into())?
                     .0;
-                Ok(Field::new(field_name, field_type))
+                Ok(Field::new(field_name.clone(), field_type))
             }
             Self::List(items) => {
                 // Use "list" as the field name, and infer list type from items.
@@ -1888,7 +1890,7 @@ impl Expr {
                 let (result_type, _intermediate, _comp_type) =
                     InferDataType::from(&lower_result_type)
                         .membership_op(&InferDataType::from(&upper_result_type))?;
-                Ok(Field::new(value_field.name.as_str(), result_type))
+                Ok(Field::new(value_field.name.as_ref(), result_type))
             }
             Self::Literal(value) => Ok(Field::new("literal", value.get_type())),
             Self::Function { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
@@ -1902,7 +1904,7 @@ impl Expr {
                     Operator::And | Operator::Or | Operator::Xor => {
                         let result_type = InferDataType::from(&left_field.dtype)
                             .logical_op(&InferDataType::from(&right_field.dtype))?;
-                        Ok(Field::new(left_field.name.as_str(), result_type))
+                        Ok(Field::new(left_field.name.as_ref(), result_type))
                     }
 
                     // Comparison operations
@@ -1916,49 +1918,49 @@ impl Expr {
                         let (result_type, _intermediate, _comp_type) =
                             InferDataType::from(&left_field.dtype)
                                 .comparison_op(&InferDataType::from(&right_field.dtype))?;
-                        Ok(Field::new(left_field.name.as_str(), result_type))
+                        Ok(Field::new(left_field.name.as_ref(), result_type))
                     }
 
                     // Arithmetic operations
                     Operator::Plus => {
                         let result_type = (InferDataType::from(&left_field.dtype)
                             + InferDataType::from(&right_field.dtype))?;
-                        Ok(Field::new(left_field.name.as_str(), result_type))
+                        Ok(Field::new(left_field.name.as_ref(), result_type))
                     }
                     Operator::Minus => {
                         let result_type = (InferDataType::from(&left_field.dtype)
                             - InferDataType::from(&right_field.dtype))?;
-                        Ok(Field::new(left_field.name.as_str(), result_type))
+                        Ok(Field::new(left_field.name.as_ref(), result_type))
                     }
                     Operator::Multiply => {
                         let result_type = (InferDataType::from(&left_field.dtype)
                             * InferDataType::from(&right_field.dtype))?;
-                        Ok(Field::new(left_field.name.as_str(), result_type))
+                        Ok(Field::new(left_field.name.as_ref(), result_type))
                     }
                     Operator::TrueDivide => {
                         let result_type = (InferDataType::from(&left_field.dtype)
                             / InferDataType::from(&right_field.dtype))?;
-                        Ok(Field::new(left_field.name.as_str(), result_type))
+                        Ok(Field::new(left_field.name.as_ref(), result_type))
                     }
                     Operator::Modulus => {
                         let result_type = (InferDataType::from(&left_field.dtype)
                             % InferDataType::from(&right_field.dtype))?;
-                        Ok(Field::new(left_field.name.as_str(), result_type))
+                        Ok(Field::new(left_field.name.as_ref(), result_type))
                     }
                     Operator::ShiftLeft => {
                         let result_type = (InferDataType::from(&left_field.dtype)
                             << InferDataType::from(&right_field.dtype))?;
-                        Ok(Field::new(left_field.name.as_str(), result_type))
+                        Ok(Field::new(left_field.name.as_ref(), result_type))
                     }
                     Operator::ShiftRight => {
                         let result_type = (InferDataType::from(&left_field.dtype)
                             >> InferDataType::from(&right_field.dtype))?;
-                        Ok(Field::new(left_field.name.as_str(), result_type))
+                        Ok(Field::new(left_field.name.as_ref(), result_type))
                     }
                     Operator::FloorDivide => {
                         let result_type = (InferDataType::from(&left_field.dtype)
                             .floor_div(&InferDataType::from(&right_field.dtype)))?;
-                        Ok(Field::new(left_field.name.as_str(), result_type))
+                        Ok(Field::new(left_field.name.as_ref(), result_type))
                     }
                 }
             }
@@ -2083,7 +2085,7 @@ impl Expr {
     }
 
     pub fn get_name(&self, schema: &Schema) -> DaftResult<String> {
-        Ok(self.to_field(schema)?.name)
+        Ok(self.to_field(schema)?.name.to_string())
     }
 
     pub fn input_mapping(self: &Arc<Self>) -> Option<String> {

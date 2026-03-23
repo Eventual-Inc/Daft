@@ -4,7 +4,7 @@ use bincode::{Decode, Encode};
 use opentelemetry::KeyValue;
 use serde::{Deserialize, Serialize};
 
-use crate::{ATTR_NODE_ID, ATTR_NODE_TYPE, NodeID};
+use crate::{ATTR_NODE_ID, ATTR_NODE_ORIGIN_ID, ATTR_NODE_PHASE, ATTR_NODE_TYPE, NodeID};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Encode, Decode)]
 pub enum NodeType {
@@ -17,11 +17,9 @@ pub enum NodeType {
 
     // Intermediate Ops
     // Consumes a MicroPartition and immediately produces a resulting one. Little internal state
-    CrossJoin,
     DistributedActorPoolProject,
     Explode,
     Filter,
-    InnerHashJoinProbe,
     IntoBatches,
     Project,
     Sample,
@@ -36,7 +34,6 @@ pub enum NodeType {
     JoinCollect,
     Dedup,
     GroupByAgg,
-    HashJoinBuild,
     IntoPartitions,
     Pivot,
     Repartition,
@@ -48,18 +45,17 @@ pub enum NodeType {
     // Streaming Sinks
     // Both consumes and produces MicroPartitions at arbitrary intervals
     // For example, limit cuts off early.
-    AntiSemiHashJoinProbe,
     AsyncUDFProject,
     Concat,
     Limit,
     MonotonicallyIncreasingId,
-    OuterHashJoinProbe,
-    SortMergeJoinProbe,
 
-    // Specific to distributed only
-    DistributedHashJoin,
-    BroadcastJoin,
+    // Join Operators
+    HashJoin,
     SortMergeJoin,
+    CrossJoin,
+    // Specific to distributed only
+    BroadcastJoin,
 }
 
 impl Display for NodeType {
@@ -88,17 +84,26 @@ impl Display for NodeCategory {
 pub struct NodeInfo {
     pub name: Arc<str>,
     pub id: NodeID,
+    pub node_origin_id: NodeID,
     #[allow(dead_code)]
     pub node_type: NodeType,
     pub node_category: NodeCategory,
+    pub node_phase: Option<String>,
     pub context: HashMap<String, String>,
 }
 
 impl NodeInfo {
     pub fn to_key_values(&self) -> Vec<KeyValue> {
-        vec![
+        let mut kvs = vec![
+            KeyValue::new(ATTR_NODE_ORIGIN_ID, self.node_origin_id.to_string()),
             KeyValue::new(ATTR_NODE_ID, self.id.to_string()),
             KeyValue::new(ATTR_NODE_TYPE, self.node_type.to_string()),
-        ]
+        ];
+        // Add node phase if present. This is used by distributed
+        // pipeline nodes that have multiple execution phases.
+        if let Some(phase) = self.node_phase.as_ref() {
+            kvs.push(KeyValue::new(ATTR_NODE_PHASE, phase.clone()));
+        }
+        kvs
     }
 }

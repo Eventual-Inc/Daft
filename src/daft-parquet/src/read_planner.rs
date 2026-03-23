@@ -1,9 +1,8 @@
 use std::{fmt::Display, ops::Range, sync::Arc};
 
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use common_error::DaftResult;
 use daft_io::{IOClient, IOStatsRef, range::GetRange};
-use futures::{StreamExt, TryStreamExt};
 use tokio::task::JoinHandle;
 
 type RangeList = Vec<Range<usize>>;
@@ -202,10 +201,14 @@ pub struct RangesContainer {
 }
 
 impl RangesContainer {
-    pub async fn get_range_reader(
-        self: Arc<Self>,
-        range: Range<usize>,
-    ) -> DaftResult<impl futures::AsyncRead> {
+    /// Retrieve the bytes for a given range as a single contiguous `Bytes` buffer.
+    ///
+    /// This resolves all underlying cache entries that overlap the requested range
+    /// and concatenates the slices into a single `Bytes` value.
+    ///
+    /// Resolves all underlying cache entries that overlap the requested range
+    /// and returns fully materialized `Bytes` (used by `AsyncFileReader::get_byte_ranges`).
+    pub async fn get_range_bytes(self: &Arc<Self>, range: Range<usize>) -> DaftResult<Bytes> {
         let mut current_pos = range.start;
         let mut curr_index;
         let start_point = self.ranges.binary_search_by_key(&current_pos, |e| e.start);
@@ -266,21 +269,22 @@ impl RangesContainer {
 
         assert_eq!(current_pos, range.end);
 
-        // We block on the first entry so we can surface up the error. This shouldn't cause any performance issues since we have to wait for this to complete anyways
-        if let Some(entry) = needed_entries.first()
-            && let Some(range) = ranges_to_slice.first()
-        {
-            entry.get_or_wait(range.clone()).await?;
+        // Fast path: single entry maps directly to a Bytes slice.
+        if needed_entries.len() == 1 {
+            let bytes = needed_entries[0]
+                .get_or_wait(ranges_to_slice[0].clone())
+                .await?;
+            return Ok(bytes);
         }
 
-        let bytes_iter = tokio_stream::iter(needed_entries.into_iter().zip(ranges_to_slice))
-            .then(|(e, r)| async move { e.get_or_wait(r).await })
-            .inspect_err(|e| log::warn!("Encountered error while streaming bytes into parquet reader. This may show up as a Thrift Error Downstream: {}", e));
-
-        let stream_reader = tokio_util::io::StreamReader::new(bytes_iter);
-        let convert = async_compat::Compat::new(stream_reader);
-
-        Ok(convert)
+        // Multiple entries: collect and concatenate.
+        let total_len = range.end - range.start;
+        let mut buf = BytesMut::with_capacity(total_len);
+        for (entry, slice_range) in needed_entries.into_iter().zip(ranges_to_slice) {
+            let bytes = entry.get_or_wait(slice_range).await?;
+            buf.extend_from_slice(&bytes);
+        }
+        Ok(buf.freeze())
     }
 }
 

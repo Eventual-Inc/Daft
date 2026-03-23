@@ -6,10 +6,7 @@ import pytest
 
 from daft import Series
 from daft.datatype import DataType
-from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.conftest import get_tests_daft_runner_name
-
-ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
 @pytest.mark.parametrize("if_true_value", [1, None])
@@ -415,10 +412,6 @@ def test_series_if_else_extension_type(uuid_ext_type, if_true_storage, if_false_
     assert result_arrow == expected_arrow
 
 
-@pytest.mark.skipif(
-    not pyarrow_supports_fixed_shape_tensor(),
-    reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
-)
 @pytest.mark.parametrize(
     ["if_true", "if_false", "expected"],
     [

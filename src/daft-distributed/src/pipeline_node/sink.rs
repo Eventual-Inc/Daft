@@ -1,23 +1,25 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
+use common_file_formats::FileFormat;
 use common_metrics::{
-    BYTES_WRITTEN_KEY, Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_WRITTEN_KEY, StatSnapshot,
-    UNIT_BYTES, UNIT_MICROSECONDS, UNIT_ROWS,
+    BYTES_WRITTEN_KEY, Counter, Meter, ROWS_WRITTEN_KEY, StatSnapshot, UNIT_BYTES, UNIT_ROWS,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::WriteSnapshot,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
+#[cfg(feature = "python")]
+use daft_logical_plan::sink_info::CatalogType;
 use daft_logical_plan::{OutputFileInfo, SinkInfo, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::KeyValue;
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -41,10 +43,18 @@ impl WriteStats {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
         let node_kv = key_values_from_context(context);
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
-            rows_written: Counter::new(meter, ROWS_WRITTEN_KEY, None, Some(UNIT_ROWS.into())),
-            bytes_written: Counter::new(meter, BYTES_WRITTEN_KEY, None, Some(UNIT_BYTES.into())),
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_written: meter.u64_counter_with_desc_and_unit(
+                ROWS_WRITTEN_KEY,
+                None,
+                Some(UNIT_ROWS.into()),
+            ),
+            bytes_written: meter.u64_counter_with_desc_and_unit(
+                BYTES_WRITTEN_KEY,
+                None,
+                Some(UNIT_BYTES.into()),
+            ),
             node_kv,
         }
     }
@@ -74,6 +84,47 @@ impl RuntimeStats for WriteStats {
     }
 }
 
+fn sink_display_name(sink_info: &SinkInfo<BoundExpr>) -> String {
+    match sink_info {
+        SinkInfo::OutputFileInfo(OutputFileInfo {
+            file_format,
+            partition_cols,
+            ..
+        }) => {
+            let partitioned = partition_cols.as_ref().is_some_and(|c| !c.is_empty());
+            match (file_format, partitioned) {
+                (FileFormat::Parquet, true) => "Partitioned Parquet Write".to_string(),
+                (FileFormat::Parquet, false) => "Parquet Write".to_string(),
+                (FileFormat::Csv, true) => "Partitioned CSV Write".to_string(),
+                (FileFormat::Csv, false) => "CSV Write".to_string(),
+                (FileFormat::Json, true) => "Partitioned JSON Write".to_string(),
+                (FileFormat::Json, false) => "JSON Write".to_string(),
+                (_, _) => "Write".to_string(),
+            }
+        }
+        #[cfg(feature = "python")]
+        SinkInfo::CatalogInfo(catalog_info) => match &catalog_info.catalog {
+            CatalogType::Iceberg(ic) => {
+                if ic.partition_cols.is_empty() {
+                    "Iceberg Write".to_string()
+                } else {
+                    "Partitioned Iceberg Write".to_string()
+                }
+            }
+            CatalogType::DeltaLake(dl) => {
+                if dl.partition_cols.as_ref().is_none_or(|c| c.is_empty()) {
+                    "DeltaLake Write".to_string()
+                } else {
+                    "Partitioned DeltaLake Write".to_string()
+                }
+            }
+            CatalogType::Lance(_) => "Lance Write".to_string(),
+        },
+        #[cfg(feature = "python")]
+        SinkInfo::DataSinkInfo(data_sink_info) => data_sink_info.name.clone(),
+    }
+}
+
 pub(crate) struct SinkNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
@@ -83,8 +134,6 @@ pub(crate) struct SinkNode {
 }
 
 impl SinkNode {
-    const NODE_NAME: NodeName = "Sink";
-
     pub fn new(
         node_id: NodeID,
         plan_config: &PlanConfig,
@@ -93,11 +142,12 @@ impl SinkNode {
         data_schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
+        let node_name = Arc::from(sink_display_name(sink_info.as_ref()));
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            node_name,
             NodeType::Write,
             NodeCategory::BlockingSink,
         );
@@ -115,10 +165,6 @@ impl SinkNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     fn create_sink_plan(
         &self,
         input: LocalPhysicalPlanRef,
@@ -133,10 +179,7 @@ impl SinkNode {
                 file_schema,
                 info.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             ),
             #[cfg(feature = "python")]
             SinkInfo::CatalogInfo(info) => match &info.catalog {
@@ -147,10 +190,7 @@ impl SinkNode {
                     data_schema,
                     file_schema,
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(node_id as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(node_id as usize)),
                 ),
                 daft_logical_plan::CatalogType::Lance(info) => LocalPhysicalPlan::lance_write(
                     input,
@@ -158,10 +198,7 @@ impl SinkNode {
                     data_schema,
                     file_schema,
                     StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(node_id as usize),
-                        additional: None,
-                    },
+                    LocalNodeContext::new(Some(node_id as usize)),
                 ),
             },
             #[cfg(feature = "python")]
@@ -170,10 +207,7 @@ impl SinkNode {
                 data_sink_info.clone(),
                 file_schema,
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             ),
         }
     }
@@ -202,10 +236,7 @@ impl SinkNode {
             file_schema,
             info,
             StatsState::NotMaterialized,
-            LocalNodeContext {
-                origin_node_id: Some(self.node_id() as usize),
-                additional: None,
-            },
+            LocalNodeContext::new(Some(self.node_id() as usize)),
         );
         let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
             .with_psets(self.node_id(), psets);
@@ -262,7 +293,7 @@ impl PipelineNodeImpl for SinkNode {
         res
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(WriteStats::new(meter, self.context()))
     }
 

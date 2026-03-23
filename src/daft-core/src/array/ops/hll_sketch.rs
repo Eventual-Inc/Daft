@@ -1,4 +1,6 @@
-use arrow::array::Array;
+use std::sync::Arc;
+
+use arrow::{array::Array, buffer::Buffer};
 use common_error::DaftResult;
 use hyperloglog::{HyperLogLog, NUM_REGISTERS};
 
@@ -17,16 +19,14 @@ impl DaftHllSketchAggable for UInt64Array {
         for value in self.as_arrow()?.iter().flatten() {
             hll.add_already_hashed(value);
         }
-        let array = FixedSizeBinaryArray::new(
-            Field::new(self.name(), DataType::FixedSizeBinary(NUM_REGISTERS)).into(),
-            Box::new(daft_arrow::array::FixedSizeBinaryArray::new(
-                daft_arrow::datatypes::DataType::FixedSizeBinary(NUM_REGISTERS),
-                daft_arrow::buffer::Buffer::from(hll.registers.to_vec()),
+        FixedSizeBinaryArray::from_arrow(
+            Field::new(self.name(), DataType::FixedSizeBinary(NUM_REGISTERS)),
+            Arc::new(arrow::array::FixedSizeBinaryArray::new(
+                NUM_REGISTERS as _,
+                Buffer::from(hll.registers.to_vec()),
                 None,
             )),
         )
-        .unwrap();
-        Ok(array)
     }
 
     fn grouped_hll_sketch(&self, group_indices: &GroupIndices) -> Self::Output {
@@ -42,15 +42,13 @@ impl DaftHllSketchAggable for UInt64Array {
             }
             bytes.extend(hll.registers.as_ref());
         }
-        let array = FixedSizeBinaryArray::new(
-            Field::new(self.name(), DataType::FixedSizeBinary(NUM_REGISTERS)).into(),
-            Box::new(daft_arrow::array::FixedSizeBinaryArray::new(
-                daft_arrow::datatypes::DataType::FixedSizeBinary(NUM_REGISTERS),
-                daft_arrow::buffer::Buffer::from(bytes),
+        FixedSizeBinaryArray::from_arrow(
+            Field::new(self.name(), DataType::FixedSizeBinary(NUM_REGISTERS)),
+            Arc::new(arrow::array::FixedSizeBinaryArray::new(
+                NUM_REGISTERS as _,
+                Buffer::from(bytes),
                 None,
             )),
         )
-        .unwrap();
-        Ok(array)
     }
 }

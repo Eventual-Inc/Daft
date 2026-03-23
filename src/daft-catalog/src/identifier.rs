@@ -103,7 +103,7 @@ impl Identifier {
     }
 
     /// Parses an identifier using sqlparser to validate the input.
-    pub fn from_sql(input: &str, normalize: bool) -> CatalogResult<Identifier> {
+    pub fn from_sql(input: &str, normalize: bool) -> CatalogResult<Self> {
         // TODO daft should define its own identifier domain.
         use sqlparser::{dialect::PostgreSqlDialect, parser::Parser};
         let err = CatalogError::InvalidIdentifier {

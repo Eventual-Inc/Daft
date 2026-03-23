@@ -2,7 +2,7 @@ use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_partitioning::{Partition, PartitionRef};
-use daft_local_plan::{ExecutionEngineFinalResult, PyLocalPhysicalPlan, SourceId, python::PyInput};
+use daft_local_plan::{ExecutionStats, PyLocalPhysicalPlan, SourceId, python::PyInput};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-#[pyclass(module = "daft.daft", name = "RayTaskResult")]
+#[pyclass(module = "daft.daft", name = "RayTaskResult", from_py_object)]
 #[derive(Clone)]
 pub(crate) enum RayTaskResult {
     Success(Vec<RayPartitionRef>, Vec<u8>),
@@ -93,8 +93,7 @@ impl TaskResultHandle for RayTaskResultHandle {
 
             match ray_task_result {
                 Ok(RayTaskResult::Success(ray_part_refs, stats_serialized)) => {
-                    let stats: ExecutionEngineFinalResult =
-                        ExecutionEngineFinalResult::decode(&stats_serialized);
+                    let stats: ExecutionStats = ExecutionStats::decode(&stats_serialized);
                     let materialized_output = MaterializedOutput::new(
                         ray_part_refs
                             .into_iter()
@@ -126,7 +125,7 @@ impl TaskResultHandle for RayTaskResultHandle {
     }
 }
 
-#[pyclass(module = "daft.daft", name = "RayPartitionRef", frozen)]
+#[pyclass(module = "daft.daft", name = "RayPartitionRef", frozen, from_py_object)]
 #[derive(Debug, Clone)]
 pub(crate) struct RayPartitionRef {
     pub object_ref: Arc<Py<PyAny>>,

@@ -7,9 +7,7 @@ use daft_schema::schema::SchemaRef;
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-    },
+    pipeline_node::{DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
 };
 
@@ -23,7 +21,7 @@ pub(crate) struct SampleNode {
 }
 
 impl SampleNode {
-    const NODE_NAME: NodeName = "Sample";
+    const NODE_NAME: &'static str = "Sample";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -40,7 +38,7 @@ impl SampleNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Sample,
             NodeCategory::Intermediate,
         );
@@ -64,10 +62,6 @@ impl SampleNode {
             seed,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
@@ -115,10 +109,7 @@ impl PipelineNodeImpl for SampleNode {
                 with_replacement,
                 seed,
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             )
         };
 

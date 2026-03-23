@@ -30,6 +30,7 @@ pub fn row_wise_udf(
     builtin_name: bool,
     is_async: bool,
     return_dtype: DataType,
+    cpus: Option<HashableF64<f64>>,
     gpus: HashableF64<f64>,
     use_process: Option<bool>,
     max_concurrency: Option<NonZeroUsize>,
@@ -37,6 +38,7 @@ pub fn row_wise_udf(
     on_error: crate::functions::python::OnError,
     original_args: RuntimePyObject,
     args: Vec<ExprRef>,
+    ray_options: Option<RuntimePyObject>,
 ) -> Expr {
     Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
         func_id: Arc::from(func_id),
@@ -50,9 +52,11 @@ pub fn row_wise_udf(
         on_error,
         max_retries,
         args,
+        cpus,
         gpus,
         use_process,
         max_concurrency,
+        ray_options,
     })))
 }
 
@@ -67,11 +71,13 @@ pub struct RowWisePyFn {
     pub return_dtype: DataType,
     pub original_args: RuntimePyObject,
     pub args: Vec<ExprRef>,
+    pub cpus: Option<HashableF64<f64>>,
     pub gpus: HashableF64<f64>,
     pub use_process: Option<bool>,
     pub max_concurrency: Option<NonZeroUsize>,
     pub max_retries: Option<usize>,
     pub on_error: crate::functions::python::OnError,
+    pub ray_options: Option<RuntimePyObject>,
 }
 
 impl Display for RowWisePyFn {
@@ -100,11 +106,13 @@ impl RowWisePyFn {
             return_dtype: self.return_dtype.clone(),
             original_args: self.original_args.clone(),
             args: children,
+            cpus: self.cpus.clone(),
             gpus: self.gpus.clone(),
             use_process: self.use_process,
             max_concurrency: self.max_concurrency,
             max_retries: self.max_retries,
             on_error: self.on_error,
+            ray_options: self.ray_options.clone(),
         }
     }
 

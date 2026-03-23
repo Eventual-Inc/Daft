@@ -436,7 +436,7 @@ fn pull_up_correlated_cols(
                             ) => {
                                 // remove correlated col from filter, use in join instead
                                 subquery_on.push(resolved_col(subquery_col_name.clone()));
-                                outer_on.push(resolved_col(outer_field.name.as_str()));
+                                outer_on.push(resolved_col(outer_field.name.as_ref()));
 
                                 found_correlated_col = true;
                                 return false;
@@ -523,6 +523,7 @@ fn pull_up_correlated_cols(
         LogicalPlan::Distinct(..)
         | LogicalPlan::MonotonicallyIncreasingId(..)
         | LogicalPlan::Repartition(..)
+        | LogicalPlan::IntoPartitions(..)
         | LogicalPlan::IntoBatches(..)
         | LogicalPlan::Union(..)
         | LogicalPlan::Intersect(..)

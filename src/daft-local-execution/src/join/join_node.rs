@@ -23,7 +23,10 @@ use crate::{
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, StaticBatchingStrategy},
-    join::join_operator::{JoinOperator, ProbeOutput},
+    join::{
+        join_operator::{JoinOperator, ProbeOutput},
+        stats::JoinStats,
+    },
     pipeline::{BuilderContext, MorselSizeRequirement, PipelineNode},
     runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle},
 };
@@ -32,7 +35,7 @@ pub struct JoinNode<Op: JoinOperator> {
     op: Arc<Op>,
     left: Box<dyn PipelineNode>,
     right: Box<dyn PipelineNode>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<JoinStats>,
     plan_stats: StatsState,
     morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
@@ -57,7 +60,7 @@ struct BuildExecutionContext<Op: JoinOperator> {
     task_spawner: ExecutionTaskSpawner,
     task_set: OrderingAwareJoinSet<DaftResult<BuildTaskResult<Op>>>,
     build_state: Option<Op::BuildState>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<JoinStats>,
 }
 
 struct ProbeExecutionContext<Op: JoinOperator> {
@@ -67,7 +70,7 @@ struct ProbeExecutionContext<Op: JoinOperator> {
     state_pool: HashMap<StateId, Op::ProbeState>,
     output_sender: Sender<Arc<MicroPartition>>,
     batch_manager: Arc<BatchManager<StaticBatchingStrategy>>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<JoinStats>,
 }
 
 impl<Op: JoinOperator + 'static> JoinNode<Op> {
@@ -81,7 +84,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
     ) -> Self {
         let name: Arc<str> = op.name().into();
         let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::Intermediate, context);
-        let runtime_stats = op.make_runtime_stats(&ctx.meter, &node_info);
+        let runtime_stats = Arc::new(JoinStats::new(&ctx.meter, &node_info));
 
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
@@ -150,7 +153,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
                                 stats_manager.activate_node(node_id);
                                 node_initialized = true;
                             }
-                            ctx.runtime_stats.add_rows_in(morsel.len() as u64);
+                            ctx.runtime_stats.add_build_rows_inserted(morsel.len() as u64);
                             let state = ctx.build_state.take()
                                 .expect("Build state should be available for build task if ctx.build_state is some");
 
@@ -217,7 +220,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
 
                 // Send output if present
                 if let Some(mp) = mp {
-                    ctx.runtime_stats.add_rows_out(mp.len() as u64);
+                    ctx.runtime_stats.add_probe_rows_out(mp.len() as u64);
                     if ctx.output_sender.send(mp).await.is_err() {
                         return Ok(OperatorControlFlow::Break);
                     }
@@ -235,7 +238,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
                 );
 
                 // Send output
-                ctx.runtime_stats.add_rows_out(output.len() as u64);
+                ctx.runtime_stats.add_probe_rows_out(output.len() as u64);
                 if ctx.output_sender.send(output).await.is_err() {
                     return Ok(OperatorControlFlow::Break);
                 }
@@ -323,7 +326,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
                                 stats_manager.activate_node(node_id);
                                 node_initialized = true;
                             }
-                            ctx.runtime_stats.add_rows_in(morsel.len() as u64);
+                            ctx.runtime_stats.add_probe_rows_in(morsel.len() as u64);
                             buffer.push(morsel);
                             Self::spawn_ready_probe_batches(&mut buffer, ctx)?;
                         }
@@ -408,13 +411,19 @@ impl<Op: JoinOperator + 'static> TreeDisplay for JoinNode<Op> {
             .map(|child| child.repr_json())
             .collect();
 
-        serde_json::json!({
+        let mut json = serde_json::json!({
             "id": self.node_id(),
             "category": "Intermediate",
             "type": self.op.op_type().to_string(),
             "name": self.name(),
             "children": children,
-        })
+        });
+
+        if let StatsState::Materialized(stats) = &self.plan_stats {
+            json["approx_stats"] = serde_json::json!(stats);
+        }
+
+        json
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
@@ -461,10 +470,13 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
     }
 
     fn start(
-        &mut self,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+        let node_id = self.node_id();
+        let op_name = self.op.name().to_string();
+
         let build_child_receiver = self.left.start(false, runtime_handle)?;
         let probe_child_receiver = self.right.start(maintain_order, runtime_handle)?;
 
@@ -491,9 +503,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         );
 
         let stats_manager = runtime_handle.stats_manager();
-        let node_id = self.node_id();
         let runtime_stats = self.runtime_stats.clone();
-        let op_name = self.op.name().to_string();
         let op = self.op.clone();
         runtime_handle.spawn(
             async move {
@@ -558,7 +568,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
                         .finalize_probe(finished_states, &finalize_spawner)
                         .await??;
                     if let Some(mp) = finalized_output {
-                        probe_ctx.runtime_stats.add_rows_out(mp.len() as u64);
+                        probe_ctx.runtime_stats.add_probe_rows_out(mp.len() as u64);
                         let _ = probe_ctx.output_sender.send(mp).await;
                     }
                 }
@@ -578,10 +588,6 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
 
     fn node_id(&self) -> usize {
         self.node_info.id
-    }
-
-    fn plan_id(&self) -> Arc<str> {
-        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
 
     fn node_info(&self) -> Arc<NodeInfo> {

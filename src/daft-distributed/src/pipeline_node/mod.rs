@@ -14,7 +14,7 @@ use common_display::{
 };
 use common_error::DaftResult;
 use common_metrics::{
-    QueryID,
+    Meter, QueryID,
     ops::{NodeCategory, NodeType},
 };
 use common_partitioning::PartitionRef;
@@ -24,7 +24,6 @@ use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, stream::BoxStream};
 use materialize::materialize_all_pipeline_outputs;
-use opentelemetry::metrics::Meter;
 
 use crate::{
     plan::{PlanExecutionContext, QueryIdx, TaskIDCounter},
@@ -69,7 +68,7 @@ mod window;
 
 pub(crate) use translate::logical_plan_to_pipeline_node;
 pub(crate) type NodeID = u32;
-pub(crate) type NodeName = &'static str;
+pub(crate) type NodeName = Arc<str>;
 /// Fingerprint identifying tasks with functionally identical plans.
 /// Tasks sharing a fingerprint can reuse the same pipeline.
 pub(crate) type PlanFingerprint = u32;
@@ -154,19 +153,33 @@ impl MaterializedOutput {
         schema: SchemaRef,
         node_id: NodeID,
     ) -> (LocalPhysicalPlanRef, Vec<PartitionRef>) {
-        Self::into_in_memory_scan_with_psets_and_context(
+        Self::build_in_memory_scan(
             materialized_outputs,
             schema,
             node_id,
-            None,
+            LocalNodeContext::new(Some(node_id as usize)),
         )
     }
 
-    pub fn into_in_memory_scan_with_psets_and_context(
+    pub fn into_in_memory_scan_with_psets_and_phase(
         materialized_outputs: Vec<Self>,
         schema: SchemaRef,
         node_id: NodeID,
-        additional: Option<HashMap<String, String>>,
+        node_phase: impl Into<String>,
+    ) -> (LocalPhysicalPlanRef, Vec<PartitionRef>) {
+        Self::build_in_memory_scan(
+            materialized_outputs,
+            schema,
+            node_id,
+            LocalNodeContext::new(Some(node_id as usize)).with_phase(node_phase),
+        )
+    }
+
+    fn build_in_memory_scan(
+        materialized_outputs: Vec<Self>,
+        schema: SchemaRef,
+        node_id: NodeID,
+        local_ctx: LocalNodeContext,
     ) -> (LocalPhysicalPlanRef, Vec<PartitionRef>) {
         let total_size_bytes = materialized_outputs
             .iter()
@@ -178,10 +191,7 @@ impl MaterializedOutput {
             schema,
             total_size_bytes,
             StatsState::NotMaterialized,
-            LocalNodeContext {
-                origin_node_id: Some(node_id as usize),
-                additional,
-            },
+            local_ctx,
         );
 
         let partition_refs = materialized_outputs
@@ -255,7 +265,7 @@ impl PipelineNodeContext {
 pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn context(&self) -> &PipelineNodeContext;
     fn config(&self) -> &PipelineNodeConfig;
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(DefaultRuntimeStats::new(meter, self.context()))
     }
 
@@ -263,7 +273,7 @@ pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn produce_tasks(self: Arc<Self>, plan_context: &mut PlanExecutionContext)
     -> TaskBuilderStream;
     fn name(&self) -> NodeName {
-        self.context().node_name
+        self.context().node_name.clone()
     }
     fn node_id(&self) -> NodeID {
         self.context().node_id
@@ -274,13 +284,19 @@ pub(crate) trait PipelineNodeImpl: Send + Sync {
 #[derive(Clone)]
 pub(crate) struct DistributedPipelineNode {
     op: Arc<dyn PipelineNodeImpl>,
+    runtime_stats: RuntimeStatsRef,
     children: Vec<DistributedPipelineNode>,
 }
 
 impl DistributedPipelineNode {
-    pub fn new(op: Arc<dyn PipelineNodeImpl>) -> Self {
+    pub fn new(op: Arc<dyn PipelineNodeImpl>, meter: &Meter) -> Self {
         let children = op.children();
-        Self { op, children }
+        let runtime_stats = op.make_runtime_stats(meter);
+        Self {
+            op,
+            runtime_stats,
+            children,
+        }
     }
 
     pub fn context(&self) -> &PipelineNodeContext {
@@ -298,8 +314,8 @@ impl DistributedPipelineNode {
     pub fn num_partitions(&self) -> usize {
         self.op.config().clustering_spec.num_partitions()
     }
-    pub fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        self.op.runtime_stats(meter)
+    pub fn runtime_stats(&self) -> RuntimeStatsRef {
+        self.runtime_stats.clone()
     }
     pub fn produce_tasks(self, plan_context: &mut PlanExecutionContext) -> TaskBuilderStream {
         self.op.produce_tasks(plan_context)
@@ -321,8 +337,9 @@ impl ConcreteTreeNode for DistributedPipelineNode {
 
     fn with_new_children(self, children: Vec<Self>) -> DaftResult<Self> {
         Ok(Self {
-            op: self.op.clone(),
+            op: self.op,
             children,
+            runtime_stats: self.runtime_stats,
         })
     }
 }
@@ -471,7 +488,7 @@ pub(crate) mod tests {
                     0,
                     QueryID::default(),
                     node_id,
-                    "Mock",
+                    Arc::from("Mock"),
                     NodeType::Project,
                     NodeCategory::Intermediate,
                 ),

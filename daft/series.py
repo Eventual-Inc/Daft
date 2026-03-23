@@ -8,7 +8,6 @@ from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.schema import Field
-from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 if TYPE_CHECKING:
     import builtins
@@ -55,7 +54,7 @@ class Series:
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
         if isinstance(array, pa.Array):
             array = ensure_array(array)
-            if isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
+            if isinstance(array.type, pa.FixedShapeTensorType):
                 series = Series.from_arrow(array.storage, name=name)
                 return series.cast(dtype or DataType.from_arrow_type(array.type))
             else:
@@ -218,17 +217,7 @@ class Series:
     def to_arrow(self) -> pa.Array:
         """Convert this Series to an pyarrow array."""
         _ensure_registered_super_ext_type()
-
-        dtype = self.datatype()
-
-        # Special-case for PyArrow FixedShapeTensor if it is supported by the version of PyArrow
-        # TODO: Push this down into self._series.to_arrow()?
-        if dtype.is_fixed_shape_tensor() and pyarrow_supports_fixed_shape_tensor():
-            pyarrow_dtype = dtype.to_arrow_dtype()
-            arrow_series = self._series.to_arrow()
-            return pa.ExtensionArray.from_storage(pyarrow_dtype, arrow_series.storage)
-        else:
-            return self._series.to_arrow()
+        return self._series.to_arrow()
 
     def to_pylist(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> list[Any]:
         """Convert this Series to a Python list.
@@ -608,9 +597,9 @@ class Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.mean())
 
-    def stddev(self) -> Series:
+    def stddev(self, ddof: int = 1) -> Series:
         assert self._series is not None
-        return Series._from_pyseries(self._series.stddev())
+        return Series._from_pyseries(self._series.stddev(ddof))
 
     def sum(self) -> Series:
         assert self._series is not None

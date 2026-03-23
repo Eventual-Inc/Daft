@@ -230,6 +230,17 @@ impl ToPyArrow for arrow_schema::DataType {
     }
 }
 
+impl ToPyArrow for Field {
+    fn to_pyarrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let c_schema = FFI_ArrowSchema::try_from(self).map_err(to_py_err)?;
+        let c_schema_ptr = &raw const c_schema;
+        let module = py.import("pyarrow")?;
+        let class = module.getattr("Field")?;
+        let dtype = class.call_method1("_import_from_c", (c_schema_ptr as Py_uintptr_t,))?;
+        Ok(dtype)
+    }
+}
+
 impl ToPyArrow for Schema {
     fn to_pyarrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let c_schema = FFI_ArrowSchema::try_from(self).map_err(to_py_err)?;

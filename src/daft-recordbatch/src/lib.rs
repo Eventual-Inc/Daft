@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 #![feature(iterator_try_collect)]
 
 use std::{
@@ -378,13 +377,16 @@ impl RecordBatch {
             return Ok(self.clone());
         }
 
-        use rand::{Rng, SeedableRng, distributions::Uniform, rngs::StdRng};
+        use rand::{Rng, SeedableRng, distr::Uniform, rngs::StdRng};
         let mut rng = match seed {
             Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::from_rng(rand::thread_rng()).unwrap(),
+            None => {
+                let mut thread_rng = rand::rng();
+                StdRng::from_rng(&mut thread_rng)
+            }
         };
         let values: Vec<u64> = if with_replacement {
-            let range = Uniform::from(0..len as u64);
+            let range = Uniform::try_from(0..len as u64).unwrap();
             rng.sample_iter(&range).take(num).collect()
         } else {
             // https://docs.rs/rand/latest/rand/seq/index/fn.sample.html
@@ -660,7 +662,7 @@ impl RecordBatch {
                 }
             }
             AggExpr::Mean(expr) => self.eval_agg_child(expr)?.mean(groups),
-            AggExpr::Stddev(expr) => self.eval_agg_child(expr)?.stddev(groups),
+            AggExpr::Stddev(expr, ddof) => self.eval_agg_child(expr)?.stddev(groups, *ddof),
             AggExpr::Var(expr, ddof) => self.eval_agg_child(expr)?.var(groups, *ddof),
             AggExpr::Min(expr) => self.eval_agg_child(expr)?.min(groups),
             AggExpr::Max(expr) => self.eval_agg_child(expr)?.max(groups),
@@ -1445,7 +1447,7 @@ impl RecordBatch {
         let exprs: Vec<_> = schema
             .into_iter()
             .map(|field| {
-                if current_col_names.contains(field.name.as_str()) {
+                if current_col_names.contains(field.name.as_ref()) {
                     // For any fields already in the table, perform a cast
                     resolved_col(field.name.clone()).cast(&field.dtype)
                 } else {
@@ -1453,7 +1455,7 @@ impl RecordBatch {
                     // If no entry for column name, fall back to null literal (i.e. create a null array for that column).
                     fill_map
                         .as_ref()
-                        .and_then(|m| m.get(field.name.as_str()))
+                        .and_then(|m| m.get(field.name.as_ref()))
                         .unwrap_or(&null_lit)
                         .clone()
                         .alias(field.name.clone())
@@ -1585,13 +1587,23 @@ impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
     type Error = DaftError;
 
     fn try_from(record_batch: RecordBatch) -> DaftResult<Self> {
-        let schema = Arc::new(record_batch.schema.to_arrow2()?.into());
+        let schema = Arc::new(record_batch.schema.to_arrow()?);
         let columns = record_batch
             .columns
             .iter()
-            .map(|s| s.to_arrow2().into())
-            .collect::<Vec<_>>();
+            .map(|s| s.to_arrow())
+            .collect::<DaftResult<Vec<_>>>()?;
+
         Self::try_new(schema, columns).map_err(DaftError::ArrowRsError)
+    }
+}
+
+impl TryFrom<&arrow_array::RecordBatch> for RecordBatch {
+    type Error = DaftError;
+
+    fn try_from(arrow_rb: &arrow_array::RecordBatch) -> DaftResult<Self> {
+        let schema: Arc<Schema> = Arc::new(arrow_rb.schema().as_ref().try_into()?);
+        Self::from_arrow(schema, arrow_rb.columns().to_vec())
     }
 }
 
@@ -1684,6 +1696,9 @@ impl AsRef<Self> for RecordBatch {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
+    use arrow_array::ArrayRef;
     use common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{expr::bound_expr::BoundExpr, resolved_col};
@@ -1707,7 +1722,7 @@ mod test {
         let e2 = resolved_col("a")
             .add(resolved_col("b"))
             .cast(&DataType::Int64);
-        let result = table.eval_expression(&&BoundExpr::try_new(e2, &table.schema)?)?;
+        let result = table.eval_expression(&BoundExpr::try_new(e2, &table.schema)?)?;
         assert_eq!(*result.data_type(), DataType::Int64);
         assert_eq!(result.len(), 3);
 
@@ -1726,6 +1741,86 @@ mod test {
         let ipc_stream = table.to_ipc_stream()?;
         let roundtrip_table = RecordBatch::from_ipc_stream(&ipc_stream)?;
         assert_eq!(table, roundtrip_table);
+        Ok(())
+    }
+
+    #[test]
+    fn test_from_arrow_auto_casts_small_types() -> DaftResult<()> {
+        use arrow::{
+            array::{
+                BinaryArray, Int32Array as ArrowInt32Array, ListArray as ArrowListArray,
+                StringArray,
+            },
+            buffer::OffsetBuffer,
+        };
+
+        // Small Utf8 (arrow StringArray)
+        let utf8_arr: ArrayRef =
+            Arc::new(StringArray::from(vec![Some("hello"), None, Some("world")]));
+
+        // Small Binary
+        let binary_arr: ArrayRef = Arc::new(BinaryArray::from(vec![
+            Some(b"abc" as &[u8]),
+            None,
+            Some(b"def"),
+        ]));
+
+        // Small List (i32 offsets) of Int32: [[1, 2], null, [3]]
+        let values = ArrowInt32Array::from(vec![1, 2, 3]);
+        let offsets = OffsetBuffer::new(vec![0i32, 2, 2, 3].into());
+        let list_field = Arc::new(arrow::datatypes::Field::new(
+            "item",
+            arrow::datatypes::DataType::Int32,
+            true,
+        ));
+        let list_arr: ArrayRef = Arc::new(ArrowListArray::new(
+            list_field,
+            offsets,
+            Arc::new(values),
+            Some(vec![true, false, true].into()),
+        ));
+
+        let schema = Schema::new(vec![
+            Field::new("utf8_col", DataType::Utf8),
+            Field::new("binary_col", DataType::Binary),
+            Field::new("list_col", DataType::List(Box::new(DataType::Int32))),
+        ]);
+
+        let rb = RecordBatch::from_arrow(schema, vec![utf8_arr, binary_arr, list_arr])?;
+
+        assert_eq!(rb.num_rows(), 3);
+        assert_eq!(rb.get_column(0).data_type(), &DataType::Utf8);
+        assert_eq!(rb.get_column(1).data_type(), &DataType::Binary);
+        assert_eq!(
+            rb.get_column(2).data_type(),
+            &DataType::List(Box::new(DataType::Int32))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_from_arrow_auto_casts_extension_type() -> DaftResult<()> {
+        use arrow::array::BinaryArray;
+
+        // Extension type with Binary inner storage — the arrow array comes in as
+        // small Binary but Daft internally stores Binary as LargeBinary.
+        let ext_dtype =
+            DataType::Extension("custom_ext".to_string(), Box::new(DataType::Binary), None);
+
+        let binary_arr: ArrayRef = Arc::new(BinaryArray::from(vec![
+            Some(b"foo" as &[u8]),
+            None,
+            Some(b"bar"),
+        ]));
+
+        let schema = Schema::new(vec![Field::new("ext_col", ext_dtype.clone())]);
+
+        let rb = RecordBatch::from_arrow(schema, vec![binary_arr])?;
+
+        assert_eq!(rb.num_rows(), 3);
+        assert_eq!(rb.get_column(0).data_type(), &ext_dtype);
+
         Ok(())
     }
 }

@@ -145,7 +145,7 @@ impl PushDownProjection {
                         if required_columns.len() < upstream_schema.names().len() {
                             let pruned_upstream_schema = upstream_schema
                                 .into_iter()
-                                .filter(|field| required_columns.contains(&field.name))
+                                .filter(|field| required_columns.contains(&*field.name))
                                 .cloned()
                                 .collect::<Vec<_>>();
                             let schema = Schema::new(pruned_upstream_schema);
@@ -270,6 +270,7 @@ impl PushDownProjection {
             LogicalPlan::Sort(..)
             | LogicalPlan::Shard(..)
             | LogicalPlan::Repartition(..)
+            | LogicalPlan::IntoPartitions(..)
             | LogicalPlan::IntoBatches(..)
             | LogicalPlan::Limit(..)
             | LogicalPlan::Offset(..)
@@ -665,9 +666,9 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
     use daft_dsl::{lit, resolved_col, unresolved_col};
+    use daft_scan::Pushdowns;
 
     use crate::{
         LogicalPlan,
@@ -907,7 +908,7 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ]);
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .add_monotonically_increasing_id(Some("id"), None)?
             .select(vec![unresolved_col("id")])?
             .build();
@@ -929,7 +930,7 @@ mod tests {
 
         let plan = LogicalPlan::Unpivot(
             Unpivot::try_new(
-                scan_node.clone(),
+                scan_node,
                 vec![resolved_col("year")],
                 vec![resolved_col("Jan"), resolved_col("Feb")],
                 "month".to_string(),
@@ -943,7 +944,7 @@ mod tests {
         )
         .into();
         let expected_scan = dummy_scan_node_with_pushdowns(
-            scan_op.clone(),
+            scan_op,
             Pushdowns {
                 limit: None,
                 partition_filters: None,

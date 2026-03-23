@@ -4,7 +4,7 @@ use std::{
 };
 
 use common_metrics::{
-    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
+    Counter, Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::UdfSnapshot,
 };
@@ -13,12 +13,12 @@ use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef}
 use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::KeyValue;
 
 use super::PipelineNodeImpl;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,
         TaskBuilderStream, metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext},
@@ -38,9 +38,9 @@ impl UdfStats {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
         let node_kv = key_values_from_context(context);
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
             custom_counters: Mutex::new(HashMap::new()),
             meter: meter.clone(),
             node_kv,
@@ -64,7 +64,7 @@ impl RuntimeStats for UdfStats {
         for (name, value) in &snapshot.custom_counters {
             let counter = custom_counters.entry(name.clone()).or_insert_with(|| {
                 let name = name.as_ref().to_string();
-                Counter::new(&self.meter, name, None, None)
+                self.meter.u64_counter(name)
             });
             counter.add(*value, self.node_kv.as_slice());
         }
@@ -96,8 +96,6 @@ pub(crate) struct UDFNode {
 }
 
 impl UDFNode {
-    const NODE_NAME: NodeName = "UDF";
-
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
@@ -108,11 +106,22 @@ impl UDFNode {
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
+        let node_name = if udf_properties.builtin_name {
+            Arc::from(udf_properties.name.as_str())
+        } else {
+            let udf_name = udf_properties
+                .name
+                .rsplit_once('.')
+                .map(|(_, name)| name)
+                .unwrap_or(udf_properties.name.as_str());
+            Arc::from(format!("UDF {}", udf_name))
+        };
+
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            node_name,
             NodeType::UDFProject,
             NodeCategory::Intermediate,
         );
@@ -135,10 +144,6 @@ impl UDFNode {
             passthrough_columns,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
@@ -190,7 +195,7 @@ impl PipelineNodeImpl for UDFNode {
         res
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(UdfStats::new(meter, self.context()))
     }
 
@@ -213,10 +218,7 @@ impl PipelineNodeImpl for UDFNode {
                 passthrough_columns.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             )
         };
 

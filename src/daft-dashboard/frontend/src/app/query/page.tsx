@@ -16,13 +16,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import LoadingPage from "@/components/loading";
 import { Status } from "./status";
 import { ExecutingState, OperatorInfo, QueryInfo } from "./types";
-import ProgressTable from "./progress-table";
-
-
-function formatPlanJSON(plan: string) {
-  const parsedPlan = JSON.parse(plan);
-  return JSON.stringify(parsedPlan, null, 2);
-}
+import PhysicalPlanTree from "./physical-plan-tree";
+import PlanVisualizer from "./plan-visualizer";
+import ResultPreview from "./result-preview";
 
 /**
  * Query detail page component
@@ -51,32 +47,18 @@ function QueryPageInner() {
       const data: QueryInfo = JSON.parse(event.data);
       setQuery(data);
     });
-    // Merges with existing info
+    // Merges with existing info, preserving the current status
     es.addEventListener("operator_info", event => {
       setQuery(prev => {
         if (!prev) return prev;
+        if (!("exec_info" in prev.state)) return prev;
 
-        const plan_info =
-          "plan_info" in prev.state ? prev.state.plan_info : undefined;
-        const old_exec_info =
-          "exec_info" in prev.state ? prev.state.exec_info : undefined;
         const data: Record<number, OperatorInfo> = JSON.parse(event.data);
-
-        if (
-          plan_info &&
-          old_exec_info &&
-          old_exec_info.exec_start_sec !== undefined
-        ) {
-          const new_exec_info = { ...old_exec_info, operators: data };
-          const new_state = {
-            status: "Executing" as const,
-            plan_info: plan_info,
-            exec_info: new_exec_info,
-          };
-          return { ...prev, state: new_state };
-        }
-
-        return prev;
+        const new_exec_info = { ...prev.state.exec_info, operators: data };
+        return {
+          ...prev,
+          state: { ...prev.state, exec_info: new_exec_info } as typeof prev.state,
+        };
       });
     });
     return () => {
@@ -179,7 +161,7 @@ function QueryPageInner() {
                   </p>
                 </div>
                 {query.ray_dashboard_url && (
-                 <div>
+                  <div>
                     <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
                       Ray Dashboard
                     </h3>
@@ -191,8 +173,8 @@ function QueryPageInner() {
                     >
                       Open in Ray
                     </a>
-                 </div>
-               )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -215,7 +197,7 @@ function QueryPageInner() {
                 query.state.status === "Setup"
               }
             >
-              Progress Table
+              Execution
             </TabsTrigger>
             <TabsTrigger
               value="optimized-plan"
@@ -224,6 +206,12 @@ function QueryPageInner() {
               Optimized Plan
             </TabsTrigger>
             <TabsTrigger value="unoptimized-plan">Unoptimized Plan</TabsTrigger>
+            <TabsTrigger
+              value="results"
+              disabled={query.state.status !== "Finished"}
+            >
+              Results
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent
@@ -239,7 +227,7 @@ function QueryPageInner() {
                   </p>
                 </div>
               ) : (
-                <ProgressTable exec_state={query.state as ExecutingState} />
+                <PhysicalPlanTree exec_state={query.state as ExecutingState} />
               )}
             </div>
           </TabsContent>
@@ -248,33 +236,36 @@ function QueryPageInner() {
             value="optimized-plan"
             className="mt-4 flex-1 overflow-auto"
           >
-            <div className="bg-zinc-900 p-4">
-              {query.state.status === "Pending" ? (
+            {query.state.status === "Pending" ? (
+              <div className="bg-zinc-900 p-4">
                 <p className={`${main.className} text-zinc-400`}>
                   Plan not yet optimized
                 </p>
-              ) : (
-                <pre
-                  className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}
-                >
-                  {"plan_info" in query.state
-                    ? formatPlanJSON(query.state.plan_info.optimized_plan)
-                    : "No optimized plan available"}
-                </pre>
-              )}
-            </div>
+              </div>
+            ) : (
+              <PlanVisualizer
+                planJson={
+                  "plan_info" in query.state
+                    ? query.state.plan_info.optimized_plan
+                    : ""
+                }
+              />
+            )}
           </TabsContent>
 
           <TabsContent
             value="unoptimized-plan"
             className="mt-4 flex-1 overflow-auto"
           >
-            <div className="bg-zinc-900 p-4">
-              <pre
-                className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}
-              >
-                {formatPlanJSON(query.unoptimized_plan)}
-              </pre>
+            <PlanVisualizer planJson={query.unoptimized_plan} />
+          </TabsContent>
+
+          <TabsContent
+            value="results"
+            className="mt-4 flex-1 overflow-auto"
+          >
+            <div className="bg-zinc-900 h-full">
+              {queryId && <ResultPreview queryId={queryId} />}
             </div>
           </TabsContent>
         </Tabs>

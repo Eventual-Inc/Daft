@@ -8,9 +8,7 @@ use daft_schema::schema::SchemaRef;
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-    },
+    pipeline_node::{DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
 };
 
@@ -26,7 +24,7 @@ pub(crate) struct PivotNode {
 }
 
 impl PivotNode {
-    const NODE_NAME: NodeName = "Pivot";
+    const NODE_NAME: &'static str = "Pivot";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -44,7 +42,7 @@ impl PivotNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Pivot,
             NodeCategory::BlockingSink,
         );
@@ -63,10 +61,6 @@ impl PivotNode {
             names,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
@@ -117,10 +111,7 @@ impl PipelineNodeImpl for PivotNode {
                 false,
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self_clone.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self_clone.node_id() as usize)),
             )
         };
 

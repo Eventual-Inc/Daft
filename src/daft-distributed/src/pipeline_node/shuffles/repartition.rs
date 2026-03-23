@@ -8,7 +8,7 @@ use daft_schema::schema::SchemaRef;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -31,7 +31,7 @@ pub(crate) struct RepartitionNode {
 }
 
 impl RepartitionNode {
-    const NODE_NAME: NodeName = "Repartition";
+    const NODE_NAME: &'static str = "Repartition";
 
     pub fn new(
         node_id: NodeID,
@@ -45,7 +45,7 @@ impl RepartitionNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::Repartition,
             NodeCategory::BlockingSink,
         );
@@ -64,10 +64,6 @@ impl RepartitionNode {
             num_partitions,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 
     // Async execution to get all partitions out
@@ -141,10 +137,7 @@ impl PipelineNodeImpl for RepartitionNode {
                 self_clone.num_partitions,
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self_clone.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self_clone.node_id() as usize)),
             )
         });
 

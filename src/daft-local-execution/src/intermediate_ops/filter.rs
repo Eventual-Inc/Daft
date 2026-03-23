@@ -2,14 +2,13 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, DURATION_KEY, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS,
-    UNIT_ROWS,
+    Counter, Gauge, Meter, StatSnapshot,
     ops::{NodeInfo, NodeType},
     snapshot::FilterSnapshot,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
@@ -30,10 +29,10 @@ impl FilterStats {
         let node_kv = node_info.to_key_values();
 
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
-            selectivity: Gauge::new(meter, "selectivity", None),
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
+            selectivity: meter.f64_gauge("selectivity"),
             node_kv,
         }
     }
@@ -146,8 +145,7 @@ impl IntermediateOperator for FilterOperator {
 mod tests {
     use std::sync::atomic::Ordering;
 
-    use common_metrics::ops::NodeInfo;
-    use opentelemetry::global;
+    use common_metrics::{Meter, ops::NodeInfo};
 
     use super::FilterStats;
     use crate::runtime_stats::RuntimeStats;
@@ -161,7 +159,7 @@ mod tests {
 
     #[test]
     fn selectivity_updates_after_rows_events() {
-        let stats = FilterStats::new(&global::meter("test_stats"), &node_info_from_id(42));
+        let stats = FilterStats::new(&Meter::test_scope("test_stats"), &node_info_from_id(42));
 
         stats.add_rows_in(200);
         stats.add_rows_out(50);
@@ -177,7 +175,7 @@ mod tests {
 
     #[test]
     fn selectivity_defaults_to_100_percent_on_zero_rows_in() {
-        let stats = FilterStats::new(&global::meter("test_stats"), &node_info_from_id(1));
+        let stats = FilterStats::new(&Meter::test_scope("test_stats"), &node_info_from_id(1));
 
         stats.add_rows_out(10);
 
@@ -191,7 +189,7 @@ mod tests {
 
     #[test]
     fn selectivity_handles_multiple_updates() {
-        let stats = FilterStats::new(&global::meter("test_stats"), &node_info_from_id(99));
+        let stats = FilterStats::new(&Meter::test_scope("test_stats"), &node_info_from_id(99));
 
         stats.add_rows_in(100);
         stats.add_rows_out(40);

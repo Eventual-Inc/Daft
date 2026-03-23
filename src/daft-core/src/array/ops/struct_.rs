@@ -30,8 +30,8 @@ impl StructArray {
 
 #[cfg(test)]
 mod tests {
+    use arrow::buffer::NullBuffer;
     use common_error::DaftResult;
-    use daft_arrow::buffer::NullBuffer;
 
     use crate::prelude::*;
 

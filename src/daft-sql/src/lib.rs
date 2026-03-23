@@ -376,7 +376,7 @@ mod tests {
             .alias("tbl2")
             .join(
                 LogicalPlanBuilder::from(tbl_3).alias("tbl3"),
-                (tbl2_id.eq(tbl3_id)).and(tbl2_val.gt(lit(0 as i64))).into(),
+                (tbl2_id.eq(tbl3_id)).and(tbl2_val.gt(lit(0_i64))).into(),
                 vec![],
                 JoinType::Inner,
                 None,

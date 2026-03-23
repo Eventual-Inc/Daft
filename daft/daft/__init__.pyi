@@ -319,10 +319,28 @@ class DatabaseSourceConfig:
 
     def __init__(self, sql: str, conn_factory: SQLConnection): ...
 
+class TextSourceConfig:
+    """Configuration of a text data source."""
+
+    encoding: str
+    skip_blank_lines: bool
+    whole_text: bool
+    buffer_size: int | None
+    chunk_size: int | None
+
+    def __init__(
+        self,
+        encoding: str,
+        skip_blank_lines: bool,
+        whole_text: bool,
+        buffer_size: int | None,
+        chunk_size: int | None,
+    ): ...
+
 class FileFormatConfig:
     """Configuration for parsing a particular file format (Parquet, CSV, JSON)."""
 
-    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | DatabaseSourceConfig | WarcSourceConfig
+    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | WarcSourceConfig
 
     @staticmethod
     def from_parquet_config(config: ParquetSourceConfig) -> FileFormatConfig:
@@ -345,8 +363,8 @@ class FileFormatConfig:
         ...
 
     @staticmethod
-    def from_database_config(config: DatabaseSourceConfig) -> FileFormatConfig:
-        """Create a database file format config."""
+    def from_text_config(config: TextSourceConfig) -> FileFormatConfig:
+        """Create a Text file format config."""
         ...
 
     def file_format(self) -> FileFormat:
@@ -640,6 +658,7 @@ class AzureConfig:
     anonymous: bool | None
     endpoint_url: str | None = None
     use_ssl: bool | None = None
+    max_connections: int
 
     def __init__(
         self,
@@ -654,6 +673,7 @@ class AzureConfig:
         anonymous: bool | None = None,
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
+        max_connections: int | None = None,
     ): ...
     def replace(
         self,
@@ -668,6 +688,7 @@ class AzureConfig:
         anonymous: bool | None = None,
         endpoint_url: str | None = None,
         use_ssl: bool | None = None,
+        max_connections: int | None = None,
     ) -> AzureConfig:
         """Replaces values if provided, returning a new AzureConfig."""
         ...
@@ -880,6 +901,7 @@ class TosConfig:
     ) -> TosConfig:
         """Replaces values if provided, returning a new TosConfig."""
         ...
+
     @staticmethod
     def from_env() -> TosConfig:
         """Creates a TosConfig, retrieving credentials and configurations from the current environment.
@@ -967,6 +989,7 @@ class CosConfig:
     ) -> CosConfig:
         """Replaces values if provided, returning a new CosConfig."""
         ...
+
     @staticmethod
     def from_env() -> CosConfig:
         """Creates a CosConfig, retrieving credentials and configurations from the current environment.
@@ -992,6 +1015,7 @@ class IOConfig:
     gravitino: GravitinoConfig
     cos: CosConfig
     opendal_backends: dict[str, dict[str, str]]
+    protocol_aliases: dict[str, str]
 
     def __init__(
         self,
@@ -1006,6 +1030,7 @@ class IOConfig:
         gravitino: GravitinoConfig | None = None,
         cos: CosConfig | None = None,
         opendal_backends: dict[str, dict[str, str]] | None = None,
+        protocol_aliases: dict[str, str] | None = None,
     ): ...
     def replace(
         self,
@@ -1020,6 +1045,7 @@ class IOConfig:
         gravitino: GravitinoConfig | None = None,
         cos: CosConfig | None = None,
         opendal_backends: dict[str, dict[str, str]] | None = None,
+        protocol_aliases: dict[str, str] | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
         ...
@@ -1063,7 +1089,7 @@ class ScanTask:
     @staticmethod
     def sql_scan_task(
         url: str,
-        file_format: FileFormatConfig,
+        config: DatabaseSourceConfig,
         schema: PySchema,
         storage_config: StorageConfig,
         num_rows: int | None,
@@ -1084,7 +1110,7 @@ class ScanTask:
         size_bytes: int | None,
         pushdowns: PyPushdowns | None,
         stats: PyRecordBatch | None,
-        source_type: str | None = None,
+        source_name: str | None = None,
     ) -> ScanTask:
         """Create a Python factory function Scan Task."""
         ...
@@ -1445,7 +1471,7 @@ class PyExpr:
     def approx_count_distinct(self) -> PyExpr: ...
     def approx_percentiles(self, percentiles: float | list[float]) -> PyExpr: ...
     def mean(self) -> PyExpr: ...
-    def stddev(self) -> PyExpr: ...
+    def stddev(self, ddof: int = 1) -> PyExpr: ...
     def var(self, ddof: int = 1) -> PyExpr: ...
     def min(self) -> PyExpr: ...
     def max(self) -> PyExpr: ...
@@ -1583,6 +1609,7 @@ def row_wise_udf(
     builtin_name: bool,
     is_async: bool,
     return_dtype: PyDataType,
+    cpus: float | None,
     gpus: float,
     use_process: bool | None,
     max_concurrency: int | None,
@@ -1590,6 +1617,7 @@ def row_wise_udf(
     on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
+    ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
 def batch_udf(
     func_id: str,
@@ -1599,6 +1627,7 @@ def batch_udf(
     builtin_name: bool,
     is_async: bool,
     return_dtype: PyDataType,
+    cpus: float | None,
     gpus: float,
     use_process: bool | None,
     max_concurrency: int | None,
@@ -1607,6 +1636,7 @@ def batch_udf(
     on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
+    ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
 def initialize_udfs(expression: PyExpr) -> PyExpr: ...
 def resolve_expr(expr: PyExpr, schema: PySchema) -> tuple[PyExpr, PyField]: ...
@@ -1701,7 +1731,7 @@ class PySeries:
     def sum(self) -> PySeries: ...
     def product(self) -> PySeries: ...
     def mean(self) -> PySeries: ...
-    def stddev(self) -> PySeries: ...
+    def stddev(self, ddof: int = 1) -> PySeries: ...
     def min(self) -> PySeries: ...
     def max(self) -> PySeries: ...
     def agg_list(self) -> PySeries: ...
@@ -2162,14 +2192,15 @@ class RaySwordfishWorker:
         ip_address: str,
     ) -> None: ...
 
-class PyExecutionEngineFinalResult:
+class PyExecutionStats:
     def encode(self) -> bytes: ...
     def to_recordbatch(self) -> PyRecordBatch: ...
 
 class PyExecutionEngineResult:
     def __aiter__(self) -> PyExecutionEngineResult: ...
     async def __anext__(self) -> PyMicroPartition | None: ...
-    async def finish(self) -> PyExecutionEngineFinalResult: ...
+    async def query_plan(self) -> str: ...
+    async def finish(self) -> PyExecutionStats: ...
 
 class LocalPhysicalPlan:
     @staticmethod
@@ -2200,19 +2231,6 @@ class NativeExecutor:
     def repr_mermaid(
         builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, options: MermaidOptions
     ) -> str: ...
-    @staticmethod
-    def get_relationship_info(
-        logical_plan_builder: LogicalPlanBuilder,
-        daft_execution_config: PyDaftExecutionConfig,
-    ) -> RelationshipInformation: ...
-
-class RelationshipInformation:
-    ids: list[RelationshipNode]
-    plan_id: str
-
-class RelationshipNode:
-    id: int
-    parent_id: int | None
 
 class PyDaftExecutionConfig:
     @staticmethod
@@ -2233,7 +2251,9 @@ class PyDaftExecutionConfig:
         parquet_inflation_factor: float | None = None,
         csv_target_filesize: int | None = None,
         csv_inflation_factor: float | None = None,
+        json_target_filesize: int | None = None,
         json_inflation_factor: float | None = None,
+        text_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
         partial_aggregation_threshold: int | None = None,
         high_cardinality_aggregation_threshold: float | None = None,
@@ -2241,6 +2261,7 @@ class PyDaftExecutionConfig:
         default_morsel_size: int | None = None,
         shuffle_algorithm: str | None = None,
         pre_shuffle_merge_threshold: int | None = None,
+        pre_shuffle_merge_partition_threshold: int | None = None,
         scantask_max_parallel: int | None = None,
         native_parquet_writer: bool | None = None,
         min_cpu_per_task: float | None = None,
@@ -2249,6 +2270,7 @@ class PyDaftExecutionConfig:
         enable_dynamic_batching: bool | None = None,
         dynamic_batching_strategy: str | None = None,
         flight_shuffle_dirs: list[str] | None = None,
+        enable_multi_glob_path_tasks: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def enable_scan_task_split_and_merge(self) -> bool: ...
@@ -2279,7 +2301,11 @@ class PyDaftExecutionConfig:
     @property
     def csv_inflation_factor(self) -> float: ...
     @property
+    def json_target_filesize(self) -> int: ...
+    @property
     def json_inflation_factor(self) -> float: ...
+    @property
+    def text_inflation_factor(self) -> float: ...
     @property
     def shuffle_aggregation_default_partitions(self) -> int: ...
     @property
@@ -2295,6 +2321,8 @@ class PyDaftExecutionConfig:
     @property
     def pre_shuffle_merge_threshold(self) -> int: ...
     @property
+    def pre_shuffle_merge_partition_threshold(self) -> int: ...
+    @property
     def min_cpu_per_task(self) -> float: ...
     @property
     def actor_udf_ready_timeout(self) -> int: ...
@@ -2306,6 +2334,8 @@ class PyDaftExecutionConfig:
     def dynamic_batching_strategy(self) -> str: ...
     @property
     def flight_shuffle_dirs(self) -> list[str]: ...
+    @property
+    def enable_multi_glob_path_tasks(self) -> bool: ...
 
 class PyDaftPlanningConfig:
     @staticmethod
@@ -2478,6 +2508,8 @@ class PySession:
     def detach_catalog(self, alias: str) -> None: ...
     def detach_function(self, alias: str) -> None: ...
     def detach_provider(self, alias: str) -> None: ...
+    def load_extension(self, path: str) -> None: ...
+    def get_function(self, name: str, *args: PyExpr) -> PyExpr: ...
     def detach_table(self, alias: str) -> None: ...
     def create_temp_table(self, ident: str, source: PyTableSource, replace: bool) -> Table: ...
     def current_catalog(self) -> Catalog | None: ...

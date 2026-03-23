@@ -2,7 +2,7 @@
 arrow = {workspace = true}
 arrow-row = {workspace = true}
 bincode = {workspace = true}
-daft-arrow = {path = "../daft-arrow"}
+bytemuck = {version = "1", features = ["derive"]}
 chrono = {workspace = true}
 chrono-tz = {workspace = true}
 comfy-table = {workspace = true}
@@ -38,7 +38,7 @@ itertools = {workspace = true}
 mur3 = "0.1.0"
 num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-rand = "0.9.1"
+rand = {workspace = true}
 serde = {workspace = true}
 sketches-ddsketch = {workspace = true}
 xxhash-rust = {workspace = true}

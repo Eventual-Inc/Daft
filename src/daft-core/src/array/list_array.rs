@@ -169,21 +169,6 @@ impl ListArray {
             new_nulls,
         ))
     }
-    #[deprecated(note = "arrow2 migration")]
-    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-        let arrow_dtype = self.data_type().to_arrow2().unwrap();
-
-        let offsets: daft_arrow::offset::OffsetsBuffer<i64> =
-            self.offsets().clone().try_into().unwrap();
-
-        Box::new(daft_arrow::array::ListArray::new(
-            arrow_dtype,
-            offsets,
-            self.flat_child.to_arrow2(),
-            daft_arrow::buffer::wrap_null_buffer(self.nulls.clone()),
-        ))
-    }
-
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
         let mut field = self.flat_child.field().to_arrow()?;
         field = field.with_name("item");
@@ -201,7 +186,7 @@ impl ListArray {
         )))
     }
 
-    pub fn with_nulls(&self, nulls: Option<daft_arrow::buffer::NullBuffer>) -> DaftResult<Self> {
+    pub fn with_nulls(&self, nulls: Option<arrow::buffer::NullBuffer>) -> DaftResult<Self> {
         if let Some(v) = &nulls
             && v.len() != self.len()
         {

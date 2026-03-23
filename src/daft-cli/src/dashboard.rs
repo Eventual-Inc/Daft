@@ -302,7 +302,7 @@ fn clear_pid_file_if_matches(pid: u32, pid_dir: Option<String>) {
     let path = get_pid_filepath(pid_dir.clone());
     match read_pid(pid_dir) {
         Ok(current_pid) if current_pid == pid => match fs::remove_file(path) {
-            Ok(_) => {}
+            Ok(()) => {}
             Err(e) if e.kind() != io::ErrorKind::NotFound => {
                 eprintln!("Warning: failed to remove daft dashboard PID file: {e}");
             }

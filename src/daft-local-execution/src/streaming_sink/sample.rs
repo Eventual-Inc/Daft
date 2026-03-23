@@ -10,7 +10,7 @@ use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
 use rand::{
     SeedableRng,
-    distributions::{Distribution, Standard},
+    distr::{Distribution, StandardUniform},
     rngs::StdRng,
 };
 use tracing::{Span, instrument};
@@ -24,7 +24,10 @@ use crate::{ExecutionTaskSpawner, dynamic_batching::StaticBatchingStrategy, pipe
 fn build_rng(seed: Option<u64>) -> StdRng {
     match seed {
         Some(seed) => StdRng::seed_from_u64(seed),
-        None => StdRng::from_rng(rand::thread_rng()).expect("failed to seed rng"),
+        None => {
+            let mut thread_rng = rand::rng();
+            StdRng::from_rng(&mut thread_rng)
+        }
     }
 }
 
@@ -58,7 +61,7 @@ impl WithReplacementState {
         let rb = Arc::new(record_batch);
         for row_idx in 0..rb.len() {
             for slot in &mut self.slots {
-                let new_key: f64 = Standard.sample(&mut self.rng);
+                let new_key: f64 = StandardUniform.sample(&mut self.rng);
                 match slot {
                     None => {
                         *slot = Some(SampleRow {
@@ -110,7 +113,7 @@ impl WithoutReplacementState {
         let rb = Arc::new(record_batch);
         for row_idx in 0..rb.len() {
             self.rows_seen += 1;
-            let key: f64 = Standard.sample(&mut self.rng);
+            let key: f64 = StandardUniform.sample(&mut self.rng);
             let new_entry = SampleRow {
                 key,
                 record_batch: rb.clone(),

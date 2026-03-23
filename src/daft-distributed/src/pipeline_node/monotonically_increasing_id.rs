@@ -8,8 +8,8 @@ use futures::StreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, TaskBuilderStream,
+        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
+        TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
 };
@@ -22,7 +22,7 @@ pub(crate) struct MonotonicallyIncreasingIdNode {
 }
 
 impl MonotonicallyIncreasingIdNode {
-    const NODE_NAME: NodeName = "MonotonicallyIncreasingId";
+    const NODE_NAME: &'static str = "Monotonic ID";
 
     pub fn new(
         node_id: NodeID,
@@ -35,7 +35,7 @@ impl MonotonicallyIncreasingIdNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
             NodeType::MonotonicallyIncreasingId,
             NodeCategory::Intermediate,
         );
@@ -50,10 +50,6 @@ impl MonotonicallyIncreasingIdNode {
             column_name,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
@@ -108,10 +104,7 @@ impl PipelineNodeImpl for MonotonicallyIncreasingIdNode {
                             Some(offset),
                             schema,
                             StatsState::NotMaterialized,
-                            LocalNodeContext {
-                                origin_node_id: Some(node_id as usize),
-                                additional: None,
-                            },
+                            LocalNodeContext::new(Some(node_id as usize)),
                         )
                     })
                     .extend_fingerprint(partition_idx as u32)

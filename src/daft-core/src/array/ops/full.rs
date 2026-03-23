@@ -78,7 +78,7 @@ where
 
 impl FullNull for FixedSizeListArray {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        let nulls = daft_arrow::buffer::NullBuffer::from_iter(repeat_n(false, length));
+        let nulls = arrow::buffer::NullBuffer::from_iter(repeat_n(false, length));
 
         match dtype {
             DataType::FixedSizeList(child_dtype, size) => {
@@ -109,7 +109,7 @@ impl FullNull for FixedSizeListArray {
 
 impl FullNull for ListArray {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        let nulls = daft_arrow::buffer::NullBuffer::from_iter(repeat_n(false, length));
+        let nulls = arrow::buffer::NullBuffer::from_iter(repeat_n(false, length));
 
         match dtype {
             DataType::List(child_dtype) => {
@@ -142,13 +142,13 @@ impl FullNull for ListArray {
 
 impl FullNull for StructArray {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        let nulls = daft_arrow::buffer::NullBuffer::from_iter(repeat_n(false, length));
+        let nulls = arrow::buffer::NullBuffer::from_iter(repeat_n(false, length));
         match dtype {
             DataType::Struct(children) => {
                 let field = Field::new(name, dtype.clone());
                 let empty_children = children
                     .iter()
-                    .map(|f| Series::full_null(f.name.as_str(), &f.dtype, length))
+                    .map(|f| Series::full_null(f.name.as_ref(), &f.dtype, length))
                     .collect::<Vec<_>>();
                 Self::new(field, empty_children, Some(nulls))
             }
@@ -162,7 +162,7 @@ impl FullNull for StructArray {
                 let field = Field::new(name, dtype.clone());
                 let empty_children = children
                     .iter()
-                    .map(|f| Series::empty(f.name.as_str(), &f.dtype))
+                    .map(|f| Series::empty(f.name.as_ref(), &f.dtype))
                     .collect::<Vec<_>>();
                 Self::new(field, empty_children, None)
             }
@@ -177,7 +177,7 @@ impl FullNull for PythonArray {
         let pynone = Arc::new(Python::attach(|py: Python| py.None()));
         let values = vec![pynone; length];
 
-        let validity = daft_arrow::buffer::NullBuffer::new_null(length);
+        let validity = arrow::buffer::NullBuffer::new_null(length);
 
         let field = Arc::new(Field::new(name, dtype.clone()));
         Self::new(field, values.into(), Some(validity))
