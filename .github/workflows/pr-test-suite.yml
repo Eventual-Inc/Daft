@@ -936,7 +936,7 @@ jobs:
       env:
         DAFT_RUNNER: native
 
-        # Cleanup docker services
+      # Cleanup docker services
     - name: Cleanup Docker services
       if: always()
       run: |
@@ -1215,11 +1215,11 @@ jobs:
     needs:
     - integration-test-tpch
     - integration-test-io
-        # - integration-test-io-credentialed
+      # - integration-test-io-credentialed
     - integration-test-sql
     - integration-test-catalogs
     - integration-test-ai
-        # - integration-test-ai-credentialed
+      # - integration-test-ai-credentialed
     - integration-test-ray
     if: always()
     steps:
@@ -1338,7 +1338,7 @@ jobs:
         bins: cargo-llvm-cov@0.6.14
         components: llvm-tools-preview
     - uses: Swatinem/rust-cache@v2
-          # skip on windows because it misses the cache and is very slow (~15 minutes)
+        # skip on windows because it misses the cache and is very slow (~15 minutes)
       if: ${{ matrix.os != 'Windows' }}
       with:
         shared-key: ${{ runner.os }}-dev-build
