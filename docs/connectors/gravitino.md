@@ -32,7 +32,7 @@ The easiest way to use Gravitino with Daft is through the integrated catalog sys
     ```python
     import daft
     from daft.catalog import Catalog
-    from daft.gravitino import GravitinoClient
+    from daft.catalog.__gravitino import GravitinoClient
 
     # Create Gravitino client
     client = GravitinoClient(
@@ -57,7 +57,7 @@ For more advanced use cases, you can use the GravitinoClient directly:
 
     ```python
     import daft
-    from daft.gravitino import GravitinoClient
+    from daft.catalog.__gravitino import GravitinoClient
 
     # Initialize client with simple authentication
     client = GravitinoClient(
@@ -115,7 +115,7 @@ Where:
 
     ```python
     import daft
-    from daft.gravitino import GravitinoClient
+    from daft.catalog.__gravitino import GravitinoClient
 
     # Create client and configure IOConfig
     client = GravitinoClient(
@@ -156,7 +156,7 @@ Where:
 
     ```python
     import daft
-    from daft.gravitino import GravitinoClient
+    from daft.catalog.__gravitino import GravitinoClient
 
     # Create client and configure IOConfig
     client = GravitinoClient(
@@ -212,7 +212,7 @@ Creates a Daft Catalog from a GravitinoClient.
 
     ```python
     from daft.catalog import Catalog
-    from daft.gravitino import GravitinoClient
+    from daft.catalog.__gravitino import GravitinoClient
 
     client = GravitinoClient("http://localhost:8090", "my_metalake", username="admin")
     catalog = Catalog.from_gravitino(client)

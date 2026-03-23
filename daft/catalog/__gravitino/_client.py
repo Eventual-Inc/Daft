@@ -36,7 +36,7 @@ class GravitinoFilesetInfo:
 
 
 @dataclasses.dataclass(frozen=True)
-class GravitinoCatalog:
+class GravitinoCatalogInfo:
     """Represents a catalog in Gravitino."""
 
     name: str
@@ -128,14 +128,14 @@ class GravitinoClient:
             warnings.warn(f"Failed to list catalogs: {e}")
             return []
 
-    def load_catalog(self, catalog_name: str) -> GravitinoCatalog:
+    def load_catalog(self, catalog_name: str) -> GravitinoCatalogInfo:
         """Load a Gravitino catalog.
 
         Args:
             catalog_name: Name of the catalog to load
 
         Returns:
-            GravitinoCatalog object
+            GravitinoCatalogInfo object
 
         Raises:
             Exception: If catalog is not found or cannot be loaded
@@ -144,7 +144,7 @@ class GravitinoClient:
             response = self._make_request("GET", f"/metalakes/{self._metalake_name}/catalogs/{catalog_name}")
             catalog_data = response.get("catalog", {})
 
-            return GravitinoCatalog(
+            return GravitinoCatalogInfo(
                 name=catalog_data.get("name", catalog_name),
                 type=catalog_data.get("type", ""),
                 provider=catalog_data.get("provider", ""),
