@@ -68,6 +68,35 @@ def test_aggs_sql():
 
     assert actual == expected
 
+
+def test_percentile_and_median_sql():
+    df = daft.from_pydict({"values": [1, 2, 3, 4]})
+
+    actual = (
+        daft.sql(
+            """
+    SELECT
+        percentile(values, 0.0) as p0,
+        percentile(values, 0.25) as p25,
+        percentile(values, 0.75) as p75,
+        percentile(values, 1.0) as p100,
+        median(values) as median
+    FROM df
+    """,
+            df=df,
+        )
+        .collect()
+        .to_pydict()
+    )
+
+    assert actual == {
+        "p0": [1.0],
+        "p25": [1.75],
+        "p75": [3.25],
+        "p100": [4.0],
+        "median": [2.5],
+    }
+
     # Test product aggregation with GROUP BY
     df_groupby = daft.from_pydict(
         {
