@@ -63,7 +63,7 @@ impl ExecutionStats {
             Field::new("name", DataType::Utf8),
             Field::new("type", DataType::Utf8),
             Field::new("category", DataType::Utf8),
-            Field::new("duration", DataType::Duration(TimeUnit::Microseconds)),
+            Field::new("duration", DataType::Duration(TimeUnit::Milliseconds)),
             Field::new(
                 "stats",
                 DataType::Map {
