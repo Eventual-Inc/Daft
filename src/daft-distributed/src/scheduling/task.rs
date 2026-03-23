@@ -453,6 +453,8 @@ impl SwordfishTaskBuilder {
     ) -> SubmittableTask<SwordfishTask> {
         let strategy = self.strategy.unwrap_or(SchedulingStrategy::Spread);
 
+        let plan_fingerprint = hash_fingerprint(&[self.plan_fingerprint, query_idx as u32]);
+
         let task_context = TaskContext {
             query_idx,
             last_node_id: *self
@@ -461,7 +463,7 @@ impl SwordfishTaskBuilder {
                 .expect("Pending node_ids must be non-empty"),
             task_id: task_id_counter.next(),
             node_ids: self.pending_node_ids,
-            plan_fingerprint: self.plan_fingerprint,
+            plan_fingerprint,
         };
 
         // Build context HashMap with task_id
