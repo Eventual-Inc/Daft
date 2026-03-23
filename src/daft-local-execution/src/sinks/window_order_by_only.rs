@@ -108,7 +108,7 @@ impl BlockingSink for WindowOrderByOnlySink {
                         .collect::<Vec<_>>();
 
                     // Concatenate all partitions
-                    let concatenated = MicroPartition::concat(all_partitions.iter())?;
+                    let concatenated = MicroPartition::concat(all_partitions)?;
 
                     // Sort the concatenated partition by order_by
                     let sorted = concatenated.sort(

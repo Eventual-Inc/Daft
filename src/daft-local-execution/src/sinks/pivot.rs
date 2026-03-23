@@ -97,11 +97,11 @@ impl BlockingSink for PivotSink {
         spawner
             .spawn(
                 async move {
-                    let all_parts: Vec<MicroPartition> = states
+                    let all_parts: Vec<_> = states
                         .into_iter()
                         .flat_map(|mut state| state.finalize())
                         .collect();
-                    let concated = MicroPartition::concat(all_parts.iter())?;
+                    let concated = MicroPartition::concat(all_parts)?;
 
                     let agged = if pivot_params.pre_agg {
                         let group_by_with_pivot = pivot_params

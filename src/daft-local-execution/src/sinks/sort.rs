@@ -87,7 +87,7 @@ impl BlockingSink for SortSink {
                         .into_iter()
                         .flat_map(|mut state| state.finalize())
                         .collect();
-                    let concated = MicroPartition::concat(parts.iter())?;
+                    let concated = MicroPartition::concat(parts)?;
                     let sorted =
                         concated.sort(&params.sort_by, &params.descending, &params.nulls_first)?;
                     Ok(BlockingSinkFinalizeOutput::Finished(vec![sorted]))

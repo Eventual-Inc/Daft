@@ -11,7 +11,6 @@ use common_error::{DaftError, DaftResult};
 use common_metrics::{NodeID, QueryID, QueryPlan, Stats};
 use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
-use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use reqwest::{Client, RequestBuilder};
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -42,7 +41,7 @@ pub struct DashboardSubscriber {
     url: String,
     client: Client,
     runtime: RuntimeRef,
-    preview_rows: DashMap<QueryID, MicroPartitionRef>,
+    preview_rows: DashMap<QueryID, Vec<MicroPartition>>,
     execution_ids: DashMap<QueryID, String>,
     worker_id: Option<String>,
 
@@ -244,7 +243,7 @@ impl Subscriber for DashboardSubscriber {
 
         self.preview_rows.insert(
             query_id.clone(),
-            Arc::new(MicroPartition::empty(Some(metadata.output_schema.clone()))),
+            vec![MicroPartition::empty(Some(metadata.output_schema.clone()))],
         );
 
         self.enqueue_json(
@@ -275,10 +274,7 @@ impl Subscriber for DashboardSubscriber {
         let num_rows = all_results.len();
         if num_rows < TOTAL_ROWS && !result.is_empty() {
             let result = result.head(TOTAL_ROWS - num_rows)?;
-            *all_results = Arc::new(MicroPartition::concat(vec![
-                all_results.clone(),
-                Arc::new(result),
-            ])?);
+            all_results.push(result);
         }
         Ok(())
     }
@@ -290,10 +286,8 @@ impl Subscriber for DashboardSubscriber {
         let results = self.preview_rows.remove(&query_id);
         let results_ipc = if let Some((_, results)) = results {
             debug_assert!(results.len() <= TOTAL_ROWS);
-            let result = results
-                .concat_or_get()?
-                .unwrap_or_else(|| RecordBatch::empty(Some(results.schema())));
-            let results_ipc = result.to_ipc_stream()?;
+            let result = MicroPartition::concat(results)?;
+            let results_ipc = result.write_to_ipc_stream()?;
             if results_ipc.len() > 1024 * 1024 * 2 {
                 // 2MB, our dashboard cap
                 None

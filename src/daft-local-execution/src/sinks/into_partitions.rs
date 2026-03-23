@@ -78,13 +78,13 @@ impl BlockingSink for IntoPartitionsSink {
             .spawn(
                 async move {
                     // Collect all data from all states
-                    let all_parts: Vec<MicroPartition> = states
+                    let all_parts: Vec<_> = states
                         .into_iter()
                         .flat_map(|mut state| state.finalize())
                         .collect();
 
                     // Concatenate all data
-                    let concatenated = MicroPartition::concat(all_parts.iter())?;
+                    let concatenated = MicroPartition::concat(all_parts)?;
 
                     let total_rows = concatenated.len();
                     let rows_per_partition = total_rows.div_ceil(num_partitions);

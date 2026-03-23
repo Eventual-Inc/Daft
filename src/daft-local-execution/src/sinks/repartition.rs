@@ -116,7 +116,7 @@ impl BlockingSink for RepartitionSink {
                             .collect::<Vec<_>>();
                         let schema = schema.clone();
                         let fut = tokio::spawn(async move {
-                            let together = MicroPartition::concat(&data)?;
+                            let together = MicroPartition::concat(data)?;
                             let concated = together.concat_or_get()?;
                             let mp = MicroPartition::new_loaded(
                                 schema,

@@ -74,12 +74,12 @@ impl AggStrategy {
         for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
             let state = state.get_or_insert_default();
             if state.unaggregated_size + p.len() >= partial_agg_threshold {
-                let unaggregated = std::mem::take(&mut state.unaggregated);
-                let aggregated =
-                    MicroPartition::concat(unaggregated.iter().chain(std::iter::once(&p)))?.agg(
-                        params.partial_agg_exprs.as_slice(),
-                        params.group_by.as_slice(),
-                    )?;
+                let mut unaggregated = std::mem::take(&mut state.unaggregated);
+                unaggregated.push(p);
+                let aggregated = MicroPartition::concat(unaggregated)?.agg(
+                    params.partial_agg_exprs.as_slice(),
+                    params.group_by.as_slice(),
+                )?;
                 state.partially_aggregated.push(aggregated);
                 state.unaggregated_size = 0;
             } else {
@@ -370,14 +370,14 @@ impl BlockingSink for GroupedAggregateSink {
 
                             // If we have no partially aggregated partitions, aggregate the unaggregated partitions using the original aggregations
                             if params.partial_agg_exprs.is_empty() && !unaggregated.is_empty() {
-                                let concated = MicroPartition::concat(&unaggregated)?;
+                                let concated = MicroPartition::concat(unaggregated)?;
                                 let agged = concated
                                     .agg(&params.original_aggregations, &params.group_by)?;
                                 Ok(agged)
                             }
                             // If we have no unaggregated partitions, finalize the partially aggregated partitions
                             else if unaggregated.is_empty() {
-                                let concated = MicroPartition::concat(&partially_aggregated)?;
+                                let concated = MicroPartition::concat(partially_aggregated)?;
                                 let agged = concated
                                     .agg(&params.final_agg_exprs, &params.final_group_by)?;
                                 let projected =
@@ -386,14 +386,10 @@ impl BlockingSink for GroupedAggregateSink {
                             }
                             // Otherwise, partially aggregate the unaggregated partitions, concatenate them with the partially aggregated partitions, and finalize the result.
                             else {
-                                let leftover_partial_agg =
-                                    MicroPartition::concat(&unaggregated)?
-                                        .agg(&params.partial_agg_exprs, &params.group_by)?;
-                                let concated = MicroPartition::concat(
-                                    partially_aggregated
-                                        .iter()
-                                        .chain(std::iter::once(&leftover_partial_agg)),
-                                )?;
+                                let leftover_partial_agg = MicroPartition::concat(unaggregated)?
+                                    .agg(&params.partial_agg_exprs, &params.group_by)?;
+                                partially_aggregated.push(leftover_partial_agg);
+                                let concated = MicroPartition::concat(partially_aggregated)?;
                                 let agged = concated
                                     .agg(&params.final_agg_exprs, &params.final_group_by)?;
                                 let projected =
@@ -407,7 +403,7 @@ impl BlockingSink for GroupedAggregateSink {
                         .await
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
-                    let concated = MicroPartition::concat(results.iter())?;
+                    let concated = MicroPartition::concat(results)?;
                     Ok(BlockingSinkFinalizeOutput::Finished(vec![concated]))
                 },
                 Span::current(),

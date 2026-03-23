@@ -226,9 +226,8 @@ impl VLLMSink {
             return Ok(());
         }
 
-        let concatted = MicroPartition::concat(&state.buffer)?
-            .concat_or_get()?
-            .unwrap();
+        let buffer = std::mem::take(&mut state.buffer);
+        let concatted = MicroPartition::concat(buffer)?.concat_or_get()?.unwrap();
 
         let sorted = concatted.sort(std::slice::from_ref(&expr_input), &[false], &[false])?;
 

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use daft_core::{join::JoinType, prelude::SchemaRef};
@@ -17,11 +15,11 @@ use crate::{
 };
 
 pub(crate) struct SortMergeJoinBuildState {
-    tables: Vec<Arc<MicroPartition>>,
+    tables: Vec<MicroPartition>,
 }
 
 pub(crate) struct SortMergeJoinProbeState {
-    build_contents: Vec<Arc<MicroPartition>>,
+    build_contents: Vec<MicroPartition>,
     probe_contents: Vec<MicroPartition>,
 }
 
@@ -53,7 +51,7 @@ impl SortMergeJoinOperator {
 
 impl JoinOperator for SortMergeJoinOperator {
     type BuildState = SortMergeJoinBuildState;
-    type FinalizedBuildState = Vec<Arc<MicroPartition>>;
+    type FinalizedBuildState = Vec<MicroPartition>;
     type ProbeState = SortMergeJoinProbeState;
 
     fn build(
@@ -63,7 +61,7 @@ impl JoinOperator for SortMergeJoinOperator {
         _spawner: &ExecutionTaskSpawner,
     ) -> BuildStateResult<Self> {
         if !input.is_empty() {
-            state.tables.push(Arc::new(input));
+            state.tables.push(input);
         }
         Ok(state).into()
     }
@@ -117,9 +115,9 @@ impl JoinOperator for SortMergeJoinOperator {
             .spawn(
                 async move {
                     let left_mp =
-                        MicroPartition::concat_or_empty(&state.build_contents, left_schema)?;
+                        MicroPartition::concat_or_empty(state.build_contents, left_schema)?;
                     let right_mp =
-                        MicroPartition::concat_or_empty(&state.probe_contents, right_schema)?;
+                        MicroPartition::concat_or_empty(state.probe_contents, right_schema)?;
 
                     // TODO: Handle pre-sorted?
                     let joined = left_mp

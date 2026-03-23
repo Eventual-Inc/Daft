@@ -174,14 +174,22 @@ impl PyMicroPartition {
 
     #[staticmethod]
     pub fn concat(py: Python, to_concat: Vec<Self>) -> PyResult<Self> {
-        let mps_iter = to_concat.iter().map(|t| t.inner.as_ref());
-        py.detach(|| Ok(MicroPartition::concat(mps_iter)?.into()))
+        let mps: Vec<_> = to_concat
+            .iter()
+            .map(|t| t.inner.as_ref())
+            .cloned()
+            .collect();
+        py.detach(|| Ok(MicroPartition::concat(mps)?.into()))
     }
 
     #[staticmethod]
     pub fn concat_or_empty(py: Python, to_concat: Vec<Self>, schema: PySchema) -> PyResult<Self> {
-        let mps_iter = to_concat.iter().map(|t| t.inner.as_ref());
-        py.detach(|| Ok(MicroPartition::concat_or_empty(mps_iter, schema.schema)?.into()))
+        let mps: Vec<_> = to_concat
+            .iter()
+            .map(|t| t.inner.as_ref())
+            .cloned()
+            .collect();
+        py.detach(|| Ok(MicroPartition::concat_or_empty(mps, schema.schema)?.into()))
     }
 
     pub fn slice(&self, py: Python, start: i64, end: i64) -> PyResult<Self> {

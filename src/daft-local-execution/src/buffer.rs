@@ -68,7 +68,7 @@ impl RowBasedBuffer {
             Ok(None)
         } else {
             let taken = std::mem::take(&mut self.buffer);
-            let concated = MicroPartition::concat(taken.iter())?;
+            let concated = MicroPartition::concat(taken)?;
             self.curr_len = 0;
             Ok(Some(concated))
         }
@@ -87,7 +87,7 @@ impl RowBasedBuffer {
                         Ok(Some(part))
                     } else {
                         let taken = std::mem::take(&mut self.buffer);
-                        let chunk = MicroPartition::concat(taken.iter())?;
+                        let chunk = MicroPartition::concat(taken)?;
                         self.curr_len = 0;
                         Ok(Some(chunk))
                     }
@@ -95,7 +95,7 @@ impl RowBasedBuffer {
                 BufferState::AboveUpperBound => {
                     // Return one batch of target size, keep rest
                     let taken = std::mem::take(&mut self.buffer);
-                    let concated = MicroPartition::concat(taken.iter())?;
+                    let concated = MicroPartition::concat(taken)?;
 
                     let batch = concated.slice(0, self.upper_bound.get())?;
 

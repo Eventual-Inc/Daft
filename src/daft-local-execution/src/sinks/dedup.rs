@@ -147,7 +147,7 @@ impl BlockingSink for DedupSink {
                         // Do this concurrently across all of the partitions
                         let columns = columns.clone();
                         per_partition_finalize_tasks.spawn(async move {
-                            MicroPartition::concat(&per_partition_micros)?.dedup(&columns)
+                            MicroPartition::concat(per_partition_micros)?.dedup(&columns)
                         });
                     }
                     // Join the tasks and collect the deduped partitions
@@ -158,7 +158,7 @@ impl BlockingSink for DedupSink {
                         .collect::<DaftResult<Vec<_>>>()?;
 
                     // Concatenate the results and return
-                    let concated = MicroPartition::concat(results.iter())?;
+                    let concated = MicroPartition::concat(results)?;
                     Ok(BlockingSinkFinalizeOutput::Finished(vec![concated]))
                 },
                 Span::current(),

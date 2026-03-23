@@ -127,7 +127,7 @@ impl BlockingSink for TopNSink {
                         .into_iter()
                         .flat_map(|mut state| state.finalize())
                         .collect();
-                    let concated = MicroPartition::concat(parts.iter())?;
+                    let concated = MicroPartition::concat(parts)?;
                     let final_output = concated.top_n(
                         &params.sort_by,
                         &params.descending,
