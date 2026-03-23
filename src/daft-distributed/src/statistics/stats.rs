@@ -1,14 +1,10 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_metrics::{
-    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, TASK_ACTIVE_KEY,
-    TASK_CANCELLED_KEY, TASK_COMPLETED_KEY, TASK_FAILED_KEY, UNIT_MICROSECONDS, UNIT_ROWS,
-    UNIT_TASKS, normalize_name, ops::NodeInfo, snapshot::DefaultSnapshot,
+    Counter, Meter, StatSnapshot, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY, TASK_COMPLETED_KEY,
+    TASK_FAILED_KEY, UNIT_TASKS, UpDownCounter, ops::NodeInfo, snapshot::DefaultSnapshot,
 };
-use opentelemetry::{
-    KeyValue,
-    metrics::{Meter, UpDownCounter},
-};
+use opentelemetry::KeyValue;
 
 use crate::{
     pipeline_node::{PipelineNodeContext, metrics::key_values_from_context},
@@ -27,7 +23,7 @@ pub struct RuntimeNodeManager {
     pub node_kv: Vec<KeyValue>,
     runtime_stats: RuntimeStatsRef,
 
-    active_tasks: UpDownCounter<i64>,
+    active_tasks: UpDownCounter,
     completed_tasks: Counter,
     failed_tasks: Counter,
     cancelled_tasks: Counter,
@@ -40,12 +36,22 @@ impl RuntimeNodeManager {
             node_info,
             node_kv,
             runtime_stats,
-            active_tasks: meter
-                .i64_up_down_counter(normalize_name(TASK_ACTIVE_KEY))
-                .build(),
-            completed_tasks: Counter::new(meter, TASK_COMPLETED_KEY, None, Some(UNIT_TASKS.into())),
-            failed_tasks: Counter::new(meter, TASK_FAILED_KEY, None, Some(UNIT_TASKS.into())),
-            cancelled_tasks: Counter::new(meter, TASK_CANCELLED_KEY, None, Some(UNIT_TASKS.into())),
+            active_tasks: meter.i64_up_down_counter(TASK_ACTIVE_KEY),
+            completed_tasks: meter.u64_counter_with_desc_and_unit(
+                TASK_COMPLETED_KEY,
+                None,
+                Some(UNIT_TASKS.into()),
+            ),
+            failed_tasks: meter.u64_counter_with_desc_and_unit(
+                TASK_FAILED_KEY,
+                None,
+                Some(UNIT_TASKS.into()),
+            ),
+            cancelled_tasks: meter.u64_counter_with_desc_and_unit(
+                TASK_CANCELLED_KEY,
+                None,
+                Some(UNIT_TASKS.into()),
+            ),
         }
     }
 
@@ -99,9 +105,9 @@ impl BaseCounters {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
         let node_kv = key_values_from_context(context);
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
             node_kv,
         }
     }

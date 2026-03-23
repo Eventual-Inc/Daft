@@ -113,6 +113,7 @@ impl PyDaftExecutionConfig {
         default_morsel_size=None,
         shuffle_algorithm=None,
         pre_shuffle_merge_threshold=None,
+        pre_shuffle_merge_partition_threshold=None,
         scantask_max_parallel=None,
         native_parquet_writer=None,
         min_cpu_per_task=None,
@@ -149,6 +150,7 @@ impl PyDaftExecutionConfig {
         default_morsel_size: Option<usize>,
         shuffle_algorithm: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
+        pre_shuffle_merge_partition_threshold: Option<usize>,
         scantask_max_parallel: Option<usize>,
         native_parquet_writer: Option<bool>,
         min_cpu_per_task: Option<f64>,
@@ -235,6 +237,7 @@ impl PyDaftExecutionConfig {
                     )
                 })?;
         }
+
         if let Some(shuffle_algorithm) = shuffle_algorithm {
             if !matches!(
                 shuffle_algorithm,
@@ -246,8 +249,13 @@ impl PyDaftExecutionConfig {
             }
             config.shuffle_algorithm = shuffle_algorithm.to_string();
         }
+
         if let Some(pre_shuffle_merge_threshold) = pre_shuffle_merge_threshold {
             config.pre_shuffle_merge_threshold = pre_shuffle_merge_threshold;
+        }
+
+        if let Some(pre_shuffle_merge_partition_threshold) = pre_shuffle_merge_partition_threshold {
+            config.pre_shuffle_merge_partition_threshold = pre_shuffle_merge_partition_threshold;
         }
 
         if let Some(scantask_max_parallel) = scantask_max_parallel {
@@ -402,17 +410,25 @@ impl PyDaftExecutionConfig {
     fn get_read_sql_partition_size_bytes(&self) -> PyResult<usize> {
         Ok(self.config.read_sql_partition_size_bytes)
     }
+
     #[getter]
     fn default_morsel_size(&self) -> PyResult<usize> {
         Ok(self.config.default_morsel_size.get())
     }
+
     #[getter]
     fn shuffle_algorithm(&self) -> PyResult<&str> {
         Ok(self.config.shuffle_algorithm.as_str())
     }
+
     #[getter]
     fn pre_shuffle_merge_threshold(&self) -> PyResult<usize> {
         Ok(self.config.pre_shuffle_merge_threshold)
+    }
+
+    #[getter]
+    fn pre_shuffle_merge_partition_threshold(&self) -> PyResult<usize> {
+        Ok(self.config.pre_shuffle_merge_partition_threshold)
     }
 
     #[getter]

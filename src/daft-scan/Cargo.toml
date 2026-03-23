@@ -21,6 +21,7 @@ daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
 daft-stats = {path = "../daft-stats", default-features = false}
 daft-compression = {path = "../daft-compression", default-features = false}
+async-trait = {workspace = true}
 futures = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}

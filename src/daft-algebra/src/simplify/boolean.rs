@@ -332,39 +332,39 @@ mod tests {
 
         // a == true
         let expr = eq(col_a.clone(), lit(true));
-        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        let result = simplify_binary_compare(expr, &schema)?;
         assert_eq!(result, Transformed::yes(col_a.clone()));
 
         let expr = eq(lit(true), col_a.clone());
-        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        let result = simplify_binary_compare(expr, &schema)?;
         assert_eq!(result, Transformed::yes(col_a.clone()));
 
         // a == false
         let expr = eq(col_a.clone(), lit(false));
-        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        let result = simplify_binary_compare(expr, &schema)?;
         assert_eq!(result, Transformed::yes(col_a.clone().not()));
 
         let expr = eq(lit(false), col_a.clone());
-        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        let result = simplify_binary_compare(expr, &schema)?;
         assert_eq!(result, Transformed::yes(col_a.clone().not()));
 
         // a != true
         let expr = neq(col_a.clone(), lit(true));
-        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        let result = simplify_binary_compare(expr, &schema)?;
         assert_eq!(result, Transformed::yes(col_a.clone().not()));
 
         let expr = neq(lit(true), col_a.clone());
-        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        let result = simplify_binary_compare(expr, &schema)?;
         assert_eq!(result, Transformed::yes(col_a.clone().not()));
 
         // a != false
         let expr = neq(col_a.clone(), lit(false));
-        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        let result = simplify_binary_compare(expr, &schema)?;
         assert_eq!(result, Transformed::yes(col_a.clone()));
 
         let expr = neq(lit(false), col_a.clone());
-        let result = simplify_binary_compare(expr.clone(), &schema)?;
-        assert_eq!(result, Transformed::yes(col_a.clone()));
+        let result = simplify_binary_compare(expr, &schema)?;
+        assert_eq!(result, Transformed::yes(col_a));
 
         Ok(())
     }

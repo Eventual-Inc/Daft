@@ -109,7 +109,7 @@ lint: check-toolchain .venv  ## Lint Python and Rust code
 
 .PHONY: precommit
 precommit: check-toolchain .venv  ## Run all pre-commit hooks
-	source $(VENV_BIN)/activate && pre-commit run --all-files
+	source $(VENV_BIN)/activate && pre-commit run --all-files --hook-stage pre-commit --hook-stage manual
 
 .PHONY: clean
 clean:

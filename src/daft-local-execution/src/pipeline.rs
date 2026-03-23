@@ -10,14 +10,14 @@ use common_display::{
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_metrics::{
-    ATTR_QUERY_ID, QueryID,
+    Meter, QueryID,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, FlightShuffleReadInput,
-    GlobScan, HashAggregate, HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext,
+    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
+    HashAggregate, HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext,
     LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
     Sample, Sort, SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot,
     VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
@@ -28,7 +28,6 @@ use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
-use opentelemetry::{InstrumentationScope, KeyValue, global, metrics::Meter};
 use snafu::ResultExt;
 
 use crate::{
@@ -63,9 +62,8 @@ use crate::{
         write::{WriteFormat, WriteSink},
     },
     sources::{
-        empty_scan::EmptyScanSource, flight_shuffle_read::FlightShuffleReadSource,
-        glob_scan::GlobScanSource, in_memory::InMemorySource, scan_task::ScanTaskSource,
-        source::SourceNode,
+        flight_shuffle_read::FlightShuffleReadSource, glob_scan::GlobScanSource,
+        in_memory::InMemorySource, scan_task::ScanTaskSource, source::SourceNode,
     },
     streaming_sink::{
         async_udf::AsyncUdfSink, base::StreamingSinkNode, limit::LimitSink,
@@ -204,10 +202,7 @@ impl BuilderContext {
     }
 
     pub fn new_with_context(query_id: QueryID, context: HashMap<String, String>) -> Self {
-        let scope = InstrumentationScope::builder("daft.execution.local")
-            .with_attributes(vec![KeyValue::new(ATTR_QUERY_ID, query_id.to_string())])
-            .build();
-        let meter = global::meter_with_scope(scope);
+        let meter = Meter::query_scope(query_id, "daft.execution.local");
 
         Self {
             index_counter: std::cell::RefCell::new(0),
@@ -307,14 +302,6 @@ fn physical_plan_to_pipeline(
     let pipeline_node: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::PlaceholderScan(_) => {
             panic!("PlaceholderScan should not be converted to a pipeline node")
-        }
-        LocalPhysicalPlan::EmptyScan(EmptyScan {
-            schema,
-            stats_state,
-            context,
-        }) => {
-            let source = EmptyScanSource::new(schema.clone());
-            SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
         }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan {
             source_id,

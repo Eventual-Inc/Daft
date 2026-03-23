@@ -652,8 +652,7 @@ mod tests {
     }
 
     /// Tests that Filter commutes with Projection if projection expression involves deterministic compute.
-    // REASON - No expression attribute indicating whether deterministic && (pure || idempotent).
-    #[ignore]
+    #[ignore = "No expression attribute indicating whether deterministic && (pure || idempotent)."]
     #[rstest]
     fn filter_commutes_with_projection_deterministic_compute(
         #[values(false, true)] push_into_scan: bool,
@@ -837,7 +836,7 @@ mod tests {
             left_scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_left_scan { None } else { Some(1) }),
         );
-        let right_scan_plan = dummy_scan_node(right_scan_op.clone());
+        let right_scan_plan = dummy_scan_node(right_scan_op);
         let join_on = if null_equals_null {
             unresolved_col("b").eq_null_safe(unresolved_col("right.b"))
         } else {
@@ -858,7 +857,7 @@ mod tests {
             .build();
         let expected_left_filter_scan = if push_into_left_scan {
             dummy_scan_node_with_pushdowns(
-                left_scan_op.clone(),
+                left_scan_op,
                 Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
@@ -893,7 +892,7 @@ mod tests {
             Field::new("right.b", DataType::Utf8),
             Field::new("c", DataType::Float64),
         ]);
-        let left_scan_plan = dummy_scan_node(left_scan_op.clone());
+        let left_scan_plan = dummy_scan_node(left_scan_op);
         let right_scan_plan = dummy_scan_node_with_pushdowns(
             right_scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
@@ -917,7 +916,7 @@ mod tests {
             .build();
         let expected_right_filter_scan = if push_into_right_scan {
             dummy_scan_node_with_pushdowns(
-                right_scan_op.clone(),
+                right_scan_op,
                 Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
@@ -983,7 +982,7 @@ mod tests {
             .build();
         let expected_left_filter_scan = if push_into_left_scan {
             dummy_scan_node_with_pushdowns(
-                left_scan_op.clone(),
+                left_scan_op,
                 Pushdowns::default().with_filters(Some(pred.clone())),
             )
         } else {
@@ -1025,8 +1024,8 @@ mod tests {
             Field::new("right.b", DataType::Utf8),
             Field::new("c", DataType::Float64),
         ]);
-        let left_scan_plan = dummy_scan_node(left_scan_op.clone());
-        let right_scan_plan = dummy_scan_node(right_scan_op.clone());
+        let left_scan_plan = dummy_scan_node(left_scan_op);
+        let right_scan_plan = dummy_scan_node(right_scan_op);
         let join_on = if null_equals_null {
             unresolved_col("b").eq_null_safe(unresolved_col("right.b"))
         } else {
@@ -1064,8 +1063,8 @@ mod tests {
             Field::new("right.b", DataType::Utf8),
             Field::new("c", DataType::Float64),
         ]);
-        let left_scan_plan = dummy_scan_node(left_scan_op.clone());
-        let right_scan_plan = dummy_scan_node(right_scan_op.clone());
+        let left_scan_plan = dummy_scan_node(left_scan_op);
+        let right_scan_plan = dummy_scan_node(right_scan_op);
         let join_on = if null_equals_null {
             unresolved_col("b").eq_null_safe(unresolved_col("right.b"))
         } else {
@@ -1209,7 +1208,7 @@ mod tests {
             Field::new("foo", DataType::Int64),
         ]);
         let left_scan_plan = dummy_scan_node(left_scan_op.clone());
-        let right_scan_plan = dummy_scan_node(right_scan_op.clone());
+        let right_scan_plan = dummy_scan_node(right_scan_op);
 
         // Filter on foo (which exists in both input schemas)
         let pred = resolved_col("foo").eq(lit(0));

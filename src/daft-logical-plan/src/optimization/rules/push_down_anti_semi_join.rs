@@ -476,7 +476,7 @@ mod tests {
                     .alias("x_plus_y"),
             ])?
             .join(
-                right_scan_node.clone(),
+                right_scan_node,
                 Some(unresolved_col("x_plus_y").eq(unresolved_col("a"))),
                 vec![],
                 join_type,
@@ -529,7 +529,7 @@ mod tests {
 
         let expected = left_scan_node
             .join(
-                filtering_scan_node.clone(),
+                filtering_scan_node,
                 Some(unresolved_col("y").eq(unresolved_col("a"))),
                 vec![],
                 join_type,
@@ -537,7 +537,7 @@ mod tests {
                 Default::default(),
             )?
             .join(
-                right_scan_node.clone(),
+                right_scan_node,
                 None,
                 vec!["x".to_string()],
                 JoinType::Inner,
@@ -590,7 +590,7 @@ mod tests {
             .join(
                 right_scan_node
                     .join(
-                        filtering_scan_node.clone(),
+                        filtering_scan_node,
                         Some(unresolved_col("z").eq(unresolved_col("a"))),
                         vec![],
                         join_type,
@@ -629,7 +629,7 @@ mod tests {
 
         let plan = left_scan_node
             .join(
-                right_scan_node.clone(),
+                right_scan_node,
                 None,
                 vec!["x".to_string()],
                 JoinType::Inner,
@@ -637,7 +637,7 @@ mod tests {
                 Default::default(),
             )?
             .join(
-                filtering_scan_node.clone(),
+                filtering_scan_node,
                 Some(unresolved_col("x").eq(unresolved_col("a"))),
                 vec![],
                 join_type,
@@ -682,7 +682,7 @@ mod tests {
 
         let expected = left_scan_node
             .join(
-                right_scan_node.clone(),
+                right_scan_node,
                 Some(unresolved_col("x").eq(unresolved_col("a"))),
                 vec![],
                 join_type,
