@@ -68,11 +68,10 @@ impl JoinOrderTree {
     // Check if the join structure is the same, regardless of cardinality or join conditions.
     pub(super) fn order_eq(this: &Self, other: &Self) -> bool {
         match (this, other) {
-            (JoinOrderTree::Relation(id1, _), JoinOrderTree::Relation(id2, _)) => id1 == id2,
-            (
-                JoinOrderTree::Join(left1, right1, _, _),
-                JoinOrderTree::Join(left2, right2, _, _),
-            ) => Self::order_eq(left1, left2) && Self::order_eq(right1, right2),
+            (Self::Relation(id1, _), Self::Relation(id2, _)) => id1 == id2,
+            (Self::Join(left1, right1, _, _), Self::Join(left2, right2, _, _)) => {
+                Self::order_eq(left1, left2) && Self::order_eq(right1, right2)
+            }
             _ => false,
         }
     }
@@ -80,8 +79,8 @@ impl JoinOrderTree {
     #[cfg(test)]
     pub(super) fn num_join_conditions(this: &Self) -> usize {
         match this {
-            JoinOrderTree::Relation(_, _) => 0,
-            JoinOrderTree::Join(left, right, conditions, _) => {
+            Self::Relation(_, _) => 0,
+            Self::Join(left, right, conditions, _) => {
                 Self::num_join_conditions(left)
                     + Self::num_join_conditions(right)
                     + conditions.len()
@@ -777,16 +776,34 @@ impl JoinGraphBuilder {
                 LogicalPlan::Project(Project {
                     input, projection, ..
                 }) => {
-                    // TODO(desmond): Currently we only support reordering through Project nodes that only project columns. Ideally we should
-                    // perform a projection pushup at the start of join reordering in order to separate out this logic from join graph construction,
-                    // and so that we can reorder joins that have more complex projections in between them.
-                    let reorderable_project = projection
+                    // Walk through projects that are pure column references
+                    // (original behavior) or non-narrowing alias renames.
+                    //
+                    // Pure column selects (even narrowing) are safe because they
+                    // add no renames to `final_name_map`.
+                    //
+                    // Alias renames require a non-narrowing check: narrowing
+                    // alias projects cause `final_name_map` renames to leak
+                    // across join boundaries when the same source appears on
+                    // multiple sides of a join (e.g. self-joins).
+                    let all_columns = projection
                         .iter()
                         .all(|e| matches!(e.as_ref(), Expr::Column(_)));
-                    if reorderable_project {
+                    let reorderable = all_columns || {
+                        let all_simple = projection.iter().all(|e| e.input_mapping().is_some());
+                        all_simple && {
+                            let input_names: HashSet<String> =
+                                input.schema().names().into_iter().collect();
+                            let mapped_inputs: HashSet<String> = projection
+                                .iter()
+                                .filter_map(|e| e.input_mapping())
+                                .collect();
+                            input_names.is_subset(&mapped_inputs)
+                        }
+                    };
+                    if reorderable {
                         plan = input;
                     } else {
-                        // Encountered a non-reorderable Project. Add the root plan at the top of the current linear chain as a relation to join.
                         self.add_relation(root_plan);
                         break;
                     }
@@ -1074,7 +1091,7 @@ mod tests {
         let cfg = Arc::new(DaftExecutionConfig::default());
         let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan, cfg).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -1141,8 +1158,7 @@ mod tests {
         let cfg = Arc::new(DaftExecutionConfig::default());
         let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph =
-            JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg.clone()).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan, cfg).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -1164,7 +1180,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Temporarily skipped - Join reordering algorithm needs to be updated to do a projection pushup"]
     fn test_create_join_graph_multiple_renames() {
         //                InnerJoin (a_beta = c)
         //                 /          \
@@ -1211,8 +1226,7 @@ mod tests {
         let cfg = Arc::new(DaftExecutionConfig::default());
         let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph =
-            JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg.clone()).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan, cfg).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a_beta <-> b
@@ -1252,10 +1266,7 @@ mod tests {
             dummy_scan_operator(vec![Field::new("c_prime", DataType::Int64)]),
             Pushdowns::default(),
         )
-        .select(vec![
-            unresolved_col("c_prime").alias("c"),
-            double_proj.clone(),
-        ])
+        .select(vec![unresolved_col("c_prime").alias("c"), double_proj])
         .unwrap();
         let scan_d = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("d", DataType::Int64)]),
@@ -1279,8 +1290,7 @@ mod tests {
         let cfg = Arc::new(DaftExecutionConfig::default());
         let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph =
-            JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg.clone()).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan, cfg).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -1302,7 +1312,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Temporarily skipped - Join reordering algorithm needs to be updated to do a projection pushup"]
+    #[ignore = "Requires scoped final_name_map to walk through narrowing projections"]
     fn test_create_join_graph_with_non_join_projections_and_filters() {
         //                InnerJoin (a = d)
         //                    /        \
@@ -1339,14 +1349,11 @@ mod tests {
             dummy_scan_operator(vec![Field::new("c_prime", DataType::Int64)]),
             Pushdowns::default(),
         )
-        .filter(filter_c_prime.clone())
+        .filter(filter_c_prime)
         .unwrap()
-        .select(vec![
-            unresolved_col("c_prime").alias("c"),
-            double_proj.clone(),
-        ])
+        .select(vec![unresolved_col("c_prime").alias("c"), double_proj])
         .unwrap()
-        .filter(filter_c.clone())
+        .filter(filter_c)
         .unwrap();
         let scan_d = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("d", DataType::Int64)]),
@@ -1361,7 +1368,7 @@ mod tests {
         let join_plan_r = scan_c
             .inner_join(scan_d, unresolved_col("c").eq(unresolved_col("d")))
             .unwrap()
-            .select(vec![unresolved_col("d"), quad_proj.clone()])
+            .select(vec![unresolved_col("d"), quad_proj])
             .unwrap();
         let join_plan = join_plan_l
             .inner_join(join_plan_r, unresolved_col("a").eq(unresolved_col("d")))
@@ -1375,7 +1382,7 @@ mod tests {
         let cfg = Arc::new(DaftExecutionConfig::default());
         let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan, cfg).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -1421,7 +1428,7 @@ mod tests {
             dummy_scan_operator(vec![Field::new("a_prime", DataType::Int64)]),
             Pushdowns::default(),
         )
-        .select(vec![a_proj.clone()])
+        .select(vec![a_proj])
         .unwrap()
         .aggregate(
             vec![Arc::new(Expr::Agg(AggExpr::Count(
@@ -1463,7 +1470,7 @@ mod tests {
         let cfg = Arc::new(DaftExecutionConfig::default());
         let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan, cfg).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b

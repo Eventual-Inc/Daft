@@ -1,7 +1,10 @@
 use std::{future, sync::Arc};
 
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    Meter,
+    ops::{NodeCategory, NodeType},
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{JoinType, stats::StatsState};
@@ -23,6 +26,7 @@ use crate::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
+    statistics::stats::RuntimeStatsRef,
     utils::{
         channel::{Sender, create_channel},
         transpose::transpose_materialized_outputs_from_vec,
@@ -83,10 +87,6 @@ impl SortMergeJoinNode {
             left,
             right,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 
     fn multiline_display(&self) -> Vec<String> {
@@ -371,6 +371,10 @@ impl PipelineNodeImpl for SortMergeJoinNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         self.multiline_display()
+    }
+
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(super::stats::BasicJoinStats::new(meter, self.context()))
     }
 
     fn produce_tasks(

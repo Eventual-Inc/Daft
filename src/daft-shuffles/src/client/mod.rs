@@ -14,12 +14,10 @@ pub struct FlightClientManager {
 }
 
 impl FlightClientManager {
-    pub fn new(addresses: Vec<String>) -> Self {
-        let mut clients = HashMap::new();
-        for address in addresses {
-            clients.insert(address.clone(), ShuffleFlightClient::new(address));
+    pub fn new() -> Self {
+        Self {
+            clients: HashMap::new(),
         }
-        Self { clients }
     }
 
     pub async fn fetch_partition(
@@ -29,18 +27,34 @@ impl FlightClientManager {
         server_cache_mapping: &HashMap<String, Vec<u32>>,
         schema: SchemaRef,
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+        // Ensure clients exist for all addresses before collecting futures
+        for address in server_cache_mapping.keys() {
+            self.clients
+                .entry(address.clone())
+                .or_insert_with(|| ShuffleFlightClient::new(address.clone()));
+        }
+
         let mut futures = Vec::new();
         for (address, client) in &mut self.clients {
-            let cache_ids = server_cache_mapping
-                .get(address)
-                .map(|v| v.as_slice())
-                .unwrap_or(&[]);
-            futures.push(client.get_partition(shuffle_id, partition, cache_ids, schema.clone()));
+            if let Some(cache_ids) = server_cache_mapping.get(address) {
+                futures.push(client.get_partition(
+                    shuffle_id,
+                    partition,
+                    cache_ids.as_slice(),
+                    schema.clone(),
+                ));
+            }
         }
 
         let remote_streams = futures::future::try_join_all(futures).await?;
         let record_batches =
             futures::stream::iter(remote_streams.into_iter()).flatten_unordered(None);
         Ok(record_batches.boxed())
+    }
+}
+
+impl Default for FlightClientManager {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -441,7 +441,7 @@ mod tests {
     #[test]
     fn strftime_timestamp_microseconds() -> DaftResult<()> {
         // 2023-01-01T12:00:00 in microseconds since epoch
-        let ts_us: Vec<i64> = vec![1672574400_000_000];
+        let ts_us: Vec<i64> = vec![1_672_574_400_000_000];
         let physical = Int64Array::from_slice("ts", &ts_us);
         let ts = TimestampArray::new(
             Field::new("ts", DataType::Timestamp(TimeUnit::Microseconds, None)),

@@ -601,7 +601,7 @@ mod test {
         let series = Series::from_literals(expected.clone()).unwrap();
         let actual = series.to_literals().collect::<Vec<_>>();
 
-        assert_eq!(expected, actual)
+        assert_eq!(expected, actual);
     }
 
     #[test]

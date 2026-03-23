@@ -22,6 +22,7 @@ macro_rules! stats {
 
 #[enum_dispatch]
 pub trait StatSnapshotImpl: Send + Sync + Serialize + Deserialize<'static> {
+    fn duration_us(&self) -> u64;
     fn to_stats(&self) -> Stats;
     fn to_message(&self) -> String;
 }
@@ -34,6 +35,10 @@ pub struct DefaultSnapshot {
 }
 
 impl StatSnapshotImpl for DefaultSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
             DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
@@ -59,6 +64,10 @@ pub struct SourceSnapshot {
 }
 
 impl StatSnapshotImpl for SourceSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
             DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
@@ -85,6 +94,10 @@ pub struct FilterSnapshot {
 }
 
 impl StatSnapshotImpl for FilterSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
             DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
@@ -113,6 +126,10 @@ pub struct ExplodeSnapshot {
 }
 
 impl StatSnapshotImpl for ExplodeSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
             DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
@@ -141,6 +158,10 @@ pub struct UdfSnapshot {
 }
 
 impl StatSnapshotImpl for UdfSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         let mut entries = SmallVec::with_capacity(3 + self.custom_counters.len());
 
@@ -180,21 +201,34 @@ impl StatSnapshotImpl for UdfSnapshot {
 }
 
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
-pub struct HashJoinBuildSnapshot {
+pub struct JoinSnapshot {
     pub cpu_us: u64,
-    pub rows_inserted: u64,
+    pub build_rows_inserted: u64,
+    pub probe_rows_in: u64,
+    pub probe_rows_out: u64,
 }
 
-impl StatSnapshotImpl for HashJoinBuildSnapshot {
+impl StatSnapshotImpl for JoinSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
             DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
-            "rows inserted"; Stat::Count(self.rows_inserted),
+            "build rows inserted"; Stat::Count(self.build_rows_inserted),
+            "probe rows in"; Stat::Count(self.probe_rows_in),
+            "probe rows out"; Stat::Count(self.probe_rows_out),
         ]
     }
 
     fn to_message(&self) -> String {
-        format!("{} rows inserted", HumanCount(self.rows_inserted))
+        format!(
+            "{} build rows inserted, {} probe rows in, {} probe rows out",
+            HumanCount(self.build_rows_inserted),
+            HumanCount(self.probe_rows_in),
+            HumanCount(self.probe_rows_out)
+        )
     }
 }
 
@@ -207,6 +241,10 @@ pub struct WriteSnapshot {
 }
 
 impl StatSnapshotImpl for WriteSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
             DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
@@ -234,6 +272,6 @@ pub enum StatSnapshot {
     Filter(FilterSnapshot),
     Explode(ExplodeSnapshot),
     Udf(UdfSnapshot),
-    HashJoinBuild(HashJoinBuildSnapshot),
+    Join(JoinSnapshot),
     Write(WriteSnapshot),
 }

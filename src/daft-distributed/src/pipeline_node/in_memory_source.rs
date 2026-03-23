@@ -1,11 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    Meter,
+    ops::{NodeCategory, NodeType},
+};
 use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
 use futures::{StreamExt, stream};
-use opentelemetry::metrics::Meter;
 
 use super::{PipelineNodeContext, PipelineNodeImpl, scan_source::SourceStats};
 use crate::{
@@ -53,10 +55,6 @@ impl InMemorySourceNode {
             info,
             input_psets,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 
     fn make_in_memory_source_task(
@@ -118,7 +116,7 @@ impl PipelineNodeImpl for InMemorySourceNode {
         TaskBuilderStream::new(stream::iter(builders_iter).boxed())
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(SourceStats::new(meter, self.context()))
     }
 }

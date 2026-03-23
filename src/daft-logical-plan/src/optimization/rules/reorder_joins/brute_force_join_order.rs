@@ -229,7 +229,7 @@ mod tests {
         let mut adj_list = JoinAdjList::empty();
         // Immediately create plan ids so that they match the ids in the test cases.
         for plan in &plans {
-            adj_list.get_or_create_plan_id(&plan);
+            adj_list.get_or_create_plan_id(plan);
         }
         for edge in edges {
             adj_list.add_bidirectional_edge_with_total_domain(

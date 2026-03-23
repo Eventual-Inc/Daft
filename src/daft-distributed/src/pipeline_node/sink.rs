@@ -3,8 +3,7 @@ use std::sync::{Arc, atomic::Ordering};
 use common_error::DaftResult;
 use common_file_formats::FileFormat;
 use common_metrics::{
-    BYTES_WRITTEN_KEY, Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_WRITTEN_KEY, StatSnapshot,
-    UNIT_BYTES, UNIT_MICROSECONDS, UNIT_ROWS,
+    BYTES_WRITTEN_KEY, Counter, Meter, ROWS_WRITTEN_KEY, StatSnapshot, UNIT_BYTES, UNIT_ROWS,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::WriteSnapshot,
 };
@@ -15,7 +14,7 @@ use daft_logical_plan::sink_info::CatalogType;
 use daft_logical_plan::{OutputFileInfo, SinkInfo, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::KeyValue;
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
@@ -44,10 +43,18 @@ impl WriteStats {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
         let node_kv = key_values_from_context(context);
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
-            rows_written: Counter::new(meter, ROWS_WRITTEN_KEY, None, Some(UNIT_ROWS.into())),
-            bytes_written: Counter::new(meter, BYTES_WRITTEN_KEY, None, Some(UNIT_BYTES.into())),
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_written: meter.u64_counter_with_desc_and_unit(
+                ROWS_WRITTEN_KEY,
+                None,
+                Some(UNIT_ROWS.into()),
+            ),
+            bytes_written: meter.u64_counter_with_desc_and_unit(
+                BYTES_WRITTEN_KEY,
+                None,
+                Some(UNIT_BYTES.into()),
+            ),
             node_kv,
         }
     }
@@ -156,10 +163,6 @@ impl SinkNode {
             data_schema,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 
     fn create_sink_plan(
@@ -290,7 +293,7 @@ impl PipelineNodeImpl for SinkNode {
         res
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(WriteStats::new(meter, self.context()))
     }
 

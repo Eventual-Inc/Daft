@@ -50,10 +50,6 @@ impl MonotonicallyIncreasingIdNode {
             child,
         }
     }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
 }
 
 /// The maximum number of rows per partition for the monotonically increasing ID node.

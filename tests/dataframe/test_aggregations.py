@@ -741,6 +741,43 @@ def test_agg_with_literal_child(make_df, repartition_nparts, with_morsel_size):
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4, 8])
+def test_agg_count_mode_all_without_expr(make_df, repartition_nparts, with_morsel_size):
+    daft_df = make_df(
+        {"a": [1, 1, 2], "i": [0, 1, 2]},
+        repartition=repartition_nparts,
+    )
+
+    result = daft_df.agg(
+        daft.functions.count(mode="all").alias("count_all"),
+    )
+    assert result.to_pydict() == {"count_all": [3]}
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4, 8])
+def test_groupby_agg_count_mode_all_without_expr(make_df, repartition_nparts, with_morsel_size):
+    daft_df = make_df(
+        {"a": [1, 1, 2], "i": [0, 1, 2]},
+        repartition=repartition_nparts,
+    )
+
+    result = daft_df.groupby("a").agg(daft.functions.count(mode="all").alias("count_all")).sort("a")
+    assert result.to_pydict() == {"a": [1, 2], "count_all": [2, 1]}
+
+
+def test_agg_count_mode_all_without_expr_empty_df(with_morsel_size):
+    daft_df = daft.from_pydict({"a": []}).with_column("a", col("a").cast(DataType.int64()))
+    result = daft_df.agg(daft.functions.count(mode="all").alias("count_all"))
+    assert result.to_pydict() == {"count_all": [0]}
+
+
+def test_agg_count_without_expr_non_all_mode_raises():
+    with pytest.raises(ValueError, match="only supports mode='all'"):
+        daft.functions.count(mode="valid")
+    with pytest.raises(ValueError, match="only supports mode='all'"):
+        daft.functions.count(mode="null")
+
+
+@pytest.mark.parametrize("repartition_nparts", [1, 2, 4, 8])
 def test_groupby_agg_with_literal_child(make_df, repartition_nparts, with_morsel_size):
     """Test grouped aggregation of literal values.
 

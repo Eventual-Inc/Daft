@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, hash::Hash, sync::Arc};
 
+use common_file_formats::FileFormat;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_schema::{field::Field, time_unit::TimeUnit};
 use serde::{Deserialize, Serialize};
@@ -10,8 +11,6 @@ use {
     pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods, types::PyAnyMethods},
 };
 
-use crate::FileFormat;
-
 /// Configuration for parsing a particular file format.
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -20,14 +19,6 @@ pub enum FileFormatConfig {
     Csv(CsvSourceConfig),
     Json(JsonSourceConfig),
     Warc(WarcSourceConfig),
-    #[cfg(feature = "python")]
-    Database(DatabaseSourceConfig),
-    #[cfg(feature = "python")]
-    PythonFunction {
-        source_name: Option<String>,
-        module_name: Option<String>,
-        function_name: Option<String>,
-    },
     Text(TextSourceConfig),
 }
 #[cfg(not(debug_assertions))]
@@ -50,23 +41,6 @@ impl FileFormatConfig {
             Self::Csv(_) => "Csv".to_string(),
             Self::Json(_) => "Json".to_string(),
             Self::Warc(_) => "Warc".to_string(),
-            #[cfg(feature = "python")]
-            Self::Database(_) => "Database".to_string(),
-            #[cfg(feature = "python")]
-            Self::PythonFunction {
-                source_name,
-                module_name,
-                ..
-            } => {
-                if let Some(source_name) = source_name {
-                    format!("{}(Python)", source_name)
-                } else if let Some(module_name) = module_name {
-                    // Infer type from module name
-                    format!("{}(Python)", module_name)
-                } else {
-                    "PythonFunction".to_string()
-                }
-            }
             Self::Text(_) => "Text".to_string(),
         }
     }
@@ -78,27 +52,19 @@ impl FileFormatConfig {
             Self::Csv(source) => source.multiline_display(),
             Self::Json(source) => source.multiline_display(),
             Self::Warc(source) => source.multiline_display(),
-            #[cfg(feature = "python")]
-            Self::Database(source) => source.multiline_display(),
-            #[cfg(feature = "python")]
-            Self::PythonFunction {
-                source_name,
-                module_name,
-                function_name,
-            } => {
-                let mut res = vec![];
-                if let Some(source_name) = source_name {
-                    res.push(format!("Source = {source_name}"));
-                }
-                if let Some(module_name) = module_name {
-                    res.push(format!("Module = {module_name}"));
-                }
-                if let Some(function_name) = function_name {
-                    res.push(format!("Function = {function_name}"));
-                }
-                res
-            }
             Self::Text(source) => source.multiline_display(),
+        }
+    }
+}
+
+impl From<&FileFormatConfig> for FileFormat {
+    fn from(file_format_config: &FileFormatConfig) -> Self {
+        match file_format_config {
+            FileFormatConfig::Parquet(_) => Self::Parquet,
+            FileFormatConfig::Csv(_) => Self::Csv,
+            FileFormatConfig::Json(_) => Self::Json,
+            FileFormatConfig::Warc(_) => Self::Warc,
+            FileFormatConfig::Text(_) => Self::Text,
         }
     }
 }
@@ -476,6 +442,7 @@ impl_bincode_py_state_serialization!(WarcSourceConfig);
 pub struct TextSourceConfig {
     pub encoding: String,
     pub skip_blank_lines: bool,
+    pub whole_text: bool,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
 }
@@ -489,18 +456,21 @@ impl TextSourceConfig {
     #[pyo3(signature = (
         encoding,
         skip_blank_lines,
+        whole_text=false,
         buffer_size=None,
-        chunk_size=None
+        chunk_size=None,
     ))]
     fn new(
         encoding: String,
         skip_blank_lines: bool,
+        whole_text: bool,
         buffer_size: Option<usize>,
         chunk_size: Option<usize>,
     ) -> PyResult<Self> {
         Ok(Self {
             encoding,
             skip_blank_lines,
+            whole_text,
             buffer_size,
             chunk_size,
         })
@@ -513,6 +483,7 @@ impl TextSourceConfig {
         let mut res = vec![];
         res.push(format!("Encoding = {}", self.encoding));
         res.push(format!("Skip blank lines = {}", self.skip_blank_lines));
+        res.push(format!("Whole text = {}", self.whole_text));
         if let Some(buffer_size) = self.buffer_size {
             res.push(format!("Buffer size = {buffer_size}"));
         }
@@ -520,6 +491,18 @@ impl TextSourceConfig {
             res.push(format!("Chunk size = {chunk_size}"));
         }
         res
+    }
+}
+
+impl Default for TextSourceConfig {
+    fn default() -> Self {
+        Self {
+            encoding: "utf-8".to_string(),
+            skip_blank_lines: true,
+            whole_text: false,
+            buffer_size: None,
+            chunk_size: None,
+        }
     }
 }
 

@@ -2,14 +2,14 @@ use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::{
-    StatSnapshot,
+    Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::StatSnapshotImpl as _,
 };
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::stats::{PlanStats, StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
-use opentelemetry::metrics::Meter;
 
 use super::{DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
@@ -43,9 +43,9 @@ impl LimitStats {
 
 impl RuntimeStats for LimitStats {
     fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot) {
+        self.base.add_duration_us(snapshot.duration_us());
         match snapshot {
             StatSnapshot::Default(snapshot) => {
-                self.base.add_duration_us(snapshot.cpu_us);
                 if let Some(phase) = &node_info.node_phase {
                     // The first limit is used for pruning, the second limit is for the final output
                     if phase == FIRST_LIMIT_PHASE {
@@ -56,7 +56,6 @@ impl RuntimeStats for LimitStats {
                 }
             }
             StatSnapshot::Source(snapshot) => {
-                self.base.add_duration_us(snapshot.cpu_us);
                 if let Some(phase) = &node_info.node_phase
                     && phase == SECOND_LIMIT_PHASE
                 {
@@ -157,10 +156,6 @@ impl LimitNode {
             offset,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 
     fn process_materialized_output(
@@ -302,12 +297,16 @@ impl LimitNode {
                     if next_tasks.is_empty() {
                         // If all rows need to be skipped, send an empty scan task to allow downstream tasks to
                         // continue running, such as aggregate tasks
-                        let empty_plan = LocalPhysicalPlan::empty_scan(
+                        let empty_plan = LocalPhysicalPlan::in_memory_scan(
+                            self.node_id(),
                             self.config.schema.clone(),
+                            0,
+                            StatsState::Materialized(PlanStats::empty().into()),
                             LocalNodeContext::new(Some(self.node_id() as usize)),
                         );
                         let empty_scan_builder =
-                            SwordfishTaskBuilder::new(empty_plan, self.as_ref());
+                            SwordfishTaskBuilder::new(empty_plan, self.as_ref())
+                                .with_psets(self.node_id(), vec![]);
                         if result_tx.send(empty_scan_builder).await.is_err() {
                             return Ok(());
                         }
@@ -354,7 +353,7 @@ impl PipelineNodeImpl for LimitNode {
         vec![self.child.clone()]
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(LimitStats::new(meter, self.context()))
     }
 

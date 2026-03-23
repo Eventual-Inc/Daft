@@ -223,7 +223,7 @@ mod tests {
         let ctx = EvalContext {
             row_count: s0.len(),
         };
-        let args = FunctionArgs::new_unnamed(vec![s0.clone(), s1.clone(), s2.clone()]);
+        let args = FunctionArgs::new_unnamed(vec![s0, s1, s2]);
         let output = coalesce.call(args, &ctx).unwrap();
         let actual = output.utf8().unwrap();
         let expected = Utf8Array::full_null("s0", &DataType::Utf8, 100);
@@ -260,7 +260,7 @@ mod tests {
         let ctx = EvalContext {
             row_count: s0.len(),
         };
-        let args = FunctionArgs::new_unnamed(vec![s0.clone(), s1.clone(), s2.clone()]);
+        let args = FunctionArgs::new_unnamed(vec![s0, s1, s2]);
         let output = coalesce.call(args, &ctx).unwrap();
 
         let expected = Utf8Array::from_iter(

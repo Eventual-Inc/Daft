@@ -22,6 +22,13 @@ class Subscriber(ABC):
     - During execution, emitting current stats of all running operators at regular intervals
     """
 
+    def close(self) -> None:
+        """Called when the subscriber is detached or the process is shutting down.
+
+        Override to release resources (file handles, connections, etc.).
+        """
+        pass
+
     @abstractmethod
     def on_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
         """Called when starting the run for a new query."""
@@ -70,6 +77,13 @@ class Subscriber(ABC):
     @abstractmethod
     def on_exec_end(self, query_id: str) -> None:
         """Called when a query has finished executing."""
+        pass
+
+    def on_process_stats(self, query_id: str, stats: Mapping[str, tuple[StatType, Any]]) -> None:
+        """Called with process-level stats (memory, CPU) on each tick.
+
+        Override to capture process-level metrics. Not abstract - defaults to no-op.
+        """
         pass
 
 

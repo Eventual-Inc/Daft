@@ -96,7 +96,7 @@ where
 
         // Add ±25% jitter to avoid thundering herd problems
         // This results in a delay between 75% and 125% of the base delay
-        let jitter = rand::thread_rng().gen_range(0..=(delay_ms / 2));
+        let jitter = rand::rng().random_range(0..=(delay_ms / 2));
         let jittered_delay_ms = (delay_ms * 3 / 4) + jitter;
         tokio::time::sleep(tokio::time::Duration::from_millis(jittered_delay_ms)).await;
         delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
@@ -143,7 +143,7 @@ where
 
         // Add ±25% jitter to avoid thundering herd problems
         // This results in a delay between 75% and 125% of the base delay
-        let jitter = rand::thread_rng().gen_range(0..=(delay_ms / 2));
+        let jitter = rand::rng().random_range(0..=(delay_ms / 2));
         let jittered_delay_ms = (delay_ms * 3 / 4) + jitter;
 
         // Release GIL during sleep if Python instance is provided
