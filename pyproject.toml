@@ -30,7 +30,7 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[aws, azure, clickhouse, deltalake, gcp, google, gravitino, hudi, huggingface, iceberg, kafka, lance, numpy, openai, paimon, pandas, postgres, ray, sentence-transformers, sql, transformers, turbopuffer, unity, video]"]
+all = ["daft[aws, azure, clickhouse, deltalake, gcp, google, gravitino, hudi, huggingface, iceberg, kafka, lance, numpy, openai, pandas, postgres, ray, sentence-transformers, sql, transformers, turbopuffer, unity, video]"]
 aws = ["boto3<1.43.0", "mypy-boto3-glue"]
 azure = []
 clickhouse = ["clickhouse_connect<0.12.0"]
