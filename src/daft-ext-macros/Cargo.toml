@@ -1,7 +1,13 @@
 [package]
 name = "daft-ext-macros"
+description = "Proc macros for Daft extensions"
+version = "0.1.0"
 edition = {workspace = true}
-version = {workspace = true}
+license = "Apache-2.0"
+homepage = "https://docs.daft.ai"
+repository = "https://github.com/Eventual-Inc/Daft"
+readme = "README.md"
+publish = true
 
 [lib]
 proc-macro = true

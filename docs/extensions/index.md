@@ -96,15 +96,14 @@ name = "hello"
 crate-type = ["cdylib"]
 
 [dependencies]
-daft-ext = <version>
-daft-ext-abi = { version = <version>, features = ["arrow-58"] }
+daft-ext = { version = <version>, features = ["arrow-58"] }
 arrow = { version = "58", features = ["ffi"] }
 ```
 
 !!! tip "Arrow version freedom"
 
     The `daft-ext` ABI uses C Data Interface types — your extension is **not** pinned to
-    Daft's arrow-rs version. Enable a feature flag on `daft-ext-abi` matching your arrow-rs
+    Daft's arrow-rs version. Enable a feature flag on `daft-ext` matching your arrow-rs
     version (`arrow-56`, `arrow-57`, or `arrow-58`) to get safe `.into()` conversions
     between arrow-rs FFI types and the ABI types. For unsupported versions, use the
     `from_owned`/`into_owned`/`from_raw`/`as_raw` escape hatches on `ArrowArray`
@@ -174,11 +173,9 @@ use std::{ffi::CStr, sync::Arc};
 
 use arrow::{
     array::{Array, builder::StringBuilder, cast::AsArray},
-    datatypes::{DataType, Field, Schema},
-    ffi::FFI_ArrowSchema,
+    datatypes::{DataType, Field},
 };
 use daft_ext::prelude::*;
-use daft_ext_abi::{ArrowData, ArrowSchema};
 
 // ── Module ──────────────────────────────────────────────────────────
 
@@ -217,9 +214,7 @@ impl DaftScalarFunction for Greet {
                 args.len()
             )));
         }
-        let ffi_schema: &FFI_ArrowSchema = unsafe { args[0].as_raw() };
-        let field = Field::try_from(ffi_schema)
-            .map_err(|e| DaftError::TypeError(e.to_string()))?;
+        let field = Field::try_from(&args[0])?;
         let dt = field.data_type();
         if *dt != DataType::Utf8 && *dt != DataType::LargeUtf8 {
             return Err(DaftError::TypeError(format!(
@@ -227,21 +222,21 @@ impl DaftScalarFunction for Greet {
                 dt
             )));
         }
-        let out_schema = Schema::new(vec![Field::new("greet", DataType::Utf8, true)]);
-        let ffi = FFI_ArrowSchema::try_from(&out_schema)
-            .map_err(|e| DaftError::TypeError(e.to_string()))?;
-        Ok(ffi.into())
+        Ok(ArrowSchema::try_from(&Field::new(
+            "greet",
+            DataType::Utf8,
+            true,
+        ))?)
     }
 
     /// Evaluation. Receives columns as C Data Interface `ArrowData` types.
     /// Use `.into()` to convert to/from arrow-rs FFI types.
     /// All data flows through Arrow arrays — no per-row Python overhead.
-    fn call(&self, args: &[ArrowData]) -> DaftResult<ArrowData> {
-        let data = unsafe { ArrowData::take_arg(args, 0) };
+    fn call(&self, args: Vec<ArrowData>) -> DaftResult<ArrowData> {
+        let data = args.into_iter().next().unwrap();
         let ffi_array: arrow::ffi::FFI_ArrowArray = data.array.into();
         let ffi_schema: arrow::ffi::FFI_ArrowSchema = data.schema.into();
-        let arrow_data = unsafe { arrow::ffi::from_ffi(ffi_array, &ffi_schema) }
-            .map_err(|e| DaftError::RuntimeError(e.to_string()))?;
+        let arrow_data = unsafe { arrow::ffi::from_ffi(ffi_array, &ffi_schema) }?;
         let input = arrow::array::make_array(arrow_data);
         let names = input.as_string::<i64>();
         let mut builder = StringBuilder::with_capacity(names.len(), names.len() * 16);
@@ -253,8 +248,7 @@ impl DaftScalarFunction for Greet {
             }
         }
         let output = builder.finish();
-        let (out_arr, out_sch) = arrow::ffi::to_ffi(&output.to_data())
-            .map_err(|e| DaftError::RuntimeError(e.to_string()))?;
+        let (out_arr, out_sch) = arrow::ffi::to_ffi(&output.to_data())?;
         Ok(ArrowData {
             array: out_arr.into(),
             schema: out_sch.into(),
@@ -266,7 +260,7 @@ impl DaftScalarFunction for Greet {
 !!! tip "ABI pattern"
 
     The `DaftScalarFunction` trait uses C Data Interface types (`ArrowSchema`, `ArrowData`)
-    at the ABI boundary. Enable a `daft-ext-abi` feature flag (`arrow-56`, `arrow-57`, or
+    at the ABI boundary. Enable a `daft-ext` feature flag (`arrow-56`, `arrow-57`, or
     `arrow-58`) matching your arrow-rs version to get `.into()` conversions. Use `.as_raw()`
     for zero-copy borrows. This decoupling means your extension is not tied to Daft's
     arrow-rs version.
@@ -402,7 +396,7 @@ Follow the Daft extension authoring guide at docs/extensions/index.md. Here is a
 
 ```
 <extension_name>/
-  Cargo.toml           # [lib] crate-type = ["cdylib"], depends on daft-ext, arrow-array, arrow-schema
+  Cargo.toml           # [lib] crate-type = ["cdylib"], depends on daft-ext (with arrow feature), arrow
   pyproject.toml       # build-system: setuptools + setuptools-rust
   setup.py             # RustExtension("<pkg>.lib<pkg>", binding=NoBinding, strip=True)
   <extension_name>/
@@ -418,7 +412,7 @@ Follow the Daft extension authoring guide at docs/extensions/index.md. Here is a
 ## Rust conventions
 
 - Use `daft_ext::prelude::*` for all imports (provides `ArrowSchema`, `ArrowData`, errors, traits).
-- Add `daft-ext-abi` with a feature flag matching your arrow version (`arrow-56`, `arrow-57`, or `arrow-58`) for `.into()` conversions.
+- Add `daft-ext` with a feature flag matching your arrow version (`arrow-56`, `arrow-57`, or `arrow-58`) for `.into()` conversions.
 - Import `arrow::array::Array` for `len()`/`is_null()` and `arrow::array::cast::AsArray` for downcasting.
 - Daft uses `LargeUtf8` (i64 offsets) for strings — downcast with `as_string::<i64>()`, never `i32`.
 - Apply `#[daft_extension]` to a struct implementing `DaftExtension`.
