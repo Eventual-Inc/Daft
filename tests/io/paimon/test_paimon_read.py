@@ -5,14 +5,13 @@ to create and populate test tables, then Daft's read_paimon() is validated.
 """
 from __future__ import annotations
 
-import pytest
 import pyarrow as pa
+import pytest
 
 pypaimon = pytest.importorskip("pypaimon")
 
 import daft
 from tests.io.paimon.conftest import _write_to_paimon
-
 
 # ---------------------------------------------------------------------------
 # Basic read roundtrip

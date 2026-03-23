@@ -1348,8 +1348,7 @@ class DataFrame:
         table: "pypaimon.table.Table",
         mode: str = "append",
     ) -> "DataFrame":
-        """Writes the DataFrame to an `Apache Paimon <https://paimon.apache.org/>`_ table,
-        returning a new DataFrame with the operations that occurred.
+        """Writes the DataFrame to an Apache Paimon table, returning a summary DataFrame.
 
         Args:
             table (pypaimon.table.Table): Destination Paimon table obtained via
@@ -1365,11 +1364,11 @@ class DataFrame:
             This call is **blocking** and will execute the DataFrame when called.
 
         Examples:
-            >>> import pypaimon, daft
+            >>> import pypaimon, daft  # doctest: +SKIP
             >>>
-            >>> catalog = pypaimon.CatalogFactory.create({"warehouse": "/tmp/warehouse"})
+            >>> catalog = pypaimon.CatalogFactory.create({"warehouse": "/tmp/warehouse"})  # doctest: +SKIP
             >>> table = catalog.get_table("mydb.mytable")  # doctest: +SKIP
-            >>> df = daft.from_pydict({"id": [1, 2, 3], "name": ["a", "b", "c"]})
+            >>> df = daft.from_pydict({"id": [1, 2, 3], "name": ["a", "b", "c"]})  # doctest: +SKIP
             >>> df.write_paimon(table)  # doctest: +SKIP
         """
         try:

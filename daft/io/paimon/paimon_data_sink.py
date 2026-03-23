@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pyarrow as pa
+import pyarrow as pa  # noqa: TID253
 
 from daft.datatype import DataType
 from daft.io.sink import DataSink, WriteResult
@@ -25,7 +25,7 @@ class PaimonDataSink(DataSink[list]):
     all CommitMessages from all workers and performs a single atomic commit.
     """
 
-    def __init__(self, table: "FileStoreTable", mode: str = "append") -> None:
+    def __init__(self, table: FileStoreTable, mode: str = "append") -> None:
         if mode not in ("append", "overwrite"):
             raise ValueError(
                 f"Only 'append' or 'overwrite' mode is supported for write_paimon, got: {mode!r}"

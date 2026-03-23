@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 
 from daft import context, runners
 from daft.api_annotations import PublicAPI
-from daft.daft import IOConfig, ScanOperatorHandle, StorageConfig
+from daft.daft import ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
-from daft.logical.builder import LogicalPlanBuilder
 from daft.io import IOConfig, S3Config
+from daft.logical.builder import LogicalPlanBuilder
 
 if TYPE_CHECKING:
     from pypaimon.table.table import Table as PaimonTable
@@ -19,7 +19,6 @@ def _convert_paimon_catalog_options_to_io_config(catalog_options: dict) -> IOCon
 
     pypaimon supports only S3-like (s3://, s3a://, s3n://, oss://), HDFS, and local (file://).
     """
-
     any_props_set = False
 
     def get(key: str):

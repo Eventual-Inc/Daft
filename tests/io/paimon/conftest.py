@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import pytest
 import pyarrow as pa
+import pytest
 
 pypaimon = pytest.importorskip("pypaimon")
 

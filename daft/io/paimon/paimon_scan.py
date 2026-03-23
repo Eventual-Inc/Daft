@@ -33,8 +33,8 @@ PAIMON_FILE_FORMAT_AVRO = "avro"
 
 
 def _paimon_read_split(
-    table: "FileStoreTable",
-    split: "Split",
+    table: FileStoreTable,
+    split: Split,
     schema: Schema,
 ) -> Iterator:
     """Fall-back reader for splits that cannot be handled by Daft's native Parquet reader.
@@ -65,7 +65,7 @@ class PaimonScanOperator(ScanOperator):
 
     def __init__(
         self,
-        table: "FileStoreTable",
+        table: FileStoreTable,
         storage_config: StorageConfig,
         catalog_options: dict,
     ) -> None:
@@ -207,7 +207,7 @@ class PaimonScanOperator(ScanOperator):
             return f"{self._warehouse_scheme}://{file_path}"
         return f"file://{file_path}"
 
-    def _build_partition_values(self, split: "Split") -> daft.recordbatch.RecordBatch | None:
+    def _build_partition_values(self, split: Split) -> daft.recordbatch.RecordBatch | None:
         """Build a single-row RecordBatch encoding the partition values for a split."""
         if not self._table.partition_keys:
             return None

@@ -7,13 +7,10 @@ reader to ensure correctness.
 from __future__ import annotations
 
 import pytest
-import pyarrow as pa
 
 pypaimon = pytest.importorskip("pypaimon")
 
 import daft
-from tests.io.paimon.conftest import _write_to_paimon
-
 
 # ---------------------------------------------------------------------------
 # Basic append
