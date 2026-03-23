@@ -15,7 +15,9 @@ use opentelemetry_sdk::{
     metrics::PeriodicReader,
     trace::{Sampler, SdkTracerProvider},
 };
-use tracing_subscriber::{layer::SubscriberExt, prelude::*};
+use tracing_subscriber::{
+    EnvFilter, Registry, filter::LevelFilter, layer::SubscriberExt, prelude::*,
+};
 
 static GLOBAL_TRACER_PROVIDER: LazyLock<Mutex<Option<SdkTracerProvider>>> =
     LazyLock::new(|| Mutex::new(None));
@@ -27,25 +29,48 @@ static GLOBAL_METER_PROVIDER: LazyLock<
 pub static GLOBAL_LOGGER_PROVIDER: LazyLock<Mutex<Option<SdkLoggerProvider>>> =
     LazyLock::new(|| Mutex::new(None));
 
-pub fn init_opentelemetry_providers() {
+pub fn init_tracing() {
     let config = Config::from_env();
+    let resource = Resource::builder().with_service_name("daft").build();
+    let mut layers: Vec<Box<dyn tracing_subscriber::Layer<Registry> + Send + Sync>> = Vec::new();
+
+    if let Ok(filter) = EnvFilter::try_from_default_env() {
+        layers.push(Box::new(
+            tracing_subscriber::fmt::layer()
+                .with_target(true)
+                .with_filter(filter),
+        ));
+    }
+
+    if let Some(endpoint) = config.traces_endpoint() {
+        let tracer_provider = init_otlp_tracer_provider(&config, endpoint, resource.clone());
+        layers.push(Box::new(
+            tracing_opentelemetry::layer()
+                .with_tracer(tracer_provider.tracer("daft-otel-tracer"))
+                .with_filter(LevelFilter::INFO),
+        ));
+    }
+
+    if !layers.is_empty() {
+        let subscriber = tracing_subscriber::registry().with(layers);
+        if let Err(err) = tracing::subscriber::set_global_default(subscriber) {
+            eprintln!(
+                "Daft could not install its tracing subscriber; OTLP trace export and Daft tracing output are disabled: {err}"
+            );
+        }
+    }
+
     if !config.enabled() {
         return;
     }
 
     let runtime = get_io_runtime(true);
     runtime.block_on_current_thread(async {
-        // Backed by inner Arc, cheap to clone
-        let resource = Resource::builder().with_service_name("daft").build();
-
         if let Some(endpoint) = config.metrics_endpoint() {
-            init_otlp_metrics_provider(&config, endpoint, resource.clone()).await;
-        }
-        if let Some(endpoint) = config.traces_endpoint() {
-            init_otlp_tracer_provider(&config, endpoint, resource.clone()).await;
+            init_otlp_metrics_provider(&config, endpoint, resource.clone());
         }
         if let Some(endpoint) = config.logs_endpoint() {
-            init_otlp_logger_provider(&config, endpoint, resource).await;
+            init_otlp_logger_provider(&config, endpoint, resource.clone());
         }
     });
 }
@@ -56,7 +81,7 @@ pub fn flush_opentelemetry_providers() {
     flush_oltp_logger_provider();
 }
 
-async fn init_otlp_logger_provider(config: &Config, otlp_endpoint: &str, resource: Resource) {
+fn init_otlp_logger_provider(config: &Config, otlp_endpoint: &str, resource: Resource) {
     let mut lg = GLOBAL_LOGGER_PROVIDER.lock().unwrap();
     assert!(lg.is_none(), "Expected logger provider to be None on init");
 
@@ -90,7 +115,7 @@ pub fn flush_oltp_logger_provider() {
     }
 }
 
-async fn init_otlp_metrics_provider(config: &Config, endpoint: &str, resource: Resource) {
+fn init_otlp_metrics_provider(config: &Config, endpoint: &str, resource: Resource) {
     let mut mg = GLOBAL_METER_PROVIDER.lock().unwrap();
     assert!(mg.is_none(), "Expected meter provider to be None on init");
 
@@ -139,10 +164,11 @@ pub fn flush_oltp_metrics_provider() {
     }
 }
 
-async fn init_otlp_tracer_provider(config: &Config, otlp_endpoint: &str, resource: Resource) {
-    let mut mg = GLOBAL_TRACER_PROVIDER.lock().unwrap();
-    assert!(mg.is_none(), "Expected tracer provider to be None on init");
-
+fn init_otlp_tracer_provider(
+    config: &Config,
+    otlp_endpoint: &str,
+    resource: Resource,
+) -> SdkTracerProvider {
     if config.otlp_protocol != Protocol::Grpc {
         log::warn!(
             "`http/json` or `http/protobuf` protocol is currently not supported for the OTEL traces exporter. gRPC will be used instead."
@@ -162,15 +188,13 @@ async fn init_otlp_tracer_provider(config: &Config, otlp_endpoint: &str, resourc
         .with_sampler(Sampler::AlwaysOn)
         .build();
 
-    let tracer = tracer_provider.tracer("daft-otel-tracer");
-    let telemetry_layer = tracing_opentelemetry::layer()
-        .with_tracer(tracer)
-        .with_filter(tracing::level_filters::LevelFilter::INFO);
+    {
+        let mut mg = GLOBAL_TRACER_PROVIDER.lock().unwrap();
+        assert!(mg.is_none(), "Expected tracer provider to be None on init");
+        *mg = Some(tracer_provider.clone());
+    }
 
-    tracing::subscriber::set_global_default(tracing_subscriber::registry().with(telemetry_layer))
-        .unwrap();
-
-    *mg = Some(tracer_provider);
+    tracer_provider
 }
 
 fn flush_oltp_tracer_provider() {
