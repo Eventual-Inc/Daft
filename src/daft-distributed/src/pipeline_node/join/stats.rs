@@ -2,7 +2,9 @@ use std::{borrow::Cow, sync::atomic::Ordering};
 
 use common_metrics::{
     Counter, JOIN_BUILD_ROWS_INSERTED_KEY, JOIN_PROBE_ROWS_IN_KEY, JOIN_PROBE_ROWS_OUT_KEY, Meter,
-    StatSnapshot, UNIT_ROWS, ops::NodeInfo, snapshot::JoinSnapshot,
+    StatSnapshot, UNIT_ROWS,
+    ops::NodeInfo,
+    snapshot::{JoinSnapshot, StatSnapshotImpl as _},
 };
 use opentelemetry::KeyValue;
 
@@ -46,12 +48,12 @@ impl BasicJoinStats {
 
 impl RuntimeStats for BasicJoinStats {
     fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
+        self.duration_us
+            .add(snapshot.duration_us(), self.node_kv.as_slice());
         let StatSnapshot::Join(snapshot) = snapshot else {
             return;
         };
 
-        self.duration_us
-            .add(snapshot.cpu_us, self.node_kv.as_slice());
         self.build_rows_inserted
             .add(snapshot.build_rows_inserted, self.node_kv.as_slice());
         self.probe_rows_in
