@@ -281,7 +281,8 @@ impl LimitNode {
                                     .with_phase(FIRST_LIMIT_PHASE),
                             )
                         })
-                        .extend_fingerprint(local_limit_per_task as u32);
+                        .extend_fingerprint(local_limit_per_task as u32)
+                        .extend_fingerprint(0);
                     let submittable =
                         builder_with_limit.build(self.context.query_idx, &task_id_counter);
                     let future = submittable.submit(&scheduler_handle)?;
