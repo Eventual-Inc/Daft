@@ -121,7 +121,6 @@ impl FlightShuffleNode {
                 self.config.schema.clone(),
                 ShuffleReadBackend::Flight {
                     shuffle_id: self.shuffle_id,
-                    server_addresses: server_cache_mapping.keys().cloned().collect(),
                     server_cache_mapping: server_cache_mapping
                         .iter()
                         .map(|(server, cache_ids)| {

@@ -2196,7 +2196,6 @@ pub enum ShuffleWriteBackend {
 pub enum ShuffleReadBackend {
     Flight {
         shuffle_id: u64,
-        server_addresses: Vec<String>,
         server_cache_mapping: HashMap<String, Vec<u32>>,
     },
 }

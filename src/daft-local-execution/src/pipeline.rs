@@ -1415,13 +1415,11 @@ fn physical_plan_to_pipeline(
         }) => {
             let ShuffleReadBackend::Flight {
                 shuffle_id,
-                server_addresses,
                 server_cache_mapping,
             } = backend;
             let source = FlightShuffleReadSource::new(
                 *shuffle_id,
                 *partition_idx,
-                server_addresses.clone(),
                 server_cache_mapping.clone(),
                 schema.clone(),
             );

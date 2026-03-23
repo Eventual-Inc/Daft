@@ -627,7 +627,7 @@ pub(super) mod tests {
                     crate::pipeline_node::MaterializedOutput::new(
                         vec![partition_ref],
                         "".into(),
-                        "".into(),
+                        String::new(),
                         task_id,
                     ),
                 ),

@@ -202,7 +202,7 @@ class RaySwordfishTaskHandle:
 
     result_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
-    flight_shuffle_write_info: tuple[int, int] | None = None
+    shuffle_write_info: tuple[str, int, int] | None = None
     cache_id: int | None = None
     task: asyncio.Task[RayTaskResult] | None = None
 
@@ -213,8 +213,10 @@ class RaySwordfishTaskHandle:
             metadata_ref = results.pop()
 
             task_metadata: SwordfishTaskMetadata = await metadata_ref
-            if self.flight_shuffle_write_info is not None:
-                shuffle_id, _ = self.flight_shuffle_write_info
+            if self.shuffle_write_info is not None:
+                backend, shuffle_id, _ = self.shuffle_write_info
+                if backend != "flight":
+                    raise NotImplementedError(f"Unsupported shuffle write backend: {backend}")
                 cache_id = self.cache_id if self.cache_id is not None else 0
                 return RayTaskResult.shuffle_success(
                     [
@@ -284,7 +286,7 @@ class RaySwordfishActorHandle:
         return RaySwordfishTaskHandle(
             result_handle,
             self.actor_handle,
-            plan.flight_shuffle_write_info(),
+            plan.shuffle_write_info(),
             task.id(),
         )
 

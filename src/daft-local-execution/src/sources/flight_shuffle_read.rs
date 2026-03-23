@@ -25,7 +25,6 @@ impl FlightShuffleReadSource {
     pub fn new(
         shuffle_id: u64,
         partition_idx: usize,
-        _server_addresses: Vec<String>,
         server_cache_mapping: HashMap<String, Vec<u32>>,
         schema: SchemaRef,
     ) -> Self {

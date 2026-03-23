@@ -57,12 +57,14 @@ impl PyLocalPhysicalPlan {
         ))
     }
 
-    fn flight_shuffle_write_info(&self) -> Option<(u64, usize)> {
+    fn shuffle_write_info(&self) -> Option<(String, u64, usize)> {
         match self.plan.as_ref() {
             LocalPhysicalPlan::ShuffleWrite(shuffle_write) => match &shuffle_write.backend {
-                ShuffleWriteBackend::Flight { shuffle_id, .. } => {
-                    Some((*shuffle_id, shuffle_write.num_partitions))
-                }
+                ShuffleWriteBackend::Flight { shuffle_id, .. } => Some((
+                    "flight".to_string(),
+                    *shuffle_id,
+                    shuffle_write.num_partitions,
+                )),
             },
             _ => None,
         }
