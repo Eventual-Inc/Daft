@@ -1,4 +1,7 @@
 [dependencies]
+# Pin aws-lc-rs/sys to avoid __builtin_bswap MSVC linking bug on Windows (aws/aws-lc-rs#780)
+aws-lc-rs = "=1.15.2"
+aws-lc-sys = "=0.35.0"
 common-daft-config = {path = "src/common/daft-config", default-features = false}
 common-display = {path = "src/common/display", default-features = false}
 common-file-formats = {path = "src/common/file-formats", default-features = false}
@@ -8,7 +11,6 @@ common-metrics = {path = "src/common/metrics", default-features = false}
 common-partitioning = {path = "src/common/partitioning", default-features = false}
 common-resource-request = {path = "src/common/resource-request", default-features = false}
 common-runtime = {path = "src/common/runtime", default-features = false}
-common-scan-info = {path = "src/common/scan-info", default-features = false}
 common-system-info = {path = "src/common/system-info", default-features = false}
 common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
@@ -69,7 +71,6 @@ python = [
   "common-partitioning/python",
   "common-resource-request/python",
   "common-file-formats/python",
-  "common-scan-info/python",
   "common-system-info/python",
   "common-metrics/python",
   "daft-ai/python",
@@ -131,7 +132,7 @@ exclude = [
 ]
 
 [package.metadata.cargo-machete]
-ignored = ["lzma-sys"]
+ignored = ["lzma-sys", "aws-lc-rs", "aws-lc-sys"]
 
 [profile.bench]
 debug = true
@@ -163,6 +164,7 @@ debug = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 libc = {workspace = true}
+tikv-jemalloc-ctl = {version = "0.6.0", features = ["stats"]}
 tikv-jemallocator = {version = "0.6.0", features = [
   "disable_initial_exec_tls"
 ]}
@@ -176,7 +178,6 @@ members = [
   "src/common/macros",
   "src/common/pattern",
   "src/common/partitioning",
-  "src/common/scan-info",
   "src/common/system-info",
   "src/common/treenode",
   "src/common/metrics",
@@ -326,13 +327,13 @@ pretty_assertions = "1.4.1"
 proptest = "1.9.0"
 prost = "0.13.5"
 prost-types = "0.13.5"
-rand = "^0.8"
+rand = "^0.9"
 rayon = "1.11.0"
 regex = "1.12.2"
 rstest = "0.26.1"
 reqwest = {version = "0.12.19", default-features = false, features = ["json"]}
 serde_json = "1.0.145"
-sha1 = "0.11.0-rc.3"
+sha1 = "0.10.6"
 simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 smallvec = {version = "1.15.1", features = ["serde", "impl_bincode"]}

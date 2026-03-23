@@ -5,7 +5,7 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, DURATION_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
+    Counter, Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::{SourceSnapshot, StatSnapshotImpl},
 };
@@ -15,7 +15,7 @@ use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{StreamExt, stream::BoxStream};
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::KeyValue;
 use snafu::ResultExt;
 
 use crate::{
@@ -39,8 +39,8 @@ impl SourceStats {
         let node_kv = node_info.to_key_values();
 
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
+            duration_us: meter.duration_us_metric(),
+            rows_out: meter.rows_out_metric(),
             io_stats: IOStatsRef::default(),
 
             node_kv,

@@ -9,8 +9,6 @@ import pytest
 
 import daft
 
-PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
-
 
 def test_decimal_parquet_roundtrip() -> None:
     python_decimals = [decimal.Decimal("-2.010"), decimal.Decimal("0.000"), decimal.Decimal("2.010")]

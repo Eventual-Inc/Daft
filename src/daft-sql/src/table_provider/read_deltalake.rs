@@ -32,7 +32,7 @@ impl SQLTableFunction for ReadDeltalakeFunction {
             unsupported_sql_err!("Expected a string literal for the first argument");
         };
 
-        daft_scan::builder::delta_scan(uri, io_config, true).map_err(From::from)
+        daft_logical_plan::scan_builder::delta_scan(uri, io_config, true).map_err(From::from)
     }
 }
 

@@ -166,7 +166,7 @@ mod tests {
                 None,
                 Default::default(),
             )?
-            .filter(filter_predicate.clone())?
+            .filter(filter_predicate)?
             .build();
 
         assert_optimized_plan_eq(plan, expected)?;

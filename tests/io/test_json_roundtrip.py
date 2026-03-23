@@ -12,8 +12,6 @@ import pytest
 import daft
 from daft import DataType, TimeUnit
 
-PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
-
 
 @pytest.mark.parametrize(
     ["data", "pa_type", "expected_dtype", "expected_inferred_dtype"],
@@ -108,10 +106,6 @@ def test_roundtrip_struct_types(tmp_path):
     assert before.to_arrow() == after.to_arrow()
 
 
-@pytest.mark.skipif(
-    not PYARROW_GE_11_0_0,
-    reason="Map types require PyArrow >= 11.0.0",
-)
 def test_roundtrip_map_types(tmp_path):
     map_data = [
         {"key1": "value1", "key2": "value2"},
@@ -495,3 +489,32 @@ def test_write_json_invalid_timestamp_format_raises_error(tmp_path):
 
     # Check that the error message is clear about the invalid format
     assert "Invalid timestamp format string" in str(exc_info.value)
+
+
+def test_write_json_target_filesize(tmp_path):
+    """Test that json_target_filesize parameter controls file splitting."""
+    data = {"x": list(range(10_000))}
+    df = daft.from_pydict(data)
+
+    with daft.execution_config_ctx(json_target_filesize=1024):
+        output_files = df.write_json(str(tmp_path))
+
+    assert len(output_files) > 1, "Expected multiple files to be written with small target filesize"
+
+    read_back = daft.read_json(str(tmp_path) + "/*.json").sort(by="x").to_pydict()
+    assert read_back == data
+
+
+def test_write_json_target_filesize_with_partitioning(tmp_path):
+    """Test that json_target_filesize works correctly with partitioning."""
+    data = {"x": list(range(10_000)), "partition": [i % 3 for i in range(10_000)]}
+    df = daft.from_pydict(data)
+
+    with daft.execution_config_ctx(json_target_filesize=1024):
+        output_files = df.write_json(str(tmp_path), partition_cols=["partition"])
+
+    assert len(output_files) >= 3, "Expected at least 3 partitions"
+
+    read_back = daft.read_json(str(tmp_path) + "/**/*.json").sort(by="x").to_pydict()
+    assert read_back["x"] == data["x"]
+    assert read_back["partition"] == data["partition"]

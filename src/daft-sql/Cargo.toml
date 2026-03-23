@@ -14,7 +14,6 @@ daft-functions-utf8 = {path = "../daft-functions-utf8"}
 daft-logical-plan = {path = "../daft-logical-plan"}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch"}
-daft-scan = {path = "../daft-scan"}
 daft-session = {path = "../daft-session"}
 itertools = {workspace = true}
 pyo3 = {workspace = true, optional = true}
@@ -41,7 +40,6 @@ python = [
   "daft-logical-plan/python",
   "daft-micropartition/python",
   "daft-recordbatch/python",
-  "daft-scan/python",
   "daft-session/python"
 ]
 

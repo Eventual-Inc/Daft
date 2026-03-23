@@ -6,6 +6,7 @@ from daft.lazy_import import LazyImport
 
 if TYPE_CHECKING:
     import av
+    import confluent_kafka
     import fsspec
     import librosa
     import numpy as np
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     import torchvision
 else:
     av = LazyImport("av")
+    confluent_kafka = LazyImport("confluent_kafka")
     flight = LazyImport("pyarrow.flight")
     fsspec = LazyImport("fsspec")
     librosa = LazyImport("librosa")
@@ -49,6 +51,7 @@ unity_catalog = LazyImport("daft.unity_catalog")
 
 __all__ = [
     "av",
+    "confluent_kafka",
     "flight",
     "fsspec",
     "librosa",

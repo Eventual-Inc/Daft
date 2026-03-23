@@ -991,7 +991,7 @@ mod tests {
         match schema.fields().deref() {
             [field] => assert_eq!(field.data_type(), &DataType::LargeBinary),
             _ => panic!("There should only be one field in the schema"),
-        };
+        }
     }
 
     /// Regression test: streaming with a limit equal to the batch size should

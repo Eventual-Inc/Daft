@@ -1,0 +1,15 @@
+{
+  "name": "Eventual-Inc",
+  "owner": {
+    "name": "Eventual, Inc.",
+    "email": "yksu@eventualcomputing.com"
+  },
+  "plugins": [
+    {
+      "name": "daft",
+      "source": "./",
+      "description": "Skills for working with Daft: UDF tuning, distributed scaling, and docs navigation",
+      "version": "0.1.0"
+    }
+  ]
+}

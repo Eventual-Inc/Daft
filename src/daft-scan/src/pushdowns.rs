@@ -12,7 +12,7 @@ pub trait SupportsPushdownFilters {
     fn push_filters(&self, filter: &[ExprRef]) -> (Vec<ExprRef>, Vec<ExprRef>);
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Pushdowns {
     /// Optional filters to apply to the source data.
     pub filters: Option<ExprRef>,
@@ -33,12 +33,6 @@ pub struct Pushdowns {
     /// This is used to indicate that the scan operator can perform an aggregation.
     /// This is useful for scans that can perform aggregations like `count`
     pub aggregation: Option<ExprRef>,
-}
-
-impl Default for Pushdowns {
-    fn default() -> Self {
-        Self::new(None, None, None, None, None, None)
-    }
 }
 
 impl Pushdowns {
@@ -73,13 +67,8 @@ impl Pushdowns {
     #[must_use]
     pub fn with_limit(&self, limit: Option<usize>) -> Self {
         Self {
-            filters: self.filters.clone(),
-            partition_filters: self.partition_filters.clone(),
-            columns: self.columns.clone(),
             limit,
-            sharder: self.sharder.clone(),
-            pushed_filters: self.pushed_filters.clone(),
-            aggregation: self.aggregation.clone(),
+            ..self.clone()
         }
     }
 
@@ -87,77 +76,47 @@ impl Pushdowns {
     pub fn with_filters(&self, filters: Option<ExprRef>) -> Self {
         Self {
             filters,
-            partition_filters: self.partition_filters.clone(),
-            columns: self.columns.clone(),
-            limit: self.limit,
-            sharder: self.sharder.clone(),
-            pushed_filters: self.pushed_filters.clone(),
-            aggregation: self.aggregation.clone(),
+            ..self.clone()
         }
     }
 
     #[must_use]
     pub fn with_partition_filters(&self, partition_filters: Option<ExprRef>) -> Self {
         Self {
-            filters: self.filters.clone(),
             partition_filters,
-            columns: self.columns.clone(),
-            limit: self.limit,
-            sharder: self.sharder.clone(),
-            pushed_filters: self.pushed_filters.clone(),
-            aggregation: self.aggregation.clone(),
+            ..self.clone()
         }
     }
 
     #[must_use]
     pub fn with_columns(&self, columns: Option<Arc<Vec<String>>>) -> Self {
         Self {
-            filters: self.filters.clone(),
-            partition_filters: self.partition_filters.clone(),
             columns,
-            limit: self.limit,
-            sharder: self.sharder.clone(),
-            pushed_filters: self.pushed_filters.clone(),
-            aggregation: self.aggregation.clone(),
+            ..self.clone()
         }
     }
 
     #[must_use]
     pub fn with_sharder(&self, sharder: Option<Sharder>) -> Self {
         Self {
-            filters: self.filters.clone(),
-            partition_filters: self.partition_filters.clone(),
-            columns: self.columns.clone(),
-            limit: self.limit,
             sharder,
-            pushed_filters: self.pushed_filters.clone(),
-            aggregation: self.aggregation.clone(),
+            ..self.clone()
         }
     }
 
     #[must_use]
     pub fn with_pushed_filters(&self, pushed_filters: Option<Vec<ExprRef>>) -> Self {
         Self {
-            filters: self.filters.clone(),
-            partition_filters: self.partition_filters.clone(),
-            columns: self.columns.clone(),
-            limit: self.limit,
-            sharder: self.sharder.clone(),
             pushed_filters,
-            aggregation: self.aggregation.clone(),
+            ..self.clone()
         }
     }
 
     #[must_use]
     pub fn with_aggregation(&self, aggregation: Option<ExprRef>) -> Self {
         Self {
-            filters: self.filters.clone(),
-            partition_filters: self.partition_filters.clone(),
-            columns: self.columns.clone(),
-            limit: self.limit,
-            sharder: self.sharder.clone(),
-            pushed_filters: self.pushed_filters.clone(),
             aggregation,
+            ..self.clone()
         }
     }
 

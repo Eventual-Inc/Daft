@@ -72,4 +72,5 @@ site
 AGENTS.md
 CLAUDE.local.md
 .claude/**/*.md
+.claude/worktrees/
 .beads

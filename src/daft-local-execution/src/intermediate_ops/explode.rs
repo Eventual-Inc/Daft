@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::{
-    DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
+    Meter, StatSnapshot,
     meters::Counter,
     ops::{NodeInfo, NodeType},
     snapshot::ExplodeSnapshot,
@@ -11,7 +11,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_functions_list::explode;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
@@ -31,9 +31,9 @@ impl ExplodeStats {
         let node_kv = node_info.to_key_values();
 
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
             node_kv,
         }
     }

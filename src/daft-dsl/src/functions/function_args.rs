@@ -484,7 +484,7 @@ mod tests {
         assert_eq!(*third, 2);
         // can't access it by position since it's a named argument.
         let third = args.required(2);
-        assert!(third.is_err())
+        assert!(third.is_err());
     }
 
     #[test]

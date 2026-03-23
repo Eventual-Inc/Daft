@@ -17,7 +17,7 @@ use daft_io::{IOStatsContext, python::IOConfig};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
-use daft_scan::{DataSource, ScanTaskRef, storage_config::StorageConfig};
+use daft_scan::{ScanSourceKind, ScanTaskRef, storage_config::StorageConfig};
 use daft_stats::{TableMetadata, TableStatistics};
 use pyo3::{PyTypeInfo, exceptions::PyValueError, prelude::*, types::PyBytes};
 use snafu::ResultExt;
@@ -1084,12 +1084,11 @@ pub fn read_pyfunc_into_table_iter(
 ) -> crate::Result<impl Iterator<Item = crate::Result<RecordBatch>>> {
     let table_iterators = scan_task.sources.iter().map(|source| {
         // Call Python function to create an Iterator (Grabs the GIL and then releases it)
-        match source {
-            DataSource::PythonFactoryFunction {
+        match &source.kind {
+            ScanSourceKind::PythonFactoryFunction {
                 module,
                 func_name,
                 func_args,
-                ..
             } => {
                 Python::attach(|py| {
                     let func = py.import(module.as_str())
@@ -1101,7 +1100,7 @@ pub fn read_pyfunc_into_table_iter(
                         .map(Into::<pyo3::Py<pyo3::PyAny>>::into)
                 })
             },
-            _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction data file sources"),
+            _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction scan sources"),
         }
     }).collect::<crate::Result<Vec<_>>>()?;
 

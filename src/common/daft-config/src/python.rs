@@ -103,6 +103,7 @@ impl PyDaftExecutionConfig {
         parquet_inflation_factor=None,
         csv_target_filesize=None,
         csv_inflation_factor=None,
+        json_target_filesize=None,
         json_inflation_factor=None,
         text_inflation_factor=None,
         shuffle_aggregation_default_partitions=None,
@@ -112,6 +113,7 @@ impl PyDaftExecutionConfig {
         default_morsel_size=None,
         shuffle_algorithm=None,
         pre_shuffle_merge_threshold=None,
+        pre_shuffle_merge_partition_threshold=None,
         scantask_max_parallel=None,
         native_parquet_writer=None,
         min_cpu_per_task=None,
@@ -120,6 +122,7 @@ impl PyDaftExecutionConfig {
         enable_dynamic_batching=None,
         dynamic_batching_strategy=None,
         flight_shuffle_dirs=None,
+        enable_multi_glob_path_tasks=None,
     ))]
     fn with_config_values(
         &self,
@@ -137,6 +140,7 @@ impl PyDaftExecutionConfig {
         parquet_inflation_factor: Option<f64>,
         csv_target_filesize: Option<usize>,
         csv_inflation_factor: Option<f64>,
+        json_target_filesize: Option<usize>,
         json_inflation_factor: Option<f64>,
         text_inflation_factor: Option<f64>,
         shuffle_aggregation_default_partitions: Option<usize>,
@@ -146,6 +150,7 @@ impl PyDaftExecutionConfig {
         default_morsel_size: Option<usize>,
         shuffle_algorithm: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
+        pre_shuffle_merge_partition_threshold: Option<usize>,
         scantask_max_parallel: Option<usize>,
         native_parquet_writer: Option<bool>,
         min_cpu_per_task: Option<f64>,
@@ -154,6 +159,7 @@ impl PyDaftExecutionConfig {
         enable_dynamic_batching: Option<bool>,
         dynamic_batching_strategy: Option<&str>,
         flight_shuffle_dirs: Option<Vec<String>>,
+        enable_multi_glob_path_tasks: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -199,6 +205,9 @@ impl PyDaftExecutionConfig {
         if let Some(csv_inflation_factor) = csv_inflation_factor {
             config.csv_inflation_factor = csv_inflation_factor;
         }
+        if let Some(json_target_filesize) = json_target_filesize {
+            config.json_target_filesize = json_target_filesize;
+        }
         if let Some(json_inflation_factor) = json_inflation_factor {
             config.json_inflation_factor = json_inflation_factor;
         }
@@ -228,6 +237,7 @@ impl PyDaftExecutionConfig {
                     )
                 })?;
         }
+
         if let Some(shuffle_algorithm) = shuffle_algorithm {
             if !matches!(
                 shuffle_algorithm,
@@ -239,8 +249,13 @@ impl PyDaftExecutionConfig {
             }
             config.shuffle_algorithm = shuffle_algorithm.to_string();
         }
+
         if let Some(pre_shuffle_merge_threshold) = pre_shuffle_merge_threshold {
             config.pre_shuffle_merge_threshold = pre_shuffle_merge_threshold;
+        }
+
+        if let Some(pre_shuffle_merge_partition_threshold) = pre_shuffle_merge_partition_threshold {
+            config.pre_shuffle_merge_partition_threshold = pre_shuffle_merge_partition_threshold;
         }
 
         if let Some(scantask_max_parallel) = scantask_max_parallel {
@@ -281,6 +296,10 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.flight_shuffle_dirs = flight_shuffle_dirs;
+        }
+
+        if let Some(enable_multi_glob_path_tasks) = enable_multi_glob_path_tasks {
+            config.enable_multi_glob_path_tasks = enable_multi_glob_path_tasks;
         }
 
         Ok(Self {
@@ -358,6 +377,11 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
+    fn get_json_target_filesize(&self) -> PyResult<usize> {
+        Ok(self.config.json_target_filesize)
+    }
+
+    #[getter]
     fn get_json_inflation_factor(&self) -> PyResult<f64> {
         Ok(self.config.json_inflation_factor)
     }
@@ -386,17 +410,25 @@ impl PyDaftExecutionConfig {
     fn get_read_sql_partition_size_bytes(&self) -> PyResult<usize> {
         Ok(self.config.read_sql_partition_size_bytes)
     }
+
     #[getter]
     fn default_morsel_size(&self) -> PyResult<usize> {
         Ok(self.config.default_morsel_size.get())
     }
+
     #[getter]
     fn shuffle_algorithm(&self) -> PyResult<&str> {
         Ok(self.config.shuffle_algorithm.as_str())
     }
+
     #[getter]
     fn pre_shuffle_merge_threshold(&self) -> PyResult<usize> {
         Ok(self.config.pre_shuffle_merge_threshold)
+    }
+
+    #[getter]
+    fn pre_shuffle_merge_partition_threshold(&self) -> PyResult<usize> {
+        Ok(self.config.pre_shuffle_merge_partition_threshold)
     }
 
     #[getter]
@@ -426,6 +458,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn dynamic_batching_strategy(&self) -> PyResult<&str> {
         Ok(self.config.dynamic_batching_strategy.as_str())
+    }
+
+    #[getter]
+    fn enable_multi_glob_path_tasks(&self) -> PyResult<bool> {
+        Ok(self.config.enable_multi_glob_path_tasks)
     }
 }
 

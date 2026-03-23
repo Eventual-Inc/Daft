@@ -136,7 +136,7 @@ impl DistributedActorPoolProjectOperator {
         let init_counter = if actor_handles.is_empty() {
             0
         } else {
-            rand::thread_rng().gen_range(0..actor_handles.len())
+            rand::rng().random_range(0..actor_handles.len())
         };
 
         Ok(Self {
