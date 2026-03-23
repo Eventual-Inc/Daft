@@ -38,7 +38,6 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 AggExpr::Percentile(e, percentile) => {
                     AggExpr::Percentile(Expr::Alias(e, name.clone()).into(), percentile)
                 }
-                AggExpr::Median(e) => AggExpr::Median(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Stddev(e, ddof) => {
                     AggExpr::Stddev(Expr::Alias(e, name.clone()).into(), ddof)
                 }
