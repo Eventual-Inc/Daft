@@ -32,6 +32,26 @@ pub static GLOBAL_LOGGER_PROVIDER: LazyLock<Mutex<Option<SdkLoggerProvider>>> =
 pub fn init_tracing() {
     let config = Config::from_env();
     let resource = Resource::builder().with_service_name("daft").build();
+    let tracer_provider = if config.enabled() {
+        let runtime = get_io_runtime(true);
+        runtime.block_on_current_thread(async {
+            let tracer_provider = config
+                .traces_endpoint()
+                .map(|endpoint| init_otlp_tracer_provider(&config, endpoint, resource.clone()));
+
+            if let Some(endpoint) = config.metrics_endpoint() {
+                init_otlp_metrics_provider(&config, endpoint, resource.clone());
+            }
+            if let Some(endpoint) = config.logs_endpoint() {
+                init_otlp_logger_provider(&config, endpoint, resource.clone());
+            }
+
+            tracer_provider
+        })
+    } else {
+        None
+    };
+
     let mut layers: Vec<Box<dyn tracing_subscriber::Layer<Registry> + Send + Sync>> = Vec::new();
 
     if let Ok(filter) = EnvFilter::try_from_default_env() {
@@ -42,8 +62,7 @@ pub fn init_tracing() {
         ));
     }
 
-    if let Some(endpoint) = config.traces_endpoint() {
-        let tracer_provider = init_otlp_tracer_provider(&config, endpoint, resource.clone());
+    if let Some(tracer_provider) = tracer_provider {
         layers.push(Box::new(
             tracing_opentelemetry::layer()
                 .with_tracer(tracer_provider.tracer("daft-otel-tracer"))
@@ -59,20 +78,6 @@ pub fn init_tracing() {
             );
         }
     }
-
-    if !config.enabled() {
-        return;
-    }
-
-    let runtime = get_io_runtime(true);
-    runtime.block_on_current_thread(async {
-        if let Some(endpoint) = config.metrics_endpoint() {
-            init_otlp_metrics_provider(&config, endpoint, resource.clone());
-        }
-        if let Some(endpoint) = config.logs_endpoint() {
-            init_otlp_logger_provider(&config, endpoint, resource.clone());
-        }
-    });
 }
 
 pub fn flush_opentelemetry_providers() {
