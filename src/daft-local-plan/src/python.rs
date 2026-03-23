@@ -19,10 +19,6 @@ pub struct PyLocalPhysicalPlan {
 
 #[pymethods]
 impl PyLocalPhysicalPlan {
-    fn single_line_display(&self) -> String {
-        self.plan.single_line_display()
-    }
-
     #[staticmethod]
     fn from_logical_plan_builder(
         py: Python<'_>,
