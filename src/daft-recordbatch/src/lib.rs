@@ -705,7 +705,6 @@ impl RecordBatch {
             AggExpr::Percentile(expr, percentile) => {
                 self.eval_agg_child(expr)?.percentile(groups, percentile.0)
             }
-            AggExpr::Median(expr) => self.eval_agg_child(expr)?.percentile(groups, 0.5),
             AggExpr::Stddev(expr, ddof) => self.eval_agg_child(expr)?.stddev(groups, *ddof),
             AggExpr::Var(expr, ddof) => self.eval_agg_child(expr)?.var(groups, *ddof),
             AggExpr::Min(expr) => self.eval_agg_child(expr)?.min(groups),
