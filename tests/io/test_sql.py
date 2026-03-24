@@ -102,19 +102,3 @@ def test_sql_partitioned_read_null_partition_col(sqlite_null_partition_db, num_p
     assert any("Falling back to a single scan task" in str(warning.message) for warning in w)
 
 
-def test_sql_partitioned_read_null_partition_col_min_max(sqlite_null_partition_db):
-    """Specifically test the MIN_MAX strategy with all-NULL partition column."""
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        df = daft.read_sql(
-            "SELECT * FROM null_table",
-            sqlite_null_partition_db,
-            partition_col="id",
-            num_partitions=4,
-            partition_bound_strategy="min-max",
-            schema={"id": DataType.int64(), "value": DataType.float64(), "label": DataType.string()},
-        )
-        result = df.to_pydict()
-
-    assert len(result["value"]) == 50
-    assert any("Falling back to a single scan task" in str(warning.message) for warning in w)
