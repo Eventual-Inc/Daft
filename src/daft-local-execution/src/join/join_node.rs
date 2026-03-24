@@ -167,6 +167,10 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<PipelineMessage>> {
+        let node_id = self.node_id();
+        let name = self.name();
+        let stats_manager = runtime_handle.stats_manager();
+
         let build_child_receiver = self.left.start(false, runtime_handle)?;
         let probe_child_receiver = self.right.start(maintain_order, runtime_handle)?;
 
@@ -194,9 +198,6 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
 
         // Create BuildStateBridge shared between build and probe sides
         let build_state_bridge = Arc::new(BuildStateBridge::new());
-
-        let node_id = self.node_id();
-        let stats_manager = runtime_handle.stats_manager();
 
         // Initialize build side
         let build_ctx = BuildExecutionContext::new(
@@ -232,7 +233,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            &self.name(),
+            &name,
         );
 
         Ok(destination_receiver)

@@ -14,7 +14,7 @@ use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, Sour
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_shuffles::client::FlightClientManager;
-use futures::{FutureExt, Stream, future::BoxFuture};
+use futures::{FutureExt, future::BoxFuture};
 use tokio::{runtime::Handle, sync::Mutex};
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
@@ -184,7 +184,7 @@ impl NativeExecutor {
 
         let ctx = BuilderContext::new_with_context(query_id.clone(), additional_context);
         let flight_client_manager = self.flight_client_manager.clone();
-        let (mut pipeline, input_senders) = translate_physical_plan_to_pipeline(
+        let (pipeline, input_senders) = translate_physical_plan_to_pipeline(
             local_physical_plan.as_ref(),
             &exec_cfg,
             &ctx,

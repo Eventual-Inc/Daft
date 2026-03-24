@@ -24,7 +24,7 @@ use daft_local_plan::{
     WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
-use daft_micropartition::{MicroPartition, MicroPartitionRef};
+use daft_micropartition::MicroPartitionRef;
 use daft_scan::ScanTaskRef;
 use daft_shuffles::client::FlightClientManager;
 use daft_writers::make_physical_writer_factory;

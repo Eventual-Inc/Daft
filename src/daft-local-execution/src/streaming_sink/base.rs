@@ -19,7 +19,6 @@ use common_runtime::{
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
-use snafu::ResultExt;
 use tracing::info_span;
 
 use crate::{

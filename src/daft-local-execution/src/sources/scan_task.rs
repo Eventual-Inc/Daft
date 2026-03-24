@@ -12,7 +12,6 @@ use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
 use daft_io::IOStatsRef;
-use daft_local_plan::InputId;
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
 use daft_scan::{FileFormatConfig, Pushdowns, ScanTask, ScanTaskRef, SourceConfig};

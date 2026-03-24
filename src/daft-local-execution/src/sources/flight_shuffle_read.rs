@@ -10,7 +10,7 @@ use daft_io::IOStatsRef;
 use daft_local_plan::{FlightShuffleReadInput, InputId};
 use daft_micropartition::MicroPartition;
 use daft_shuffles::client::FlightClientManager;
-use futures::{FutureExt, StreamExt, stream::BoxStream};
+use futures::{FutureExt, StreamExt};
 use tracing::instrument;
 
 use super::source::{Source, SourceStream};
