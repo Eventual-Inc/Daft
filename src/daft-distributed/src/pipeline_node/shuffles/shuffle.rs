@@ -1,4 +1,7 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
@@ -27,18 +30,31 @@ fn make_shuffle_id(context: &PipelineNodeContext) -> u64 {
     ((context.query_idx as u64) << 32) | (context.node_id as u64)
 }
 
-pub(crate) struct FlightShuffleNode {
-    config: PipelineNodeConfig,
-    context: PipelineNodeContext,
+struct FlightDistributedShuffleConfig {
     shuffle_id: u64,
-    repartition_spec: RepartitionSpec,
-    num_partitions: usize,
     shuffle_dirs: Vec<String>,
     compression: Option<String>,
+}
+
+struct FlightReadSpec {
+    shuffle_id: u64,
+    server_cache_mapping: HashMap<String, Vec<u32>>,
+}
+
+enum DistributedShuffleBackend {
+    Flight(FlightDistributedShuffleConfig),
+}
+
+pub(crate) struct ShuffleNode {
+    config: PipelineNodeConfig,
+    context: PipelineNodeContext,
+    repartition_spec: RepartitionSpec,
+    num_partitions: usize,
+    backend: DistributedShuffleBackend,
     child: DistributedPipelineNode,
 }
 
-impl FlightShuffleNode {
+impl ShuffleNode {
     const NODE_NAME: &'static str = "FlightShuffle";
 
     #[allow(clippy::too_many_arguments)]
@@ -72,13 +88,125 @@ impl FlightShuffleNode {
         Self {
             config,
             context,
-            shuffle_id,
             repartition_spec,
             num_partitions,
-            shuffle_dirs,
-            compression,
+            backend: DistributedShuffleBackend::Flight(FlightDistributedShuffleConfig {
+                shuffle_id,
+                shuffle_dirs,
+                compression,
+            }),
             child,
         }
+    }
+
+    fn register_flight_cleanup(
+        &self,
+        plan_context: &mut PlanExecutionContext,
+        backend: &FlightDistributedShuffleConfig,
+    ) {
+        let shuffle_dirs_to_register: Vec<String> = backend
+            .shuffle_dirs
+            .iter()
+            .map(|base_dir| format!("{}/daft_shuffle/{}", base_dir, backend.shuffle_id))
+            .collect();
+        plan_context.register_shuffle_dirs(shuffle_dirs_to_register);
+    }
+
+    fn build_flight_write_stage(
+        self: Arc<Self>,
+        input_node: TaskBuilderStream,
+        backend: &FlightDistributedShuffleConfig,
+    ) -> TaskBuilderStream {
+        let partition_by = match &self.repartition_spec {
+            RepartitionSpec::Hash(hash_spec) => Some(hash_spec.by.clone()),
+            RepartitionSpec::Random(_) => None,
+            RepartitionSpec::Range(_) => {
+                unreachable!("Range repartition is not supported for flight shuffle")
+            }
+        };
+
+        let shuffle_id = backend.shuffle_id;
+        let shuffle_dirs = backend.shuffle_dirs.clone();
+        let compression = backend.compression.clone();
+        input_node.pipeline_instruction(self.clone(), move |input| {
+            LocalPhysicalPlan::shuffle_write(
+                input,
+                partition_by.clone(),
+                self.num_partitions,
+                self.config.schema.clone(),
+                ShuffleWriteBackend::Flight {
+                    shuffle_id,
+                    shuffle_dirs: shuffle_dirs.clone(),
+                    compression: compression.clone(),
+                },
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(self.context.node_id as usize)),
+            )
+        })
+    }
+
+    fn flight_read_spec_from_outputs(
+        &self,
+        backend: &FlightDistributedShuffleConfig,
+        outputs: Vec<TaskOutput>,
+    ) -> DaftResult<FlightReadSpec> {
+        let mut server_cache_mapping: HashMap<String, HashSet<u32>> = HashMap::new();
+
+        for output in outputs {
+            let TaskOutput::ShuffleWrite(output) = output else {
+                return Err(common_error::DaftError::InternalError(
+                    "Expected shuffle write task output for Flight shuffle write stage".to_string(),
+                ));
+            };
+
+            for partition in output.partitions {
+                match partition {
+                    ShufflePartitionRef::Flight(partition) => {
+                        server_cache_mapping
+                            .entry(partition.server_address)
+                            .or_default()
+                            .insert(partition.cache_id);
+                    }
+                }
+            }
+        }
+
+        Ok(FlightReadSpec {
+            shuffle_id: backend.shuffle_id,
+            server_cache_mapping: server_cache_mapping
+                .into_iter()
+                .map(|(server, cache_ids)| (server, cache_ids.into_iter().collect()))
+                .collect(),
+        })
+    }
+
+    async fn emit_flight_read_tasks(
+        &self,
+        read_spec: FlightReadSpec,
+        result_tx: Sender<SwordfishTaskBuilder>,
+    ) -> DaftResult<()> {
+        for partition_idx in 0..self.num_partitions {
+            let shuffle_read_plan = LocalPhysicalPlan::shuffle_read(
+                self.context.node_id,
+                self.config.schema.clone(),
+                ShuffleReadBackend::Flight {
+                    shuffle_id: read_spec.shuffle_id,
+                    server_cache_mapping: read_spec.server_cache_mapping.clone(),
+                },
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(self.context.node_id as usize)),
+            );
+
+            let task = SwordfishTaskBuilder::new(shuffle_read_plan, self, self.node_id())
+                .with_flight_shuffle_reads(
+                    self.context.node_id,
+                    vec![FlightShuffleReadInput { partition_idx }],
+                );
+
+            let _ = result_tx.send(task).await;
+        }
+
+        Ok(())
     }
 
     // Async execution to handle flight shuffle write and read operations
@@ -98,57 +226,18 @@ impl FlightShuffleNode {
             .try_collect::<Vec<_>>()
             .await?;
 
-        let mut server_cache_mapping: std::collections::HashMap<String, HashSet<u32>> =
-            std::collections::HashMap::new();
-        for output in outputs {
-            let TaskOutput::ShuffleWrite(output) = output else {
-                return Err(common_error::DaftError::InternalError(
-                    "Expected shuffle write task output for Flight shuffle write stage".to_string(),
-                ));
-            };
-            for partition in output.partitions {
-                match partition {
-                    ShufflePartitionRef::Flight(partition) => {
-                        server_cache_mapping
-                            .entry(partition.server_address)
-                            .or_default()
-                            .insert(partition.cache_id);
-                    }
-                }
+        match &self.backend {
+            DistributedShuffleBackend::Flight(backend) => {
+                let read_spec = self.flight_read_spec_from_outputs(backend, outputs)?;
+                self.emit_flight_read_tasks(read_spec, result_tx).await?;
             }
-        }
-
-        for partition_idx in 0..self.num_partitions {
-            let shuffle_read_plan = LocalPhysicalPlan::shuffle_read(
-                self.context.node_id,
-                self.config.schema.clone(),
-                ShuffleReadBackend::Flight {
-                    shuffle_id: self.shuffle_id,
-                    server_cache_mapping: server_cache_mapping
-                        .iter()
-                        .map(|(server, cache_ids)| {
-                            (server.clone(), cache_ids.iter().copied().collect())
-                        })
-                        .collect(),
-                },
-                StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(self.context.node_id as usize)),
-            );
-
-            let task = SwordfishTaskBuilder::new(shuffle_read_plan, self.as_ref(), self.node_id())
-                .with_flight_shuffle_reads(
-                    self.context.node_id,
-                    vec![FlightShuffleReadInput { partition_idx }],
-                );
-
-            let _ = result_tx.send(task).await;
         }
 
         Ok(())
     }
 }
 
-impl PipelineNodeImpl for FlightShuffleNode {
+impl PipelineNodeImpl for ShuffleNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
     }
@@ -167,38 +256,12 @@ impl PipelineNodeImpl for FlightShuffleNode {
     ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let self_arc = self.clone();
-
-        // Register shuffle directories for cleanup when the plan completes
-        let shuffle_dirs_to_register: Vec<String> = self
-            .shuffle_dirs
-            .iter()
-            .map(|base_dir| format!("{}/daft_shuffle/{}", base_dir, self.shuffle_id))
-            .collect();
-        plan_context.register_shuffle_dirs(shuffle_dirs_to_register);
-
-        let partition_by = match &self.repartition_spec {
-            RepartitionSpec::Hash(hash_spec) => Some(hash_spec.by.clone()),
-            RepartitionSpec::Random(_) => None,
-            RepartitionSpec::Range(_) => {
-                unreachable!("Range repartition is not supported for flight shuffle")
+        let local_shuffle_write_node = match &self.backend {
+            DistributedShuffleBackend::Flight(backend) => {
+                self.register_flight_cleanup(plan_context, backend);
+                self.clone().build_flight_write_stage(input_node, backend)
             }
         };
-        let local_shuffle_write_node =
-            input_node.pipeline_instruction(self.clone(), move |input| {
-                LocalPhysicalPlan::shuffle_write(
-                    input,
-                    partition_by.clone(),
-                    self.num_partitions,
-                    self.config.schema.clone(),
-                    ShuffleWriteBackend::Flight {
-                        shuffle_id: self.shuffle_id,
-                        shuffle_dirs: self.shuffle_dirs.clone(),
-                        compression: self.compression.clone(),
-                    },
-                    StatsState::NotMaterialized,
-                    LocalNodeContext::new(Some(self.context.node_id as usize)),
-                )
-            });
 
         let (result_tx, result_rx) = create_channel(1);
 
