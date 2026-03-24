@@ -20,7 +20,7 @@ jobs:
         - url: https://www.eventual.ai
     steps:
     - name: Check ${{ matrix.site.url }}
-      uses: lycheeverse/lychee-action@v2
+      uses: lycheeverse/lychee-action@v2.8.0
       id: lychee
       with:
         args: >-
