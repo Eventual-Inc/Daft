@@ -100,5 +100,3 @@ def test_sql_partitioned_read_null_partition_col(sqlite_null_partition_db, num_p
 
     assert len(result["value"]) == 50
     assert any("Falling back to a single scan task" in str(warning.message) for warning in w)
-
-
