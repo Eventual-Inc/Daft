@@ -7,10 +7,7 @@ use common_metrics::{
     snapshot::SourceSnapshot,
 };
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{
-    ClusteringSpec,
-    stats::{PlanStats, StatsState},
-};
+use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_scan::{Pushdowns, ScanTaskRef, SourceConfig};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
@@ -220,11 +217,12 @@ impl PipelineNodeImpl for ScanSourceNode {
         _plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
         if self.scan_tasks.is_empty() {
-            let physical_scan = LocalPhysicalPlan::in_memory_scan(
+            let physical_scan = LocalPhysicalPlan::physical_scan(
                 self.node_id(),
+                None,
+                self.pushdowns.clone(),
                 self.config.schema.clone(),
-                0,
-                StatsState::Materialized(PlanStats::empty().into()),
+                StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(self.node_id() as usize)),
             );
 
