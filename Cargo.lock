@@ -2400,7 +2400,6 @@ dependencies = [
  "daft-dashboard",
  "daft-logical-plan",
  "daft-micropartition",
- "daft-recordbatch",
  "daft-runners",
  "dashmap",
  "log",
