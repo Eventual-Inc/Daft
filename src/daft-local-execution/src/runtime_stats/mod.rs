@@ -112,6 +112,11 @@ impl RuntimeStatsManager {
             progress_bar.finalize_node(node_id, &snapshot);
         }
 
+        let Some(operator_meta) = operators.get(&node_id) else {
+            log::warn!("Unknown node_id {node_id} in operators during {err_context}, skipping");
+            return;
+        };
+
         let stats_event = Arc::new(StatsEvent {
             header: EventHeader {
                 query_id: query_id.clone(),
@@ -125,7 +130,7 @@ impl RuntimeStatsManager {
                 query_id: query_id.clone(),
                 timestamp_epoch_secs: now_epoch_secs(),
             },
-            operator: operators[&node_id].clone(),
+            operator: operator_meta.clone(),
         });
         for res in future::join_all(subscribers.iter().map(|subscriber| {
             let stats_event = stats_event.clone();
@@ -234,12 +239,17 @@ impl RuntimeStatsManager {
                                 progress_bar.initialize_node(node_id);
                             }
 
+                            let Some(operator_meta) = operators.get(&node_id) else {
+                                log::warn!("Unknown node_id {node_id} in operators during activate, skipping subscriber notification");
+                                continue;
+                            };
+
                             let event = Arc::new(OperatorStartEvent {
                                 header: EventHeader {
                                     query_id: query_id.clone(),
                                     timestamp_epoch_secs: now_epoch_secs(),
                                 },
-                                operator: operators[&node_id].clone(),
+                                operator: operator_meta.clone(),
                             });
 
                             for res in future::join_all(subscribers.iter().map(|subscriber| {
