@@ -134,7 +134,7 @@ impl JoinOperator for SortMergeJoinOperator {
     }
 
     fn op_type(&self) -> NodeType {
-        NodeType::SortMergeJoinProbe
+        NodeType::SortMergeJoin
     }
 
     fn multiline_display(&self) -> Vec<String> {

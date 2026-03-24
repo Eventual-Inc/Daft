@@ -334,12 +334,7 @@ impl JoinOperator for HashJoinOperator {
     }
 
     fn op_type(&self) -> NodeType {
-        // Use existing node types for now
-        match self.params.join_type {
-            JoinType::Inner => NodeType::InnerHashJoinProbe,
-            JoinType::Left | JoinType::Right | JoinType::Outer => NodeType::OuterHashJoinProbe,
-            JoinType::Anti | JoinType::Semi => NodeType::AntiSemiHashJoinProbe,
-        }
+        NodeType::HashJoin
     }
 
     fn multiline_display(&self) -> Vec<String> {
