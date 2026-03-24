@@ -145,9 +145,13 @@ impl ScalarUDF for ScalarFunctionHandle {
         let mut ffi_schemas: Vec<ArrowSchema> = Vec::with_capacity(series_vec.len());
 
         for s in &series_vec {
-            let arrow_arr = s.to_arrow()?;
-            let (ffi_array, ffi_schema) = arrow::ffi::to_ffi(&arrow_arr.to_data())
-                .map_err(|e| DaftError::InternalError(format!("Arrow FFI export failed: {e}")))?;
+            let array = s.to_arrow()?;
+            let target_field = s.field().to_arrow()?;
+
+            let ffi_schema = arrow::ffi::FFI_ArrowSchema::try_from(target_field)?;
+            let mut data = array.to_data();
+            data.align_buffers();
+            let ffi_array = arrow::ffi::FFI_ArrowArray::new(&data);
             ffi_arrays.push(unsafe { ArrowArray::from_owned(ffi_array) });
             ffi_schemas.push(unsafe { ArrowSchema::from_owned(ffi_schema) });
         }
