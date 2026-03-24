@@ -124,34 +124,7 @@ def embed_text(
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """
-    from daft.ai._expressions import _TextEmbedderExpression
-
-    # load a TextEmbedderDescriptor from the resolved provider
-    text_embedder = _resolve_provider(provider, "transformers").get_text_embedder(model, dimensions, **options)
-
-    udf_options = text_embedder.get_udf_options()
-
-    # Choose synchronous or asynchronous call implementation based on the embedder
-    is_async = text_embedder.is_async()
-    call_impl = _TextEmbedderExpression._call_async if is_async else _TextEmbedderExpression._call_sync
-
-    # Decorate the selected call method with @daft.method to specify return_dtype
-    _TextEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign]
-        method=call_impl,
-        return_dtype=text_embedder.get_dimensions().as_dtype(),
-        batch_size=udf_options.batch_size,
-    )
-    wrapped_cls = daft_cls(
-        _TextEmbedderExpression,
-        max_concurrency=udf_options.concurrency,
-        gpus=udf_options.num_gpus or 0,
-        max_retries=udf_options.max_retries,
-        on_error=udf_options.on_error,
-        name_override="embed_text",
-    )
-
-    expr = wrapped_cls(text_embedder)
-    return expr(text)
+    return _resolve_provider(provider, "transformers").embed_text(text, model=model, dimensions=dimensions, **options)
 
 
 def embed_image(
