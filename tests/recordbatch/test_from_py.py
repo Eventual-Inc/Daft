@@ -43,10 +43,8 @@ PYTHON_INFERRED_TYPES = {
     "time": DataType.time(TimeUnit.us()),
     "list": DataType.list(DataType.int64()),
     "struct": DataType.struct({"a": DataType.int64(), "b": DataType.float64()}),
-    "empty_struct": DataType.struct({"": DataType.null()}),
-    "nested_struct": DataType.struct(
-        {"a": DataType.struct({"b": DataType.int64()}), "c": DataType.struct({"": DataType.null()})}
-    ),
+    "empty_struct": DataType.struct({}),
+    "nested_struct": DataType.struct({"a": DataType.struct({"b": DataType.int64()}), "c": DataType.struct({})}),
     "null": DataType.null(),
     "tensor": DataType.tensor(DataType.int64()),
     # The following types are not natively supported and will be cast to Python object types.

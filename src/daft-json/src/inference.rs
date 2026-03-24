@@ -172,7 +172,6 @@ pub fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
         let fields: Vec<Field> = fields
             .into_iter()
             .map(|(name, dts)| Field::new(name, coerce_data_type(dts), true))
-            .filter(|f| !f.name().is_empty() && *f.data_type() != DataType::Null)
             .collect();
         return DataType::Struct(Fields::from(fields));
     }
