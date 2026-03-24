@@ -8,7 +8,6 @@ from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
 from daft.dependencies import unity_catalog
-from daft.io.catalog import DataCatalogTable
 from daft.logical.builder import LogicalPlanBuilder
 
 if TYPE_CHECKING:
@@ -17,12 +16,12 @@ if TYPE_CHECKING:
     import deltalake
     import pyarrow as pa
 
-    from daft.unity_catalog import UnityCatalogTable
+    from daft.catalog.__unity._client import UnityCatalogTable
 
 
 @PublicAPI
 def read_deltalake(
-    table: Union[str, DataCatalogTable, "UnityCatalogTable"],
+    table: Union[str, "UnityCatalogTable"],
     version: Union[int, str, "datetime"] | None = None,
     io_config: IOConfig | None = None,
     ignore_deletion_vectors: bool = False,
@@ -32,8 +31,7 @@ def read_deltalake(
 
     Args:
         table: Either a URI for the Delta Lake table (supports remote URLs to object stores such as ``s3://`` or ``gs://``)
-            or a :class:`~daft.io.catalog.DataCatalogTable` instance referencing a table in a data catalog,
-            such as AWS Glue Data Catalog or Databricks Unity Catalog.
+            or a ``UnityCatalogTable`` instance from a Unity Catalog client.
         version (optional): If int is passed, read the table with specified version number. Otherwise if string or datetime,
             read the timestamp version of the table. Strings must be RFC 3339 and ISO 8601 date and time format.
             Datetimes are assumed to be UTC timezone unless specified. By default, read the latest version of the table.
@@ -76,8 +74,6 @@ def read_deltalake(
 
     if isinstance(table, str):
         table_uri = os.path.expanduser(table)
-    elif isinstance(table, DataCatalogTable):
-        table_uri = table.table_uri(io_config)
     elif unity_catalog.module_available() and isinstance(table, unity_catalog.UnityCatalogTable):
         table_uri = table.table_uri
 
@@ -87,7 +83,7 @@ def read_deltalake(
             storage_config = StorageConfig(multithreaded_io, recordbatch_io_config)
     else:
         raise ValueError(
-            f"table argument must be a table URI string, DataCatalogTable or UnityCatalogTable instance, but got: {type(table)}, {table}"
+            f"table argument must be a table URI string or UnityCatalogTable instance, but got: {type(table)}, {table}"
         )
     delta_lake_operator = DeltaLakeScanOperator(
         table_uri, storage_config=storage_config, version=version, ignore_deletion_vectors=ignore_deletion_vectors

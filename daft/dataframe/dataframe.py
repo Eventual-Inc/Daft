@@ -64,12 +64,11 @@ if TYPE_CHECKING:
     import torch
     from sqlalchemy.engine import Connection
 
+    from daft.catalog.__unity._client import UnityCatalogTable
     from daft.execution.metadata import ExecutionMetadata
     from daft.io import DataSink
-    from daft.io.catalog import DataCatalogTable
     from daft.io.lance.rest_config import LanceRestConfig
     from daft.io.sink import WriteResultType
-    from daft.unity_catalog import UnityCatalogTable
 
 from daft.schema import Schema
 
@@ -1383,7 +1382,7 @@ class DataFrame:
     @DataframePublicAPI
     def write_deltalake(
         self,
-        table: Union[str, pathlib.Path, "DataCatalogTable", "deltalake.DeltaTable", "UnityCatalogTable"],
+        table: Union[str, pathlib.Path, "deltalake.DeltaTable", "UnityCatalogTable"],
         partition_cols: list[str] | None = None,
         mode: Literal["append", "overwrite", "error", "ignore"] = "append",
         schema_mode: Literal["merge", "overwrite"] | None = None,
@@ -1398,7 +1397,7 @@ class DataFrame:
         """Writes the DataFrame to a [Delta Lake](https://docs.delta.io/latest/index.html) table, returning a new DataFrame with the operations that occurred.
 
         Args:
-            table (Union[str, pathlib.Path, DataCatalogTable, deltalake.DeltaTable, UnityCatalogTable]): Destination [Delta Lake Table](https://delta-io.github.io/delta-rs/api/delta_table/) or table URI to write dataframe to.
+            table (Union[str, pathlib.Path, deltalake.DeltaTable, UnityCatalogTable]): Destination [Delta Lake Table](https://delta-io.github.io/delta-rs/api/delta_table/) or table URI to write dataframe to.
             partition_cols (List[str], optional): How to subpartition each partition further. If table exists, expected to match table's existing partitioning scheme, otherwise creates the table with specified partition columns. Defaults to None.
             mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace table with new data, `error` will raise an error if table already exists, and `ignore` will not write anything if table already exists. Defaults to `append`.
             schema_mode (str, optional): Schema mode of the write. If set to `overwrite`, allows replacing the schema of the table when doing `mode=overwrite`. Schema mode `merge` is currently not supported.
@@ -1432,7 +1431,6 @@ class DataFrame:
         from daft import from_pydict
         from daft.dependencies import unity_catalog
         from daft.filesystem import get_protocol_from_path
-        from daft.io import DataCatalogTable
         from daft.io.delta_lake._deltalake import delta_schema_to_pyarrow
         from daft.io.delta_lake.delta_lake_write import (
             AddAction,
@@ -1482,8 +1480,6 @@ class DataFrame:
             elif unity_catalog.module_available() and isinstance(table, unity_catalog.UnityCatalogTable):
                 table_uri = table.table_uri
                 io_config = table.io_config
-            elif isinstance(table, DataCatalogTable):
-                table_uri = table.table_uri(io_config)
             else:
                 raise ValueError(f"Expected table to be a path or a DeltaTable, received: {type(table)}")
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
-from daft.gravitino import GravitinoClient as InnerCatalog
-from daft.gravitino import GravitinoTable as InnerTable
+from daft.catalog.__gravitino._client import GravitinoClient as InnerCatalog
+from daft.catalog.__gravitino._client import GravitinoTable as InnerTable
 from daft.io.iceberg._iceberg import read_iceberg
 
 if TYPE_CHECKING:
@@ -192,8 +192,6 @@ class GravitinoTable(Table):
         self._validate_options("Gravitino write", options, GravitinoTable._write_options)
 
         if self._inner.table_info.format.upper().startswith("ICEBERG"):
-            # For Iceberg tables, we need to create a PyIceberg table object
-            # This is more complex and may require additional Gravitino integration
             raise NotImplementedError("Writing to Iceberg tables through Gravitino is not yet supported")
         else:
             raise NotImplementedError(f"Writing {self._inner.table_info.format} format tables is not yet supported")
@@ -202,8 +200,6 @@ class GravitinoTable(Table):
         self._validate_options("Gravitino write", options, GravitinoTable._write_options)
 
         if self._inner.table_info.format.upper().startswith("ICEBERG"):
-            # For Iceberg tables, we need to create a PyIceberg table object
-            # This is more complex and may require additional Gravitino integration
             raise NotImplementedError("Writing to Iceberg tables through Gravitino is not yet supported")
         else:
             raise NotImplementedError(f"Writing {self._inner.table_info.format} format tables is not yet supported")
