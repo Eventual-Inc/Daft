@@ -332,6 +332,7 @@ jobs:
         maturin build --release --compatibility linux --out dist --timings=json -Z unstable-options
         ls -alh
         ls -alh target/
+        ls -alh target/generated/
     - name: Upload wheels
       uses: actions/upload-artifact@v7
       with:
