@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from daft.sql.sql_connection import SQLConnection
 
 logger = logging.getLogger(__name__)
+_MIN_MAX_FALLBACK_ERROR_PATTERNS = ("cannot infer type from null",)
 
 
 class PartitionBoundStrategy(Enum):
@@ -92,13 +93,13 @@ class SQLScanOperator(ScanOperator):
             return self._single_scan_task(pushdowns, total_rows, total_size)
 
         partition_bounds = self._get_partition_bounds(num_scan_tasks)
-        partition_bounds_sql = [lit(bound)._to_sql() for bound in partition_bounds]
-
-        if any(bound is None for bound in partition_bounds_sql):
+        if any(bound is None for bound in partition_bounds):
             warnings.warn(
                 "Unable to partition the data using the specified column. Falling back to a single scan task."
             )
             return self._single_scan_task(pushdowns, total_rows, total_size)
+
+        partition_bounds_sql = [lit(bound)._to_sql() for bound in partition_bounds]
 
         size_bytes = (
             math.ceil(total_size / num_scan_tasks)
@@ -225,7 +226,16 @@ class SQLScanOperator(ScanOperator):
         min_max_sql = self.conn.construct_sql_query(
             self.sql, projection=[f"MIN({self._partition_col}) as min", f"MAX({self._partition_col}) as max"]
         )
-        pa_table = self.conn.execute_sql_query(min_max_sql)
+        try:
+            pa_table = self.conn.execute_sql_query(min_max_sql)
+        except Exception as e:
+            if not self._should_fallback_to_single_scan(e):
+                raise
+            warnings.warn(
+                f"Unable to determine partition bounds for read_sql: failed to execute MIN/MAX query for partition "
+                f"column '{self._partition_col}' ({e!s}). Falling back to a single scan task."
+            )
+            return [None] * (num_scan_tasks + 1)
 
         if pa_table.num_rows != 1:
             raise RuntimeError(f"Failed to get partition bounds: expected 1 row, but got {pa_table.num_rows}.")
@@ -238,6 +248,10 @@ class SQLScanOperator(ScanOperator):
         max_val = pydict["max"][0]
         range_size = (max_val - min_val) / num_scan_tasks
         return [min_val + range_size * i for i in range(num_scan_tasks)] + [max_val]
+
+    def _should_fallback_to_single_scan(self, error: Exception) -> bool:
+        error_message = str(error).lower()
+        return any(pattern in error_message for pattern in _MIN_MAX_FALLBACK_ERROR_PATTERNS)
 
     def _single_scan_task(
         self, pushdowns: PyPushdowns, total_rows: int | None, total_size: float
