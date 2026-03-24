@@ -329,12 +329,17 @@ jobs:
     - name: Build wheels
       run: |
         source .venv/bin/activate
-        maturin build --release --compatibility linux --out dist
+        maturin build --release --compatibility linux --out dist --timings=json --target-dir timings
     - name: Upload wheels
       uses: actions/upload-artifact@v7
       with:
         name: wheels-${{ matrix.python-version }}
         path: dist
+    - name: Upload timings
+      uses: actions/upload-artifact@v7
+      with:
+        name: timings-${{ matrix.python-version }}
+        path: timings
 
   integration-test-tpch:
     runs-on: ubuntu-latest
