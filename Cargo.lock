@@ -2678,6 +2678,7 @@ dependencies = [
  "daft-hash",
  "num-traits",
  "pyo3",
+ "rand 0.9.2",
  "serde",
  "snafu",
  "typetag",

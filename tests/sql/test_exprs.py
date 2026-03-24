@@ -7,6 +7,7 @@ import pytest
 import daft
 from daft import col, interval
 from daft.functions import hash as hash_fn
+from daft.functions import random_int
 
 
 def test_nested():
@@ -74,6 +75,42 @@ def test_hash_exprs():
 
     with pytest.raises(Exception, match="Required argument `num_hashes` not found"):
         daft.sql("SELECT minhash(a) as hash_a FROM df").collect()
+
+
+def test_random_exprs():
+    df = daft.from_pydict({"a": list(range(10))})
+
+    actual = (
+        daft.sql("""
+    SELECT
+        random_int(10, 20, 7) as ri,
+        random_int(low:=10, high:=20, seed:=7) as ri_named,
+    FROM df
+    """)
+        .collect()
+        .to_pydict()
+    )
+
+    expected = (
+        df.select(
+            random_int(10, 20, 7).alias("ri"),
+            random_int(low=10, high=20, seed=7).alias("ri_named"),
+        )
+        .collect()
+        .to_pydict()
+    )
+
+    assert actual == expected
+
+
+def test_random_exprs_invalid_arguments():
+    df = daft.from_pydict({"a": [1, 2, 3]})  # noqa: F841
+
+    with pytest.raises(Exception, match="lower bound must be less than upper bound"):
+        daft.sql("SELECT random_int(10, 10) as ri FROM df").collect()
+
+    with pytest.raises(Exception, match="Required argument `low` not found"):
+        daft.sql("SELECT random_int(foo:=1) as ri FROM df").collect()
 
 
 def test_count_star():
