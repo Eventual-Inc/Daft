@@ -329,7 +329,7 @@ jobs:
     - name: Build wheels
       run: |
         source .venv/bin/activate
-        maturin build --release --compatibility linux --out dist --timings -Z unstable-options
+        maturin build --release --compatibility linux --out dist --timings=html -Z unstable-options
         ls -alh
         ls -alh target/
         ls -alh target/generated/
@@ -1557,7 +1557,10 @@ jobs:
         uv venv --seed .venv
         source .venv/bin/activate
         uv pip install maturin
-        maturin build --out dist
+        maturin build --out dist --timings=html -Z unstable-options
+        ls -alh
+        ls -alh target/
+        ls -alh target/generated/
 
     - name: Windows Build
       if: ${{ (runner.os == 'Windows') }}
@@ -1565,7 +1568,10 @@ jobs:
         uv venv --seed .venv
         .\.venv\Scripts\activate
         uv pip install maturin
-        maturin build --out dist
+        maturin build --out dist --timings=html -Z unstable-options
+        ls -alh
+        ls -alh target/
+        ls -alh target/generated/
 
     - name: Test Imports in Clean Env (Unix)
       if: ${{ (runner.os != 'Windows') }}
