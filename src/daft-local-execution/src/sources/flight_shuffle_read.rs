@@ -10,7 +10,7 @@ use daft_io::IOStatsRef;
 use daft_local_plan::{FlightShuffleReadInput, InputId};
 use daft_micropartition::MicroPartition;
 use daft_shuffles::client::FlightClientManager;
-use futures::{FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, stream::BoxStream};
 use tracing::instrument;
 
 use super::source::{Source, SourceStream};
@@ -23,7 +23,6 @@ use crate::{
 pub struct FlightShuffleReadSource {
     receiver: Option<UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>>,
     schema: SchemaRef,
-    client_manager: Arc<tokio::sync::Mutex<FlightClientManager>>,
     num_parallel_tasks: usize,
 }
 
@@ -31,7 +30,6 @@ impl FlightShuffleReadSource {
     pub fn new(
         receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
         schema: SchemaRef,
-        client_manager: Arc<tokio::sync::Mutex<FlightClientManager>>,
         cfg: &DaftExecutionConfig,
     ) -> Self {
         let num_cpus = get_compute_pool_num_threads();
@@ -43,7 +41,6 @@ impl FlightShuffleReadSource {
         Self {
             receiver: Some(receiver),
             schema,
-            client_manager,
             num_parallel_tasks,
         }
     }
@@ -53,12 +50,12 @@ impl FlightShuffleReadSource {
         mut receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
         output_sender: Sender<Arc<MicroPartition>>,
         schema: SchemaRef,
-        client_manager: Arc<tokio::sync::Mutex<FlightClientManager>>,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
         let num_parallel_tasks = self.num_parallel_tasks;
 
         io_runtime.spawn(async move {
+            let mut client_manager = FlightClientManager::new();
             let mut task_set = JoinSet::new();
             let mut pending_tasks: VecDeque<FlightShuffleReadInput> = VecDeque::new();
             let mut receiver_exhausted = false;
@@ -68,10 +65,17 @@ impl FlightShuffleReadSource {
                     let input = pending_tasks
                         .pop_front()
                         .expect("Pending tasks should not be empty");
-                    task_set.spawn(forward_flight_shuffle_input(
-                        input,
+                    let stream = client_manager
+                        .fetch_partition(
+                            input.shuffle_id,
+                            input.partition_idx,
+                            &input.server_cache_mapping,
+                            schema.clone(),
+                        )
+                        .await?;
+                    task_set.spawn(forward_partition_stream(
+                        stream,
                         schema.clone(),
-                        client_manager.clone(),
                         output_sender.clone(),
                     ));
                 }
@@ -113,23 +117,11 @@ impl FlightShuffleReadSource {
     }
 }
 
-async fn forward_flight_shuffle_input(
-    input: FlightShuffleReadInput,
+async fn forward_partition_stream(
+    mut stream: BoxStream<'static, DaftResult<daft_recordbatch::RecordBatch>>,
     schema: SchemaRef,
-    client_manager: Arc<tokio::sync::Mutex<FlightClientManager>>,
     sender: Sender<Arc<MicroPartition>>,
 ) -> DaftResult<()> {
-    let mut stream = {
-        let mut manager = client_manager.lock().await;
-        manager
-            .fetch_partition(
-                input.shuffle_id,
-                input.partition_idx,
-                &input.server_cache_mapping,
-                schema.clone(),
-            )
-            .await?
-    };
     while let Some(batch) = stream.next().await {
         let mp = MicroPartition::new_loaded(schema.clone(), vec![batch?].into(), None);
         if sender.send(Arc::new(mp)).await.is_err() {
@@ -167,12 +159,8 @@ impl Source for FlightShuffleReadSource {
         let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
         let input_receiver = self.receiver.take().expect("Receiver not found");
 
-        let processor_task = self.spawn_flight_shuffle_processor(
-            input_receiver,
-            output_sender,
-            self.schema.clone(),
-            self.client_manager.clone(),
-        );
+        let processor_task =
+            self.spawn_flight_shuffle_processor(input_receiver, output_sender, self.schema.clone());
 
         let result_stream = output_receiver.into_stream().map(|mp| {
             Ok(PipelineMessage::Morsel {
