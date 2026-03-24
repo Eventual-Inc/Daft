@@ -30,6 +30,7 @@ jobs:
           --exclude '^https?://www\.kaggle\.com'
           --exclude '^https?://x\.com'
           --exclude '^https?://twitter\.com'
+          --exclude '^https?://www\.linkedin\.com'
           --timeout 30
           --retry-wait-time 5
           --max-retries 3
@@ -48,14 +49,14 @@ jobs:
 
         # Extract URLs that returned 404
         FAILED_404=$(jq -r '
-          .fail_map // {} | to_entries[] |
+          .error_map // {} | to_entries[] |
           .value[] | select(.status and (.status.code == 404)) |
           "\(.url) -> \(.status.code)"
         ' results.json || true)
 
         # Show all failures for visibility
         echo "=== Full lychee results ==="
-        jq -r '.fail_map // {} | to_entries[] | .value[] | "\(.url) [\(.status.code // .status.text // "unknown")]"' results.json 2>/dev/null || true
+        jq -r '.error_map // {} | to_entries[] | .value[] | "\(.url) [\(.status.code // .status.text // "unknown")]"' results.json 2>/dev/null || true
 
         if [ -n "$FAILED_404" ]; then
           echo ""
