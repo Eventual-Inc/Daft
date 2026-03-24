@@ -218,12 +218,13 @@ class RaySwordfishTaskHandle:
                 if backend != "flight":
                     raise NotImplementedError(f"Unsupported shuffle write backend: {backend}")
                 cache_id = self.cache_id if self.cache_id is not None else 0
+                actor_address = await self.actor_handle.get_address.remote()
                 return RayTaskResult.shuffle_success(
                     [
                         FlightShufflePartitionRef(
                             shuffle_id,
                             partition_idx,
-                            await self.actor_handle.get_address.remote(),
+                            actor_address,
                             cache_id,
                             metadata.num_rows,
                             metadata.size_bytes or 0,
