@@ -4,9 +4,10 @@ import asyncio
 import logging
 import os
 import shutil
+import time
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Callable, NamedTuple
 
 from daft.daft import (
     DistributedPhysicalPlan,
@@ -460,16 +461,35 @@ class FlotillaRunner:
             ),
         ).remote(dashboard_url=dashboard_url)
 
+    @staticmethod
+    def _ray_get_with_retry(ref: Callable[[], ray.ObjectRef], max_retries: int = 5):
+        for attempt in range(max_retries + 1):
+            try:
+                return ray.get(ref())
+            except ray.exceptions.ActorUnavailableError:
+                if attempt == max_retries:
+                    raise
+                backoff = min(2**attempt * 0.1, 5.0)
+                logger.warning(
+                    "FlotillaRunner actor temporarily unavailable (attempt %d/%d), retrying in %.1fs",
+                    attempt + 1,
+                    max_retries,
+                    backoff,
+                )
+                time.sleep(backoff)
+
     def stream_plan(
         self,
         plan: DistributedPhysicalPlan,
         partition_sets: dict[str, PartitionSet[RayMaterializedResult]],
     ) -> Generator[RayMaterializedResult, None, PyExecutionStats]:
         plan_id = plan.idx()
-        ray.get(self.runner.run_plan.remote(plan, partition_sets))
+        self._ray_get_with_retry(lambda: self.runner.run_plan.remote(plan, partition_sets))
 
         while True:
-            result = ray.get(self.runner.get_next_partition.remote(plan_id))
+            # Lambda so _ray_get_with_retry can re-issue the .remote() call on retry; a failed ObjectRef cannot be re-fetched.
+            ref = lambda: self.runner.get_next_partition.remote(plan_id)
+            result = self._ray_get_with_retry(ref)
             if isinstance(result, PyExecutionStats):
                 return result
             yield result
