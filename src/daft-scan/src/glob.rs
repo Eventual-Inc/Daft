@@ -318,7 +318,7 @@ impl GlobScanOperator {
                     }
                 }
                 FileFormatConfig::ArrowIpc(_) => {
-                    let schema = daft_ipc::read_arrow_ipc_file_schema(
+                    let schema = daft_ipc::read_ipc_stream_schema(
                         first_filepath.as_str(),
                         io_client.clone(),
                         Some(io_stats.clone()),

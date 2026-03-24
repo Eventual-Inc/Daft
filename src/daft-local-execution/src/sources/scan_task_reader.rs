@@ -285,7 +285,7 @@ async fn read_arrow_ipc(
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let options = ArrowIpcReadOptions::new(scan_task.schema.clone(), scan_task.pushdowns.limit);
 
-    daft_ipc::stream_arrow_ipc_file(url.to_string(), options, io_client, Some(io_stats)).await
+    daft_ipc::stream_ipc_stream(url.to_string(), options, io_client, Some(io_stats)).await
 }
 
 #[cfg(feature = "python")]

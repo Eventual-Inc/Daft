@@ -1,6 +1,6 @@
 use std::{fs::File, sync::Arc};
 
-use arrow_ipc::reader::FileReader;
+use arrow_ipc::reader::{FileReader, StreamReader};
 use common_error::{DaftError, DaftResult};
 use daft_io::{GetResult, IOClient, IOStatsRef, LocalFile};
 use daft_recordbatch::RecordBatch;
@@ -90,7 +90,7 @@ async fn read_from_remote(
 }
 
 /// Read all record batches from an Arrow IPC file and yield them as a stream.
-pub async fn stream_arrow_ipc_file(
+pub async fn stream_ipc_file(
     uri: String,
     options: ArrowIpcReadOptions,
     io_client: Arc<IOClient>,
@@ -102,4 +102,43 @@ pub async fn stream_arrow_ipc_file(
         GetResult::File(file) => read_from_local(file, options).await,
         GetResult::Stream(stream, ..) => read_from_remote(stream, options).await,
     }
+}
+
+pub async fn stream_ipc_stream(
+    uri: String,
+    options: ArrowIpcReadOptions,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let get_result = io_client
+        .single_url_get(uri.clone(), None, io_stats)
+        .await?;
+
+    let GetResult::File(file) = get_result else {
+        return Err(DaftError::ValueError(format!(
+            "Expected a file for Arrow IPC stream, got a stream for `{uri}`"
+        )));
+    };
+
+    let path = file.path;
+    let (tx, rx) = tokio::sync::mpsc::channel(4);
+    let tx_err = tx.clone();
+
+    tokio::task::spawn_blocking(move || {
+        let inner = || -> DaftResult<()> {
+            let file = File::open(&path)?;
+            let mut reader = StreamReader::try_new_buffered(file, None)?;
+            unsafe {
+                reader = reader.with_skip_validation(!cfg!(debug_assertions));
+            }
+            send_ipc_record_batches(reader, options, tx)?;
+            Ok(())
+        };
+
+        if let Err(e) = inner() {
+            let _ = tx_err.blocking_send(Err(e));
+        }
+    });
+
+    Ok(ReceiverStream::new(rx).boxed())
 }

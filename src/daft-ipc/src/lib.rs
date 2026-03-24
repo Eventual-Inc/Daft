@@ -3,5 +3,5 @@
 mod read;
 mod schema;
 
-pub use read::{ArrowIpcReadOptions, stream_arrow_ipc_file};
-pub use schema::read_arrow_ipc_file_schema;
+pub use read::{ArrowIpcReadOptions, stream_ipc_file, stream_ipc_stream};
+pub use schema::{read_ipc_file_schema, read_ipc_stream_schema};
