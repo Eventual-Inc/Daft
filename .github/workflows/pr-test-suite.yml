@@ -329,7 +329,7 @@ jobs:
     - name: Build wheels
       run: |
         source .venv/bin/activate
-        maturin build --release --compatibility linux --out dist --timings=json --target-dir timings
+        maturin build --release --compatibility linux --out dist --timings=json --target-dir timings -Z unstable-options
     - name: Upload wheels
       uses: actions/upload-artifact@v7
       with:
