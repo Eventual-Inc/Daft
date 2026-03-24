@@ -229,16 +229,14 @@ mod tests {
     fn test_subsets_pair() {
         // Set {0, 1} has 2 non-empty proper subsets: {0} and {1}
         let s = RelationSet::singleton(0).union(RelationSet::singleton(1));
-        let subsets: Vec<RelationSet> = s.subsets().collect();
-        assert_eq!(subsets.len(), 2);
+        assert_eq!(s.subsets().count(), 2);
     }
 
     #[test]
     fn test_subsets_singleton() {
         // A singleton has no non-empty proper subsets
         let s = RelationSet::singleton(5);
-        let subsets: Vec<RelationSet> = s.subsets().collect();
-        assert_eq!(subsets.len(), 0);
+        assert_eq!(s.subsets().count(), 0);
     }
 
     #[test]
