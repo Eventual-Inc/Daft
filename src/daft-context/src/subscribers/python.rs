@@ -143,4 +143,21 @@ impl Subscriber for PySubscriberWrapper {
             Ok(())
         })
     }
+
+    async fn on_process_stats(&self, query_id: QueryID, stats: Stats) -> DaftResult<()> {
+        Python::attach(|py| {
+            let stat_map = stats
+                .iter()
+                .map(|(name, stat)| (name.to_string(), stat.clone().into_py_contents(py).unwrap()))
+                .collect::<HashMap<_, _>>();
+            let py_stats = stat_map.into_pyobject(py)?;
+
+            self.0.call_method1(
+                py,
+                intern!(py, "on_process_stats"),
+                (query_id.to_string(), py_stats),
+            )?;
+            Ok(())
+        })
+    }
 }

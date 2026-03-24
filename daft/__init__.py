@@ -126,8 +126,6 @@ from daft.session import (
 )
 from daft.udf import udf, func, cls, method, metrics
 from daft.io import (
-    DataCatalogTable,
-    DataCatalogType,
     IOConfig,
     from_glob_path,
     _range as range,
@@ -136,6 +134,7 @@ from daft.io import (
     read_hudi,
     read_iceberg,
     read_json,
+    read_kafka,
     read_parquet,
     read_sql,
     read_text,
@@ -155,7 +154,6 @@ from daft import io
 from daft import runners
 from daft import datasets
 from daft import functions
-from daft import gravitino
 
 
 # Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.
@@ -172,8 +170,6 @@ def __getattr__(name: str) -> object:
 __all__ = [
     "AudioFile",
     "Catalog",
-    "DataCatalogTable",
-    "DataCatalogType",
     "DataFrame",
     "DataType",
     "Expression",
@@ -234,7 +230,6 @@ __all__ = [
     "get_or_infer_runner_type",
     "get_provider",
     "get_table",
-    "gravitino",
     "has_catalog",
     "has_namespace",
     "has_provider",
@@ -255,6 +250,7 @@ __all__ = [
     "read_huggingface",
     "read_iceberg",
     "read_json",
+    "read_kafka",
     "read_lance",
     "read_mcap",
     "read_parquet",

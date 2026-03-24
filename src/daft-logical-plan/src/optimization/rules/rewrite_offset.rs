@@ -128,10 +128,7 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]);
-        let plan = dummy_scan_node(scan_op.clone())
-            .offset(7)?
-            .offset(11)?
-            .build();
+        let plan = dummy_scan_node(scan_op).offset(7)?.offset(11)?.build();
         assert_optimized_plan_err(
             plan,
             DaftError::InternalError(
@@ -148,7 +145,7 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]);
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .offset(offset)?
             .limit(limit, false)?
             .build();
@@ -243,7 +240,7 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]);
-        let plan = dummy_scan_node(scan_op.clone()).offset(offset)?.build();
+        let plan = dummy_scan_node(scan_op).offset(offset)?.build();
         assert_optimized_plan_err(
             plan,
             DaftError::not_implemented("Offset without limit is unsupported now!"),

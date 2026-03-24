@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    Meter,
+    ops::{NodeCategory, NodeType},
+};
 use common_py_serde::PyObjectWrapper;
 use common_runtime::JoinSet;
 use daft_dsl::{
@@ -12,7 +15,6 @@ use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
-use opentelemetry::metrics::Meter;
 use pyo3::{Py, PyAny, Python, types::PyAnyMethods};
 
 use super::{NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, udf::UdfStats};
@@ -164,10 +166,6 @@ impl ActorUDF {
         })
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     async fn execution_loop_fused(
         self: Arc<Self>,
         mut input_task_stream: TaskBuilderStream,
@@ -268,7 +266,7 @@ impl PipelineNodeImpl for ActorUDF {
         res
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(UdfStats::new(meter, self.context()))
     }
 

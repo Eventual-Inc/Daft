@@ -1820,7 +1820,7 @@ mod tests {
         let checksum = format!("{:x}", md5::compute(all_bytes));
         assert_eq!(checksum, parquet_expected_md5);
 
-        test_full_get(client, &parquet_file_path, &bytes).await
+        test_full_get(client, parquet_file_path, &bytes).await
     }
 
     #[tokio::test]

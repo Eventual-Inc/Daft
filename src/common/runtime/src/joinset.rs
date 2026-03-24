@@ -268,7 +268,7 @@ mod tests {
         for i in 0..1000000 {
             join_set.spawn(async move {
                 // random sleep between 0 and 1000ms
-                let sleep_duration = rand::thread_rng().gen_range(0..1000);
+                let sleep_duration = rand::rng().random_range(0..1000);
                 sleep(Duration::from_millis(sleep_duration)).await;
                 i
             });

@@ -12,7 +12,9 @@ use tokio_util::sync::CancellationToken;
 
 use super::worker::WorkerId;
 use crate::{
-    pipeline_node::{MaterializedOutput, NodeID, PipelineNodeContext, PipelineNodeImpl},
+    pipeline_node::{
+        MaterializedOutput, NodeID, PipelineNodeContext, PipelineNodeImpl, PlanFingerprint,
+    },
     plan::{QueryIdx, TaskIDCounter},
     scheduling::scheduler::SubmittableTask,
     utils::channel::{OneshotReceiver, OneshotSender, create_oneshot_channel},
@@ -55,6 +57,10 @@ pub(crate) struct TaskContext {
     /// The task ID
     pub task_id: TaskID,
     pub node_ids: Vec<NodeID>,
+    /// A fingerprint identifying tasks with functionally identical plans.
+    /// Assigned by pipeline nodes: tasks with the same fingerprint have structurally
+    /// identical plans and can share a single pipeline for execution.
+    pub plan_fingerprint: PlanFingerprint,
 }
 
 impl TaskContext {
@@ -63,12 +69,14 @@ impl TaskContext {
         node_id: NodeID,
         task_id: TaskID,
         node_ids: Vec<NodeID>,
+        plan_fingerprint: PlanFingerprint,
     ) -> Self {
         Self {
             query_idx,
             last_node_id: node_id,
             task_id,
             node_ids,
+            plan_fingerprint,
         }
     }
 }
@@ -77,8 +85,8 @@ impl std::fmt::Debug for TaskContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "TaskContext(query_idx = {}, last_node_id = {}, task_id = {})",
-            self.query_idx, self.last_node_id, self.task_id
+            "TaskContext(query_idx = {}, last_node_id = {}, task_id = {}, plan_fingerprint = {})",
+            self.query_idx, self.last_node_id, self.task_id, self.plan_fingerprint
         )
     }
 }
@@ -90,6 +98,7 @@ impl From<(&PipelineNodeContext, TaskID)> for TaskContext {
             node_context.node_id,
             task_id,
             vec![node_context.node_id],
+            0,
         )
     }
 }
@@ -271,6 +280,16 @@ impl Task for SwordfishTask {
     }
 }
 
+/// Hash multiple u32 values into a PlanFingerprint.
+pub(crate) fn hash_fingerprint(parts: &[u32]) -> PlanFingerprint {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    for part in parts {
+        part.hash(&mut hasher);
+    }
+    hasher.finish() as PlanFingerprint
+}
+
 /// Builder for creating and modifying SwordfishTask instances.
 /// Automatically handles TaskContext creation, config extraction, and context metadata.
 pub(crate) struct SwordfishTaskBuilder {
@@ -283,12 +302,20 @@ pub(crate) struct SwordfishTaskBuilder {
     node_context: Option<PipelineNodeContext>,
     pending_node_ids: Vec<NodeID>,
     notify_tokens: Vec<OneshotSender<()>>,
+    /// Fingerprint identifying tasks with functionally identical plans.
+    /// Assigned by pipeline nodes: tasks with the same fingerprint can share a pipeline.
+    plan_fingerprint: PlanFingerprint,
 }
 
 impl SwordfishTaskBuilder {
     /// Create a new builder from a plan and node.
     /// Automatically extracts context and config from the node, and adds node_id to pending_node_ids.
-    pub fn new(plan: LocalPhysicalPlanRef, node: &dyn PipelineNodeImpl) -> Self {
+    /// The `plan_fingerprint` identifies tasks with functionally identical plans.
+    pub fn new(
+        plan: LocalPhysicalPlanRef,
+        node: &dyn PipelineNodeImpl,
+        plan_fingerprint: PlanFingerprint,
+    ) -> Self {
         Self {
             plan,
             config: node.config().execution_config.clone(),
@@ -299,18 +326,35 @@ impl SwordfishTaskBuilder {
             node_context: None,
             pending_node_ids: vec![node.node_id()],
             notify_tokens: vec![],
+            plan_fingerprint,
         }
+    }
+
+    /// Get the current plan fingerprint/
+    #[cfg(test)]
+    pub fn fingerprint(&self) -> PlanFingerprint {
+        self.plan_fingerprint
+    }
+
+    /// Fold an additional value into the plan fingerprint.
+    /// Use this when a node produces plans that differ by some parameter
+    /// (e.g., limit value, partition offset).
+    pub fn extend_fingerprint(mut self, value: u32) -> Self {
+        self.plan_fingerprint = hash_fingerprint(&[self.plan_fingerprint, value]);
+        self
     }
 
     /// Transform the current plan using a function.
     /// The function receives the current plan and returns a new plan.
-    /// Automatically adds the node_id from the provided node to pending_node_ids.
+    /// Automatically adds the node_id from the provided node to pending_node_ids
+    /// and folds the node_id into the plan fingerprint.
     pub fn map_plan<F>(mut self, node: &dyn PipelineNodeImpl, f: F) -> Self
     where
         F: FnOnce(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef,
     {
         self.plan = f(self.plan);
         self.pending_node_ids.push(node.node_id());
+        self.plan_fingerprint = hash_fingerprint(&[self.plan_fingerprint, node.node_id()]);
         self
     }
 
@@ -339,6 +383,12 @@ impl SwordfishTaskBuilder {
         pending_node_ids.extend(right.pending_node_ids.clone());
         pending_node_ids.push(node.node_id());
 
+        let plan_fingerprint = hash_fingerprint(&[
+            left.plan_fingerprint,
+            right.plan_fingerprint,
+            node.node_id(),
+        ]);
+
         Self {
             plan: combined_plan,
             config: left.config.clone(),
@@ -349,6 +399,7 @@ impl SwordfishTaskBuilder {
             node_context: left.node_context.clone(),
             pending_node_ids,
             notify_tokens: vec![],
+            plan_fingerprint,
         }
     }
 
@@ -402,6 +453,8 @@ impl SwordfishTaskBuilder {
     ) -> SubmittableTask<SwordfishTask> {
         let strategy = self.strategy.unwrap_or(SchedulingStrategy::Spread);
 
+        let plan_fingerprint = hash_fingerprint(&[self.plan_fingerprint, query_idx as u32]);
+
         let task_context = TaskContext {
             query_idx,
             last_node_id: *self
@@ -410,6 +463,7 @@ impl SwordfishTaskBuilder {
                 .expect("Pending node_ids must be non-empty"),
             task_id: task_id_counter.next(),
             node_ids: self.pending_node_ids,
+            plan_fingerprint,
         };
 
         // Build context HashMap with task_id
@@ -579,14 +633,14 @@ pub(super) mod tests {
             let task_id = task_context.task_id;
             Self {
                 task_context,
-                task_name: "".into(),
+                task_name: String::new(),
                 priority: MockTaskPriority { priority: 0 },
                 scheduling_strategy: SchedulingStrategy::Spread,
                 resource_request: TaskResourceRequest::new(ResourceRequest::default()),
                 task_result: MaterializedOutput::new(
                     vec![partition_ref],
                     "".into(),
-                    "".into(),
+                    String::new(),
                     task_id,
                 ),
                 cancel_notifier: Arc::new(Mutex::new(None)),
@@ -698,7 +752,7 @@ pub(super) mod tests {
                     match failure {
                         MockTaskFailure::Error(error_message) => {
                             return TaskStatus::Failed {
-                                error: DaftError::InternalError(error_message.clone()),
+                                error: DaftError::InternalError(error_message),
                             };
                         }
                         MockTaskFailure::Panic(error_message) => {

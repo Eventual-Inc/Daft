@@ -12,7 +12,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use common_metrics::{
-    DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
+    Meter, StatSnapshot,
     meters::Counter,
     operator_metrics::OperatorCounter,
     ops::{NodeInfo, NodeType},
@@ -30,7 +30,7 @@ use daft_dsl::{
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::KeyValue;
 #[cfg(feature = "python")]
 use pyo3::{Py, prelude::*};
 use tracing::{Span, instrument};
@@ -98,9 +98,9 @@ impl UdfRuntimeStats {
         let node_kv = node_info.to_key_values();
 
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
             custom_counters: Mutex::new(HashMap::new()),
             node_kv,
             meter: meter.clone(), // Cheap to clone, Arc under the hood
@@ -124,8 +124,11 @@ impl UdfRuntimeStats {
                     existing.add(value, key_values.as_slice());
                 }
                 None => {
-                    let counter =
-                        Counter::new(&self.meter, name.clone(), description.map(Cow::Owned), None);
+                    let counter = self.meter.u64_counter_with_desc_and_unit(
+                        name.clone(),
+                        description.map(Cow::Owned),
+                        None,
+                    );
                     counter.add(value, key_values.as_slice());
                     counters.insert(name.into(), counter);
                 }

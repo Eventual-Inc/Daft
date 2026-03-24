@@ -197,7 +197,7 @@ mod tests {
         // Test subtraction with 0.
         let expr = sub(col_expr.clone(), lit(0));
         let simplified = simplify_numeric_expr(expr, &empty_schema)?;
-        assert_eq!(simplified, Transformed::yes(col_expr.clone()));
+        assert_eq!(simplified, Transformed::yes(col_expr));
 
         Ok(())
     }
@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(simplified, Transformed::no(expr));
 
         // 0 - a should not be simplified.
-        let expr = sub(lit(0), col_expr.clone());
+        let expr = sub(lit(0), col_expr);
         let simplified = simplify_numeric_expr(expr.clone(), &empty_schema)?;
         assert_eq!(simplified, Transformed::no(expr));
 

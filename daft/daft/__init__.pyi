@@ -324,10 +324,18 @@ class TextSourceConfig:
 
     encoding: str
     skip_blank_lines: bool
+    whole_text: bool
     buffer_size: int | None
     chunk_size: int | None
 
-    def __init__(self, encoding: str, skip_blank_lines: bool, buffer_size: int | None, chunk_size: int | None): ...
+    def __init__(
+        self,
+        encoding: str,
+        skip_blank_lines: bool,
+        whole_text: bool,
+        buffer_size: int | None,
+        chunk_size: int | None,
+    ): ...
 
 class FileFormatConfig:
     """Configuration for parsing a particular file format (Parquet, CSV, JSON)."""
@@ -1601,6 +1609,7 @@ def row_wise_udf(
     builtin_name: bool,
     is_async: bool,
     return_dtype: PyDataType,
+    cpus: float | None,
     gpus: float,
     use_process: bool | None,
     max_concurrency: int | None,
@@ -1608,6 +1617,7 @@ def row_wise_udf(
     on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
+    ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
 def batch_udf(
     func_id: str,
@@ -1617,6 +1627,7 @@ def batch_udf(
     builtin_name: bool,
     is_async: bool,
     return_dtype: PyDataType,
+    cpus: float | None,
     gpus: float,
     use_process: bool | None,
     max_concurrency: int | None,
@@ -1625,6 +1636,7 @@ def batch_udf(
     on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
+    ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
 def initialize_udfs(expression: PyExpr) -> PyExpr: ...
 def resolve_expr(expr: PyExpr, schema: PySchema) -> tuple[PyExpr, PyField]: ...
