@@ -307,7 +307,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
                 // Branch 1: Join completed task (only if tasks exist)
                 Some(join_result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
                     let control = Self::handle_probe_task_completion(join_result??, ctx).await?;
-                    if !control.is_continue() {
+                    if control.is_break() {
                         return Ok(ControlFlow::Break(()));
                     }
 
@@ -359,7 +359,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
             // Wait for final task to complete
             while let Some(join_result) = ctx.task_set.join_next().await {
                 let control = Self::handle_probe_task_completion(join_result??, ctx).await?;
-                if !control.is_continue() {
+                if control.is_break() {
                     return Ok(ControlFlow::Break(()));
                 }
             }
@@ -550,7 +550,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
                 );
 
                 build_result?;
-                if !probe_result?.is_continue() {
+                if probe_result?.is_break() {
                     stats_manager.finalize_node(node_id);
                     return Ok(());
                 }

@@ -290,7 +290,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 // Branch 1: Join completed task (only if tasks exist)
                 Some(join_result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
                     let result = join_result??;
-                    if !Self::handle_task_completion(result, ctx).await?.is_continue() {
+                    if Self::handle_task_completion(result, ctx).await?.is_break() {
                         return Ok(ControlFlow::Break(()));
                     }
 
@@ -341,9 +341,9 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
 
             // Wait for final task to complete
             while let Some(join_result) = ctx.task_set.join_next().await {
-                if !Self::handle_task_completion(join_result??, ctx)
+                if Self::handle_task_completion(join_result??, ctx)
                     .await?
-                    .is_continue()
+                    .is_break()
                 {
                     return Ok(ControlFlow::Break(()));
                 }
