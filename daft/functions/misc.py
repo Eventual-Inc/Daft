@@ -98,12 +98,7 @@ def random_int(low: int, high: int, seed: int | None = None) -> Expression:
         >>> all(10 <= v <= 20 for v in vals)
         True
     """
-    kwargs: dict[str, int] = {}
-    if high is not None:
-        kwargs["high"] = high
-    if seed is not None:
-        kwargs["seed"] = seed
-    return Expression._call_builtin_scalar_fn("random_int", low, **kwargs)
+    return Expression._call_builtin_scalar_fn("random_int", low, high, seed=seed)
 
 
 def eq_null_safe(left: Expression, right: Expression) -> Expression:
