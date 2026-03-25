@@ -2746,6 +2746,8 @@ dependencies = [
 name = "daft-functions-temporal"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
+ "chrono",
  "common-error",
  "daft-core",
  "daft-dsl",

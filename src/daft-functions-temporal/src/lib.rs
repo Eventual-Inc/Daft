@@ -1,3 +1,4 @@
+pub mod current;
 mod time;
 mod to_string;
 mod total;
@@ -13,6 +14,7 @@ use daft_dsl::{
     ExprRef,
     functions::{FunctionArgs, FunctionModule, FunctionRegistry, ScalarUDF, UnaryArg},
 };
+use current::{CurrentDate, CurrentTimestamp, CurrentTimezone};
 use serde::{Deserialize, Serialize};
 use time::Time;
 use truncate::Truncate;
@@ -109,5 +111,8 @@ impl FunctionModule for TemporalFunctions {
         parent.add_fn(WeekOfYear);
         parent.add_fn(Year);
         parent.add_fn(UnixTimestamp);
+        parent.add_fn(CurrentDate);
+        parent.add_fn(CurrentTimestamp);
+        parent.add_fn(CurrentTimezone);
     }
 }
