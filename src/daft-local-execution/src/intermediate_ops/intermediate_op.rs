@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    ops::ControlFlow,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -20,8 +21,7 @@ use snafu::ResultExt;
 use tracing::info_span;
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorControlFlow, OperatorOutput,
-    PipelineExecutionSnafu,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
@@ -164,7 +164,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     async fn handle_task_completion(
         result: ExecutionTaskResult<Op::State>,
         ctx: &mut ExecutionContext<Op>,
-    ) -> DaftResult<OperatorControlFlow> {
+    ) -> DaftResult<ControlFlow<()>> {
         match result.result {
             IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
                 // Record execution stats
@@ -177,7 +177,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 // Send output
                 ctx.runtime_stats.add_rows_out(mp.len() as u64);
                 if ctx.output_sender.send(mp).await.is_err() {
-                    return Ok(OperatorControlFlow::Break);
+                    return Ok(ControlFlow::Break(()));
                 }
 
                 // Return state to pool
@@ -198,14 +198,14 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 // Send output
                 ctx.runtime_stats.add_rows_out(output.len() as u64);
                 if ctx.output_sender.send(output).await.is_err() {
-                    return Ok(OperatorControlFlow::Break);
+                    return Ok(ControlFlow::Break(()));
                 }
 
                 // Spawn another execution with same input and state (don't return state)
                 Self::spawn_execution_task(ctx, input, result.state, result.state_id);
             }
         }
-        Ok(OperatorControlFlow::Continue)
+        Ok(ControlFlow::Continue(()))
     }
 
     fn spawn_ready_batches(
@@ -249,14 +249,12 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 // Branch 1: Join completed task (only if tasks exist)
                 Some(join_result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
                     let control = Self::handle_task_completion(join_result??, ctx).await?;
-                    if !control.should_continue() {
+                    if control.is_break() {
                         return Ok(()); // Break
                     }
 
                     // After completing a task, update bounds and try to spawn more tasks
-                    let new_requirements = ctx.batch_manager.calculate_batch_size();
-                    let (lower, upper) = new_requirements.values();
-                    buffer.update_bounds(lower, upper);
+                    buffer.update_bounds(ctx.batch_manager.calculate_batch_size());
 
                     Self::spawn_ready_batches(&mut buffer, ctx)?;
                 }
@@ -303,7 +301,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
             // Wait for final task to complete
             while let Some(join_result) = ctx.task_set.join_next().await {
                 let control = Self::handle_task_completion(join_result??, ctx).await?;
-                if !control.should_continue() {
+                if control.is_break() {
                     return Ok(()); // Break
                 }
             }
