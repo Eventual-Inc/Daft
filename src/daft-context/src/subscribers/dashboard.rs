@@ -285,8 +285,8 @@ impl Subscriber for DashboardSubscriber {
         }
         let results = self.preview_rows.remove(&query_id);
         let results_ipc = if let Some((_, results)) = results {
-            debug_assert!(results.len() <= TOTAL_ROWS);
             let result = MicroPartition::concat(results)?;
+            debug_assert!(result.len() <= TOTAL_ROWS);
             let results_ipc = result.write_to_ipc_stream()?;
             if results_ipc.len() > 1024 * 1024 * 2 {
                 // 2MB, our dashboard cap
