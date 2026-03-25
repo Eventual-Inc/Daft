@@ -160,10 +160,14 @@ impl GlobScanSource {
                                 }
                             }
 
-                            if output_sender.send(PipelineMessage::Morsel {
-                                input_id,
-                                partition,
-                            }).await.is_err() {
+                            if output_sender
+                                .send(PipelineMessage::Morsel {
+                                    input_id,
+                                    partition,
+                                })
+                                .await
+                                .is_err()
+                            {
                                 break;
                             }
                         }

@@ -15,6 +15,7 @@ use crate::{
     join::{
         build::{BuildStateBridge, FinalizedBuildStateReceiver},
         join_operator::{JoinOperator, ProbeOutput},
+        stats::JoinStats,
     },
     pipeline_message::{InputId, PipelineMessage},
     runtime_stats::RuntimeStats,
@@ -28,7 +29,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
     op: Arc<Op>,
     task_spawner: ExecutionTaskSpawner,
     finalize_spawner: ExecutionTaskSpawner,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<JoinStats>,
     output_sender: Sender<PipelineMessage>,
     build_state_bridge: Arc<BuildStateBridge<Op>>,
     _maintain_order: bool,
@@ -89,7 +90,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
                     ProbeOutput::HasMoreOutput { output, .. } => Some(output),
                 };
                 if let Some(mp) = output_mp {
-                    runtime_stats.add_rows_out(mp.len() as u64);
+                    runtime_stats.add_probe_rows_out(mp.len() as u64);
                     if output_sender
                         .send(PipelineMessage::Morsel {
                             input_id,
@@ -122,7 +123,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
             msg = receiver.recv(), if !states.is_empty() && !input_closed => {
                 match msg {
                     Some(PipelineMessage::Morsel { partition, .. }) => {
-                        runtime_stats.add_rows_in(partition.len() as u64);
+                        runtime_stats.add_probe_rows_in(partition.len() as u64);
                         buffer.push(partition);
                     }
                     Some(PipelineMessage::Flush(_)) | None => {
@@ -147,7 +148,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
                 ProbeOutput::HasMoreOutput { output, .. } => Some(output),
             };
             if let Some(mp) = output_mp {
-                runtime_stats.add_rows_out(mp.len() as u64);
+                runtime_stats.add_probe_rows_out(mp.len() as u64);
                 if output_sender
                     .send(PipelineMessage::Morsel {
                         input_id,
@@ -177,7 +178,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
     if op.needs_probe_finalization()
         && let Some(mp) = op.finalize_probe(states, &finalize_spawner).await??
     {
-        runtime_stats.add_rows_out(mp.len() as u64);
+        runtime_stats.add_probe_rows_out(mp.len() as u64);
         if output_sender
             .send(PipelineMessage::Morsel {
                 input_id,
@@ -207,7 +208,7 @@ pub(crate) struct ProbeExecutionContext<Op: JoinOperator> {
     finalize_spawner: ExecutionTaskSpawner,
     output_sender: Sender<PipelineMessage>,
     build_state_bridge: Arc<BuildStateBridge<Op>>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<JoinStats>,
     maintain_order: bool,
 }
 
@@ -219,7 +220,7 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
         finalize_spawner: ExecutionTaskSpawner,
         output_sender: Sender<PipelineMessage>,
         build_state_bridge: Arc<BuildStateBridge<Op>>,
-        runtime_stats: Arc<dyn RuntimeStats>,
+        runtime_stats: Arc<JoinStats>,
         maintain_order: bool,
     ) -> Self {
         Self {

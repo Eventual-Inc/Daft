@@ -19,7 +19,6 @@ pub(crate) struct JoinStats {
     node_kv: Vec<KeyValue>,
 }
 
-#[allow(dead_code)]
 impl JoinStats {
     pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
         let node_kv = node_info.to_key_values();

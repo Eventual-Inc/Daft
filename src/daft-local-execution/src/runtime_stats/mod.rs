@@ -37,12 +37,6 @@ fn should_enable_process_monitor() -> bool {
     }
 }
 
-/// Message type for the stats manager channel: node lifecycle events and snapshot requests.
-#[allow(dead_code)]
-pub enum StatsManagerMessage {
-    NodeEvent(usize, bool),
-}
-
 fn should_enable_progress_bar() -> bool {
     if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
         return false;
@@ -55,11 +49,11 @@ fn should_enable_progress_bar() -> bool {
 }
 
 #[derive(Clone)]
-pub struct RuntimeStatsManagerHandle(Arc<mpsc::UnboundedSender<StatsManagerMessage>>);
+pub struct RuntimeStatsManagerHandle(Arc<mpsc::UnboundedSender<(usize, bool)>>);
 
 impl RuntimeStatsManagerHandle {
     pub fn activate_node(&self, node_id: usize) {
-        if let Err(e) = self.0.send(StatsManagerMessage::NodeEvent(node_id, true)) {
+        if let Err(e) = self.0.send((node_id, true)) {
             log::warn!(
                 "Unable to activate node: {node_id} because RuntimeStatsManager was already finished: {e}"
             );
@@ -67,13 +61,12 @@ impl RuntimeStatsManagerHandle {
     }
 
     pub fn finalize_node(&self, node_id: usize) {
-        if let Err(e) = self.0.send(StatsManagerMessage::NodeEvent(node_id, false)) {
+        if let Err(e) = self.0.send((node_id, false)) {
             log::warn!(
                 "Unable to finalize node: {node_id} because RuntimeStatsManager was already finished: {e}"
             );
         }
     }
-
 }
 
 /// Event handler for RuntimeStats
@@ -83,7 +76,7 @@ impl RuntimeStatsManagerHandle {
 /// For a given event, the event handler ensures that the subscribers only get the latest event at a frequency of once every 500ms
 /// This prevents the subscribers from being overwhelmed by too many events.
 pub struct RuntimeStatsManager {
-    node_tx: Arc<mpsc::UnboundedSender<StatsManagerMessage>>,
+    node_tx: Arc<mpsc::UnboundedSender<(usize, bool)>>,
     finish_tx: oneshot::Sender<QueryEndState>,
     stats_manager_task: RuntimeTask<ExecutionStats>,
 }
@@ -185,7 +178,7 @@ impl RuntimeStatsManager {
         throttle_interval: Duration,
         enable_process_monitor: bool,
     ) -> Self {
-        let (node_tx, mut node_rx) = mpsc::unbounded_channel::<StatsManagerMessage>();
+        let (node_tx, mut node_rx) = mpsc::unbounded_channel::<(usize, bool)>();
         let node_tx = Arc::new(node_tx);
         let (finish_tx, mut finish_rx) = oneshot::channel::<QueryEndState>();
 
@@ -205,31 +198,27 @@ impl RuntimeStatsManager {
             loop {
                 tokio::select! {
                     biased;
-                    Some(msg) = node_rx.recv() => {
-                        match msg {
-                            StatsManagerMessage::NodeEvent(node_id, is_initialize) => {
-                                if is_initialize && active_nodes.insert(node_id) {
-                                    if let Some(progress_bar) = &progress_bar {
-                                        progress_bar.initialize_node(node_id);
-                                    }
+                    Some((node_id, is_initialize)) = node_rx.recv() => {
+                        if is_initialize && active_nodes.insert(node_id) {
+                            if let Some(progress_bar) = &progress_bar {
+                                progress_bar.initialize_node(node_id);
+                            }
 
-                                    for res in future::join_all(subscribers.iter().map(|subscriber| subscriber.on_exec_operator_start(query_id.clone(), node_id))).await {
-                                        if let Err(e) = res {
-                                            log::error!("Failed to initialize node: {}", e);
-                                        }
-                                    }
-                                } else if !is_initialize && active_nodes.remove(&node_id) {
-                                    Self::flush_and_finalize_node(
-                                        &query_id,
-                                        node_id,
-                                        &node_map,
-                                        progress_bar.as_deref(),
-                                        &subscribers,
-                                        "finalize node",
-                                    )
-                                    .await;
+                            for res in future::join_all(subscribers.iter().map(|subscriber| subscriber.on_exec_operator_start(query_id.clone(), node_id))).await {
+                                if let Err(e) = res {
+                                    log::error!("Failed to initialize node: {}", e);
                                 }
                             }
+                        } else if !is_initialize && active_nodes.remove(&node_id) {
+                            Self::flush_and_finalize_node(
+                                &query_id,
+                                node_id,
+                                &node_map,
+                                progress_bar.as_deref(),
+                                &subscribers,
+                                "finalize node",
+                            )
+                            .await;
                         }
                     }
 

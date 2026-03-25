@@ -30,7 +30,7 @@ use crate::{
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<PipelineMessage>>;
 
 pub(crate) struct SourceStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_out: Counter,
     io_stats: IOStatsRef,
 
@@ -42,7 +42,7 @@ impl SourceStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: meter.duration_us_metric(),
+            duration_us: meter.duration_us_metric(),
             rows_out: meter.rows_out_metric(),
             io_stats: IOStatsRef::default(),
 
@@ -57,7 +57,7 @@ impl RuntimeStats for SourceStats {
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        let cpu_us = self.cpu_us.load(ordering);
+        let cpu_us = self.duration_us.load(ordering);
         let rows_out = self.rows_out.load(ordering);
         let bytes_read = self.io_stats.load_bytes_read() as u64;
         StatSnapshot::Source(SourceSnapshot {
@@ -76,7 +76,7 @@ impl RuntimeStats for SourceStats {
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 

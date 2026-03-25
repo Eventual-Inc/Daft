@@ -10,9 +10,9 @@ use tokio::sync::oneshot;
 use crate::{
     ExecutionTaskSpawner,
     channel::{Receiver, Sender, create_channel},
-    join::join_operator::JoinOperator,
+    join::{join_operator::JoinOperator, stats::JoinStats},
     pipeline_message::{InputId, PipelineMessage},
-    runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle},
+    runtime_stats::RuntimeStatsManagerHandle,
 };
 
 /// Slot for one input_id: either probe will receive (sender stored) or build already sent (value stored).
@@ -84,14 +84,14 @@ async fn process_single_input<Op: JoinOperator + 'static>(
     op: Arc<Op>,
     task_spawner: ExecutionTaskSpawner,
     build_state_bridge: Arc<BuildStateBridge<Op>>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<JoinStats>,
 ) -> DaftResult<()> {
     let mut state = op.make_build_state()?;
 
     while let Some(msg) = receiver.recv().await {
         match msg {
             PipelineMessage::Morsel { partition, .. } => {
-                runtime_stats.add_rows_in(partition.len() as u64);
+                runtime_stats.add_build_rows_inserted(partition.len() as u64);
                 state = op.build(partition, state, &task_spawner).await??;
             }
             PipelineMessage::Flush(_) => {
@@ -109,7 +109,7 @@ pub(crate) struct BuildExecutionContext<Op: JoinOperator> {
     op: Arc<Op>,
     task_spawner: ExecutionTaskSpawner,
     build_state_bridge: Arc<BuildStateBridge<Op>>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<JoinStats>,
     stats_manager: RuntimeStatsManagerHandle,
     node_id: usize,
 }
@@ -119,7 +119,7 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
         op: Arc<Op>,
         task_spawner: ExecutionTaskSpawner,
         build_state_bridge: Arc<BuildStateBridge<Op>>,
-        runtime_stats: Arc<dyn RuntimeStats>,
+        runtime_stats: Arc<JoinStats>,
         stats_manager: RuntimeStatsManagerHandle,
         node_id: usize,
     ) -> Self {
