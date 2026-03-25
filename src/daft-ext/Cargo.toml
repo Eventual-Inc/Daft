@@ -1,14 +1,38 @@
 [package]
 name = "daft-ext"
+description = "Daft extension SDK for building custom extensions"
+version = "0.1.1"
 edition = {workspace = true}
-version = {workspace = true}
+license = "Apache-2.0"
+homepage = "https://docs.daft.ai"
+repository = "https://github.com/Eventual-Inc/Daft"
+readme = "README.md"
+publish = true
+
+[package.metadata.cargo-machete]
+ignored = [
+  "arrow-data-56",
+  "arrow-data-57",
+  "arrow-data-58",
+  "arrow-schema-56",
+  "arrow-schema-57",
+  "arrow-schema-58"
+]
 
 [features]
-arrow-56 = ["daft-ext-abi/arrow-56"]
-arrow-57 = ["daft-ext-abi/arrow-57"]
-arrow-58 = ["daft-ext-abi/arrow-58"]
+arrow-56 = ["dep:arrow-schema-56", "dep:arrow-data-56"]
+arrow-57 = ["dep:arrow-schema-57", "dep:arrow-data-57"]
+arrow-58 = ["dep:arrow-schema-58", "dep:arrow-data-58"]
 
 [dependencies]
-daft-ext-abi = {path = "../daft-ext-abi"}
-daft-ext-core = {path = "../daft-ext-core"}
-daft-ext-macros = {path = "../daft-ext-macros"}
+daft-ext-macros = {path = "../daft-ext-macros", version = "0.1.1"}
+# Arrow C Data Interface compatibility (optional, feature-gated)
+arrow-schema-56 = {package = "arrow-schema", version = "56", features = ["ffi"], optional = true}
+arrow-data-56 = {package = "arrow-data", version = "56", features = ["ffi"], optional = true}
+arrow-schema-57 = {package = "arrow-schema", version = "57", features = ["ffi"], optional = true}
+arrow-data-57 = {package = "arrow-data", version = "57", features = ["ffi"], optional = true}
+arrow-schema-58 = {package = "arrow-schema", version = "58", features = ["ffi"], optional = true}
+arrow-data-58 = {package = "arrow-data", version = "58", features = ["ffi"], optional = true}
+
+[lints]
+workspace = true

@@ -11,7 +11,7 @@ use daft_dsl::{
         BuiltinScalarFnVariant, FunctionArgs, ScalarFunctionFactory, ScalarUDF, scalar::EvalContext,
     },
 };
-use daft_ext_abi::{ArrowArray, ArrowSchema, FFI_ScalarFunction};
+use daft_ext::abi::{ArrowArray, ArrowSchema, FFI_ScalarFunction};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::module::ModuleHandle;
@@ -336,14 +336,14 @@ mod tests {
         }
     }
 
-    unsafe extern "C" fn mock_init(_session: *mut daft_ext_abi::FFI_SessionContext) -> c_int {
+    unsafe extern "C" fn mock_init(_session: *mut daft_ext::abi::FFI_SessionContext) -> c_int {
         0
     }
 
     fn make_mock_module_handle() -> Arc<ModuleHandle> {
-        use daft_ext_abi::FFI_Module;
+        use daft_ext::abi::FFI_Module;
         let module = FFI_Module {
-            daft_abi_version: daft_ext_abi::DAFT_ABI_VERSION,
+            daft_abi_version: daft_ext::abi::DAFT_ABI_VERSION,
             name: c"mock_module".as_ptr(),
             init: mock_init,
             free_string: mock_free_string,
