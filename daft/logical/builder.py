@@ -293,30 +293,9 @@ class LogicalPlanBuilder:
         strategy: JoinStrategy | None = None,
         prefix: str | None = None,
         suffix: str | None = None,
-    ) -> LogicalPlanBuilder:
-        builder = self._builder.join(
-            right._builder,
-            [expr._expr for expr in left_on],
-            [expr._expr for expr in right_on],
-            how,
-            strategy,
-            prefix,
-            suffix,
-        )
-        return LogicalPlanBuilder(builder)
-
-    def join_with_skip_existing(
-        self,
-        right: LogicalPlanBuilder,
-        left_on: list[Expression],
-        right_on: list[Expression],
-        how: JoinType = JoinType.Inner,
-        strategy: JoinStrategy | None = None,
-        prefix: str | None = None,
-        suffix: str | None = None,
         skip_existing_spec: Any = None,
     ) -> LogicalPlanBuilder:
-        builder = self._builder.join_with_skip_existing(
+        builder = self._builder.join(
             right._builder,
             [expr._expr for expr in left_on],
             [expr._expr for expr in right_on],

@@ -2108,17 +2108,7 @@ class LogicalPlanBuilder:
         join_strategy: JoinStrategy | None = None,
         prefix: str | None = None,
         suffix: str | None = None,
-    ) -> LogicalPlanBuilder: ...
-    def join_with_skip_existing(
-        self,
-        right: LogicalPlanBuilder,
-        left_on: list[PyExpr],
-        right_on: list[PyExpr],
-        join_type: JoinType,
-        join_strategy: JoinStrategy | None = None,
-        prefix: str | None = None,
-        suffix: str | None = None,
-        skip_existing_spec: SkipExistingSpec = ...,
+        skip_existing_spec: SkipExistingSpec | None = None,
     ) -> LogicalPlanBuilder: ...
     def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder: ...
     def union(self, other: LogicalPlanBuilder, is_all: bool, is_by_name: bool) -> LogicalPlanBuilder: ...

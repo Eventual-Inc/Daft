@@ -657,31 +657,6 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn join_with_skip_existing<Right: Into<LogicalPlanRef>>(
-        &self,
-        right: Right,
-        on: Option<ExprRef>,
-        using: Vec<String>,
-        join_type: JoinType,
-        join_strategy: Option<JoinStrategy>,
-        options: JoinOptions,
-        skip_existing_spec: ops::SkipExistingSpec,
-    ) -> DaftResult<Self> {
-        let result = self.join(right, on, using, join_type, join_strategy, options)?;
-        // Attach the skip_existing_spec to the Join node
-        match result.plan.as_ref() {
-            LogicalPlan::Join(join) => {
-                let new_join = join
-                    .clone()
-                    .with_skip_existing_spec(Some(skip_existing_spec));
-                let logical_plan: LogicalPlan = new_join.into();
-                Ok(result.with_new_plan(logical_plan))
-            }
-            _ => unreachable!("join() must return a Join node"),
-        }
-    }
-
     pub fn cross_join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
@@ -1337,6 +1312,7 @@ impl PyLogicalPlanBuilder {
         join_strategy,
         prefix,
         suffix,
+        skip_existing_spec=None,
     ))]
     pub fn join(
         &self,
@@ -1347,6 +1323,7 @@ impl PyLogicalPlanBuilder {
         join_strategy: Option<JoinStrategy>,
         prefix: Option<String>,
         suffix: Option<String>,
+        skip_existing_spec: Option<ops::PySkipExistingSpec>,
     ) -> PyResult<Self> {
         let left_on = left_on.into_iter().map(|expr| expr.expr);
         let right_on = right_on.into_iter().map(|expr| expr.expr);
@@ -1374,77 +1351,37 @@ impl PyLogicalPlanBuilder {
 
         let on = combine_conjunction(on_exprs);
 
-        Ok(self
-            .builder
-            .join(
-                &right.builder,
-                on,
-                using,
-                join_type,
-                join_strategy,
-                JoinOptions { prefix, suffix },
-            )?
-            .into())
-    }
+        let mut result = self.builder.join(
+            &right.builder,
+            on,
+            using,
+            join_type,
+            join_strategy,
+            JoinOptions { prefix, suffix },
+        )?;
 
-    #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (
-        right,
-        left_on,
-        right_on,
-        join_type,
-        join_strategy,
-        prefix,
-        suffix,
-        skip_existing_spec,
-    ))]
-    pub fn join_with_skip_existing(
-        &self,
-        right: &Self,
-        left_on: Vec<PyExpr>,
-        right_on: Vec<PyExpr>,
-        join_type: JoinType,
-        join_strategy: Option<JoinStrategy>,
-        prefix: Option<String>,
-        suffix: Option<String>,
-        skip_existing_spec: ops::PySkipExistingSpec,
-    ) -> PyResult<Self> {
-        let left_on = left_on.into_iter().map(|expr| expr.expr);
-        let right_on = right_on.into_iter().map(|expr| expr.expr);
+        if let Some(skip_existing_spec) = skip_existing_spec {
+            if join_type != JoinType::Anti || join_strategy != Some(JoinStrategy::KeyFiltering) {
+                return Err(DaftError::ValueError(
+                    "skip_existing_spec may only be used with JoinType::Anti and JoinStrategy::KeyFiltering"
+                        .to_string(),
+                )
+                .into());
+            }
 
-        let mut on_exprs = Vec::new();
-        let mut using = Vec::new();
-
-        for (l, r) in left_on.zip(right_on) {
-            if let (
-                Expr::Column(Column::Unresolved(UnresolvedColumn { name: l_name, .. })),
-                Expr::Column(Column::Unresolved(UnresolvedColumn { name: r_name, .. })),
-            ) = (l.as_ref(), r.as_ref())
-                && l_name == r_name
-            {
-                using.push(l_name.to_string());
-            } else {
-                let l = l.to_left_cols(self.builder.schema())?;
-                let r = r.to_right_cols(right.builder.schema())?;
-
-                on_exprs.push(l.eq(r));
+            match result.plan.as_ref() {
+                LogicalPlan::Join(join) => {
+                    let new_join = join
+                        .clone()
+                        .with_skip_existing_spec(Some(skip_existing_spec.spec));
+                    let logical_plan: LogicalPlan = new_join.into();
+                    result = result.with_new_plan(logical_plan);
+                }
+                _ => unreachable!("join() must return a Join node"),
             }
         }
 
-        let on = combine_conjunction(on_exprs);
-
-        Ok(self
-            .builder
-            .join_with_skip_existing(
-                &right.builder,
-                on,
-                using,
-                join_type,
-                join_strategy,
-                JoinOptions { prefix, suffix },
-                skip_existing_spec.spec,
-            )?
-            .into())
+        Ok(result.into())
     }
 
     pub fn concat(&self, other: &Self) -> DaftResult<Self> {

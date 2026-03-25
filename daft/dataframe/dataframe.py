@@ -2635,7 +2635,6 @@ class DataFrame:
         keys_load_batch_size: int = 100000,
         max_concurrency_per_worker: int = 1,
         filter_batch_size: int = 10000,
-        strict_path_check: bool = False,
         **reader_args: Any,
     ) -> "DataFrame":
         """Filter out rows whose key(s) already exist in existing data (i.e., already processed rows).
@@ -2663,8 +2662,6 @@ class DataFrame:
                 (total memory ≈ num_tasks × filter_batch_size × avg_key_size). For lightweight
                 keys (int, short string), 10000-50000 works well. For large keys (URLs, long
                 strings), keep this lower to avoid excessive memory usage. Defaults to 10000.
-            strict_path_check: If True, raise an error when the path doesn't exist.
-                If False (default), log a warning and process all rows (useful for first run).
             **reader_args: Additional arguments passed to the file reader (e.g., delimiter for CSV).
 
         Returns:
@@ -2707,29 +2704,37 @@ class DataFrame:
         else:
             existing_path_strs = [str(existing_path)]
 
-        # Path existence check:
-        # If the existing data path doesn't exist, it means there's nothing to skip.
-        if not strict_path_check:
-            from pyarrow.fs import FileType
+        if not isinstance(key_column, list):
+            key_column = [key_column]
 
-            from daft.filesystem import _resolve_paths_and_filesystem
+        from pyarrow.fs import FileType
 
-            try:
-                resolved_paths, fs = _resolve_paths_and_filesystem(existing_path_strs, io_config=io_config)
-                infos = fs.get_file_info(resolved_paths)
-                all_exist = all(info.type != FileType.NotFound for info in infos)
-            except Exception:
-                all_exist = False
+        from daft.filesystem import _resolve_paths_and_filesystem
 
-            if not all_exist:
+        resolved_paths, fs = _resolve_paths_and_filesystem(existing_path_strs, io_config=io_config)
+        infos = fs.get_file_info(resolved_paths)
+
+        original_existing_path_strs = existing_path_strs
+        existing_path_strs = [
+            path for path, info in zip(original_existing_path_strs, infos) if info.type != FileType.NotFound
+        ]
+        missing_path_strs = [
+            path for path, info in zip(original_existing_path_strs, infos) if info.type == FileType.NotFound
+        ]
+
+        if missing_path_strs:
+            if not existing_path_strs:
                 logger.warning(
                     "[skip_existing] No existing data found at %s, processing all rows.",
-                    existing_path_strs,
+                    original_existing_path_strs,
                 )
                 return self
 
-        if not isinstance(key_column, list):
-            key_column = [key_column]
+            logger.warning(
+                "[skip_existing] Some existing data paths were not found at %s; continuing with existing paths %s.",
+                missing_path_strs,
+                existing_path_strs,
+            )
 
         from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
         from daft.daft import PySchema, SkipExistingSpec
@@ -2758,7 +2763,7 @@ class DataFrame:
         # Build anti-join on key columns with KeyFiltering strategy
         left_on = [col(c) for c in key_column]
         right_on = [col(c) for c in key_column]
-        builder = self._builder.join_with_skip_existing(
+        builder = self._builder.join(
             right_builder,
             left_on=left_on,
             right_on=right_on,

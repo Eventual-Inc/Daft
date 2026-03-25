@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::ops::{NodeCategory, NodeType};
 use common_py_serde::PyObjectWrapper;
 use common_runtime::{JoinSet, python::execute_python_coroutine};
@@ -137,7 +137,7 @@ impl KeyFilterActors {
                         ),
                     )
                 {
-                    eprintln!("Error tearing down key filter actors: {:?}", e);
+                    tracing::error!("Error tearing down key filter actors: {:?}", e);
                 }
             }
         });
@@ -223,13 +223,21 @@ impl KeyFilteringJoinNode {
             }
         }
         // Wait for all tasks to finish.
+        let mut first_error = None;
         while let Some(result) = running_tasks.join_next().await {
-            if result?.is_err() {
-                break;
+            match result? {
+                Ok(()) => {}
+                Err(err) if first_error.is_none() => first_error = Some(err),
+                Err(_) => {}
             }
         }
         // Only teardown actors after all tasks are finished.
         actors.teardown();
+        if let Some(err) = first_error {
+            return Err(DaftError::InternalError(format!(
+                "Sender of OneShot Channel dropped before sending task completion notification: {err}"
+            )));
+        }
         Ok(())
     }
 

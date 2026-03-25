@@ -185,7 +185,6 @@ def test_skip_existing_from_glob_path(tmp_path: Path):
     # Read listing and sort; build seed and full sets
     df_all = daft.from_glob_path(str(src_dir / "*.txt"))
     df_all = df_all.sort("path")
-    df_all.show(100)
     df_seed = df_all.limit(5)
 
     # Write to destination with skip_existing (use 'path' as key)
@@ -406,26 +405,8 @@ def test_skip_existing_jsonl_and_ndjson_format_aliases(tmp_path: Path, fmt_alias
     assert out.select("id").to_pydict()["id"] == [3]
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_skip_existing_missing_keys_raises(tmp_path: Path):
-    """strict_path_check=True bypasses the eager path check.
-
-    The anti-join strategy encounters a missing path and raises RuntimeError.
-    """
-    ckpt_dir = tmp_path / "missing_skip_existing_keys"
-    df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
-
-    with pytest.raises(RuntimeError, match=r"\[key_filtering_join\] Unable to read keys"):
-        df.skip_existing(
-            existing_path=ckpt_dir, key_column="id", file_format="parquet", strict_path_check=True
-        ).collect()
-
-
-def test_skip_existing_strict_path_check_false_processes_all_rows(tmp_path: Path):
-    """strict_path_check=False (default) detects the missing path eagerly.
-
-    Returns the original DataFrame without requiring the Ray runner.
-    """
+def test_skip_existing_missing_path_processes_all_rows(tmp_path: Path):
+    """A missing path returns all rows without requiring the Ray runner."""
     ckpt_dir = tmp_path / "nonexistent_path"
     df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
 
@@ -433,17 +414,35 @@ def test_skip_existing_strict_path_check_false_processes_all_rows(tmp_path: Path
     assert result.select("id").to_pydict()["id"] == [1, 2, 3]
 
 
-def test_skip_existing_strict_path_check_false_returns_self(tmp_path: Path):
-    """strict_path_check=False returns the original DataFrame when path doesn't exist.
-
-    No anti-join plan should be created.
-    """
+def test_skip_existing_missing_path_returns_self(tmp_path: Path):
+    """A missing path returns the original DataFrame without building a join plan."""
     ckpt_dir = tmp_path / "nonexistent_path"
     df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
 
     result_df = df.skip_existing(existing_path=ckpt_dir, key_column="id", file_format="parquet")
     # No join node should be appended — should be the exact same DataFrame object
     assert result_df is df
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
+def test_skip_existing_partial_missing_paths_uses_existing_paths(tmp_path: Path):
+    existing_dir = tmp_path / "existing_path"
+    missing_dir = tmp_path / "missing_path"
+
+    helper_write_dataframe(
+        daft.from_pydict({"id": [1, 2], "val": ["a", "b"]}),
+        FileFormat.Parquet,
+        existing_dir,
+    )
+
+    df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
+    result = df.skip_existing(
+        existing_path=[existing_dir, missing_dir],
+        key_column="id",
+        file_format="parquet",
+    ).collect()
+
+    assert result.select("id").to_pydict()["id"] == [3]
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
@@ -474,10 +473,12 @@ def test_skip_existing_composite_key_filters_correctly(tmp_path: Path):
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
 def test_skip_existing_empty_key_list_raises(tmp_path: Path):
     df = daft.from_pydict({"id": [1], "val": ["a"]})
+    existing_dir = tmp_path / "a"
+    existing_dir.mkdir()
     with pytest.raises(
         ValueError, match=r"\[skip_existing\] key_column must be a non-empty list of non-empty column names"
     ):
-        df.skip_existing(existing_path=tmp_path / "a", key_column=[], file_format="parquet").collect()
+        df.skip_existing(existing_path=existing_dir, key_column=[], file_format="parquet").collect()
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
@@ -490,14 +491,18 @@ def test_skip_existing_invalid_format_string_raises(tmp_path: Path):
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
 def test_skip_existing_invalid_num_workers_raises(tmp_path: Path):
     df = daft.from_pydict({"id": [1], "val": ["a"]})
+    existing_dir = tmp_path / "a"
+    existing_dir.mkdir()
     with pytest.raises(Exception, match="num_workers"):
-        df.skip_existing(existing_path=tmp_path / "a", key_column="id", file_format="parquet", num_workers=0).collect()
+        df.skip_existing(existing_path=existing_dir, key_column="id", file_format="parquet", num_workers=0).collect()
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
 def test_skip_existing_invalid_cpus_per_worker_raises(tmp_path: Path):
     df = daft.from_pydict({"id": [1], "val": ["a"]})
+    existing_dir = tmp_path / "a"
+    existing_dir.mkdir()
     with pytest.raises(Exception, match="cpus_per_worker"):
         df.skip_existing(
-            existing_path=tmp_path / "a", key_column="id", file_format="parquet", cpus_per_worker=0
+            existing_path=existing_dir, key_column="id", file_format="parquet", cpus_per_worker=0
         ).collect()
