@@ -34,7 +34,12 @@ impl RecordBatch {
                 .get_column(0)
                 .argsort(*descending.first().unwrap(), *nulls_first.first().unwrap())
         } else {
-            Series::argsort_multikey(sort_values.columns.as_slice(), descending, nulls_first)
+            let cols: Vec<Series> = sort_values
+                .as_materialized_series()
+                .into_iter()
+                .cloned()
+                .collect();
+            Series::argsort_multikey(cols.as_slice(), descending, nulls_first)
         }
     }
 

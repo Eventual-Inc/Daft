@@ -71,7 +71,7 @@ impl ProbeTable {
         let input_arrays = input
             .columns
             .iter()
-            .map(|s| s.as_physical()?.to_arrow())
+            .map(|s| s.as_physical()?.as_materialized_series().to_arrow())
             .collect::<DaftResult<Vec<_>>>()?;
 
         // Pre-create comparators for each stored table vs input.
@@ -126,7 +126,7 @@ impl ProbeTable {
         let current_arrays = table
             .columns
             .iter()
-            .map(|s| s.as_physical()?.to_arrow())
+            .map(|s| s.as_physical()?.as_materialized_series().to_arrow())
             .collect::<DaftResult<Vec<_>>>()?;
 
         // Pre-create comparators: current table vs each existing table + self.
