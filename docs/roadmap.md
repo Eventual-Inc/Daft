@@ -33,9 +33,6 @@ Feel free to open an issue or PR on [GitHub ↗](https://github.com/Eventual-Inc
 2. **Data Source refactor** - Simplify the source pipeline to make adding native Rust sources straightforward.
 3. **Arrow2 deprecation** ([discussion #5741](https://github.com/Eventual-Inc/Daft/discussions/5741))
 
-## Leftovers from 2025
-
-1. **New UDFs** - Complete the migration to the new UDF system, including a major release to fully remove legacy UDFs. Remaining work includes async generator UDFs, aggregating UDFs, and custom resources for rate limiting. ([discussion #4820](https://github.com/Eventual-Inc/Daft/discussions/4820))
 
 ## Future Work
 
