@@ -112,6 +112,9 @@ pub fn split_by_jsonl_ranges<'a>(
                         if let ScanSourceKind::File { chunk_spec, .. } = &mut new_source.kind {
                             *chunk_spec = Some(ChunkSpec::Bytes { start, end });
                         }
+                        new_source.size_bytes = Some((end - start) as u64);
+                        new_source.metadata = None;
+                        new_source.statistics = None;
                         let new_task = ScanTask::new(
                             vec![new_source],
                             t.source_config.clone(),
