@@ -102,13 +102,13 @@ impl StructArray {
         let field: Arc<Field> = field.into();
         assert!(
             matches!(&field.dtype, DataType::Struct(fields) if fields.is_empty()),
-            "StructArray::new_empty_fields expected empty Struct datatype, but received field: {}",
+            "StructArray::new_empty expected empty Struct datatype, but received field: {}",
             field
         );
         if let Some(ref n) = nulls {
             assert!(
                 n.len() == len,
-                "StructArray::new_empty_fields expects validity to have length {} but received: {}",
+                "StructArray::new_empty expects validity to have length {} but received: {}",
                 len,
                 n.len()
             );
