@@ -254,22 +254,32 @@ pub fn rewrite_predicate_for_partitioning(
                 Ok(Transformed::no(expr))
             }
             // Binary Op for Lt | LtEq | Gt | GtEq
-            // we need to relax Lt and LtEq and only allow certain Transforms
+            // For non-identity transforms (e.g. Year, Month, Day, Hour, IcebergTruncate), we need to
+            // relax the comparison boundary because the transform is lossy (e.g. a timestamp
+            // `2024-03-15` maps to month `2024-03`, so `ts < 2024-03-15` must become
+            // `month <= 2024-03` to avoid missing rows at the boundary).
+            // For Identity transforms the partition value equals the source value exactly, so the
+            // original operator is already precise and must NOT be relaxed.
             Expr::BinaryOp { op, left, right } if matches!(op, Lt | LtEq | Gt | GtEq) => {
-                let relaxed_op = match op {
-                    Lt | LtEq => LtEq,
-                    Gt | GtEq => GtEq,
-                    _ => unreachable!("this branch only supports Lt | LtEq | Gt | GtEq"),
-                };
-
                 if let Some(pfield) = get_pfield_for_col(left) {
                     if let Some(tfm) = pfield.transform
                         && tfm.supports_comparison()
                         && let Some(new_expr) = apply_partitioning_expr(right.clone(), pfield)
                     {
+                        let final_op = if matches!(tfm, PartitionTransform::Identity) {
+                            *op
+                        } else {
+                            match op {
+                                Lt | LtEq => LtEq,
+                                Gt | GtEq => GtEq,
+                                _ => {
+                                    unreachable!("this branch only supports Lt | LtEq | Gt | GtEq")
+                                }
+                            }
+                        };
                         return Ok(Transformed::yes(
                             Expr::BinaryOp {
-                                op: relaxed_op,
+                                op: final_op,
                                 left: resolved_col(pfield.field.name.as_ref()),
                                 right: new_expr,
                             }
@@ -281,9 +291,18 @@ pub fn rewrite_predicate_for_partitioning(
                     && tfm.supports_comparison()
                     && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield)
                 {
+                    let final_op = if matches!(tfm, PartitionTransform::Identity) {
+                        *op
+                    } else {
+                        match op {
+                            Lt | LtEq => LtEq,
+                            Gt | GtEq => GtEq,
+                            _ => unreachable!("this branch only supports Lt | LtEq | Gt | GtEq"),
+                        }
+                    };
                     return Ok(Transformed::yes(
                         Expr::BinaryOp {
-                            op: relaxed_op,
+                            op: final_op,
                             left: new_expr,
                             right: resolved_col(pfield.field.name.as_ref()),
                         }
