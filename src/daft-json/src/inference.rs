@@ -73,17 +73,7 @@ fn infer_object(inner: &Object) -> Result<DataType, ArrowError> {
             Ok(Field::new(key.as_ref(), dt, true))
         })
         .collect::<Result<Vec<_>, ArrowError>>()?;
-    if fields.is_empty() {
-        // Converts empty Structs to structs with a single field named "" and with a NullType.
-        // This is required because Daft internally cannot handle empty StructArrays (zero fields).
-        Ok(DataType::Struct(Fields::from(vec![Field::new(
-            "",
-            DataType::Null,
-            true,
-        )])))
-    } else {
-        Ok(DataType::Struct(Fields::from(fields)))
-    }
+    Ok(DataType::Struct(Fields::from(fields)))
 }
 
 fn infer_array(values: &[BorrowedValue]) -> Result<DataType, ArrowError> {
