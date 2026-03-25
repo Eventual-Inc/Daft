@@ -261,25 +261,28 @@ pub fn rewrite_predicate_for_partitioning(
             // For Identity transforms the partition value equals the source value exactly, so the
             // original operator is already precise and must NOT be relaxed.
             Expr::BinaryOp { op, left, right } if matches!(op, Lt | LtEq | Gt | GtEq) => {
+                // Compute final_op once given the transform: identity transforms preserve the
+                // original operator exactly; lossy transforms must relax the boundary.
+                let compute_final_op = |tfm: PartitionTransform| {
+                    if matches!(tfm, PartitionTransform::Identity) {
+                        *op
+                    } else {
+                        match op {
+                            Lt | LtEq => LtEq,
+                            Gt | GtEq => GtEq,
+                            _ => unreachable!("this branch only supports Lt | LtEq | Gt | GtEq"),
+                        }
+                    }
+                };
+
                 if let Some(pfield) = get_pfield_for_col(left) {
                     if let Some(tfm) = pfield.transform
                         && tfm.supports_comparison()
                         && let Some(new_expr) = apply_partitioning_expr(right.clone(), pfield)
                     {
-                        let final_op = if matches!(tfm, PartitionTransform::Identity) {
-                            *op
-                        } else {
-                            match op {
-                                Lt | LtEq => LtEq,
-                                Gt | GtEq => GtEq,
-                                _ => {
-                                    unreachable!("this branch only supports Lt | LtEq | Gt | GtEq")
-                                }
-                            }
-                        };
                         return Ok(Transformed::yes(
                             Expr::BinaryOp {
-                                op: final_op,
+                                op: compute_final_op(tfm),
                                 left: resolved_col(pfield.field.name.as_ref()),
                                 right: new_expr,
                             }
@@ -291,18 +294,9 @@ pub fn rewrite_predicate_for_partitioning(
                     && tfm.supports_comparison()
                     && let Some(new_expr) = apply_partitioning_expr(left.clone(), pfield)
                 {
-                    let final_op = if matches!(tfm, PartitionTransform::Identity) {
-                        *op
-                    } else {
-                        match op {
-                            Lt | LtEq => LtEq,
-                            Gt | GtEq => GtEq,
-                            _ => unreachable!("this branch only supports Lt | LtEq | Gt | GtEq"),
-                        }
-                    };
                     return Ok(Transformed::yes(
                         Expr::BinaryOp {
-                            op: final_op,
+                            op: compute_final_op(tfm),
                             left: new_expr,
                             right: resolved_col(pfield.field.name.as_ref()),
                         }
