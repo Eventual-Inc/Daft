@@ -32,13 +32,12 @@ use crate::{
 };
 
 #[cfg_attr(debug_assertions, derive(Debug))]
-#[derive(Clone)]
 pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     #[allow(dead_code)]
     HasMoreOutput {
         input: Arc<MicroPartition>,
-        output: Option<Arc<MicroPartition>>,
+        output: Arc<MicroPartition>,
     },
 }
 
@@ -417,7 +416,7 @@ impl IntermediateOperatorResult {
     pub(crate) fn output(&self) -> Option<&Arc<MicroPartition>> {
         match self {
             Self::NeedMoreInput(mp) => mp.as_ref(),
-            Self::HasMoreOutput { output, .. } => output.as_ref(),
+            Self::HasMoreOutput { output, .. } => Some(output),
         }
     }
 }
