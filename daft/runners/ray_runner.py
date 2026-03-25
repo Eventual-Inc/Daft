@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, cast
 import pyarrow as pa  # noqa: TID253
 import ray.experimental  # noqa: TID253
 
-from daft.arrow_utils import ensure_array
 from daft.context import get_context
 from daft.daft import DistributedPhysicalPlan, PyExecutionStats
 from daft.daft import PyRecordBatch as _PyRecordBatch
@@ -219,7 +218,6 @@ def _series_from_arrow_with_ray_data_extensions(
             return Series.from_numpy(numpy_data, name=name)
         elif isinstance(array, pa.Array):
             # Handle ArrowTensorType (has storage attribute)
-            array = ensure_array(array)
             if hasattr(array.type, "shape") and array.type.shape is not None and hasattr(array, "storage"):
                 tensor_array = cast("ArrowTensorArray", array)
                 storage_series = _series_from_arrow_with_ray_data_extensions(tensor_array.storage, name=name)
