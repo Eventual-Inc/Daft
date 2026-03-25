@@ -208,11 +208,7 @@ def test_from_pydict_arrow_roundtrip(uuid_ext_type) -> None:
     assert len(table) == 2
     assert set(table.column_names()) == set(arrow_type_arrays.keys())
     for field in table.schema():
-        assert field.dtype == (
-            DataType.from_arrow_type(arrow_type_arrays[field.name].type)
-            if (field.name != "empty_struct" and field.name != "nested_struct")
-            else PYTHON_INFERRED_TYPES[field.name]  # empty structs are internally represented as {"": None}
-        )
+        assert field.dtype == DataType.from_arrow_type(arrow_type_arrays[field.name].type)
     expected_table = pa.table(arrow_type_arrays).cast(pa.schema(arrow_roundtrip_types))
     assert table.to_arrow() == expected_table
 
@@ -224,11 +220,7 @@ def test_from_arrow_roundtrip(uuid_ext_type) -> None:
     assert len(table) == 2
     assert set(table.column_names()) == set(arrow_type_arrays.keys())
     for field in table.schema():
-        assert field.dtype == (
-            DataType.from_arrow_type(arrow_type_arrays[field.name].type)
-            if (field.name != "empty_struct" and field.name != "nested_struct")
-            else PYTHON_INFERRED_TYPES[field.name]  # empty structs are internally represented as {"": None}
-        )
+        assert field.dtype == DataType.from_arrow_type(arrow_type_arrays[field.name].type)
     expected_table = pa.table(arrow_type_arrays).cast(pa.schema(arrow_roundtrip_types))
     assert table.to_arrow() == expected_table
 
