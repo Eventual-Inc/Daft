@@ -311,9 +311,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
                     }
 
                     // After completing a task, update bounds and try to spawn more tasks
-                    let new_requirements = ctx.batch_manager.calculate_batch_size();
-                    let (lower, upper) = new_requirements.values();
-                    buffer.update_bounds(lower, upper);
+                    buffer.update_bounds(ctx.batch_manager.calculate_batch_size());
 
                     Self::spawn_ready_probe_batches(&mut buffer, ctx)?;
                 }
