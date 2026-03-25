@@ -222,7 +222,7 @@ impl Preview {
                 .enumerate()
                 .map(|(idx, series)| {
                     // Unfortunately actually plumbing the formatting would make this too much work right now.
-                    let mut text = series.str_value(o);
+                    let mut text = series.as_materialized_series().str_value(o);
                     let mut alignment = CellAlignment::Left;
 
                     // Use column overrides if any, falling back to the global settings.

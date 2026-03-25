@@ -40,7 +40,7 @@ Next (_make sure Daft is installed_), you can launch the dashboard using the `da
 
 ```bash
 # You can learn more about this command by `daft dashboard -h`
-daft dashboard -v -a 127.0.0.1 -p 3238
+daft dashboard start -v -a 127.0.0.1 -p 3238
 ```
 
 Before executing a specific Daft job, enable reporting query execution data to the dashboard by setting the `DAFT_DASHBOARD_URL` environment variable, for example:

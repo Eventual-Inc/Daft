@@ -25,7 +25,12 @@ impl RecordBatch {
         // )
 
         if self.num_columns() == 1 {
-            return self.columns.first().unwrap().make_groups();
+            return self
+                .columns
+                .first()
+                .unwrap()
+                .as_materialized_series()
+                .make_groups();
         }
 
         let probe_table = self.to_probe_hash_table()?;
@@ -54,21 +59,21 @@ impl RecordBatch {
         // )
 
         // Begin by doing the argsort.
+        let cols: Vec<Series> = self.as_materialized_series().into_iter().cloned().collect();
         let argsort_array = Series::argsort_multikey(
-            self.columns.as_slice(),
-            &vec![false; self.columns.len()],
-            &vec![false; self.columns.len()],
+            cols.as_slice(),
+            &vec![false; cols.len()],
+            &vec![false; cols.len()],
         )?;
 
-        // The result indices.
         let mut key_indices: Vec<u64> = vec![];
         let mut values_indices: Vec<UInt64Array> = vec![];
 
         let comparator = build_multi_array_is_equal(
-            self.columns.as_slice(),
-            self.columns.as_slice(),
-            vec![true; self.columns.len()].as_slice(),
-            vec![true; self.columns.len()].as_slice(),
+            cols.as_slice(),
+            cols.as_slice(),
+            vec![true; cols.len()].as_slice(),
+            vec![true; cols.len()].as_slice(),
         )?;
 
         // To group the argsort values together, we will traverse the table in argsort order,
@@ -124,7 +129,12 @@ impl IntoUniqueIdxs for RecordBatch {
         // returns: [2, 0, 4]  <-- indices of A, B, and C
 
         if self.num_columns() == 1 {
-            return self.columns.first().unwrap().make_unique_idxs();
+            return self
+                .columns
+                .first()
+                .unwrap()
+                .as_materialized_series()
+                .make_unique_idxs();
         }
 
         let idx_table = self.to_idx_hash_table()?;
