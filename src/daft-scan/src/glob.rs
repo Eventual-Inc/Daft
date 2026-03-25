@@ -391,6 +391,25 @@ impl GlobScanOperator {
                 .collect::<Result<Vec<_>, _>>()?;
             (partitioning_keys, generated_fields)
         };
+
+        let mut final_schema = (*schema).clone();
+        if let (true, Some(hint)) = (infer_schema, &user_provided_schema) {
+            let mut added = false;
+            let mut current_fields = final_schema.fields().to_vec();
+            for hint_field in hint.fields() {
+                if !final_schema.has_field(hint_field.name.as_ref())
+                    && !generated_fields.has_field(hint_field.name.as_ref())
+                {
+                    current_fields.push(hint_field.clone());
+                    added = true;
+                }
+            }
+            if added {
+                final_schema = Schema::new(current_fields);
+            }
+        }
+        let schema = Arc::new(final_schema);
+
         Ok(Self {
             glob_paths,
             file_format_config,
