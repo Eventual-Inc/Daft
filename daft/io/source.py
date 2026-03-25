@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import warnings
 from abc import ABC, abstractmethod
+from dataclasses import replace
 from typing import TYPE_CHECKING
+
+from daft.daft import FileFormatConfig, ParquetSourceConfig, ScanTask, StorageConfig
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
 
-    from daft.daft import ScanTask, StorageConfig
     from daft.dataframe import DataFrame
     from daft.io.partitioning import PartitionField
     from daft.io.pushdowns import Pushdowns
@@ -93,8 +96,6 @@ class DataSourceTask(ABC):
         :meth:`get_micro_partitions` for backwards compatibility.
         New subclasses should override this method directly.
         """
-        import warnings
-
         try:
             parts = self.get_micro_partitions()
         except NotImplementedError:
@@ -164,10 +165,6 @@ class DataSourceTask(ABC):
                             size_bytes=file.size_bytes,
                         )
         """
-        from dataclasses import replace
-
-        from daft.daft import FileFormatConfig, ParquetSourceConfig, ScanTask, StorageConfig
-
         sc = storage_config if storage_config is not None else StorageConfig(multithreaded_io=True, io_config=None)
 
         # Strip partition_filters before constructing the ScanTask. In the

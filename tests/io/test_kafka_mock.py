@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 import daft
+from daft.io.__shim import _drain_async_iter
 
 
 def test_read_kafka_is_exported() -> None:
@@ -249,8 +250,6 @@ def test_kafka_source_task_terminates_on_empty_consume(monkeypatch: pytest.Monke
         _limit=None,
     )
 
-    from daft.io.__shim import _drain_async_iter
-
     assert list(_drain_async_iter(task.read())) == []
     assert _Consumer.consume_calls == 1
 
@@ -319,8 +318,6 @@ def test_kafka_source_task_ignores_partition_eof(monkeypatch: pytest.MonkeyPatch
         _chunk_size=10,
         _limit=None,
     )
-
-    from daft.io.__shim import _drain_async_iter
 
     assert list(_drain_async_iter(task.read())) == []
 
@@ -392,8 +389,6 @@ def test_kafka_source_task_respects_chunk_size(monkeypatch: pytest.MonkeyPatch) 
         _limit=None,
     )
 
-    from daft.io.__shim import _drain_async_iter
-
     batches = list(_drain_async_iter(task.read()))
     assert len(batches) == 3
     assert [rows[0]["offset"] for rows in (rb.to_pylist() for rb in batches)] == [0, 1, 2]
@@ -460,8 +455,6 @@ def test_kafka_source_task_respects_limit(monkeypatch: pytest.MonkeyPatch) -> No
         _chunk_size=1024,
         _limit=3,
     )
-
-    from daft.io.__shim import _drain_async_iter
 
     batches = list(_drain_async_iter(task.read()))
     total_rows = sum(len(rb.to_pylist()) for rb in batches)

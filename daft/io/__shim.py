@@ -82,6 +82,11 @@ class _DataSourceShim(ScanOperator):
         result = self._source.get_tasks(pds)
         if inspect.isasyncgen(result):
             yield from _drain_async_iter(result)
+        elif inspect.iscoroutine(result):
+            raise TypeError(
+                f"{type(self._source).__name__}.get_tasks() must be an async generator "
+                "(use 'async def ... yield ...' rather than returning an AsyncIterator)."
+            )
         else:
             warnings.warn(
                 "Sync get_tasks() is deprecated — use 'async def get_tasks()'.",

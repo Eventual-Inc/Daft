@@ -149,7 +149,7 @@ from daft.viz import register_viz_hook
 from daft.window import Window
 from daft.file import File, VideoFile, AudioFile
 
-range = _range  # shadows builtin intentionally
+range = _range  # type: ignore[no-redef,unused-ignore]
 
 from daft import context
 from daft import io
