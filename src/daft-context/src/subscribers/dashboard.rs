@@ -271,7 +271,7 @@ impl Subscriber for DashboardSubscriber {
         };
 
         let all_results = entry.value_mut();
-        let num_rows = all_results.len();
+        let num_rows = all_results.iter().map(|r| r.len()).sum::<usize>();
         if num_rows < TOTAL_ROWS && !result.is_empty() {
             let result = result.head(TOTAL_ROWS - num_rows)?;
             all_results.push(result);

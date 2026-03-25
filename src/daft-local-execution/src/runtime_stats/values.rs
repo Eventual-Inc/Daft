@@ -61,7 +61,7 @@ impl RuntimeStats for DefaultRuntimeStats {
         self.rows_out.add(rows, self.node_kv.as_slice());
     }
 
-    fn add_duration_us(&self, cpu_us: u64) {
-        self.duration_us.add(cpu_us, self.node_kv.as_slice());
+    fn add_duration_us(&self, duration_us: u64) {
+        self.duration_us.add(duration_us, self.node_kv.as_slice());
     }
 }
