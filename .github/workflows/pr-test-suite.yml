@@ -218,6 +218,7 @@ jobs:
         CONDA_EXE: ${{ env.CONDA_HOME }}/bin/conda
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        HF_HUB_DISABLE_XET: "1"
 
     - name: Build library and Test with pytest (no coverage)
       if: matrix.coverage == false
@@ -233,6 +234,7 @@ jobs:
         CONDA_EXE: ${{ env.CONDA_HOME }}/bin/conda
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+        HF_HUB_DISABLE_XET: "1"
 
     - name: Upload coverage report
       if: matrix.coverage != false
