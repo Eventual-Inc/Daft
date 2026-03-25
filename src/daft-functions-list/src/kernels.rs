@@ -1063,11 +1063,11 @@ fn scatter_grouped_aggs(
     })
 }
 
-fn agg_list<T>(arr: &ListArray, op: T, target_dtype: &DataType) -> DaftResult<Series>
+fn agg_list_helper<T>(arr: &ListArray, op: T, target_dtype: &DataType) -> DaftResult<Series>
 where
     T: Fn(&Series, &GroupIndices) -> DaftResult<Series>,
 {
-    let mut groups = GroupIndices::new();
+    let mut groups = GroupIndices::with_capacity(arr.len());
     let mut scatter_indices = Vec::with_capacity(arr.len());
 
     for i in 0..arr.len() {
@@ -1093,11 +1093,7 @@ where
 
 /// Helper to construct group indices for fixed size list arrays.
 /// Used for list_sum, list_mean, list_min, list_max.
-fn agg_fixed_size_list<T>(
-    arr: &FixedSizeListArray,
-    op: T,
-    target_dtype: &DataType,
-) -> DaftResult<Series>
+fn agg_fsl_helper<T>(arr: &FixedSizeListArray, op: T, target_dtype: &DataType) -> DaftResult<Series>
 where
     T: Fn(&Series, &GroupIndices) -> DaftResult<Series>,
 {
@@ -1129,8 +1125,8 @@ where
     scatter_grouped_aggs(arr.name(), target_dtype, scatter_indices, grouped_aggs)
 }
 
-impl_aggs_list_array!(ListArray, agg_list);
-impl_aggs_list_array!(FixedSizeListArray, agg_fixed_size_list);
+impl_aggs_list_array!(ListArray, agg_list_helper);
+impl_aggs_list_array!(FixedSizeListArray, agg_fsl_helper);
 
 #[cfg(test)]
 mod tests {
