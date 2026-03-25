@@ -338,6 +338,11 @@ jobs:
       with:
         name: wheels-${{ matrix.python-version }}
         path: dist
+    - name: Upload timings
+      uses: actions/upload-artifact@v7
+      with:
+        name: timings-${{ matrix.python-version }}
+        path: target/cargo-timings/
 
   integration-test-tpch:
     runs-on: ubuntu-latest
@@ -1557,10 +1562,7 @@ jobs:
         uv venv --seed .venv
         source .venv/bin/activate
         uv pip install maturin
-        maturin build --out dist --timings=html -Z unstable-options
-        ls -alh
-        ls -alh target/
-        ls -alh target/generated/
+        maturin build --out dist
 
     - name: Windows Build
       if: ${{ (runner.os == 'Windows') }}
@@ -1568,10 +1570,7 @@ jobs:
         uv venv --seed .venv
         .\.venv\Scripts\activate
         uv pip install maturin
-        maturin build --out dist --timings=html -Z unstable-options
-        ls -alh
-        ls -alh target/
-        ls -alh target/generated/
+        maturin build --out dist
 
     - name: Test Imports in Clean Env (Unix)
       if: ${{ (runner.os != 'Windows') }}
