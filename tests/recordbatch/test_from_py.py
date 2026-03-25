@@ -244,8 +244,7 @@ def test_from_pandas_roundtrip() -> None:
         assert field.dtype == PANDAS_INFERRED_TYPES[field.name]
     # pyarrow --> pandas will insert explicit Nones within the struct fields.
     df["struct"][1]["a"] = None
-    df["empty_struct"][0] = {}
-    df["empty_struct"][1] = {}
+    df["empty_struct"] = [{}, {}]
     df["nested_struct"][0]["c"] = {}
     df["nested_struct"][1]["c"] = {}
     pd.testing.assert_frame_equal(table.to_pandas(), df)
