@@ -2677,6 +2677,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "flate2",
+ "hex",
  "serde",
  "simdutf8",
  "typetag",

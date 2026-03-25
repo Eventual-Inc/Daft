@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from daft.udf.legacy import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
 
-    ENCODING_CHARSET = Literal["utf-8", "utf8", "base64"]
+    ENCODING_CHARSET = Literal["utf-8", "utf8", "base64", "hex"]
     COMPRESSION_CODEC = Literal["deflate", "gzip", "gz", "zlib"]
 
 

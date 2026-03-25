@@ -362,6 +362,7 @@ url = "2.4.0"
 uuid = {version = "1.19.0", features = ["v4"]}
 xxhash-rust = {version = "0.8.15", features = ["const_xxh3", "const_xxh64", "const_xxh32", "xxh64", "xxh3", "xxh32"]}
 libc = {version = "^0.2.150", default-features = false}
+hex = "0.4.3"
 
 [workspace.dependencies.bincode]
 version = "2.0.1"
