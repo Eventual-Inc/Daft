@@ -192,7 +192,7 @@ def test_year_gt_is_relaxed_to_gteq():
         source_col="ts_col",
         dtype=DataType.timestamp(timeunit=TimeUnit.from_str("us")),
         partition_fields=[pfield],
-        filter_expr=col("ts_col") > lit(2024),
+        filter_expr=col("ts_col") > lit("2024-01-01").cast(DataType.timestamp(timeunit=TimeUnit.from_str("us"))),
     )
 
     assert pushdowns.partition_filters is not None, "Expected a partition filter to be pushed down"
