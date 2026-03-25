@@ -16,7 +16,7 @@ jobs:
       matrix:
         site:
         - url: https://www.daft.ai
-        - url: https://docs.daft.ai
+        - url: https://docs.daft.ai/en/stable/
         - url: https://www.eventual.ai
     steps:
     - name: Check ${{ matrix.site.url }}
