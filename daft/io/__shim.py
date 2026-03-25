@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
+import warnings
 from typing import TYPE_CHECKING, TypeVar
 
 from daft.daft import (
@@ -74,9 +76,22 @@ class _DataSourceShim(ScanOperator):
             f"Schema = {self.schema()}",
         ]
 
-    def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
+    def _get_tasks(self, pushdowns: PyPushdowns) -> Iterator[DataSourceTask]:
+        """Resolve get_tasks, handling both sync (deprecated) and async implementations."""
         pds = Pushdowns._from_pypushdowns(pushdowns)
-        for task in _drain_async_iter(self._source.get_tasks(pds)):
+        result = self._source.get_tasks(pds)
+        if inspect.isasyncgen(result):
+            yield from _drain_async_iter(result)
+        else:
+            warnings.warn(
+                "Sync get_tasks() is deprecated — use 'async def get_tasks()'.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            yield from result  # type: ignore[misc]
+
+    def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
+        for task in self._get_tasks(pushdowns):
             if isinstance(task, _PyDataSourceTask):
                 # Unwrap the native ScanTask from the DataSourceTask and yield it directly.
                 yield task.unwrap()

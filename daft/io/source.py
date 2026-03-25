@@ -4,13 +4,14 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Iterator
 
     from daft.daft import ScanTask, StorageConfig
     from daft.dataframe import DataFrame
     from daft.io.partitioning import PartitionField
     from daft.io.pushdowns import Pushdowns
     from daft.recordbatch import RecordBatch
+    from daft.recordbatch.micropartition import MicroPartition
     from daft.schema import Schema
 
 
@@ -85,11 +86,33 @@ class DataSourceTask(ABC):
         """Returns the schema of the record batches produced by this task."""
         ...
 
-    @abstractmethod
     async def read(self) -> AsyncIterator[RecordBatch]:
-        """Yields record batches. Called from an async execution context."""
-        ...
-        yield  # type: ignore[misc]
+        """Yields record batches. Called from an async execution context.
+
+        The default implementation delegates to the deprecated
+        :meth:`get_micro_partitions` for backwards compatibility.
+        New subclasses should override this method directly.
+        """
+        import warnings
+
+        try:
+            parts = self.get_micro_partitions()
+        except NotImplementedError:
+            raise NotImplementedError(
+                f"{type(self).__name__} must implement async def read(self) -> AsyncIterator[RecordBatch]"
+            )
+        warnings.warn(
+            f"{type(self).__name__}.get_micro_partitions() is deprecated — override 'async def read()' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        for mp in parts:
+            for rb in mp.get_record_batches():
+                yield rb
+
+    def get_micro_partitions(self) -> Iterator[MicroPartition]:
+        """Deprecated: override :meth:`read` instead."""
+        raise NotImplementedError
 
     @staticmethod
     def parquet(
