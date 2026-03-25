@@ -15,6 +15,7 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
+from daft.dependencies import pa
 from daft.expressions.expressions import lit
 from daft.io.common import _get_schema_from_dict
 from daft.io.scan import ScanOperator
@@ -92,8 +93,13 @@ class SQLScanOperator(ScanOperator):
             return self._single_scan_task(pushdowns, total_rows, total_size)
 
         partition_bounds = self._get_partition_bounds(num_scan_tasks)
-        partition_bounds_sql = [lit(bound)._to_sql() for bound in partition_bounds]
+        if partition_bounds is None:
+            warnings.warn(
+                "Unable to partition the data using the specified column. Falling back to a single scan task."
+            )
+            return self._single_scan_task(pushdowns, total_rows, total_size)
 
+        partition_bounds_sql = [lit(bound)._to_sql() for bound in partition_bounds]
         if any(bound is None for bound in partition_bounds_sql):
             warnings.warn(
                 "Unable to partition the data using the specified column. Falling back to a single scan task."
@@ -175,7 +181,7 @@ class SQLScanOperator(ScanOperator):
 
         return int(pa_table.column(0)[0].as_py())
 
-    def _get_partition_bounds(self, num_scan_tasks: int) -> list[Any]:
+    def _get_partition_bounds(self, num_scan_tasks: int) -> list[Any] | None:
         if self._partition_col is None:
             raise ValueError("Failed to get partition bounds: partition_col must be specified to partition the data.")
 
@@ -225,7 +231,11 @@ class SQLScanOperator(ScanOperator):
         min_max_sql = self.conn.construct_sql_query(
             self.sql, projection=[f"MIN({self._partition_col}) as min", f"MAX({self._partition_col}) as max"]
         )
-        pa_table = self.conn.execute_sql_query(min_max_sql)
+
+        # Execute the query with explicit schema to gracefully handle NULL values.
+        pa_type = self._schema[self._partition_col].dtype.to_arrow_dtype()
+        pa_schema = pa.schema([pa.field("min", pa_type), pa.field("max", pa_type)])
+        pa_table = self.conn.execute_sql_query(min_max_sql, schema=pa_schema)
 
         if pa_table.num_rows != 1:
             raise RuntimeError(f"Failed to get partition bounds: expected 1 row, but got {pa_table.num_rows}.")
@@ -236,6 +246,9 @@ class SQLScanOperator(ScanOperator):
         assert pydict.keys() == {"min", "max"}
         min_val = pydict["min"][0]
         max_val = pydict["max"][0]
+        if min_val is None or max_val is None:
+            return None
+
         range_size = (max_val - min_val) / num_scan_tasks
         return [min_val + range_size * i for i in range(num_scan_tasks)] + [max_val]
 
