@@ -11,7 +11,7 @@ use daft_dsl::{
         BuiltinScalarFnVariant, FunctionArgs, ScalarFunctionFactory, ScalarUDF, scalar::EvalContext,
     },
 };
-use daft_ext_abi::{ArrowArray, ArrowSchema, FFI_ScalarFunction};
+use daft_ext::abi::{ArrowArray, ArrowSchema, FFI_ScalarFunction};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::module::ModuleHandle;
@@ -145,9 +145,13 @@ impl ScalarUDF for ScalarFunctionHandle {
         let mut ffi_schemas: Vec<ArrowSchema> = Vec::with_capacity(series_vec.len());
 
         for s in &series_vec {
-            let arrow_arr = s.to_arrow()?;
-            let (ffi_array, ffi_schema) = arrow::ffi::to_ffi(&arrow_arr.to_data())
-                .map_err(|e| DaftError::InternalError(format!("Arrow FFI export failed: {e}")))?;
+            let array = s.to_arrow()?;
+            let target_field = s.field().to_arrow()?;
+
+            let ffi_schema = arrow::ffi::FFI_ArrowSchema::try_from(target_field)?;
+            let mut data = array.to_data();
+            data.align_buffers();
+            let ffi_array = arrow::ffi::FFI_ArrowArray::new(&data);
             ffi_arrays.push(unsafe { ArrowArray::from_owned(ffi_array) });
             ffi_schemas.push(unsafe { ArrowSchema::from_owned(ffi_schema) });
         }
@@ -332,14 +336,14 @@ mod tests {
         }
     }
 
-    unsafe extern "C" fn mock_init(_session: *mut daft_ext_abi::FFI_SessionContext) -> c_int {
+    unsafe extern "C" fn mock_init(_session: *mut daft_ext::abi::FFI_SessionContext) -> c_int {
         0
     }
 
     fn make_mock_module_handle() -> Arc<ModuleHandle> {
-        use daft_ext_abi::FFI_Module;
+        use daft_ext::abi::FFI_Module;
         let module = FFI_Module {
-            daft_abi_version: daft_ext_abi::DAFT_ABI_VERSION,
+            daft_abi_version: daft_ext::abi::DAFT_ABI_VERSION,
             name: c"mock_module".as_ptr(),
             init: mock_init,
             free_string: mock_free_string,
@@ -428,5 +432,115 @@ mod tests {
         let (ffi, module) = make_mock_handle();
         let factory = into_scalar_function_factory(ffi, module);
         assert_eq!(factory.name(), "increment");
+    }
+
+    // --- mock that asserts incoming schema carries extension metadata ---
+
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static METADATA_SEEN: AtomicBool = AtomicBool::new(false);
+
+    unsafe extern "C" fn meta_mock_name(_ctx: *const c_void) -> *const c_char {
+        c"meta_passthrough".as_ptr()
+    }
+
+    unsafe extern "C" fn meta_mock_get_return_field(
+        _ctx: *const c_void,
+        _args: *const ArrowSchema,
+        _args_count: usize,
+        ret: *mut ArrowSchema,
+        _errmsg: *mut *mut c_char,
+    ) -> c_int {
+        let field = arrow_schema::Field::new("result", arrow_schema::DataType::Int32, false);
+        let schema: ArrowSchema = unsafe {
+            ArrowSchema::from_owned(arrow::ffi::FFI_ArrowSchema::try_from(&field).unwrap())
+        };
+        unsafe { std::ptr::write(ret, schema) };
+        0
+    }
+
+    unsafe extern "C" fn meta_mock_call(
+        _ctx: *const c_void,
+        args: *const ArrowArray,
+        args_schemas: *const ArrowSchema,
+        args_count: usize,
+        ret_array: *mut ArrowArray,
+        ret_schema: *mut ArrowSchema,
+        _errmsg: *mut *mut c_char,
+    ) -> c_int {
+        assert_eq!(args_count, 1);
+
+        let abi_schema = unsafe { std::ptr::read(args_schemas) };
+        let ffi_schema: arrow::ffi::FFI_ArrowSchema = unsafe { abi_schema.into_owned() };
+        let field = arrow_schema::Field::try_from(&ffi_schema).unwrap();
+
+        let has_ext_name = field
+            .metadata()
+            .get("ARROW:extension:name")
+            .is_some_and(|v| v == "my_ext_type");
+        let has_ext_meta = field
+            .metadata()
+            .get("ARROW:extension:metadata")
+            .is_some_and(|v| v == "ext_meta_payload");
+
+        METADATA_SEEN.store(has_ext_name && has_ext_meta, Ordering::SeqCst);
+
+        let abi_array = unsafe { std::ptr::read(args) };
+        let ffi_array: arrow::ffi::FFI_ArrowArray = unsafe { abi_array.into_owned() };
+        let ffi_schema2: arrow::ffi::FFI_ArrowSchema = arrow::ffi::FFI_ArrowSchema::try_from(
+            &arrow_schema::Field::new("x", arrow_schema::DataType::Int32, true),
+        )
+        .unwrap();
+        let data = unsafe { arrow::ffi::from_ffi(ffi_array, &ffi_schema2) }.unwrap();
+        let arr = arrow_array::make_array(data);
+        let output_ref: arrow_array::ArrayRef = arr;
+        let (ffi_arr, ffi_sch) = arrow::ffi::to_ffi(&output_ref.to_data()).unwrap();
+        let out_array: ArrowArray = unsafe { ArrowArray::from_owned(ffi_arr) };
+        let out_schema: ArrowSchema = unsafe { ArrowSchema::from_owned(ffi_sch) };
+        unsafe {
+            std::ptr::write(ret_array, out_array);
+            std::ptr::write(ret_schema, out_schema);
+        }
+        0
+    }
+
+    fn make_meta_mock_handle() -> (FFI_ScalarFunction, Arc<ModuleHandle>) {
+        let ctx = Box::into_raw(Box::new(IncrementCtx));
+        let handle = FFI_ScalarFunction {
+            ctx: ctx.cast(),
+            name: meta_mock_name,
+            get_return_field: meta_mock_get_return_field,
+            call: meta_mock_call,
+            fini: mock_fini,
+        };
+        (handle, make_mock_module_handle())
+    }
+
+    #[test]
+    fn test_call_preserves_field_metadata() {
+        METADATA_SEEN.store(false, Ordering::SeqCst);
+
+        let (ffi, module) = make_meta_mock_handle();
+        let udf = ScalarFunctionHandle::new(ffi, module);
+
+        let arrow_arr: arrow_array::ArrayRef = Arc::new(Int32Array::from(vec![10, 20, 30]));
+        let field = Field::new(
+            "x",
+            DataType::Extension(
+                "my_ext_type".into(),
+                Box::new(DataType::Int32),
+                Some("ext_meta_payload".into()),
+            ),
+        );
+        let series = Series::from_arrow(field, arrow_arr).unwrap();
+
+        let args = FunctionArgs::new_unnamed(vec![series]);
+        let ctx = EvalContext { row_count: 3 };
+        let _result = udf.call(args, &ctx).unwrap();
+
+        assert!(
+            METADATA_SEEN.load(Ordering::SeqCst),
+            "extension metadata was not preserved in the FFI schema"
+        );
     }
 }

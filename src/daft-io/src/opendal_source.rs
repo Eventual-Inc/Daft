@@ -297,20 +297,12 @@ impl ObjectSource for OpenDALSource {
             });
         }
 
-        let entries = if posix {
-            // Non-recursive listing (like ls)
-            self.operator
-                .list(&dir_path)
-                .await
-                .map_err(|e| opendal_err_to_daft_err(e, path, &self.scheme))?
-        } else {
-            // Recursive listing
-            self.operator
-                .list_with(&dir_path)
-                .recursive(true)
-                .await
-                .map_err(|e| opendal_err_to_daft_err(e, path, &self.scheme))?
-        };
+        let entries = self
+            .operator
+            .list_with(&dir_path)
+            .recursive(!posix)
+            .await
+            .map_err(|e| opendal_err_to_daft_err(e, path, &self.scheme))?;
 
         // Reconstruct the URL prefix for file paths
         let parsed = url::Url::parse(path).context(super::InvalidUrlSnafu { path })?;

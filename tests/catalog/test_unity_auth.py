@@ -8,7 +8,7 @@ from urllib.error import HTTPError
 
 import pytest
 
-from daft.unity_catalog.auth import OAuth2Credentials, _generate_workspace_token, is_expired
+from daft.catalog.__unity._auth import OAuth2Credentials, _generate_workspace_token, is_expired
 
 
 @pytest.fixture(autouse=True)
@@ -21,7 +21,7 @@ def _http_error(url: str, code: int, body: bytes) -> HTTPError:
     return HTTPError(url=url, code=code, msg="error", hdrs=headers, fp=BytesIO(body))
 
 
-@patch("daft.unity_catalog.auth.urllib.request.urlopen")
+@patch("daft.catalog.__unity._auth.urllib.request.urlopen")
 def test_generate_token_retries_on_429(mock_urlopen) -> None:
     error_429 = _http_error(
         url="https://workspace.example/oidc/v1/token",
@@ -39,7 +39,7 @@ def test_generate_token_retries_on_429(mock_urlopen) -> None:
     assert mock_urlopen.call_count == 3
 
 
-@patch("daft.unity_catalog.auth.urllib.request.urlopen")
+@patch("daft.catalog.__unity._auth.urllib.request.urlopen")
 def test_generate_token_fails_instantly_on_401(mock_urlopen) -> None:
     error_401 = _http_error(
         url="https://workspace.example/oidc/v1/token",
@@ -58,7 +58,7 @@ def test_generate_token_fails_instantly_on_401(mock_urlopen) -> None:
     assert "unauthorized" in str(excinfo.value)
 
 
-@patch("daft.unity_catalog.auth.urllib.request.urlopen")
+@patch("daft.catalog.__unity._auth.urllib.request.urlopen")
 def test_generate_token_retries_on_socket_timeout(mock_urlopen) -> None:
     mock_urlopen.side_effect = TimeoutError("timed out")
 
@@ -71,7 +71,7 @@ def test_generate_token_retries_on_socket_timeout(mock_urlopen) -> None:
     assert "timed out" in str(excinfo.value)
 
 
-@patch("daft.unity_catalog.auth.urllib.request.urlopen")
+@patch("daft.catalog.__unity._auth.urllib.request.urlopen")
 def test_generate_token_missing_access_token(mock_urlopen) -> None:
     response_body = b'{"token_type": "bearer"}'
     mock_response = MagicMock()

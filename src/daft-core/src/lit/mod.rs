@@ -587,6 +587,53 @@ impl Literal {
         Self::Struct(IndexMap::from_iter(iter))
     }
 
+    pub fn size_bytes(&self) -> usize {
+        match self {
+            Self::Null => 0,
+            Self::Boolean(_) => std::mem::size_of::<bool>(),
+            Self::Utf8(s) => s.len(),
+            Self::Binary(b) => b.len(),
+            Self::Int8(_) => std::mem::size_of::<i8>(),
+            Self::UInt8(_) => std::mem::size_of::<u8>(),
+            Self::Int16(_) => std::mem::size_of::<i16>(),
+            Self::UInt16(_) => std::mem::size_of::<u16>(),
+            Self::Int32(_) => std::mem::size_of::<i32>(),
+            Self::UInt32(_) => std::mem::size_of::<u32>(),
+            Self::Int64(_) => std::mem::size_of::<i64>(),
+            Self::UInt64(_) => std::mem::size_of::<u64>(),
+            Self::Timestamp(..) => std::mem::size_of::<i64>(),
+            Self::Date(_) => std::mem::size_of::<i32>(),
+            Self::Time(..) => std::mem::size_of::<i64>(),
+            Self::Duration(..) => std::mem::size_of::<i64>(),
+            Self::Interval(_) => std::mem::size_of::<IntervalValue>(),
+            Self::Float32(_) => std::mem::size_of::<f32>(),
+            Self::Float64(_) => std::mem::size_of::<f64>(),
+            Self::Decimal(..) => std::mem::size_of::<i128>(),
+            Self::List(series) => series.size_bytes(),
+            #[cfg(feature = "python")]
+            Self::Python(_) => std::mem::size_of::<PyObjectWrapper>(),
+            Self::Struct(entries) => entries.iter().map(|(k, v)| k.len() + v.size_bytes()).sum(),
+            Self::File(f) => std::mem::size_of_val(f),
+            Self::Tensor { data, shape } => {
+                data.size_bytes() + shape.len() * std::mem::size_of::<u64>()
+            }
+            Self::SparseTensor {
+                values,
+                indices,
+                shape,
+                ..
+            } => {
+                values.size_bytes()
+                    + indices.size_bytes()
+                    + shape.len() * std::mem::size_of::<u64>()
+            }
+            Self::Embedding(data) => data.size_bytes(),
+            Self::Map { keys, values } => keys.size_bytes() + values.size_bytes(),
+            Self::Image(image) => image.as_bytes().len(),
+            Self::Extension(series) => series.size_bytes(),
+        }
+    }
+
     /// Cast the literal to a data type.
     ///
     /// This method is lossy, AKA it is not guaranteed that `lit.cast(dtype).get_type() == dtype`.

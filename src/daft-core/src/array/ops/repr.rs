@@ -456,7 +456,6 @@ impl StructArray {
                     let fields_to_strs = fields
                         .iter()
                         .zip(self.children.iter())
-                        .filter(|(f, _)| !f.name.is_empty() && f.dtype != DataType::Null)
                         .map(|(f, s)| Ok(format!("{}: {},\n", f.name.as_ref(), s.str_value(idx))))
                         .collect::<DaftResult<Vec<_>>>()?;
                     let mut result = "{".to_string();

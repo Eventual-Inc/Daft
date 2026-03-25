@@ -21,7 +21,7 @@ use daft_parquet::{
 use daft_recordbatch::RecordBatch;
 use daft_stats::{ColumnRangeStatistics, PartitionSpec, TableMetadata, TableStatistics};
 use daft_warc::WarcConvertOptions;
-use futures::{Future, Stream};
+use futures::{Future, Stream, TryStreamExt};
 use snafu::ResultExt;
 
 use crate::DaftCoreComputeSnafu;
@@ -305,6 +305,11 @@ pub fn read_csv_into_micropartition(
     }
 }
 
+/// Reads JSON/JSONL files into a MicroPartition.
+///
+/// Exposed to Python via `MicroPartition.read_json()`.
+/// Only used by test paths (`tests/recordbatch/` and `tests/integration/io/jsonl/`).
+/// The production path uses `stream_scan_task` → `stream_json` instead.
 pub fn read_json_into_micropartition(
     uris: &[&str],
     convert_options: Option<JsonConvertOptions>,
@@ -319,19 +324,54 @@ pub fn read_json_into_micropartition(
     match uris {
         [] => Ok(MicroPartition::empty(None)),
         uris => {
-            // Perform a bulk read of URIs, materializing a table per URI.
-            let tables = daft_json::read_json_bulk(
-                uris,
-                convert_options,
-                parse_options,
-                read_options,
-                io_client,
-                io_stats,
-                multithreaded_io,
-                None,
-                8,
-            )
-            .context(DaftCoreComputeSnafu)?;
+            let schema_hint = convert_options
+                .as_ref()
+                .and_then(|opts| opts.schema.clone());
+            let runtime_handle = get_io_runtime(multithreaded_io);
+            let mut remaining_rows = convert_options
+                .as_ref()
+                .and_then(|opts| opts.limit.map(|limit| limit as i64));
+            let tables = runtime_handle
+                .block_on_current_thread(async move {
+                    let mut out = Vec::new();
+                    for uri in uris {
+                        if remaining_rows.is_some_and(|rows_left| rows_left <= 0) {
+                            break;
+                        }
+
+                        let convert_options_for_uri = convert_options.clone().map(|mut co| {
+                            if let Some(rows_left) = remaining_rows {
+                                co.limit = Some(usize::try_from(rows_left.max(0)).unwrap_or(0));
+                            }
+                            co
+                        });
+
+                        let stream = daft_json::read::stream_json(
+                            (*uri).to_string(),
+                            convert_options_for_uri,
+                            parse_options.clone(),
+                            read_options.clone(),
+                            io_client.clone(),
+                            io_stats.clone(),
+                            None,
+                            None,
+                        )
+                        .await?;
+
+                        let mut tables = stream.try_collect::<Vec<_>>().await?;
+                        if let Some(rows_left) = remaining_rows {
+                            let read_rows = tables.iter().map(|t| t.len() as i64).sum::<i64>();
+                            remaining_rows = Some(rows_left - read_rows);
+                        }
+                        out.append(&mut tables);
+                    }
+                    DaftResult::Ok(out)
+                })
+                .context(DaftCoreComputeSnafu)?;
+
+            if tables.is_empty() {
+                return Ok(MicroPartition::empty(schema_hint));
+            }
 
             // Union all schemas and cast all tables to the same schema
             let unioned_schema = tables

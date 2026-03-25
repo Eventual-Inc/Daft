@@ -155,7 +155,7 @@ impl IntoBatchesNode {
                         LocalNodeContext::new(Some(self.node_id() as usize))
                             .with_phase(REBATCH_PHASE),
                     );
-                    let builder = SwordfishTaskBuilder::new(plan, self.as_ref())
+                    let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
                         .with_psets(self.node_id(), psets);
                     if result_tx.send(builder).await.is_err() {
                         break;
@@ -177,8 +177,8 @@ impl IntoBatchesNode {
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(self.node_id() as usize)).with_phase(REBATCH_PHASE),
             );
-            let builder =
-                SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
+            let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+                .with_psets(self.node_id(), psets);
             let _ = result_tx.send(builder).await;
         }
         Ok(())
