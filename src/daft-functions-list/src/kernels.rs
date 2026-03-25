@@ -1020,35 +1020,27 @@ macro_rules! impl_aggs_list_array {
     ($la:ident, $agg_helper:ident) => {
         impl ListArrayAggExtension for $la {
             fn sum(&self) -> DaftResult<Series> {
-                $agg_helper(
-                    self,
-                    |child, groups| child.sum(Some(groups)),
-                    try_sum_supertype,
-                )
+                let target_dtype = try_sum_supertype(self.child_data_type())?;
+                $agg_helper(self, |child, groups| child.sum(Some(groups)), &target_dtype)
             }
 
             fn mean(&self) -> DaftResult<Series> {
+                let target_dtype = try_mean_aggregation_supertype(self.child_data_type())?;
                 $agg_helper(
                     self,
                     |child, groups| child.mean(Some(groups)),
-                    try_mean_aggregation_supertype,
+                    &target_dtype,
                 )
             }
 
             fn min(&self) -> DaftResult<Series> {
-                $agg_helper(
-                    self,
-                    |child, groups| child.min(Some(groups)),
-                    |dtype| Ok(dtype.clone()),
-                )
+                let target_dtype = self.child_data_type();
+                $agg_helper(self, |child, groups| child.min(Some(groups)), &target_dtype)
             }
 
             fn max(&self) -> DaftResult<Series> {
-                $agg_helper(
-                    self,
-                    |child, groups| child.max(Some(groups)),
-                    |dtype| Ok(dtype.clone()),
-                )
+                let target_dtype = self.child_data_type();
+                $agg_helper(self, |child, groups| child.max(Some(groups)), &target_dtype)
             }
         }
     };
@@ -1065,18 +1057,16 @@ fn scatter_grouped_aggs(
         scatter_indices.into_iter(),
     );
 
-    match grouped_aggs {
-        Some(series) => series.take(&idx).map(|s| s.rename(name)),
-        None => Ok(Series::full_null(name, target_dtype, idx.len())),
-    }
+    Ok(match grouped_aggs {
+        Some(series) => series.take(&idx)?.rename(name),
+        None => Series::full_null(name, target_dtype, idx.len()),
+    })
 }
 
-fn min_max_helper<T, F>(arr: &ListArray, op: T, target_type_getter: F) -> DaftResult<Series>
+fn agg_list<T>(arr: &ListArray, op: T, target_dtype: &DataType) -> DaftResult<Series>
 where
     T: Fn(&Series, &GroupIndices) -> DaftResult<Series>,
-    F: Fn(&DataType) -> DaftResult<DataType>,
 {
-    let target_dtype = target_type_getter(arr.child_data_type())?;
     let mut groups = GroupIndices::new();
     let mut scatter_indices = Vec::with_capacity(arr.len());
 
@@ -1098,22 +1088,22 @@ where
         Some(op(&arr.flat_child, &groups)?)
     };
 
-    scatter_grouped_aggs(arr.name(), &target_dtype, scatter_indices, grouped_aggs)
+    scatter_grouped_aggs(arr.name(), target_dtype, scatter_indices, grouped_aggs)
 }
 
-fn min_max_helper_fixed_size<T, F>(
+/// Helper to construct group indices for fixed size list arrays.
+/// Used for list_sum, list_mean, list_min, list_max.
+fn agg_fixed_size_list<T>(
     arr: &FixedSizeListArray,
     op: T,
-    target_type_getter: F,
+    target_dtype: &DataType,
 ) -> DaftResult<Series>
 where
     T: Fn(&Series, &GroupIndices) -> DaftResult<Series>,
-    F: Fn(&DataType) -> DaftResult<DataType>,
 {
-    let target_dtype = target_type_getter(arr.child_data_type())?;
     let fixed_size = arr.fixed_element_len();
     if fixed_size == 0 {
-        return Ok(Series::full_null(arr.name(), &target_dtype, arr.len()));
+        return Ok(Series::full_null(arr.name(), target_dtype, arr.len()));
     }
 
     let mut groups = GroupIndices::with_capacity(arr.len());
@@ -1136,11 +1126,11 @@ where
         Some(op(&arr.flat_child, &groups)?)
     };
 
-    scatter_grouped_aggs(arr.name(), &target_dtype, scatter_indices, grouped_aggs)
+    scatter_grouped_aggs(arr.name(), target_dtype, scatter_indices, grouped_aggs)
 }
 
-impl_aggs_list_array!(ListArray, min_max_helper);
-impl_aggs_list_array!(FixedSizeListArray, min_max_helper_fixed_size);
+impl_aggs_list_array!(ListArray, agg_list);
+impl_aggs_list_array!(FixedSizeListArray, agg_fixed_size_list);
 
 #[cfg(test)]
 mod tests {
