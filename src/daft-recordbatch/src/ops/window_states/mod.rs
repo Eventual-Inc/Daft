@@ -41,7 +41,7 @@ pub fn create_window_agg_state(
             };
 
             Ok(Some(Box::new(CountWindowState::new(
-                source,
+                source.as_materialized_series(),
                 total_length,
                 *mode,
             ))))
@@ -55,7 +55,7 @@ pub fn create_window_agg_state(
             };
 
             Ok(Some(Box::new(CountDistinctWindowState::new(
-                source,
+                source.as_materialized_series(),
                 total_length,
             ))))
         }

@@ -249,7 +249,7 @@ impl SortMergeJoinNode {
                 .columns()
                 .iter()
                 .zip(right_boundary_names)
-                .map(|(series, name)| series.clone().rename(name))
+                .map(|(col, name)| col.as_materialized_series().rename(&name))
                 .collect::<Vec<_>>(),
         )?;
 

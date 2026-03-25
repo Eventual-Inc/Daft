@@ -432,8 +432,7 @@ impl PyRecordBatch {
         self.record_batch
             .columns()
             .iter()
-            .cloned()
-            .map(Into::into)
+            .map(|c| c.as_materialized_series().clone().into())
             .collect()
     }
 

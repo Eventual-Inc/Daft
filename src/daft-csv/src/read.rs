@@ -881,7 +881,7 @@ mod tests {
             .zip(reference_series.iter())
             .enumerate()
         {
-            let out_arrow = out_col.to_arrow().unwrap();
+            let out_arrow = out_col.as_materialized_series().to_arrow().unwrap();
             let ref_arrow = ref_col.to_arrow().unwrap();
             assert_eq!(
                 out_arrow.as_ref(),
