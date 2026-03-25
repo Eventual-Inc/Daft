@@ -56,8 +56,9 @@ impl BlockingSink for RepartitionSink {
     #[instrument(skip_all, name = "RepartitionSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let repartition_spec = self.repartition_spec.clone();
@@ -114,7 +115,7 @@ impl BlockingSink for RepartitionSink {
                             .collect::<Vec<_>>();
                         let schema = schema.clone();
                         let fut = tokio::spawn(async move {
-                            let together = MicroPartition::concat(&data)?;
+                            let together = MicroPartition::concat(data)?;
                             let concated = together.concat_or_get()?;
                             let mp = MicroPartition::new_loaded(
                                 schema,
@@ -125,7 +126,7 @@ impl BlockingSink for RepartitionSink {
                                 }),
                                 None,
                             );
-                            Ok(Arc::new(mp))
+                            Ok(mp)
                         });
                         outputs.push(fut);
                     }

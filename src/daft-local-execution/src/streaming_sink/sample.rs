@@ -237,17 +237,15 @@ impl SampleSink {
     fn build_output(
         params: &SampleParams,
         samples: Vec<RecordBatch>,
-    ) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    ) -> DaftResult<Vec<MicroPartition>> {
         if samples.is_empty() {
-            return Ok(vec![Arc::new(MicroPartition::empty(Some(
-                params.schema.clone(),
-            )))]);
+            return Ok(vec![MicroPartition::empty(Some(params.schema.clone()))]);
         }
 
         let record_batches: Vec<RecordBatch> =
             samples.into_iter().map(|rb| rb.as_ref().clone()).collect();
         let mp = MicroPartition::new_loaded(params.schema.clone(), Arc::new(record_batches), None);
-        Ok(vec![Arc::new(mp)])
+        Ok(vec![mp])
     }
 }
 
@@ -257,8 +255,9 @@ impl StreamingSink for SampleSink {
     #[instrument(skip_all, name = "SampleSink::execute")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self> {
         let method = self.params.sampling_method;
@@ -271,7 +270,7 @@ impl StreamingSink for SampleSink {
                         let out = input.sample_by_fraction(fraction, with_replacement, seed)?;
                         Ok((
                             SampleState::Fraction(()),
-                            StreamingSinkOutput::NeedMoreInput(Some(Arc::new(out))),
+                            StreamingSinkOutput::NeedMoreInput(Some(out)),
                         ))
                     },
                     Span::current(),

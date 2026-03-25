@@ -13,11 +13,11 @@ use crate::join::{
 };
 
 pub(crate) fn probe_left_right_with_bitmap(
-    input: &Arc<MicroPartition>,
+    input: &MicroPartition,
     bitmap_builder: &mut IndexBitmapBuilder,
     probe_state: &ProbeState,
     params: &HashJoinParams,
-) -> DaftResult<Arc<MicroPartition>> {
+) -> DaftResult<MicroPartition> {
     let build_side_tables = probe_state.get_record_batches().iter().collect::<Vec<_>>();
 
     let final_tables = input
@@ -83,18 +83,18 @@ pub(crate) fn probe_left_right_with_bitmap(
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
-    Ok(Arc::new(MicroPartition::new_loaded(
+    Ok(MicroPartition::new_loaded(
         params.output_schema.clone(),
         Arc::new(final_tables),
         None,
-    )))
+    ))
 }
 
 pub(crate) fn probe_left_right(
-    input: &Arc<MicroPartition>,
+    input: &MicroPartition,
     probe_state: &ProbeState,
     params: &HashJoinParams,
-) -> DaftResult<Arc<MicroPartition>> {
+) -> DaftResult<MicroPartition> {
     let build_side_tables = probe_state.get_record_batches().iter().collect::<Vec<_>>();
 
     let final_tables = input
@@ -163,24 +163,24 @@ pub(crate) fn probe_left_right(
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
-    Ok(Arc::new(MicroPartition::new_loaded(
+    Ok(MicroPartition::new_loaded(
         params.output_schema.clone(),
         Arc::new(final_tables),
         None,
-    )))
+    ))
 }
 
 pub(crate) async fn finalize_left(
     states: Vec<HashJoinProbeState>,
     params: &HashJoinParams,
-) -> DaftResult<Option<Arc<MicroPartition>>> {
+) -> DaftResult<Option<MicroPartition>> {
     let build_side_table = merge_bitmaps_and_construct_null_table(states).await?;
 
     // If build_side_table is empty, return empty result with correct schema
     if build_side_table.is_empty() {
-        return Ok(Some(Arc::new(MicroPartition::empty(Some(
+        return Ok(Some(MicroPartition::empty(Some(
             params.output_schema.clone(),
-        )))));
+        ))));
     }
 
     let common_join_cols: Vec<String> = params.common_join_cols.iter().cloned().collect();
@@ -212,24 +212,24 @@ pub(crate) async fn finalize_left(
         RecordBatch::new_unchecked(right_non_join_schema, columns, left.len())
     };
     let final_table = join_table.union(&left)?.union(&right)?;
-    Ok(Some(Arc::new(MicroPartition::new_loaded(
+    Ok(Some(MicroPartition::new_loaded(
         final_table.schema.clone(),
         Arc::new(vec![final_table]),
         None,
-    ))))
+    )))
 }
 
 pub(crate) async fn finalize_right(
     states: Vec<HashJoinProbeState>,
     params: &HashJoinParams,
-) -> DaftResult<Option<Arc<MicroPartition>>> {
+) -> DaftResult<Option<MicroPartition>> {
     let build_side_table = merge_bitmaps_and_construct_null_table(states).await?;
 
     // If build_side_table is empty, return empty result with correct schema
     if build_side_table.is_empty() {
-        return Ok(Some(Arc::new(MicroPartition::empty(Some(
+        return Ok(Some(MicroPartition::empty(Some(
             params.output_schema.clone(),
-        )))));
+        ))));
     }
 
     let common_join_cols: Vec<String> = params.common_join_cols.iter().cloned().collect();
@@ -261,9 +261,9 @@ pub(crate) async fn finalize_right(
     };
     let right = get_columns_by_name(&build_side_table, &right_non_join_columns)?;
     let final_table = join_table.union(&left)?.union(&right)?;
-    Ok(Some(Arc::new(MicroPartition::new_loaded(
+    Ok(Some(MicroPartition::new_loaded(
         final_table.schema.clone(),
         Arc::new(vec![final_table]),
         None,
-    ))))
+    )))
 }

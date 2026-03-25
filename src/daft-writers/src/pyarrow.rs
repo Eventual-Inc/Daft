@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use common_error::DaftResult;
 use daft_logical_plan::sink_info::CsvFormatOption;
@@ -191,7 +189,7 @@ impl PyArrowWriter {
 
 #[async_trait]
 impl AsyncFileWriter for PyArrowWriter {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {

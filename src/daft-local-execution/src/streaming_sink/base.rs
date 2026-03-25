@@ -9,7 +9,6 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::StatSnapshotImpl,
 };
@@ -30,21 +29,21 @@ use crate::{
 };
 
 pub enum StreamingSinkOutput {
-    NeedMoreInput(Option<Arc<MicroPartition>>),
+    NeedMoreInput(Option<MicroPartition>),
     #[allow(dead_code)]
     HasMoreOutput {
-        input: Arc<MicroPartition>,
-        output: Option<Arc<MicroPartition>>,
+        input: MicroPartition,
+        output: Option<MicroPartition>,
     },
-    Finished(Option<Arc<MicroPartition>>),
+    Finished(Option<MicroPartition>),
 }
 
 pub enum StreamingSinkFinalizeOutput<Op: StreamingSink> {
     HasMoreOutput {
         states: Vec<Op::State>,
-        output: Option<Arc<MicroPartition>>,
+        output: Option<MicroPartition>,
     },
-    Finished(Option<Arc<MicroPartition>>),
+    Finished(Option<MicroPartition>),
 }
 
 pub(crate) type StreamingSinkExecuteResult<Op> =
@@ -53,6 +52,7 @@ pub(crate) type StreamingSinkFinalizeResult<Op> =
     OperatorOutput<DaftResult<StreamingSinkFinalizeOutput<Op>>>;
 pub(crate) trait StreamingSink: Send + Sync {
     type State: Send + Sync + Unpin;
+    type Stats: RuntimeStats = DefaultRuntimeStats;
     type BatchingStrategy: BatchingStrategy + 'static;
 
     /// Execute the StreamingSink operator on the morsel of input data,
@@ -60,8 +60,9 @@ pub(crate) trait StreamingSink: Send + Sync {
     /// with the given state.
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self>;
 
@@ -85,11 +86,6 @@ pub(crate) trait StreamingSink: Send + Sync {
     /// Create a new worker-local state for this StreamingSink.
     fn make_state(&self) -> DaftResult<Self::State>;
 
-    /// Create a new RuntimeStats for this StreamingSink.
-    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::new(meter, node_info))
-    }
-
     /// The maximum number of concurrent workers that can be spawned for this sink.
     /// Each worker will has its own StreamingSinkState.
     fn max_concurrency(&self) -> usize {
@@ -105,7 +101,7 @@ pub(crate) trait StreamingSink: Send + Sync {
 pub struct StreamingSinkNode<Op: StreamingSink> {
     op: Arc<Op>,
     child: Box<dyn PipelineNode>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<Op::Stats>,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
     morsel_size_requirement: MorselSizeRequirement,
@@ -125,9 +121,9 @@ struct ExecutionContext<Op: StreamingSink> {
     task_spawner: ExecutionTaskSpawner,
     task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
     state_pool: HashMap<StateId, Op::State>,
-    output_sender: Sender<Arc<MicroPartition>>,
+    output_sender: Sender<MicroPartition>,
     batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<Op::Stats>,
     stats_manager: RuntimeStatsManagerHandle,
 }
 
@@ -142,7 +138,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         let name: Arc<str> = op.name().into();
         let node_info =
             ctx.next_node_info(name, op.op_type(), NodeCategory::StreamingSink, context);
-        let runtime_stats = op.make_runtime_stats(&ctx.meter, &node_info);
+        let runtime_stats = Arc::new(Op::Stats::new(&ctx.meter, &node_info));
 
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
@@ -163,15 +159,18 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
 
     fn spawn_execution_task(
         ctx: &mut ExecutionContext<Op>,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Op::State,
         state_id: StateId,
     ) {
         let op = ctx.op.clone();
         let task_spawner = ctx.task_spawner.clone();
+        let runtime_stats = ctx.runtime_stats.clone();
         ctx.task_set.spawn(async move {
             let now = Instant::now();
-            let (new_state, result) = op.execute(input, state, &task_spawner).await??;
+            let (new_state, result) = op
+                .execute(input, state, runtime_stats, &task_spawner)
+                .await??;
             let elapsed = now.elapsed();
 
             Ok(ExecutionTaskResult {
@@ -213,6 +212,8 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         match result.output {
             StreamingSinkOutput::NeedMoreInput(mp) => {
                 // Record execution stats
+                ctx.runtime_stats
+                    .add_duration_us(result.elapsed.as_micros() as u64);
                 ctx.batch_manager.record_execution_stats(
                     ctx.runtime_stats.as_ref(),
                     mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
@@ -274,7 +275,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
 
     async fn process_input(
         node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
+        mut receiver: Receiver<MicroPartition>,
         ctx: &mut ExecutionContext<Op>,
     ) -> DaftResult<ControlFlow<()>> {
         let (lower, upper) = ctx.batch_manager.initial_requirements().values();
@@ -449,7 +450,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<Receiver<MicroPartition>> {
         let node_id = self.node_id();
         let name = self.name();
 
@@ -472,13 +473,11 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let task_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("StreamingSink::Execute"),
         );
         let finalize_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("StreamingSink::Finalize"),
         );
 
@@ -499,10 +498,15 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                 let mut finished_states: Vec<_> =
                     ctx.state_pool.drain().map(|(_, state)| state).collect();
                 loop {
+                    let now = Instant::now();
                     let finalized_result = ctx
                         .op
                         .finalize(finished_states, &finalize_spawner)
                         .await??;
+                    let elapsed = now.elapsed();
+                    ctx.runtime_stats
+                        .add_duration_us(elapsed.as_micros() as u64);
+
                     match finalized_result {
                         StreamingSinkFinalizeOutput::HasMoreOutput { states, output } => {
                             if let Some(mp) = output {

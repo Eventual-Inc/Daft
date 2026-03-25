@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
@@ -12,10 +10,10 @@ use crate::{
 
 /// Result of probing a single morsel
 pub(crate) enum ProbeOutput {
-    NeedMoreInput(Option<Arc<MicroPartition>>),
+    NeedMoreInput(Option<MicroPartition>),
     HasMoreOutput {
-        input: Arc<MicroPartition>,
-        output: Arc<MicroPartition>,
+        input: MicroPartition,
+        output: MicroPartition,
     },
 }
 
@@ -23,7 +21,7 @@ pub(crate) type BuildStateResult<Op> = OperatorOutput<DaftResult<<Op as JoinOper
 pub(crate) type FinalizeBuildResult<Op> = DaftResult<<Op as JoinOperator>::FinalizedBuildState>;
 pub(crate) type ProbeResult<Op> =
     OperatorOutput<DaftResult<(<Op as JoinOperator>::ProbeState, ProbeOutput)>>;
-pub(crate) type ProbeFinalizeResult = OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
+pub(crate) type ProbeFinalizeResult = OperatorOutput<DaftResult<Option<MicroPartition>>>;
 
 pub(crate) trait JoinOperator: Send + Sync {
     /// State used during the build phase
@@ -38,7 +36,7 @@ pub(crate) trait JoinOperator: Send + Sync {
     /// Add a morsel to the build state
     fn build(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::BuildState,
         spawner: &ExecutionTaskSpawner,
     ) -> BuildStateResult<Self>
@@ -62,7 +60,7 @@ pub(crate) trait JoinOperator: Send + Sync {
     /// Probe a morsel against the built state
     fn probe(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::ProbeState,
         spawner: &ExecutionTaskSpawner,
     ) -> ProbeResult<Self>

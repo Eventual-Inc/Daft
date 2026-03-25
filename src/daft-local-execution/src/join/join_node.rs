@@ -69,7 +69,7 @@ struct ProbeExecutionContext<Op: JoinOperator> {
     task_spawner: ExecutionTaskSpawner,
     task_set: OrderingAwareJoinSet<DaftResult<ProbeTaskResult<Op>>>,
     state_pool: HashMap<StateId, Op::ProbeState>,
-    output_sender: Sender<Arc<MicroPartition>>,
+    output_sender: Sender<MicroPartition>,
     batch_manager: Arc<BatchManager<StaticBatchingStrategy>>,
     runtime_stats: Arc<JoinStats>,
 }
@@ -105,7 +105,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
 
     fn spawn_build_task(
         ctx: &mut BuildExecutionContext<Op>,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Op::BuildState,
     ) {
         let op = ctx.op.clone();
@@ -124,7 +124,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
 
     async fn process_build_input(
         node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
+        mut receiver: Receiver<MicroPartition>,
         ctx: &mut BuildExecutionContext<Op>,
         stats_manager: &RuntimeStatsManagerHandle,
         finalized_build_state_sender: oneshot::Sender<Op::FinalizedBuildState>,
@@ -140,7 +140,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
                 // Branch 1: Join completed task (only if tasks exist)
                 Some(result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
                     let BuildTaskResult { state, elapsed } = result??;
-                    ctx.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+                    ctx.runtime_stats.add_duration_us(elapsed.as_micros() as u64);
 
                     // Return state
                     ctx.build_state = Some(state);
@@ -186,7 +186,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
 
     fn spawn_probe_task(
         ctx: &mut ProbeExecutionContext<Op>,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Op::ProbeState,
         state_id: StateId,
     ) {
@@ -276,7 +276,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
 
     async fn process_probe_input(
         node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
+        mut receiver: Receiver<MicroPartition>,
         ctx: &mut ProbeExecutionContext<Op>,
         stats_manager: &RuntimeStatsManagerHandle,
         finalized_build_state_receiver: oneshot::Receiver<Op::FinalizedBuildState>,
@@ -472,7 +472,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<Receiver<MicroPartition>> {
         let node_id = self.node_id();
         let op_name = self.op.name().to_string();
 
@@ -485,19 +485,16 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         let build_task_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("JoinNode::Build"),
         );
         let probe_task_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("JoinNode::Probe"),
         );
         let finalize_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("JoinNode::FinalizeProbe"),
         );
 
