@@ -31,8 +31,8 @@ jobs:
         pip install -U jupyter papermill matplotlib nb-clean
     - name: Install Tesseract
       run: |
-        sudo apt install tesseract-ocr
-        sudo apt install libtesseract-dev
+        sudo apt-get update
+        sudo apt-get install -y tesseract-ocr libtesseract-dev
     - name: Clean all notebook output
       run: find . -name "*.ipynb" -print0 | xargs -0 nb-clean clean
     - name: Run notebooks in docs
