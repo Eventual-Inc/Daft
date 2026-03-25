@@ -81,6 +81,8 @@ def azure_iceberg_catalog() -> Iterator[tuple[str, Catalog]]:
     daft.attach_catalog(cat, alias=catalog_name)
     yield catalog_name, cat
     daft.detach_catalog(alias=catalog_name)
+    if hasattr(cat, "engine"):
+        cat.engine.dispose()
 
 
 @tenacity.retry(

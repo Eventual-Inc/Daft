@@ -10,63 +10,63 @@ macro_rules! impl_arrow_conversions {
         // Compile-time layout assertions.
         const _: () = {
             assert!(
-                std::mem::size_of::<crate::ArrowArray>()
+                std::mem::size_of::<crate::abi::ArrowArray>()
                     == std::mem::size_of::<$arrow_data_crate::ffi::FFI_ArrowArray>()
             );
             assert!(
-                std::mem::align_of::<crate::ArrowArray>()
+                std::mem::align_of::<crate::abi::ArrowArray>()
                     == std::mem::align_of::<$arrow_data_crate::ffi::FFI_ArrowArray>()
             );
             assert!(
-                std::mem::size_of::<crate::ArrowSchema>()
+                std::mem::size_of::<crate::abi::ArrowSchema>()
                     == std::mem::size_of::<$arrow_schema_crate::ffi::FFI_ArrowSchema>()
             );
             assert!(
-                std::mem::align_of::<crate::ArrowSchema>()
+                std::mem::align_of::<crate::abi::ArrowSchema>()
                     == std::mem::align_of::<$arrow_schema_crate::ffi::FFI_ArrowSchema>()
             );
         };
 
         // ── FFI_ArrowArray ↔ ArrowArray ─────────────────────────────────
 
-        impl From<$arrow_data_crate::ffi::FFI_ArrowArray> for crate::ArrowArray {
+        impl From<$arrow_data_crate::ffi::FFI_ArrowArray> for crate::abi::ArrowArray {
             fn from(val: $arrow_data_crate::ffi::FFI_ArrowArray) -> Self {
                 unsafe { Self::from_owned(val) }
             }
         }
 
-        impl From<crate::ArrowArray> for $arrow_data_crate::ffi::FFI_ArrowArray {
-            fn from(val: crate::ArrowArray) -> Self {
+        impl From<crate::abi::ArrowArray> for $arrow_data_crate::ffi::FFI_ArrowArray {
+            fn from(val: crate::abi::ArrowArray) -> Self {
                 unsafe { val.into_owned() }
             }
         }
 
         // ── FFI_ArrowSchema ↔ ArrowSchema ───────────────────────────────
 
-        impl From<$arrow_schema_crate::ffi::FFI_ArrowSchema> for crate::ArrowSchema {
+        impl From<$arrow_schema_crate::ffi::FFI_ArrowSchema> for crate::abi::ArrowSchema {
             fn from(val: $arrow_schema_crate::ffi::FFI_ArrowSchema) -> Self {
                 unsafe { Self::from_owned(val) }
             }
         }
 
-        impl From<crate::ArrowSchema> for $arrow_schema_crate::ffi::FFI_ArrowSchema {
-            fn from(val: crate::ArrowSchema) -> Self {
+        impl From<crate::abi::ArrowSchema> for $arrow_schema_crate::ffi::FFI_ArrowSchema {
+            fn from(val: crate::abi::ArrowSchema) -> Self {
                 unsafe { val.into_owned() }
             }
         }
 
         // ── Field ↔ ArrowSchema (TryFrom) ──────────────────────────────
 
-        impl TryFrom<&crate::ArrowSchema> for $arrow_schema_crate::Field {
+        impl TryFrom<&crate::abi::ArrowSchema> for $arrow_schema_crate::Field {
             type Error = $arrow_schema_crate::ArrowError;
 
-            fn try_from(schema: &crate::ArrowSchema) -> Result<Self, Self::Error> {
+            fn try_from(schema: &crate::abi::ArrowSchema) -> Result<Self, Self::Error> {
                 let ffi: &$arrow_schema_crate::ffi::FFI_ArrowSchema = unsafe { schema.as_raw() };
                 Self::try_from(ffi)
             }
         }
 
-        impl TryFrom<&$arrow_schema_crate::Field> for crate::ArrowSchema {
+        impl TryFrom<&$arrow_schema_crate::Field> for crate::abi::ArrowSchema {
             type Error = $arrow_schema_crate::ArrowError;
 
             fn try_from(field: &$arrow_schema_crate::Field) -> Result<Self, Self::Error> {
@@ -77,16 +77,16 @@ macro_rules! impl_arrow_conversions {
 
         // ── Schema ↔ ArrowSchema (TryFrom) ─────────────────────────────
 
-        impl TryFrom<&crate::ArrowSchema> for $arrow_schema_crate::Schema {
+        impl TryFrom<&crate::abi::ArrowSchema> for $arrow_schema_crate::Schema {
             type Error = $arrow_schema_crate::ArrowError;
 
-            fn try_from(schema: &crate::ArrowSchema) -> Result<Self, Self::Error> {
+            fn try_from(schema: &crate::abi::ArrowSchema) -> Result<Self, Self::Error> {
                 let ffi: &$arrow_schema_crate::ffi::FFI_ArrowSchema = unsafe { schema.as_raw() };
                 Self::try_from(ffi)
             }
         }
 
-        impl TryFrom<&$arrow_schema_crate::Schema> for crate::ArrowSchema {
+        impl TryFrom<&$arrow_schema_crate::Schema> for crate::abi::ArrowSchema {
             type Error = $arrow_schema_crate::ArrowError;
 
             fn try_from(schema: &$arrow_schema_crate::Schema) -> Result<Self, Self::Error> {

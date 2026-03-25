@@ -7,7 +7,7 @@ import pytest
 import requests
 from requests.exceptions import RequestException
 
-from daft.unity_catalog import UnityCatalog
+from daft.catalog.__unity._client import UnityCatalogClient as UnityCatalog
 
 
 @pytest.fixture(scope="session")

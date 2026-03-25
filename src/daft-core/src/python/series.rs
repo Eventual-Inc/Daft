@@ -563,10 +563,6 @@ impl ToPyArrow for Series {
             (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
         )?;
 
-        let array = pyo3::types::PyModule::import(py, pyo3::intern!(py, "daft.arrow_utils"))?
-            .getattr(pyo3::intern!(py, "remove_empty_struct_placeholders"))?
-            .call1((array,))?;
-
         // For FixedShapeTensor, re-wrap the storage array as a PyArrow canonical
         // FixedShapeTensorArray instead of returning a DaftExtension array.
         if self.data_type().is_fixed_shape_tensor() {

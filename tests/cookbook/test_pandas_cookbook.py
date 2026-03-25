@@ -96,6 +96,7 @@ def test_multi_criteria_or_assignment(repartition_nparts, with_morsel_size):
     daft_df = daft_df.with_column(
         "AAA", when((col("BBB") > 25) | (col("CCC") >= 75), 0.1).otherwise(col("AAA").cast(DataType.float32()))
     )
+    pd_df["AAA"] = pd_df["AAA"].astype(float)
     pd_df.loc[(pd_df["BBB"] > 25) | (pd_df["CCC"] >= 75), "AAA"] = 0.1
     daft_pd_df = daft_df.to_pandas()
     assert_df_equals(daft_pd_df, pd_df, sort_key="BBB")

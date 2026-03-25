@@ -92,3 +92,24 @@ def test_split_parquet_read_some_splits(tmpdir):
                 "Should have 220 partitions since we will split all large files (20 * 10 rowgroups) but keep small files unsplit"
             )
             assert df.to_pydict() == {"data": ["small"] * 20 + [str(f"large{i}") for i in range(100)] * 20}
+
+
+def test_split_jsonl_byte_ranges(tmpdir):
+    """Verify that byte-range sub-tasks read only their assigned range, not the entire file."""
+    path = tmpdir / "data.jsonl"
+    num_rows = 10_000
+    payload = "x" * 150
+    with open(str(path), "w", encoding="utf-8", newline="") as f:
+        for i in range(num_rows):
+            f.write(f'{{"id":{i},"payload":"{payload}"}}\n')
+
+    with daft.execution_config_ctx(
+        enable_scan_task_split_and_merge=True,
+        scan_tasks_max_size_bytes=512 * 1024,
+        scan_tasks_min_size_bytes=0,
+    ):
+        df = daft.read_json(str(path))
+        result = df.to_pydict()
+        ids = result["id"]
+        assert len(ids) == num_rows, f"Expected {num_rows} rows, got {len(ids)} (data may be duplicated)"
+        assert len(set(ids)) == num_rows, "Duplicate IDs found — byte ranges likely ignored"

@@ -47,7 +47,7 @@ else:
     torch = LazyImport("torch")
     torchvision = LazyImport("torchvision")
 
-unity_catalog = LazyImport("daft.unity_catalog")
+unity_catalog = LazyImport("daft.catalog.__unity._client")
 
 __all__ = [
     "av",
