@@ -240,7 +240,7 @@ impl RuntimeStatsManager {
                             }
 
                             let Some(operator_meta) = operators.get(&node_id) else {
-                                log::warn!("Unknown node_id {node_id} in operators during activate, skipping subscriber notification");
+                                log::warn!("Unknown node_id {node_id} in operators during on_start, skipping subscriber notification");
                                 continue;
                             };
 
