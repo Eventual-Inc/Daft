@@ -623,7 +623,8 @@ fn translate_helper(
         LogicalPlan::Intersect(_)
         | LogicalPlan::Union(_)
         | LogicalPlan::SubqueryAlias(_)
-        | LogicalPlan::Offset(_) => Err(DaftError::InternalError(format!(
+        | LogicalPlan::Offset(_)
+        | LogicalPlan::Shuffle(_) => Err(DaftError::InternalError(format!(
             "Logical plan operator {} should already be optimized away",
             plan.name()
         ))),

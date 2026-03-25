@@ -5,7 +5,11 @@ use daft_core::{
 };
 use daft_dsl::{
     ExprRef,
-    functions::{prelude::*, scalar::EvalContext},
+    expr::lit,
+    functions::{
+        prelude::*,
+        scalar::{EvalContext, ScalarFn},
+    },
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use serde::{Deserialize, Serialize};
@@ -37,7 +41,7 @@ impl ScalarUDF for RandomIntFunction {
         _schema: &Schema,
     ) -> DaftResult<Field> {
         let RandomIntArgs { low, high, .. } = inputs.try_into()?;
-        ensure!(low < high, ValueError: "lower bound must be less than upper bound");
+        ensure!(low < high, ValueError: "lower bound (`low`) must be strictly less than the upper bound (`high`)");
         Ok(Field::new("random_int", DataType::Int64))
     }
 
@@ -65,4 +69,14 @@ impl ScalarUDF for RandomIntFunction {
 
         Ok(Int64Array::from_values("random_int", values).into_series())
     }
+}
+
+/// Builds a `random_int(low, high, seed?)` expression for use in logical plan construction.
+#[must_use]
+pub fn random_int_expr(low: i64, high: i64, seed: Option<u64>) -> ExprRef {
+    let mut inputs = vec![lit(low), lit(high)];
+    if let Some(s) = seed {
+        inputs.push(lit(s));
+    }
+    ScalarFn::builtin(RandomIntFunction, inputs).into()
 }

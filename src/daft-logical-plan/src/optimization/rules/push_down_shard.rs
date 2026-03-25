@@ -55,6 +55,7 @@ impl PushDownShard {
                     | LogicalPlan::Pivot(_)
                     | LogicalPlan::Sink(_)
                     | LogicalPlan::Sample(_)
+                    | LogicalPlan::Shuffle(_)
                     | LogicalPlan::MonotonicallyIncreasingId(_)
                     | LogicalPlan::Window(_)
                     | LogicalPlan::TopN(_)

@@ -2,6 +2,7 @@ mod int;
 
 use daft_dsl::functions::FunctionModule;
 use int::RandomIntFunction;
+pub use int::random_int_expr;
 
 pub struct RandomFunctions;
 

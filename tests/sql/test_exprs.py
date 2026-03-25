@@ -106,7 +106,7 @@ def test_random_exprs():
 def test_random_exprs_invalid_arguments():
     df = daft.from_pydict({"a": [1, 2, 3]})  # noqa: F841
 
-    with pytest.raises(Exception, match="lower bound must be less than upper bound"):
+    with pytest.raises(Exception, match="lower bound (`low`) must be strictly less than the upper bound (`high`)"):
         daft.sql("SELECT random_int(10, 10) as ri FROM df").collect()
 
     with pytest.raises(Exception, match="Required argument `low` not found"):

@@ -619,7 +619,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             | LogicalPlan::Union(_)
             | LogicalPlan::Intersect(_)
             | LogicalPlan::Shard(_)
-            | LogicalPlan::Offset(_) => {
+            | LogicalPlan::Offset(_)
+            | LogicalPlan::Shuffle(_) => {
                 panic!(
                     "Logical plan operator {} should be handled by the optimizer",
                     node.name()
