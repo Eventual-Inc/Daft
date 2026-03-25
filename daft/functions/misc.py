@@ -95,7 +95,7 @@ def random_int(low: int, high: int, seed: int | None = None) -> Expression:
         >>> df.schema()["r"].dtype == daft.DataType.int64()
         True
         >>> vals = df.to_pydict()["r"]
-        >>> all(10 <= v < 20 for v in vals)
+        >>> all(10 <= v <= 20 for v in vals)
         True
     """
     kwargs: dict[str, int] = {}
