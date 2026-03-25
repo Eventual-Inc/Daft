@@ -128,7 +128,7 @@ from daft.udf import udf, func, cls, method, metrics
 from daft.io import (
     IOConfig,
     from_glob_path,
-    _range as range,
+    _range,
     read_csv,
     read_deltalake,
     read_hudi,
@@ -148,6 +148,8 @@ from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
 from daft.file import File, VideoFile, AudioFile
+
+range = _range  # shadows builtin intentionally
 
 from daft import context
 from daft import io

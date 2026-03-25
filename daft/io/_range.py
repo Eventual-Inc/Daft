@@ -1,21 +1,18 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, overload
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-
 
 from daft import DataType
 from daft.api_annotations import PublicAPI
 from daft.io.source import DataSource, DataSourceTask
-from daft.recordbatch import MicroPartition
+from daft.recordbatch import RecordBatch
 from daft.schema import Schema
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from daft.dataframe import DataFrame
     from daft.io.pushdowns import Pushdowns
 
@@ -133,8 +130,6 @@ def _range(start: int, end: int | None = None, step: int = 1, partitions: int = 
     if end is None:
         end = start
         start = 0
-    else:
-        start = start
     return RangeSource(start, end, step, partitions).read()
 
 
@@ -148,14 +143,6 @@ class RangeSource(DataSource):
     _schema = Schema.from_pydict({"id": DataType.int64()})
 
     def __init__(self, start: int, end: int, step: int = 1, partitions: int = 1) -> None:
-        """Create a RangeSource instance.
-
-        Args:
-            start (int): The start of the range.
-            end (int, optional): The end of the range. If not provided, the start is 0 and the end is `start`.
-            step (int, optional): The step size of the range. Defaults to 1.
-            partitions (int, optional): The number of partitions to split the range into. Defaults to 1.
-        """
         if step == 0:
             raise ValueError("daft.range() step parameter cannot be zero - use a positive or negative integer")
 
@@ -182,7 +169,7 @@ class RangeSource(DataSource):
     def schema(self) -> Schema:
         return self._schema
 
-    def get_tasks(self, pushdowns: Pushdowns) -> Iterator[RangeSourceTask]:
+    async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[RangeSourceTask]:
         step = self._step
 
         # Calculate the total number of elements in the range using ceiling division
@@ -201,13 +188,8 @@ class RangeSource(DataSource):
             partition_elements = elements_per_partition + (1 if i < remainder else 0)
             curr_e = curr_s + (partition_elements * step)
 
-            # Ensure we don't exceed the end boundary
-            if step > 0:
-                if curr_e > self._end:
-                    curr_e = self._end
-            else:
-                if curr_e < self._end:
-                    curr_e = self._end
+            # Clamp to the end boundary
+            curr_e = min(curr_e, self._end) if step > 0 else max(curr_e, self._end)
 
             yield RangeSourceTask(curr_s, curr_e, step)
             curr_s = curr_e
@@ -223,5 +205,5 @@ class RangeSourceTask(DataSourceTask):
     def schema(self) -> Schema:
         return RangeSource._schema
 
-    def get_micro_partitions(self) -> Iterator[MicroPartition]:
-        yield MicroPartition.from_pydict({"id": list(range(self._start, self._end, self._step))})
+    async def read(self) -> AsyncIterator[RecordBatch]:
+        yield RecordBatch.from_pydict({"id": list(range(self._start, self._end, self._step))})
