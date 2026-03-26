@@ -121,7 +121,7 @@ def read_lance(
         Read a LanceDB table from a public S3 bucket:
         >>> from daft.io import S3Config, IOConfig
         >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
-        >>> df = daft.read_lance("s3://daft-public-data/lance/words-test-dataset", io_config=io_config)
+        >>> df = daft.read_lance("s3://daft-oss-public-data/lance/words-test-dataset", io_config=io_config)
         >>> df.show()
 
         Read a Lance table via REST API:

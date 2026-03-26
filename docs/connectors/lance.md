@@ -91,7 +91,7 @@ To access public S3/GCS buckets, configure IO options for authentication and end
     s3_config = S3Config(region_name="us-west-2", anonymous=True)
     gcs_config = GCSConfig(credentials="/path/to/gcp-service-account.json")
     io_config = IOConfig(s3=s3_config, gcs=gcs_config)
-    df_s3 = daft.read_lance("s3://daft-public-data/lance/words-test-dataset", io_config=io_config)
+    df_s3 = daft.read_lance("s3://daft-oss-public-data/lance/words-test-dataset", io_config=io_config)
 
     # GCS example (service account credentials)
     df_gcs = daft.read_lance("gs://my-bucket/lance/my-dataset", io_config=io_config)

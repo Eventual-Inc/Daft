@@ -27,7 +27,7 @@ USE_GPU = True
 IO_CONFIG = daft.io.IOConfig(
     s3=daft.io.S3Config(anonymous=True, region_name="us-west-2")
 )  # Use anonymous-mode for accessing AWS S3
-PARQUET_PATH = "s3://daft-public-data/tutorials/laion-parquet/train-00000-of-00001-6f24a7497df494ae.parquet"
+PARQUET_PATH = "s3://daft-oss-public-data/tutorials/laion-parquet/train-00000-of-00001-6f24a7497df494ae.parquet"
 
 parquet_df = daft.read_parquet(PARQUET_PATH, io_config=IO_CONFIG)
 ```
