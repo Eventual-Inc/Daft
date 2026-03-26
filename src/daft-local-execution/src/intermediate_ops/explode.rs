@@ -1,7 +1,11 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_metrics::ops::NodeType;
+use common_metrics::{
+    Counter, Meter, StatSnapshot,
+    ops::{NodeInfo, NodeType},
+    snapshot::ExplodeSnapshot,
+};
 use daft_core::count_mode::CountMode;
 use daft_dsl::{
     Expr,
@@ -10,6 +14,7 @@ use daft_dsl::{
 use daft_functions_list::{SeriesListExtension, explode};
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
+use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
@@ -18,7 +23,58 @@ use crate::{
     buffer::RowBasedBuffer,
     dynamic_batching::BatchingStrategy,
     pipeline::{MorselSizeRequirement, NodeName},
+    runtime_stats::RuntimeStats,
 };
+pub struct ExplodeStats {
+    duration_us: Counter,
+    rows_in: Counter,
+    rows_out: Counter,
+    node_kv: Vec<KeyValue>,
+}
+
+impl RuntimeStats for ExplodeStats {
+    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = node_info.to_key_values();
+
+        Self {
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
+            node_kv,
+        }
+    }
+
+    fn build_snapshot(&self, ordering: std::sync::atomic::Ordering) -> StatSnapshot {
+        let cpu_us = self.duration_us.load(ordering);
+        let rows_in = self.rows_in.load(ordering);
+        let rows_out = self.rows_out.load(ordering);
+
+        let amplification = if rows_in == 0 {
+            1.
+        } else {
+            rows_out as f64 / rows_in as f64
+        };
+
+        StatSnapshot::Explode(ExplodeSnapshot {
+            cpu_us,
+            rows_in,
+            rows_out,
+            amplification,
+        })
+    }
+
+    fn add_rows_in(&self, rows: u64) {
+        self.rows_in.add(rows, self.node_kv.as_slice());
+    }
+
+    fn add_rows_out(&self, rows: u64) {
+        self.rows_out.add(rows, self.node_kv.as_slice());
+    }
+
+    fn add_duration_us(&self, cpu_us: u64) {
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
+    }
+}
 
 pub struct ExplodeOperator {
     to_explode: Arc<Vec<BoundExpr>>,
@@ -61,6 +117,7 @@ impl ExplodeOperator {
 
 impl IntermediateOperator for ExplodeOperator {
     type State = ();
+    type Stats = ExplodeStats;
     type BatchingStrategy = crate::dynamic_batching::DynBatchingStrategy;
     #[instrument(skip_all, name = "ExplodeOperator::execute")]
     fn execute(
