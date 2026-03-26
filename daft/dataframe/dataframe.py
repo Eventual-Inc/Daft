@@ -4949,21 +4949,35 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
             >>> ray_dataset = df.to_ray_dataset()  # doctest: +SKIP
 
         Note:
-            This function can only work if Daft is running using the RayRunner
+            This function requires Ray to be installed. It works with any Daft runner -
+            when using the native runner, partitions are converted to Arrow tables locally
+            and then handed to Ray.
         """
         from daft.runners.ray_runner import RayPartitionSet
 
         self.collect()
         partition_set = self._result
         assert partition_set is not None
-        if not isinstance(partition_set, RayPartitionSet):
-            raise ValueError("Cannot convert to Ray Dataset if not running on Ray backend")
-        return partition_set.to_ray_dataset()
+        if isinstance(partition_set, RayPartitionSet):
+            return partition_set.to_ray_dataset()
+
+        # Native runner path: convert MicroPartitions to Arrow tables locally,
+        # then create a Ray Dataset from them.
+        import ray.data
+
+        from daft.runners.ray_runner import _micropartition_to_ray_dataset_block
+
+        blocks = [_micropartition_to_ray_dataset_block(result.micropartition()) for _, result in partition_set.items()]
+        # All partitions share the same schema, so either all convert to Arrow or all
+        # fall back to pylist. Handle both cases.
+        if blocks and isinstance(blocks[0], list):
+            all_items = [item for block in blocks for item in block]
+            return ray.data.from_items(all_items)
+        return ray.data.from_arrow(blocks)
 
     @classmethod
     def _from_ray_dataset(cls, ds: "ray.data.dataset.DataSet") -> "DataFrame":
