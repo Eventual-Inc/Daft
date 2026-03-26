@@ -6,4 +6,3 @@ There are a few ways to run Daft on multiple machines:
 
 - For the easiest way to get started, check out our guide for [running on Kubernetes](kubernetes.md)
 - Alternatively, if you have an existing Ray setup, check out our guide for [running on Ray](ray.md)
-- For a fully managed serverless experience, check out [Daft Cloud](https://www.daft.ai/cloud)

@@ -30,9 +30,9 @@ impl RecordBatch {
                 .get_column(0)
                 .search_sorted(keys.get_column(0), *descending.first().unwrap());
         }
-        unsafe {
-            multicol_search_sorted(self.columns.as_slice(), keys.columns.as_slice(), descending)
-        }
+        let self_cols: Vec<Series> = self.as_materialized_series().into_iter().cloned().collect();
+        let keys_cols: Vec<Series> = keys.as_materialized_series().into_iter().cloned().collect();
+        unsafe { multicol_search_sorted(self_cols.as_slice(), keys_cols.as_slice(), descending) }
     }
 }
 

@@ -190,8 +190,6 @@ members = [
   "src/daft-dashboard",
   "src/daft-dsl",
   "src/daft-ext",
-  "src/daft-ext-abi",
-  "src/daft-ext-core",
   "src/daft-ext-internal",
   "src/daft-ext-macros",
   "src/daft-file",
@@ -271,11 +269,9 @@ daft-catalog = {path = "src/daft-catalog"}
 daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
-daft-ext-abi = {path = "src/daft-ext-abi"}
-daft-ext-core = {path = "src/daft-ext-core"}
 daft-ext-internal = {path = "src/daft-ext-internal"}
-daft-ext-macros = {path = "src/daft-ext-macros"}
-daft-ext = {path = "src/daft-ext"}
+daft-ext-macros = {path = "src/daft-ext-macros", version = "0.1.1"}
+daft-ext = {path = "src/daft-ext", version = "0.1.1"}
 daft-file = {path = "src/daft-file"}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-binary = {path = "src/daft-functions-binary"}
@@ -366,6 +362,7 @@ url = "2.4.0"
 uuid = {version = "1.19.0", features = ["v4"]}
 xxhash-rust = {version = "0.8.15", features = ["const_xxh3", "const_xxh64", "const_xxh32", "xxh64", "xxh3", "xxh32"]}
 libc = {version = "^0.2.150", default-features = false}
+hex = "0.4.3"
 
 [workspace.dependencies.bincode]
 version = "2.0.1"

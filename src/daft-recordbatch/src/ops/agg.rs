@@ -75,7 +75,12 @@ impl RecordBatch {
             .collect::<DaftResult<Vec<_>>>()?;
 
         // Combine the groupkey columns and the aggregation result columns.
-        Self::from_nonempty_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
+        let groupkeys_series: Vec<Series> = groupkeys_table
+            .columns
+            .iter()
+            .map(|c| c.as_materialized_series().clone())
+            .collect();
+        Self::from_nonempty_columns([groupkeys_series.as_slice(), &grouped_cols].concat())
     }
 
     #[cfg(feature = "python")]
@@ -156,10 +161,12 @@ impl RecordBatch {
                                 let broadcasted_groupkeys = groupkeys_table
                                     .columns
                                     .iter()
-                                    .map(|c| c.broadcast(evaluated_grouped_col.len()))
+                                    .map(|c| {
+                                        c.broadcast(evaluated_grouped_col.len())
+                                            .map(|c| c.take_materialized_series())
+                                    })
                                     .collect::<DaftResult<Vec<_>>>()?;
 
-                                // Combine the broadcasted group keys into a Table
                                 Self::from_nonempty_columns(broadcasted_groupkeys)?
                             };
 
@@ -245,10 +252,12 @@ impl RecordBatch {
                                 let broadcasted_groupkeys = groupkeys_table
                                     .columns
                                     .iter()
-                                    .map(|c| c.broadcast(evaluated_grouped_col.len()))
+                                    .map(|c| {
+                                        c.broadcast(evaluated_grouped_col.len())
+                                            .map(|c| c.take_materialized_series())
+                                    })
                                     .collect::<DaftResult<Vec<_>>>()?;
 
-                                // Combine the broadcasted group keys into a Table
                                 Self::from_nonempty_columns(broadcasted_groupkeys)?
                             };
 
@@ -269,7 +278,12 @@ impl RecordBatch {
 
         // Broadcast either the keys or the grouped_cols, depending on which is unit-length
         let final_len = grouped_col.len();
-        let final_columns = [&groupkeys_table.columns[..], &[grouped_col]].concat();
+        let groupkeys_series: Vec<Series> = groupkeys_table
+            .columns
+            .iter()
+            .map(|c| c.as_materialized_series().clone())
+            .collect();
+        let final_columns = [groupkeys_series.as_slice(), &[grouped_col]].concat();
         let final_schema = Schema::new(final_columns.iter().map(|s| s.field().clone()));
         Self::new_with_broadcast(final_schema, final_columns, final_len)
     }

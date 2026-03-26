@@ -9,8 +9,8 @@ import unitycatalog
 
 from daft.io import AzureConfig, IOConfig, S3Config, UnityConfig
 
-from .auth import OAuth2Credentials, OAuth2TokenProvider, StaticTokenProvider, TokenProvider  # noqa: TID253
-from .httpx import AuthProvider  # noqa: TID253
+from ._auth import OAuth2Credentials, OAuth2TokenProvider, StaticTokenProvider, TokenProvider
+from ._httpx import AuthProvider
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -65,7 +65,7 @@ def _io_config_from_temp_creds(
         return None
 
 
-class UnityCatalog:
+class UnityCatalogClient:
     _token_provider: TokenProvider
 
     """Client to access the Unity Catalog.
@@ -79,7 +79,7 @@ class UnityCatalog:
 
     Example of reading a dataframe from a table in Unity Catalog hosted by Databricks:
 
-    >>> cat = UnityCatalog("https://<databricks_workspace_id>.cloud.databricks.com", token="my-token")
+    >>> cat = UnityCatalogClient("https://<databricks_workspace_id>.cloud.databricks.com", token="my-token")
     >>> table = cat.load_table("my_catalog.my_schema.my_table")
     >>> df = daft.read_deltalake(table)
     """
@@ -253,3 +253,7 @@ class UnityCatalog:
     def to_io_config(self) -> IOConfig:
         token = self._token_provider.get_token()
         return IOConfig(unity=UnityConfig(endpoint=self._endpoint, token=token))
+
+
+# Backwards-compatible alias
+UnityCatalog = UnityCatalogClient

@@ -1710,7 +1710,7 @@ mod tests {
     fn extract_val_column(batch: &RecordBatch) -> Vec<i32> {
         let idx = batch.schema.get_index("val").unwrap();
         let series = &batch.columns()[idx];
-        let arr = series.i32().unwrap();
+        let arr = series.as_materialized_series().i32().unwrap();
         (0..arr.len()).map(|i| arr.get(i).unwrap()).collect()
     }
 

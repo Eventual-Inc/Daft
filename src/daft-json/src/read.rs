@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
+use std::{collections::HashMap, io::SeekFrom, num::NonZeroUsize, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
@@ -14,19 +14,19 @@ use futures::{
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use snafu::{
     ResultExt,
-    futures::{TryFutureExt, TryStreamExt as _, try_future::Context},
+    futures::{TryFutureExt, try_future::Context},
 };
 use tokio::{
     fs::File,
-    io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader},
+    io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, BufReader},
     task::JoinHandle,
 };
 use tokio_util::io::StreamReader;
 
 use crate::{
-    ArrowSnafu, ChunkSnafu, JoinSnafu, JsonConvertOptions, JsonParseOptions, JsonReadOptions,
+    ArrowSnafu, JoinSnafu, JsonConvertOptions, JsonParseOptions, JsonReadOptions, StdIOSnafu,
     decoding::deserialize_records,
-    local::{read_json_array_impl, read_json_local},
+    local::{read_json_array_impl, read_json_local_into_tables_with_range},
     schema::read_json_schema_single,
 };
 
@@ -41,6 +41,9 @@ impl<T> TableChunkStream for T where T: Stream<Item = TableChunkResult> {}
 trait LineChunkStream: Stream<Item = LineChunkResult> {}
 impl<T> LineChunkStream for T where T: Stream<Item = LineChunkResult> {}
 
+/// Single-file read exposed to Python FFI (`daft.daft.read_json`).
+///
+/// Only used by test paths; the production path uses `stream_json` via the scan operator.
 #[allow(clippy::too_many_arguments)]
 pub fn read_json(
     uri: &str,
@@ -65,73 +68,6 @@ pub fn read_json(
         )
         .await
     })
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn read_json_bulk(
-    uris: &[&str],
-    convert_options: Option<JsonConvertOptions>,
-    parse_options: Option<JsonParseOptions>,
-    read_options: Option<JsonReadOptions>,
-    io_client: Arc<IOClient>,
-    io_stats: Option<IOStatsRef>,
-    multithreaded_io: bool,
-    max_chunks_in_flight: Option<usize>,
-    num_parallel_tasks: usize,
-) -> DaftResult<Vec<RecordBatch>> {
-    let runtime_handle = get_io_runtime(multithreaded_io);
-    let tables = runtime_handle.block_on_current_thread(async move {
-        // Launch a read task per URI, throttling the number of concurrent file reads to num_parallel tasks.
-        let task_stream = futures::stream::iter(uris.iter().map(|uri| {
-            let (uri, convert_options, parse_options, read_options, io_client, io_stats) = (
-                (*uri).to_string(),
-                convert_options.clone(),
-                parse_options.clone(),
-                read_options.clone(),
-                io_client.clone(),
-                io_stats.clone(),
-            );
-            tokio::task::spawn(async move {
-                let table = read_json_single_into_table(
-                    uri.as_str(),
-                    convert_options,
-                    parse_options,
-                    read_options,
-                    io_client,
-                    io_stats,
-                    max_chunks_in_flight,
-                )
-                .await?;
-                DaftResult::Ok(table)
-            })
-            .context(crate::JoinSnafu)
-        }));
-        let mut remaining_rows = convert_options
-            .as_ref()
-            .and_then(|opts| opts.limit.map(|limit| limit as i64));
-        task_stream
-            // Limit the number of file reads we have in flight at any given time.
-            .buffered(num_parallel_tasks)
-            // Terminate the stream if we have already reached the row limit. With the upstream buffering, we will still read up to
-            // num_parallel_tasks redundant files.
-            .try_take_while(|result| {
-                match (result, remaining_rows) {
-                    // Limit has been met, early-teriminate.
-                    (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
-                    // Limit has not yet been met, update remaining limit slack and continue.
-                    (Ok(table), Some(rows_left)) => {
-                        remaining_rows = Some(rows_left - table.len() as i64);
-                        futures::future::ready(Ok(true))
-                    }
-                    // (1) No limit, never early-terminate.
-                    // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
-                    (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
-                }
-            })
-            .try_collect::<Vec<_>>()
-            .await
-    })?;
-    tables.into_iter().collect::<DaftResult<Vec<_>>>()
 }
 
 // Parallel version of table concat
@@ -172,7 +108,36 @@ pub(crate) fn tables_concat(mut tables: Vec<RecordBatch>) -> DaftResult<RecordBa
     )
 }
 
-async fn read_json_single_into_table(
+pub(crate) fn truncate_tables_to_limit(
+    tables: Vec<RecordBatch>,
+    limit: Option<usize>,
+) -> DaftResult<Vec<RecordBatch>> {
+    let Some(limit) = limit else {
+        return Ok(tables);
+    };
+
+    let mut out = Vec::new();
+    let mut remaining = limit;
+    for table in tables {
+        if remaining == 0 {
+            break;
+        }
+        let table_len = table.len();
+        if table_len <= remaining {
+            remaining -= table_len;
+            out.push(table);
+        } else {
+            out.push(table.head(remaining)?);
+            break;
+        }
+    }
+    Ok(out)
+}
+
+/// Reads a single JSON file into multiple RecordBatches (one per chunk).
+///
+/// Only used by legacy test paths (via `read_json_single_into_table` → `read_json`).
+async fn read_json_single_into_tables(
     uri: &str,
     convert_options: Option<JsonConvertOptions>,
     parse_options: Option<JsonParseOptions>,
@@ -180,16 +145,17 @@ async fn read_json_single_into_table(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
-) -> DaftResult<RecordBatch> {
+) -> DaftResult<Vec<RecordBatch>> {
     let (source_type, fixed_uri) = parse_url(uri)?;
     let is_compressed = CompressionCodec::from_uri(uri).is_some();
     if matches!(source_type, SourceType::File) && !is_compressed {
-        return read_json_local(
+        return read_json_local_into_tables_with_range(
             fixed_uri.as_ref(),
             convert_options,
             parse_options,
             read_options,
             max_chunks_in_flight,
+            None,
         );
     }
 
@@ -238,9 +204,8 @@ async fn read_json_single_into_table(
             .unwrap()
             .into()
     });
-    let tables = table_stream
-        // Limit the number of chunks we have in flight at any given time.
-        .try_buffered(max_chunks_in_flight);
+    // Limit the number of chunks we have in flight at any given time.
+    let tables = table_stream.try_buffered(max_chunks_in_flight);
 
     let daft_schema: SchemaRef = Arc::new(Schema::try_from(schema)?);
 
@@ -270,38 +235,60 @@ async fn read_json_single_into_table(
     });
     let mut remaining_rows = limit.map(|limit| limit as i64);
     let collected_tables = filtered_tables
-        .try_take_while(|result| {
-            match (result, remaining_rows) {
-                // Limit has been met, early-terminate.
-                (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
-                // Limit has not yet been met, update remaining limit slack and continue.
-                (Ok(table), Some(rows_left)) => {
-                    remaining_rows = Some(rows_left - table.len() as i64);
-                    futures::future::ready(Ok(true))
-                }
-                // (1) No limit, never early-terminate.
-                // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
-                (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
+        .try_take_while(|result| match (result, remaining_rows) {
+            // Limit has been met, early-terminate.
+            (_, Some(rows_left)) if rows_left <= 0 => futures::future::ready(Ok(false)),
+            // Limit has not yet been met, update remaining limit slack and continue.
+            (Ok(table), Some(rows_left)) => {
+                remaining_rows = Some(rows_left - table.len() as i64);
+                futures::future::ready(Ok(true))
             }
+            // (1) No limit, never early-terminate.
+            // (2) Encountered error, propagate error to try_collect to allow it to short-circuit.
+            (_, None) | (Err(_), _) => futures::future::ready(Ok(true)),
         })
         .try_collect::<Vec<_>>()
         .await?
         .into_iter()
         .collect::<DaftResult<Vec<_>>>()?;
+
     // Handle empty table case.
     if collected_tables.is_empty() {
-        return Ok(RecordBatch::empty(Some(daft_schema)));
+        return Ok(Vec::new());
     }
-    // // TODO(Clark): Don't concatenate all chunks from a file into a single table, since MicroPartition is natively chunked.
-    let concated_table = tables_concat(collected_tables)?;
-    if let Some(limit) = limit
-        && concated_table.len() > limit
-    {
-        // apply head in case that last chunk went over limit
-        concated_table.head(limit)
-    } else {
-        Ok(concated_table)
+    truncate_tables_to_limit(collected_tables, limit)
+}
+
+/// Backward-compatible wrapper that concatenates all chunks into a single RecordBatch.
+///
+/// Only used by legacy test paths (via `read_json`).
+async fn read_json_single_into_table(
+    uri: &str,
+    convert_options: Option<JsonConvertOptions>,
+    parse_options: Option<JsonParseOptions>,
+    read_options: Option<JsonReadOptions>,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    max_chunks_in_flight: Option<usize>,
+) -> DaftResult<RecordBatch> {
+    let schema_hint = convert_options
+        .as_ref()
+        .and_then(|c| c.schema.as_ref())
+        .map_or_else(|| Schema::empty().into(), |s| s.clone());
+    let tables = read_json_single_into_tables(
+        uri,
+        convert_options,
+        parse_options,
+        read_options,
+        io_client,
+        io_stats,
+        max_chunks_in_flight,
+    )
+    .await?;
+    if tables.is_empty() {
+        return Ok(RecordBatch::empty(Some(schema_hint)));
     }
+    tables_concat(tables)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -319,15 +306,15 @@ pub async fn stream_json(
     let is_compressed = CompressionCodec::from_uri(&uri).is_some();
     if matches!(source_type, SourceType::File) && !is_compressed {
         let fixed_uri = fixed_uri.to_string();
-        return Ok(Box::pin(once(async move {
-            read_json_local(
-                fixed_uri.as_ref(),
-                convert_options,
-                parse_options,
-                read_options,
-                max_chunks_in_flight,
-            )
-        })));
+        let tables = read_json_local_into_tables_with_range(
+            fixed_uri.as_ref(),
+            convert_options,
+            parse_options,
+            read_options,
+            max_chunks_in_flight,
+            range,
+        )?;
+        return Ok(Box::pin(futures::stream::iter(tables.into_iter().map(Ok))));
     }
     let predicate = convert_options
         .as_ref()
@@ -453,7 +440,7 @@ async fn read_json_single_into_stream(
             .await?
         {
             GetResult::File(file) => {
-                // Use user-provided buffer size, falling back to 8 * the user-provided chunk size if that exists, otherwise falling back to 512 KiB as the default.
+                // Use user-provided buffer size, falling back to 64 * the user-provided chunk size if that exists, otherwise falling back to 256 KiB as the default.
                 let buffer_size = read_options
                     .as_ref()
                     .and_then(|opt| {
@@ -461,11 +448,18 @@ async fn read_json_single_into_stream(
                             .or_else(|| opt.chunk_size.map(|cs| (64 * cs).min(256 * 1024 * 1024)))
                     })
                     .unwrap_or(256 * 1024);
+                let mut local_file = File::open(file.path).await?;
+                let reader: Box<dyn AsyncBufRead + Unpin + Send> = match file.range {
+                    Some(range) => {
+                        let length = range.end.saturating_sub(range.start);
+                        local_file.seek(SeekFrom::Start(range.start as u64)).await?;
+                        let limited = local_file.take(length as u64);
+                        Box::new(BufReader::with_capacity(buffer_size, limited))
+                    }
+                    None => Box::new(BufReader::with_capacity(buffer_size, local_file)),
+                };
                 (
-                    Box::new(BufReader::with_capacity(
-                        buffer_size,
-                        File::open(file.path).await?,
-                    )),
+                    reader,
                     buffer_size,
                     read_options
                         .as_ref()
@@ -477,7 +471,7 @@ async fn read_json_single_into_stream(
                 )
             }
             GetResult::Stream(stream, ..) => {
-                // Use user-provided buffer size, falling back to 8 * the user-provided chunk size if that exists, otherwise falling back to 8 MiB as the default for streams.
+                // Use user-provided buffer size, falling back to 256 * the user-provided chunk size if that exists, otherwise falling back to 8 MiB as the default for streams.
                 let buffer_size = read_options
                     .as_ref()
                     .and_then(|opt| {
@@ -573,12 +567,49 @@ where
     R: AsyncBufRead + Unpin + Send + 'static,
 {
     let num_rows = num_rows.unwrap_or(usize::MAX);
-    // Stream of unparsed json string record chunks.
-    let line_stream = tokio_stream::wrappers::LinesStream::new(reader.lines());
-    line_stream
-        .take(num_rows)
-        .try_chunks(chunk_size)
-        .context(ChunkSnafu)
+    let chunk_size = chunk_size.max(1);
+    // Stream of unparsed json string record chunks, grouped by byte size.
+    futures::stream::try_unfold(
+        (reader, 0usize),
+        move |(mut reader, mut total_rows_read)| async move {
+            if total_rows_read >= num_rows {
+                return Ok(None);
+            }
+
+            let mut records: Vec<String> = Vec::new();
+            let mut bytes_in_chunk: usize = 0;
+            let mut line = String::new();
+
+            while total_rows_read < num_rows {
+                line.clear();
+                let bytes_read = reader.read_line(&mut line).await.context(StdIOSnafu)?;
+                if bytes_read == 0 {
+                    break;
+                }
+
+                if line.ends_with('\n') {
+                    line.pop();
+                    if line.ends_with('\r') {
+                        line.pop();
+                    }
+                }
+
+                bytes_in_chunk = bytes_in_chunk.saturating_add(line.len());
+                total_rows_read = total_rows_read.saturating_add(1);
+                records.push(std::mem::take(&mut line));
+
+                if bytes_in_chunk >= chunk_size {
+                    break;
+                }
+            }
+
+            if records.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some((records, (reader, total_rows_read))))
+            }
+        },
+    )
 }
 
 fn parse_into_column_array_chunk_stream(
@@ -640,6 +671,7 @@ mod tests {
     use daft_core::prelude::*;
     use daft_io::{IOClient, IOConfig};
     use daft_recordbatch::RecordBatch;
+    use futures::TryStreamExt;
     use indexmap::IndexMap;
     use rstest::rstest;
 
@@ -649,6 +681,33 @@ mod tests {
         decoding::deserialize_records,
         inference::{column_types_map_to_fields, infer_records_schema},
     };
+
+    #[test]
+    fn test_streaming_chunk_size_is_bytes() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let chunks = rt
+            .block_on(async {
+                let data = b"{\"a\":1}\n{\"a\":2}\n{\"a\":3}\n";
+                let (mut w, r) = tokio::io::duplex(1024);
+                tokio::spawn(async move {
+                    use tokio::io::AsyncWriteExt;
+                    w.write_all(&data[..]).await.unwrap();
+                    w.shutdown().await.unwrap();
+                });
+                let reader = tokio::io::BufReader::new(r);
+                let stream = super::read_into_line_chunk_stream(reader, None, 14);
+                stream.try_collect::<Vec<_>>().await
+            })
+            .unwrap();
+
+        assert_eq!(
+            chunks,
+            vec![
+                vec!["{\"a\":1}".to_string(), "{\"a\":2}".to_string()],
+                vec!["{\"a\":3}".to_string()],
+            ]
+        );
+    }
 
     fn check_equal_local_arrow(
         path: &str,

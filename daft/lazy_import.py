@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 class LazyImport:
     """Manages Optional Dependency imports.
 
-    There are certain large imports (e.g. Ray, daft.unity_catalog.UnityCatalogTable, etc.) that
+    There are certain large imports (e.g. Ray, UnityCatalogTable, etc.) that
     do not need to be top-level imports. For example, Ray should only be imported when the ray
     runner is used, or specific ray data extension types are needed. We can lazily import these
     modules as needed.

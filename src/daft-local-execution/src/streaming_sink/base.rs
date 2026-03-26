@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    ops::ControlFlow,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -20,8 +21,7 @@ use snafu::ResultExt;
 use tracing::info_span;
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorControlFlow, OperatorOutput,
-    PipelineExecutionSnafu,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
@@ -209,7 +209,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
     async fn handle_task_completion(
         result: ExecutionTaskResult<Op::State>,
         ctx: &mut ExecutionContext<Op>,
-    ) -> DaftResult<OperatorControlFlow> {
+    ) -> DaftResult<ControlFlow<()>> {
         match result.output {
             StreamingSinkOutput::NeedMoreInput(mp) => {
                 // Record execution stats
@@ -223,7 +223,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 if let Some(mp) = mp {
                     ctx.runtime_stats.add_rows_out(mp.len() as u64);
                     if ctx.output_sender.send(mp).await.is_err() {
-                        return Ok(OperatorControlFlow::Break);
+                        return Ok(ControlFlow::Break(()));
                     }
                 }
 
@@ -242,7 +242,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 if let Some(mp) = output {
                     ctx.runtime_stats.add_rows_out(mp.len() as u64);
                     if ctx.output_sender.send(mp).await.is_err() {
-                        return Ok(OperatorControlFlow::Break);
+                        return Ok(ControlFlow::Break(()));
                     }
                 }
 
@@ -266,17 +266,17 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 // Return state to pool for finalization
                 ctx.state_pool.insert(result.state_id, result.state);
                 // Short-circuit: Finished means we should exit early (like a closed sender)
-                return Ok(OperatorControlFlow::Break);
+                return Ok(ControlFlow::Break(()));
             }
         }
-        Ok(OperatorControlFlow::Continue)
+        Ok(ControlFlow::Continue(()))
     }
 
     async fn process_input(
         node_id: usize,
         mut receiver: Receiver<Arc<MicroPartition>>,
         ctx: &mut ExecutionContext<Op>,
-    ) -> DaftResult<OperatorControlFlow> {
+    ) -> DaftResult<ControlFlow<()>> {
         let (lower, upper) = ctx.batch_manager.initial_requirements().values();
         let mut buffer = RowBasedBuffer::new(lower, upper);
         let mut input_closed = false;
@@ -290,14 +290,12 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 // Branch 1: Join completed task (only if tasks exist)
                 Some(join_result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
                     let result = join_result??;
-                    if !Self::handle_task_completion(result, ctx).await?.should_continue() {
-                        return Ok(OperatorControlFlow::Break);
+                    if Self::handle_task_completion(result, ctx).await?.is_break() {
+                        return Ok(ControlFlow::Break(()));
                     }
 
                     // After completing a task, update bounds and try to spawn more tasks
-                    let new_requirements = ctx.batch_manager.calculate_batch_size();
-                    let (lower, upper) = new_requirements.values();
-                    buffer.update_bounds(lower, upper);
+                    buffer.update_bounds(ctx.batch_manager.calculate_batch_size());
 
                     Self::spawn_ready_batches(&mut buffer, ctx)?;
                 }
@@ -343,18 +341,18 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
 
             // Wait for final task to complete
             while let Some(join_result) = ctx.task_set.join_next().await {
-                if !Self::handle_task_completion(join_result??, ctx)
+                if Self::handle_task_completion(join_result??, ctx)
                     .await?
-                    .should_continue()
+                    .is_break()
                 {
-                    return Ok(OperatorControlFlow::Break);
+                    return Ok(ControlFlow::Break(()));
                 }
             }
         }
 
         debug_assert_eq!(ctx.task_set.len(), 0, "TaskSet should be empty after loop");
 
-        Ok(OperatorControlFlow::Continue)
+        Ok(ControlFlow::Continue(()))
     }
 }
 
@@ -496,7 +494,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         };
         runtime_handle.spawn(
             async move {
-                Self::process_input(node_id, child_result_receiver, &mut ctx).await?;
+                let _ = Self::process_input(node_id, child_result_receiver, &mut ctx).await?;
 
                 let mut finished_states: Vec<_> =
                     ctx.state_pool.drain().map(|(_, state)| state).collect();

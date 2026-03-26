@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ops::ControlFlow, sync::Arc};
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
@@ -12,7 +12,7 @@ use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 
 use crate::{
-    ExecutionRuntimeContext, OperatorControlFlow,
+    ExecutionRuntimeContext,
     channel::{Receiver, Sender, create_channel},
     pipeline::{BuilderContext, MorselSizeRequirement, PipelineNode},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
@@ -62,7 +62,7 @@ impl ConcatNode {
         runtime_stats: Arc<dyn RuntimeStats>,
         stats_manager: &RuntimeStatsManagerHandle,
         node_initialized: &mut bool,
-    ) -> DaftResult<OperatorControlFlow> {
+    ) -> DaftResult<ControlFlow<()>> {
         while let Some(mp) = receiver.recv().await {
             if !*node_initialized {
                 stats_manager.activate_node(node_id);
@@ -71,11 +71,11 @@ impl ConcatNode {
             runtime_stats.add_rows_in(mp.len() as u64);
             runtime_stats.add_rows_out(mp.len() as u64);
             if sender.send(mp).await.is_err() {
-                return Ok(OperatorControlFlow::Break);
+                return Ok(ControlFlow::Break(()));
             }
         }
 
-        Ok(OperatorControlFlow::Continue)
+        Ok(ControlFlow::Continue(()))
     }
 }
 
@@ -197,7 +197,7 @@ impl PipelineNode for ConcatNode {
                     &mut node_initialized,
                 )
                 .await?;
-                if !control.should_continue() {
+                if control.is_break() {
                     stats_manager.finalize_node(node_id);
                     return Ok(());
                 }
@@ -211,7 +211,7 @@ impl PipelineNode for ConcatNode {
                     &mut node_initialized,
                 )
                 .await?;
-                if !control.should_continue() {
+                if control.is_break() {
                     stats_manager.finalize_node(node_id);
                     return Ok(());
                 }

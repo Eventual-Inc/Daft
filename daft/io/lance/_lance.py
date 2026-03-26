@@ -229,7 +229,7 @@ def merge_columns(
     """
     warnings.warn(
         "daft.io.lance.merge_columns is deprecated and will be removed in a future release. "
-        "Please use daft.io.lance.merge_columns_df instead.",
+        "Please use daft_lance.merge_columns from the daft-lance package instead: pip install daft-lance",
         category=DeprecationWarning,
         stacklevel=2,
     )
@@ -335,6 +335,13 @@ def merge_columns_df(
         >>> # Merge the new columns back to the table
         >>> daft.io.lance.merge_columns_df(df, "s3://my-lancedb-bucket/data/")
     """
+    warnings.warn(
+        "daft.io.lance.merge_columns_df is deprecated and will be removed in a future release. "
+        "Please use daft_lance.merge_columns_df from the daft-lance package instead: pip install daft-lance",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
     storage_options = storage_options or io_config_to_storage_options(io_config, uri)
 
@@ -465,6 +472,13 @@ def create_scalar_index(
         Create an index without replacing existing ones:
         >>> daft.io.lance.create_scalar_index("s3://my-bucket/dataset/", column="title", replace=False)
     """
+    warnings.warn(
+        "daft.io.lance.create_scalar_index is deprecated and will be removed in a future release. "
+        "Please use daft_lance.create_scalar_index from the daft-lance package instead: pip install daft-lance",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+
     try:
         import lance
         from packaging import version as packaging_version
@@ -568,6 +582,13 @@ def compact_files(
     Raises:
         RuntimeError: When compaction fails or no successful results
     """
+    warnings.warn(
+        "daft.io.lance.compact_files is deprecated and will be removed in a future release. "
+        "Please use daft_lance.compact_files from the daft-lance package instead: pip install daft-lance",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+
     try:
         import lance
 

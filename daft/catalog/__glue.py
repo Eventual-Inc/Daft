@@ -19,10 +19,10 @@ if TYPE_CHECKING:
     from mypy_boto3_glue.type_defs import TableTypeDef as GlueTableInfo
     from pyiceberg.table import Table as PyIcebergTable
 
+    from daft.catalog.__unity._client import UnityCatalogTable
     from daft.daft import IOConfig
     from daft.dataframe import DataFrame
     from daft.io.partitioning import PartitionField
-    from daft.unity_catalog import UnityCatalogTable
     from daft.utils import ColumnInputType
 else:
     GlueClient = Any
@@ -518,7 +518,7 @@ class GlueDeltaTable(GlueTable):
     def _create_unity_catalog_table(cls, table: GlueTableInfo, io_config: IOConfig | None) -> UnityCatalogTable:
         from unitycatalog.types import TableInfo
 
-        from daft.unity_catalog import UnityCatalogTable
+        from daft.catalog.__unity._client import UnityCatalogTable
 
         table_info = TableInfo(
             # catalog_name=
