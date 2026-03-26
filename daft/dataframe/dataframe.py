@@ -4911,20 +4911,17 @@ class DataFrame:
 
         # Native runner path: convert MicroPartitions to Arrow tables locally,
         # then create a Ray Dataset from them.
-        import pyarrow as pa
         import ray.data
 
         from daft.runners.ray_runner import _micropartition_to_ray_dataset_block
 
         blocks = [_micropartition_to_ray_dataset_block(result.micropartition()) for _, result in partition_set.items()]
-        arrow_blocks = [b for b in blocks if isinstance(b, pa.Table)]
-        list_blocks = [b for b in blocks if not isinstance(b, pa.Table)]
-
-        if list_blocks:
-            # Fallback: some partitions couldn't be converted to Arrow
-            all_items = [item for block in list_blocks for item in block]
+        # All partitions share the same schema, so either all convert to Arrow or all
+        # fall back to pylist. Handle both cases.
+        if blocks and isinstance(blocks[0], list):
+            all_items = [item for block in blocks for item in block]
             return ray.data.from_items(all_items)
-        return ray.data.from_arrow(arrow_blocks)
+        return ray.data.from_arrow(blocks)
 
     @classmethod
     def _from_ray_dataset(cls, ds: "ray.data.dataset.DataSet") -> "DataFrame":
