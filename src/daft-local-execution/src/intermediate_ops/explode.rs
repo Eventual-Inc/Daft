@@ -2,19 +2,19 @@ use std::{num::NonZeroUsize, sync::Arc, time::Duration};
 
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, meters::Counter, ops::NodeType,
+    Meter, StatSnapshot,
+    meters::Counter,
+    ops::{NodeInfo, NodeType},
     snapshot::ExplodeSnapshot,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_functions_list::explode;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use opentelemetry::{KeyValue, global};
+use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::{BatchingState, BatchingStrategy},
@@ -23,36 +23,29 @@ use crate::{
 };
 
 pub struct ExplodeStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
     node_kv: Vec<KeyValue>,
-}
-
-impl ExplodeStats {
-    pub fn new(id: usize) -> Self {
-        let meter = global::meter("daft.local.node_stats");
-        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
-
-        Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY, None),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY, None),
-            node_kv,
-        }
-    }
 }
 
 impl RuntimeStats for ExplodeStats {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
-        self
-    }
 
+    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = node_info.to_key_values();
+
+        Self {
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
+            node_kv,
+        }
+    }
     fn build_snapshot(&self, ordering: std::sync::atomic::Ordering) -> StatSnapshot {
-        let cpu_us = self.cpu_us.load(ordering);
+        let cpu_us = self.duration_us.load(ordering);
         let rows_in = self.rows_in.load(ordering);
         let rows_out = self.rows_out.load(ordering);
 
@@ -78,8 +71,8 @@ impl RuntimeStats for ExplodeStats {
         self.rows_out.add(rows, self.node_kv.as_slice());
     }
 
-    fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+    fn add_duration_us(&self, cpu_us: u64) {
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
@@ -89,12 +82,21 @@ pub struct ExplodeOperator {
 }
 
 impl ExplodeOperator {
-    pub fn new(to_explode: Vec<BoundExpr>, index_column: Option<String>) -> Self {
+    pub fn new(
+        to_explode: Vec<BoundExpr>,
+        ignore_empty_and_null: bool,
+        index_column: Option<String>,
+    ) -> Self {
         Self {
             to_explode: Arc::new(
                 to_explode
                     .into_iter()
-                    .map(|expr| BoundExpr::new_unchecked(explode(expr.inner().clone())))
+                    .map(|expr| {
+                        BoundExpr::new_unchecked(explode(
+                            expr.inner().clone(),
+                            daft_dsl::lit(ignore_empty_and_null),
+                        ))
+                    })
                     .collect(),
             ),
             index_column,
@@ -108,8 +110,9 @@ impl IntermediateOperator for ExplodeOperator {
     #[instrument(skip_all, name = "ExplodeOperator::execute")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         let to_explode = self.to_explode.clone();
@@ -118,10 +121,7 @@ impl IntermediateOperator for ExplodeOperator {
             .spawn(
                 async move {
                     let out = input.explode(&to_explode, index_column.as_deref())?;
-                    Ok((
-                        state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                    ))
+                    Ok((state, out))
                 },
                 Span::current(),
             )
@@ -147,10 +147,6 @@ impl IntermediateOperator for ExplodeOperator {
 
     fn op_type(&self) -> NodeType {
         NodeType::Explode
-    }
-
-    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(ExplodeStats::new(id))
     }
 
     fn batching_strategy(
@@ -302,7 +298,7 @@ mod tests {
     use super::*;
 
     fn new_explode_stats(rows_in: u64, rows_out: u64) -> ExplodeStats {
-        let stats = ExplodeStats::new(0);
+        let stats = ExplodeStats::new(&Meter::global_scope("test"), &Default::default());
         stats.add_rows_in(rows_in);
         stats.add_rows_out(rows_out);
         stats

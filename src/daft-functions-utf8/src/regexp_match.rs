@@ -20,7 +20,11 @@ impl ScalarUDF for RegexpMatch {
         "regexp_match"
     }
 
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "pattern", |s, pattern| {
             s.with_utf8_array(|arr| {
                 pattern

@@ -285,7 +285,22 @@ impl MapArray {
         let val = self.get(idx);
         match val {
             None => Ok("None".to_string()),
-            Some(v) => series_as_list_str(&v),
+            Some(v) => {
+                let struct_arr = v.struct_()?;
+                let keys = struct_arr.get("key")?;
+                let values = struct_arr.get("value")?;
+                let pairs: Vec<String> = (0..keys.len())
+                    .map(|i| {
+                        let key_str = if matches!(keys.data_type(), DataType::Utf8) {
+                            format!("\"{}\"", keys.str_value(i))
+                        } else {
+                            keys.str_value(i)
+                        };
+                        format!("{}: {}", key_str, values.str_value(i))
+                    })
+                    .collect();
+                Ok(format!("{{{}}}", pairs.join(", ")))
+            }
         }
     }
 }
@@ -441,8 +456,7 @@ impl StructArray {
                     let fields_to_strs = fields
                         .iter()
                         .zip(self.children.iter())
-                        .filter(|(f, _)| !f.name.is_empty() && f.dtype != DataType::Null)
-                        .map(|(f, s)| Ok(format!("{}: {},\n", f.name.as_str(), s.str_value(idx))))
+                        .map(|(f, s)| Ok(format!("{}: {},\n", f.name.as_ref(), s.str_value(idx))))
                         .collect::<DaftResult<Vec<_>>>()?;
                     let mut result = "{".to_string();
                     for line in fields_to_strs {

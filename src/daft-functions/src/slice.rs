@@ -27,7 +27,11 @@ impl ScalarUDF for Slice {
         "slice"
     }
 
-    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let SliceArgs { input, start, end } = args.try_into()?;
 
         let mut input_lengths = vec![input.len(), start.len()];
@@ -157,7 +161,7 @@ fn list_slice(
     let start_iter = start.into_iter().cycle().take(output_len);
 
     let end_iter: Box<dyn Iterator<Item = Option<i64>>> = if let Some(end) = end {
-        Box::new(end.into_iter().map(|i| i.copied()).cycle().take(output_len))
+        Box::new(end.into_iter().cycle().take(output_len))
     } else {
         Box::new(input_iter.clone().map(|i| i.map(|i| i.len() as i64)))
     };
@@ -166,7 +170,7 @@ fn list_slice(
         .zip(end_iter)
         .zip(input_iter)
         .map(|((s, e), i)| {
-            let (Some(s), Some(e), Some(i)) = (s.copied(), e, i) else {
+            let (Some(s), Some(e), Some(i)) = (s, e, i) else {
                 return Ok(None);
             };
 
@@ -181,7 +185,7 @@ fn list_slice(
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
-    ListArray::try_from((name, slices.as_slice()))
+    ListArray::from_series(name, slices)
 }
 
 fn binary_slice<'a>(
@@ -195,7 +199,7 @@ fn binary_slice<'a>(
     let start_iter = start.into_iter().cycle().take(output_len);
 
     let end_iter: Box<dyn Iterator<Item = Option<i64>>> = if let Some(end) = end {
-        Box::new(end.into_iter().map(|i| i.copied()).cycle().take(output_len))
+        Box::new(end.into_iter().cycle().take(output_len))
     } else {
         Box::new(input_iter.clone().map(|i| i.map(|i| i.len() as i64)))
     };
@@ -204,7 +208,7 @@ fn binary_slice<'a>(
         .zip(end_iter)
         .zip(input_iter)
         .map(|((s, e), i)| {
-            let (Some(s), Some(e), Some(i)) = (s.copied(), e, i) else {
+            let (Some(s), Some(e), Some(i)) = (s, e, i) else {
                 return None;
             };
 

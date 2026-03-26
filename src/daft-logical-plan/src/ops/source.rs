@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-use common_scan_info::{PhysicalScanInfo, ScanState};
+use daft_scan::{PhysicalScanInfo, ScanState};
 use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 
@@ -138,7 +138,18 @@ impl Source {
                 ..
             }) => {
                 res.push("GlobScan:".to_string());
-                res.push(format!("Glob paths = {:?}", glob_paths));
+                if glob_paths.len() == 1 {
+                    res.push(format!(
+                        "Glob path: {}",
+                        glob_paths.first().expect("Empty glob paths")
+                    ));
+                } else {
+                    res.push("Glob paths: [".to_string());
+                    for path in glob_paths.iter() {
+                        res.push(format!("  {}", path));
+                    }
+                    res.push("]".to_string());
+                }
                 res.extend(pushdowns.multiline_display());
             }
             SourceInfo::PlaceHolder(PlaceHolderInfo {

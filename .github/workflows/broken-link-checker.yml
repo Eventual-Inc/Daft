@@ -1,6 +1,3 @@
-# This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests across different versions of node
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs
-
 name: Check Broken Links on daft.ai
 
 on:
@@ -19,53 +16,66 @@ jobs:
       matrix:
         site:
         - url: https://www.daft.ai
-        - url: https://docs.daft.ai
+        - url: https://docs.daft.ai/en/stable/
         - url: https://www.eventual.ai
     steps:
-    - name: setup broken link checker
-      run: npm install -g broken-link-checker
     - name: Check ${{ matrix.site.url }}
-      uses: nick-fields/retry@v3
+      uses: lycheeverse/lychee-action@v2.8.0
+      id: lychee
       with:
-        timeout_minutes: 10
-        retry_wait_seconds: 120
-        max_attempts: 3
-        command: |
-          LOG="$(mktemp)"
-          blc ${{ matrix.site.url }} \
-            -ro \
-            --exclude https://scarf.sh/ \
-            --exclude https://static.scarf.sh/* \
-            --exclude http://www.allaboutcookies.org/ \
-            --exclude https://www.kaggle.com/* \
-            --exclude https://x.com/daftengine \
-            | tee "$LOG"
+        args: >-
+          --exclude '^https?://scarf\.sh'
+          --exclude '^https?://static\.scarf\.sh'
+          --exclude '^https?://www\.allaboutcookies\.org'
+          --exclude '^https?://www\.kaggle\.com'
+          --exclude '^https?://x\.com'
+          --exclude '^https?://twitter\.com'
+          --exclude '^https?://www\.linkedin\.com'
+          --timeout 30
+          --retry-wait-time 5
+          --max-retries 3
+          --max-concurrency 8
+          --no-progress
+          --format json
+          ${{ matrix.site.url }}
+        output: results.json
+        fail: false
+    - name: Fail only on 404s
+      run: |
+        if [ ! -f results.json ]; then
+          echo "No results file found"
+          exit 0
+        fi
 
-          # Only fail on 404s; print other broken links too (deduplicated).
-          BROKEN_LINES="$(grep 'BROKEN' "$LOG" | sort -u || true)"
-          if [ -n "$BROKEN_LINES" ]; then
-            NON_404="$(printf "%s\n" "$BROKEN_LINES" | grep -v 'HTTP_404' || true)"
-            ONLY_404="$(printf "%s\n" "$BROKEN_LINES" | grep 'HTTP_404' || true)"
+        # Extract URLs that returned 404
+        FAILED_404=$(jq -r '
+          .error_map // {} | to_entries[] |
+          .value[] | select(.status and (.status.code == 404)) |
+          "\(.url) -> \(.status.code)"
+        ' results.json || true)
 
-            if [ -n "$NON_404" ]; then
-              echo "Broken links (non-404, non-fatal):"
-              printf "%s\n" "$NON_404"
-            fi
+        # Show all failures for visibility
+        echo "=== Full lychee results ==="
+        jq -r '.error_map // {} | to_entries[] | .value[] | "\(.url) [\(.status.code // .status.text // "unknown")]"' results.json 2>/dev/null || true
 
-            if [ -n "$ONLY_404" ]; then
-              echo "Broken links (404 - failing):"
-              printf "%s\n" "$ONLY_404"
-              exit 1
-            fi
-          else
-            echo "No broken links detected."
-          fi
+        if [ -n "$FAILED_404" ]; then
+          echo ""
+          echo "=== 404 errors (failing) ==="
+          printf "%s\n" "$FAILED_404"
+          exit 1
+        else
+          echo ""
+          echo "No 404 errors detected."
+        fi
   notify_on_failure:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     if: failure()
     needs: check-links
     steps:
     - name: Send Slack notification on failure
+      if: ${{ env.SLACK_WEBHOOK_URL }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       uses: slackapi/slack-github-action@v2.1.1
       with:
         payload: |
@@ -80,5 +90,5 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook

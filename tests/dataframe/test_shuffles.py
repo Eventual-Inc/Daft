@@ -189,20 +189,18 @@ def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions)
     def bytes_per_row_fn():
         return 200
 
-    # TODO: Remove raises flag once flight shuffle is supported in Flotilla
-    with pytest.raises(TypeError):
-        with flight_shuffle_ctx():
-            df = (
-                read_generator(
-                    generator(input_partitions, num_rows_fn, bytes_per_row_fn),
-                    schema=daft.Schema._from_field_name_and_types(
-                        [
-                            ("ints", daft.DataType.uint64()),
-                            ("bytes", daft.DataType.fixed_size_binary(200)),
-                        ]
-                    ),
-                )
-                .repartition(output_partitions, "ints")
-                .collect()
+    with flight_shuffle_ctx():
+        df = (
+            read_generator(
+                generator(input_partitions, num_rows_fn, bytes_per_row_fn),
+                schema=daft.Schema._from_field_name_and_types(
+                    [
+                        ("ints", daft.DataType.uint64()),
+                        ("bytes", daft.DataType.fixed_size_binary(200)),
+                    ]
+                ),
             )
-            assert len(df) == input_partitions * output_partitions
+            .repartition(output_partitions, "ints")
+            .collect()
+        )
+        assert len(df) == input_partitions * output_partitions

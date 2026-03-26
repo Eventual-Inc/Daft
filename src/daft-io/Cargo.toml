@@ -16,7 +16,6 @@ common-error = {path = "../common/error", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
-derive_builder = {workspace = true}
 futures = {workspace = true}
 globset = "0.4"
 google-cloud-storage = {version = "0.24.0", default-features = false, features = ["rustls-tls", "auth"]}
@@ -24,12 +23,20 @@ google-cloud-token = {version = "0.1.2"}
 home = "0.5.12"
 itertools = {workspace = true}
 log = {workspace = true}
+opendal = {workspace = true, features = [
+  "executors-tokio",  # Use tokio for async execution
+  "services-oss",  # Alibaba Cloud Object Storage Service
+  "services-cos",  # Tencent Cloud Object Storage
+  "services-obs",  # Huawei Cloud Object Storage
+  "services-memory",  # In-memory backend (used for testing)
+  "services-fs",  # Local filesystem (used for integration testing)
+  "services-github"  # GitHub repository contents
+]}
 pyo3 = {workspace = true, optional = true}
-rand = "0.8.5"
+rand = {workspace = true}
 regex = {version = "1.12.2"}
 reqwest-middleware = "0.4.2"
 reqwest-retry = "0.7.0"
-retry-policies = "0.4.0"
 serde = {workspace = true}
 snafu = {workspace = true}
 thiserror = {workspace = true}

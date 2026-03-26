@@ -19,7 +19,11 @@ impl ScalarUDF for ListAppend {
     fn name(&self) -> &'static str {
         "list_append"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let other = inputs.required((1, "other"))?;
 

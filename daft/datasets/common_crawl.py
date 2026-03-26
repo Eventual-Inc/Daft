@@ -90,9 +90,9 @@ def common_crawl(
         crawl: The crawl identifier, e.g. "CC-MAIN-2025-33".
         segment: Specific segment to fetch within the crawl. If not provided, defaults to all segments in the crawl.
         content: Specifies the type of content to load. Options are:
-            - "raw" or "warc": Raw WARC files containing full HTTP responses
-            - "text" or "wet": Extracted plain text content
-            - "metadata" or "wat": Metadata about crawled pages
+            + "raw" or "warc": Raw WARC files containing full HTTP responses
+            + "text" or "wet": Extracted plain text content
+            + "metadata" or "wat": Metadata about crawled pages
         num_files: Limit the number of files to process. If not provided, processes all matching files.
         io_config: IO configuration for accessing S3.
         in_aws: Where to fetch the common crawl data from. If running in AWS, this must be set to True. If outside of AWS,

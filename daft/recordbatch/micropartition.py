@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from daft.daft import (
     CsvConvertOptions,
@@ -158,11 +158,17 @@ class MicroPartition:
         else:
             return self.to_record_batch().to_arrow_table()
 
-    def to_pydict(self) -> dict[str, list[Any]]:
-        return self.to_record_batch().to_pydict()
+    def _to_pydict_impl(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> dict[str, list[Any]]:
+        return self.to_record_batch()._to_pydict_impl(maps_as_pydicts=maps_as_pydicts)
 
-    def to_pylist(self) -> list[dict[str, Any]]:
-        return self.to_record_batch().to_pylist()
+    def _to_pylist_impl(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> list[dict[str, Any]]:
+        return self.to_record_batch()._to_pylist_impl(maps_as_pydicts=maps_as_pydicts)
+
+    def to_pydict(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> dict[str, list[Any]]:
+        return self._to_pydict_impl(maps_as_pydicts=maps_as_pydicts)
+
+    def to_pylist(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> list[dict[str, Any]]:
+        return self._to_pylist_impl(maps_as_pydicts=maps_as_pydicts)
 
     def to_pandas(
         self,

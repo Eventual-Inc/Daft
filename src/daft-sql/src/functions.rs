@@ -3,16 +3,17 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use daft_core::prelude::Schema;
+use daft_core::prelude::{Operator, Schema};
 use daft_dsl::{
-    Expr, ExprRef, Operator, WindowExpr, WindowSpec, binary_op,
+    Expr, ExprRef, WindowExpr, WindowSpec, binary_op,
     expr::window::{WindowBoundary, WindowFrame},
     functions::{
-        BuiltinScalarFn, BuiltinScalarFnVariant, FUNCTION_REGISTRY, FunctionArgs, ScalarUDF,
+        BuiltinScalarFn, BuiltinScalarFnVariant, FUNCTION_REGISTRY, FunctionArgs,
+        ScalarFunctionFactory, ScalarUDF,
     },
     unresolved_col,
 };
-use daft_session::Session;
+use daft_session::{ScalarFunction as SessionFunction, Session};
 use sqlparser::ast::{
     DuplicateTreatment, Function, FunctionArg, FunctionArgExpr, FunctionArgOperator,
     FunctionArguments, WindowType,
@@ -23,7 +24,7 @@ use crate::{
     invalid_operation_err,
     modules::{
         SQLModule, SQLModuleAggs, SQLModuleConfig, SQLModuleMap, SQLModulePartitioning,
-        SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleWindow,
+        SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleTemporal, SQLModuleWindow,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
@@ -74,18 +75,18 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.register::<SQLModuleSketch>();
     functions.register::<SQLModuleStructs>();
     functions.register::<SQLModuleConfig>();
+    functions.register::<SQLModuleTemporal>();
     functions.register::<SQLModuleWindow>();
     functions.add_fn("concat", SQLConcat);
     functions.add_fn("element", SQLElement);
     for (name, function_factory) in FUNCTION_REGISTRY.read().unwrap().entries() {
-        // Note:
-        //  FunctionModule came from SQLModule, but SQLModule still remains.
-        //  We must add all functions from the registry to the SQLModule, but
-        //  now the FunctionModule has the ability to represent both logical
-        //  and physical via ScalarFunctionFactory. This is an easy migration
-        //  because, like the python API, we've only had dynamic functions on
-        //  the SQL side. The solution is to add all `DynamicScalarFunction`
-        //  by calling get_function with empty arguments and only adding the ok's.
+        // Auto-register all functions from the registry as generic SQL
+        // passthroughs, but skip names that already have a custom SQLFunction
+        // wrapper (e.g. SQLDateTrunc for "truncate"). Custom wrappers handle
+        // SQL-specific argument reordering that the generic passthrough can't.
+        if functions.map.contains_key(name) {
+            continue;
+        }
         let args = FunctionArgs::empty();
         let schema = Schema::empty();
         if let Ok(function) = function_factory.get_function(args, &schema) {
@@ -124,6 +125,19 @@ impl SQLFunction for BuiltinScalarFnVariant {
             inputs: daft_dsl::functions::FunctionArgs::try_new(inputs)?,
         }
         .into())
+    }
+}
+
+impl SQLFunction for Arc<dyn ScalarFunctionFactory> {
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        let inputs = inputs
+            .iter()
+            .map(|input| planner.plan_function_arg(input))
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
+        let inputs = daft_dsl::functions::FunctionArgs::try_new(inputs)?;
+        let schema = Schema::empty();
+        let func = self.get_function(inputs.clone(), &schema)?;
+        Ok(BuiltinScalarFn { func, inputs }.into())
     }
 }
 
@@ -392,9 +406,9 @@ impl SQLPlanner<'_> {
             name: impl AsRef<str>,
         ) -> SQLPlannerResult<Option<Arc<dyn SQLFunction>>> {
             let name = name.as_ref();
-
             match session.get_function(name)? {
-                Some(f) => Ok(Some(Arc::new(f))),
+                Some(SessionFunction::Python(udf)) => Ok(Some(Arc::new(udf))),
+                Some(SessionFunction::Native(factory)) => Ok(Some(Arc::new(factory))),
                 None => Ok(None),
             }
         }

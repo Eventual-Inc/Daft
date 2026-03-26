@@ -98,7 +98,7 @@ impl Subscriber for PySubscriberWrapper {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, Stats)],
+        stats: Arc<Vec<(NodeID, Stats)>>,
     ) -> DaftResult<()> {
         Python::attach(|py| {
             let stats_map = stats
@@ -140,6 +140,23 @@ impl Subscriber for PySubscriberWrapper {
         Python::attach(|py| {
             self.0
                 .call_method1(py, intern!(py, "on_exec_end"), (query_id.to_string(),))?;
+            Ok(())
+        })
+    }
+
+    async fn on_process_stats(&self, query_id: QueryID, stats: Stats) -> DaftResult<()> {
+        Python::attach(|py| {
+            let stat_map = stats
+                .iter()
+                .map(|(name, stat)| (name.to_string(), stat.clone().into_py_contents(py).unwrap()))
+                .collect::<HashMap<_, _>>();
+            let py_stats = stat_map.into_pyobject(py)?;
+
+            self.0.call_method1(
+                py,
+                intern!(py, "on_process_stats"),
+                (query_id.to_string(), py_stats),
+            )?;
             Ok(())
         })
     }

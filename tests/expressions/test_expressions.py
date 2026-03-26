@@ -653,10 +653,10 @@ def test_list_value_counts():
 
     # Apply list_value_counts operation
     result = mp.eval_expression_list([col("list_col").value_counts().alias("value_counts")])
-    value_counts = result.to_pydict()["value_counts"]
+    value_counts = result.to_pydict(maps_as_pydicts="lossy")["value_counts"]
 
     # Expected output
-    expected = [[("a", 2), ("b", 1), ("c", 1)], [("b", 2), ("c", 1)], [("a", 3)], [], [("d", 2)]]
+    expected = [{"a": 2, "b": 1, "c": 1}, {"b": 2, "c": 1}, {"a": 3}, {}, {"d": 2}]
 
     # Check the result
     assert value_counts == expected
@@ -689,16 +689,8 @@ def test_list_value_counts_nested():
 
     # Apply list_value_counts operation and expect an exception
     result = mp.eval_expression_list([col("nested_list_col").value_counts().alias("value_counts")])
-    result_dict = result.to_pydict()
-
-    assert result_dict["value_counts"] == [
-        [([1, 2], 1), ([3, 4], 1)],
-        [([1, 2], 1), ([5, 6], 1)],
-        [([3, 4], 1), ([1, 2], 1)],
-        [],
-        [],
-        [([1, 2], 2)],
-    ]
+    with pytest.raises(TypeError):
+        result.to_pydict(maps_as_pydicts="lossy")
 
 
 def test_list_value_counts_fixed_size():
@@ -725,14 +717,14 @@ def test_list_value_counts_fixed_size():
     result = df.with_column("value_counts", col("fixed_list").value_counts())
 
     # Verify the value counts
-    result_dict = result.to_pydict()
+    result_dict = result.to_pydict(maps_as_pydicts="lossy")
     assert result_dict["value_counts"] == [
-        [(1, 1), (2, 1), (3, 1)],
-        [(4, 2), (3, 1)],
-        [(4, 1), (5, 1), (6, 1)],
-        [(1, 1), (2, 1), (3, 1)],
-        [(7, 1), (8, 1), (9, 1)],
-        [],
+        {1: 1, 2: 1, 3: 1},
+        {4: 2, 3: 1},
+        {4: 1, 5: 1, 6: 1},
+        {1: 1, 2: 1, 3: 1},
+        {7: 1, 8: 1, 9: 1},
+        {},
     ]
 
 
@@ -754,7 +746,7 @@ def test_list_value_counts_degenerate():
     result_null = null_mp.eval_expression_list([col("null_list_col").value_counts().alias("value_counts")])
 
     # Check the result for null values
-    assert result_null.to_pydict() == {"value_counts": [[], []]}
+    assert result_null.to_pydict(maps_as_pydicts="lossy") == {"value_counts": [{}, {}]}
 
 
 @pytest.mark.parametrize(
@@ -782,6 +774,20 @@ def test_cast_sql_string(sql, actual):
     df = daft.from_pydict({"a": [1, 2, 3]}).select(expr)
     actual_df = daft.from_pydict({"a": [1, 2, 3]}).select(actual)
     assert df.schema() == actual_df.schema()
+
+
+def test_expression_as_dtype_methods() -> None:
+    expr = col("x").as_string()
+    expected = col("x").cast(DataType.string())
+    assert expr_structurally_equal(expr, expected)
+
+    expr = col("x").as_timestamp("ms", "UTC")
+    expected = col("x").cast(DataType.timestamp("ms", "UTC"))
+    assert expr_structurally_equal(expr, expected)
+
+    expr = col("x").as_list(DataType.int64())
+    expected = col("x").cast(DataType.list(DataType.int64()))
+    assert expr_structurally_equal(expr, expected)
 
 
 @pytest.mark.parametrize(

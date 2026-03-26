@@ -18,7 +18,7 @@ SF_TO_S3_PATH = {
 }
 
 
-def run_benchmark():
+def run_benchmark(up_to_query: int = 22):
     results = {}
 
     scale_factor = int(os.getenv("TPCH_SCALE_FACTOR"))
@@ -30,14 +30,20 @@ def run_benchmark():
 
     client = JobSubmissionClient(address="http://localhost:8265")
 
-    for q in range(1, 23):
+    for q in range(1, up_to_query + 1):
         print(f"Running TPC-H Q{q}... ", end="", flush=True)
 
         start: float = time.perf_counter()
 
         submission_id = client.submit_job(
-            entrypoint=f"DAFT_RUNNER=ray DAFT_PROGRESS_BAR=0 python answers_sql.py {parquet_path} {q}",
-            runtime_env={"working_dir": "./benchmarking/tpch"},
+            entrypoint=f"DAFT_RUNNER=ray python answers_sql.py {parquet_path} {q}",
+            runtime_env={
+                "working_dir": "./benchmarking/tpch",
+                "env_vars": {
+                    "DAFT_PROGRESS_BAR": "0",
+                    "DAFT_SHUFFLE_ALGORITHM": os.getenv("DAFT_SHUFFLE_ALGORITHM", "auto"),
+                },
+            },
         )
 
         job_details = asyncio.run(tail_logs(client, submission_id))
@@ -64,12 +70,19 @@ def main():
     num_workers = int(os.getenv("RAY_NUM_WORKERS"))
 
     print("Starting warmup run...")
-    run_benchmark()
+    run_benchmark(up_to_query=5)
 
     print("Warmup done. Running benchmark and collecting results...")
     results = run_benchmark()
 
-    data_dict = {**metadata, "scale factor": scale_factor, "num workers": num_workers, **results}
+    data_dict = {
+        **metadata,
+        "scale factor": scale_factor,
+        "num workers": num_workers,
+        # TODO: Add column to Google sheet before uncommenting this
+        # "shuffle algorithm": os.getenv("DAFT_SHUFFLE_ALGORITHM", "auto"),
+        **results,
+    }
 
     print("Results:")
     print(data_dict)

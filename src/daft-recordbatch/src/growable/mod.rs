@@ -39,7 +39,7 @@ impl<'a> GrowableRecordBatch<'a> {
                 )));
             }
             for (col, v) in tab.columns.iter().zip(series_list.iter_mut()) {
-                v.push(col);
+                v.push(col.as_materialized_series());
             }
         }
         let growables = series_list

@@ -1,10 +1,14 @@
-use common_arrow_ffi as ffi;
+use arrow_schema::ffi::FFI_ArrowSchema;
+use common_arrow_ffi::ToPyArrow;
+use common_error::DaftError;
 use common_py_serde::impl_bincode_py_state_serialization;
 use indexmap::IndexMap;
 use pyo3::{
     class::basic::CompareOp,
     exceptions::{PyAttributeError, PyValueError},
+    ffi::Py_uintptr_t,
     prelude::*,
+    types::PyAnyMethods,
 };
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +18,7 @@ use crate::{
     time_unit::TimeUnit,
 };
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PyTimeUnit {
     pub timeunit: TimeUnit,
@@ -82,7 +86,7 @@ impl PyTimeUnit {
     }
 }
 
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyDataType {
     pub dtype: DataType,
@@ -344,31 +348,16 @@ impl PyDataType {
     pub fn to_arrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         match &self.dtype {
-            DataType::FixedShapeTensor(dtype, shape) => {
-                if py
-                    .import(pyo3::intern!(py, "daft.utils"))?
-                    .getattr(pyo3::intern!(py, "pyarrow_supports_fixed_shape_tensor"))?
-                    .call0()?
-                    .extract()?
-                {
-                    pyarrow
-                        .getattr(pyo3::intern!(py, "fixed_shape_tensor"))?
-                        .call1((
-                            Self {
-                                dtype: *dtype.clone(),
-                            }
-                            .to_arrow(py)?,
-                            pyo3::types::PyTuple::new(py, shape.clone())?,
-                        ))
-                } else {
-                    // Fall back to default Daft super extension representation if installed pyarrow doesn't have the
-                    // canonical tensor extension type.
-                    #[allow(deprecated, reason = "arrow2 migration")]
-                    ffi::dtype_to_py(py, &self.dtype.to_arrow2()?, pyarrow)
-                }
-            }
-            #[allow(deprecated, reason = "arrow2 migration")]
-            _ => ffi::dtype_to_py(py, &self.dtype.to_arrow2()?, pyarrow),
+            DataType::FixedShapeTensor(dtype, shape) => pyarrow
+                .getattr(pyo3::intern!(py, "fixed_shape_tensor"))?
+                .call1((
+                    Self {
+                        dtype: *dtype.clone(),
+                    }
+                    .to_arrow(py)?,
+                    pyo3::types::PyTuple::new(py, shape.clone())?,
+                )),
+            _ => self.dtype.to_pyarrow(py),
         }
     }
     pub fn is_null(&self) -> PyResult<bool> {
@@ -642,5 +631,25 @@ impl From<DataType> for PyDataType {
 impl From<PyDataType> for DataType {
     fn from(item: PyDataType) -> Self {
         item.dtype
+    }
+}
+
+impl ToPyArrow for DataType {
+    fn to_pyarrow<'py>(
+        &self,
+        py: pyo3::Python<'py>,
+    ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        let field = Field::new("", self.clone());
+        let arrow_field = field.to_arrow()?;
+
+        let c_schema = FFI_ArrowSchema::try_from(&arrow_field).map_err(DaftError::from)?;
+        let c_schema_ptr = &raw const c_schema;
+        let module = py.import(pyo3::intern!(py, "pyarrow"))?;
+        let class = module.getattr(pyo3::intern!(py, "DataType"))?;
+        let dtype = class.call_method1(
+            pyo3::intern!(py, "_import_from_c"),
+            (c_schema_ptr as Py_uintptr_t,),
+        )?;
+        Ok(dtype)
     }
 }

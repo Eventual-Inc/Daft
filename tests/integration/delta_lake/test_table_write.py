@@ -14,12 +14,6 @@ from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.schema import Schema
 from tests.conftest import get_tests_daft_runner_name
 
-PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
-pytestmark = pytest.mark.skipif(
-    PYARROW_LOWER_BOUND_SKIP,
-    reason="deltalake not supported on older versions of pyarrow",
-)
-
 
 class _FakeCommitProperties:
     def __init__(self, custom_metadata):
@@ -79,7 +73,7 @@ def test_deltalake_multi_write_basic(tmp_path, base_table):
 
 def test_deltalake_write_cloud(base_table, cloud_paths):
     deltalake = pytest.importorskip("deltalake")
-    path, io_config, _ = cloud_paths
+    path, io_config = cloud_paths
     df = daft.from_arrow(base_table)
     result = df.write_deltalake(str(path), io_config=io_config)
     result = result.to_pydict()
@@ -112,7 +106,7 @@ def test_deltalake_write_overwrite_basic(tmp_path):
 
 def test_deltalake_write_overwrite_cloud(cloud_paths):
     deltalake = pytest.importorskip("deltalake")
-    path, io_config, _ = cloud_paths
+    path, io_config = cloud_paths
     df1 = daft.from_pydict({"a": [1, 2]})
     df1.write_deltalake(str(path), io_config=io_config)
 

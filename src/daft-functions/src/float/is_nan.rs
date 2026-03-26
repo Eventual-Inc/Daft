@@ -16,7 +16,11 @@ pub struct IsNan;
 
 #[typetag::serde]
 impl ScalarUDF for IsNan {
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         ensure!(inputs.len() == 1, ComputeError: "Expected 1 input, got {}", inputs.len());
 
         let data = inputs.required(("input", 0))?;

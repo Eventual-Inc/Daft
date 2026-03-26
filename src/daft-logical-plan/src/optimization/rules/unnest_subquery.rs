@@ -3,8 +3,11 @@ use std::{collections::HashSet, sync::Arc};
 use common_error::{DaftError, DaftResult};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_algebra::boolean::{combine_conjunction, split_conjunction};
-use daft_core::{join::JoinType, prelude::SchemaRef};
-use daft_dsl::{Column, Expr, ExprRef, Operator, ResolvedColumn, Subquery, resolved_col};
+use daft_core::{
+    join::JoinType,
+    prelude::{Operator, SchemaRef},
+};
+use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn, Subquery, resolved_col};
 use itertools::multiunzip;
 use uuid::Uuid;
 
@@ -433,7 +436,7 @@ fn pull_up_correlated_cols(
                             ) => {
                                 // remove correlated col from filter, use in join instead
                                 subquery_on.push(resolved_col(subquery_col_name.clone()));
-                                outer_on.push(resolved_col(outer_field.name.as_str()));
+                                outer_on.push(resolved_col(outer_field.name.as_ref()));
 
                                 found_correlated_col = true;
                                 return false;
@@ -520,6 +523,7 @@ fn pull_up_correlated_cols(
         LogicalPlan::Distinct(..)
         | LogicalPlan::MonotonicallyIncreasingId(..)
         | LogicalPlan::Repartition(..)
+        | LogicalPlan::IntoPartitions(..)
         | LogicalPlan::IntoBatches(..)
         | LogicalPlan::Union(..)
         | LogicalPlan::Intersect(..)

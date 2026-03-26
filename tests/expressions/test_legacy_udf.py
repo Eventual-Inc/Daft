@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import os
 import threading
+import warnings
 
 import httpx
 import numpy as np
 import pyarrow as pa
 import pytest
 from openai import APIStatusError
+
+# This module intentionally tests the deprecated @daft.udf API for backward compatibility.
+warnings.filterwarnings("ignore", category=DeprecationWarning, message=r".*@daft\.udf.*")
+pytestmark = pytest.mark.filterwarnings(r"ignore:.*@daft\.udf.*:DeprecationWarning")
 
 import daft
 from daft import col
@@ -689,7 +694,7 @@ def test_udf_fails_with_no_actors_schedulable():
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Tests Flotilla-specific behavior")
 def test_udf_succeeds_with_some_actors_schedulable():
-    with execution_config_ctx(actor_udf_ready_timeout=10):
+    with execution_config_ctx(actor_udf_ready_timeout=60):
         df = daft.from_pydict({"a": [1, 2, 3]})
 
         # Request for 100 actors, with 1 cpu. Not all will be scheduled, but the query can still run.

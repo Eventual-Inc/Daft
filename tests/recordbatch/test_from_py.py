@@ -13,10 +13,7 @@ import daft
 from daft import DataType, TimeUnit
 from daft.recordbatch import MicroPartition
 from daft.series import Series
-from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.conftest import get_tests_daft_runner_name
-
-ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 PYTHON_TYPE_ARRAYS = {
     "int": [1, 2],
@@ -46,10 +43,8 @@ PYTHON_INFERRED_TYPES = {
     "time": DataType.time(TimeUnit.us()),
     "list": DataType.list(DataType.int64()),
     "struct": DataType.struct({"a": DataType.int64(), "b": DataType.float64()}),
-    "empty_struct": DataType.struct({"": DataType.null()}),
-    "nested_struct": DataType.struct(
-        {"a": DataType.struct({"b": DataType.int64()}), "c": DataType.struct({"": DataType.null()})}
-    ),
+    "empty_struct": DataType.struct({}),
+    "nested_struct": DataType.struct({"a": DataType.struct({"b": DataType.int64()}), "c": DataType.struct({})}),
     "null": DataType.null(),
     "tensor": DataType.tensor(DataType.int64()),
     # The following types are not natively supported and will be cast to Python object types.
@@ -168,15 +163,14 @@ ARROW_ROUNDTRIP_TYPES = {
     "timestamp": pa.timestamp("us"),
 }
 
-if pyarrow_supports_fixed_shape_tensor():
-    arrow_tensor_dtype = pa.fixed_shape_tensor(pa.int64(), (2, 2))
-    # NOTE: We don't infer fixed-shape tensors when constructing a table from Python objects, since
-    # the shapes may be variable across partitions.
-    # PYTHON_TYPE_ARRAYS["canonical_tensor"] = list(np.arange(8).reshape(2, 2, 2))
-    # PYTHON_INFERRED_TYPES["canonical_tensor"] = DataType.tensor(DataType.int64(), (2, 2))
-    # ROUNDTRIP_TYPES["canonical_tensor"] = arrow_tensor_dtype
-    ARROW_ROUNDTRIP_TYPES["canonical_tensor"] = arrow_tensor_dtype
-    ARROW_TYPE_ARRAYS["canonical_tensor"] = pa.FixedShapeTensorArray.from_numpy_ndarray(np.arange(8).reshape(2, 2, 2))
+arrow_tensor_dtype = pa.fixed_shape_tensor(pa.int64(), (2, 2))
+# NOTE: We don't infer fixed-shape tensors when constructing a table from Python objects, since
+# the shapes may be variable across partitions.
+# PYTHON_TYPE_ARRAYS["canonical_tensor"] = list(np.arange(8).reshape(2, 2, 2))
+# PYTHON_INFERRED_TYPES["canonical_tensor"] = DataType.tensor(DataType.int64(), (2, 2))
+# ROUNDTRIP_TYPES["canonical_tensor"] = arrow_tensor_dtype
+ARROW_ROUNDTRIP_TYPES["canonical_tensor"] = arrow_tensor_dtype
+ARROW_TYPE_ARRAYS["canonical_tensor"] = pa.FixedShapeTensorArray.from_numpy_ndarray(np.arange(8).reshape(2, 2, 2))
 
 
 def _with_uuid_ext_type(uuid_ext_type) -> tuple[dict, dict]:
@@ -214,11 +208,7 @@ def test_from_pydict_arrow_roundtrip(uuid_ext_type) -> None:
     assert len(table) == 2
     assert set(table.column_names()) == set(arrow_type_arrays.keys())
     for field in table.schema():
-        assert field.dtype == (
-            DataType.from_arrow_type(arrow_type_arrays[field.name].type)
-            if (field.name != "empty_struct" and field.name != "nested_struct")
-            else PYTHON_INFERRED_TYPES[field.name]  # empty structs are internally represented as {"": None}
-        )
+        assert field.dtype == DataType.from_arrow_type(arrow_type_arrays[field.name].type)
     expected_table = pa.table(arrow_type_arrays).cast(pa.schema(arrow_roundtrip_types))
     assert table.to_arrow() == expected_table
 
@@ -230,11 +220,7 @@ def test_from_arrow_roundtrip(uuid_ext_type) -> None:
     assert len(table) == 2
     assert set(table.column_names()) == set(arrow_type_arrays.keys())
     for field in table.schema():
-        assert field.dtype == (
-            DataType.from_arrow_type(arrow_type_arrays[field.name].type)
-            if (field.name != "empty_struct" and field.name != "nested_struct")
-            else PYTHON_INFERRED_TYPES[field.name]  # empty structs are internally represented as {"": None}
-        )
+        assert field.dtype == DataType.from_arrow_type(arrow_type_arrays[field.name].type)
     expected_table = pa.table(arrow_type_arrays).cast(pa.schema(arrow_roundtrip_types))
     assert table.to_arrow() == expected_table
 
@@ -248,8 +234,7 @@ def test_from_pandas_roundtrip() -> None:
         assert field.dtype == PANDAS_INFERRED_TYPES[field.name]
     # pyarrow --> pandas will insert explicit Nones within the struct fields.
     df["struct"][1]["a"] = None
-    df["empty_struct"][0] = {}
-    df["empty_struct"][1] = {}
+    df["empty_struct"] = [{}, {}]
     df["nested_struct"][0]["c"] = {}
     df["nested_struct"][1]["c"] = {}
     pd.testing.assert_frame_equal(table.to_pandas(), df)
@@ -303,7 +288,7 @@ def test_from_pydict_arrow_map_array() -> None:
     # Perform expected Daft cast, where the inner string and int arrays are cast to large string and int arrays.
     expected = arrow_arr.cast(pa.map_(pa.int64(), pa.float64()))
     assert daft_recordbatch.to_arrow()["a"].combine_chunks() == expected
-    assert daft_recordbatch.to_pydict()["a"] == data
+    assert daft_recordbatch.to_pydict(maps_as_pydicts="lossy")["a"] == [{1: 2.0, 3: 4.0}, None, {5: 6.0, 7: 8.0}]
 
 
 def test_from_pydict_arrow_struct_array() -> None:
@@ -524,7 +509,7 @@ def test_from_arrow_map_array() -> None:
     # Perform expected Daft cast, where the inner string and int arrays are cast to large string and int arrays.
     expected = arrow_arr.cast(pa.map_(pa.float32(), pa.int32()))
     assert daft_recordbatch.to_arrow()["a"].combine_chunks() == expected
-    assert daft_recordbatch.to_pydict()["a"] == data
+    assert daft_recordbatch.to_pydict(maps_as_pydicts="lossy")["a"] == [{1.0: 1, 2.0: 2}, {3.0: 3, 4.0: 4}]
 
 
 @pytest.mark.skipif(

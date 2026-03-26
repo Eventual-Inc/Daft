@@ -15,6 +15,7 @@ use daft_core::{
     prelude::ImageArray,
 };
 use daft_schema::image_property::ImageProperty;
+use rayon::prelude::*;
 
 use crate::{CountingWriter, iters::ImageBufferIter};
 
@@ -76,8 +77,11 @@ impl ImageOps for ImageArray {
     }
 
     fn to_mode(&self, mode: ImageMode) -> DaftResult<Self> {
-        let buffers = ImageBufferIter::new(self).map(|img| img.map(|img| img.into_mode(mode)));
-        image_array_from_img_buffers(self.name(), buffers, Some(mode))
+        let buffers: Vec<Option<CowImage>> = (0..self.len())
+            .into_par_iter()
+            .map(|i| self.as_image_obj(i).map(|img| img.into_mode(mode)))
+            .collect();
+        image_array_from_img_buffers(self.name(), buffers.into_iter(), Some(mode))
     }
 
     fn attribute(&self, attr: ImageProperty) -> DaftResult<DataArray<UInt32Type>> {
@@ -159,8 +163,9 @@ impl ImageOps for FixedShapeImageArray {
     where
         Self: Sized,
     {
-        let buffers: Vec<Option<CowImage>> = ImageBufferIter::new(self)
-            .map(|img| img.map(|img| img.into_mode(mode)))
+        let buffers: Vec<Option<CowImage>> = (0..self.len())
+            .into_par_iter()
+            .map(|i| self.as_image_obj(i).map(|img| img.into_mode(mode)))
             .collect();
 
         let (height, width) = match self.data_type() {
@@ -177,22 +182,22 @@ impl ImageOps for FixedShapeImageArray {
         };
 
         match attr {
-            ImageProperty::Height => Ok(UInt32Array::from((
+            ImageProperty::Height => Ok(UInt32Array::from_slice(
                 self.name(),
-                vec![*height; self.len()].as_slice(),
-            ))),
-            ImageProperty::Width => Ok(UInt32Array::from((
+                &vec![*height; self.len()],
+            )),
+            ImageProperty::Width => Ok(UInt32Array::from_slice(
                 self.name(),
-                vec![*width; self.len()].as_slice(),
-            ))),
-            ImageProperty::Channel => Ok(UInt32Array::from((
+                &vec![*width; self.len()],
+            )),
+            ImageProperty::Channel => Ok(UInt32Array::from_slice(
                 self.name(),
-                vec![self.image_mode().num_channels() as u32; self.len()].as_slice(),
-            ))),
-            ImageProperty::Mode => Ok(UInt32Array::from((
+                &vec![self.image_mode().num_channels() as u32; self.len()],
+            )),
+            ImageProperty::Mode => Ok(UInt32Array::from_slice(
                 self.name(),
-                vec![(*self.image_mode() as u8) as u32; self.len()].as_slice(),
-            ))),
+                &vec![(*self.image_mode() as u8) as u32; self.len()],
+            )),
         }
     }
 }
@@ -273,10 +278,15 @@ fn encode_images<Arr: AsImageObj>(
     }
 }
 
-fn resize_images<Arr: AsImageObj>(images: &Arr, w: u32, h: u32) -> Vec<Option<CowImage<'_>>> {
-    ImageBufferIter::new(images)
-        .map(|img| img.map(|img| img.resize(w, h)))
-        .collect::<Vec<_>>()
+fn resize_images<Arr: AsImageObj + Sync>(
+    images: &Arr,
+    w: u32,
+    h: u32,
+) -> Vec<Option<CowImage<'_>>> {
+    (0..images.len())
+        .into_par_iter()
+        .map(|i| images.as_image_obj(i).map(|img| img.resize(w, h)))
+        .collect()
 }
 
 fn crop_images<'a, Arr>(
@@ -284,15 +294,17 @@ fn crop_images<'a, Arr>(
     bboxes: &mut dyn Iterator<Item = Option<BBox>>,
 ) -> Vec<Option<CowImage<'a>>>
 where
-    Arr: AsImageObj,
+    Arr: AsImageObj + Sync,
 {
-    ImageBufferIter::new(images)
-        .zip(bboxes)
-        .map(|(img, bbox)| match (img, bbox) {
+    let bboxes: Vec<Option<BBox>> = bboxes.take(images.len()).collect();
+    (0..images.len())
+        .into_par_iter()
+        .zip(bboxes.into_par_iter())
+        .map(|(i, bbox)| match (images.as_image_obj(i), bbox) {
             (None, _) | (_, None) => None,
             (Some(img), Some(bbox)) => Some(img.crop(&bbox)),
         })
-        .collect::<Vec<_>>()
+        .collect()
 }
 
 #[must_use]

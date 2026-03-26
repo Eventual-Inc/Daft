@@ -1,14 +1,17 @@
-use std::sync::Arc;
-
+use arrow::array::ArrowPrimitiveType;
 use common_error::{DaftError, DaftResult};
 use num_traits::{clamp, clamp_max, clamp_min};
 
-use crate::{array::DataArray, datatypes::DaftNumericType};
+use crate::{
+    array::DataArray,
+    datatypes::{DaftNumericType, NumericNative},
+};
 
 impl<T> DataArray<T>
 where
     T: DaftNumericType,
     T::Native: PartialOrd,
+    <T::Native as NumericNative>::ARROWTYPE: ArrowPrimitiveType<Native = T::Native>,
 {
     /// Clips the values in the array to the provided left and right bounds.
     ///
@@ -32,12 +35,12 @@ where
                     .zip(left_bound.into_iter())
                     .zip(right_bound.into_iter())
                     .map(|((value, left), right)| match (left, right) {
-                        (Some(l), Some(r)) => Some(clamp(*value, *l, *r)),
-                        (Some(l), None) => Some(clamp_min(*value, *l)),
-                        (None, Some(r)) => Some(clamp_max(*value, *r)),
+                        (Some(l), Some(r)) => Some(clamp(*value, l, r)),
+                        (Some(l), None) => Some(clamp_min(*value, l)),
+                        (None, Some(r)) => Some(clamp_max(*value, r)),
                         (None, None) => Some(*value),
                     });
-                let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
+                let data_array = Self::from_iter(self.field().clone(), result)
                     .with_nulls(self.nulls().cloned())?;
                 Ok(data_array)
             }
@@ -55,10 +58,10 @@ where
                                 .iter()
                                 .zip(left_bound.into_iter())
                                 .map(move |(value, left)| match left {
-                                    Some(l) => Some(clamp(*value, *l, r)),
+                                    Some(l) => Some(clamp(*value, l, r)),
                                     None => Some(clamp_max(*value, r)), // If left is null, we can just clamp_max
                                 });
-                        let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
+                        let data_array = Self::from_iter(self.field().clone(), result)
                             .with_nulls(self.nulls().cloned())?;
                         Ok(data_array)
                     }
@@ -67,11 +70,11 @@ where
                         // In this case, right_bound is null, so we can just do a simple clamp_min
                         let result = values.iter().zip(left_bound.into_iter()).map(
                             |(value, left)| match left {
-                                Some(l) => Some(clamp_min(*value, *l)),
+                                Some(l) => Some(clamp_min(*value, l)),
                                 None => Some(*value), // Left null, and right null, so we just don't do anything
                             },
                         );
-                        let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
+                        let data_array = Self::from_iter(self.field().clone(), result)
                             .with_nulls(self.nulls().cloned())?;
                         Ok(data_array)
                     }
@@ -85,11 +88,11 @@ where
                         let values = self.values();
                         let result = values.iter().zip(right_bound.into_iter()).map(
                             move |(value, right)| match right {
-                                Some(r) => Some(clamp(*value, l, *r)),
+                                Some(r) => Some(clamp(*value, l, r)),
                                 None => Some(clamp_min(*value, l)), // Right null, so we can just clamp_min
                             },
                         );
-                        let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
+                        let data_array = Self::from_iter(self.field().clone(), result)
                             .with_nulls(self.nulls().cloned())?;
                         Ok(data_array)
                     }
@@ -100,10 +103,10 @@ where
                                 .iter()
                                 .zip(right_bound.into_iter())
                                 .map(|(value, right)| match right {
-                                    Some(r) => Some(clamp_max(*value, *r)),
+                                    Some(r) => Some(clamp_max(*value, r)),
                                     None => Some(*value),
                                 });
-                        let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
+                        let data_array = Self::from_iter(self.field().clone(), result)
                             .with_nulls(self.nulls().cloned())?;
                         Ok(data_array)
                     }

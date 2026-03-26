@@ -136,6 +136,116 @@ def test_charset_base64():
     _test_charset("base64", buff=base64.b64encode(TEXT))
 
 
+def test_charset_hex():
+    import binascii
+
+    # Test binary to hex encoding/decoding
+    _test_encode("hex", input=TEXT, output=binascii.hexlify(TEXT).upper())
+    _test_decode("hex", input=binascii.hexlify(TEXT).upper(), output=TEXT)
+    _test_charset_roundtrip("hex", input=TEXT)
+
+    # Test string to hex encoding/decoding
+    text_str = TEXT.decode("utf-8")
+    _test_encode("hex", input=text_str, output=binascii.hexlify(TEXT).upper())
+
+    # Test specific byte values to hex
+    # Test single byte
+    single_byte = b"\x01"
+    single_byte_hex = b"01"
+    _test_encode("hex", input=single_byte, output=single_byte_hex)
+    _test_decode("hex", input=single_byte_hex, output=single_byte)
+
+    # Test hello string
+    hello_bytes = b"hello"
+    hello_hex = b"68656C6C6F"
+    _test_encode("hex", input=hello_bytes, output=hello_hex)
+    _test_decode("hex", input=hello_hex, output=hello_bytes)
+
+    # Test different lengths of bytes
+    test_bytes = [
+        b"",
+        b"\x00",
+        b"\xff",
+        b"\x00\x01",
+        b"\x01\x23\x45\x67",
+        b"\x89\xab\xcd\xef",
+    ]
+    for bytes_val in test_bytes:
+        expected_hex = binascii.hexlify(bytes_val).upper()
+        _test_encode("hex", input=bytes_val, output=expected_hex)
+        _test_decode("hex", input=expected_hex, output=bytes_val)
+
+    # Test mixed case hex decoding
+    mixed_case_hex = b"68656c6c6f"  # lowercase 'hello'
+    _test_decode("hex", input=mixed_case_hex, output=b"hello")
+
+    # Test numeric to hex encoding/decoding
+    #  Numeric input is first cast to string, then to hex
+    test_numbers = [0, 1, 10, 15, 16, 255, 256, 1024, 65535, 1000000]
+    for num in test_numbers:
+        num_str = str(num)
+        num_bytes = num_str.encode("utf-8")
+        expected_hex = binascii.hexlify(num_bytes).upper()
+        _test_encode("hex", input=num_str, output=expected_hex)
+
+    # Test try_encode and try_decode with hex
+    df = daft.from_pydict({"v": [b"hello", None, b"\x01"]})
+    result = df.select(col("v").try_encode("hex").alias("try_encode"), col("v").encode("hex").alias("encode"))
+    assert result.to_pydict()["try_encode"][0] is not None
+    assert result.to_pydict()["try_encode"][1] is None
+    assert result.to_pydict()["try_encode"][2] is not None
+    assert result.to_pydict()["try_encode"] == result.to_pydict()["encode"]
+
+    # Test edge cases for hex decoding
+    # Test with odd length hex strings
+    odd_hex = b"68656c6c6"  # 9 characters instead of 10
+    df = daft.from_pydict({"v": [odd_hex]})
+    result = df.select(col("v").try_decode("hex").alias("decoded"))
+    assert result.to_pydict()["decoded"][0] is None
+
+    # Test with non-hex characters
+    non_hex = b"68656c6c6g"  # 'g' is not a hex character
+    df = daft.from_pydict({"v": [non_hex]})
+    result = df.select(col("v").try_decode("hex").alias("decoded"))
+    assert result.to_pydict()["decoded"][0] is None
+
+    # Test with whitespace in hex strings
+    whitespace_hex = b"68 65 6c 6c 6f"  # with spaces
+    df = daft.from_pydict({"v": [whitespace_hex]})
+    result = df.select(col("v").try_decode("hex").alias("decoded"))
+    assert result.to_pydict()["decoded"][0] is None
+
+    # Test with very long hex strings
+    long_bytes = b"a" * 1000
+    long_hex = binascii.hexlify(long_bytes).upper()
+    _test_encode("hex", input=long_bytes, output=long_hex)
+    _test_decode("hex", input=long_hex, output=long_bytes)
+
+    # Test with different character cases in hex strings
+    mixed_case_hex2 = b"68656C6C6F"  # mixed case 'hello'
+    _test_decode("hex", input=mixed_case_hex2, output=b"hello")
+    upper_case_hex = b"68656C6C6F"  # uppercase 'hello'
+    _test_decode("hex", input=upper_case_hex, output=b"hello")
+
+    # Test with null values in different positions
+    df = daft.from_pydict({"v": [None, b"hello", None, b"\x01", None]})
+    result = df.select(col("v").encode("hex").alias("encoded"), col("v").try_encode("hex").alias("try_encoded"))
+    assert result.to_pydict()["encoded"][0] is None
+    assert result.to_pydict()["encoded"][2] is None
+    assert result.to_pydict()["encoded"][4] is None
+    assert result.to_pydict()["try_encoded"] == result.to_pydict()["encoded"]
+
+    # Test with empty hex string
+    empty_hex = b""
+    _test_decode("hex", input=empty_hex, output=b"")
+
+    # Test with special characters
+    special_chars = b"!@#$%^&*()"
+    special_chars_hex = binascii.hexlify(special_chars).upper()
+    _test_encode("hex", input=special_chars, output=special_chars_hex)
+    _test_decode("hex", input=special_chars_hex, output=special_chars)
+
+
 def test_codec_zstd():
     with pytest.raises(Exception, match="unsupported codec"):
         _test_codec("zstd", None)
@@ -245,7 +355,7 @@ def test_try_decode_utf8():
 def test_try_decode_utf8_perf():
     from daft import DataType as dt
 
-    @daft.udf(return_dtype=dt.string())
+    @daft.func.batch(return_dtype=dt.string())
     def try_decode_utf8_udf(binary_series):
         strings = []
         for binary in binary_series:

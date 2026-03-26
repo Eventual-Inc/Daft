@@ -30,8 +30,13 @@ impl SQLModule for SQLModuleAggs {
         parent.add_fn("max", AggExpr::Max(nil.clone()));
         parent.add_fn("bool_and", AggExpr::BoolAnd(nil.clone()));
         parent.add_fn("bool_or", AggExpr::BoolOr(nil.clone()));
-        parent.add_fn("stddev", AggExpr::Stddev(nil.clone()));
-        parent.add_fn("stddev_samp", AggExpr::Stddev(nil));
+        parent.add_fn("stddev", AggExpr::Stddev(nil.clone(), 1));
+        parent.add_fn("stddev_samp", AggExpr::Stddev(nil.clone(), 1));
+        parent.add_fn("stddev_pop", AggExpr::Stddev(nil.clone(), 0));
+        parent.add_fn("variance", AggExpr::Var(nil.clone(), 1));
+        parent.add_fn("var", AggExpr::Var(nil.clone(), 1));
+        parent.add_fn("var_samp", AggExpr::Var(nil.clone(), 1));
+        parent.add_fn("var_pop", AggExpr::Var(nil, 0));
     }
 }
 
@@ -55,7 +60,8 @@ impl SQLFunction for AggExpr {
             Self::Mean(_) => static_docs::AVG_DOCSTRING.replace("{}", alias),
             Self::Min(_) => static_docs::MIN_DOCSTRING.to_string(),
             Self::Max(_) => static_docs::MAX_DOCSTRING.to_string(),
-            Self::Stddev(_) => static_docs::STDDEV_DOCSTRING.to_string(),
+            Self::Stddev(_, _) => static_docs::STDDEV_DOCSTRING.to_string(),
+            Self::Var(_, _) => static_docs::VAR_DOCSTRING.to_string(),
             Self::BoolAnd(_) => static_docs::BOOL_AND_DOCSTRING.to_string(),
             Self::BoolOr(_) => static_docs::BOOL_OR_DOCSTRING.to_string(),
             e => unimplemented!("Need to implement docstrings for {e}"),
@@ -71,7 +77,8 @@ impl SQLFunction for AggExpr {
             | Self::Mean(_)
             | Self::Min(_)
             | Self::Max(_)
-            | Self::Stddev(_)
+            | Self::Stddev(_, _)
+            | Self::Var(_, _)
             | Self::BoolAnd(_)
             | Self::BoolOr(_) => &["input"],
             e => unimplemented!("Need to implement arg names for {e}"),
@@ -87,7 +94,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
                 let pushdown_col = schema
                     .min_estimated_size_column()
                     .map(|name| name.to_string())
-                    .unwrap_or_else(|| schema[0].name.clone());
+                    .unwrap_or_else(|| schema[0].name.to_string());
                 unresolved_col(pushdown_col)
                     .count(daft_core::count_mode::CountMode::All)
                     .alias("count")
@@ -105,7 +112,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
                         let pushdown_col = schema
                             .min_estimated_size_column()
                             .map(|name| name.to_string())
-                            .unwrap_or_else(|| schema[0].name.clone());
+                            .unwrap_or_else(|| schema[0].name.to_string());
                         unresolved_col(pushdown_col)
                             .count(daft_core::count_mode::CountMode::All)
                             .alias("count")
@@ -129,7 +136,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
                         let pushdown_col = schema
                             .min_estimated_size_column()
                             .map(|name| name.to_string())
-                            .unwrap_or_else(|| schema[0].name.clone());
+                            .unwrap_or_else(|| schema[0].name.to_string());
                         unresolved_col(pushdown_col)
                             .count(daft_core::count_mode::CountMode::All)
                             .alias("count")
@@ -169,9 +176,13 @@ fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
             ensure!(args.len() == 1, "mean takes exactly one argument");
             Ok(args[0].clone().mean())
         }
-        AggExpr::Stddev(_) => {
+        AggExpr::Stddev(_, ddof) => {
             ensure!(args.len() == 1, "stddev takes exactly one argument");
-            Ok(args[0].clone().stddev())
+            Ok(args[0].clone().stddev(*ddof))
+        }
+        AggExpr::Var(_, ddof) => {
+            ensure!(args.len() == 1, "var takes exactly one argument");
+            Ok(args[0].clone().var(*ddof))
         }
         AggExpr::Min(_) => {
             ensure!(args.len() == 1, "min takes exactly one argument");
@@ -191,7 +202,7 @@ fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
         }
         AggExpr::AnyValue(_, _) => unsupported_sql_err!("any_value"),
         AggExpr::List(_) => unsupported_sql_err!("list"),
-        AggExpr::Concat(_) => unsupported_sql_err!("concat"),
+        AggExpr::Concat(_, _) => unsupported_sql_err!("concat"),
         AggExpr::MapGroups { .. } => unsupported_sql_err!("map_groups"),
         AggExpr::Set(_) => unsupported_sql_err!("set"),
         AggExpr::Skew(_) => unsupported_sql_err!("skew"),
@@ -509,6 +520,44 @@ Example:
     ╞══════════════╡
     │ 70.710678118 │
     ╰──────────────╯
+    (Showing first 1 of 1 rows)";
+
+    pub(crate) const VAR_DOCSTRING: &str =
+        "Calculates the variance of non-null elements in the input expression.
+
+Example:
+
+.. code-block:: sql
+    :caption: SQL
+
+    SELECT var(x) FROM tbl
+
+.. code-block:: text
+    :caption: Input
+
+    ╭───────╮
+    │ x     │
+    │ ---   │
+    │ Int64 │
+    ╞═══════╡
+    │ 100   │
+    ├╌╌╌╌╌╌╌┤
+    │ 200   │
+    ├╌╌╌╌╌╌╌┤
+    │ null  │
+    ╰───────╯
+    (Showing first 3 of 3 rows)
+
+.. code-block:: text
+    :caption: Output
+
+    ╭────────╮
+    │ x      │
+    │ ---    │
+    │ Float64│
+    ╞════════╡
+    │ 5000.0 │
+    ╰────────╯
     (Showing first 1 of 1 rows)";
 
     pub(crate) const BOOL_AND_DOCSTRING: &str =

@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from daft.arrow_utils import ensure_table
 from daft.daft import (
     CsvConvertOptions,
     CsvParseOptions,
@@ -29,7 +28,7 @@ from daft.logical.schema import Schema
 from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Mapping
 
     from daft.io import IOConfig
 
@@ -80,8 +79,8 @@ class RecordBatch:
         return tab
 
     @staticmethod
-    def _from_series(series: list[Series]) -> RecordBatch:
-        return RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_pyseries_list([s._series for s in series]))
+    def _from_series(series: list[Series], num_rows: int | None = None) -> RecordBatch:
+        return RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_pyseries_list([s._series for s in series], num_rows))
 
     @staticmethod
     def from_arrow_table(arrow_table: pa.Table) -> RecordBatch:
@@ -105,7 +104,6 @@ class RecordBatch:
             return RecordBatch.from_pydict(dict(zip(arrow_table.column_names, arrow_table.columns)))
         else:
             # Otherwise, go through record batch happy path.
-            arrow_table = ensure_table(arrow_table)
             pyt = _PyRecordBatch.from_arrow_record_batches(arrow_table.to_batches(), schema._schema)
             return RecordBatch._from_pyrecordbatch(pyt)
 
@@ -177,23 +175,27 @@ class RecordBatch:
         tab = pa.Table.from_pydict({column.name(): column.to_arrow() for column in self.columns()})
         return tab
 
-    def to_pydict(self) -> dict[str, list[Any]]:
-        return {column.name(): column.to_pylist() for column in self.columns()}
+    def _to_pydict_impl(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> dict[str, list[Any]]:
+        return {column.name(): column._series.to_pylist(maps_as_pydicts) for column in self.columns()}
 
-    def to_pylist(self) -> list[dict[str, Any]]:
+    def _to_pylist_impl(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> list[dict[str, Any]]:
         # TODO(Clark): Avoid a double-materialization of the table once the Rust-side table supports
         # by-row selection or iteration.
-        table = self.to_pydict()
+        table = self._to_pydict_impl(maps_as_pydicts=maps_as_pydicts)
         column_names = table.keys()
         return [{colname: table[colname][i] for colname in column_names} for i in range(len(self))]
+
+    def to_pydict(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> dict[str, list[Any]]:
+        return self._to_pydict_impl(maps_as_pydicts=maps_as_pydicts)
+
+    def to_pylist(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> list[dict[str, Any]]:
+        return self._to_pylist_impl(maps_as_pydicts=maps_as_pydicts)
 
     def to_pandas(
         self,
         schema: Schema | None = None,
         coerce_temporal_nanoseconds: bool = False,
     ) -> pd.DataFrame:
-        from packaging.version import parse
-
         if not pd.module_available():  # type: ignore[attr-defined]
             raise ImportError("Unable to import Pandas - please ensure that it is installed.")
 
@@ -215,19 +217,13 @@ class RecordBatch:
                 else:
                     # Arrow-native field, so provide column as Arrow array.
                     column_arrow = column_series.to_arrow()
-                    if parse(pa.__version__) < parse("13.0.0"):
-                        column = column_arrow.to_pandas()
-                    else:
-                        column = column_arrow.to_pandas(coerce_temporal_nanoseconds=coerce_temporal_nanoseconds)
+                    column = column_arrow.to_pandas(coerce_temporal_nanoseconds=coerce_temporal_nanoseconds)
                 table[colname] = column
 
             return pd.DataFrame.from_dict(table)
         else:
             arrow_table = self.to_arrow_record_batch()
-            if parse(pa.__version__) < parse("13.0.0"):
-                return arrow_table.to_pandas()
-            else:
-                return arrow_table.to_pandas(coerce_temporal_nanoseconds=coerce_temporal_nanoseconds)
+            return arrow_table.to_pandas(coerce_temporal_nanoseconds=coerce_temporal_nanoseconds)
 
     def to_ipc_stream(self) -> bytes:
         return self._recordbatch.to_ipc_stream()
@@ -472,10 +468,9 @@ class RecordBatch:
             raise TypeError(f"Expected a bool, list[bool] or None for `nulls_first` but got {type(nulls_first)}")
         return Series._from_pyseries(self._recordbatch.argsort(pyexprs, descending, nulls_first))
 
-    def __reduce__(
-        self,
-    ) -> tuple[Callable[[list[Series]], RecordBatch], tuple[list[Series]]]:
-        return RecordBatch._from_series, (self.columns(),)
+    def __reduce__(self) -> tuple[Any, ...]:
+        columns = self.columns()
+        return RecordBatch._from_series, (columns, len(self))
 
     @classmethod
     def read_parquet(

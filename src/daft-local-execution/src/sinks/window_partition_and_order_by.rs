@@ -83,8 +83,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
     #[instrument(skip_all, name = "WindowPartitionAndOrderBySink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.window_partition_and_order_by_params.clone();
@@ -160,7 +161,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 .iter()
                                 .map(|indices| {
                                     let indices_arr =
-                                        UInt64Array::from(("indices", indices.clone()));
+                                        UInt64Array::from_vec("indices", indices.clone());
                                     input_data.take(&indices_arr).unwrap()
                                 })
                                 .collect::<Vec<_>>();
@@ -184,10 +185,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                                 ))?
                                                 .broadcast(partition.len())?
                                                 .rename(name.clone());
-                                            partition.append_column(
-                                                params.original_schema.clone(),
-                                                new_col,
-                                            )?
+                                            let agg_batch =
+                                                RecordBatch::from_nonempty_columns(vec![new_col])?;
+                                            partition.union(&agg_batch)?
                                         }
                                         WindowExpr::RowNumber => {
                                             partition.window_row_number(name.clone())?
@@ -230,9 +230,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                     if results.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                            empty_result,
-                        )]));
+                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![empty_result]));
                     }
 
                     let final_result = MicroPartition::new_loaded(
@@ -240,9 +238,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                         results.into(),
                         None,
                     );
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        final_result,
-                    )]))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![final_result]))
                 },
                 Span::current(),
             )
@@ -254,7 +250,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
     }
 
     fn op_type(&self) -> NodeType {
-        NodeType::WindowPartitionAndOrderBy
+        NodeType::Window
     }
 
     fn multiline_display(&self) -> Vec<String> {

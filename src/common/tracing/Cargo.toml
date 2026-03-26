@@ -6,6 +6,7 @@ opentelemetry_sdk = {workspace = true}
 tracing = {workspace = true}
 tracing-opentelemetry = {version = "0.32", default-features = false, features = ["metrics"]}
 tracing-subscriber = {workspace = true}
+log = {workspace = true}
 
 [lints]
 workspace = true

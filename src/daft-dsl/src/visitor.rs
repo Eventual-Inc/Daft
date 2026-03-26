@@ -1,4 +1,8 @@
-use daft_core::{lit::Literal, prelude::DataType, python::PyDataType};
+use daft_core::{
+    lit::Literal,
+    prelude::{DataType, Operator},
+    python::PyDataType,
+};
 use pyo3::{
     Bound, PyAny, PyResult, Python,
     exceptions::PyValueError,
@@ -6,7 +10,7 @@ use pyo3::{
 };
 
 use crate::{
-    AggExpr, Column, Expr, ExprRef, Operator, Subquery, WindowExpr, WindowSpec,
+    AggExpr, Column, Expr, ExprRef, Subquery, WindowExpr, WindowSpec,
     functions::{BuiltinScalarFn, FunctionExpr, scalar::ScalarFn},
     python::PyExpr,
     python_udf::{BatchPyFn, PyScalarFn, RowWisePyFn},

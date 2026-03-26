@@ -59,8 +59,12 @@ def test_sharding_with_file_scan(tmpdir) -> None:
 
 
 def test_sharding_distribution_fairness(tmpdir) -> None:
-    num_files = 100
-    write_test_files(tmpdir, num_files)
+    # Use a large number of files so the hash-based distribution reliably converges
+    # to uniform, regardless of the tmpdir path (which varies across CI runs).
+    num_files = 500
+    for i in range(num_files):
+        df = daft.from_pydict({"id": [i]})
+        df.write_parquet(f"{tmpdir}/file_{i}.parquet")
 
     world_size = 10
     files_per_shard = []

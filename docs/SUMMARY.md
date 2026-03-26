@@ -14,8 +14,10 @@
         * [Images](modalities/images.md)
         * [Audio](modalities/audio.md)
         * [Videos](modalities/videos.md)
+        * [Documents](modalities/documents.md)
         * [JSON and Nested Data](modalities/json.md)
-        * [URLs and Files](modalities/urls.md)
+        * [Files and URLs](modalities/files.md)
+        * [Embeddings](modalities/embeddings.md)
         * [Custom Modalities](modalities/custom.md)
     * Scale Custom Python Code
         * [New UDF Overview](custom-code/index.md)
@@ -30,11 +32,13 @@
     * Data Connectors
         * [Connectors](connectors/index.md)
         * [Custom Connectors](connectors/custom.md)
+        * [Custom Catalogs](connectors/custom-catalogs.md)
         * [AWS Glue](connectors/glue.md)
         * [AWS S3 Tables](connectors/s3tables.md)
         * [Apache Gravitino](connectors/gravitino.md)
         * [Apache Hudi](connectors/hudi.md)
         * [Apache Iceberg](connectors/iceberg.md)
+        * [Apache Kafka](connectors/kafka.md)
         * [Azure Blob Store](connectors/azure.md)
         * [Delta Lake](connectors/delta_lake.md)
         * [Lance](connectors/lance.md)
@@ -44,21 +48,22 @@
         * [SQL Databases](connectors/sql.md)
         * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
+    * Extensions
+        * [Extensions](extensions/index.md)
     * Scaling Out and Deployment
         * [Distributed Execution](distributed/index.md)
         * [Running on Kubernetes](distributed/kubernetes.md)
         * [Running on Ray](distributed/ray.md)
     * Architecture
         * [Architecture](architecture/index.md)
-    * Optimization and Debugging
+    * Optimization
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
-        * [Observability](optimization/observability.md)
-        * [Logging](optimization/logging.md)
-    * Contributing
-        * [Overview](contributing/overview.md)
-        * [Development Guide](contributing/development.md)
-        * [Contributing AI Functions](contributing/contributing-ai-functions.md)
+        * [Join Strategies](optimization/join-strategies.md)
+    * Observability
+        * [Progress Indicators](observability/progress-indicators.md)
+        * [Logging](observability/logging.md)
+        * [Telemetry](observability/telemetry.md)
     * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
     * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
@@ -70,7 +75,6 @@
     * [Multimodal Structured Outputs: Evaluating Image Understanding](examples/mm_structured_outputs.md)
     * [Voice AI Analytics with Faster-Whisper and embed_text](examples/voice-ai-analytics.md)
     * [Web Text Deduplication](examples/minhash-dedupe.md)
-    * [Voice AI Analytics](examples/voice-ai-analytics.md)
     * [Audio Transcription](examples/audio-transcription.md)
     * [Generate Text Embeddings for Turbopuffer](examples/text-embeddings.md)
     * [Running LLMs on the Red Pajamas Dataset](examples/llms-red-pajamas.md)
@@ -90,7 +94,7 @@
     * [User-Defined Functions](api/udf.md)
     * Data Types
         * [DataType](api/datatypes/all_datatypes.md)
-        * [daft.File Types](api/datatypes/daft_file_types.md)
+        * [File Types](api/datatypes/file_types.md)
         * [Type Conversions](api/datatypes/type_conversions.md)
         * [Casting](api/datatypes/casting.md)
     * [Window](api/window.md)
@@ -109,7 +113,11 @@
         * [USE](sql/statements/use.md)
     * [Data Types](sql/datatypes.md)
     * [Window Functions](sql/window_functions.md)
-* [Daft Cloud](https://www.daft.ai/cloud)
+* Contributing
+    * [Overview](contributing/overview.md)
+    * [Development Guide](contributing/development.md)
+    * [Contributing AI Functions](contributing/contributing-ai-functions.md)
+* [Daft Skills](skills.md)
 
 <!--
 TODO

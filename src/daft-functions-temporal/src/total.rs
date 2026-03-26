@@ -22,7 +22,7 @@ macro_rules! impl_total {
                 stringify!([ < $name:snake:lower > ])
             }
 
-            fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+            fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>, _ctx: &daft_dsl::functions::scalar::EvalContext) -> DaftResult<Series> {
                 ensure!(inputs.len() == 1, SchemaMismatch: "Expected 1 input, but received {}", inputs.len());
                 let s = inputs.required((0, "input"))?;
                 match s.data_type() {

@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING, Any
 from daft.context import get_context
 from daft.daft import (
     DatabaseSourceConfig,
-    FileFormatConfig,
     PyPartitionField,
     PyPushdowns,
     PyRecordBatch,
     ScanTask,
     StorageConfig,
 )
+from daft.dependencies import pa
 from daft.expressions.expressions import lit
 from daft.io.common import _get_schema_from_dict
 from daft.io.scan import ScanOperator
@@ -29,6 +29,13 @@ if TYPE_CHECKING:
     from daft.sql.sql_connection import SQLConnection
 
 logger = logging.getLogger(__name__)
+
+
+def _partition_bounds_are_degenerate(bounds: list[Any]) -> bool:
+    """True when each adjacent pair is equal (zero-width between consecutive bounds)."""
+    if len(bounds) < 2:
+        return True
+    return all(bounds[i] == bounds[i + 1] for i in range(len(bounds) - 1))
 
 
 class PartitionBoundStrategy(Enum):
@@ -93,8 +100,20 @@ class SQLScanOperator(ScanOperator):
             return self._single_scan_task(pushdowns, total_rows, total_size)
 
         partition_bounds = self._get_partition_bounds(num_scan_tasks)
-        partition_bounds_sql = [lit(bound)._to_sql() for bound in partition_bounds]
+        if partition_bounds is None:
+            warnings.warn(
+                "Unable to partition the data using the specified column. Falling back to a single scan task."
+            )
+            return self._single_scan_task(pushdowns, total_rows, total_size)
 
+        if _partition_bounds_are_degenerate(partition_bounds):
+            warnings.warn(
+                "Partition bounds are degenerate (e.g. min equals max, zero-width ranges). "
+                "Falling back to a single scan task."
+            )
+            return self._single_scan_task(pushdowns, total_rows, total_size)
+
+        partition_bounds_sql = [lit(bound)._to_sql() for bound in partition_bounds]
         if any(bound is None for bound in partition_bounds_sql):
             warnings.warn(
                 "Unable to partition the data using the specified column. Falling back to a single scan task."
@@ -176,7 +195,7 @@ class SQLScanOperator(ScanOperator):
 
         return int(pa_table.column(0)[0].as_py())
 
-    def _get_partition_bounds(self, num_scan_tasks: int) -> list[Any]:
+    def _get_partition_bounds(self, num_scan_tasks: int) -> list[Any] | None:
         if self._partition_col is None:
             raise ValueError("Failed to get partition bounds: partition_col must be specified to partition the data.")
 
@@ -226,7 +245,11 @@ class SQLScanOperator(ScanOperator):
         min_max_sql = self.conn.construct_sql_query(
             self.sql, projection=[f"MIN({self._partition_col}) as min", f"MAX({self._partition_col}) as max"]
         )
-        pa_table = self.conn.execute_sql_query(min_max_sql)
+
+        # Execute the query with explicit schema to gracefully handle NULL values.
+        pa_type = self._schema[self._partition_col].dtype.to_arrow_dtype()
+        pa_schema = pa.schema([pa.field("min", pa_type), pa.field("max", pa_type)])
+        pa_table = self.conn.execute_sql_query(min_max_sql, schema=pa_schema)
 
         if pa_table.num_rows != 1:
             raise RuntimeError(f"Failed to get partition bounds: expected 1 row, but got {pa_table.num_rows}.")
@@ -237,6 +260,9 @@ class SQLScanOperator(ScanOperator):
         assert pydict.keys() == {"min", "max"}
         min_val = pydict["min"][0]
         max_val = pydict["max"][0]
+        if min_val is None or max_val is None:
+            return None
+
         range_size = (max_val - min_val) / num_scan_tasks
         return [min_val + range_size * i for i in range(num_scan_tasks)] + [max_val]
 
@@ -269,14 +295,14 @@ class SQLScanOperator(ScanOperator):
         else:
             sql = self.conn.construct_sql_query(self.sql, partition_bounds=partition_bounds)
 
-        file_format_config = FileFormatConfig.from_database_config(DatabaseSourceConfig(sql, self.conn))
+        db_config = DatabaseSourceConfig(sql, self.conn)
 
         # keep column pushdowns because they are used for deriving the materialized schema
         remaining_pushdowns = pushdowns if not apply_pushdowns_to_sql else PyPushdowns(columns=pushdowns.columns)
 
         return ScanTask.sql_scan_task(
             url=self.conn.url,
-            file_format=file_format_config,
+            config=db_config,
             schema=self._schema._schema,
             storage_config=self.storage_config,
             num_rows=num_rows,

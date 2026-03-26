@@ -11,6 +11,8 @@ from daft.daft import IOConfig, ScanOperatorHandle
 from daft.dataframe import DataFrame
 from daft.io.lance.lance_merge_column import merge_columns_internal
 from daft.io.lance.lance_scan import LanceDBScanOperator
+from daft.io.lance.rest_config import LanceRestConfig, parse_lance_uri
+from daft.io.lance.rest_scan import LanceRestScanOperator
 from daft.io.lance.utils import construct_lance_dataset
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.builder import LogicalPlanBuilder
@@ -32,6 +34,7 @@ LanceDataset = Any
 def read_lance(
     uri: str | pathlib.Path,
     io_config: IOConfig | None = None,
+    rest_config: LanceRestConfig | None = None,
     version: str | int | None = None,
     asof: str | None = None,
     block_size: int | None = None,
@@ -42,11 +45,14 @@ def read_lance(
     fragment_group_size: int | None = None,
     include_fragment_id: bool | None = None,
 ) -> DataFrame:
-    """Create a DataFrame from a LanceDB table.
+    """Create a DataFrame from a LanceDB table or Lance REST service.
 
     Args:
-        uri: The URI of the Lance table to read from (supports remote URLs to object stores such as `s3://` or `gs://`)
+        uri: The URI of the Lance table to read from. Supports:
+            - File paths: "/path/to/lance/data/" or cloud URIs like "s3://bucket/path"
+            - REST URIs: "rest://namespace/table_name" (requires rest_config)
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
+        rest_config: Configuration for REST-based Lance services. Required when using REST URIs.
         version : optional, int | str
             If specified, load a specific version of the Lance dataset. Else, loads the
             latest version. A version number (`int`) or a tag (`str`) can be provided.
@@ -115,27 +121,49 @@ def read_lance(
         Read a LanceDB table from a public S3 bucket:
         >>> from daft.io import S3Config, IOConfig
         >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
-        >>> df = daft.read_lance("s3://daft-public-data/lance/words-test-dataset", io_config=io_config)
+        >>> df = daft.read_lance("s3://daft-oss-public-data/lance/words-test-dataset", io_config=io_config)
+        >>> df.show()
+
+        Read a Lance table via REST API:
+        >>> from daft.io.lance import LanceRestConfig
+        >>> rest_config = LanceRestConfig(base_url="https://api.lancedb.com", api_key="your-api-key")
+        >>> df = daft.read_lance("rest://my_namespace/my_table", rest_config=rest_config)
         >>> df.show()
     """
-    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    storage_options = io_config_to_storage_options(io_config, uri)
+    # Parse URI to determine if it's REST-based or file-based
+    uri_str = str(uri)
+    uri_type, uri_info = parse_lance_uri(uri_str)
 
-    ds = construct_lance_dataset(
-        uri,
-        storage_options=storage_options,
-        version=version,
-        asof=asof,
-        block_size=block_size,
-        commit_lock=commit_lock,
-        index_cache_size=index_cache_size,
-        default_scan_options=default_scan_options,
-        metadata_cache_size_bytes=metadata_cache_size_bytes,
-    )
+    if uri_type == "rest":
+        # REST-based Lance table
+        if rest_config is None:
+            raise ValueError("rest_config is required when using REST URIs (rest://namespace/table_name)")
 
-    lance_operator = LanceDBScanOperator(
-        ds, fragment_group_size=fragment_group_size, include_fragment_id=include_fragment_id
-    )
+        lance_operator: LanceDBScanOperator | LanceRestScanOperator = LanceRestScanOperator(
+            rest_config=rest_config,
+            namespace=uri_info["namespace"],
+            table_name=uri_info["table_name"],
+        )
+    else:
+        # File-based Lance table (existing logic)
+        io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+        storage_options = io_config_to_storage_options(io_config, uri_str)
+
+        ds = construct_lance_dataset(
+            uri_str,
+            storage_options=storage_options,
+            version=version,
+            asof=asof,
+            block_size=block_size,
+            commit_lock=commit_lock,
+            index_cache_size=index_cache_size,
+            default_scan_options=default_scan_options,
+            metadata_cache_size_bytes=metadata_cache_size_bytes,
+        )
+
+        lance_operator = LanceDBScanOperator(
+            ds, fragment_group_size=fragment_group_size, include_fragment_id=include_fragment_id
+        )
 
     handle = ScanOperatorHandle.from_python_scan_operator(lance_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
@@ -201,7 +229,7 @@ def merge_columns(
     """
     warnings.warn(
         "daft.io.lance.merge_columns is deprecated and will be removed in a future release. "
-        "Please use daft.io.lance.merge_columns_df instead.",
+        "Please use daft_lance.merge_columns from the daft-lance package instead: pip install daft-lance",
         category=DeprecationWarning,
         stacklevel=2,
     )
@@ -307,6 +335,13 @@ def merge_columns_df(
         >>> # Merge the new columns back to the table
         >>> daft.io.lance.merge_columns_df(df, "s3://my-lancedb-bucket/data/")
     """
+    warnings.warn(
+        "daft.io.lance.merge_columns_df is deprecated and will be removed in a future release. "
+        "Please use daft_lance.merge_columns_df from the daft-lance package instead: pip install daft-lance",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
     storage_options = storage_options or io_config_to_storage_options(io_config, uri)
 
@@ -357,8 +392,6 @@ def create_scalar_index(
     name: str | None = None,
     replace: bool = True,
     storage_options: dict[str, Any] | None = None,
-    daft_remote_args: dict[str, Any] | None = None,
-    concurrency: int | None = None,
     version: int | str | None = None,
     asof: str | None = None,
     block_size: int | None = None,
@@ -366,9 +399,12 @@ def create_scalar_index(
     index_cache_size: int | None = None,
     default_scan_options: dict[str, Any] | None = None,
     metadata_cache_size_bytes: int | None = None,
+    fragment_group_size: int | None = None,
+    num_partitions: int | None = None,
+    max_concurrency: int | None = None,
     **kwargs: Any,
 ) -> None:
-    """Build a distributed full-text search index using Daft's distributed computing.
+    """Build a distributed scalar index using Daft's distributed execution.
 
     This function distributes the index building process across multiple Daft workers,
     with each worker building indices for a subset of fragments. The indices are then
@@ -378,28 +414,35 @@ def create_scalar_index(
         uri: The URI of the Lance table (supports remote URLs to object stores such as `s3://` or `gs://`)
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
         column: Column name to index
-        index_type: Type of index to build ("INVERTED" or "FTS")
-        name: Name of the index (generated if None)
+        index_type: Type of index to build.
+            For distributed execution this supports "INVERTED", "FTS", and "BTREE".
+            Other scalar index types supported by Lance (for example "BITMAP", "NGRAM", "ZONEMAP",
+            "LABEL_LIST", "BLOOMFILTER") are passed through to Lance's scalar index implementation.
+        name: Name of the index (generated if None).
         replace: Whether to replace an existing index with the same name. Defaults to True.
-        storage_options: Storage options for the dataset
-        daft_remote_args: Options for Daft remote execution (e.g., num_cpus, num_gpus, memory_bytes)
-        concurrency: Number of Daft workers to use
-        version: Version of the dataset to use
-        asof: Timestamp to use for time travel queries
-        block_size: Block size for the index
-        commit_lock: Commit lock for the dataset
-        index_cache_size: Size of the index cache
-        default_scan_options: Default scan options for the dataset
-        metadata_cache_size_bytes: Size of the metadata cache in bytes
-        **kwargs: Additional arguments to pass to create_scalar_index
+        storage_options: Storage options for the dataset.
+        version: Version of the dataset to use.
+        asof: Timestamp to use for time travel queries.
+        block_size: Block size for the index.
+        commit_lock: Commit lock for the dataset.
+        index_cache_size: Size of the index cache.
+        default_scan_options: Default scan options for the dataset.
+        metadata_cache_size_bytes: Size of the metadata cache in bytes.
+        fragment_group_size: Number of fragments to group together in each fragment batch. If None,
+            defaults to 10. Must be a positive integer.
+        num_partitions: Optional number of partitions to use when repartitioning fragment batches before execution. Only values
+            greater than 1 enable additional parallelism on distributed runners; values <= 1 or None will use the default partitioning.
+        max_concurrency: Maximum number of concurrent tasks to use for processing fragment batches.
+            If None, Daft will use its default concurrency setting. Must be a positive integer.
+        **kwargs: Additional keyword arguments forwarded to ``lance.LanceDataset.create_scalar_index``.
 
     Returns:
         None
 
     Raises:
-        ValueError: If input parameters are invalid
-        TypeError: If column type is not string
-        RuntimeError: If index building fails
+        ValueError: If input parameters are invalid (e.g., empty column name, non-existent column, invalid index type, etc.)
+        TypeError: If column type is incompatible with the chosen ``index_type``
+        RuntimeError: If index building fails (e.g., version compatibility issues, commit failures)
         ImportError: If lance package is not available
 
     Note:
@@ -407,19 +450,35 @@ def create_scalar_index(
         To ensure that this is installed with Daft, you may install: `pip install daft[lance]`
 
     Examples:
-        Create a distributed inverted index:
+        Create a distributed inverted index with custom concurrency:
         >>> import daft
         >>> daft.io.lance.create_scalar_index(
-        ...     "s3://my-bucket/dataset/", column="text_content", index_type="INVERTED", concurrency=8
+        ...     "s3://my-bucket/dataset/", column="text_content", index_type="INVERTED", max_concurrency=8
         ... )
 
-        Create an index with custom Daft remote arguments:
+        Create a FTS (Full-Text Search) index:
+        >>> daft.io.lance.create_scalar_index("s3://my-bucket/dataset/", column="document", index_type="FTS")
+
+        Create a BTREE index for numeric or string columns:
         >>> daft.io.lance.create_scalar_index(
-        ...     "s3://my-bucket/dataset/",
-        ...     column="description",
-        ...     daft_remote_args={"num_cpus": 2},
+        ...     "s3://my-bucket/dataset/", column="price", index_type="BTREE", name="price_idx"
         ... )
+
+        Create an index with custom fragment grouping and partitioning:
+        >>> daft.io.lance.create_scalar_index(
+        ...     "s3://my-bucket/dataset/", column="description", fragment_group_size=8, num_partitions=16
+        ... )
+
+        Create an index without replacing existing ones:
+        >>> daft.io.lance.create_scalar_index("s3://my-bucket/dataset/", column="title", replace=False)
     """
+    warnings.warn(
+        "daft.io.lance.create_scalar_index is deprecated and will be removed in a future release. "
+        "Please use daft_lance.create_scalar_index from the daft-lance package instead: pip install daft-lance",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+
     try:
         import lance
         from packaging import version as packaging_version
@@ -431,7 +490,7 @@ def create_scalar_index(
         if lance_version < min_required_version:
             raise RuntimeError(
                 f"Distributed indexing requires pylance >= 0.37.0, but found {lance.__version__}. "
-                "The distribute-related interfaces are not available in older versions. "
+                "The distributed indexing interfaces are not available in older versions. "
                 "Please upgrade lance by running: pip install --upgrade pylance"
             )
     except ImportError as e:
@@ -462,8 +521,9 @@ def create_scalar_index(
         name=name,
         replace=replace,
         storage_options=storage_options,
-        daft_remote_args=daft_remote_args,
-        concurrency=concurrency,
+        fragment_group_size=fragment_group_size,
+        num_partitions=num_partitions,
+        max_concurrency=max_concurrency,
         **kwargs,
     )
 
@@ -522,6 +582,13 @@ def compact_files(
     Raises:
         RuntimeError: When compaction fails or no successful results
     """
+    warnings.warn(
+        "daft.io.lance.compact_files is deprecated and will be removed in a future release. "
+        "Please use daft_lance.compact_files from the daft-lance package instead: pip install daft-lance",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+
     try:
         import lance
 

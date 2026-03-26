@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common_error::{DaftError, DaftResult};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::{CatalogType, DeltaLakeCatalogInfo, IcebergCatalogInfo};
@@ -24,7 +22,7 @@ impl CatalogWriterFactory {
 }
 
 impl WriterFactory for CatalogWriterFactory {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     fn create_writer(
@@ -47,8 +45,7 @@ pub fn create_pyarrow_catalog_writer(
     file_idx: usize,
     partition_values: Option<&RecordBatch>,
     catalog_info: &CatalogType<BoundExpr>,
-) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
-{
+) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
     match catalog_info {
         CatalogType::DeltaLake(DeltaLakeCatalogInfo {
             path,

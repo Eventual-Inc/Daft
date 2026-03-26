@@ -1,13 +1,15 @@
 use std::sync::{Arc, atomic::AtomicU64};
 
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
+use futures::StreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, TaskBuilderStream,
+        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
+        TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
 };
@@ -20,7 +22,7 @@ pub(crate) struct MonotonicallyIncreasingIdNode {
 }
 
 impl MonotonicallyIncreasingIdNode {
-    const NODE_NAME: NodeName = "MonotonicallyIncreasingId";
+    const NODE_NAME: &'static str = "Monotonic ID";
 
     pub fn new(
         node_id: NodeID,
@@ -33,7 +35,9 @@ impl MonotonicallyIncreasingIdNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
+            NodeType::MonotonicallyIncreasingId,
+            NodeCategory::Intermediate,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -46,10 +50,6 @@ impl MonotonicallyIncreasingIdNode {
             column_name,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
@@ -89,21 +89,27 @@ impl PipelineNodeImpl for MonotonicallyIncreasingIdNode {
         let next_starting_offset = AtomicU64::new(0);
         let node_id = self.node_id();
 
-        input_node.pipeline_instruction(self, move |input| {
-            LocalPhysicalPlan::monotonically_increasing_id(
-                input,
-                column_name.clone(),
-                Some(
-                    next_starting_offset
-                        .fetch_add(MAX_ROWS_PER_PARTITION, std::sync::atomic::Ordering::SeqCst),
-                ),
-                schema.clone(),
-                StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
-            )
-        })
+        let task_builder_stream = input_node
+            .enumerate()
+            .map(move |(partition_idx, builder)| {
+                let offset = next_starting_offset
+                    .fetch_add(MAX_ROWS_PER_PARTITION, std::sync::atomic::Ordering::SeqCst);
+                let column_name = column_name.clone();
+                let schema = schema.clone();
+                builder
+                    .map_plan(self.as_ref(), move |input| {
+                        LocalPhysicalPlan::monotonically_increasing_id(
+                            input,
+                            column_name,
+                            Some(offset),
+                            schema,
+                            StatsState::NotMaterialized,
+                            LocalNodeContext::new(Some(node_id as usize)),
+                        )
+                    })
+                    .extend_fingerprint(partition_idx as u32)
+            })
+            .boxed();
+        TaskBuilderStream::new(task_builder_stream)
     }
 }

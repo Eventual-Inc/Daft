@@ -10,6 +10,8 @@ mod local;
 pub mod multipart;
 mod object_io;
 mod object_store_glob;
+mod opendal_source;
+mod range_expansion;
 mod retry;
 pub mod s3_like;
 mod stats;
@@ -27,6 +29,7 @@ use google_cloud::GCSSource;
 #[cfg(feature = "python")]
 use gravitino::GravitinoSource;
 use huggingface::HFSource;
+use opendal_source::OpenDALSource;
 use tos::TosSource;
 #[cfg(feature = "python")]
 use unity::UnitySource;
@@ -43,7 +46,7 @@ use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_io_config::{
-    AzureConfig, GCSConfig, GravitinoConfig, HTTPConfig, IOConfig, S3Config, TosConfig,
+    AzureConfig, CosConfig, GCSConfig, GravitinoConfig, HTTPConfig, IOConfig, S3Config, TosConfig,
 };
 use futures::{FutureExt, stream::BoxStream};
 use object_io::StreamingRetryParams;
@@ -231,7 +234,8 @@ impl IOClient {
         &self,
         input: &str,
     ) -> Result<(Arc<dyn ObjectSource>, String)> {
-        let (source_type, path) = parse_url(input)?;
+        let resolved = resolve_url_alias(input, &self.config);
+        let (source_type, path) = parse_url(&resolved)?;
 
         {
             if let Some(client) = self.source_type_to_store.read().await.get(&source_type) {
@@ -244,7 +248,7 @@ impl IOClient {
             return Ok((client.clone(), path.to_string()));
         }
 
-        let new_source = match source_type {
+        let new_source = match &source_type {
             SourceType::File => LocalSource::get_client().await? as Arc<dyn ObjectSource>,
             SourceType::Http => {
                 let url = url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
@@ -297,6 +301,31 @@ impl IOClient {
                     unimplemented!("Gravitino source currently requires Python");
                 }
             }
+            SourceType::OpenDAL { scheme } => {
+                let empty_config = std::collections::BTreeMap::new();
+                let backend_config = if scheme == "cos" {
+                    // Extract bucket from the URL for COS config
+                    let parsed_url =
+                        url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
+                    let bucket = parsed_url.host_str().unwrap_or_default();
+                    let cos_config = self.config.cos.to_opendal_config(bucket);
+                    // Merge user-provided opendal_backends on top (if any)
+                    let mut merged = cos_config;
+                    if let Some(extra) = self.config.opendal_backends.get(scheme) {
+                        for (k, v) in extra {
+                            merged.insert(k.clone(), v.clone());
+                        }
+                    }
+                    merged
+                } else {
+                    self.config
+                        .opendal_backends
+                        .get(scheme)
+                        .unwrap_or(&empty_config)
+                        .clone()
+                };
+                OpenDALSource::get_client(scheme, &backend_config).await? as Arc<dyn ObjectSource>
+            }
         };
 
         if w_handle.get(&source_type).is_none() {
@@ -340,8 +369,9 @@ impl IOClient {
         range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> Result<GetResult> {
-        let (_, path) = parse_url(&input)?;
-        let source = self.get_source(&input).await?;
+        let resolved = resolve_url_alias(&input, &self.config);
+        let (_, path) = parse_url(&resolved)?;
+        let source = self.get_source(&resolved).await?;
 
         if let Some(GetRange::Suffix(_)) = range
             && !self.support_suffix_range()
@@ -363,8 +393,9 @@ impl IOClient {
         data: bytes::Bytes,
         io_stats: Option<IOStatsRef>,
     ) -> Result<()> {
-        let (_, path) = parse_url(dest)?;
-        let source = self.get_source(dest).await?;
+        let resolved = resolve_url_alias(dest, &self.config);
+        let (_, path) = parse_url(&resolved)?;
+        let source = self.get_source(&resolved).await?;
         source.put(path.as_ref(), data, io_stats.clone()).await
     }
 
@@ -373,8 +404,9 @@ impl IOClient {
         input: String,
         io_stats: Option<IOStatsRef>,
     ) -> Result<usize> {
-        let (_, path) = parse_url(&input)?;
-        let source = self.get_source(&input).await?;
+        let resolved = resolve_url_alias(&input, &self.config);
+        let (_, path) = parse_url(&resolved)?;
+        let source = self.get_source(&resolved).await?;
         source.get_size(path.as_ref(), io_stats).await
     }
 
@@ -436,7 +468,7 @@ impl IOClient {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, std::cmp::Eq, Clone, Copy)]
+#[derive(Debug, Hash, PartialEq, std::cmp::Eq, Clone)]
 pub enum SourceType {
     File,
     Http,
@@ -447,6 +479,7 @@ pub enum SourceType {
     Unity,
     Tos,
     Gravitino,
+    OpenDAL { scheme: String },
 }
 
 impl std::fmt::Display for SourceType {
@@ -461,6 +494,7 @@ impl std::fmt::Display for SourceType {
             Self::Unity => write!(f, "UnityCatalog"),
             Self::Tos => write!(f, "tos"),
             Self::Gravitino => write!(f, "Gravitino"),
+            Self::OpenDAL { scheme } => write!(f, "opendal({})", scheme),
         }
     }
 }
@@ -469,7 +503,10 @@ impl SourceType {
     /// Whether source support write parquet/json/csv files via native IO,
     /// if the source is object store, it should support multipart part upload currently.
     pub fn supports_native_writer(&self) -> bool {
-        matches!(self, Self::File | Self::S3 | Self::Tos | Self::Gravitino)
+        matches!(
+            self,
+            Self::File | Self::S3 | Self::Tos | Self::Gravitino | Self::OpenDAL { .. }
+        )
     }
 }
 
@@ -546,15 +583,42 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         "hf" => Ok((SourceType::HF, fixed_input)),
         "tos" => Ok((SourceType::Tos, fixed_input)),
+        "cos" | "cosn" => Ok((
+            SourceType::OpenDAL {
+                scheme: "cos".to_string(),
+            },
+            fixed_input,
+        )),
         "vol+dbfs" | "dbfs" => Ok((SourceType::Unity, fixed_input)),
         "gvfs" => Ok((SourceType::Gravitino, fixed_input)),
         #[cfg(target_env = "msvc")]
         _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => {
             Ok((SourceType::File, Cow::Owned(format!("file://{input}"))))
         }
-        _ => Err(Error::NotImplementedSource { store: scheme }),
+        _ => Ok((SourceType::OpenDAL { scheme }, fixed_input)),
     }
 }
+
+/// Resolves a URL's scheme against the protocol aliases in the given `IOConfig`.
+///
+/// If the URL's scheme matches an alias key, the scheme is rewritten to the alias target.
+/// Only single-level resolution is performed (no chaining).
+/// Returns `Cow::Borrowed` when no rewriting occurs (zero allocation).
+pub fn resolve_url_alias<'a>(input: &'a str, config: &IOConfig) -> Cow<'a, str> {
+    if config.protocol_aliases.is_empty() {
+        return Cow::Borrowed(input);
+    }
+    if let Some(sep) = input.find("://") {
+        let scheme = &input[..sep];
+        let lowered = scheme.to_lowercase();
+        if let Some(target) = config.protocol_aliases.get(&lowered) {
+            let rest = &input[sep..]; // includes "://..."
+            return Cow::Owned(format!("{target}{rest}"));
+        }
+    }
+    Cow::Borrowed(input)
+}
+
 type CacheKey = (bool, Arc<IOConfig>);
 
 static CLIENT_CACHE: LazyLock<std::sync::RwLock<HashMap<CacheKey, Arc<IOClient>>>> =
@@ -580,3 +644,74 @@ pub fn get_io_client(multi_thread: bool, config: Arc<IOConfig>) -> DaftResult<Ar
 }
 
 type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
+#[cfg(test)]
+mod resolve_alias_tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    fn config_with_aliases(aliases: &[(&str, &str)]) -> IOConfig {
+        IOConfig {
+            protocol_aliases: aliases
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                .collect::<BTreeMap<_, _>>(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_resolve_empty_aliases() {
+        let config = IOConfig::default();
+        let result = resolve_url_alias("my-s3://bucket/path", &config);
+        assert_eq!(result.as_ref(), "my-s3://bucket/path");
+        assert!(matches!(result, Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn test_resolve_matching_alias() {
+        let config = config_with_aliases(&[("my-s3", "s3")]);
+        let result = resolve_url_alias("my-s3://bucket/path", &config);
+        assert_eq!(result.as_ref(), "s3://bucket/path");
+        assert!(matches!(result, Cow::Owned(_)));
+    }
+
+    #[test]
+    fn test_resolve_no_match() {
+        let config = config_with_aliases(&[("my-s3", "s3")]);
+        let result = resolve_url_alias("gcs://bucket/path", &config);
+        assert_eq!(result.as_ref(), "gcs://bucket/path");
+        assert!(matches!(result, Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn test_resolve_case_insensitive() {
+        let config = config_with_aliases(&[("my-s3", "s3")]);
+        let result = resolve_url_alias("MY-S3://bucket/path", &config);
+        assert_eq!(result.as_ref(), "s3://bucket/path");
+    }
+
+    #[test]
+    fn test_resolve_no_scheme() {
+        let config = config_with_aliases(&[("my-s3", "s3")]);
+        let result = resolve_url_alias("/local/path/file.parquet", &config);
+        assert_eq!(result.as_ref(), "/local/path/file.parquet");
+        assert!(matches!(result, Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn test_resolve_single_level_only() {
+        // "a" -> "b" and "b" -> "s3"; resolving "a://" should give "b://", NOT "s3://"
+        let config = config_with_aliases(&[("a", "b"), ("b", "s3")]);
+        let result = resolve_url_alias("a://bucket/path", &config);
+        assert_eq!(result.as_ref(), "b://bucket/path");
+    }
+
+    #[test]
+    fn test_resolve_preserves_full_path() {
+        let config = config_with_aliases(&[("custom", "s3")]);
+        let result = resolve_url_alias("custom://my-bucket/some/deep/path?query=1", &config);
+        assert_eq!(result.as_ref(), "s3://my-bucket/some/deep/path?query=1");
+    }
+}

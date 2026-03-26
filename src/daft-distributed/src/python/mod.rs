@@ -1,16 +1,20 @@
+mod dashboard;
 mod progress_bar;
 pub mod ray;
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
-use common_display::DisplayLevel;
+use common_display::{DisplayLevel, tree::TreeDisplay};
+use common_metrics::Meter;
 use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
+use daft_local_plan::python::PyExecutionStats;
 use daft_logical_plan::PyLogicalPlanBuilder;
+use dashboard::DashboardStatisticsSubscriber;
 use futures::StreamExt;
 use progress_bar::FlotillaProgressBar;
-use pyo3::prelude::*;
-use ray::{RayPartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
+use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use ray::{RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
@@ -20,13 +24,14 @@ use crate::{
         viz_distributed_pipeline_mermaid,
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
-    python::ray::RayTaskResult,
-    statistics::StatisticsSubscriber,
+    python::ray::{RayPartitionRef, RayTaskResult},
+    statistics::{StatisticsManagerRef, StatisticsSubscriber},
 };
 
 #[pyclass(frozen)]
 struct PythonPartitionRefStream {
     inner: Arc<Mutex<PlanResultStream>>,
+    statistics_manager: StatisticsManagerRef,
 }
 
 #[pymethods]
@@ -57,6 +62,11 @@ impl PythonPartitionRefStream {
             };
             Ok(next)
         })
+    }
+
+    fn finish(&self) -> PyResult<PyExecutionStats> {
+        let result = self.statistics_manager.export_metrics();
+        Ok(PyExecutionStats::from(result))
     }
 }
 
@@ -97,6 +107,7 @@ impl PyDistributedPhysicalPlan {
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
+            &Meter::global_scope("daft.execution.distributed.num_partitions"),
         )?;
 
         Ok(pipeline_node.num_partitions())
@@ -114,6 +125,7 @@ impl PyDistributedPhysicalPlan {
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
+            &Meter::global_scope("daft.execution.distributed.repr_ascii"),
         )?;
 
         Ok(viz_distributed_pipeline_ascii(&pipeline_node, simple))
@@ -131,6 +143,7 @@ impl PyDistributedPhysicalPlan {
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
+            &Meter::global_scope("daft.execution.distributed.repr_mermaid"),
         )?;
 
         let display_level = if simple {
@@ -144,6 +157,23 @@ impl PyDistributedPhysicalPlan {
             bottom_up,
             None,
         ))
+    }
+
+    fn repr_json(&self) -> PyResult<String> {
+        let plan_config = PlanConfig::new(
+            self.plan.idx(),
+            self.plan.query_id(),
+            self.plan.execution_config().clone(),
+        );
+        let pipeline_node = logical_plan_to_pipeline_node(
+            plan_config,
+            self.plan.logical_plan().clone(),
+            Arc::new(HashMap::new()), // No psets needed for repr_json
+            &Meter::global_scope("daft.execution.distributed.repr_json"),
+        )
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+
+        Ok(serde_json::to_string(&pipeline_node.repr_json()).unwrap())
     }
 }
 impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
@@ -181,12 +211,22 @@ impl PyDistributedPhysicalPlanRunner {
             })
             .collect();
 
-        let subscribers: Vec<Box<dyn StatisticsSubscriber>> =
+        // Create subscribers list with progress bar always included
+        let mut subscribers: Vec<Box<dyn StatisticsSubscriber>> =
             vec![Box::new(FlotillaProgressBar::try_new(py)?)];
 
+        // Only add DashboardStatisticsSubscriber if RAY_DISABLE_DASHBOARD is not set to "1"
+        if std::env::var("RAY_DISABLE_DASHBOARD").as_deref() != Ok("1") {
+            subscribers.push(Box::new(DashboardStatisticsSubscriber::new(
+                plan.plan.query_id(),
+            )));
+        }
+
         let plan_result = self.runner.run_plan(&plan.plan, psets, subscribers)?;
+        let statistics_manager = plan_result.statistics_manager.clone();
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(plan_result.into_stream())),
+            statistics_manager,
         };
         Ok(part_stream)
     }

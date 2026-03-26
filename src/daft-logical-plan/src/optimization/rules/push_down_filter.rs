@@ -4,14 +4,15 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_scan_info::{PredicateGroups, ScanState, rewrite_predicate_for_partitioning};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_algebra::boolean::{combine_conjunction, split_conjunction, to_cnf};
+use daft_core::join::JoinType;
 use daft_dsl::{
     ExprRef,
     optimization::{get_required_columns, replace_columns_with_expressions},
     resolved_col,
 };
+use daft_scan::{PredicateGroups, ScanState, rewrite_predicate_for_partitioning};
 
 use super::OptimizerRule;
 use crate::{
@@ -302,7 +303,10 @@ impl PushDownFilter {
                     post_projection_filter.into()
                 }
             }
-            LogicalPlan::Sort(_) | LogicalPlan::Repartition(_) | LogicalPlan::IntoBatches(_) => {
+            LogicalPlan::Sort(_)
+            | LogicalPlan::Repartition(_)
+            | LogicalPlan::IntoBatches(_)
+            | LogicalPlan::IntoPartitions(_) => {
                 // Naive commuting with unary ops.
                 let new_filter = plan
                     .with_new_children(&[child_plan.arc_children()[0].clone()])
@@ -342,14 +346,39 @@ impl PushDownFilter {
                 for predicate in split_conjunction(&to_cnf(filter.predicate.clone())) {
                     let pred_cols = HashSet::<_>::from_iter(get_required_columns(&predicate));
 
+                    // Extract join key column names for anti/semi join handling
+                    let join_key_cols: HashSet<String> =
+                        if matches!(join_type, JoinType::Anti | JoinType::Semi) {
+                            let (_, left_keys, right_keys, _) = on.split_eq_preds();
+                            left_keys
+                                .iter()
+                                .chain(right_keys.iter())
+                                .filter_map(|e| e.input_mapping())
+                                .collect()
+                        } else {
+                            HashSet::new()
+                        };
+
                     match (
                         pred_cols.is_subset(&left_cols),
                         pred_cols.is_subset(&right_cols),
                     ) {
                         (true, true) => {
-                            // predicate only depends on common join keys, so we can push it down to both sides
-                            left_pushdowns.push(predicate.clone());
-                            right_pushdowns.push(predicate);
+                            // predicate columns exist in both left and right input schemas
+                            if matches!(join_type, JoinType::Anti | JoinType::Semi)
+                                && !pred_cols.iter().all(|c| join_key_cols.contains(c))
+                            {
+                                // For anti/semi joins, if the predicate column is NOT a join key,
+                                // only push to the left side. The output only contains left columns,
+                                // so filtering the right side on a non-join-key column would
+                                // incorrectly change the join semantics.
+                                // (Issue #6086)
+                                left_pushdowns.push(predicate);
+                            } else {
+                                // For join key columns or other join types, push to both sides
+                                left_pushdowns.push(predicate.clone());
+                                right_pushdowns.push(predicate);
+                            }
                         }
                         (false, false) => {
                             // predicate depends on unique columns on both left and right sides, so we can't push it down
@@ -443,10 +472,10 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
     use daft_dsl::{ExprRef, functions::BuiltinScalarFn, lit, resolved_col, unresolved_col};
     use daft_functions_uri::download::UrlDownload;
+    use daft_scan::Pushdowns;
     use rstest::rstest;
 
     use crate::{
@@ -623,8 +652,7 @@ mod tests {
     }
 
     /// Tests that Filter commutes with Projection if projection expression involves deterministic compute.
-    // REASON - No expression attribute indicating whether deterministic && (pure || idempotent).
-    #[ignore]
+    #[ignore = "No expression attribute indicating whether deterministic && (pure || idempotent)."]
     #[rstest]
     fn filter_commutes_with_projection_deterministic_compute(
         #[values(false, true)] push_into_scan: bool,
@@ -808,7 +836,7 @@ mod tests {
             left_scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_left_scan { None } else { Some(1) }),
         );
-        let right_scan_plan = dummy_scan_node(right_scan_op.clone());
+        let right_scan_plan = dummy_scan_node(right_scan_op);
         let join_on = if null_equals_null {
             unresolved_col("b").eq_null_safe(unresolved_col("right.b"))
         } else {
@@ -829,7 +857,7 @@ mod tests {
             .build();
         let expected_left_filter_scan = if push_into_left_scan {
             dummy_scan_node_with_pushdowns(
-                left_scan_op.clone(),
+                left_scan_op,
                 Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
@@ -864,7 +892,7 @@ mod tests {
             Field::new("right.b", DataType::Utf8),
             Field::new("c", DataType::Float64),
         ]);
-        let left_scan_plan = dummy_scan_node(left_scan_op.clone());
+        let left_scan_plan = dummy_scan_node(left_scan_op);
         let right_scan_plan = dummy_scan_node_with_pushdowns(
             right_scan_op.clone(),
             Pushdowns::default().with_limit(if push_into_right_scan { None } else { Some(1) }),
@@ -888,7 +916,7 @@ mod tests {
             .build();
         let expected_right_filter_scan = if push_into_right_scan {
             dummy_scan_node_with_pushdowns(
-                right_scan_op.clone(),
+                right_scan_op,
                 Pushdowns::default().with_filters(Some(pred)),
             )
         } else {
@@ -954,7 +982,7 @@ mod tests {
             .build();
         let expected_left_filter_scan = if push_into_left_scan {
             dummy_scan_node_with_pushdowns(
-                left_scan_op.clone(),
+                left_scan_op,
                 Pushdowns::default().with_filters(Some(pred.clone())),
             )
         } else {
@@ -996,8 +1024,8 @@ mod tests {
             Field::new("right.b", DataType::Utf8),
             Field::new("c", DataType::Float64),
         ]);
-        let left_scan_plan = dummy_scan_node(left_scan_op.clone());
-        let right_scan_plan = dummy_scan_node(right_scan_op.clone());
+        let left_scan_plan = dummy_scan_node(left_scan_op);
+        let right_scan_plan = dummy_scan_node(right_scan_op);
         let join_on = if null_equals_null {
             unresolved_col("b").eq_null_safe(unresolved_col("right.b"))
         } else {
@@ -1035,8 +1063,8 @@ mod tests {
             Field::new("right.b", DataType::Utf8),
             Field::new("c", DataType::Float64),
         ]);
-        let left_scan_plan = dummy_scan_node(left_scan_op.clone());
-        let right_scan_plan = dummy_scan_node(right_scan_op.clone());
+        let left_scan_plan = dummy_scan_node(left_scan_op);
+        let right_scan_plan = dummy_scan_node(right_scan_op);
         let join_on = if null_equals_null {
             unresolved_col("b").eq_null_safe(unresolved_col("right.b"))
         } else {
@@ -1160,5 +1188,62 @@ mod tests {
     #[test]
     fn filter_pushdown_strict_mode_false() -> DaftResult<()> {
         filter_pushdown_strict_mode_scenario(false)
+    }
+
+    /// Tests that Filter on a column that exists in both left and right input schemas
+    /// is NOT pushed to the right side for anti/semi joins.
+    /// This addresses GitHub issue #6086.
+    #[rstest]
+    fn filter_not_pushed_to_right_for_anti_semi_join_with_common_column(
+        #[values(JoinType::Anti, JoinType::Semi)] how: JoinType,
+    ) -> DaftResult<()> {
+        // Left has columns: id, foo
+        let left_scan_op = dummy_scan_operator(vec![
+            Field::new("id", DataType::Int64),
+            Field::new("foo", DataType::Int64),
+        ]);
+        // Right has columns: left_id, foo (foo exists in both!)
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("left_id", DataType::Int64),
+            Field::new("foo", DataType::Int64),
+        ]);
+        let left_scan_plan = dummy_scan_node(left_scan_op.clone());
+        let right_scan_plan = dummy_scan_node(right_scan_op);
+
+        // Filter on foo (which exists in both input schemas)
+        let pred = resolved_col("foo").eq(lit(0));
+
+        // Plan: Filter(Join(left, right))
+        let plan = left_scan_plan
+            .join(
+                &right_scan_plan,
+                Some(unresolved_col("id").eq(unresolved_col("left_id"))),
+                vec![],
+                how,
+                None,
+                Default::default(),
+            )?
+            .filter(pred.clone())?
+            .build();
+
+        // Expected: Filter should only be pushed to left side, NOT to right side
+        // This is because anti/semi join output only contains left columns,
+        // so filtering the right side would incorrectly change the join semantics.
+        let expected = dummy_scan_node_with_pushdowns(
+            left_scan_op,
+            Pushdowns::default().with_filters(Some(pred)),
+        )
+        .join(
+            &right_scan_plan,
+            Some(unresolved_col("id").eq(unresolved_col("left_id"))),
+            vec![],
+            how,
+            None,
+            Default::default(),
+        )?
+        .build();
+
+        assert_optimized_plan_eq(plan, expected, false)?;
+        Ok(())
     }
 }

@@ -1,19 +1,28 @@
-use std::{collections::HashMap, hash::Hash, sync::Arc};
+use std::{
+    collections::HashMap,
+    hash::Hash,
+    sync::{Arc, LazyLock, Mutex},
+};
 
 use arrow_schema::extension::{EXTENSION_TYPE_METADATA_KEY, EXTENSION_TYPE_NAME_KEY};
 use common_error::{DaftError, DaftResult};
-use daft_arrow::datatypes::Field as ArrowField;
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::dtype::{DAFT_SUPER_EXTENSION_NAME, DataType};
+
+/// Registry that maps extension type names to their original arrow-rs storage DataType
+/// (before Daft coercion, e.g. Binary instead of LargeBinary). This allows `to_arrow`
+/// to reverse the coercion so PyArrow sees the original storage type.
+static EXTENSION_TYPE_REGISTRY: LazyLock<Mutex<HashMap<String, arrow_schema::DataType>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub type Metadata = std::collections::BTreeMap<String, String>;
 
 #[derive(Clone, Display, Debug, Eq, Deserialize, Serialize)]
 #[display("{name}#{dtype}")]
 pub struct Field {
-    pub name: String,
+    pub name: Arc<str>,
     pub dtype: DataType,
     pub metadata: Arc<Metadata>,
 }
@@ -65,8 +74,8 @@ impl FieldID {
 }
 
 impl Field {
-    pub fn new<S: Into<String>>(name: S, dtype: DataType) -> Self {
-        let name: String = name.into();
+    pub fn new<S: Into<Arc<str>>>(name: S, dtype: DataType) -> Self {
+        let name: Arc<str> = name.into();
         Self {
             name,
             dtype,
@@ -82,18 +91,19 @@ impl Field {
         }
     }
 
-    #[deprecated(note = "use .to_arrow")]
-    #[allow(deprecated, reason = "arrow2 migration")]
-    pub fn to_arrow2(&self) -> DaftResult<ArrowField> {
-        Ok(
-            ArrowField::new(self.name.clone(), self.dtype.to_arrow2()?, true)
-                .with_metadata(self.metadata.as_ref().clone()),
-        )
-    }
     pub fn to_arrow(&self) -> DaftResult<arrow_schema::Field> {
         let field = match &self.dtype {
             DataType::Extension(name, dtype, metadata) => {
-                let physical = arrow_schema::Field::new(self.name.clone(), dtype.to_arrow()?, true);
+                // If we previously registered the original (pre-coercion) storage type,
+                // use it so PyArrow sees the original type (e.g. Binary, not LargeBinary).
+                let storage_type = EXTENSION_TYPE_REGISTRY
+                    .lock()
+                    .unwrap()
+                    .get(name)
+                    .cloned()
+                    .map_or_else(|| dtype.to_arrow(), Ok)?;
+
+                let physical = arrow_schema::Field::new(self.name.to_string(), storage_type, true);
                 let mut metadata_map = HashMap::new();
                 metadata_map.insert(EXTENSION_TYPE_NAME_KEY.to_string(), name.clone());
                 if let Some(metadata) = metadata {
@@ -137,7 +147,7 @@ impl Field {
 
                 physical.to_arrow()?.with_metadata(metadata_map)
             }
-            _ => arrow_schema::Field::new(self.name.clone(), self.dtype.to_arrow()?, true),
+            _ => arrow_schema::Field::new(self.name.to_string(), self.dtype.to_arrow()?, true),
         };
 
         let meta = field.metadata().clone();
@@ -159,7 +169,7 @@ impl Field {
         }
     }
 
-    pub fn rename<S: Into<String>>(&self, name: S) -> Self {
+    pub fn rename<S: Into<Arc<str>>>(&self, name: S) -> Self {
         Self {
             name: name.into(),
             dtype: self.dtype.clone(),
@@ -200,39 +210,54 @@ impl Field {
     }
 }
 
-impl From<&ArrowField> for Field {
-    fn from(af: &ArrowField) -> Self {
-        Self {
-            name: af.name.clone(),
-            dtype: af.data_type().into(),
-            metadata: af.metadata.clone().into(),
-        }
-    }
-}
-
 impl TryFrom<&arrow_schema::Field> for Field {
     type Error = DaftError;
 
-    fn try_from(value: &arrow_schema::Field) -> Result<Self, Self::Error> {
-        if value.extension_type_name() == Some(DAFT_SUPER_EXTENSION_NAME) {
-            let metadata = value.extension_type_metadata()
-                .expect("DataType::try_from<&arrow_schema::Field> failed to get metadata for extension type");
+    fn try_from(field: &arrow_schema::Field) -> Result<Self, Self::Error> {
+        if field.extension_type_name() == Some(DAFT_SUPER_EXTENSION_NAME) {
+            let metadata = field.extension_type_metadata()
+                         .expect("DataType::try_from<&arrow_schema::Field> failed to get metadata for extension type");
             let dtype = DataType::from_json(metadata)?;
 
-            let mut metadata = value.metadata().clone();
+            let mut metadata = field.metadata().clone();
             metadata.remove(EXTENSION_TYPE_NAME_KEY);
             metadata.remove(EXTENSION_TYPE_METADATA_KEY);
 
             Ok(Self {
-                name: value.name().clone(),
+                name: Arc::from(field.name().as_str()),
                 dtype,
                 metadata: Arc::new(metadata.into_iter().collect()),
             })
+        } else if let Some(extension_name) = field.extension_type_name() {
+            // Generic extension type (e.g. daft.uuid)
+            let physical = DataType::try_from(field.data_type())?;
+            let ext_metadata = field.extension_type_metadata().map(|s| s.to_string());
+
+            // Remember the original arrow storage type so to_arrow() can
+            // reverse the coercion (e.g. Binary instead of LargeBinary).
+            EXTENSION_TYPE_REGISTRY
+                .lock()
+                .unwrap()
+                .insert(extension_name.to_string(), field.data_type().clone());
+
+            let mut field_metadata = field.metadata().clone();
+            field_metadata.remove(EXTENSION_TYPE_NAME_KEY);
+            field_metadata.remove(EXTENSION_TYPE_METADATA_KEY);
+
+            Ok(Self {
+                name: Arc::from(field.name().as_str()),
+                dtype: DataType::Extension(
+                    extension_name.to_string(),
+                    Box::new(physical),
+                    ext_metadata,
+                ),
+                metadata: Arc::new(field_metadata.into_iter().collect()),
+            })
         } else {
             Ok(Self {
-                name: value.name().clone(),
-                dtype: value.try_into()?,
-                metadata: Arc::new(value.metadata().clone().into_iter().collect()),
+                name: Arc::from(field.name().as_str()),
+                dtype: field.try_into()?,
+                metadata: Arc::new(field.metadata().clone().into_iter().collect()),
             })
         }
     }

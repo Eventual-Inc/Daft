@@ -7,19 +7,21 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
-    operator_metrics::OperatorCounter, ops::NodeType, snapshot::UdfSnapshot,
+    Counter, Meter, StatSnapshot,
+    operator_metrics::OperatorCounter,
+    ops::{NodeInfo, NodeType},
+    snapshot::UdfSnapshot,
 };
 use common_runtime::JoinSet;
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::{
     expr::bound_expr::BoundExpr, functions::python::UDFProperties,
-    operator_metrics::OperatorMetrics,
+    operator_metrics::OperatorMetrics, utils::remap_used_cols,
 };
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
-use opentelemetry::{KeyValue, global, metrics::Meter};
+use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
 use super::base::{
@@ -28,7 +30,6 @@ use super::base::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    intermediate_ops::udf::remap_used_cols,
     pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::RuntimeStats,
 };
@@ -41,10 +42,10 @@ struct AsyncUdfParams {
     required_cols: Vec<usize>,
 }
 
-struct AsyncUdfRuntimeStats {
+pub(crate) struct AsyncUdfRuntimeStats {
     meter: Meter,
     node_kv: Vec<KeyValue>,
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
     custom_counters: Mutex<HashMap<Arc<str>, Counter>>,
@@ -54,15 +55,25 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
-        self
+
+    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = node_info.to_key_values();
+
+        Self {
+            meter: meter.clone(), // Cheap to clone, Arc under the hood
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
+            custom_counters: Mutex::new(HashMap::new()),
+            node_kv,
+        }
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         let counters = self.custom_counters.lock().unwrap();
 
         StatSnapshot::Udf(UdfSnapshot {
-            cpu_us: self.cpu_us.load(ordering),
+            cpu_us: self.duration_us.load(ordering),
             rows_in: self.rows_in.load(ordering),
             rows_out: self.rows_out.load(ordering),
             custom_counters: counters
@@ -80,26 +91,12 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
         self.rows_out.add(rows, self.node_kv.as_slice());
     }
 
-    fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+    fn add_duration_us(&self, cpu_us: u64) {
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
 impl AsyncUdfRuntimeStats {
-    fn new(id: usize) -> Self {
-        let meter = global::meter("daft.local.node_stats");
-        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
-
-        Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY, None),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY, None),
-            custom_counters: Mutex::new(HashMap::new()),
-            node_kv,
-            meter,
-        }
-    }
-
     fn update_metrics(&self, metrics: OperatorMetrics) {
         let mut counters = self.custom_counters.lock().unwrap();
         for (name, counter_data) in metrics {
@@ -117,8 +114,11 @@ impl AsyncUdfRuntimeStats {
                     existing.add(value, key_values.as_slice());
                 }
                 None => {
-                    let counter =
-                        Counter::new(&self.meter, name.clone(), description.map(Cow::Owned));
+                    let counter = self.meter.u64_counter_with_desc_and_unit(
+                        name.clone(),
+                        description.map(Cow::Owned),
+                        None,
+                    );
                     counter.add(value, key_values.as_slice());
                     counters.insert(name.into(), counter);
                 }
@@ -174,23 +174,19 @@ pub struct AsyncUdfState {
 
 impl StreamingSink for AsyncUdfSink {
     type State = AsyncUdfState;
+    type Stats = AsyncUdfRuntimeStats;
     type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "AsyncUdfSink::execute")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self> {
         #[cfg(feature = "python")]
         {
             let params = self.params.clone();
-            let runtime_stats = spawner
-                .runtime_stats
-                .clone()
-                .as_any_arc()
-                .downcast::<AsyncUdfRuntimeStats>()
-                .expect("Expected AsyncUdfRuntimeStats in task_spawner.runtime_stats");
             spawner
                 .spawn(
                     {
@@ -245,7 +241,11 @@ impl StreamingSink for AsyncUdfSink {
 
                             // Force drain tasks until the number of inflight tasks is less than the concurrency limit
                             let mut num_inflight_tasks = state.task_set.len();
-                            let max_inflight_tasks = get_max_inflight_tasks();
+                            let max_inflight_tasks = params
+                                .udf_properties
+                                .concurrency
+                                .map(|c| c.get())
+                                .unwrap_or_else(get_max_inflight_tasks);
                             while num_inflight_tasks > max_inflight_tasks {
                                 if let Some(join_res) = state.task_set.join_next().await {
                                     let batch = join_res??;
@@ -257,11 +257,11 @@ impl StreamingSink for AsyncUdfSink {
                             if ready_batches.is_empty() {
                                 Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
                             } else {
-                                let output = Arc::new(MicroPartition::new_loaded(
+                                let output = MicroPartition::new_loaded(
                                     params.output_schema.clone(),
                                     Arc::new(ready_batches),
                                     None,
-                                ));
+                                );
                                 Ok((state, StreamingSinkOutput::NeedMoreInput(Some(output))))
                             }
                         }
@@ -291,11 +291,11 @@ impl StreamingSink for AsyncUdfSink {
                         let batch = join_res??;
                         Ok(StreamingSinkFinalizeOutput::HasMoreOutput {
                             states,
-                            output: Some(Arc::new(MicroPartition::new_loaded(
+                            output: Some(MicroPartition::new_loaded(
                                 params.output_schema.clone(),
                                 Arc::new(vec![batch]),
                                 None,
-                            ))),
+                            )),
                         })
                     } else {
                         Ok(StreamingSinkFinalizeOutput::Finished(None))
@@ -361,10 +361,6 @@ impl StreamingSink for AsyncUdfSink {
             task_set: JoinSet::new(),
             udf_initialized: false,
         })
-    }
-
-    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(AsyncUdfRuntimeStats::new(id))
     }
 
     fn max_concurrency(&self) -> usize {

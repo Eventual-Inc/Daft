@@ -6,9 +6,9 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{QueryID, StatSnapshot};
+use common_metrics::{Meter, ops::NodeInfo};
 use common_treenode::{TreeNode, TreeNodeRecursion};
-use opentelemetry::{InstrumentationScope, KeyValue, global};
+use daft_local_plan::ExecutionStats;
 pub use stats::RuntimeStats;
 
 use crate::{
@@ -32,7 +32,7 @@ pub(crate) enum TaskEvent {
     },
     Completed {
         context: TaskContext,
-        stats: Vec<(common_metrics::NodeID, StatSnapshot)>,
+        stats: ExecutionStats,
     },
     Failed {
         context: TaskContext,
@@ -99,20 +99,24 @@ pub struct StatisticsManager {
 
 impl StatisticsManager {
     pub fn from_pipeline_node(
-        query_id: QueryID,
         pipeline_node: &DistributedPipelineNode,
         subscribers: Vec<Box<dyn StatisticsSubscriber>>,
+        meter: &Meter,
     ) -> DaftResult<StatisticsManagerRef> {
-        let scope = InstrumentationScope::builder("daft.distributed.node_stats")
-            .with_attributes(vec![KeyValue::new("query_id", query_id.to_string())])
-            .build();
-        let meter = global::meter_with_scope(scope);
-
         let mut runtime_node_managers = HashMap::new();
         pipeline_node.apply(|node| {
+            let node_info = Arc::new(NodeInfo {
+                name: node.name(),
+                id: node.node_id() as usize,
+                node_origin_id: node.node_id() as usize,
+                node_type: node.context().node_type.clone(),
+                node_category: node.context().node_category.clone(),
+                node_phase: None,
+                context: HashMap::new(),
+            });
             runtime_node_managers.insert(
                 node.node_id(),
-                RuntimeNodeManager::new(&meter, node.runtime_stats(&meter), node.node_id()),
+                RuntimeNodeManager::new(meter, node.runtime_stats(), node_info),
             );
             Ok(TreeNodeRecursion::Continue)
         })?;
@@ -134,9 +138,20 @@ impl StatisticsManager {
 
         let mut subscribers = self.subscribers.lock().unwrap();
         for (i, subscriber) in subscribers.iter_mut().enumerate() {
-            tracing::info!(target: STATISTICS_LOG_TARGET, "StatisticsManager calling subscriber {}", i);
+            tracing::debug!(target: STATISTICS_LOG_TARGET, "StatisticsManager calling subscriber {}", i);
             subscriber.handle_event(&event)?;
         }
         Ok(())
+    }
+
+    /// Collects accumulated stats from each node manager and returns them as an
+    /// ExecutionEngineFinalResult for export to the driver (e.g. after the partition stream is done).
+    pub fn export_metrics(&self) -> ExecutionStats {
+        let nodes: Vec<(Arc<NodeInfo>, _)> = self
+            .runtime_node_managers
+            .values()
+            .map(RuntimeNodeManager::export_snapshot)
+            .collect();
+        ExecutionStats::new("".into(), nodes)
     }
 }

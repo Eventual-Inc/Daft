@@ -3,12 +3,11 @@ use std::ops::Rem;
 use common_error::DaftResult;
 use num_traits::ToPrimitive;
 
-use super::as_arrow::AsArrow;
 use crate::{
     array::DataArray,
     datatypes::{
-        DaftNumericType, Decimal128Array, Int8Type, Int16Type, Int32Type, Int64Type, UInt8Type,
-        UInt16Type, UInt32Type, UInt64Type, Utf8Array,
+        DaftDataType, DaftNumericType, DataType, Decimal128Array, Field, Int8Type, Int16Type,
+        Int32Type, Int64Type, UInt8Type, UInt16Type, UInt32Type, UInt64Type, Utf8Array,
     },
     prelude::BinaryArray,
 };
@@ -17,17 +16,17 @@ macro_rules! impl_int_truncate {
     ($DT:ty) => {
         impl DataArray<$DT> {
             pub fn iceberg_truncate(&self, w: i64) -> DaftResult<DataArray<$DT>> {
-                let as_arrowed = self.as_arrow2();
-
-                let trun_value = as_arrowed.into_iter().map(|v| {
+                let trun_value = self.into_iter().map(|v| {
                     v.map(|v| {
                         let i = v.to_i64().unwrap();
                         let t = (i - (((i.rem(w)) + w).rem(w)));
                         t as <$DT as DaftNumericType>::Native
                     })
                 });
-                let array = Box::new(daft_arrow::array::PrimitiveArray::from_iter(trun_value));
-                Ok(<DataArray<$DT>>::from((self.name(), array)))
+                Ok(Self::from_iter(
+                    Field::new(self.name(), <$DT>::get_dtype()),
+                    trun_value,
+                ))
             }
         }
     };
@@ -45,8 +44,7 @@ impl_int_truncate!(UInt64Type);
 
 impl Decimal128Array {
     pub fn iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
-        let as_arrow = self.as_arrow2();
-        let trun_value = as_arrow.into_iter().map(|v| {
+        let trun_value = self.into_iter().map(|v| {
             v.map(|i| {
                 let w = w as i128;
                 let remainder = ((i.rem(w)) + w).rem(w);
@@ -59,16 +57,23 @@ impl Decimal128Array {
 
 impl Utf8Array {
     pub fn iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
-        let as_arrow = self.as_arrow2();
-        let substring = daft_arrow::compute::substring::utf8_substring(as_arrow, 0, &Some(w));
-        Ok(Self::from((self.name(), Box::new(substring))))
+        let substring = arrow::compute::kernels::substring::substring(
+            self.to_arrow().as_ref(),
+            0,
+            Some(w as _),
+        )?;
+
+        Self::from_arrow(Field::new(self.name(), DataType::Utf8), substring)
     }
 }
 
 impl BinaryArray {
     pub fn iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
-        let as_arrow = self.as_arrow2();
-        let substring = daft_arrow::compute::substring::binary_substring(as_arrow, 0, &Some(w));
-        Ok(Self::from((self.name(), Box::new(substring))))
+        let result = arrow::compute::kernels::substring::substring(
+            self.to_arrow().as_ref(),
+            0,
+            Some(w as _),
+        )?;
+        Self::from_arrow(Field::new(self.name(), DataType::Binary), result)
     }
 }

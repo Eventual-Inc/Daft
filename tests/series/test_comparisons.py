@@ -891,3 +891,112 @@ def test_numeric_and_string_compare_raises_error(op):
 
     with pytest.raises(ValueError, match="Cannot perform comparison on types:"):
         op(right, left)
+
+
+@pytest.mark.parametrize(
+    "op,expected",
+    [
+        ("__lt__", [True, True, False]),
+        ("__le__", [True, True, True]),
+        ("__eq__", [False, False, True]),
+        ("__ne__", [True, True, False]),
+        ("__ge__", [False, False, True]),
+        ("__gt__", [False, False, False]),
+    ],
+)
+def test_comparisons_list_basic(op, expected) -> None:
+    left = Series.from_pylist([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
+    right = Series.from_pylist([[1, 2, 4], [5, 6, 7], [7, 8, 9]])
+
+    result = getattr(left, op)(right).to_pylist()
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "op,expected",
+    [
+        ("__lt__", [True, False, False]),
+        ("__gt__", [False, False, True]),
+        ("__eq__", [False, True, False]),
+    ],
+)
+def test_comparisons_list_by_length(op, expected) -> None:
+    left = Series.from_pylist([[1], [1, 2], [1, 2, 3]])
+    right = Series.from_pylist([[1, 0], [1, 2], [1, 2]])
+
+    result = getattr(left, op)(right).to_pylist()
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "op,expected",
+    [
+        ("__eq__", [True, None, False]),
+        ("__ne__", [False, None, True]),
+        ("__lt__", [False, None, True]),
+    ],
+)
+def test_comparisons_list_with_nulls(op, expected) -> None:
+    left = Series.from_pylist([[1, 2, 3], None, [7, 8, 9]])
+    right = Series.from_pylist([[1, 2, 3], None, [7, 8, 10]])
+
+    result = getattr(left, op)(right).to_pylist()
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "op,expected",
+    [
+        ("__lt__", [False, True, False]),
+        ("__le__", [True, True, True]),
+        ("__eq__", [True, False, True]),
+        ("__ne__", [False, True, False]),
+        ("__ge__", [True, False, True]),
+        ("__gt__", [False, False, False]),
+    ],
+)
+def test_comparisons_struct_basic(op, expected) -> None:
+    left = Series.from_pylist([{"x": 1, "y": "a"}, {"x": 2, "y": "b"}, {"x": 3, "y": "c"}]).cast(
+        DataType.struct({"x": DataType.int64(), "y": DataType.string()})
+    )
+    right = Series.from_pylist([{"x": 1, "y": "a"}, {"x": 2, "y": "c"}, {"x": 3, "y": "c"}]).cast(
+        DataType.struct({"x": DataType.int64(), "y": DataType.string()})
+    )
+
+    result = getattr(left, op)(right).to_pylist()
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "op,expected",
+    [
+        ("__eq__", [True, None, False]),
+        ("__lt__", [False, None, True]),
+    ],
+)
+def test_comparisons_struct_with_nulls(op, expected) -> None:
+    left = Series.from_pylist([{"x": 1, "y": "a"}, None, {"x": 3, "y": "c"}]).cast(
+        DataType.struct({"x": DataType.int64(), "y": DataType.string()})
+    )
+    right = Series.from_pylist([{"x": 1, "y": "a"}, None, {"x": 4, "y": "c"}]).cast(
+        DataType.struct({"x": DataType.int64(), "y": DataType.string()})
+    )
+
+    result = getattr(left, op)(right).to_pylist()
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "op,expected",
+    [
+        ("__lt__", [True, False]),
+        ("__eq__", [False, True]),
+        ("__gt__", [False, False]),
+    ],
+)
+def test_comparisons_nested_list(op, expected) -> None:
+    left = Series.from_pylist([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])
+    right = Series.from_pylist([[[1, 2], [3, 5]], [[5, 6], [7, 8]]])
+
+    result = getattr(left, op)(right).to_pylist()
+    assert result == expected

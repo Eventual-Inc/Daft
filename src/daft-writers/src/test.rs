@@ -17,7 +17,7 @@ use crate::{
 pub struct DummyWriterFactory;
 
 impl WriterFactory for DummyWriterFactory {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     fn create_writer(
@@ -46,7 +46,7 @@ pub struct DummyWriter {
 
 #[async_trait]
 impl AsyncFileWriter for DummyWriter {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     async fn write(&mut self, input: Self::Input) -> DaftResult<WriteResult> {
@@ -68,14 +68,10 @@ impl AsyncFileWriter for DummyWriter {
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
-        let path_series = Utf8Array::from_values(
-            RETURN_PATHS_COLUMN_NAME,
-            std::iter::once(self.file_idx.clone()),
-        )
-        .into_series();
+        let path_series =
+            Utf8Array::from_slice(RETURN_PATHS_COLUMN_NAME, &[self.file_idx.clone()]).into_series();
         let write_count_series =
-            UInt64Array::from_values("write_count", std::iter::once(self.write_count as u64))
-                .into_series();
+            UInt64Array::from_slice("write_count", &[self.write_count as u64]).into_series();
         let path_table = RecordBatch::new_unchecked(
             Schema::new(vec![
                 path_series.field().clone(),
@@ -118,7 +114,7 @@ impl FailingWriterFactory {
 }
 
 impl WriterFactory for FailingWriterFactory {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     fn create_writer(
@@ -151,7 +147,7 @@ pub struct FailingWriter {
 
 #[async_trait]
 impl AsyncFileWriter for FailingWriter {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     async fn write(&mut self, input: Self::Input) -> DaftResult<WriteResult> {
@@ -186,14 +182,10 @@ impl AsyncFileWriter for FailingWriter {
         }
 
         // Same behavior as DummyWriter when not failing
-        let path_series = Utf8Array::from_values(
-            RETURN_PATHS_COLUMN_NAME,
-            std::iter::once(self.file_idx.clone()),
-        )
-        .into_series();
+        let path_series =
+            Utf8Array::from_slice(RETURN_PATHS_COLUMN_NAME, &[self.file_idx.clone()]).into_series();
         let write_count_series =
-            UInt64Array::from_values("write_count", std::iter::once(self.write_count as u64))
-                .into_series();
+            UInt64Array::from_slice("write_count", &[self.write_count as u64]).into_series();
         let path_table = RecordBatch::new_unchecked(
             Schema::new(vec![
                 path_series.field().clone(),
@@ -215,8 +207,8 @@ impl AsyncFileWriter for FailingWriter {
 pub fn make_dummy_target_file_size_writer_factory(
     target_size_bytes: usize,
     initial_inflation_factor: f64,
-    factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
-) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>> {
+    factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Option<RecordBatch>>>,
+) -> Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>> {
     let target_file_size_calculator =
         TargetInMemorySizeBytesCalculator::new(target_size_bytes, initial_inflation_factor);
     Arc::new(TargetFileSizeWriterFactory::new(
@@ -225,16 +217,11 @@ pub fn make_dummy_target_file_size_writer_factory(
     ))
 }
 
-pub fn make_dummy_mp(size_bytes: usize) -> Arc<MicroPartition> {
-    let range = (0..size_bytes).map(|i| Some(i as u8));
-    let series = UInt8Array::from_regular_iter(Field::new("ints", DataType::UInt8), range)
-        .unwrap()
-        .into_series();
+pub fn make_dummy_mp(size_bytes: usize) -> MicroPartition {
+    let range = (0..size_bytes).map(|i| i as u8);
+    let series =
+        UInt8Array::from_field_and_values(Field::new("ints", DataType::UInt8), range).into_series();
     let schema = Arc::new(Schema::new(vec![series.field().clone()]));
     let table = RecordBatch::new_unchecked(schema.clone(), vec![series.into()], size_bytes);
-    Arc::new(MicroPartition::new_loaded(
-        schema.into(),
-        vec![table].into(),
-        None,
-    ))
+    MicroPartition::new_loaded(schema.into(), vec![table].into(), None)
 }

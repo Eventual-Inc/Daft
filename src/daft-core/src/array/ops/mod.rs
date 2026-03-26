@@ -64,6 +64,7 @@ mod time;
 pub mod trigonometry;
 mod truncate;
 mod utf8;
+mod variance;
 
 use std::hash::BuildHasher;
 
@@ -218,8 +219,14 @@ pub trait DaftMeanAggable {
 
 pub trait DaftStddevAggable {
     type Output;
-    fn stddev(&self) -> Self::Output;
-    fn grouped_stddev(&self, groups: &GroupIndices) -> Self::Output;
+    fn stddev(&self, ddof: usize) -> Self::Output;
+    fn grouped_stddev(&self, groups: &GroupIndices, ddof: usize) -> Self::Output;
+}
+
+pub trait DaftVarianceAggable {
+    type Output;
+    fn var(&self, ddof: usize) -> Self::Output;
+    fn grouped_var(&self, groups: &GroupIndices, ddof: usize) -> Self::Output;
 }
 
 pub trait DaftCompareAggable {

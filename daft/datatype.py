@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import threading
+import typing
 import warnings
-from types import GenericAlias
+from types import GenericAlias, UnionType
 from typing import TYPE_CHECKING, Any
 
 from packaging.version import parse
@@ -120,6 +121,18 @@ class TimeUnit:
         return f"TimeUnit({self.__str__()})"
 
 
+_DATATYPE_CONSTRUCTOR_SET: set[str] = set()
+
+
+def datatype_constructor(obj: Any) -> Any:
+    if isinstance(obj, classmethod):
+        name = obj.__func__.__name__
+    else:
+        name = obj.__name__
+    _DATATYPE_CONSTRUCTOR_SET.add(name)
+    return obj
+
+
 class DataType:
     """A Daft DataType defines the type of all the values in an Expression or DataFrame column."""
 
@@ -132,16 +145,19 @@ class DataType:
         )
 
     @classmethod
-    def infer_from_type(cls, t: type | GenericAlias) -> DataType:
+    def infer_from_type(cls, t: type | GenericAlias | UnionType) -> DataType:
         """Infer Daft DataType from a Python type."""
         # NOTE: Make sure this matches the logic in `Literal::from_pyobj` in Rust
+        # NOTE: The base type for Union is hidden, so it requires special handling
+        # TODO: TypeForm would cover everything: https://peps.python.org/pep-0747/
 
-        assert isinstance(t, (type, GenericAlias)), f"Input to DataType.infer_from_type must be a type, found: {t}"
+        assert isinstance(t, (type, GenericAlias, UnionType)) or typing.get_origin(t) is typing.Union, (
+            f"Input to DataType.infer_from_type must be a type, found {t} (type {type(t)})"
+        )
 
         import datetime
         import decimal
         import importlib
-        import typing
         from typing import is_typeddict
 
         import daft.file
@@ -170,7 +186,16 @@ class DataType:
 
             return issubclass(origin, type_obj)
 
-        if check_type(type(None)):
+        # NOTE: This has to be first to handle the special case of typing.Union
+        if origin is typing.Union or check_type(UnionType):  # type: ignore[comparison-overlap]
+            inner_types = set(DataType.infer_from_type(arg) for arg in args)
+            if len(inner_types) == 1:
+                return inner_types.pop()
+            elif len(inner_types) == 2 and cls.null() in inner_types:
+                return inner_types.difference([cls.null()]).pop()
+            else:
+                return cls.python()
+        elif check_type(type(None)):
             return cls.null()
         elif check_type(bool):
             return cls.bool()
@@ -445,10 +470,14 @@ class DataType:
             return user_provided_type
         elif isinstance(user_provided_type, str):
             return cls.from_sql(user_provided_type)
-        elif isinstance(user_provided_type, (type, GenericAlias)):
+        elif isinstance(user_provided_type, (type, GenericAlias, UnionType)):
             return cls.infer_from_type(user_provided_type)
         else:
             raise TypeError("DataType._infer expects a DataType, string, or type")
+
+    @classmethod
+    def _constructor_names(cls) -> tuple[str, ...]:
+        return tuple(sorted(_DATATYPE_CONSTRUCTOR_SET))
 
     @staticmethod
     def _from_pydatatype(pydt: PyDataType) -> DataType:
@@ -456,71 +485,85 @@ class DataType:
         dt._dtype = pydt
         return dt
 
+    @datatype_constructor
     @classmethod
     def int8(cls) -> DataType:
         """Create an 8-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.int8())
 
+    @datatype_constructor
     @classmethod
     def int16(cls) -> DataType:
         """Create an 16-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.int16())
 
+    @datatype_constructor
     @classmethod
     def int32(cls) -> DataType:
         """Create an 32-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.int32())
 
+    @datatype_constructor
     @classmethod
     def int64(cls) -> DataType:
         """Create an 64-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.int64())
 
+    @datatype_constructor
     @classmethod
     def uint8(cls) -> DataType:
         """Create an unsigned 8-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.uint8())
 
+    @datatype_constructor
     @classmethod
     def uint16(cls) -> DataType:
         """Create an unsigned 16-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.uint16())
 
+    @datatype_constructor
     @classmethod
     def uint32(cls) -> DataType:
         """Create an unsigned 32-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.uint32())
 
+    @datatype_constructor
     @classmethod
     def uint64(cls) -> DataType:
         """Create an unsigned 64-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.uint64())
 
+    @datatype_constructor
     @classmethod
     def float32(cls) -> DataType:
         """Create a 32-bit float DataType."""
         return cls._from_pydatatype(PyDataType.float32())
 
+    @datatype_constructor
     @classmethod
     def float64(cls) -> DataType:
         """Create a 64-bit float DataType."""
         return cls._from_pydatatype(PyDataType.float64())
 
+    @datatype_constructor
     @classmethod
     def string(cls) -> DataType:
         """Create a String DataType: A string of UTF8 characters."""
         return cls._from_pydatatype(PyDataType.string())
 
+    @datatype_constructor
     @classmethod
     def bool(cls) -> DataType:
         """Create the Boolean DataType: Either ``True`` or ``False``."""
         return cls._from_pydatatype(PyDataType.bool())
 
+    @datatype_constructor
     @classmethod
     def binary(cls) -> DataType:
         """Create a Binary DataType: A string of bytes."""
         return cls._from_pydatatype(PyDataType.binary())
 
+    @datatype_constructor
     @classmethod
     def fixed_size_binary(cls, size: int) -> DataType:
         """Create a FixedSizeBinary DataType: A fixed-size string of bytes."""
@@ -528,21 +571,25 @@ class DataType:
             raise ValueError("The size for a fixed-size binary must be a positive integer, but got: ", size)
         return cls._from_pydatatype(PyDataType.fixed_size_binary(size))
 
+    @datatype_constructor
     @classmethod
     def null(cls) -> DataType:
         """Creates the Null DataType: Always the ``Null`` value."""
         return cls._from_pydatatype(PyDataType.null())
 
+    @datatype_constructor
     @classmethod
     def decimal128(cls, precision: int, scale: int) -> DataType:
         """Fixed-precision decimal."""
         return cls._from_pydatatype(PyDataType.decimal128(precision, scale))
 
+    @datatype_constructor
     @classmethod
     def date(cls) -> DataType:
         """Create a Date DataType: A date with a year, month and day."""
         return cls._from_pydatatype(PyDataType.date())
 
+    @datatype_constructor
     @classmethod
     def time(cls, timeunit: TimeUnit | str) -> DataType:
         """Time DataType. Supported timeunits are "us", "ns"."""
@@ -550,6 +597,7 @@ class DataType:
             timeunit = TimeUnit.from_str(timeunit)
         return cls._from_pydatatype(PyDataType.time(timeunit._timeunit))
 
+    @datatype_constructor
     @classmethod
     def timestamp(cls, timeunit: TimeUnit | str, timezone: str | None = None) -> DataType:
         """Timestamp DataType."""
@@ -557,6 +605,7 @@ class DataType:
             timeunit = TimeUnit.from_str(timeunit)
         return cls._from_pydatatype(PyDataType.timestamp(timeunit._timeunit, timezone))
 
+    @datatype_constructor
     @classmethod
     def duration(cls, timeunit: TimeUnit | str) -> DataType:
         """Duration DataType."""
@@ -564,11 +613,13 @@ class DataType:
             timeunit = TimeUnit.from_str(timeunit)
         return cls._from_pydatatype(PyDataType.duration(timeunit._timeunit))
 
+    @datatype_constructor
     @classmethod
     def interval(cls) -> DataType:
         """Interval DataType."""
         return cls._from_pydatatype(PyDataType.interval())
 
+    @datatype_constructor
     @classmethod
     def list(cls, dtype: DataType) -> DataType:
         """Create a List DataType: Variable-length list, where each element in the list has type ``dtype``.
@@ -578,6 +629,7 @@ class DataType:
         """
         return cls._from_pydatatype(PyDataType.list(dtype._dtype))
 
+    @datatype_constructor
     @classmethod
     def fixed_size_list(cls, dtype: DataType, size: int) -> DataType:
         """Create a FixedSizeList DataType: Fixed-size list, where each element in the list has type ``dtype`` and each list has length ``size``.
@@ -590,6 +642,7 @@ class DataType:
             raise ValueError("The size for a fixed-size list must be a positive integer, but got: ", size)
         return cls._from_pydatatype(PyDataType.fixed_size_list(dtype._dtype, size))
 
+    @datatype_constructor
     @classmethod
     def map(cls, key_type: DataType, value_type: DataType) -> DataType:
         """Create a Map DataType: A map is a nested type of key-value pairs that is implemented as a list of structs with two fields, key and value.
@@ -600,6 +653,7 @@ class DataType:
         """
         return cls._from_pydatatype(PyDataType.map(key_type._dtype, value_type._dtype))
 
+    @datatype_constructor
     @classmethod
     def struct(cls, fields: dict[str, DataType]) -> DataType:
         """Create a Struct DataType: a nested type which has names mapped to child types.
@@ -612,10 +666,12 @@ class DataType:
         """
         return cls._from_pydatatype(PyDataType.struct({name: datatype._dtype for name, datatype in fields.items()}))
 
+    @datatype_constructor
     @classmethod
     def extension(cls, name: str, storage_dtype: DataType, metadata: str | None = None) -> DataType:
         return cls._from_pydatatype(PyDataType.extension(name, storage_dtype._dtype, metadata))
 
+    @datatype_constructor
     @classmethod
     def embedding(cls, dtype: DataType, size: int) -> DataType:
         """Create an Embedding DataType: embeddings are fixed size arrays, where each element in the array has a **numeric** ``dtype`` and each array has a fixed length of ``size``.
@@ -628,6 +684,7 @@ class DataType:
             raise ValueError("The size for a embedding must be a positive integer, but got: ", size)
         return cls._from_pydatatype(PyDataType.embedding(dtype._dtype, size))
 
+    @datatype_constructor
     @classmethod
     def image(
         cls, mode: str | ImageMode | None = None, height: int | None = None, width: int | None = None
@@ -669,6 +726,7 @@ class DataType:
             )
         return cls._from_pydatatype(PyDataType.image(mode, height, width))
 
+    @datatype_constructor
     @classmethod
     def tensor(
         cls,
@@ -692,6 +750,7 @@ class DataType:
                 raise ValueError("Tensor shape must be a tuple of ints, but got: ", shape)
         return cls._from_pydatatype(PyDataType.tensor(dtype._dtype, shape))
 
+    @datatype_constructor
     @classmethod
     def sparse_tensor(
         cls,
@@ -792,7 +851,7 @@ class DataType:
                 key_type=cls.from_arrow_type(arrow_type.key_type, python_fallback),
                 value_type=cls.from_arrow_type(arrow_type.item_type, python_fallback),
             )
-        elif isinstance(arrow_type, getattr(pa, "FixedShapeTensorType", ())):
+        elif isinstance(arrow_type, pa.FixedShapeTensorType):
             scalar_dtype = cls.from_arrow_type(arrow_type.value_type, python_fallback)
             return cls.tensor(scalar_dtype, tuple(arrow_type.shape))
         # Only check for PyExtensionType if pyarrow version is < 21.0.0
@@ -800,7 +859,7 @@ class DataType:
             # TODO(Clark): Add a native cross-lang extension type representation for PyExtensionTypes.
             raise ValueError(
                 "pyarrow extension types that subclass pa.PyExtensionType can't be used in Daft, since they can't be "
-                f"used in non-Python Arrow implementations and Daft uses the Rust Arrow2 implementation: {arrow_type}"
+                f"used in non-Python Arrow implementations and Daft uses the Rust Arrow implementation: {arrow_type}"
             )
         elif isinstance(arrow_type, pa.BaseExtensionType):
             name = arrow_type.extension_name
@@ -846,11 +905,13 @@ class DataType:
         _ensure_registered_super_ext_type()
         return self._dtype.to_arrow()
 
+    @datatype_constructor
     @classmethod
     def python(cls) -> DataType:
         """Create a Python DataType: a type which refers to an arbitrary Python object."""
         return cls._from_pydatatype(PyDataType.python())
 
+    @datatype_constructor
     @classmethod
     def file(cls, media_type: MediaType = MediaType.unknown()) -> DataType:
         """Create a File DataType: a type which refers to a file object."""

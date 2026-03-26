@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use common_treenode::Transformed;
-use daft_core::lit::Literal;
-use daft_dsl::{Expr, ExprRef, Operator, lit};
+use daft_core::{lit::Literal, prelude::Operator};
+use daft_dsl::{Expr, ExprRef, lit};
 use daft_schema::{dtype::DataType, schema::SchemaRef};
 use indexmap::IndexSet;
 
@@ -296,7 +296,8 @@ mod tests {
 
     use common_error::DaftResult;
     use common_treenode::Transformed;
-    use daft_dsl::{Column, Expr, ExprRef, Operator, ResolvedColumn, lit};
+    use daft_core::prelude::Operator;
+    use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn, lit};
     use daft_schema::{dtype::DataType, field::Field, schema::Schema};
 
     use crate::simplify::boolean::simplify_binary_compare;
@@ -331,39 +332,39 @@ mod tests {
 
         // a == true
         let expr = eq(col_a.clone(), lit(true));
-        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        let result = simplify_binary_compare(expr, &schema)?;
         assert_eq!(result, Transformed::yes(col_a.clone()));
 
         let expr = eq(lit(true), col_a.clone());
-        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        let result = simplify_binary_compare(expr, &schema)?;
         assert_eq!(result, Transformed::yes(col_a.clone()));
 
         // a == false
         let expr = eq(col_a.clone(), lit(false));
-        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        let result = simplify_binary_compare(expr, &schema)?;
         assert_eq!(result, Transformed::yes(col_a.clone().not()));
 
         let expr = eq(lit(false), col_a.clone());
-        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        let result = simplify_binary_compare(expr, &schema)?;
         assert_eq!(result, Transformed::yes(col_a.clone().not()));
 
         // a != true
         let expr = neq(col_a.clone(), lit(true));
-        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        let result = simplify_binary_compare(expr, &schema)?;
         assert_eq!(result, Transformed::yes(col_a.clone().not()));
 
         let expr = neq(lit(true), col_a.clone());
-        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        let result = simplify_binary_compare(expr, &schema)?;
         assert_eq!(result, Transformed::yes(col_a.clone().not()));
 
         // a != false
         let expr = neq(col_a.clone(), lit(false));
-        let result = simplify_binary_compare(expr.clone(), &schema)?;
+        let result = simplify_binary_compare(expr, &schema)?;
         assert_eq!(result, Transformed::yes(col_a.clone()));
 
         let expr = neq(lit(false), col_a.clone());
-        let result = simplify_binary_compare(expr.clone(), &schema)?;
-        assert_eq!(result, Transformed::yes(col_a.clone()));
+        let result = simplify_binary_compare(expr, &schema)?;
+        assert_eq!(result, Transformed::yes(col_a));
 
         Ok(())
     }

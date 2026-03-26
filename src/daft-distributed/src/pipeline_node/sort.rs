@@ -1,10 +1,10 @@
-use std::{collections::HashMap, future, sync::Arc};
+use std::{future, sync::Arc};
 
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, SamplingMethod};
 use daft_logical_plan::{
-    InMemoryInfo,
     partitioning::{RangeRepartitionConfig, RepartitionSpec},
     stats::StatsState,
 };
@@ -15,7 +15,7 @@ use futures::{TryStreamExt, future::try_join_all};
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -47,12 +47,13 @@ pub(crate) async fn get_partition_boundaries_from_samples(
         .into_iter()
         .flat_map(|mo| mo.into_inner().0)
         .map(|pr| {
-            let ray_partition_ref = pr
-                .as_any()
-                .downcast_ref::<crate::python::ray::RayPartitionRef>()
-                .ok_or(common_error::DaftError::InternalError(
+            use crate::python::ray::RayPartitionRef;
+
+            let ray_partition_ref = pr.as_any().downcast_ref::<RayPartitionRef>().ok_or(
+                common_error::DaftError::InternalError(
                     "Failed to downcast partition ref".to_string(),
-                ))?;
+                ),
+            )?;
             Ok(ray_partition_ref.clone())
         })
         .collect::<DaftResult<Vec<_>>>()?;
@@ -137,22 +138,17 @@ pub(crate) fn create_sample_tasks(
                 true,
                 None,
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(pipeline_node.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(pipeline_node.node_id() as usize)),
             );
             let plan = LocalPhysicalPlan::project(
                 sample,
                 sample_by.clone(),
                 sample_schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(pipeline_node.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(pipeline_node.node_id() as usize)),
             );
-            let builder = SwordfishTaskBuilder::new(plan, pipeline_node).with_psets(psets);
+            let builder = SwordfishTaskBuilder::new(plan, pipeline_node, pipeline_node.node_id())
+                .with_psets(pipeline_node.node_id(), psets);
             let submittable_task = builder.build(context.query_idx, task_id_counter);
             let submitted_task = submittable_task.submit(scheduler_handle)?;
             Ok(submitted_task)
@@ -179,23 +175,12 @@ pub(crate) fn create_range_repartition_tasks(
     materialized_outputs
         .into_iter()
         .map(|mo| {
-            let info = InMemoryInfo::new(
-                input_schema.clone(),
-                node_id.to_string(),
-                None,
-                1,
-                mo.size_bytes(),
-                mo.num_rows(),
-                None,
-                None,
-            );
             let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
-                info,
+                node_id,
+                input_schema.clone(),
+                mo.size_bytes(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             );
             let plan = LocalPhysicalPlan::repartition(
                 in_memory_source_plan,
@@ -208,13 +193,10 @@ pub(crate) fn create_range_repartition_tasks(
                 num_partitions,
                 input_schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             );
-            let psets = HashMap::from([(node_id.to_string(), mo.into_inner().0)]);
-            let builder = SwordfishTaskBuilder::new(plan, pipeline_node).with_psets(psets);
+            let builder = SwordfishTaskBuilder::new(plan, pipeline_node, pipeline_node.node_id())
+                .with_psets(node_id, mo.into_inner().0);
             let submittable_task = builder.build(context.query_idx, task_id_counter);
             let submitted_task = submittable_task.submit(scheduler_handle)?;
             Ok(submitted_task)
@@ -233,7 +215,7 @@ pub(crate) struct SortNode {
 }
 
 impl SortNode {
-    const NODE_NAME: NodeName = "Sort";
+    const NODE_NAME: &'static str = "Sort";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -249,7 +231,9 @@ impl SortNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
+            NodeType::Sort,
+            NodeCategory::BlockingSink,
         );
 
         let config = PipelineNodeConfig::new(
@@ -265,10 +249,6 @@ impl SortNode {
             nulls_first,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execution_loop(
@@ -304,12 +284,10 @@ impl SortNode {
                 self.descending.clone(),
                 self.nulls_first.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self.node_id() as usize)),
             );
-            let task = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+            let task = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+                .with_psets(self.node_id(), psets);
             let _ = result_tx.send(task).await;
             return Ok(());
         }
@@ -375,12 +353,10 @@ impl SortNode {
                 self.descending.clone(),
                 self.nulls_first.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self.node_id() as usize)),
             );
-            let task = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+            let task = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+                .with_psets(self.node_id(), psets);
             let _ = result_tx.send(task).await;
         }
         Ok(())

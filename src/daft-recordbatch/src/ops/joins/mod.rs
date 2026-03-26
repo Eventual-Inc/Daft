@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
@@ -26,8 +25,8 @@ fn match_types_for_tables(
     for (ls, rs) in left.columns.iter().zip(right.columns.iter()) {
         let st = try_get_supertype(ls.data_type(), rs.data_type());
         if let Ok(st) = st {
-            lseries.push(ls.cast(&st)?);
-            rseries.push(rs.cast(&st)?);
+            lseries.push(ls.cast(&st)?.take_materialized_series());
+            rseries.push(rs.cast(&st)?.take_materialized_series());
         } else {
             return Err(DaftError::SchemaMismatch(format!(
                 "Can not perform join between due to mismatch of types of left: {} vs right: {}",
@@ -55,7 +54,7 @@ fn add_non_join_key_columns(
         .collect::<HashSet<_>>();
 
     for field in left.schema.as_ref() {
-        if join_keys.contains(&field.name) {
+        if join_keys.contains(&*field.name) {
             continue;
         }
         join_series.push(get_column_by_name(left, &field.name)?.take(&lidx)?);
@@ -64,7 +63,7 @@ fn add_non_join_key_columns(
     drop(lidx);
 
     for field in right.schema.as_ref() {
-        if join_keys.contains(&field.name) {
+        if join_keys.contains(&*field.name) {
             continue;
         }
 
@@ -173,8 +172,8 @@ impl RecordBatch {
 
                 for (li, ri) in lidx.into_iter().zip(ridx.into_iter()) {
                     match (li, ri) {
-                        (Some(i), _) => growable.extend(0, *i as usize, 1),
-                        (None, Some(i)) => growable.extend(1, *i as usize, 1),
+                        (Some(i), _) => growable.extend(0, i as usize, 1),
+                        (None, Some(i)) => growable.extend(1, i as usize, 1),
                         (None, None) => unreachable!("Join should not have None for both sides"),
                     }
                 }
@@ -202,7 +201,7 @@ impl RecordBatch {
                 .flat_map(|i| std::iter::repeat_n(i, inner_len))
                 .collect::<Vec<_>>();
 
-            let idx_arr = UInt64Array::from(("inner_indices", idx));
+            let idx_arr = UInt64Array::from_vec("inner_indices", idx);
             input.take(&idx_arr)
         }
 
@@ -228,10 +227,16 @@ impl RecordBatch {
         let num_rows = self.len() * right.len();
 
         let join_schema = self.schema.union(&right.schema)?;
-        let mut join_columns = Arc::unwrap_or_clone(left_table.columns);
-        let mut right_columns = Arc::unwrap_or_clone(right_table.columns);
+        let mut join_columns: Vec<Series> = Arc::unwrap_or_clone(left_table.columns)
+            .into_iter()
+            .map(|c| c.take_materialized_series())
+            .collect();
+        let right_columns: Vec<Series> = Arc::unwrap_or_clone(right_table.columns)
+            .into_iter()
+            .map(|c| c.take_materialized_series())
+            .collect();
 
-        join_columns.append(&mut right_columns);
+        join_columns.extend(right_columns);
 
         Self::new_with_size(join_schema, join_columns, num_rows)
     }

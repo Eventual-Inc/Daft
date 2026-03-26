@@ -11,16 +11,19 @@ use crate::{
 
 macro_rules! collect_to_set_and_check_membership {
     ($self:expr, $rhs:expr) => {{
-        let set = $rhs
-            .as_arrow2()
+        let rhs_arrow = $rhs.as_arrow()?;
+        let set = rhs_arrow
             .iter()
             .filter_map(|item| item)
             .collect::<HashSet<_>>();
-        let result = $self
-            .as_arrow2()
+
+        let self_arrow = $self.as_arrow()?;
+        let result = self_arrow
             .iter()
-            .map(|option| option.and_then(|value| Some(set.contains(&value))));
-        Ok(BooleanArray::from_iter($self.name(), result))
+            .map(|option| option.map(|value| set.contains(&value)));
+
+        let bools: BooleanArray = result.collect();
+        Ok(bools.rename($self.name()))
     }};
 }
 
@@ -28,8 +31,8 @@ impl<T> DaftIsIn<&Self> for DataArray<T>
 where
     T: DaftIntegerType,
     <T as DaftNumericType>::Native: Ord,
-    <T as DaftNumericType>::Native: std::hash::Hash,
-    <T as DaftNumericType>::Native: std::cmp::Eq,
+    <<<T as DaftNumericType>::Native as crate::datatypes::NumericNative>::ARROWTYPE as arrow::array::ArrowPrimitiveType>::Native:
+        std::hash::Hash + std::cmp::Eq,
 {
     type Output = DaftResult<BooleanArray>;
 
@@ -44,15 +47,19 @@ macro_rules! impl_is_in_floating_array {
             type Output = DaftResult<BooleanArray>;
 
             fn is_in(&self, rhs: &$arr) -> Self::Output {
-                let set = rhs
-                    .as_arrow2()
+                let rhs_arrow = rhs.as_arrow()?;
+                let set = rhs_arrow
                     .iter()
-                    .filter_map(|item| item.map(|value| FloatWrapper(*value)))
+                    .filter_map(|item| item.map(FloatWrapper))
                     .collect::<BTreeSet<FloatWrapper<$T>>>();
-                let result = self.as_arrow2().iter().map(|option| {
-                    option.and_then(|value| Some(set.contains(&FloatWrapper(*value))))
-                });
-                Ok(BooleanArray::from_iter(self.name(), result))
+
+                let self_arrow = self.as_arrow()?;
+                let result = self_arrow
+                    .iter()
+                    .map(|option| option.map(|value| set.contains(&FloatWrapper(value))));
+
+                let bools: BooleanArray = result.collect();
+                Ok(bools.rename(self.name()))
             }
         }
     };

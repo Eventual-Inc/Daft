@@ -9,7 +9,7 @@ from daft.expressions.expressions import _resolved_col
 from daft.recordbatch import MicroPartition
 
 PRED_PUSHDOWN_FILES = [
-    "s3://daft-public-data/test_fixtures/parquet-dev/sampled-tpch-with-stats.parquet",
+    "s3://daft-oss-public-data/test_fixtures/parquet-dev/sampled-tpch-with-stats.parquet",
     "tests/assets/parquet-data/sampled-tpch-with-stats.parquet",
 ]
 
@@ -54,7 +54,7 @@ def test_parquet_filter_pushdowns_disjoint_predicate(path, pred, aws_public_s3_c
 @pytest.mark.parametrize(
     "path, pred",
     product(
-        ["tests/assets/parquet-data/mvp.parquet", "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"],
+        ["tests/assets/parquet-data/mvp.parquet", "s3://daft-oss-public-data/test_fixtures/parquet-dev/mvp.parquet"],
         [_resolved_col("a") == 7, _resolved_col("a") == 10000, daft.lit(True)],
     ),
 )

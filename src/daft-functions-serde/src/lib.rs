@@ -1,3 +1,5 @@
+#![allow(deprecated, reason = "arrow2 migration")]
+
 use daft_dsl::functions::{FunctionModule, FunctionRegistry};
 
 mod deserialize;

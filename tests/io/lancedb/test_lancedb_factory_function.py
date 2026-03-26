@@ -10,9 +10,6 @@ import pytest
 from daft.io.lance.lance_scan import _lancedb_table_factory_function
 from daft.recordbatch import RecordBatch
 
-PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
-pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="lance not supported on old versions of pyarrow")
-
 # Import-or-skip lance once at module level so individual tests don't need to do this
 lance = pytest.importorskip("lance")
 

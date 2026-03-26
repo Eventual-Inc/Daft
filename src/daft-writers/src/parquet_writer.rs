@@ -7,6 +7,7 @@ use daft_core::prelude::*;
 use daft_io::{IOConfig, SourceType, parse_url, utils::ObjectPath};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
+#[allow(deprecated)]
 use parquet::{
     arrow::{
         ArrowSchemaConverter,
@@ -91,12 +92,11 @@ pub(crate) fn create_native_parquet_writer(
     file_idx: usize,
     partition_values: Option<&RecordBatch>,
     io_config: Option<IOConfig>,
-) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
-{
+) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
     // Parse the root directory and add partition values if present.
     let (source_type, root_dir) = parse_url(root_dir)?;
     let filename = build_filename(
-        source_type,
+        &source_type,
         root_dir.as_ref(),
         partition_values,
         file_idx,
@@ -209,12 +209,11 @@ impl<B: StorageBackend> ParquetWriter<B> {
             .collect();
         // Iterate through each record batch and extract its leaf columns.
         for record_batch in record_batches {
-            #[allow(deprecated, reason = "arrow2 migration")]
             let arrays = record_batch.get_inner_arrow_arrays();
             let mut leaf_column_slots = leaf_columns.iter_mut();
 
             for (arr, field) in arrays.zip(&self.arrow_schema.fields) {
-                let leaves = compute_leaves(field, &arr.into())
+                let leaves = compute_leaves(field, &arr)
                     .map_err(|e| DaftError::ParquetError(e.to_string()))?;
 
                 for leaf in leaves {
@@ -240,6 +239,7 @@ impl<B: StorageBackend> ParquetWriter<B> {
         record_batches: &[RecordBatch],
     ) -> DaftResult<VecDeque<Pin<Box<ColumnWriterFuture>>>> {
         // Get leaf column writers. For example, a struct<int, int> column produces two leaf column writers.
+        #[allow(deprecated)]
         let column_writers = get_column_writers(
             &self.parquet_schema,
             &self.writer_properties,
@@ -278,7 +278,7 @@ impl<B: StorageBackend> ParquetWriter<B> {
 
 #[async_trait]
 impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {

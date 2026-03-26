@@ -1,13 +1,14 @@
 import os
 from datetime import datetime, timezone
 
-import gspread
 from ray.job_submission import JobDetails, JobSubmissionClient
 
 import daft
 
 
 def upload_to_google_sheets(worksheet, data):
+    import gspread
+
     gc = gspread.service_account()
 
     sh = gc.open_by_url(

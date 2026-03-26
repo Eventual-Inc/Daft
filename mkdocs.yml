@@ -151,13 +151,17 @@ plugins:
       resources/architecture.md: architecture/index.md
       advanced/memory.md: optimization/memory.md
       advanced/partitioning.md: optimization/partitioning.md
-      advanced/observability.md: optimization/observability.md
+      advanced/observability.md: observability/progress-indicators.md
+      optimization/observability.md: observability/progress-indicators.md
+      optimization/logging.md: observability/logging.md
       resources/telemetry.md: telemetry.md
       resources/engine_comparison.md: index.md
       resources/tutorials.md: examples/index.md
       migration/dask_migration.md: index.md
       resources/benchmarks/tpch.md: benchmarks/index.md
       core_concepts.md: index.md
+      api/datatypes/index.md: api/datatypes/all_datatypes.md
+      modalities/urls.md: modalities/files.md
 - mkdocstrings:
     custom_templates: docs/templates
     handlers:

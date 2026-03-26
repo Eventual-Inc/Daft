@@ -3,12 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import daft.daft as native
-from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries, PySeriesIterator
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
 from daft.schema import Field
-from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 if TYPE_CHECKING:
     import builtins
@@ -54,15 +52,13 @@ class Series:
             # If the Arrow type is not natively supported, go through the Python list path.
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
         if isinstance(array, pa.Array):
-            array = ensure_array(array)
-            if isinstance(array.type, getattr(pa, "FixedShapeTensorType", ())):
+            if isinstance(array.type, pa.FixedShapeTensorType):
                 series = Series.from_arrow(array.storage, name=name)
                 return series.cast(dtype or DataType.from_arrow_type(array.type))
             else:
                 pys = PySeries.from_arrow(name, array, dtype=dtype._dtype if dtype else None)
                 return Series._from_pyseries(pys)
         elif isinstance(array, pa.ChunkedArray):
-            array = ensure_chunked_array(array)
             arr_type = array.type
             if isinstance(arr_type, pa.BaseExtensionType):
                 combined_storage_array = array.cast(arr_type.storage_type).combine_chunks()
@@ -218,21 +214,19 @@ class Series:
     def to_arrow(self) -> pa.Array:
         """Convert this Series to an pyarrow array."""
         _ensure_registered_super_ext_type()
+        return self._series.to_arrow()
 
-        dtype = self.datatype()
+    def to_pylist(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> list[Any]:
+        """Convert this Series to a Python list.
 
-        # Special-case for PyArrow FixedShapeTensor if it is supported by the version of PyArrow
-        # TODO: Push this down into self._series.to_arrow()?
-        if dtype.is_fixed_shape_tensor() and pyarrow_supports_fixed_shape_tensor():
-            pyarrow_dtype = dtype.to_arrow_dtype()
-            arrow_series = self._series.to_arrow()
-            return pa.ExtensionArray.from_storage(pyarrow_dtype, arrow_series.storage)
-        else:
-            return self._series.to_arrow()
-
-    def to_pylist(self) -> list[Any]:
-        """Convert this Series to a Python list."""
-        return self._series.to_pylist()
+        Args:
+            maps_as_pydicts: If None (default), Map values are converted to association lists
+                (`list[tuple[key, value]]`) preserving order and duplicates.
+                If `"lossy"` or `"strict"`, Map values are converted to Python dicts.
+                `"lossy"` keeps the last value for duplicate keys and warns.
+                `"strict"` raises on duplicate keys.
+        """
+        return self._series.to_pylist(maps_as_pydicts)
 
     def filter(self, mask: Series) -> Series:
         if not isinstance(mask, Series):
@@ -600,9 +594,9 @@ class Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.mean())
 
-    def stddev(self) -> Series:
+    def stddev(self, ddof: int = 1) -> Series:
         assert self._series is not None
-        return Series._from_pyseries(self._series.stddev())
+        return Series._from_pyseries(self._series.stddev(ddof))
 
     def sum(self) -> Series:
         assert self._series is not None
@@ -930,11 +924,35 @@ class SeriesStringNamespace(SeriesNamespace):
     def rstrip(self) -> Series:
         return self._eval_expressions("rstrip")
 
+    def strip(self) -> Series:
+        return self._eval_expressions("strip")
+
     def reverse(self) -> Series:
         return self._eval_expressions("reverse")
 
     def capitalize(self) -> Series:
         return self._eval_expressions("capitalize")
+
+    def to_camel_case(self) -> Series:
+        return self._eval_expressions("to_camel_case")
+
+    def to_upper_camel_case(self) -> Series:
+        return self._eval_expressions("to_upper_camel_case")
+
+    def to_snake_case(self) -> Series:
+        return self._eval_expressions("to_snake_case")
+
+    def to_upper_snake_case(self) -> Series:
+        return self._eval_expressions("to_upper_snake_case")
+
+    def to_kebab_case(self) -> Series:
+        return self._eval_expressions("to_kebab_case")
+
+    def to_upper_kebab_case(self) -> Series:
+        return self._eval_expressions("to_upper_kebab_case")
+
+    def to_title_case(self) -> Series:
+        return self._eval_expressions("to_title_case")
 
     def left(self, nchars: Series) -> Series:
         return self._eval_expressions("left", nchars)
@@ -1112,6 +1130,9 @@ class SeriesListNamespace(SeriesNamespace):
 
     def sort(self, desc: bool | Series = False, nulls_first: bool | Series | None = None) -> Series:
         return self._eval_expressions("list_sort", desc=desc, nulls_first=nulls_first)
+
+    def contains(self, item: Series) -> Series:
+        return self._eval_expressions("list_contains", item=item)
 
 
 class SeriesMapNamespace(SeriesNamespace):

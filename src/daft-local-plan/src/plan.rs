@@ -8,7 +8,6 @@ use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use common_py_serde::{PyObjectWrapper, deserialize_py_object, serialize_py_object};
 use common_resource_request::ResourceRequest;
-use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use common_treenode::{DynTreeNode, TreeNode, TreeNodeRecursion};
 use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
@@ -24,12 +23,36 @@ use daft_logical_plan::{
     partitioning::RepartitionSpec,
     stats::{PlanStats, StatsState},
 };
+use daft_scan::{Pushdowns, SourceConfig};
 use serde::{Deserialize, Serialize};
+
+use crate::SourceId;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct LocalNodeContext {
     pub origin_node_id: Option<usize>,
+    pub phase: Option<String>,
     pub additional: Option<HashMap<String, String>>,
+}
+
+impl LocalNodeContext {
+    pub fn new(origin_node_id: Option<usize>) -> Self {
+        Self {
+            origin_node_id,
+            phase: None,
+            additional: None,
+        }
+    }
+
+    pub fn with_phase(mut self, phase: impl Into<String>) -> Self {
+        self.phase = Some(phase.into());
+        self
+    }
+
+    pub fn with_additional(mut self, additional: HashMap<String, String>) -> Self {
+        self.additional = Some(additional);
+        self
+    }
 }
 
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
@@ -39,7 +62,6 @@ pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
     PhysicalScan(PhysicalScan),
     GlobScan(GlobScan),
-    EmptyScan(EmptyScan),
     PlaceholderScan(PlaceholderScan),
     Project(Project),
     UDFProject(UDFProject),
@@ -85,6 +107,8 @@ pub enum LocalPhysicalPlan {
     // Flotilla Only Nodes
     Repartition(Repartition),
     IntoPartitions(IntoPartitions),
+    FlightShuffleWrite(FlightShuffleWrite),
+    FlightShuffleRead(FlightShuffleRead),
     SortMergeJoin(SortMergeJoin),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
@@ -115,7 +139,6 @@ impl LocalPhysicalPlan {
             | Self::PhysicalScan(PhysicalScan { stats_state, .. })
             | Self::GlobScan(GlobScan { stats_state, .. })
             | Self::PlaceholderScan(PlaceholderScan { stats_state, .. })
-            | Self::EmptyScan(EmptyScan { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::UDFProject(UDFProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
@@ -139,6 +162,8 @@ impl LocalPhysicalPlan {
             | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::Repartition(Repartition { stats_state, .. })
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
+            | Self::FlightShuffleWrite(FlightShuffleWrite { stats_state, .. })
+            | Self::FlightShuffleRead(FlightShuffleRead { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -164,7 +189,6 @@ impl LocalPhysicalPlan {
             | Self::PhysicalScan(PhysicalScan { context, .. })
             | Self::GlobScan(GlobScan { context, .. })
             | Self::PlaceholderScan(PlaceholderScan { context, .. })
-            | Self::EmptyScan(EmptyScan { context, .. })
             | Self::Project(Project { context, .. })
             | Self::UDFProject(UDFProject { context, .. })
             | Self::Filter(Filter { context, .. })
@@ -188,6 +212,8 @@ impl LocalPhysicalPlan {
             | Self::CommitWrite(CommitWrite { context, .. })
             | Self::Repartition(Repartition { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
+            | Self::FlightShuffleWrite(FlightShuffleWrite { context, .. })
+            | Self::FlightShuffleRead(FlightShuffleRead { context, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { context, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { context, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -204,28 +230,17 @@ impl LocalPhysicalPlan {
         }
     }
 
-    pub fn in_memory_scan(
-        in_memory_info: InMemoryInfo,
-        stats_state: StatsState,
-        context: LocalNodeContext,
-    ) -> LocalPhysicalPlanRef {
-        Self::InMemoryScan(InMemoryScan {
-            info: in_memory_info,
-            stats_state,
-            context,
-        })
-        .arced()
-    }
-
     pub fn physical_scan(
-        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
+        source_id: SourceId,
+        source_config: Option<Arc<SourceConfig>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::PhysicalScan(PhysicalScan {
-            scan_tasks,
+            source_id,
+            source_config,
             pushdowns,
             schema,
             stats_state,
@@ -234,8 +249,25 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub fn in_memory_scan(
+        source_id: SourceId,
+        schema: SchemaRef,
+        size_bytes: usize,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::InMemoryScan(InMemoryScan {
+            source_id,
+            schema,
+            size_bytes,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
     pub fn glob_scan(
-        glob_paths: Arc<Vec<String>>,
+        source_id: SourceId,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         stats_state: StatsState,
@@ -243,7 +275,7 @@ impl LocalPhysicalPlan {
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::GlobScan(GlobScan {
-            glob_paths,
+            source_id,
             pushdowns,
             schema,
             stats_state,
@@ -261,15 +293,6 @@ impl LocalPhysicalPlan {
         Self::PlaceholderScan(PlaceholderScan {
             schema,
             stats_state,
-            context,
-        })
-        .arced()
-    }
-
-    pub fn empty_scan(schema: SchemaRef, context: LocalNodeContext) -> LocalPhysicalPlanRef {
-        Self::EmptyScan(EmptyScan {
-            schema,
-            stats_state: StatsState::Materialized(PlanStats::empty().into()),
             context,
         })
         .arced()
@@ -333,6 +356,7 @@ impl LocalPhysicalPlan {
     pub fn explode(
         input: LocalPhysicalPlanRef,
         to_explode: Vec<BoundExpr>,
+        ignore_empty_and_null: bool,
         index_column: Option<String>,
         schema: SchemaRef,
         stats_state: StatsState,
@@ -341,6 +365,7 @@ impl LocalPhysicalPlan {
         Self::Explode(Explode {
             input,
             to_explode,
+            ignore_empty_and_null,
             index_column,
             schema,
             stats_state,
@@ -388,12 +413,15 @@ impl LocalPhysicalPlan {
     }
 
     #[cfg(feature = "python")]
+    #[allow(clippy::too_many_arguments)]
     pub fn distributed_actor_pool_project(
         input: LocalPhysicalPlanRef,
         actor_objects: Vec<PyObjectWrapper>,
         batch_size: Option<usize>,
         memory_request: u64,
         schema: SchemaRef,
+        passthrough_columns: Vec<BoundExpr>,
+        required_columns: Vec<usize>,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
@@ -403,6 +431,8 @@ impl LocalPhysicalPlan {
             batch_size,
             memory_request,
             schema,
+            passthrough_columns,
+            required_columns,
             stats_state,
             context,
         })
@@ -946,12 +976,52 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn flight_shuffle_write(
+        input: LocalPhysicalPlanRef,
+        partition_by: Option<Vec<ExprRef>>,
+        num_partitions: usize,
+        schema: SchemaRef,
+        shuffle_id: u64,
+        shuffle_dirs: Vec<String>,
+        compression: Option<String>,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::FlightShuffleWrite(FlightShuffleWrite {
+            input,
+            num_partitions,
+            partition_by,
+            schema,
+            shuffle_id,
+            shuffle_dirs,
+            compression,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
+    pub fn flight_shuffle_read(
+        source_id: SourceId,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::FlightShuffleRead(FlightShuffleRead {
+            source_id,
+            schema,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
             | Self::GlobScan(GlobScan { schema, .. })
             | Self::PlaceholderScan(PlaceholderScan { schema, .. })
-            | Self::EmptyScan(EmptyScan { schema, .. })
             | Self::Filter(Filter { schema, .. })
             | Self::IntoBatches(IntoBatches { schema, .. })
             | Self::Limit(Limit { schema, .. })
@@ -979,7 +1049,7 @@ impl LocalPhysicalPlan {
             | Self::WindowOrderByOnly(WindowOrderByOnly { schema, .. }) => schema,
             Self::PhysicalWrite(PhysicalWrite { file_schema, .. }) => file_schema,
             Self::CommitWrite(CommitWrite { file_schema, .. }) => file_schema,
-            Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
+            Self::InMemoryScan(InMemoryScan { schema, .. }) => schema,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
@@ -990,6 +1060,8 @@ impl LocalPhysicalPlan {
             Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
             Self::Repartition(Repartition { schema, .. }) => schema,
             Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
+            Self::FlightShuffleWrite(FlightShuffleWrite { schema, .. }) => schema,
+            Self::FlightShuffleRead(FlightShuffleRead { schema, .. }) => schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
             Self::VLLMProject(VLLMProject { schema, .. }) => schema,
@@ -1030,7 +1102,6 @@ impl LocalPhysicalPlan {
             Self::PhysicalScan(_)
             | Self::GlobScan(_)
             | Self::PlaceholderScan(_)
-            | Self::EmptyScan(_)
             | Self::InMemoryScan(_) => vec![],
             Self::Filter(Filter { input, .. })
             | Self::Limit(Limit { input, .. })
@@ -1072,6 +1143,8 @@ impl LocalPhysicalPlan {
             }
             Self::Repartition(Repartition { input, .. }) => vec![input.clone()],
             Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
+            Self::FlightShuffleWrite(FlightShuffleWrite { input, .. }) => vec![input.clone()],
+            Self::FlightShuffleRead(FlightShuffleRead { .. }) => vec![], // No input children
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
             Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
             Self::VLLMProject(VLLMProject { input, .. }) => vec![input.clone()],
@@ -1080,13 +1153,15 @@ impl LocalPhysicalPlan {
 
     pub fn with_new_children(&self, children: &[Arc<Self>]) -> Arc<Self> {
         match children {
+            [] => panic!(
+                "LocalPhysicalPlan::with_new_children: Empty children not handled for FlightShuffleRead"
+            ),
             [new_child] => match self {
-                Self::PhysicalScan(_)
-                | Self::PlaceholderScan(_)
-                | Self::EmptyScan(_)
-                | Self::InMemoryScan(_) => panic!(
-                    "LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"
-                ),
+                Self::PhysicalScan(_) | Self::PlaceholderScan(_) | Self::InMemoryScan(_) => {
+                    panic!(
+                        "LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, and InMemoryScan do not have children"
+                    )
+                }
                 Self::Filter(Filter {
                     predicate, context, ..
                 }) => Self::filter(
@@ -1239,6 +1314,7 @@ impl LocalPhysicalPlan {
                 ),
                 Self::Explode(Explode {
                     to_explode,
+                    ignore_empty_and_null,
                     index_column,
                     schema,
                     context,
@@ -1246,6 +1322,7 @@ impl LocalPhysicalPlan {
                 }) => Self::explode(
                     new_child.clone(),
                     to_explode.clone(),
+                    *ignore_empty_and_null,
                     index_column.clone(),
                     schema.clone(),
                     StatsState::NotMaterialized,
@@ -1481,6 +1558,8 @@ impl LocalPhysicalPlan {
                     batch_size,
                     memory_request,
                     context,
+                    passthrough_columns,
+                    required_columns,
                     ..
                 }) => Self::distributed_actor_pool_project(
                     new_child.clone(),
@@ -1488,6 +1567,8 @@ impl LocalPhysicalPlan {
                     *batch_size,
                     *memory_request,
                     schema.clone(),
+                    passthrough_columns.clone(),
+                    required_columns.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
@@ -1531,6 +1612,29 @@ impl LocalPhysicalPlan {
                     schema.clone(),
                     stats_state.clone(),
                     context.clone(),
+                ),
+                Self::FlightShuffleWrite(FlightShuffleWrite {
+                    num_partitions,
+                    partition_by,
+                    schema,
+                    shuffle_id,
+                    shuffle_dirs,
+                    compression,
+                    context,
+                    ..
+                }) => Self::flight_shuffle_write(
+                    new_child.clone(),
+                    partition_by.clone(),
+                    *num_partitions,
+                    schema.clone(),
+                    *shuffle_id,
+                    shuffle_dirs.clone(),
+                    compression.clone(),
+                    StatsState::NotMaterialized,
+                    context.clone(),
+                ),
+                Self::FlightShuffleRead(_) => panic!(
+                    "LocalPhysicalPlan::with_new_children: FlightShuffleRead should have 0 children"
                 ),
                 Self::HashJoin(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: HashJoin should have 2 children")
@@ -1656,18 +1760,21 @@ impl DynTreeNode for LocalPhysicalPlan {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
-pub struct InMemoryScan {
-    pub info: InMemoryInfo,
+pub struct PhysicalScan {
+    pub source_id: SourceId,
+    pub source_config: Option<Arc<SourceConfig>>,
+    pub pushdowns: Pushdowns,
+    pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
-pub struct PhysicalScan {
-    pub scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
-    pub pushdowns: Pushdowns,
+pub struct InMemoryScan {
+    pub source_id: SourceId,
     pub schema: SchemaRef,
+    pub size_bytes: usize,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
@@ -1675,25 +1782,17 @@ pub struct PhysicalScan {
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct GlobScan {
-    pub glob_paths: Arc<Vec<String>>,
+    pub source_id: SourceId,
     pub pushdowns: Pushdowns,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
-    pub io_config: Option<common_io_config::IOConfig>,
+    pub io_config: Option<IOConfig>,
     pub context: LocalNodeContext,
 }
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PlaceholderScan {
-    pub schema: SchemaRef,
-    pub stats_state: StatsState,
-    pub context: LocalNodeContext,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(debug_assertions, derive(Debug))]
-pub struct EmptyScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
@@ -1730,6 +1829,8 @@ pub struct DistributedActorPoolProject {
     pub batch_size: Option<usize>,
     pub memory_request: u64,
     pub schema: SchemaRef,
+    pub passthrough_columns: Vec<BoundExpr>,
+    pub required_columns: Vec<usize>,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
@@ -1771,6 +1872,7 @@ pub struct Limit {
 pub struct Explode {
     pub input: LocalPhysicalPlanRef,
     pub to_explode: Vec<BoundExpr>,
+    pub ignore_empty_and_null: bool,
     pub index_column: Option<String>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
@@ -2085,4 +2187,32 @@ pub struct VLLMProject {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FlightShuffleWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub num_partitions: usize,
+    pub partition_by: Option<Vec<ExprRef>>,
+    pub schema: SchemaRef,
+    pub shuffle_id: u64,
+    pub shuffle_dirs: Vec<String>,
+    pub compression: Option<String>,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FlightShuffleRead {
+    pub source_id: SourceId,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlightShuffleReadInput {
+    pub shuffle_id: u64,
+    pub partition_idx: usize,
+    pub server_cache_mapping: HashMap<String, Vec<u32>>,
 }

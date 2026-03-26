@@ -238,12 +238,14 @@ mod tests {
             setup_dispatcher_test_context(&[(worker_id.clone(), 4)]);
 
         let num_tasks = 100;
-        let mut rng = StdRng::from_entropy();
+        let mut rng = StdRng::from_os_rng();
         let (scheduled_tasks, submitted_tasks) = (0..num_tasks)
             .map(|i| {
                 let task = MockTaskBuilder::new(create_mock_partition_ref(100 + i, 1024 * (i + 1)))
                     .with_task_id(i as u32)
-                    .with_sleep_duration(std::time::Duration::from_millis(rng.gen_range(50..100)))
+                    .with_sleep_duration(std::time::Duration::from_millis(
+                        rng.random_range(50..100),
+                    ))
                     .build();
                 let submittable_task = SubmittableTask::task_only(task);
                 let (schedulable_task, submitted_task) =
@@ -518,12 +520,11 @@ mod tests {
             .iter()
             .map(|task| task.task_context().task_id)
             .collect();
-        failed_task_ids.sort();
+        failed_task_ids.sort_unstable();
         assert_eq!(failed_task_ids, vec![1, 2, 3]);
 
         // Verify worker state: Workers 1 and 3 should be dead, worker 2 should be alive
         let worker_snapshots = worker_manager.worker_snapshots()?;
-        println!("worker_snapshots: {:?}", worker_snapshots);
         assert_eq!(
             worker_snapshots.len(),
             1,

@@ -74,10 +74,26 @@ pub fn calculate_mean(sum: f64, count: u64) -> Option<f64> {
     }
 }
 
-pub fn calculate_stddev(stats: Stats, values: impl Iterator<Item = f64>) -> Option<f64> {
-    stats.mean.map(|mean| {
+pub fn calculate_stddev(
+    stats: Stats,
+    values: impl Iterator<Item = f64>,
+    ddof: usize,
+) -> Option<f64> {
+    calculate_variance(stats, values, ddof).map(f64::sqrt)
+}
+
+pub fn calculate_variance(
+    stats: Stats,
+    values: impl Iterator<Item = f64>,
+    ddof: usize,
+) -> Option<f64> {
+    stats.mean.and_then(|mean| {
+        let n = stats.count as usize;
+        if n <= ddof {
+            return None; // Not enough data points for the requested ddof
+        }
         let sum_of_squares = values.map(|value| (value - mean).powi(2)).sum::<f64>();
-        (sum_of_squares / stats.count).sqrt()
+        Some(sum_of_squares / (n - ddof) as f64)
     })
 }
 

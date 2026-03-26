@@ -60,6 +60,8 @@ if TYPE_CHECKING:
 __all__ = [
     "Catalog",
     "Identifier",
+    "NotFoundError",
+    "Properties",
     "Schema",
     "Table",
 ]
@@ -250,7 +252,7 @@ class Catalog(ABC):
             Catalog: a new Catalog instance backed by the Gravitino catalog.
 
         Examples:
-            >>> from daft.gravitino import GravitinoClient
+            >>> from daft.catalog.__gravitino import GravitinoClient
             >>> gravitino_client = GravitinoClient(...)
             >>> catalog = Catalog.from_gravitino(gravitino_client)
 

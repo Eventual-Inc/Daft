@@ -16,7 +16,11 @@ impl ScalarUDF for ListMin {
     fn name(&self) -> &'static str {
         "list_min"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         ensure!(inputs.len() == 1, ValueError: "Expected 1 input arg, got {}", inputs.len());
         let input = inputs.required((0, "input"))?;
         input.list_min()

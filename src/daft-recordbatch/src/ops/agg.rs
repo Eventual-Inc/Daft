@@ -58,7 +58,7 @@ impl RecordBatch {
 
         // Table with the aggregated (deduplicated) group keys.
         let groupkeys_table = {
-            let indices_as_arr = UInt64Array::from(("", groupkey_indices));
+            let indices_as_arr = UInt64Array::from_vec("", groupkey_indices);
             groupby_table.take(&indices_as_arr)?
         };
 
@@ -75,7 +75,12 @@ impl RecordBatch {
             .collect::<DaftResult<Vec<_>>>()?;
 
         // Combine the groupkey columns and the aggregation result columns.
-        Self::from_nonempty_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
+        let groupkeys_series: Vec<Series> = groupkeys_table
+            .columns
+            .iter()
+            .map(|c| c.as_materialized_series().clone())
+            .collect();
+        Self::from_nonempty_columns([groupkeys_series.as_slice(), &grouped_cols].concat())
     }
 
     #[cfg(feature = "python")]
@@ -118,7 +123,7 @@ impl RecordBatch {
                 } else if groupvals_indices.len() == 1 {
                     let grouped_col = udf.call_udf(evaluated_inputs.as_slice())?;
                     let groupkeys_table = {
-                        let indices_as_arr = UInt64Array::from(("", groupkey_indices));
+                        let indices_as_arr = UInt64Array::from_vec("", groupkey_indices);
                         groupby_table.take(&indices_as_arr)?
                     };
                     (groupkeys_table, grouped_col)
@@ -130,7 +135,7 @@ impl RecordBatch {
                             let evaluated_grouped_col = {
                                 // Convert group indices to Series
                                 let indices_as_arr =
-                                    UInt64Array::from(("", groupval_indices.clone()));
+                                    UInt64Array::from_vec("", groupval_indices.clone());
 
                                 // Take each input Series by the group indices
                                 let input_groups = evaluated_inputs
@@ -145,7 +150,7 @@ impl RecordBatch {
                             let broadcasted_groupkeys_table = {
                                 // Convert groupkey indices to Series
                                 let groupkey_indices_as_arr =
-                                    UInt64Array::from(("", vec![*groupkey_index]));
+                                    UInt64Array::from_slice("", &[*groupkey_index]);
 
                                 // Take the group keys by the groupkey indices
                                 let groupkeys_table =
@@ -156,10 +161,12 @@ impl RecordBatch {
                                 let broadcasted_groupkeys = groupkeys_table
                                     .columns
                                     .iter()
-                                    .map(|c| c.broadcast(evaluated_grouped_col.len()))
+                                    .map(|c| {
+                                        c.broadcast(evaluated_grouped_col.len())
+                                            .map(|c| c.take_materialized_series())
+                                    })
                                     .collect::<DaftResult<Vec<_>>>()?;
 
-                                // Combine the broadcasted group keys into a Table
                                 Self::from_nonempty_columns(broadcasted_groupkeys)?
                             };
 
@@ -204,7 +211,7 @@ impl RecordBatch {
                     };
 
                     let groupkeys_table = {
-                        let indices_as_arr = UInt64Array::from(("", groupkey_indices));
+                        let indices_as_arr = UInt64Array::from_vec("", groupkey_indices);
                         groupby_table.take(&indices_as_arr)?
                     };
                     (groupkeys_table, grouped_col)
@@ -214,7 +221,8 @@ impl RecordBatch {
                         .zip(groupvals_indices.iter())
                         .map(|(groupkey_index, groupval_indices)| {
                             // Convert group indices to Series
-                            let indices_as_arr = UInt64Array::from(("", groupval_indices.clone()));
+                            let indices_as_arr =
+                                UInt64Array::from_vec("", groupval_indices.clone());
 
                             // Take each input Series by the group indices
                             let input_groups = evaluated_inputs
@@ -234,7 +242,7 @@ impl RecordBatch {
                             let broadcasted_groupkeys_table = {
                                 // Convert groupkey indices to Series
                                 let groupkey_indices_as_arr =
-                                    UInt64Array::from(("", vec![*groupkey_index]));
+                                    UInt64Array::from_slice("", &[*groupkey_index]);
 
                                 // Take the group keys by the groupkey indices
                                 let groupkeys_table =
@@ -244,10 +252,12 @@ impl RecordBatch {
                                 let broadcasted_groupkeys = groupkeys_table
                                     .columns
                                     .iter()
-                                    .map(|c| c.broadcast(evaluated_grouped_col.len()))
+                                    .map(|c| {
+                                        c.broadcast(evaluated_grouped_col.len())
+                                            .map(|c| c.take_materialized_series())
+                                    })
                                     .collect::<DaftResult<Vec<_>>>()?;
 
-                                // Combine the broadcasted group keys into a Table
                                 Self::from_nonempty_columns(broadcasted_groupkeys)?
                             };
 
@@ -268,7 +278,12 @@ impl RecordBatch {
 
         // Broadcast either the keys or the grouped_cols, depending on which is unit-length
         let final_len = grouped_col.len();
-        let final_columns = [&groupkeys_table.columns[..], &[grouped_col]].concat();
+        let groupkeys_series: Vec<Series> = groupkeys_table
+            .columns
+            .iter()
+            .map(|c| c.as_materialized_series().clone())
+            .collect();
+        let final_columns = [groupkeys_series.as_slice(), &[grouped_col]].concat();
         let final_schema = Schema::new(final_columns.iter().map(|s| s.field().clone()));
         Self::new_with_broadcast(final_schema, final_columns, final_len)
     }
@@ -282,7 +297,7 @@ impl RecordBatch {
 
         let dedup_table = self.eval_expression_list(columns)?;
         let unique_indices = dedup_table.make_unique_idxs()?;
-        let indices_as_arr = UInt64Array::from(("", unique_indices));
+        let indices_as_arr = UInt64Array::from_vec("", unique_indices);
         self.take(&indices_as_arr)
     }
 }

@@ -1,5 +1,6 @@
 use std::{
     any::Any,
+    collections::HashMap,
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -46,7 +47,7 @@ use crate::{
 ///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx"))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct S3Config {
     pub config: crate::S3Config,
 }
@@ -69,7 +70,7 @@ pub struct S3Config {
 ///     >>> io_config = IOConfig(s3=S3Config(credentials_provider=get_credentials))
 ///     >>> daft.read_parquet("s3://some-path", io_config=io_config)
 #[derive(Clone, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct S3Credentials {
     pub credentials: crate::S3Credentials,
 }
@@ -91,12 +92,13 @@ pub struct S3Credentials {
 ///     anonymous (bool, optional): Whether or not to use "anonymous mode", which will access Azure without any credentials
 ///     endpoint_url (str, optional): Custom URL to the Azure endpoint, e.g. ``https://my-account-name.blob.core.windows.net``. Overrides `use_fabric_endpoint` if set
 ///     use_ssl (bool, optional): Whether or not to use SSL, which require accessing Azure over HTTPS rather than HTTP, defaults to True
+///     max_connections (int, optional): Maximum number of connections to Azure at any time per io thread, defaults to 8
 ///
 /// Examples:
 ///     >>> io_config = IOConfig(azure=AzureConfig(storage_account="dafttestdata", access_key="xxx"))
 ///     >>> daft.read_parquet("az://some-path", io_config=io_config)
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct AzureConfig {
     pub config: crate::AzureConfig,
 }
@@ -120,7 +122,7 @@ pub struct AzureConfig {
 ///     >>> io_config = IOConfig(gcs=GCSConfig(anonymous=True))
 ///     >>> daft.read_parquet("gs://some-path", io_config=io_config)
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct GCSConfig {
     pub config: crate::GCSConfig,
 }
@@ -136,7 +138,7 @@ pub struct GCSConfig {
 ///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx", num_tries=10), azure=AzureConfig(anonymous=True), gcs=GCSConfig(...))
 ///     >>> daft.read_parquet(["s3://some-path", "az://some-other-path", "gs://path3"], io_config=io_config)
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct IOConfig {
     pub config: config::IOConfig,
 }
@@ -155,39 +157,63 @@ pub struct IOConfig {
 ///     >>> io_config = IOConfig(http=HTTPConfig(user_agent="my_application/0.0.1", bearer_token="xxx"))
 ///     >>> daft.read_parquet("http://some-path", io_config=io_config)
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct HTTPConfig {
     pub config: crate::HTTPConfig,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct UnityConfig {
     pub config: crate::UnityConfig,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct GravitinoConfig {
     pub config: crate::GravitinoConfig,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct HuggingFaceConfig {
     pub config: crate::HuggingFaceConfig,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
-#[pyclass(module = "daft.daft")]
+#[pyclass(module = "daft.daft", from_py_object)]
 pub struct TosConfig {
     pub config: crate::TosConfig,
+}
+
+/// Create configurations to be used when accessing Tencent Cloud COS (Cloud Object Storage).
+///
+/// Args:
+///     region (str, optional): Region name, e.g., "ap-guangzhou", "ap-beijing"
+///     endpoint (str, optional): Custom endpoint URL, e.g., "https://cos.ap-guangzhou.myqcloud.com"
+///     secret_id (str, optional): Tencent Cloud SecretId
+///     secret_key (str, optional): Tencent Cloud SecretKey
+///     security_token (str, optional): Security token for temporary credentials (STS)
+///     anonymous (bool, optional): Whether to use anonymous access, defaults to False
+///     max_retries (int, optional): Maximum number of retries, defaults to 3
+///     retry_timeout_ms (int, optional): Retry timeout in milliseconds, defaults to 30000
+///     connect_timeout_ms (int, optional): Connection timeout in milliseconds, defaults to 10000
+///     read_timeout_ms (int, optional): Read timeout in milliseconds, defaults to 30000
+///     max_concurrent_requests (int, optional): Maximum concurrent requests, defaults to 50
+///     max_connections (int, optional): Maximum connections per IO thread, defaults to 50
+///
+/// Examples:
+///     >>> io_config = IOConfig(cos=CosConfig(region="ap-guangzhou", secret_id="xxx", secret_key="xxx"))
+///     >>> daft.read_parquet("cos://bucket/path", io_config=io_config)
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[pyclass(module = "daft.daft", from_py_object)]
+pub struct CosConfig {
+    pub config: crate::CosConfig,
 }
 
 #[pymethods]
 impl IOConfig {
     #[new]
-    #[must_use]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         s3=None,
@@ -198,7 +224,10 @@ impl IOConfig {
         hf=None,
         disable_suffix_range=None,
         tos=None,
-        gravitino=None
+        gravitino=None,
+        cos=None,
+        opendal_backends=None,
+        protocol_aliases=None
     ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -211,24 +240,38 @@ impl IOConfig {
         disable_suffix_range: Option<bool>,
         tos: Option<TosConfig>,
         gravitino: Option<GravitinoConfig>,
-    ) -> Self {
-        Self {
-            config: config::IOConfig {
-                s3: s3.unwrap_or_default().config,
-                azure: azure.unwrap_or_default().config,
-                gcs: gcs.unwrap_or_default().config,
-                http: http.unwrap_or_default().config,
-                unity: unity.unwrap_or_default().config,
-                hf: hf.unwrap_or_default().config,
-                disable_suffix_range: disable_suffix_range.unwrap_or_default(),
-                tos: tos.unwrap_or_default().config,
-                gravitino: gravitino.unwrap_or_default().config,
-            },
-        }
+        cos: Option<CosConfig>,
+        opendal_backends: Option<HashMap<String, HashMap<String, String>>>,
+        protocol_aliases: Option<HashMap<String, String>>,
+    ) -> PyResult<Self> {
+        let cfg = config::IOConfig {
+            s3: s3.unwrap_or_default().config,
+            azure: azure.unwrap_or_default().config,
+            gcs: gcs.unwrap_or_default().config,
+            http: http.unwrap_or_default().config,
+            unity: unity.unwrap_or_default().config,
+            hf: hf.unwrap_or_default().config,
+            disable_suffix_range: disable_suffix_range.unwrap_or_default(),
+            tos: tos.unwrap_or_default().config,
+            gravitino: gravitino.unwrap_or_default().config,
+            cos: cos.unwrap_or_default().config,
+            opendal_backends: opendal_backends
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, v)| (k, v.into_iter().collect()))
+                .collect(),
+            protocol_aliases: protocol_aliases
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, v)| (k.to_lowercase(), v.to_lowercase()))
+                .collect(),
+        };
+        cfg.validate_protocol_aliases()
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        Ok(Self { config: cfg })
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[must_use]
     #[pyo3(signature = (
         s3=None,
         azure=None,
@@ -238,7 +281,10 @@ impl IOConfig {
         hf=None,
         disable_suffix_range=None,
         tos=None,
-        gravitino=None
+        gravitino=None,
+        cos=None,
+        opendal_backends=None,
+        protocol_aliases=None
     ))]
     #[allow(clippy::too_many_arguments)]
     pub fn replace(
@@ -252,37 +298,57 @@ impl IOConfig {
         disable_suffix_range: Option<bool>,
         tos: Option<TosConfig>,
         gravitino: Option<GravitinoConfig>,
-    ) -> Self {
-        Self {
-            config: config::IOConfig {
-                s3: s3
-                    .map(|s3| s3.config)
-                    .unwrap_or_else(|| self.config.s3.clone()),
-                azure: azure
-                    .map(|azure| azure.config)
-                    .unwrap_or_else(|| self.config.azure.clone()),
-                gcs: gcs
-                    .map(|gcs| gcs.config)
-                    .unwrap_or_else(|| self.config.gcs.clone()),
-                http: http
-                    .map(|http| http.config)
-                    .unwrap_or_else(|| self.config.http.clone()),
-                unity: unity
-                    .map(|unity| unity.config)
-                    .unwrap_or_else(|| self.config.unity.clone()),
-                hf: hf
-                    .map(|hf| hf.config)
-                    .unwrap_or_else(|| self.config.hf.clone()),
-                disable_suffix_range: disable_suffix_range
-                    .unwrap_or(self.config.disable_suffix_range),
-                tos: tos
-                    .map(|tos| tos.config)
-                    .unwrap_or_else(|| self.config.tos.clone()),
-                gravitino: gravitino
-                    .map(|gravitino| gravitino.config)
-                    .unwrap_or_else(|| self.config.gravitino.clone()),
-            },
-        }
+        cos: Option<CosConfig>,
+        opendal_backends: Option<HashMap<String, HashMap<String, String>>>,
+        protocol_aliases: Option<HashMap<String, String>>,
+    ) -> PyResult<Self> {
+        let cfg = config::IOConfig {
+            s3: s3
+                .map(|s3| s3.config)
+                .unwrap_or_else(|| self.config.s3.clone()),
+            azure: azure
+                .map(|azure| azure.config)
+                .unwrap_or_else(|| self.config.azure.clone()),
+            gcs: gcs
+                .map(|gcs| gcs.config)
+                .unwrap_or_else(|| self.config.gcs.clone()),
+            http: http
+                .map(|http| http.config)
+                .unwrap_or_else(|| self.config.http.clone()),
+            unity: unity
+                .map(|unity| unity.config)
+                .unwrap_or_else(|| self.config.unity.clone()),
+            hf: hf
+                .map(|hf| hf.config)
+                .unwrap_or_else(|| self.config.hf.clone()),
+            disable_suffix_range: disable_suffix_range.unwrap_or(self.config.disable_suffix_range),
+            tos: tos
+                .map(|tos| tos.config)
+                .unwrap_or_else(|| self.config.tos.clone()),
+            gravitino: gravitino
+                .map(|gravitino| gravitino.config)
+                .unwrap_or_else(|| self.config.gravitino.clone()),
+            cos: cos
+                .map(|cos| cos.config)
+                .unwrap_or_else(|| self.config.cos.clone()),
+            opendal_backends: opendal_backends
+                .map(|b| {
+                    b.into_iter()
+                        .map(|(k, v)| (k, v.into_iter().collect()))
+                        .collect()
+                })
+                .unwrap_or_else(|| self.config.opendal_backends.clone()),
+            protocol_aliases: protocol_aliases
+                .map(|a| {
+                    a.into_iter()
+                        .map(|(k, v)| (k.to_lowercase(), v.to_lowercase()))
+                        .collect()
+                })
+                .unwrap_or_else(|| self.config.protocol_aliases.clone()),
+        };
+        cfg.validate_protocol_aliases()
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        Ok(Self { config: cfg })
     }
 
     pub fn __repr__(&self) -> PyResult<String> {
@@ -346,6 +412,41 @@ impl IOConfig {
     pub fn tos(&self) -> PyResult<TosConfig> {
         Ok(TosConfig {
             config: self.config.tos.clone(),
+        })
+    }
+
+    /// Additional backends configured via OpenDAL
+    #[getter]
+    pub fn opendal_backends(&self) -> PyResult<HashMap<String, HashMap<String, String>>> {
+        Ok(self
+            .config
+            .opendal_backends
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    v.iter().map(|(k2, v2)| (k2.clone(), v2.clone())).collect(),
+                )
+            })
+            .collect())
+    }
+
+    /// Protocol aliases mapping custom scheme names to existing schemes
+    #[getter]
+    pub fn protocol_aliases(&self) -> PyResult<HashMap<String, String>> {
+        Ok(self
+            .config
+            .protocol_aliases
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect())
+    }
+
+    /// Configuration to be used when accessing COS URLs
+    #[getter]
+    pub fn cos(&self) -> PyResult<CosConfig> {
+        Ok(CosConfig {
+            config: self.config.cos.clone(),
         })
     }
 
@@ -850,7 +951,8 @@ impl AzureConfig {
         use_fabric_endpoint=None,
         anonymous=None,
         endpoint_url=None,
-        use_ssl=None
+        use_ssl=None,
+        max_connections=None
     ))]
     pub fn new(
         storage_account: Option<String>,
@@ -864,6 +966,7 @@ impl AzureConfig {
         anonymous: Option<bool>,
         endpoint_url: Option<String>,
         use_ssl: Option<bool>,
+        max_connections: Option<u32>,
     ) -> Self {
         let def = crate::AzureConfig::default();
         Self {
@@ -881,6 +984,8 @@ impl AzureConfig {
                 anonymous: anonymous.unwrap_or(def.anonymous),
                 endpoint_url: endpoint_url.or(def.endpoint_url),
                 use_ssl: use_ssl.unwrap_or(def.use_ssl),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(def.max_connections_per_io_thread),
             },
         }
     }
@@ -898,7 +1003,8 @@ impl AzureConfig {
         use_fabric_endpoint=None,
         anonymous=None,
         endpoint_url=None,
-        use_ssl=None
+        use_ssl=None,
+        max_connections=None
     ))]
     pub fn replace(
         &self,
@@ -913,6 +1019,7 @@ impl AzureConfig {
         anonymous: Option<bool>,
         endpoint_url: Option<String>,
         use_ssl: Option<bool>,
+        max_connections: Option<u32>,
     ) -> Self {
         Self {
             config: crate::AzureConfig {
@@ -931,6 +1038,8 @@ impl AzureConfig {
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
                 endpoint_url: endpoint_url.or_else(|| self.config.endpoint_url.clone()),
                 use_ssl: use_ssl.unwrap_or(self.config.use_ssl),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(self.config.max_connections_per_io_thread),
             },
         }
     }
@@ -1010,6 +1119,12 @@ impl AzureConfig {
     #[getter]
     pub fn use_ssl(&self) -> PyResult<bool> {
         Ok(self.config.use_ssl)
+    }
+
+    /// Maximum number of connections per IO thread for Azure
+    #[getter]
+    pub fn max_connections(&self) -> PyResult<u32> {
+        Ok(self.config.max_connections_per_io_thread)
     }
 }
 
@@ -1633,6 +1748,232 @@ impl TosConfig {
     }
 }
 
+#[pymethods]
+impl CosConfig {
+    #[allow(clippy::too_many_arguments)]
+    #[new]
+    #[pyo3(signature = (
+        region=None,
+        endpoint=None,
+        secret_id=None,
+        secret_key=None,
+        security_token=None,
+        anonymous=None,
+        max_retries=None,
+        retry_timeout_ms=None,
+        connect_timeout_ms=None,
+        read_timeout_ms=None,
+        max_concurrent_requests=None,
+        max_connections=None,
+    ))]
+    pub fn new(
+        region: Option<String>,
+        endpoint: Option<String>,
+        secret_id: Option<String>,
+        secret_key: Option<String>,
+        security_token: Option<String>,
+        anonymous: Option<bool>,
+        max_retries: Option<u32>,
+        retry_timeout_ms: Option<u64>,
+        connect_timeout_ms: Option<u64>,
+        read_timeout_ms: Option<u64>,
+        max_concurrent_requests: Option<u32>,
+        max_connections: Option<u32>,
+    ) -> PyResult<Self> {
+        let def = crate::CosConfig::default();
+        Ok(Self {
+            config: crate::CosConfig {
+                region: region.or(def.region),
+                endpoint: endpoint.or(def.endpoint),
+                secret_id: secret_id.or(def.secret_id),
+                secret_key: secret_key.map(std::convert::Into::into).or(def.secret_key),
+                security_token: security_token
+                    .map(std::convert::Into::into)
+                    .or(def.security_token),
+                anonymous: anonymous.unwrap_or(def.anonymous),
+                max_retries: max_retries.unwrap_or(def.max_retries),
+                retry_timeout_ms: retry_timeout_ms.unwrap_or(def.retry_timeout_ms),
+                connect_timeout_ms: connect_timeout_ms.unwrap_or(def.connect_timeout_ms),
+                read_timeout_ms: read_timeout_ms.unwrap_or(def.read_timeout_ms),
+                max_concurrent_requests: max_concurrent_requests
+                    .unwrap_or(def.max_concurrent_requests),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(def.max_connections_per_io_thread),
+            },
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        region=None,
+        endpoint=None,
+        secret_id=None,
+        secret_key=None,
+        security_token=None,
+        anonymous=None,
+        max_retries=None,
+        retry_timeout_ms=None,
+        connect_timeout_ms=None,
+        read_timeout_ms=None,
+        max_concurrent_requests=None,
+        max_connections=None,
+    ))]
+    pub fn replace(
+        &self,
+        region: Option<String>,
+        endpoint: Option<String>,
+        secret_id: Option<String>,
+        secret_key: Option<String>,
+        security_token: Option<String>,
+        anonymous: Option<bool>,
+        max_retries: Option<u32>,
+        retry_timeout_ms: Option<u64>,
+        connect_timeout_ms: Option<u64>,
+        read_timeout_ms: Option<u64>,
+        max_concurrent_requests: Option<u32>,
+        max_connections: Option<u32>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            config: crate::CosConfig {
+                region: region.or_else(|| self.config.region.clone()),
+                endpoint: endpoint.or_else(|| self.config.endpoint.clone()),
+                secret_id: secret_id.or_else(|| self.config.secret_id.clone()),
+                secret_key: secret_key
+                    .map(std::convert::Into::into)
+                    .or_else(|| self.config.secret_key.clone()),
+                security_token: security_token
+                    .map(std::convert::Into::into)
+                    .or_else(|| self.config.security_token.clone()),
+                anonymous: anonymous.unwrap_or(self.config.anonymous),
+                max_retries: max_retries.unwrap_or(self.config.max_retries),
+                retry_timeout_ms: retry_timeout_ms.unwrap_or(self.config.retry_timeout_ms),
+                connect_timeout_ms: connect_timeout_ms.unwrap_or(self.config.connect_timeout_ms),
+                read_timeout_ms: read_timeout_ms.unwrap_or(self.config.read_timeout_ms),
+                max_concurrent_requests: max_concurrent_requests
+                    .unwrap_or(self.config.max_concurrent_requests),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(self.config.max_connections_per_io_thread),
+            },
+        })
+    }
+
+    #[staticmethod]
+    pub fn from_env(_py: Python) -> PyResult<Self> {
+        let endpoint = std::env::var("COS_ENDPOINT").ok();
+        let region = std::env::var("COS_REGION")
+            .or_else(|_| std::env::var("TENCENTCLOUD_REGION"))
+            .ok();
+        let secret_id = std::env::var("COS_SECRET_ID")
+            .or_else(|_| std::env::var("TENCENTCLOUD_SECRET_ID"))
+            .ok();
+        let secret_key = std::env::var("COS_SECRET_KEY")
+            .or_else(|_| std::env::var("TENCENTCLOUD_SECRET_KEY"))
+            .ok();
+        let security_token = std::env::var("COS_SECURITY_TOKEN")
+            .or_else(|_| std::env::var("TENCENTCLOUD_SECURITY_TOKEN"))
+            .ok();
+        let anonymous = secret_id.is_none();
+
+        Ok(Self {
+            config: crate::CosConfig {
+                endpoint,
+                region,
+                secret_id,
+                secret_key: secret_key.map(|s| s.into()),
+                security_token: security_token.map(|s| s.into()),
+                anonymous,
+                ..Default::default()
+            },
+        })
+    }
+
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.config))
+    }
+
+    /// Region name (e.g., "ap-guangzhou", "ap-beijing")
+    #[getter]
+    pub fn region(&self) -> PyResult<Option<String>> {
+        Ok(self.config.region.clone())
+    }
+
+    /// Custom endpoint URL
+    #[getter]
+    pub fn endpoint(&self) -> PyResult<Option<String>> {
+        Ok(self.config.endpoint.clone())
+    }
+
+    /// Tencent Cloud SecretId
+    #[getter]
+    pub fn secret_id(&self) -> PyResult<Option<String>> {
+        Ok(self.config.secret_id.clone())
+    }
+
+    /// Tencent Cloud SecretKey
+    #[getter]
+    pub fn secret_key(&self) -> PyResult<Option<String>> {
+        Ok(self
+            .config
+            .secret_key
+            .as_ref()
+            .map(super::ObfuscatedString::as_string)
+            .cloned())
+    }
+
+    /// Security token for temporary credentials (STS)
+    #[getter]
+    pub fn security_token(&self) -> PyResult<Option<String>> {
+        Ok(self
+            .config
+            .security_token
+            .as_ref()
+            .map(super::ObfuscatedString::as_string)
+            .cloned())
+    }
+
+    /// Whether to use anonymous access
+    #[getter]
+    pub fn anonymous(&self) -> PyResult<bool> {
+        Ok(self.config.anonymous)
+    }
+
+    /// Maximum number of retries
+    #[getter]
+    pub fn max_retries(&self) -> PyResult<u32> {
+        Ok(self.config.max_retries)
+    }
+
+    /// Retry timeout in milliseconds
+    #[getter]
+    pub fn retry_timeout_ms(&self) -> PyResult<u64> {
+        Ok(self.config.retry_timeout_ms)
+    }
+
+    /// Connection timeout in milliseconds
+    #[getter]
+    pub fn connect_timeout_ms(&self) -> PyResult<u64> {
+        Ok(self.config.connect_timeout_ms)
+    }
+
+    /// Read timeout in milliseconds
+    #[getter]
+    pub fn read_timeout_ms(&self) -> PyResult<u64> {
+        Ok(self.config.read_timeout_ms)
+    }
+
+    /// Maximum concurrent requests
+    #[getter]
+    pub fn max_concurrent_requests(&self) -> PyResult<u32> {
+        Ok(self.config.max_concurrent_requests)
+    }
+
+    /// Maximum connections per IO thread
+    #[getter]
+    pub fn max_connections(&self) -> PyResult<u32> {
+        Ok(self.config.max_connections_per_io_thread)
+    }
+}
+
 impl_bincode_py_state_serialization!(IOConfig);
 impl_bincode_py_state_serialization!(S3Config);
 impl_bincode_py_state_serialization!(S3Credentials);
@@ -1643,6 +1984,7 @@ impl_bincode_py_state_serialization!(UnityConfig);
 impl_bincode_py_state_serialization!(HuggingFaceConfig);
 impl_bincode_py_state_serialization!(TosConfig);
 impl_bincode_py_state_serialization!(GravitinoConfig);
+impl_bincode_py_state_serialization!(CosConfig);
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
@@ -1654,6 +1996,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<UnityConfig>()?;
     parent.add_class::<HuggingFaceConfig>()?;
     parent.add_class::<GravitinoConfig>()?;
+    parent.add_class::<CosConfig>()?;
     parent.add_class::<IOConfig>()?;
     Ok(())
 }

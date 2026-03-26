@@ -3,12 +3,12 @@ use pyo3::prelude::*;
 pub mod pylib {
     use std::{collections::BTreeMap, sync::Arc};
 
-    use common_arrow_ffi::{field_to_py, to_py_array};
+    use common_arrow_ffi::ToPyArrow;
     use daft_core::python::{PySchema, PySeries, PyTimeUnit};
     use daft_dsl::python::PyExpr;
     use daft_io::{IOStatsContext, get_io_client, python::IOConfig};
     use daft_recordbatch::python::PyRecordBatch;
-    use pyo3::{Bound, PyResult, Python, pyfunction, types::PyModule};
+    use pyo3::{PyResult, Python, pyfunction};
 
     use crate::read::{
         ArrowChunk, ParquetSchemaInferenceOptions, ParquetSchemaInferenceOptionsBuilder,
@@ -75,26 +75,30 @@ pub mod pylib {
     );
     fn convert_pyarrow_parquet_read_result_into_py(
         py: Python,
-        schema: daft_arrow::datatypes::SchemaRef,
+        schema: arrow::datatypes::SchemaRef,
         all_arrays: Vec<ArrowChunk>,
         num_rows: usize,
-        pyarrow: &Bound<PyModule>,
     ) -> PyResult<PyArrowParquetType> {
         let converted_arrays = all_arrays
             .into_iter()
             .map(|v| {
                 v.into_iter()
-                    .map(|a| to_py_array(py, a, pyarrow).map(pyo3::Bound::unbind))
+                    .map(|a| Ok(a.to_data().to_pyarrow(py)?.unbind()))
                     .collect::<PyResult<Vec<_>>>()
             })
             .collect::<PyResult<Vec<_>>>()?;
         let fields = schema
             .fields
             .iter()
-            .map(|f| field_to_py(py, f, pyarrow))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|f| Ok(f.to_pyarrow(py)?.unbind()))
+            .collect::<PyResult<Vec<_>>>()?;
         let metadata = &schema.metadata;
-        Ok((fields, metadata.clone(), converted_arrays, num_rows))
+        Ok((
+            fields,
+            metadata.clone().into_iter().collect(),
+            converted_arrays,
+            num_rows,
+        ))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -147,8 +151,7 @@ pub mod pylib {
                 file_timeout_ms,
             )
         })?;
-        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-        convert_pyarrow_parquet_read_result_into_py(py, schema, all_arrays, num_rows, &pyarrow)
+        convert_pyarrow_parquet_read_result_into_py(py, schema, all_arrays, num_rows)
     }
     #[allow(clippy::too_many_arguments)]
     #[pyfunction(signature = (
@@ -255,11 +258,10 @@ pub mod pylib {
                 schema_infer_options,
             )
         })?;
-        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         parquet_read_results
             .into_iter()
             .map(|(s, all_arrays, num_rows)| {
-                convert_pyarrow_parquet_read_result_into_py(py, s, all_arrays, num_rows, &pyarrow)
+                convert_pyarrow_parquet_read_result_into_py(py, s, all_arrays, num_rows)
             })
             .collect::<PyResult<Vec<_>>>()
     }
@@ -333,6 +335,7 @@ pub mod pylib {
         })
     }
 }
+
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(pylib::read_parquet, parent)?)?;
     parent.add_function(wrap_pyfunction!(pylib::read_parquet_into_pyarrow, parent)?)?;

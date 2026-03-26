@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    ops::ControlFlow,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -12,7 +13,6 @@ use common_metrics::{
     snapshot::StatSnapshotImpl,
 };
 use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
-use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
@@ -24,26 +24,26 @@ use crate::{
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
-    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
+    pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 
 pub enum StreamingSinkOutput {
-    NeedMoreInput(Option<Arc<MicroPartition>>),
+    NeedMoreInput(Option<MicroPartition>),
     #[allow(dead_code)]
     HasMoreOutput {
-        input: Arc<MicroPartition>,
-        output: Option<Arc<MicroPartition>>,
+        input: MicroPartition,
+        output: Option<MicroPartition>,
     },
-    Finished(Option<Arc<MicroPartition>>),
+    Finished(Option<MicroPartition>),
 }
 
 pub enum StreamingSinkFinalizeOutput<Op: StreamingSink> {
     HasMoreOutput {
         states: Vec<Op::State>,
-        output: Option<Arc<MicroPartition>>,
+        output: Option<MicroPartition>,
     },
-    Finished(Option<Arc<MicroPartition>>),
+    Finished(Option<MicroPartition>),
 }
 
 pub(crate) type StreamingSinkExecuteResult<Op> =
@@ -52,15 +52,17 @@ pub(crate) type StreamingSinkFinalizeResult<Op> =
     OperatorOutput<DaftResult<StreamingSinkFinalizeOutput<Op>>>;
 pub(crate) trait StreamingSink: Send + Sync {
     type State: Send + Sync + Unpin;
+    type Stats: RuntimeStats = DefaultRuntimeStats;
     type BatchingStrategy: BatchingStrategy + 'static;
 
     /// Execute the StreamingSink operator on the morsel of input data,
-    /// received from the child with the given index,
+    /// received from the child,
     /// with the given state.
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self>;
 
@@ -84,11 +86,6 @@ pub(crate) trait StreamingSink: Send + Sync {
     /// Create a new worker-local state for this StreamingSink.
     fn make_state(&self) -> DaftResult<Self::State>;
 
-    /// Create a new RuntimeStats for this StreamingSink.
-    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::new(id))
-    }
-
     /// The maximum number of concurrent workers that can be spawned for this sink.
     /// Each worker will has its own StreamingSinkState.
     fn max_concurrency(&self) -> usize {
@@ -103,8 +100,8 @@ pub(crate) trait StreamingSink: Send + Sync {
 
 pub struct StreamingSinkNode<Op: StreamingSink> {
     op: Arc<Op>,
-    children: Vec<Box<dyn PipelineNode>>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    child: Box<dyn PipelineNode>,
+    runtime_stats: Arc<Op::Stats>,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
     morsel_size_requirement: MorselSizeRequirement,
@@ -124,35 +121,29 @@ struct ExecutionContext<Op: StreamingSink> {
     task_spawner: ExecutionTaskSpawner,
     task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
     state_pool: HashMap<StateId, Op::State>,
-    output_sender: Sender<Arc<MicroPartition>>,
+    output_sender: Sender<MicroPartition>,
     batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<Op::Stats>,
     stats_manager: RuntimeStatsManagerHandle,
 }
 
 impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
     pub(crate) fn new(
         op: Arc<Op>,
-        children: Vec<Box<dyn PipelineNode>>,
+        child: Box<dyn PipelineNode>,
         plan_stats: StatsState,
-        ctx: &RuntimeContext,
-        output_schema: SchemaRef,
+        ctx: &BuilderContext,
         context: &LocalNodeContext,
     ) -> Self {
         let name: Arc<str> = op.name().into();
-        let node_info = ctx.next_node_info(
-            name,
-            op.op_type(),
-            NodeCategory::StreamingSink,
-            output_schema,
-            context,
-        );
-        let runtime_stats = op.make_runtime_stats(node_info.id);
+        let node_info =
+            ctx.next_node_info(name, op.op_type(), NodeCategory::StreamingSink, context);
+        let runtime_stats = Arc::new(Op::Stats::new(&ctx.meter, &node_info));
 
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
             op,
-            children,
+            child,
             runtime_stats,
             plan_stats,
             node_info: Arc::new(node_info),
@@ -168,15 +159,18 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
 
     fn spawn_execution_task(
         ctx: &mut ExecutionContext<Op>,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Op::State,
         state_id: StateId,
     ) {
         let op = ctx.op.clone();
         let task_spawner = ctx.task_spawner.clone();
+        let runtime_stats = ctx.runtime_stats.clone();
         ctx.task_set.spawn(async move {
             let now = Instant::now();
-            let (new_state, result) = op.execute(input, state, &task_spawner).await??;
+            let (new_state, result) = op
+                .execute(input, state, runtime_stats, &task_spawner)
+                .await??;
             let elapsed = now.elapsed();
 
             Ok(ExecutionTaskResult {
@@ -214,10 +208,12 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
     async fn handle_task_completion(
         result: ExecutionTaskResult<Op::State>,
         ctx: &mut ExecutionContext<Op>,
-    ) -> DaftResult<bool> {
+    ) -> DaftResult<ControlFlow<()>> {
         match result.output {
             StreamingSinkOutput::NeedMoreInput(mp) => {
                 // Record execution stats
+                ctx.runtime_stats
+                    .add_duration_us(result.elapsed.as_micros() as u64);
                 ctx.batch_manager.record_execution_stats(
                     ctx.runtime_stats.as_ref(),
                     mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
@@ -228,13 +224,12 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 if let Some(mp) = mp {
                     ctx.runtime_stats.add_rows_out(mp.len() as u64);
                     if ctx.output_sender.send(mp).await.is_err() {
-                        return Ok(false);
+                        return Ok(ControlFlow::Break(()));
                     }
                 }
 
                 // Return state to pool
                 ctx.state_pool.insert(result.state_id, result.state);
-                Ok(true)
             }
             StreamingSinkOutput::HasMoreOutput { input, output } => {
                 // Record execution stats
@@ -248,13 +243,12 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 if let Some(mp) = output {
                     ctx.runtime_stats.add_rows_out(mp.len() as u64);
                     if ctx.output_sender.send(mp).await.is_err() {
-                        return Ok(false);
+                        return Ok(ControlFlow::Break(()));
                     }
                 }
 
                 // Spawn another execution with same input and state (don't return state)
                 Self::spawn_execution_task(ctx, input, result.state, result.state_id);
-                Ok(true)
             }
             StreamingSinkOutput::Finished(mp) => {
                 // Record execution stats
@@ -273,16 +267,17 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 // Return state to pool for finalization
                 ctx.state_pool.insert(result.state_id, result.state);
                 // Short-circuit: Finished means we should exit early (like a closed sender)
-                Ok(false)
+                return Ok(ControlFlow::Break(()));
             }
         }
+        Ok(ControlFlow::Continue(()))
     }
 
     async fn process_input(
         node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
+        mut receiver: Receiver<MicroPartition>,
         ctx: &mut ExecutionContext<Op>,
-    ) -> DaftResult<bool> {
+    ) -> DaftResult<ControlFlow<()>> {
         let (lower, upper) = ctx.batch_manager.initial_requirements().values();
         let mut buffer = RowBasedBuffer::new(lower, upper);
         let mut input_closed = false;
@@ -296,14 +291,12 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 // Branch 1: Join completed task (only if tasks exist)
                 Some(join_result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
                     let result = join_result??;
-                    if !Self::handle_task_completion(result, ctx).await? {
-                        return Ok(false);
+                    if Self::handle_task_completion(result, ctx).await?.is_break() {
+                        return Ok(ControlFlow::Break(()));
                     }
 
                     // After completing a task, update bounds and try to spawn more tasks
-                    let new_requirements = ctx.batch_manager.calculate_batch_size();
-                    let (lower, upper) = new_requirements.values();
-                    buffer.update_bounds(lower, upper);
+                    buffer.update_bounds(ctx.batch_manager.calculate_batch_size());
 
                     Self::spawn_ready_batches(&mut buffer, ctx)?;
                 }
@@ -349,15 +342,18 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
 
             // Wait for final task to complete
             while let Some(join_result) = ctx.task_set.join_next().await {
-                if !Self::handle_task_completion(join_result??, ctx).await? {
-                    return Ok(false);
+                if Self::handle_task_completion(join_result??, ctx)
+                    .await?
+                    .is_break()
+                {
+                    return Ok(ControlFlow::Break(()));
                 }
             }
         }
 
         debug_assert_eq!(ctx.task_set.len(), 0, "TaskSet should be empty after loop");
 
-        Ok(true)
+        Ok(ControlFlow::Continue(()))
     }
 }
 
@@ -400,33 +396,33 @@ impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
             .map(|child| child.repr_json())
             .collect();
 
-        serde_json::json!({
+        let mut json = serde_json::json!({
             "id": self.node_id(),
             "category": "StreamingSink",
             "type": self.op.op_type().to_string(),
             "name": self.name(),
             "children": children,
-        })
+        });
+
+        if let StatsState::Materialized(stats) = &self.plan_stats {
+            json["approx_stats"] = serde_json::json!(stats);
+        }
+
+        json
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        self.children()
-            .iter()
-            .map(|v| v.as_tree_display())
-            .collect()
+        vec![self.child.as_tree_display()]
     }
 }
 
 impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
     fn children(&self) -> Vec<&dyn PipelineNode> {
-        self.children
-            .iter()
-            .map(std::convert::AsRef::as_ref)
-            .collect()
+        vec![self.child.as_ref()]
     }
 
     fn boxed_children(&self) -> Vec<&Box<dyn PipelineNode>> {
-        self.children.iter().collect()
+        vec![&self.child]
     }
 
     fn name(&self) -> Arc<str> {
@@ -444,24 +440,21 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
             downstream_requirement,
         );
         self.morsel_size_requirement = combined_morsel_size_requirement;
-        for child in &mut self.children {
-            child.propagate_morsel_size_requirement(
-                combined_morsel_size_requirement,
-                _default_morsel_size,
-            );
-        }
+        self.child.propagate_morsel_size_requirement(
+            combined_morsel_size_requirement,
+            _default_morsel_size,
+        );
     }
 
     fn start(
-        &self,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let mut child_result_receivers = Vec::with_capacity(self.children.len());
-        for child in &self.children {
-            let child_result_receiver = child.start(maintain_order, runtime_handle)?;
-            child_result_receivers.push(child_result_receiver);
-        }
+    ) -> crate::Result<Receiver<MicroPartition>> {
+        let node_id = self.node_id();
+        let name = self.name();
+
+        let child_result_receiver = self.child.start(maintain_order, runtime_handle)?;
 
         let (destination_sender, destination_receiver) = create_channel(1);
 
@@ -480,13 +473,11 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let task_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("StreamingSink::Execute"),
         );
         let finalize_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("StreamingSink::Finalize"),
         );
 
@@ -500,22 +491,22 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
             runtime_stats: self.runtime_stats.clone(),
             stats_manager: runtime_handle.stats_manager(),
         };
-        let node_id = self.node_id();
         runtime_handle.spawn(
             async move {
-                for receiver in child_result_receivers {
-                    if !Self::process_input(node_id, receiver, &mut ctx).await? {
-                        break;
-                    }
-                }
+                let _ = Self::process_input(node_id, child_result_receiver, &mut ctx).await?;
 
                 let mut finished_states: Vec<_> =
                     ctx.state_pool.drain().map(|(_, state)| state).collect();
                 loop {
+                    let now = Instant::now();
                     let finalized_result = ctx
                         .op
                         .finalize(finished_states, &finalize_spawner)
                         .await??;
+                    let elapsed = now.elapsed();
+                    ctx.runtime_stats
+                        .add_duration_us(elapsed.as_micros() as u64);
+
                     match finalized_result {
                         StreamingSinkFinalizeOutput::HasMoreOutput { states, output } => {
                             if let Some(mp) = output {
@@ -537,7 +528,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                 ctx.stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            &self.name(),
+            &name,
         );
         Ok(destination_receiver)
     }
@@ -546,9 +537,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
     }
     fn node_id(&self) -> usize {
         self.node_info.id
-    }
-    fn plan_id(&self) -> Arc<str> {
-        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()

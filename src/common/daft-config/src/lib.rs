@@ -123,6 +123,7 @@ pub struct DaftExecutionConfig {
     pub csv_inflation_factor: f64,
     pub json_target_filesize: usize,
     pub json_inflation_factor: f64,
+    pub text_inflation_factor: f64,
     pub shuffle_aggregation_default_partitions: usize,
     pub partial_aggregation_threshold: usize,
     pub high_cardinality_aggregation_threshold: f64,
@@ -130,6 +131,7 @@ pub struct DaftExecutionConfig {
     pub default_morsel_size: NonZeroUsize,
     pub shuffle_algorithm: String,
     pub pre_shuffle_merge_threshold: usize,
+    pub pre_shuffle_merge_partition_threshold: usize,
     pub scantask_max_parallel: usize,
     pub native_parquet_writer: bool,
     pub min_cpu_per_task: f64,
@@ -137,6 +139,8 @@ pub struct DaftExecutionConfig {
     pub maintain_order: bool,
     pub enable_dynamic_batching: bool,
     pub dynamic_batching_strategy: String,
+    pub flight_shuffle_dirs: Vec<String>,
+    pub enable_multi_glob_path_tasks: bool,
 }
 
 #[cfg(not(debug_assertions))]
@@ -165,6 +169,7 @@ impl Default for DaftExecutionConfig {
             csv_inflation_factor: 0.5,
             json_target_filesize: 512 * 1024 * 1024, // 512MB
             json_inflation_factor: 0.25,
+            text_inflation_factor: 1.0,
             shuffle_aggregation_default_partitions: 200,
             partial_aggregation_threshold: 10000,
             high_cardinality_aggregation_threshold: 0.8,
@@ -172,6 +177,7 @@ impl Default for DaftExecutionConfig {
             default_morsel_size: NonZeroUsize::new(128 * 1024).unwrap(),
             shuffle_algorithm: "auto".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
+            pre_shuffle_merge_partition_threshold: 200,
             scantask_max_parallel: 8,
             native_parquet_writer: true,
             min_cpu_per_task: 0.5,
@@ -179,6 +185,8 @@ impl Default for DaftExecutionConfig {
             maintain_order: true,
             enable_dynamic_batching: false,
             dynamic_batching_strategy: "auto".to_string(),
+            flight_shuffle_dirs: vec!["/tmp".to_string()],
+            enable_multi_glob_path_tasks: false,
         }
     }
 }
@@ -192,6 +200,7 @@ impl DaftExecutionConfig {
     const ENV_PARQUET_INFLATION_FACTOR: &'static str = "DAFT_PARQUET_INFLATION_FACTOR";
     const ENV_CSV_INFLATION_FACTOR: &'static str = "DAFT_CSV_INFLATION_FACTOR";
     const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
+    const ENV_TEXT_INFLATION_FACTOR: &'static str = "DAFT_TEXT_INFLATION_FACTOR";
     const ENV_DAFT_MAINTAIN_ORDER: &'static str = "DAFT_MAINTAIN_ORDER";
 
     #[must_use]
@@ -252,6 +261,12 @@ impl DaftExecutionConfig {
             cfg.json_inflation_factor = val;
         }
 
+        if let Some(val) =
+            parse_number_from_env(Self::ENV_TEXT_INFLATION_FACTOR, cfg.text_inflation_factor)
+        {
+            cfg.text_inflation_factor = val;
+        }
+
         cfg
     }
 }
@@ -283,7 +298,7 @@ mod tests {
         // ENV_DAFT_DEV_DISABLE_JOIN_REORDERING
         {
             let cfg = DaftPlanningConfig::from_env();
-            assert_eq!(cfg.disable_join_reordering, false);
+            assert!(!cfg.disable_join_reordering);
 
             unsafe {
                 std::env::set_var(
@@ -292,7 +307,7 @@ mod tests {
                 );
             }
             let cfg = DaftPlanningConfig::from_env();
-            assert_eq!(cfg.disable_join_reordering, true);
+            assert!(cfg.disable_join_reordering);
 
             unsafe {
                 std::env::set_var(
@@ -301,7 +316,7 @@ mod tests {
                 );
             }
             let cfg = DaftPlanningConfig::from_env();
-            assert_eq!(cfg.disable_join_reordering, false);
+            assert!(!cfg.disable_join_reordering);
 
             unsafe {
                 std::env::remove_var(DaftPlanningConfig::ENV_DAFT_DEV_DISABLE_JOIN_REORDERING);
@@ -311,7 +326,7 @@ mod tests {
         // ENV_DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN
         {
             let cfg = DaftPlanningConfig::from_env();
-            assert_eq!(cfg.enable_strict_filter_pushdown, false);
+            assert!(!cfg.enable_strict_filter_pushdown);
 
             unsafe {
                 std::env::set_var(
@@ -320,7 +335,7 @@ mod tests {
                 );
             }
             let cfg = DaftPlanningConfig::from_env();
-            assert_eq!(cfg.enable_strict_filter_pushdown, false);
+            assert!(!cfg.enable_strict_filter_pushdown);
 
             unsafe {
                 std::env::set_var(
@@ -329,7 +344,7 @@ mod tests {
                 );
             }
             let cfg = DaftPlanningConfig::from_env();
-            assert_eq!(cfg.enable_strict_filter_pushdown, true);
+            assert!(cfg.enable_strict_filter_pushdown);
 
             unsafe {
                 std::env::remove_var(
@@ -403,19 +418,19 @@ mod tests {
         // ENV_DAFT_NATIVE_PARQUET_WRITER
         {
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.native_parquet_writer, true);
+            assert!(cfg.native_parquet_writer);
 
             unsafe {
                 std::env::set_var(DaftExecutionConfig::ENV_DAFT_NATIVE_PARQUET_WRITER, "false");
             }
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.native_parquet_writer, false);
+            assert!(!cfg.native_parquet_writer);
 
             unsafe {
                 std::env::set_var(DaftExecutionConfig::ENV_DAFT_NATIVE_PARQUET_WRITER, "1");
             }
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.native_parquet_writer, true);
+            assert!(cfg.native_parquet_writer);
 
             unsafe {
                 std::env::remove_var(DaftExecutionConfig::ENV_DAFT_NATIVE_PARQUET_WRITER);
@@ -472,19 +487,19 @@ mod tests {
         // ENV_DAFT_MAINTAIN_ORDER
         {
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.maintain_order, true);
+            assert!(cfg.maintain_order);
 
             unsafe {
                 std::env::set_var(DaftExecutionConfig::ENV_DAFT_MAINTAIN_ORDER, "false");
             }
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.maintain_order, false);
+            assert!(!cfg.maintain_order);
 
             unsafe {
                 std::env::set_var(DaftExecutionConfig::ENV_DAFT_MAINTAIN_ORDER, "1");
             }
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.maintain_order, true);
+            assert!(cfg.maintain_order);
 
             unsafe {
                 std::env::remove_var(DaftExecutionConfig::ENV_DAFT_MAINTAIN_ORDER);

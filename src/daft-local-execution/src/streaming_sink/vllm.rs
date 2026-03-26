@@ -40,7 +40,7 @@ pub(crate) struct VLLMSink {
 
 pub(crate) struct VLLMState {
     executor: VLLMExecutor,
-    buffer: Vec<Arc<MicroPartition>>,
+    buffer: Vec<MicroPartition>,
     buffer_size: usize,
     finished_submitting: bool,
 }
@@ -194,21 +194,17 @@ impl VLLMSink {
         }
     }
 
-    fn poll_tasks(&self, state: &VLLMState) -> DaftResult<Option<Arc<MicroPartition>>> {
+    fn poll_tasks(&self, state: &VLLMState) -> DaftResult<Option<MicroPartition>> {
         Ok(state.executor.poll()?.map(|(outputs, rows)| {
             let output_series =
-                Utf8Array::from((self.output_column_name.as_ref(), outputs.as_slice()))
+                Utf8Array::from_slice(self.output_column_name.as_ref(), outputs.as_slice())
                     .into_series();
 
             let rb = rows
                 .append_column(self.schema.clone(), output_series)
                 .unwrap();
 
-            Arc::new(MicroPartition::new_loaded(
-                self.schema.clone(),
-                Arc::new(vec![rb]),
-                None,
-            ))
+            MicroPartition::new_loaded(self.schema.clone(), Arc::new(vec![rb]), None)
         }))
     }
 
@@ -230,9 +226,8 @@ impl VLLMSink {
             return Ok(());
         }
 
-        let concatted = MicroPartition::concat(&state.buffer)?
-            .concat_or_get()?
-            .unwrap();
+        let buffer = std::mem::take(&mut state.buffer);
+        let concatted = MicroPartition::concat(buffer)?.concat_or_get()?.unwrap();
 
         let sorted = concatted.sort(std::slice::from_ref(&expr_input), &[false], &[false])?;
 
@@ -344,16 +339,17 @@ impl VLLMSink {
         let prompts = batch.eval_expression(&expr_input)?;
 
         // TODO: handle nulls
-        prompts
+        Ok(prompts
             .utf8()
-            .cloned()
             .map_err(|_| {
                 DaftError::type_error(format!(
                     "Expected input to `prompt` to be string, got {}",
                     prompts.data_type()
                 ))
             })?
-            .into_values()
+            .values()?
+            .map(str::to_string)
+            .collect())
     }
 }
 
@@ -363,8 +359,9 @@ impl StreamingSink for VLLMSink {
 
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self> {
         let this = self.clone();

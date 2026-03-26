@@ -20,7 +20,11 @@ impl ScalarUDF for ListMean {
     fn name(&self) -> &'static str {
         "list_mean"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         ensure!(inputs.len() == 1, ValueError: "Expected 1 input arg, got {}", inputs.len());
         let input = inputs.required((0, "input"))?;
         input.list_mean()
@@ -35,7 +39,7 @@ impl ScalarUDF for ListMean {
         let input = inputs.required((0, "input"))?;
         let inner_field = input.to_field(schema)?.to_exploded_field()?;
         Ok(Field::new(
-            inner_field.name.as_str(),
+            inner_field.name.as_ref(),
             try_mean_aggregation_supertype(&inner_field.dtype)?,
         ))
     }

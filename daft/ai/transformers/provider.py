@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import warnings
 from typing import TYPE_CHECKING, Any
 
 if sys.version_info < (3, 11):
@@ -91,13 +90,12 @@ class TransformersProvider(Provider):
             TransformersTextEmbedderDescriptor,
         )
 
-        if dimensions is not None:
-            warnings.warn(
-                f"embed_text dimensions was specified but provider {self.name} currently ignores this property: see https://github.com/Eventual-Inc/Daft/issues/5555"
-            )
-
         embed_options: EmbedTextOptions = options
-        return TransformersTextEmbedderDescriptor(model or self.DEFAULT_TEXT_EMBEDDER, embed_options=embed_options)
+        return TransformersTextEmbedderDescriptor(
+            model=model or self.DEFAULT_TEXT_EMBEDDER,
+            dimensions=dimensions,
+            embed_options=embed_options,
+        )
 
     def get_image_classifier(
         self,

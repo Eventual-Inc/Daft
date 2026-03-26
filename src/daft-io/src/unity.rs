@@ -28,7 +28,7 @@ fn invalid_unity_path(path: &str) -> crate::Error {
 }
 
 pub struct UnitySource {
-    /// A `daft.unity_catalog.UnityCatalog` instance
+    /// A `daft.catalog.__unity._client.UnityCatalogClient` instance
     unity_catalog: pyo3::Py<pyo3::PyAny>,
     /// map of volume name to io client and storage location
     cached_sources: tokio::sync::RwLock<HashMap<String, Arc<ClientAndLocation>>>,
@@ -52,8 +52,8 @@ impl UnitySource {
 
         let unity_catalog = Python::attach(|py| {
             Ok::<_, PyErr>(
-                py.import(intern!(py, "daft.unity_catalog"))?
-                    .getattr(intern!(py, "UnityCatalog"))?
+                py.import(intern!(py, "daft.catalog.__unity._client"))?
+                    .getattr(intern!(py, "UnityCatalogClient"))?
                     .call1((
                         endpoint,
                         config.token.as_ref().map(ObfuscatedString::as_string),

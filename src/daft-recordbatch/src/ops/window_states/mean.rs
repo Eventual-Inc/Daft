@@ -1,8 +1,9 @@
 use std::ops::{AddAssign, SubAssign};
 
+use arrow::array::ArrowPrimitiveType;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    datatypes::{DaftPrimitiveType, try_mean_aggregation_supertype},
+    datatypes::{DaftPrimitiveType, NumericNative, try_mean_aggregation_supertype},
     prelude::*,
 };
 use num_traits::Zero;
@@ -40,6 +41,7 @@ where
     T: DaftPrimitiveType,
     DataArray<T>: IntoSeries,
     T::Native: Zero + AddAssign + SubAssign + Copy,
+    <T::Native as NumericNative>::ARROWTYPE: ArrowPrimitiveType<Native = T::Native>,
 {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
         assert!(
@@ -84,6 +86,7 @@ pub fn create_for_type(
     let [source] = sources.columns() else {
         unreachable!("sum should only have one input")
     };
+    let source = source.as_materialized_series();
 
     let target_type = try_mean_aggregation_supertype(source.data_type())?;
     match target_type {

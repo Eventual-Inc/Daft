@@ -1,6 +1,11 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    sync::atomic::{AtomicBool, AtomicU16, Ordering},
+    time::Duration,
+};
 
-use pyo3::{PyErr, PyResult, exceptions, pyclass, pyfunction, pymethods};
+use pyo3::{
+    PyErr, PyResult, Python, exceptions, pyclass, pyfunction, pymethods, types::PyAnyMethods,
+};
 use tokio::{
     runtime::{Builder, Runtime},
     sync::oneshot,
@@ -9,6 +14,7 @@ use tokio::{
 use crate::{DEFAULT_SERVER_PORT, state::GLOBAL_DASHBOARD_STATE};
 
 static DASHBOARD_ENABLED: AtomicBool = AtomicBool::new(false);
+static RUNNING_PORT: AtomicU16 = AtomicU16::new(DEFAULT_SERVER_PORT);
 
 #[pyclass]
 pub struct ConnectionHandle {
@@ -20,9 +26,13 @@ pub struct ConnectionHandle {
 impl ConnectionHandle {
     pub fn shutdown(&mut self, noop_if_shutdown: bool) -> PyResult<()> {
         match (self.shutdown_signal.take(), noop_if_shutdown) {
-            (Some(shutdown_signal), _) => shutdown_signal.send(()).map_err(|()| {
-                PyErr::new::<exceptions::PyRuntimeError, _>("unable to send shutdown signal")
-            }),
+            (Some(shutdown_signal), _) => {
+                let res = shutdown_signal.send(()).map_err(|()| {
+                    PyErr::new::<exceptions::PyRuntimeError, _>("unable to send shutdown signal")
+                });
+                DASHBOARD_ENABLED.store(false, Ordering::SeqCst);
+                res
+            }
             (None, true) => Ok(()),
             (None, false) => Err(PyErr::new::<exceptions::PyRuntimeError, _>(
                 "shutdown signal already sent",
@@ -68,13 +78,13 @@ fn tokio_runtime() -> Runtime {
 }
 
 #[pyfunction]
-pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
+pub fn launch(noop_if_initialized: bool, port: Option<u16>) -> PyResult<ConnectionHandle> {
     // Check if server is already running
     if DASHBOARD_ENABLED.load(Ordering::SeqCst) {
         if noop_if_initialized {
             return Ok(ConnectionHandle {
                 shutdown_signal: None,
-                port: super::DEFAULT_SERVER_PORT,
+                port: RUNNING_PORT.load(Ordering::SeqCst),
             });
         } else {
             return Err(PyErr::new::<exceptions::PyRuntimeError, _>(
@@ -83,7 +93,14 @@ pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
         }
     }
 
-    let port = super::DEFAULT_SERVER_PORT;
+    let port = port.unwrap_or(super::DEFAULT_SERVER_PORT);
+    RUNNING_PORT.store(port, Ordering::SeqCst);
+
+    if std::env::var("DAFT_DASHBOARD_URL").is_err() {
+        unsafe {
+            std::env::set_var("DAFT_DASHBOARD_URL", format!("http://127.0.0.1:{}", port));
+        }
+    }
     let (send, recv) = oneshot::channel::<()>();
 
     let handle = ConnectionHandle {
@@ -105,5 +122,18 @@ pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
     });
 
     DASHBOARD_ENABLED.store(true, Ordering::SeqCst);
+    Python::attach(|py| {
+        if let Ok(daft) = py.import(pyo3::intern!(py, "daft.daft"))
+            && let Ok(func) = daft.getattr(pyo3::intern!(py, "refresh_dashboard_subscriber"))
+        {
+            for _ in 0..50 {
+                if func.call0().is_ok() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+        Ok::<(), PyErr>(())
+    })?;
     Ok(handle)
 }

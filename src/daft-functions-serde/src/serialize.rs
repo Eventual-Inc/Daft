@@ -30,7 +30,11 @@ impl ScalarUDF for Serialize {
         get_field(inputs, schema)
     }
 
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let SerializeArgs { input, format } = inputs.try_into()?;
         format.serializer()(input).map(|array| array.into_series())
     }
@@ -57,7 +61,11 @@ impl ScalarUDF for TrySerialize {
         get_field(inputs, schema)
     }
 
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let SerializeArgs { input, format } = inputs.try_into()?;
         format.try_serializer()(input).map(|array| array.into_series())
     }

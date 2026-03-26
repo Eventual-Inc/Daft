@@ -1,15 +1,20 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::{
+    Meter, StatSnapshot,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::StatSnapshotImpl as _,
+};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -17,8 +22,47 @@ use crate::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
+    statistics::{
+        RuntimeStats,
+        stats::{BaseCounters, RuntimeStatsRef},
+    },
     utils::channel::{Sender, create_channel},
 };
+
+const INITIAL_BATCH_PHASE: &str = "local";
+const REBATCH_PHASE: &str = "rebatch";
+
+pub struct IntoBatchesStats {
+    base: BaseCounters,
+}
+
+impl IntoBatchesStats {
+    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        Self {
+            base: BaseCounters::new(meter, context),
+        }
+    }
+}
+
+impl RuntimeStats for IntoBatchesStats {
+    fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot) {
+        self.base.add_duration_us(snapshot.duration_us());
+        if let StatSnapshot::Default(snapshot) = snapshot
+            && let Some(phase) = &node_info.node_phase
+        {
+            // Track input rows for the initial local batching pass and output rows for the rebatch pass.
+            if phase == INITIAL_BATCH_PHASE {
+                self.base.add_rows_in(snapshot.rows_in);
+            } else if phase == REBATCH_PHASE {
+                self.base.add_rows_out(snapshot.rows_out);
+            }
+        }
+    }
+
+    fn export_snapshot(&self) -> StatSnapshot {
+        self.base.export_default_snapshot()
+    }
+}
 
 pub(crate) struct IntoBatchesNode {
     config: PipelineNodeConfig,
@@ -36,7 +80,7 @@ pub(crate) struct IntoBatchesNode {
 const BATCH_SIZE_THRESHOLD: f64 = 0.8;
 
 impl IntoBatchesNode {
-    const NODE_NAME: NodeName = "IntoBatches";
+    const NODE_NAME: &'static str = "IntoBatches";
 
     pub fn new(
         node_id: NodeID,
@@ -49,12 +93,19 @@ impl IntoBatchesNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
+            NodeType::IntoBatches,
+            NodeCategory::StreamingSink,
         );
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            child.config().clustering_spec.clone(),
+            Arc::new(
+                UnknownClusteringConfig::new(
+                    child.config().clustering_spec.num_partitions().max(2),
+                )
+                .into(),
+            ),
         );
         Self {
             config,
@@ -62,10 +113,6 @@ impl IntoBatchesNode {
             batch_size,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn execute_into_batches(
@@ -105,12 +152,11 @@ impl IntoBatchesNode {
                         group_size,
                         true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
                         StatsState::NotMaterialized,
-                        LocalNodeContext {
-                            origin_node_id: Some(self.node_id() as usize),
-                            additional: None,
-                        },
+                        LocalNodeContext::new(Some(self.node_id() as usize))
+                            .with_phase(REBATCH_PHASE),
                     );
-                    let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+                    let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+                        .with_psets(self.node_id(), psets);
                     if result_tx.send(builder).await.is_err() {
                         break;
                     }
@@ -129,12 +175,10 @@ impl IntoBatchesNode {
                 current_group_size,
                 true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self.node_id() as usize)).with_phase(REBATCH_PHASE),
             );
-            let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+            let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+                .with_psets(self.node_id(), psets);
             let _ = result_tx.send(builder).await;
         }
         Ok(())
@@ -154,6 +198,10 @@ impl PipelineNodeImpl for IntoBatchesNode {
         vec![self.child.clone()]
     }
 
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(IntoBatchesStats::new(meter, self.context()))
+    }
+
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         vec![format!("IntoBatches: {}", self.batch_size)]
     }
@@ -171,10 +219,7 @@ impl PipelineNodeImpl for IntoBatchesNode {
                 batch_size,
                 false, // No need strict batch sizes for the child tasks, as we coalesce them later on.
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)).with_phase(INITIAL_BATCH_PHASE),
             )
         });
 

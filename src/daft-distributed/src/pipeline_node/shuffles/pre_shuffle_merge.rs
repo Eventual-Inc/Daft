@@ -1,12 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -26,7 +27,7 @@ pub(crate) struct PreShuffleMergeNode {
 }
 
 impl PreShuffleMergeNode {
-    const NODE_NAME: NodeName = "PreShuffleMerge";
+    const NODE_NAME: &'static str = "PreShuffleMerge";
 
     pub fn new(
         node_id: NodeID,
@@ -39,7 +40,9 @@ impl PreShuffleMergeNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
+            NodeType::Repartition,
+            NodeCategory::BlockingSink,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -53,10 +56,6 @@ impl PreShuffleMergeNode {
             pre_shuffle_merge_threshold,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
@@ -137,12 +136,13 @@ impl PreShuffleMergeNode {
                             self.config.schema.clone(),
                             self.node_id(),
                         );
-                    let builder = SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())
-                        .with_psets(psets)
-                        .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
-                            worker_id,
-                            soft: false,
-                        }));
+                    let builder =
+                        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref(), self.node_id())
+                            .with_psets(self.node_id(), psets)
+                            .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
+                                worker_id,
+                                soft: false,
+                            }));
 
                     // Send the builder directly to result_tx
                     if result_tx.send(builder).await.is_err() {
@@ -160,12 +160,13 @@ impl PreShuffleMergeNode {
                     self.config.schema.clone(),
                     self.node_id(),
                 );
-                let builder = SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())
-                    .with_psets(psets)
-                    .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
-                        worker_id,
-                        soft: false,
-                    }));
+                let builder =
+                    SwordfishTaskBuilder::new(in_memory_scan, self.as_ref(), self.node_id())
+                        .with_psets(self.node_id(), psets)
+                        .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
+                            worker_id,
+                            soft: false,
+                        }));
 
                 if result_tx.send(builder).await.is_err() {
                     break;

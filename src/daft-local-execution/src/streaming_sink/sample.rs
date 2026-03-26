@@ -10,7 +10,7 @@ use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
 use rand::{
     SeedableRng,
-    distributions::{Distribution, Standard},
+    distr::{Distribution, StandardUniform},
     rngs::StdRng,
 };
 use tracing::{Span, instrument};
@@ -24,7 +24,10 @@ use crate::{ExecutionTaskSpawner, dynamic_batching::StaticBatchingStrategy, pipe
 fn build_rng(seed: Option<u64>) -> StdRng {
     match seed {
         Some(seed) => StdRng::seed_from_u64(seed),
-        None => StdRng::from_rng(rand::thread_rng()).expect("failed to seed rng"),
+        None => {
+            let mut thread_rng = rand::rng();
+            StdRng::from_rng(&mut thread_rng)
+        }
     }
 }
 
@@ -58,7 +61,7 @@ impl WithReplacementState {
         let rb = Arc::new(record_batch);
         for row_idx in 0..rb.len() {
             for slot in &mut self.slots {
-                let new_key: f64 = Standard.sample(&mut self.rng);
+                let new_key: f64 = StandardUniform.sample(&mut self.rng);
                 match slot {
                     None => {
                         *slot = Some(SampleRow {
@@ -110,7 +113,7 @@ impl WithoutReplacementState {
         let rb = Arc::new(record_batch);
         for row_idx in 0..rb.len() {
             self.rows_seen += 1;
-            let key: f64 = Standard.sample(&mut self.rng);
+            let key: f64 = StandardUniform.sample(&mut self.rng);
             let new_entry = SampleRow {
                 key,
                 record_batch: rb.clone(),
@@ -154,7 +157,7 @@ fn collect_sample_rows(rows: Vec<SampleRow>) -> DaftResult<Vec<RecordBatch>> {
 
     let mut taken_batches = Vec::with_capacity(rows_needed_per_batch.len());
     for (_, (record_batch, rows_needed)) in rows_needed_per_batch {
-        let taken = record_batch.take(&UInt64Array::from(("idx", rows_needed)))?;
+        let taken = record_batch.take(&UInt64Array::from_vec("idx", rows_needed))?;
         taken_batches.push(taken);
     }
     Ok(taken_batches)
@@ -234,17 +237,15 @@ impl SampleSink {
     fn build_output(
         params: &SampleParams,
         samples: Vec<RecordBatch>,
-    ) -> DaftResult<Vec<Arc<MicroPartition>>> {
+    ) -> DaftResult<Vec<MicroPartition>> {
         if samples.is_empty() {
-            return Ok(vec![Arc::new(MicroPartition::empty(Some(
-                params.schema.clone(),
-            )))]);
+            return Ok(vec![MicroPartition::empty(Some(params.schema.clone()))]);
         }
 
         let record_batches: Vec<RecordBatch> =
             samples.into_iter().map(|rb| rb.as_ref().clone()).collect();
         let mp = MicroPartition::new_loaded(params.schema.clone(), Arc::new(record_batches), None);
-        Ok(vec![Arc::new(mp)])
+        Ok(vec![mp])
     }
 }
 
@@ -254,8 +255,9 @@ impl StreamingSink for SampleSink {
     #[instrument(skip_all, name = "SampleSink::execute")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self> {
         let method = self.params.sampling_method;
@@ -268,7 +270,7 @@ impl StreamingSink for SampleSink {
                         let out = input.sample_by_fraction(fraction, with_replacement, seed)?;
                         Ok((
                             SampleState::Fraction(()),
-                            StreamingSinkOutput::NeedMoreInput(Some(Arc::new(out))),
+                            StreamingSinkOutput::NeedMoreInput(Some(out)),
                         ))
                     },
                     Span::current(),

@@ -41,6 +41,7 @@ pub enum LogicalPlan {
     Unpivot(Unpivot),
     Sort(Sort),
     Repartition(Repartition),
+    IntoPartitions(IntoPartitions),
     Distinct(Distinct),
     Aggregate(Aggregate),
     Pivot(Pivot),
@@ -162,6 +163,7 @@ impl LogicalPlan {
             Self::Unpivot(Unpivot { output_schema, .. }) => output_schema.clone(),
             Self::Sort(Sort { input, .. }) => input.schema(),
             Self::Repartition(Repartition { input, .. }) => input.schema(),
+            Self::IntoPartitions(IntoPartitions { input, .. }) => input.schema(),
             Self::Distinct(Distinct { input, .. }) => input.schema(),
             Self::Aggregate(Aggregate { output_schema, .. }) => output_schema.clone(),
             Self::Pivot(Pivot { output_schema, .. }) => output_schema.clone(),
@@ -187,6 +189,7 @@ impl LogicalPlan {
             Self::Shard(..)
             | Self::Limit(..)
             | Self::IntoBatches(..)
+            | Self::IntoPartitions(..)
             | Self::Offset(..)
             | Self::Sample(..)
             | Self::MonotonicallyIncreasingId(..) => RequiredCols::new(IndexSet::new(), None),
@@ -294,13 +297,13 @@ impl LogicalPlan {
                                 Field { name, .. },
                                 JoinSide::Left,
                             ))) => {
-                                left.insert(name.clone());
+                                left.insert(name.to_string());
                             }
                             Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
                                 Field { name, .. },
                                 JoinSide::Right,
                             ))) => {
-                                right.insert(name.clone());
+                                right.insert(name.to_string());
                             }
                             _ => {}
                         }
@@ -355,6 +358,7 @@ impl LogicalPlan {
             Self::Unpivot(..) => "Unpivot",
             Self::Sort(..) => "Sort",
             Self::Repartition(..) => "Repartition",
+            Self::IntoPartitions(..) => "IntoPartitions",
             Self::Distinct(..) => "Distinct",
             Self::Aggregate(..) => "Aggregate",
             Self::Pivot(..) => "Pivot",
@@ -386,6 +390,7 @@ impl LogicalPlan {
             | Self::Unpivot(Unpivot { stats_state, .. })
             | Self::Sort(Sort { stats_state, .. })
             | Self::Repartition(Repartition { stats_state, .. })
+            | Self::IntoPartitions(IntoPartitions { stats_state, .. })
             | Self::Distinct(Distinct { stats_state, .. })
             | Self::Aggregate(Aggregate { stats_state, .. })
             | Self::Pivot(Pivot { stats_state, .. })
@@ -426,6 +431,7 @@ impl LogicalPlan {
             Self::Unpivot(plan) => Self::Unpivot(plan.with_materialized_stats()),
             Self::Sort(plan) => Self::Sort(plan.with_materialized_stats()),
             Self::Repartition(plan) => Self::Repartition(plan.with_materialized_stats()),
+            Self::IntoPartitions(plan) => Self::IntoPartitions(plan.with_materialized_stats()),
             Self::Distinct(plan) => Self::Distinct(plan.with_materialized_stats()),
             Self::Aggregate(plan) => Self::Aggregate(plan.with_materialized_stats()),
             Self::Pivot(plan) => Self::Pivot(plan.with_materialized_stats()),
@@ -462,6 +468,7 @@ impl LogicalPlan {
             Self::Unpivot(unpivot) => unpivot.multiline_display(),
             Self::Sort(sort) => sort.multiline_display(),
             Self::Repartition(repartition) => repartition.multiline_display(),
+            Self::IntoPartitions(into_partitions) => into_partitions.multiline_display(),
             Self::Distinct(distinct) => distinct.multiline_display(),
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
             Self::Pivot(pivot) => pivot.multiline_display(),
@@ -495,6 +502,7 @@ impl LogicalPlan {
             Self::Unpivot(Unpivot { input, .. }) => vec![input],
             Self::Sort(Sort { input, .. }) => vec![input],
             Self::Repartition(Repartition { input, .. }) => vec![input],
+            Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input],
             Self::Distinct(Distinct { input, .. }) => vec![input],
             Self::Aggregate(Aggregate { input, .. }) => vec![input],
             Self::Pivot(Pivot { input, .. }) => vec![input],
@@ -551,11 +559,17 @@ impl LogicalPlan {
                 }
                 Self::Explode(Explode {
                     to_explode,
+                    ignore_empty_and_null,
                     index_column,
                     ..
                 }) => Self::Explode(
-                    Explode::try_new(input.clone(), to_explode.clone(), index_column.clone())
-                        .unwrap(),
+                    Explode::try_new(
+                        input.clone(),
+                        to_explode.clone(),
+                        *ignore_empty_and_null,
+                        index_column.clone(),
+                    )
+                    .unwrap(),
                 ),
                 Self::Sort(Sort {
                     sort_by,
@@ -577,6 +591,9 @@ impl LogicalPlan {
                 }) => Self::Repartition(Repartition::new(input.clone(), scheme_config.clone())),
                 Self::Distinct(distinct) => {
                     Self::Distinct(Distinct::new(input.clone(), distinct.columns.clone()))
+                }
+                Self::IntoPartitions(IntoPartitions { num_partitions, .. }) => {
+                    Self::IntoPartitions(IntoPartitions::new(input.clone(), *num_partitions))
                 }
                 Self::Aggregate(Aggregate {
                     aggregations,
@@ -789,82 +806,105 @@ impl LogicalPlan {
     pub fn get_schema_for_alias(self: &Arc<Self>, alias: &str) -> DaftResult<Option<SchemaRef>> {
         use common_treenode::TreeNode;
 
-        let mut schema = None;
-        let mut found_match = false;
-
-        self.apply(|node| {
-            if let Self::SubqueryAlias(subquery_alias) = node.as_ref() {
-
-                let SubqueryAlias { name, input, .. } = subquery_alias;
-                if name.as_ref() == alias {
-                    if schema.is_some() {
-                        return Err(DaftError::ValueError(format!(
-                            "Plan must not have duplicate aliases in the same scope, found: {alias}"
-                        )));
-                    }
-
-                    schema = Some(node.schema());
-                    found_match = true;
-                    return Ok(TreeNodeRecursion::Jump);
+        match self.as_ref() {
+            Self::Union(union) => {
+                if let Some(s) = union.lhs.get_schema_for_alias(alias)? {
+                    return Ok(Some(s));
                 }
+                if let Some(s) = union.rhs.get_schema_for_alias(alias)? {
+                    return Ok(Some(s));
+                }
+                Ok(None)
+            }
+            _ => {
+                let mut schema = None;
+                let mut found_match = false;
 
-                let input_schema = input.schema();
-                let fields = input_schema.get_fields_with_name(alias);
-                for (_, field) in fields {
-                    if let DataType::Struct(struct_fields) = &field.dtype {
-                        if schema.is_some() {
-                            return Err(DaftError::ValueError(format!(
-                                "Plan must not have duplicate aliases in the same scope, found: {alias}"
-                            )));
+                self.apply(|node| {
+                    if let Self::SubqueryAlias(subquery_alias) = node.as_ref() {
+                        let SubqueryAlias { name, input, .. } = subquery_alias;
+                        if name.as_ref() == alias {
+                            if schema.is_some() {
+                                return Err(DaftError::ValueError(format!(
+                                    "Plan must not have duplicate aliases in the same scope, found: {alias}"
+                                )));
+                            }
+
+                            schema = Some(node.schema());
+                            found_match = true;
+                            return Ok(TreeNodeRecursion::Jump);
                         }
 
-                        let new_fields: Vec<Field> = struct_fields
-                            .iter()
-                            .map(|f| Field::new(f.name.clone(), f.dtype.clone()))
-                            .collect();
+                        let input_schema = input.schema();
+                        let fields = input_schema.get_fields_with_name(alias);
+                        for (_, field) in fields {
+                            if let DataType::Struct(struct_fields) = &field.dtype {
+                                if schema.is_some() {
+                                    return Err(DaftError::ValueError(format!(
+                                        "Plan must not have duplicate aliases in the same scope, found: {alias}"
+                                    )));
+                                }
 
-                        let new_schema = Schema::new(new_fields);
-                        schema = Some(Arc::new(new_schema));
-                        found_match = true;
+                                let new_fields: Vec<Field> = struct_fields
+                                    .iter()
+                                    .map(|f| Field::new(f.name.clone(), f.dtype.clone()))
+                                    .collect();
+
+                                let new_schema = Schema::new(new_fields);
+                                schema = Some(Arc::new(new_schema));
+                                found_match = true;
+                                return Ok(TreeNodeRecursion::Jump);
+                            }
+                        }
                         return Ok(TreeNodeRecursion::Jump);
                     }
-                }
-                if !found_match {
-                    return Ok(TreeNodeRecursion::Jump);
-                }
-            }
-            Ok(TreeNodeRecursion::Continue)
-        })?;
+                    Ok(TreeNodeRecursion::Continue)
+                })?;
 
-        Ok(schema)
+                Ok(schema)
+            }
+        }
     }
 
     pub fn get_schema_for_id(self: &Arc<Self>, id: usize) -> DaftResult<Option<SchemaRef>> {
         use common_treenode::TreeNode;
 
-        let mut schema = None;
-
-        self.apply(|node| {
-            if let Some(plan_id) = node.plan_id() {
-                if plan_id == &id {
-                    if schema.is_some() {
-                        return Err(DaftError::ValueError(format!(
-                            "Plan must not have duplicate plan ids in the same scope, found: {id}"
-                        )));
-                    }
-
-                    schema = Some(node.schema());
-
-                    Ok(TreeNodeRecursion::Jump)
-                } else {
-                    Ok(TreeNodeRecursion::Continue)
+        match self.as_ref() {
+            Self::Union(union) => {
+                if let Some(s) = union.lhs.get_schema_for_id(id)? {
+                    return Ok(Some(s));
                 }
-            } else {
-                Ok(TreeNodeRecursion::Continue)
+                if let Some(s) = union.rhs.get_schema_for_id(id)? {
+                    return Ok(Some(s));
+                }
+                Ok(None)
             }
-        })?;
+            _ => {
+                let mut schema = None;
 
-        Ok(schema)
+                self.apply(|node| {
+                    if let Some(plan_id) = node.plan_id() {
+                        if plan_id == &id {
+                            if schema.is_some() {
+                                return Err(DaftError::ValueError(format!(
+                                    "Plan must not have duplicate plan ids in the same scope, found: {id}"
+                                )));
+                            }
+
+                            schema = Some(node.schema());
+
+                            Ok(TreeNodeRecursion::Jump)
+                        } else {
+                            Ok(TreeNodeRecursion::Continue)
+                        }
+                    } else {
+                        Ok(TreeNodeRecursion::Continue)
+                    }
+                })?;
+
+                Ok(schema)
+            }
+        }
     }
 
     pub fn plan_id(&self) -> &Option<usize> {
@@ -881,6 +921,7 @@ impl LogicalPlan {
             | Self::Unpivot(Unpivot { plan_id, .. })
             | Self::Sort(Sort { plan_id, .. })
             | Self::Repartition(Repartition { plan_id, .. })
+            | Self::IntoPartitions(IntoPartitions { plan_id, .. })
             | Self::Distinct(Distinct { plan_id, .. })
             | Self::Aggregate(Aggregate { plan_id, .. })
             | Self::Pivot(Pivot { plan_id, .. })
@@ -912,6 +953,7 @@ impl LogicalPlan {
             | Self::Unpivot(Unpivot { node_id, .. })
             | Self::Sort(Sort { node_id, .. })
             | Self::Repartition(Repartition { node_id, .. })
+            | Self::IntoPartitions(IntoPartitions { node_id, .. })
             | Self::Distinct(Distinct { node_id, .. })
             | Self::Aggregate(Aggregate { node_id, .. })
             | Self::Pivot(Pivot { node_id, .. })
@@ -946,6 +988,9 @@ impl LogicalPlan {
             Self::Unpivot(unpivot) => Self::Unpivot(unpivot.with_plan_id(plan_id)),
             Self::Sort(sort) => Self::Sort(sort.with_plan_id(plan_id)),
             Self::Repartition(repartition) => Self::Repartition(repartition.with_plan_id(plan_id)),
+            Self::IntoPartitions(into_partitions) => {
+                Self::IntoPartitions(into_partitions.with_plan_id(plan_id))
+            }
             Self::Distinct(distinct) => Self::Distinct(distinct.with_plan_id(plan_id)),
             Self::Aggregate(aggregate) => Self::Aggregate(aggregate.with_plan_id(plan_id)),
             Self::Pivot(pivot) => Self::Pivot(pivot.with_plan_id(plan_id)),
@@ -984,6 +1029,9 @@ impl LogicalPlan {
             Self::Unpivot(unpivot) => Self::Unpivot(unpivot.with_node_id(node_id)),
             Self::Sort(sort) => Self::Sort(sort.with_node_id(node_id)),
             Self::Repartition(repartition) => Self::Repartition(repartition.with_node_id(node_id)),
+            Self::IntoPartitions(into_partitions) => {
+                Self::IntoPartitions(into_partitions.with_node_id(node_id))
+            }
             Self::Distinct(distinct) => Self::Distinct(distinct.with_node_id(node_id)),
             Self::Aggregate(aggregate) => Self::Aggregate(aggregate.with_node_id(node_id)),
             Self::Pivot(pivot) => Self::Pivot(pivot.with_node_id(node_id)),
@@ -1098,6 +1146,7 @@ impl_from_data_struct_for_logical_plan!(Explode);
 impl_from_data_struct_for_logical_plan!(Unpivot);
 impl_from_data_struct_for_logical_plan!(Sort);
 impl_from_data_struct_for_logical_plan!(Repartition);
+impl_from_data_struct_for_logical_plan!(IntoPartitions);
 impl_from_data_struct_for_logical_plan!(Distinct);
 impl_from_data_struct_for_logical_plan!(Aggregate);
 impl_from_data_struct_for_logical_plan!(Pivot);

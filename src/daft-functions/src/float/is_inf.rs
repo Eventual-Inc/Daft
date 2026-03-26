@@ -15,7 +15,11 @@ pub struct IsInf;
 
 #[typetag::serde]
 impl ScalarUDF for IsInf {
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         use daft_core::{array::ops::DaftIsInf, series::IntoSeries};
         let UnaryArg { input: data } = inputs.try_into()?;
 

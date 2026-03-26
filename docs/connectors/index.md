@@ -56,6 +56,18 @@ See also [Iceberg](iceberg.md) for detailed integration.
 | [`read_json`][daft.io.read_json] | Read a JSON file or multiple JSON files into a DataFrame |
 
 
+## Kafka
+
+!!! warning "Experimental"
+
+    This connector is experimental. Currently only bounded batch reads are supported — there is no streaming/unbounded mode and no offset commit management.
+
+| Function                           | Description                                          |
+|------------------------------------|------------------------------------------------------|
+| [`read_kafka`][daft.io.read_kafka] | Read messages from Kafka topic(s) into a DataFrame   |
+
+See also [Kafka](kafka.md) for detailed integration.
+
 ## Lance
 
 | Function                                              | Description                           |

@@ -2,10 +2,15 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use bincode::{Decode, Encode};
 use enum_dispatch::enum_dispatch;
+use indicatif::{HumanBytes, HumanCount};
 use itertools::Itertools as _;
+use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
-use crate::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, Stats};
+use crate::{
+    BYTES_READ_KEY, BYTES_WRITTEN_KEY, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY,
+    Stat, Stats,
+};
 
 macro_rules! stats {
     ($($name:expr; $value:expr),* $(,)?) => {
@@ -16,12 +21,13 @@ macro_rules! stats {
 }
 
 #[enum_dispatch]
-pub trait StatSnapshotImpl: Send + Sync {
+pub trait StatSnapshotImpl: Send + Sync + Serialize + Deserialize<'static> {
+    fn duration_us(&self) -> u64;
     fn to_stats(&self) -> Stats;
     fn to_message(&self) -> String;
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct DefaultSnapshot {
     pub cpu_us: u64,
     pub rows_in: u64,
@@ -29,20 +35,28 @@ pub struct DefaultSnapshot {
 }
 
 impl StatSnapshotImpl for DefaultSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
-            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
+            DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
             ROWS_IN_KEY; Stat::Count(self.rows_in),
             ROWS_OUT_KEY; Stat::Count(self.rows_out),
         ]
     }
 
     fn to_message(&self) -> String {
-        format!("{} rows in, {} rows out", self.rows_in, self.rows_out)
+        format!(
+            "{} rows in, {} rows out",
+            HumanCount(self.rows_in),
+            HumanCount(self.rows_out)
+        )
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct SourceSnapshot {
     pub cpu_us: u64,
     pub rows_out: u64,
@@ -50,20 +64,28 @@ pub struct SourceSnapshot {
 }
 
 impl StatSnapshotImpl for SourceSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
-            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
+            DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
             ROWS_OUT_KEY; Stat::Count(self.rows_out),
-            "bytes read"; Stat::Bytes(self.bytes_read),
+            BYTES_READ_KEY; Stat::Bytes(self.bytes_read),
         ]
     }
 
     fn to_message(&self) -> String {
-        format!("{} rows out, {} bytes read", self.rows_out, self.bytes_read)
+        format!(
+            "{} rows out, {} read",
+            HumanCount(self.rows_out),
+            HumanBytes(self.bytes_read)
+        )
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct FilterSnapshot {
     pub cpu_us: u64,
     pub rows_in: u64,
@@ -72,9 +94,13 @@ pub struct FilterSnapshot {
 }
 
 impl StatSnapshotImpl for FilterSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
-            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
+            DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
             ROWS_IN_KEY; Stat::Count(self.rows_in),
             ROWS_OUT_KEY; Stat::Count(self.rows_out),
             "selectivity"; Stat::Percent(self.selectivity),
@@ -84,14 +110,14 @@ impl StatSnapshotImpl for FilterSnapshot {
     fn to_message(&self) -> String {
         format!(
             "{} rows in, {} rows out, {:.2}% kept",
-            self.rows_in,
-            self.rows_out,
-            self.selectivity * 100.0
+            HumanCount(self.rows_in),
+            HumanCount(self.rows_out),
+            self.selectivity
         )
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct ExplodeSnapshot {
     pub cpu_us: u64,
     pub rows_in: u64,
@@ -100,9 +126,13 @@ pub struct ExplodeSnapshot {
 }
 
 impl StatSnapshotImpl for ExplodeSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
-            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
+            DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
             ROWS_IN_KEY; Stat::Count(self.rows_in),
             ROWS_OUT_KEY; Stat::Count(self.rows_out),
             "amplification"; Stat::Float(self.amplification),
@@ -112,12 +142,14 @@ impl StatSnapshotImpl for ExplodeSnapshot {
     fn to_message(&self) -> String {
         format!(
             "{} rows in, {} rows out, {:.2}x inc",
-            self.rows_in, self.rows_out, self.amplification
+            HumanCount(self.rows_in),
+            HumanCount(self.rows_out),
+            self.amplification
         )
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct UdfSnapshot {
     pub cpu_us: u64,
     pub rows_in: u64,
@@ -126,11 +158,15 @@ pub struct UdfSnapshot {
 }
 
 impl StatSnapshotImpl for UdfSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         let mut entries = SmallVec::with_capacity(3 + self.custom_counters.len());
 
         entries.push((
-            CPU_US_KEY.into(),
+            DURATION_KEY.into(),
             Stat::Duration(Duration::from_micros(self.cpu_us)),
         ));
         entries.push((ROWS_IN_KEY.into(), Stat::Count(self.rows_in)));
@@ -144,38 +180,59 @@ impl StatSnapshotImpl for UdfSnapshot {
     }
 
     fn to_message(&self) -> String {
-        format!(
-            "{} rows in, {} rows out, {}",
-            self.rows_in,
-            self.rows_out,
-            self.custom_counters
-                .iter()
-                .map(|(name, value)| format!("{}: {}", name.as_ref(), value))
-                .join(", ")
-        )
+        if self.custom_counters.is_empty() {
+            format!(
+                "{} rows in, {} rows out",
+                HumanCount(self.rows_in),
+                HumanCount(self.rows_out)
+            )
+        } else {
+            format!(
+                "{} rows in, {} rows out, {}",
+                HumanCount(self.rows_in),
+                HumanCount(self.rows_out),
+                self.custom_counters
+                    .iter()
+                    .map(|(name, value)| format!("{}: {}", name.as_ref(), HumanCount(*value)))
+                    .join(", ")
+            )
+        }
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
-pub struct HashJoinBuildSnapshot {
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
+pub struct JoinSnapshot {
     pub cpu_us: u64,
-    pub rows_inserted: u64,
+    pub build_rows_inserted: u64,
+    pub probe_rows_in: u64,
+    pub probe_rows_out: u64,
 }
 
-impl StatSnapshotImpl for HashJoinBuildSnapshot {
+impl StatSnapshotImpl for JoinSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
-            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
-            "rows inserted"; Stat::Count(self.rows_inserted),
+            DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
+            "build rows inserted"; Stat::Count(self.build_rows_inserted),
+            "probe rows in"; Stat::Count(self.probe_rows_in),
+            "probe rows out"; Stat::Count(self.probe_rows_out),
         ]
     }
 
     fn to_message(&self) -> String {
-        format!("{} rows inserted", self.rows_inserted)
+        format!(
+            "{} build rows inserted, {} probe rows in, {} probe rows out",
+            HumanCount(self.build_rows_inserted),
+            HumanCount(self.probe_rows_in),
+            HumanCount(self.probe_rows_out)
+        )
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct WriteSnapshot {
     pub cpu_us: u64,
     pub rows_in: u64,
@@ -184,31 +241,37 @@ pub struct WriteSnapshot {
 }
 
 impl StatSnapshotImpl for WriteSnapshot {
+    fn duration_us(&self) -> u64 {
+        self.cpu_us
+    }
+
     fn to_stats(&self) -> Stats {
         stats![
-            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
+            DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
             ROWS_IN_KEY; Stat::Count(self.rows_in),
-            "rows written"; Stat::Count(self.rows_written),
-            "bytes written"; Stat::Bytes(self.bytes_written),
+            ROWS_WRITTEN_KEY; Stat::Count(self.rows_written),
+            BYTES_WRITTEN_KEY; Stat::Bytes(self.bytes_written),
         ]
     }
 
     fn to_message(&self) -> String {
         format!(
-            "{} rows in, {} rows written, {} bytes written",
-            self.rows_in, self.rows_written, self.bytes_written
+            "{} rows in, {} rows written, {} written",
+            HumanCount(self.rows_in),
+            HumanCount(self.rows_written),
+            HumanBytes(self.bytes_written)
         )
     }
 }
 
 #[enum_dispatch(StatSnapshotImpl)]
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub enum StatSnapshot {
     Default(DefaultSnapshot),
     Source(SourceSnapshot),
     Filter(FilterSnapshot),
     Explode(ExplodeSnapshot),
     Udf(UdfSnapshot),
-    HashJoinBuild(HashJoinBuildSnapshot),
+    Join(JoinSnapshot),
     Write(WriteSnapshot),
 }

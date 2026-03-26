@@ -22,11 +22,11 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
                     (acc, None) => acc,
                     (None, Some(v)) => {
                         let mut sketch = DDSketch::new(Config::defaults());
-                        sketch.add(*v);
+                        sketch.add(v);
                         Some(sketch)
                     }
                     (Some(mut acc), Some(v)) => {
-                        acc.add(*v);
+                        acc.add(v);
                         Some(acc)
                     }
                 });
@@ -45,7 +45,7 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
 
         StructArray::from_arrow(
             Arc::new(Field::new(
-                &self.field.name,
+                self.field.name.clone(),
                 DataType::try_from(&*daft_sketch::ARROW_DDSKETCH_DTYPE)?,
             )),
             arrow_array,
@@ -98,7 +98,7 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
 
         StructArray::from_arrow(
             Arc::new(Field::new(
-                &self.field.name,
+                self.field.name.clone(),
                 DataType::try_from(&*daft_sketch::ARROW_DDSKETCH_DTYPE)?,
             )),
             sketch_per_group,

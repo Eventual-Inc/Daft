@@ -100,7 +100,7 @@ def test_table_filter_bad_expression() -> None:
 
     exprs = [col("a") + 1]
 
-    with pytest.raises(ValueError, match="Boolean Series"):
+    with pytest.raises(ValueError, match="BooleanType"):
         daft_recordbatch.filter(exprs)
 
 

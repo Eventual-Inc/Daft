@@ -27,7 +27,8 @@ def test_math_tensors(op, ldtype, rdtype) -> None:
     np.random.seed(1)
     x = np.random.randint(0, 10, (12, 10, 1)).astype(ldtype.to_arrow_dtype().to_pandas_dtype())
     y = np.random.randint(0, 10, (12, 10, 1)).astype(rdtype.to_arrow_dtype().to_pandas_dtype())
-    expected = op(x, y)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        expected = op(x, y)
 
     df = daft.from_pydict({"x": x, "y": y})
     df = df.with_column("x", df["x"].cast(daft.DataType.tensor(ldtype, (10, 1))))
@@ -46,7 +47,8 @@ def test_math_tensors_with_literal(op, ldtype, rdtype) -> None:
     np.random.seed(1)
     x = np.random.randint(0, 10, (12, 10, 1)).astype(ldtype.to_arrow_dtype().to_pandas_dtype())
     y = np.random.randint(0, 10, (10, 1)).astype(rdtype.to_arrow_dtype().to_pandas_dtype())
-    expected = op(x, y)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        expected = op(x, y)
 
     df = daft.from_pydict({"x": x})
     df = df.with_column("x", df["x"].cast(daft.DataType.tensor(ldtype, (10, 1))))

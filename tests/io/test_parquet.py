@@ -19,10 +19,6 @@ from daft.recordbatch import MicroPartition
 
 from ..integration.io.conftest import minio_create_bucket
 
-PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
-PYARROW_GE_13_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (13, 0, 0)
-
-
 ###
 # Test Parquet Int96 timestamps
 ###
@@ -54,9 +50,8 @@ def test_parquet_read_int96_timestamps(use_deprecated_int96_timestamps):
     papq_write_table_kwargs = {
         "use_deprecated_int96_timestamps": use_deprecated_int96_timestamps,
         "coerce_timestamps": "us" if not use_deprecated_int96_timestamps else None,
+        "store_schema": False,
     }
-    if PYARROW_GE_11_0_0:
-        papq_write_table_kwargs["store_schema"] = False
 
     with _parquet_write_helper(
         pa.Table.from_pydict(data),
@@ -81,9 +76,8 @@ def test_parquet_read_int96_timestamps_overflow(coerce_to):
 
     papq_write_table_kwargs = {
         "use_deprecated_int96_timestamps": True,
+        "store_schema": False,
     }
-    if PYARROW_GE_11_0_0:
-        papq_write_table_kwargs["store_schema"] = False
 
     with _parquet_write_helper(
         pa.Table.from_pydict(data),
@@ -123,9 +117,8 @@ def test_parquet_read_int96_timestamps_schema_inference(coerce_to, store_schema)
 
     papq_write_table_kwargs = {
         "use_deprecated_int96_timestamps": True,
+        "store_schema": store_schema,
     }
-    if PYARROW_GE_11_0_0:
-        papq_write_table_kwargs["store_schema"] = store_schema
 
     with _parquet_write_helper(
         pa.Table.from_pydict(data),
@@ -263,7 +256,7 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
             after = daft.read_parquet(file_path, _chunk_size=chunk_size)
             compare_before_and_after(before, after)
             # Test reads from S3.
-            bucket_name = "my-bucket"
+            bucket_name = f"parquet-test-{uuid.uuid4()}"
             s3_path = f"s3://{bucket_name}/my-folder"
             with minio_create_bucket(minio_io_config=minio_io_config, bucket_name=bucket_name):
                 before.write_parquet(s3_path, io_config=minio_io_config)

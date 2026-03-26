@@ -69,6 +69,7 @@ class DaftContext:
         self._ctx.notify_query_start(query_id, metadata)
 
     def _notify_query_end(self, query_id: str, query_result: PyQueryResult) -> None:
+        """Notifies the query end to the subscribers. Exceptions from subscribers are logged and ignored."""
         self._ctx.notify_query_end(query_id, query_result)
 
     def _notify_optimization_start(self, query_id: str) -> None:
@@ -76,6 +77,21 @@ class DaftContext:
 
     def _notify_optimization_end(self, query_id: str, optimized_plan: str) -> None:
         self._ctx.notify_optimization_end(query_id, optimized_plan)
+
+    def _notify_exec_start(self, query_id: str, physical_plan: str) -> None:
+        self._ctx.notify_exec_start(query_id, physical_plan)
+
+    def _notify_exec_end(self, query_id: str) -> None:
+        self._ctx.notify_exec_end(query_id)
+
+    def _notify_exec_operator_start(self, query_id: str, node_id: int) -> None:
+        self._ctx.notify_exec_operator_start(query_id, node_id)
+
+    def _notify_exec_operator_end(self, query_id: str, node_id: int) -> None:
+        self._ctx.notify_exec_operator_end(query_id, node_id)
+
+    def _notify_exec_emit_stats(self, query_id: str, node_id: int, stats: dict[str, int]) -> None:
+        self._ctx.notify_exec_emit_stats(query_id, node_id, stats)
 
     def _notify_result_out(self, query_id: str, result: PartitionT) -> None:
         from daft.recordbatch.micropartition import MicroPartition
@@ -155,7 +171,9 @@ def set_execution_config(
     parquet_inflation_factor: float | None = None,
     csv_target_filesize: int | None = None,
     csv_inflation_factor: float | None = None,
+    json_target_filesize: int | None = None,
     json_inflation_factor: float | None = None,
+    text_inflation_factor: float | None = None,
     shuffle_aggregation_default_partitions: int | None = None,
     partial_aggregation_threshold: int | None = None,
     high_cardinality_aggregation_threshold: float | None = None,
@@ -163,6 +181,7 @@ def set_execution_config(
     default_morsel_size: int | None = None,
     shuffle_algorithm: str | None = None,
     pre_shuffle_merge_threshold: int | None = None,
+    pre_shuffle_merge_partition_threshold: int | None = None,
     scantask_max_parallel: int | None = None,
     native_parquet_writer: bool | None = None,
     min_cpu_per_task: float | None = None,
@@ -170,6 +189,8 @@ def set_execution_config(
     maintain_order: bool | None = None,
     enable_dynamic_batching: bool | None = None,
     dynamic_batching_strategy: str | None = None,
+    flight_shuffle_dirs: list[str] | None = None,
+    enable_multi_glob_path_tasks: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -179,7 +200,7 @@ def set_execution_config(
     Args:
         config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
             that the old (current) config should be used.
-        enable_scan_task_split_and_merge: Whether to enable scan task split and merge. Defaults to True.
+        enable_scan_task_split_and_merge: Whether to enable scan task split and merge. Defaults to False.
         scan_tasks_min_size_bytes: Minimum size of scan tasks in bytes. Defaults to 96MB.
         scan_tasks_max_size_bytes: Maximum size of scan tasks in bytes. Defaults to 384MB.
         max_sources_per_scan_task: Maximum number of sources per scan task. Defaults to 10.
@@ -198,14 +219,17 @@ def set_execution_config(
         parquet_inflation_factor: Inflation Factor of parquet files (In-Memory-Size / File-Size) ratio. Defaults to 3.0
         csv_target_filesize: Target File Size when writing out CSV Files. Defaults to 512MB
         csv_inflation_factor: Inflation Factor of CSV files (In-Memory-Size / File-Size) ratio. Defaults to 0.5
+        json_target_filesize: Target File Size when writing out JSON Files. Defaults to 512MB
         json_inflation_factor: Inflation Factor of JSON files (In-Memory-Size / File-Size) ratio. Defaults to 0.25
+        text_inflation_factor: Inflation Factor of Text files (In-Memory-Size / File-Size) ratio. Defaults to 1.0
         shuffle_aggregation_default_partitions: Maximum number of partitions to create when performing aggregations on the Ray Runner. Defaults to 200, unless the number of input partitions is less than 200.
         partial_aggregation_threshold: Threshold for performing partial aggregations on the Native Runner. Defaults to 10000 rows.
         high_cardinality_aggregation_threshold: Threshold selectivity for performing high cardinality aggregations on the Native Runner. Defaults to 0.8.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
-        shuffle_algorithm: The shuffle algorithm to use. Defaults to "auto", which will let Daft determine the algorithm. Options are "map_reduce" and "pre_shuffle_merge".
+        shuffle_algorithm: The shuffle algorithm to use. Defaults to "auto", which will let Daft determine the algorithm. Options are "map_reduce", "pre_shuffle_merge", and "flight_shuffle".
         pre_shuffle_merge_threshold: Memory threshold in bytes for pre-shuffle merge. Defaults to 1GB
+        pre_shuffle_merge_partition_threshold: Number of partitions threshold to enable pre-shuffle merge when shuffle_algorithm is "auto". Defaults to 200.
         scantask_max_parallel: Set the max parallelism for running scan tasks simultaneously. Currently, this only works for Native Runner. If set to 0, all available CPUs will be used. Defaults to 8.
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
         min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
@@ -213,6 +237,8 @@ def set_execution_config(
         maintain_order: Whether to maintain order during execution. Defaults to True. Some blocking sink operators (e.g. write_parquet) won't respect this flag and will always keep maintain_order as false, and propagate to child operators. It's useful to set this to False for running df.collect() when no ordering is required.
         enable_dynamic_batching: Whether to enable dynamic batching. Defaults to False.
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
+        flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to ["/tmp"]. Must not be empty.
+        enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -234,7 +260,9 @@ def set_execution_config(
             parquet_inflation_factor=parquet_inflation_factor,
             csv_target_filesize=csv_target_filesize,
             csv_inflation_factor=csv_inflation_factor,
+            json_target_filesize=json_target_filesize,
             json_inflation_factor=json_inflation_factor,
+            text_inflation_factor=text_inflation_factor,
             shuffle_aggregation_default_partitions=shuffle_aggregation_default_partitions,
             partial_aggregation_threshold=partial_aggregation_threshold,
             high_cardinality_aggregation_threshold=high_cardinality_aggregation_threshold,
@@ -242,6 +270,7 @@ def set_execution_config(
             default_morsel_size=default_morsel_size,
             shuffle_algorithm=shuffle_algorithm,
             pre_shuffle_merge_threshold=pre_shuffle_merge_threshold,
+            pre_shuffle_merge_partition_threshold=pre_shuffle_merge_partition_threshold,
             scantask_max_parallel=scantask_max_parallel,
             native_parquet_writer=native_parquet_writer,
             min_cpu_per_task=min_cpu_per_task,
@@ -249,6 +278,8 @@ def set_execution_config(
             maintain_order=maintain_order,
             enable_dynamic_batching=enable_dynamic_batching,
             dynamic_batching_strategy=dynamic_batching_strategy,
+            flight_shuffle_dirs=flight_shuffle_dirs,
+            enable_multi_glob_path_tasks=enable_multi_glob_path_tasks,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

@@ -95,6 +95,7 @@ use std::{
     simd::{Simd, cmp::SimdOrd},
 };
 
+use arrow::array::UInt32Array;
 use common_error::DaftResult;
 
 use crate::windowed::WindowedWordsExt;
@@ -281,7 +282,7 @@ pub fn minhash(
     num_hashes: usize,
     word_ngram_size: usize,
     hasher: &impl BuildHasher,
-) -> DaftResult<Vec<u32>> {
+) -> DaftResult<UInt32Array> {
     let mut alloc = VecDeque::new();
     minhash_in(
         s,
@@ -301,7 +302,7 @@ pub fn minhash_in(
     word_ngram_size: usize,
     hasher: &impl BuildHasher,
     alloc: &mut VecDeque<isize>,
-) -> DaftResult<Vec<u32>> {
+) -> DaftResult<UInt32Array> {
     let (perm_a_simd, perm_b_simd) = perm_simd;
     let num_simd_vectors = num_hashes.div_ceil(SIMD_LANES);
 
@@ -331,7 +332,7 @@ pub fn minhash_in(
     }
 
     // Convert SIMD results to a flat vector of u32 values
-    let minhash_signature: Vec<u32> = min_hash_values
+    let minhash_signature: UInt32Array = min_hash_values
         .iter()
         .flat_map(Simd::as_array)
         .take(num_hashes)

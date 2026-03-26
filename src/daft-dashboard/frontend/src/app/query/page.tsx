@@ -11,18 +11,14 @@ import {
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { toHumanReadableDate, main } from "@/lib/utils";
+import { toHumanReadableDate, main, getEngineName } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import LoadingPage from "@/components/loading";
 import { Status } from "./status";
 import { ExecutingState, OperatorInfo, QueryInfo } from "./types";
-import ProgressTable from "./progress-table";
-
-
-function formatPlanJSON(plan: string) {
-  const parsedPlan = JSON.parse(plan);
-  return JSON.stringify(parsedPlan, null, 2);
-}
+import PhysicalPlanTree from "./physical-plan-tree";
+import PlanVisualizer from "./plan-visualizer";
+import ResultPreview from "./result-preview";
 
 /**
  * Query detail page component
@@ -51,32 +47,18 @@ function QueryPageInner() {
       const data: QueryInfo = JSON.parse(event.data);
       setQuery(data);
     });
-    // Merges with existing info
+    // Merges with existing info, preserving the current status
     es.addEventListener("operator_info", event => {
       setQuery(prev => {
         if (!prev) return prev;
+        if (!("exec_info" in prev.state)) return prev;
 
-        const plan_info =
-          "plan_info" in prev.state ? prev.state.plan_info : undefined;
-        const old_exec_info =
-          "exec_info" in prev.state ? prev.state.exec_info : undefined;
         const data: Record<number, OperatorInfo> = JSON.parse(event.data);
-
-        if (
-          plan_info &&
-          old_exec_info &&
-          old_exec_info.exec_start_sec !== undefined
-        ) {
-          const new_exec_info = { ...old_exec_info, operators: data };
-          const new_state = {
-            status: "Executing" as const,
-            plan_info: plan_info,
-            exec_info: new_exec_info,
-          };
-          return { ...prev, state: new_state };
-        }
-
-        return prev;
+        const new_exec_info = { ...prev.state.exec_info, operators: data };
+        return {
+          ...prev,
+          state: { ...prev.state, exec_info: new_exec_info } as typeof prev.state,
+        };
       });
     });
     return () => {
@@ -117,16 +99,16 @@ function QueryPageInner() {
           </BreadcrumbList>
         </Breadcrumb>
 
-        <div className="w-full h-[150px] flex">
-          <div className="w-1/4 h-full border-r px-6 py-4">
+        <div className="w-full flex border-b border-zinc-800">
+          <div className="w-1/4 border-r border-zinc-800 px-6 py-4">
             <Status
               status={query.state.status}
               start_sec={query.start_sec}
               end_sec={end_sec}
             />
           </div>
-          <div className="flex-1 h-full px-6 py-4">
-            <div className="grid grid-cols-2 gap-6 h-full">
+          <div className="flex-1 px-6 py-4">
+            <div className="grid grid-cols-2 gap-6">
               <div className="space-y-3">
                 <div>
                   <h3
@@ -134,7 +116,7 @@ function QueryPageInner() {
                   >
                     Query ID
                   </h3>
-                  <p className={`${main.className} text-lg font-mono`}>
+                  <p className={`${main.className} text-lg font-mono text-zinc-100`}>
                     {query.id}
                   </p>
                 </div>
@@ -144,8 +126,16 @@ function QueryPageInner() {
                   >
                     Start Time
                   </h3>
-                  <p className={`${main.className} text-lg font-mono`}>
+                  <p className={`${main.className} text-lg font-mono text-zinc-100`}>
                     {toHumanReadableDate(query.start_sec)}
+                  </p>
+                </div>
+                <div>
+                  <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
+                    Entrypoint
+                  </h3>
+                  <p className={`${main.className} text-sm font-mono break-all text-zinc-100`} title={query.entrypoint || ""}>
+                    {query.entrypoint || "-"}
                   </p>
                 </div>
               </div>
@@ -154,10 +144,10 @@ function QueryPageInner() {
                   <h3
                     className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}
                   >
-                    Runner
+                    Engine
                   </h3>
-                  <p className={`${main.className} text-lg font-mono`}>
-                    Native (Swordfish)
+                  <p className={`${main.className} text-lg font-mono text-zinc-100`}>
+                    {getEngineName(query.runner)}
                   </p>
                 </div>
                 <div>
@@ -166,10 +156,25 @@ function QueryPageInner() {
                   >
                     End Time
                   </h3>
-                  <p className={`${main.className} text-lg font-mono`}>
+                  <p className={`${main.className} text-lg font-mono text-zinc-100`}>
                     {end_sec ? toHumanReadableDate(end_sec) : "..."}
                   </p>
                 </div>
+                {query.ray_dashboard_url && (
+                  <div>
+                    <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
+                      Ray Dashboard
+                    </h3>
+                    <a
+                      href={query.ray_dashboard_url.startsWith("http") ? query.ray_dashboard_url : `http://${query.ray_dashboard_url}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`${main.className} text-sm font-mono text-blue-500 hover:underline`}
+                    >
+                      Open in Ray
+                    </a>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -192,7 +197,7 @@ function QueryPageInner() {
                 query.state.status === "Setup"
               }
             >
-              Progress Table
+              Execution
             </TabsTrigger>
             <TabsTrigger
               value="optimized-plan"
@@ -201,6 +206,12 @@ function QueryPageInner() {
               Optimized Plan
             </TabsTrigger>
             <TabsTrigger value="unoptimized-plan">Unoptimized Plan</TabsTrigger>
+            <TabsTrigger
+              value="results"
+              disabled={query.state.status !== "Finished"}
+            >
+              Results
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent
@@ -216,7 +227,7 @@ function QueryPageInner() {
                   </p>
                 </div>
               ) : (
-                <ProgressTable exec_state={query.state as ExecutingState} />
+                <PhysicalPlanTree exec_state={query.state as ExecutingState} />
               )}
             </div>
           </TabsContent>
@@ -225,33 +236,36 @@ function QueryPageInner() {
             value="optimized-plan"
             className="mt-4 flex-1 overflow-auto"
           >
-            <div className="bg-zinc-900 p-4">
-              {query.state.status === "Pending" ? (
+            {query.state.status === "Pending" ? (
+              <div className="bg-zinc-900 p-4">
                 <p className={`${main.className} text-zinc-400`}>
                   Plan not yet optimized
                 </p>
-              ) : (
-                <pre
-                  className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}
-                >
-                  {"plan_info" in query.state
-                    ? formatPlanJSON(query.state.plan_info.optimized_plan)
-                    : "No optimized plan available"}
-                </pre>
-              )}
-            </div>
+              </div>
+            ) : (
+              <PlanVisualizer
+                planJson={
+                  "plan_info" in query.state
+                    ? query.state.plan_info.optimized_plan
+                    : ""
+                }
+              />
+            )}
           </TabsContent>
 
           <TabsContent
             value="unoptimized-plan"
             className="mt-4 flex-1 overflow-auto"
           >
-            <div className="bg-zinc-900 p-4">
-              <pre
-                className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}
-              >
-                {formatPlanJSON(query.unoptimized_plan)}
-              </pre>
+            <PlanVisualizer planJson={query.unoptimized_plan} />
+          </TabsContent>
+
+          <TabsContent
+            value="results"
+            className="mt-4 flex-1 overflow-auto"
+          >
+            <div className="bg-zinc-900 h-full">
+              {queryId && <ResultPreview queryId={queryId} />}
             </div>
           </TabsContent>
         </Tabs>

@@ -13,21 +13,23 @@ use common_display::{
     tree::TreeDisplay,
 };
 use common_error::DaftResult;
-use common_metrics::QueryID;
+use common_metrics::{
+    Meter, QueryID,
+    ops::{NodeCategory, NodeType},
+};
 use common_partitioning::PartitionRef;
 use common_treenode::ConcreteTreeNode;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{InMemoryInfo, partitioning::ClusteringSpecRef, stats::StatsState};
+use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, stream::BoxStream};
 use materialize::materialize_all_pipeline_outputs;
-use opentelemetry::metrics::Meter;
 
 use crate::{
     plan::{PlanExecutionContext, QueryIdx, TaskIDCounter},
     scheduling::{
         scheduler::SchedulerHandle,
-        task::{SwordfishTask, SwordfishTaskBuilder},
+        task::{SwordfishTask, SwordfishTaskBuilder, TaskID},
         worker::WorkerId,
     },
     statistics::stats::{DefaultRuntimeStats, RuntimeStatsRef},
@@ -48,6 +50,7 @@ mod into_partitions;
 mod join;
 mod limit;
 pub(crate) mod materialize;
+pub(crate) mod metrics;
 mod monotonically_increasing_id;
 mod pivot;
 mod project;
@@ -65,7 +68,10 @@ mod window;
 
 pub(crate) use translate::logical_plan_to_pipeline_node;
 pub(crate) type NodeID = u32;
-pub(crate) type NodeName = &'static str;
+pub(crate) type NodeName = Arc<str>;
+/// Fingerprint identifying tasks with functionally identical plans.
+/// Tasks sharing a fingerprint can reuse the same pipeline.
+pub(crate) type PlanFingerprint = u32;
 
 /// The materialized output of a completed pipeline node.
 /// Contains both the partition data as well as metadata about the partition.
@@ -75,13 +81,22 @@ pub(crate) type NodeName = &'static str;
 pub(crate) struct MaterializedOutput {
     partition: Vec<PartitionRef>,
     worker_id: WorkerId,
+    ip_address: String,
+    task_id: TaskID,
 }
 
 impl MaterializedOutput {
-    pub fn new(partition: Vec<PartitionRef>, worker_id: WorkerId) -> Self {
+    pub fn new(
+        partition: Vec<PartitionRef>,
+        worker_id: WorkerId,
+        ip_address: String,
+        task_id: TaskID,
+    ) -> Self {
         Self {
             partition,
             worker_id,
+            ip_address,
+            task_id,
         }
     }
 
@@ -94,14 +109,28 @@ impl MaterializedOutput {
         &self.worker_id
     }
 
-    pub fn into_inner(self) -> (Vec<PartitionRef>, WorkerId) {
-        (self.partition, self.worker_id)
+    #[allow(dead_code)]
+    pub fn ip_address(&self) -> &String {
+        &self.ip_address
+    }
+
+    pub fn task_id(&self) -> TaskID {
+        self.task_id
+    }
+
+    pub fn into_inner(self) -> (Vec<PartitionRef>, WorkerId, String) {
+        (self.partition, self.worker_id, self.ip_address)
     }
 
     pub fn split_into_materialized_outputs(&self) -> Vec<Self> {
         self.partition
             .iter()
-            .map(|partition| Self::new(vec![partition.clone()], self.worker_id.clone()))
+            .map(|partition| Self {
+                partition: vec![partition.clone()],
+                worker_id: self.worker_id.clone(),
+                ip_address: self.ip_address.clone(),
+                task_id: self.task_id,
+            })
             .collect()
     }
 
@@ -123,43 +152,54 @@ impl MaterializedOutput {
         materialized_outputs: Vec<Self>,
         schema: SchemaRef,
         node_id: NodeID,
-    ) -> (LocalPhysicalPlanRef, HashMap<String, Vec<PartitionRef>>) {
+    ) -> (LocalPhysicalPlanRef, Vec<PartitionRef>) {
+        Self::build_in_memory_scan(
+            materialized_outputs,
+            schema,
+            node_id,
+            LocalNodeContext::new(Some(node_id as usize)),
+        )
+    }
+
+    pub fn into_in_memory_scan_with_psets_and_phase(
+        materialized_outputs: Vec<Self>,
+        schema: SchemaRef,
+        node_id: NodeID,
+        node_phase: impl Into<String>,
+    ) -> (LocalPhysicalPlanRef, Vec<PartitionRef>) {
+        Self::build_in_memory_scan(
+            materialized_outputs,
+            schema,
+            node_id,
+            LocalNodeContext::new(Some(node_id as usize)).with_phase(node_phase),
+        )
+    }
+
+    fn build_in_memory_scan(
+        materialized_outputs: Vec<Self>,
+        schema: SchemaRef,
+        node_id: NodeID,
+        local_ctx: LocalNodeContext,
+    ) -> (LocalPhysicalPlanRef, Vec<PartitionRef>) {
         let total_size_bytes = materialized_outputs
             .iter()
             .map(|output| output.size_bytes())
             .sum::<usize>();
-        let total_num_rows = materialized_outputs
-            .iter()
-            .map(|output| output.num_rows())
-            .sum::<usize>();
-
-        let info = InMemoryInfo::new(
-            schema,
-            node_id.to_string(),
-            None,
-            materialized_outputs.len(),
-            total_size_bytes,
-            total_num_rows,
-            None,
-            None,
-        );
 
         let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
-            info,
+            node_id,
+            schema,
+            total_size_bytes,
             StatsState::NotMaterialized,
-            LocalNodeContext {
-                origin_node_id: Some(node_id as usize),
-                additional: None,
-            },
+            local_ctx,
         );
 
         let partition_refs = materialized_outputs
             .into_iter()
             .flat_map(|output| output.into_inner().0)
             .collect::<Vec<_>>();
-        let psets = HashMap::from([(node_id.to_string(), partition_refs)]);
 
-        (in_memory_scan, psets)
+        (in_memory_scan, partition_refs)
     }
 }
 
@@ -190,6 +230,8 @@ pub(super) struct PipelineNodeContext {
     pub query_id: QueryID,
     pub node_id: NodeID,
     pub node_name: NodeName,
+    pub node_type: NodeType,
+    pub node_category: NodeCategory,
 }
 
 impl PipelineNodeContext {
@@ -198,12 +240,16 @@ impl PipelineNodeContext {
         query_id: QueryID,
         node_id: NodeID,
         node_name: NodeName,
+        node_type: NodeType,
+        node_category: NodeCategory,
     ) -> Self {
         Self {
             query_idx,
             query_id,
             node_id,
             node_name,
+            node_type,
+            node_category,
         }
     }
 
@@ -219,15 +265,15 @@ impl PipelineNodeContext {
 pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn context(&self) -> &PipelineNodeContext;
     fn config(&self) -> &PipelineNodeConfig;
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(DefaultRuntimeStats::new(meter, self.node_id()))
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(DefaultRuntimeStats::new(meter, self.context()))
     }
 
     fn children(&self) -> Vec<DistributedPipelineNode>;
     fn produce_tasks(self: Arc<Self>, plan_context: &mut PlanExecutionContext)
     -> TaskBuilderStream;
     fn name(&self) -> NodeName {
-        self.context().node_name
+        self.context().node_name.clone()
     }
     fn node_id(&self) -> NodeID {
         self.context().node_id
@@ -238,16 +284,22 @@ pub(crate) trait PipelineNodeImpl: Send + Sync {
 #[derive(Clone)]
 pub(crate) struct DistributedPipelineNode {
     op: Arc<dyn PipelineNodeImpl>,
+    runtime_stats: RuntimeStatsRef,
     children: Vec<DistributedPipelineNode>,
 }
 
 impl DistributedPipelineNode {
-    pub fn new(op: Arc<dyn PipelineNodeImpl>) -> Self {
+    pub fn new(op: Arc<dyn PipelineNodeImpl>, meter: &Meter) -> Self {
         let children = op.children();
-        Self { op, children }
+        let runtime_stats = op.make_runtime_stats(meter);
+        Self {
+            op,
+            runtime_stats,
+            children,
+        }
     }
 
-    fn context(&self) -> &PipelineNodeContext {
+    pub fn context(&self) -> &PipelineNodeContext {
         self.op.context()
     }
     fn config(&self) -> &PipelineNodeConfig {
@@ -262,8 +314,8 @@ impl DistributedPipelineNode {
     pub fn num_partitions(&self) -> usize {
         self.op.config().clustering_spec.num_partitions()
     }
-    pub fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        self.op.runtime_stats(meter)
+    pub fn runtime_stats(&self) -> RuntimeStatsRef {
+        self.runtime_stats.clone()
     }
     pub fn produce_tasks(self, plan_context: &mut PlanExecutionContext) -> TaskBuilderStream {
         self.op.produce_tasks(plan_context)
@@ -285,8 +337,9 @@ impl ConcreteTreeNode for DistributedPipelineNode {
 
     fn with_new_children(self, children: Vec<Self>) -> DaftResult<Self> {
         Ok(Self {
-            op: self.op.clone(),
+            op: self.op,
             children,
+            runtime_stats: self.runtime_stats,
         })
     }
 }
@@ -302,9 +355,11 @@ impl TreeDisplay for DistributedPipelineNode {
 
     fn repr_json(&self) -> serde_json::Value {
         serde_json::json!({
-            "id": self.id(),
+            "id": self.node_id(),
             "type": self.op.name(),
             "name": self.name(),
+            "category": "Physical",
+            "children": self.children.iter().map(|child| child.repr_json()).collect::<Vec<_>>(),
         })
     }
 
@@ -395,5 +450,136 @@ impl Stream for TaskBuilderStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.task_builder_stream.poll_next_unpin(cx)
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use std::sync::Arc;
+
+    use common_daft_config::DaftExecutionConfig;
+    use common_metrics::{
+        QueryID,
+        ops::{NodeCategory, NodeType},
+    };
+    use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+    use daft_logical_plan::{ClusteringSpec, stats::StatsState};
+    use daft_schema::schema::Schema;
+    use futures::{StreamExt, stream};
+
+    use super::*;
+    use crate::scheduling::task::SwordfishTaskBuilder;
+
+    /// Mock pipeline node for tests. Implements PipelineNodeImpl with minimal setup.
+    pub struct MockNode {
+        config: PipelineNodeConfig,
+        context: PipelineNodeContext,
+    }
+
+    impl MockNode {
+        pub fn new(node_id: NodeID) -> Self {
+            Self {
+                config: PipelineNodeConfig::new(
+                    Arc::new(Schema::empty()),
+                    Arc::new(DaftExecutionConfig::default()),
+                    Arc::new(ClusteringSpec::unknown()),
+                ),
+                context: PipelineNodeContext::new(
+                    0,
+                    QueryID::default(),
+                    node_id,
+                    Arc::from("Mock"),
+                    NodeType::Project,
+                    NodeCategory::Intermediate,
+                ),
+            }
+        }
+    }
+
+    impl PipelineNodeImpl for MockNode {
+        fn context(&self) -> &PipelineNodeContext {
+            &self.context
+        }
+        fn config(&self) -> &PipelineNodeConfig {
+            &self.config
+        }
+        fn children(&self) -> Vec<DistributedPipelineNode> {
+            vec![]
+        }
+        fn produce_tasks(
+            self: Arc<Self>,
+            _: &mut crate::plan::PlanExecutionContext,
+        ) -> TaskBuilderStream {
+            unimplemented!()
+        }
+        fn multiline_display(&self, _: bool) -> Vec<String> {
+            vec![]
+        }
+    }
+
+    pub fn make_builder(node: &MockNode, fp: PlanFingerprint) -> SwordfishTaskBuilder {
+        let plan = LocalPhysicalPlan::in_memory_scan(
+            0,
+            Arc::new(Schema::empty()),
+            0,
+            StatsState::NotMaterialized,
+            LocalNodeContext::default(),
+        );
+        SwordfishTaskBuilder::new(plan, node, fp)
+    }
+
+    pub fn make_source_stream(node: &Arc<MockNode>, n: usize) -> TaskBuilderStream {
+        let fp = node.node_id();
+        let node = node.clone();
+        TaskBuilderStream::new(stream::iter((0..n).map(move |_| make_builder(&node, fp))).boxed())
+    }
+
+    pub async fn collect_fingerprints(stream: TaskBuilderStream) -> Vec<PlanFingerprint> {
+        stream.map(|b| b.fingerprint()).collect().await
+    }
+
+    #[tokio::test]
+    async fn chaining_nodes_produce_same_fingerprint_across_tasks() {
+        let source = Arc::new(MockNode::new(10));
+        let fps = collect_fingerprints(
+            make_source_stream(&source, 3)
+                .pipeline_instruction(Arc::new(MockNode::new(20)), |p| p)
+                .pipeline_instruction(Arc::new(MockNode::new(30)), |p| p),
+        )
+        .await;
+        assert!(fps.iter().all(|fp| *fp == fps[0]));
+    }
+
+    #[tokio::test]
+    async fn join_produces_same_fingerprint_across_tasks() {
+        let (left_src, right_src) = (Arc::new(MockNode::new(10)), Arc::new(MockNode::new(20)));
+        let join: Arc<MockNode> = Arc::new(MockNode::new(30));
+        let j = join.clone();
+        let fps = collect_fingerprints(TaskBuilderStream::new(
+            make_source_stream(&left_src, 3)
+                .zip(make_source_stream(&right_src, 3))
+                .map(move |(l, r)| SwordfishTaskBuilder::combine_with(&l, &r, j.as_ref(), |l, _| l))
+                .boxed(),
+        ))
+        .await;
+        assert!(fps.iter().all(|fp| *fp == fps[0]));
+    }
+
+    #[tokio::test]
+    async fn fingerprint_override_produces_different_fingerprints_across_tasks() {
+        let source = Arc::new(MockNode::new(10));
+        let node: Arc<dyn PipelineNodeImpl> = Arc::new(MockNode::new(20));
+        let counter = std::sync::atomic::AtomicU32::new(0);
+        let fps = collect_fingerprints(TaskBuilderStream::new(
+            make_source_stream(&source, 4)
+                .map(move |b| {
+                    let id = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    b.map_plan(node.as_ref(), |p| p).extend_fingerprint(id)
+                })
+                .boxed(),
+        ))
+        .await;
+        let unique: std::collections::HashSet<_> = fps.into_iter().collect();
+        assert_eq!(unique.len(), 4);
     }
 }

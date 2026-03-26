@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    ops::ControlFlow,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -12,7 +13,6 @@ use common_metrics::{
     snapshot::StatSnapshotImpl,
 };
 use common_runtime::{OrderingAwareJoinSet, get_compute_runtime};
-use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
@@ -20,12 +20,15 @@ use tokio::sync::oneshot;
 use tracing::info_span;
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorControlFlow,
+    ExecutionRuntimeContext, ExecutionTaskSpawner,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, StaticBatchingStrategy},
-    join::join_operator::{JoinOperator, ProbeOutput},
-    pipeline::{MorselSizeRequirement, PipelineNode, RuntimeContext},
+    join::{
+        join_operator::{JoinOperator, ProbeOutput},
+        stats::JoinStats,
+    },
+    pipeline::{BuilderContext, MorselSizeRequirement, PipelineNode},
     runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle},
 };
 
@@ -33,7 +36,7 @@ pub struct JoinNode<Op: JoinOperator> {
     op: Arc<Op>,
     left: Box<dyn PipelineNode>,
     right: Box<dyn PipelineNode>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<JoinStats>,
     plan_stats: StatsState,
     morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
@@ -58,7 +61,7 @@ struct BuildExecutionContext<Op: JoinOperator> {
     task_spawner: ExecutionTaskSpawner,
     task_set: OrderingAwareJoinSet<DaftResult<BuildTaskResult<Op>>>,
     build_state: Option<Op::BuildState>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<JoinStats>,
 }
 
 struct ProbeExecutionContext<Op: JoinOperator> {
@@ -66,9 +69,9 @@ struct ProbeExecutionContext<Op: JoinOperator> {
     task_spawner: ExecutionTaskSpawner,
     task_set: OrderingAwareJoinSet<DaftResult<ProbeTaskResult<Op>>>,
     state_pool: HashMap<StateId, Op::ProbeState>,
-    output_sender: Sender<Arc<MicroPartition>>,
+    output_sender: Sender<MicroPartition>,
     batch_manager: Arc<BatchManager<StaticBatchingStrategy>>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<JoinStats>,
 }
 
 impl<Op: JoinOperator + 'static> JoinNode<Op> {
@@ -77,19 +80,12 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
         left: Box<dyn PipelineNode>,
         right: Box<dyn PipelineNode>,
         plan_stats: StatsState,
-        ctx: &RuntimeContext,
-        output_schema: SchemaRef,
+        ctx: &BuilderContext,
         context: &LocalNodeContext,
     ) -> Self {
         let name: Arc<str> = op.name().into();
-        let node_info = ctx.next_node_info(
-            name,
-            op.op_type(),
-            NodeCategory::Intermediate,
-            output_schema,
-            context,
-        );
-        let runtime_stats = op.make_runtime_stats(node_info.id);
+        let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::Intermediate, context);
+        let runtime_stats = Arc::new(JoinStats::new(&ctx.meter, &node_info));
 
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
@@ -109,7 +105,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
 
     fn spawn_build_task(
         ctx: &mut BuildExecutionContext<Op>,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Op::BuildState,
     ) {
         let op = ctx.op.clone();
@@ -128,7 +124,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
 
     async fn process_build_input(
         node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
+        mut receiver: Receiver<MicroPartition>,
         ctx: &mut BuildExecutionContext<Op>,
         stats_manager: &RuntimeStatsManagerHandle,
         finalized_build_state_sender: oneshot::Sender<Op::FinalizedBuildState>,
@@ -144,7 +140,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
                 // Branch 1: Join completed task (only if tasks exist)
                 Some(result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
                     let BuildTaskResult { state, elapsed } = result??;
-                    ctx.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+                    ctx.runtime_stats.add_duration_us(elapsed.as_micros() as u64);
 
                     // Return state
                     ctx.build_state = Some(state);
@@ -158,7 +154,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
                                 stats_manager.activate_node(node_id);
                                 node_initialized = true;
                             }
-                            ctx.runtime_stats.add_rows_in(morsel.len() as u64);
+                            ctx.runtime_stats.add_build_rows_inserted(morsel.len() as u64);
                             let state = ctx.build_state.take()
                                 .expect("Build state should be available for build task if ctx.build_state is some");
 
@@ -190,7 +186,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
 
     fn spawn_probe_task(
         ctx: &mut ProbeExecutionContext<Op>,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Op::ProbeState,
         state_id: StateId,
     ) {
@@ -213,7 +209,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
     async fn handle_probe_task_completion(
         result: ProbeTaskResult<Op>,
         ctx: &mut ProbeExecutionContext<Op>,
-    ) -> DaftResult<OperatorControlFlow> {
+    ) -> DaftResult<ControlFlow<()>> {
         match result.output {
             ProbeOutput::NeedMoreInput(mp) => {
                 // Record execution stats
@@ -225,9 +221,9 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
 
                 // Send output if present
                 if let Some(mp) = mp {
-                    ctx.runtime_stats.add_rows_out(mp.len() as u64);
+                    ctx.runtime_stats.add_probe_rows_out(mp.len() as u64);
                     if ctx.output_sender.send(mp).await.is_err() {
-                        return Ok(OperatorControlFlow::Break);
+                        return Ok(ControlFlow::Break(()));
                     }
                 }
 
@@ -243,16 +239,16 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
                 );
 
                 // Send output
-                ctx.runtime_stats.add_rows_out(output.len() as u64);
+                ctx.runtime_stats.add_probe_rows_out(output.len() as u64);
                 if ctx.output_sender.send(output).await.is_err() {
-                    return Ok(OperatorControlFlow::Break);
+                    return Ok(ControlFlow::Break(()));
                 }
 
                 // Spawn another execution with same input and state (don't return state)
                 Self::spawn_probe_task(ctx, input, result.state, result.state_id);
             }
         }
-        Ok(OperatorControlFlow::Continue)
+        Ok(ControlFlow::Continue(()))
     }
 
     fn spawn_ready_probe_batches(
@@ -280,15 +276,15 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
 
     async fn process_probe_input(
         node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
+        mut receiver: Receiver<MicroPartition>,
         ctx: &mut ProbeExecutionContext<Op>,
         stats_manager: &RuntimeStatsManagerHandle,
         finalized_build_state_receiver: oneshot::Receiver<Op::FinalizedBuildState>,
-    ) -> DaftResult<OperatorControlFlow> {
+    ) -> DaftResult<ControlFlow<()>> {
         // Wait for finalized build state before starting
         let finalized_build_state = match finalized_build_state_receiver.await {
             Ok(build_state) => build_state,
-            Err(_) => return Ok(OperatorControlFlow::Break),
+            Err(_) => return Ok(ControlFlow::Break(())),
         };
 
         // Initialize probe states with the finalized build state
@@ -311,14 +307,12 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
                 // Branch 1: Join completed task (only if tasks exist)
                 Some(join_result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
                     let control = Self::handle_probe_task_completion(join_result??, ctx).await?;
-                    if !control.should_continue() {
-                        return Ok(OperatorControlFlow::Break);
+                    if control.is_break() {
+                        return Ok(ControlFlow::Break(()));
                     }
 
                     // After completing a task, update bounds and try to spawn more tasks
-                    let new_requirements = ctx.batch_manager.calculate_batch_size();
-                    let (lower, upper) = new_requirements.values();
-                    buffer.update_bounds(lower, upper);
+                    buffer.update_bounds(ctx.batch_manager.calculate_batch_size());
 
                     Self::spawn_ready_probe_batches(&mut buffer, ctx)?;
                 }
@@ -331,7 +325,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
                                 stats_manager.activate_node(node_id);
                                 node_initialized = true;
                             }
-                            ctx.runtime_stats.add_rows_in(morsel.len() as u64);
+                            ctx.runtime_stats.add_probe_rows_in(morsel.len() as u64);
                             buffer.push(morsel);
                             Self::spawn_ready_probe_batches(&mut buffer, ctx)?;
                         }
@@ -365,15 +359,15 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
             // Wait for final task to complete
             while let Some(join_result) = ctx.task_set.join_next().await {
                 let control = Self::handle_probe_task_completion(join_result??, ctx).await?;
-                if !control.should_continue() {
-                    return Ok(OperatorControlFlow::Break);
+                if control.is_break() {
+                    return Ok(ControlFlow::Break(()));
                 }
             }
         }
 
         debug_assert_eq!(ctx.task_set.len(), 0, "TaskSet should be empty after loop");
 
-        Ok(OperatorControlFlow::Continue)
+        Ok(ControlFlow::Continue(()))
     }
 }
 
@@ -416,13 +410,19 @@ impl<Op: JoinOperator + 'static> TreeDisplay for JoinNode<Op> {
             .map(|child| child.repr_json())
             .collect();
 
-        serde_json::json!({
+        let mut json = serde_json::json!({
             "id": self.node_id(),
             "category": "Intermediate",
             "type": self.op.op_type().to_string(),
             "name": self.name(),
             "children": children,
-        })
+        });
+
+        if let StatsState::Materialized(stats) = &self.plan_stats {
+            json["approx_stats"] = serde_json::json!(stats);
+        }
+
+        json
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
@@ -469,10 +469,13 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
     }
 
     fn start(
-        &self,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<Receiver<MicroPartition>> {
+        let node_id = self.node_id();
+        let op_name = self.op.name().to_string();
+
         let build_child_receiver = self.left.start(false, runtime_handle)?;
         let probe_child_receiver = self.right.start(maintain_order, runtime_handle)?;
 
@@ -482,26 +485,21 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         let build_task_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("JoinNode::Build"),
         );
         let probe_task_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("JoinNode::Probe"),
         );
         let finalize_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("JoinNode::FinalizeProbe"),
         );
 
         let stats_manager = runtime_handle.stats_manager();
-        let node_id = self.node_id();
         let runtime_stats = self.runtime_stats.clone();
-        let op_name = self.op.name().to_string();
         let op = self.op.clone();
         runtime_handle.spawn(
             async move {
@@ -549,7 +547,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
                 );
 
                 build_result?;
-                if !probe_result?.should_continue() {
+                if probe_result?.is_break() {
                     stats_manager.finalize_node(node_id);
                     return Ok(());
                 }
@@ -566,7 +564,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
                         .finalize_probe(finished_states, &finalize_spawner)
                         .await??;
                     if let Some(mp) = finalized_output {
-                        probe_ctx.runtime_stats.add_rows_out(mp.len() as u64);
+                        probe_ctx.runtime_stats.add_probe_rows_out(mp.len() as u64);
                         let _ = probe_ctx.output_sender.send(mp).await;
                     }
                 }
@@ -586,10 +584,6 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
 
     fn node_id(&self) -> usize {
         self.node_info.id
-    }
-
-    fn plan_id(&self) -> Arc<str> {
-        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
 
     fn node_info(&self) -> Arc<NodeInfo> {

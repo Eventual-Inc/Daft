@@ -13,12 +13,12 @@ use super::blocking_sink::{
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) enum SortState {
-    Building(Vec<Arc<MicroPartition>>),
+    Building(Vec<MicroPartition>),
     Done,
 }
 
 impl SortState {
-    fn push(&mut self, part: Arc<MicroPartition>) {
+    fn push(&mut self, part: MicroPartition) {
         if let Self::Building(parts) = self {
             parts.push(part);
         } else {
@@ -26,7 +26,7 @@ impl SortState {
         }
     }
 
-    fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
+    fn finalize(&mut self) -> Vec<MicroPartition> {
         let res = if let Self::Building(parts) = self {
             std::mem::take(parts)
         } else {
@@ -64,8 +64,9 @@ impl BlockingSink for SortSink {
     #[instrument(skip_all, name = "SortSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         state.push(input);
@@ -82,13 +83,13 @@ impl BlockingSink for SortSink {
         spawner
             .spawn(
                 async move {
-                    let parts = states.into_iter().flat_map(|mut state| state.finalize());
+                    let parts: Vec<MicroPartition> = states
+                        .into_iter()
+                        .flat_map(|mut state| state.finalize())
+                        .collect();
                     let concated = MicroPartition::concat(parts)?;
-                    let sorted = Arc::new(concated.sort(
-                        &params.sort_by,
-                        &params.descending,
-                        &params.nulls_first,
-                    )?);
+                    let sorted =
+                        concated.sort(&params.sort_by, &params.descending, &params.nulls_first)?;
                     Ok(BlockingSinkFinalizeOutput::Finished(vec![sorted]))
                 },
                 Span::current(),
@@ -128,5 +129,9 @@ impl BlockingSink for SortSink {
 
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(SortState::Building(Vec::new()))
+    }
+
+    fn max_concurrency(&self) -> usize {
+        1
     }
 }

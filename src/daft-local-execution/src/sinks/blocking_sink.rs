@@ -12,7 +12,6 @@ use common_metrics::{
     snapshot::StatSnapshotImpl,
 };
 use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
-use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
@@ -22,7 +21,7 @@ use tracing::info_span;
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
     channel::{Receiver, Sender, create_channel},
-    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
+    pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 
@@ -30,9 +29,9 @@ pub enum BlockingSinkFinalizeOutput<Op: BlockingSink> {
     #[allow(dead_code)]
     HasMoreOutput {
         states: Vec<Op::State>,
-        output: Vec<Arc<MicroPartition>>,
+        output: Vec<MicroPartition>,
     },
-    Finished(Vec<Arc<MicroPartition>>),
+    Finished(Vec<MicroPartition>),
 }
 
 pub(crate) type BlockingSinkSinkResult<Op> =
@@ -41,11 +40,13 @@ pub(crate) type BlockingSinkFinalizeResult<Op> =
     OperatorOutput<DaftResult<BlockingSinkFinalizeOutput<Op>>>;
 pub(crate) trait BlockingSink: Send + Sync {
     type State: Send + Sync + Unpin;
+    type Stats: RuntimeStats = DefaultRuntimeStats;
 
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self>
     where
@@ -61,9 +62,6 @@ pub(crate) trait BlockingSink: Send + Sync {
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Self::State>;
-    fn make_runtime_stats(&self, name: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::new(name))
-    }
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
     }
@@ -82,15 +80,15 @@ struct ExecutionContext<Op: BlockingSink> {
     task_spawner: ExecutionTaskSpawner,
     task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
     state_pool: HashMap<StateId, Op::State>,
-    output_sender: Sender<Arc<MicroPartition>>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    output_sender: Sender<MicroPartition>,
+    runtime_stats: Arc<Op::Stats>,
     stats_manager: RuntimeStatsManagerHandle,
 }
 
 pub struct BlockingSinkNode<Op: BlockingSink> {
     op: Arc<Op>,
     child: Box<dyn PipelineNode>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<Op::Stats>,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
 }
@@ -100,19 +98,12 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         op: Arc<Op>,
         child: Box<dyn PipelineNode>,
         plan_stats: StatsState,
-        ctx: &RuntimeContext,
-        output_schema: SchemaRef,
+        ctx: &BuilderContext,
         context: &LocalNodeContext,
     ) -> Self {
         let name: Arc<str> = op.name().into();
-        let node_info = ctx.next_node_info(
-            name,
-            op.op_type(),
-            NodeCategory::BlockingSink,
-            output_schema,
-            context,
-        );
-        let runtime_stats = op.make_runtime_stats(node_info.id);
+        let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::BlockingSink, context);
+        let runtime_stats = Arc::new(Op::Stats::new(&ctx.meter, &node_info));
 
         Self {
             op,
@@ -130,15 +121,18 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
 
     fn spawn_execution_task(
         ctx: &mut ExecutionContext<Op>,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Op::State,
         state_id: StateId,
     ) {
         let op = ctx.op.clone();
         let task_spawner = ctx.task_spawner.clone();
+        let runtime_stats = ctx.runtime_stats.clone();
         ctx.task_set.spawn(async move {
             let now = Instant::now();
-            let new_state = op.sink(input, state, &task_spawner).await??;
+            let new_state = op
+                .sink(input, state, runtime_stats, &task_spawner)
+                .await??;
             let elapsed = now.elapsed();
 
             Ok(ExecutionTaskResult {
@@ -151,7 +145,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
 
     async fn process_input(
         node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
+        mut receiver: Receiver<MicroPartition>,
         ctx: &mut ExecutionContext<Op>,
     ) -> DaftResult<()> {
         let mut input_closed = false;
@@ -166,7 +160,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                 Some(result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
                     // Record execution stats
                     let ExecutionTaskResult { state_id, state, elapsed } = result??;
-                    ctx.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+                    ctx.runtime_stats.add_duration_us(elapsed.as_micros() as u64);
 
                     // Return state to pool
                     ctx.state_pool.insert(state_id, state);
@@ -247,13 +241,19 @@ impl<Op: BlockingSink + 'static> TreeDisplay for BlockingSinkNode<Op> {
             .map(|child| child.repr_json())
             .collect();
 
-        serde_json::json!({
+        let mut json = serde_json::json!({
             "id": self.node_id(),
             "category": "BlockingSink",
             "type": self.op.op_type().to_string(),
             "name": self.name(),
             "children": children,
-        })
+        });
+
+        if let StatsState::Materialized(stats) = &self.plan_stats {
+            json["approx_stats"] = serde_json::json!(stats);
+        }
+
+        json
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
@@ -284,10 +284,13 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
     }
 
     fn start(
-        &self,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<Receiver<MicroPartition>> {
+        let node_id = self.node_id();
+        let name = self.name();
+
         let child_results_receiver = self.child.start(false, runtime_handle)?;
 
         let (destination_sender, destination_receiver) = create_channel(1);
@@ -299,19 +302,16 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         let task_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("BlockingSink::Sink"),
         );
         let finalize_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("BlockingSink::Finalize"),
         );
 
         // Spawn process_input task
         let stats_manager = runtime_handle.stats_manager();
-        let node_id = self.node_id();
         let runtime_stats = self.runtime_stats.clone();
 
         // Create task set
@@ -324,7 +324,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
             task_set,
             state_pool: HashMap::new(),
             output_sender: destination_sender,
-            runtime_stats: runtime_stats.clone(),
+            runtime_stats,
             stats_manager: stats_manager.clone(),
         };
 
@@ -374,7 +374,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            &self.name(),
+            &name,
         );
 
         Ok(destination_receiver)
@@ -384,9 +384,6 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
     }
     fn node_id(&self) -> usize {
         self.node_info.id
-    }
-    fn plan_id(&self) -> Arc<str> {
-        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
     }
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()

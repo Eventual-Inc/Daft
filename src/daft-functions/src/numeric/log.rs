@@ -17,7 +17,11 @@ macro_rules! log {
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
-            fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+            fn call(
+                &self,
+                inputs: FunctionArgs<Series>,
+                _ctx: &daft_dsl::functions::scalar::EvalContext,
+            ) -> DaftResult<Series> {
                 let UnaryArg { input } = inputs.try_into()?;
 
                 input.$name()
@@ -85,7 +89,11 @@ impl ScalarUDF for Log {
     fn name(&self) -> &'static str {
         "log"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let LogArgs { input, base } = inputs.try_into()?;
 
         input.log(base)

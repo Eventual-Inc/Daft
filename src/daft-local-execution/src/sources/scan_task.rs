@@ -1,7 +1,5 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{
-    collections::{HashMap, HashSet},
-    future::Future,
+    collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
 };
 
@@ -9,149 +7,169 @@ use async_trait::async_trait;
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
-use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
-use common_scan_info::{Pushdowns, ScanTaskLike};
 use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
-use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_dsl::{AggExpr, Expr};
-use daft_io::{GetRange, IOStatsRef};
-use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
+use daft_io::IOStatsRef;
+use daft_local_plan::InputId;
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
-use daft_scan::{ChunkSpec, ScanTask};
-use daft_warc::WarcConvertOptions;
+use daft_scan::{FileFormatConfig, Pushdowns, ScanTask, ScanTaskRef, SourceConfig};
 use futures::{FutureExt, Stream, StreamExt};
-use snafu::ResultExt;
 use tracing::instrument;
 
 use crate::{
-    channel::{Sender, create_channel},
+    channel::{Receiver, Sender, UnboundedReceiver, create_channel, create_unbounded_channel},
     pipeline::NodeName,
-    sources::source::{Source, SourceStream},
+    sources::{
+        scan_task_reader,
+        source::{Source, SourceStream},
+    },
 };
 
 pub struct ScanTaskSource {
-    scan_tasks: Vec<Arc<ScanTask>>,
-    num_parallel_tasks: usize,
+    receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
+    source_config: Option<Arc<SourceConfig>>,
+    pushdowns: Pushdowns,
     schema: SchemaRef,
-    execution_config: Arc<DaftExecutionConfig>,
+    num_parallel_tasks: usize,
 }
 
 impl ScanTaskSource {
     pub fn new(
-        scan_tasks: Vec<Arc<ScanTask>>,
+        receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
+        source_config: Option<Arc<SourceConfig>>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
     ) -> Self {
-        // Split all scan tasks for parallelism
-        let scan_tasks = scan_tasks
-            .into_iter()
-            .flat_map(|scan_task| scan_task.split())
-            .collect::<Vec<_>>();
-
-        // Determine the number of parallel tasks to run based on available CPU cores and row limits
         let num_cpus = get_compute_pool_num_threads();
-        let mut num_parallel_tasks = match pushdowns.limit {
-            // If we have a row limit, we need to calculate how many parallel tasks we can run
-            // without exceeding the limit
-            Some(limit) => {
-                let mut count = 0;
-                let mut remaining_rows = limit as f64;
-
-                // Only examine tasks up to the number of available CPU cores
-                for scan_task in scan_tasks.iter().take(num_cpus) {
-                    match scan_task.approx_num_rows(Some(cfg)) {
-                        // If we can estimate the number of rows for this task
-                        Some(estimated_rows) => {
-                            remaining_rows -= estimated_rows;
-                            count += 1;
-
-                            // Stop adding tasks if we would exceed the row limit
-                            if remaining_rows <= 0.0 {
-                                break;
-                            }
-                        }
-                        // If we can't estimate rows, conservatively include the task
-                        // This ensures we don't underutilize available resources
-                        None => count += 1,
-                    }
-                }
-                count
-            }
-            // If there's no row limit, use the configured parallelism, or all available CPU cores
-            // if configured value is 0
-            None => {
-                if cfg.scantask_max_parallel == 0 {
-                    log::info!(
-                        "The max parallelism of the scan tasks is configured to {}, using all available CPUs instead.",
-                        cfg.scantask_max_parallel
-                    );
-                    num_cpus
-                } else {
-                    cfg.scantask_max_parallel
-                }
-            }
+        let num_parallel_tasks = if cfg.scantask_max_parallel > 0 {
+            cfg.scantask_max_parallel
+        } else {
+            num_cpus
         };
-        num_parallel_tasks = num_parallel_tasks.min(scan_tasks.len());
         Self {
-            scan_tasks,
-            num_parallel_tasks,
+            receiver,
+            source_config,
+            pushdowns,
             schema,
-            execution_config: Arc::new(cfg.clone()),
+            num_parallel_tasks,
         }
     }
 
-    pub fn arced(self) -> Arc<dyn Source> {
-        Arc::new(self) as Arc<dyn Source>
-    }
-
-    /// Spawns the background task that processes scan tasks with limited parallelism
     fn spawn_scan_task_processor(
-        &self,
-        senders: Vec<Sender<Arc<MicroPartition>>>,
+        num_parallel_tasks: usize,
+        mut receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
+        output_sender: Sender<MicroPartition>,
         io_stats: IOStatsRef,
-        delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
-        maintain_order: bool,
         chunk_size: usize,
+        schema: SchemaRef,
+        maintain_order: bool,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
-        let scan_tasks = self.scan_tasks.clone();
-        let num_parallel_tasks = self.num_parallel_tasks;
+
+        // When maintain_order is true, spawn flattener outside so it drains stream outputs in order.
+        let mut flattener_state = if maintain_order {
+            let (agg_tx, agg_rx) = create_unbounded_channel::<Receiver<MicroPartition>>();
+            let flattener_handle = io_runtime.spawn(run_order_preserving_flattener(
+                agg_rx,
+                output_sender.clone(),
+            ));
+            Some((agg_tx, flattener_handle))
+        } else {
+            None
+        };
 
         io_runtime.spawn(async move {
             let mut task_set = JoinSet::new();
-            let mut scan_task_and_sender_iter = scan_tasks.into_iter().zip(senders.into_iter());
+            let mut pending_tasks = VecDeque::new();
+            let mut receiver_exhausted = false;
 
-            // Start initial batch of parallel tasks
-            for _ in 0..num_parallel_tasks {
-                if let Some((scan_task, sender)) = scan_task_and_sender_iter.next() {
+            while !receiver_exhausted || !pending_tasks.is_empty() || !task_set.is_empty() {
+                while task_set.len() < num_parallel_tasks && !pending_tasks.is_empty() {
+                    let (scan_task, delete_map, input_id) =
+                        pending_tasks.pop_front().expect("Pending tasks should not be empty");
+                    let sender = match &flattener_state {
+                        Some((agg_tx, _)) => {
+                            let (stream_tx, stream_rx) = create_channel(1);
+                            let _ = agg_tx.send(stream_rx);
+                            stream_tx
+                        }
+                        None => output_sender.clone(),
+                    };
                     task_set.spawn(forward_scan_task_stream(
                         scan_task,
                         io_stats.clone(),
-                        delete_map.clone(),
+                        delete_map,
                         maintain_order,
                         chunk_size,
                         sender,
+                        input_id,
                     ));
+                }
+
+                tokio::select! {
+                    recv_result = receiver.recv(), if !receiver_exhausted => {
+                        match recv_result {
+                            Some((_input_id, scan_tasks_batch)) if scan_tasks_batch.is_empty() => {
+                                let empty = MicroPartition::empty(Some(schema.clone()));
+                                match &flattener_state {
+                                    Some((agg_tx, _)) => {
+                                        let (tx, rx) = create_channel(1);
+                                        let _ = tx.send(empty).await;
+                                        drop(tx);
+                                        let _ = agg_tx.send(rx);
+                                    }
+                                    None => {
+                                        if output_sender.send(empty).await.is_err() {
+                                            return Ok(());
+                                        }
+                                    }
+                                }
+                            }
+                            Some((input_id, scan_tasks_batch)) => {
+                                let delete_map =
+                                    get_delete_map(&scan_tasks_batch).await?.map(Arc::new);
+
+                                let split_tasks: Vec<Arc<ScanTask>> = scan_tasks_batch
+                                    .into_iter()
+                                    .flat_map(|scan_task| scan_task.split())
+                                    .collect();
+
+                                for scan_task in split_tasks {
+                                    pending_tasks.push_back((scan_task, delete_map.clone(), input_id));
+                                }
+                            }
+                            None => {
+                                receiver_exhausted = true;
+                            }
+                        }
+                    }
+                    Some(join_result) = task_set.join_next(), if !task_set.is_empty() => {
+                        match join_result {
+                            Ok(Ok(_)) => {}
+                            Ok(Err(e)) => {
+                                let _ = flattener_state.take();
+                                return Err(e.into());
+                            }
+                            Err(e) => {
+                                let _ = flattener_state.take();
+                                return Err(e.into());
+                            }
+                        }
+                    }
                 }
             }
+            debug_assert!(pending_tasks.is_empty(), "Pending tasks should be empty");
+            debug_assert!(task_set.is_empty(), "Task set should be empty");
+            debug_assert!(receiver_exhausted, "Receiver should be exhausted");
 
-            // Process remaining tasks as previous ones complete
-            while let Some(result) = task_set.join_next().await {
-                result??;
-                if let Some((scan_task, sender)) = scan_task_and_sender_iter.next() {
-                    task_set.spawn(forward_scan_task_stream(
-                        scan_task,
-                        io_stats.clone(),
-                        delete_map.clone(),
-                        maintain_order,
-                        chunk_size,
-                        sender,
-                    ));
-                }
+            if let Some((agg_tx, flattener_handle)) = flattener_state {
+                drop(agg_tx);
+                flattener_handle
+                    .await
+                    .map_err::<DaftError, _>(|e| e.into())?;
             }
 
             Ok(())
@@ -162,46 +180,55 @@ impl ScanTaskSource {
 #[async_trait]
 impl Source for ScanTaskSource {
     #[instrument(name = "ScanTaskSource::get_data", level = "info", skip_all)]
-    async fn get_data(
-        &self,
+    fn get_data(
+        self: Box<Self>,
         maintain_order: bool,
         io_stats: IOStatsRef,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        // Get the delete map for the scan tasks, if any
-        let delete_map = get_delete_map(&self.scan_tasks).await?.map(Arc::new);
+        let (output_sender, output_receiver) = create_channel::<MicroPartition>(1);
+        let input_receiver = self.receiver;
+        let num_parallel_tasks = self.num_parallel_tasks;
 
-        // Create channels for the scan tasks
-        let (senders, receivers) = match maintain_order {
-            // If we need to maintain order, we need to create a channel for each scan task
-            true => (0..self.scan_tasks.len())
-                .map(|_| create_channel::<Arc<MicroPartition>>(1))
-                .unzip(),
-            // If we don't need to maintain order, we can use a single channel for all scan tasks
-            false => {
-                let (tx, rx) = create_channel(1);
-                (vec![tx; self.scan_tasks.len()], vec![rx])
-            }
-        };
-
-        // Spawn the scan task processor
-        let task = self.spawn_scan_task_processor(
-            senders,
+        let processor_task = Self::spawn_scan_task_processor(
+            num_parallel_tasks,
+            input_receiver,
+            output_sender,
             io_stats,
-            delete_map,
-            maintain_order,
             chunk_size,
+            self.schema.clone(),
+            maintain_order,
         );
+        let result_stream = output_receiver.into_stream().map(Ok);
+        let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
 
-        // Flatten the receivers into a stream
-        let result_stream = flatten_receivers_into_stream(receivers, task.map(|x| x?));
-
-        Ok(Box::pin(result_stream))
+        Ok(Box::pin(combined_stream))
     }
 
     fn name(&self) -> NodeName {
-        let format_name = self.scan_tasks[0].file_format_config.var_name();
-        format!("{} Scan", format_name).into()
+        if let Some(source_config) = &self.source_config {
+            match source_config.as_ref() {
+                SourceConfig::File(ffc) => match ffc {
+                    FileFormatConfig::Parquet(_) => "Read Parquet".into(),
+                    FileFormatConfig::Csv(_) => "Read CSV".into(),
+                    FileFormatConfig::Json(_) => "Read JSON".into(),
+                    FileFormatConfig::Warc(_) => "Read WARC".into(),
+                    FileFormatConfig::Text(_) => "Read Text".into(),
+                },
+                #[cfg(feature = "python")]
+                SourceConfig::Database(_) => "Read Database".into(),
+                #[cfg(feature = "python")]
+                SourceConfig::PythonFunction { source_name, .. } => {
+                    if let Some(source_name) = source_name {
+                        format!("Read {source_name} (Python)").into()
+                    } else {
+                        "Read Python".into()
+                    }
+                }
+            }
+        } else {
+            "Empty (Scan Task)".into()
+        }
     }
 
     fn op_type(&self) -> NodeType {
@@ -224,78 +251,40 @@ impl TreeDisplay for ScanTaskSource {
     fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
         fn base_display(scan: &ScanTaskSource) -> String {
-            let num_scan_tasks = scan.scan_tasks.len();
-            let total_bytes: usize = scan
-                .scan_tasks
-                .iter()
-                .map(|st| {
-                    st.estimate_in_memory_size_bytes(Some(scan.execution_config.as_ref()))
-                        .or_else(|| st.size_bytes_on_disk())
-                        .unwrap_or(0)
-                })
-                .sum();
-
-            let num_parallel_tasks = scan.num_parallel_tasks;
-            #[allow(unused_mut)]
-            let mut s = format!(
+            format!(
                 "ScanTaskSource:
-Num Scan Tasks = {num_scan_tasks}
-Estimated Scan Bytes = {total_bytes}
-Num Parallel Scan Tasks = {num_parallel_tasks}
-"
-            );
-            #[cfg(feature = "python")]
-            if let FileFormatConfig::Database(config) =
-                scan.scan_tasks[0].file_format_config().as_ref()
-            {
-                if num_scan_tasks == 1 {
-                    writeln!(s, "SQL Query = {}", &config.sql).unwrap();
-                } else {
-                    writeln!(s, "SQL Queries = [{},..]", &config.sql).unwrap();
-                }
-            }
-            s
+Num Parallel Scan Tasks = {}
+",
+                scan.num_parallel_tasks
+            )
         }
         match level {
             DisplayLevel::Compact => self.get_name(),
             DisplayLevel::Default => {
                 let mut s = base_display(self);
-                // We're only going to display the pushdowns and schema for the first scan task.
-                let pushdown = self.scan_tasks[0].pushdowns();
+                let pushdown = &self.pushdowns;
                 if !pushdown.is_empty() {
                     s.push_str(&pushdown.display_as(DisplayLevel::Compact));
                     s.push('\n');
                 }
 
-                let schema = self.scan_tasks[0].schema();
                 writeln!(
                     s,
                     "Schema: {{{}}}",
-                    schema.display_as(DisplayLevel::Compact)
+                    self.schema.display_as(DisplayLevel::Compact)
                 )
                 .unwrap();
-
-                let tasks = self.scan_tasks.iter();
-
-                writeln!(s, "Scan Tasks: [").unwrap();
-                for (i, st) in tasks.enumerate() {
-                    if i < 3 || i >= self.scan_tasks.len() - 3 {
-                        writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Compact)).unwrap();
-                    } else if i == 3 {
-                        writeln!(s, "...").unwrap();
-                    }
-                }
-                writeln!(s, "]").unwrap();
 
                 s
             }
             DisplayLevel::Verbose => {
                 let mut s = base_display(self);
-                writeln!(s, "Scan Tasks: [").unwrap();
-
-                for st in &self.scan_tasks {
-                    writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Verbose)).unwrap();
-                }
+                writeln!(
+                    s,
+                    "Pushdowns: {}",
+                    self.pushdowns.display_as(DisplayLevel::Verbose)
+                )
+                .unwrap();
                 s
             }
         }
@@ -393,7 +382,7 @@ async fn get_delete_map(
                     .map(|(file, pos)| {
                         (
                             file.expect("file should not be null in iceberg delete files"),
-                            *pos.expect("pos should not be null in iceberg delete files"),
+                            pos.expect("pos should not be null in iceberg delete files"),
                         )
                     })
                 {
@@ -407,18 +396,19 @@ async fn get_delete_map(
         .await?
 }
 
-/// Creates the final result stream by flattening receivers and handling task completion
-fn flatten_receivers_into_stream(
-    receivers: Vec<crate::channel::Receiver<Arc<MicroPartition>>>,
-    background_task: impl Future<Output = DaftResult<()>>,
-) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
-    let flattened_receivers =
-        futures::stream::iter(receivers.into_iter().map(|rx| rx.into_stream()))
-            .flatten()
-            .map(Ok);
-
-    // Handle the background task completion and forward any errors
-    combine_stream(flattened_receivers, background_task)
+/// Drains a "receiver of receivers" in order, forwarding each inner stream's
+/// micropartitions to `output_sender`. Used when `maintain_order` is true.
+async fn run_order_preserving_flattener(
+    mut agg_rx: UnboundedReceiver<Receiver<MicroPartition>>,
+    output_sender: Sender<MicroPartition>,
+) {
+    while let Some(mut inner_rx) = agg_rx.recv().await {
+        while let Some(mp) = inner_rx.recv().await {
+            if output_sender.send(mp).await.is_err() {
+                return;
+            }
+        }
+    }
 }
 
 async fn forward_scan_task_stream(
@@ -427,16 +417,28 @@ async fn forward_scan_task_stream(
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
     chunk_size: usize,
-    sender: Sender<Arc<MicroPartition>>,
-) -> DaftResult<()> {
+    sender: Sender<MicroPartition>,
+    input_id: InputId,
+) -> DaftResult<InputId> {
+    let schema = scan_task.materialized_schema();
     let mut stream =
         stream_scan_task(scan_task, io_stats, delete_map, maintain_order, chunk_size).await?;
+    let mut has_data = false;
     while let Some(result) = stream.next().await {
-        if sender.send(result?).await.is_err() {
+        has_data = true;
+        let partition = result?;
+        if sender.send(partition).await.is_err() {
             break;
         }
     }
-    Ok(())
+
+    // If no data was emitted, send empty micropartition
+    if !has_data {
+        let empty = MicroPartition::empty(Some(schema));
+        let _ = sender.send(empty).await;
+    }
+
+    Ok(input_id)
 }
 
 async fn stream_scan_task(
@@ -445,7 +447,7 @@ async fn stream_scan_task(
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
     chunk_size: usize,
-) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
+) -> DaftResult<impl Stream<Item = DaftResult<MicroPartition>> + Send> {
     let pushdown_columns = scan_task
         .pushdowns
         .columns
@@ -475,7 +477,7 @@ async fn stream_scan_task(
     };
 
     if scan_task.sources.len() != 1 {
-        return Err(common_error::DaftError::TypeError(
+        return Err(DaftError::TypeError(
             "Streaming reads only supported for single source ScanTasks".to_string(),
         ));
     }
@@ -489,175 +491,19 @@ async fn stream_scan_task(
             .unwrap_or_default(),
     );
     let io_client = daft_io::get_io_client(scan_task.storage_config.multithreaded_io, io_config)?;
-    let table_stream = match scan_task.file_format_config.as_ref() {
-        FileFormatConfig::Parquet(ParquetSourceConfig {
-            coerce_int96_timestamp_unit,
-            field_id_mapping,
-            chunk_size: chunk_size_from_config,
-            ..
-        }) => {
-            if let Some(aggregation) = &scan_task.pushdowns.aggregation
-                && let Expr::Agg(AggExpr::Count(_, _)) = aggregation.as_ref()
-            {
-                daft_parquet::read::stream_parquet_count_pushdown(
-                    url,
-                    io_client,
-                    Some(io_stats),
-                    field_id_mapping.clone(),
-                    aggregation,
-                )
-                .await?
-            } else {
-                let parquet_chunk_size = chunk_size_from_config.or(Some(chunk_size));
-                let inference_options =
-                    ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
 
-                let delete_rows = delete_map.as_ref().and_then(|m| m.get(url).cloned());
-                let row_groups =
-                    if let Some(ChunkSpec::Parquet(row_groups)) = source.get_chunk_spec() {
-                        Some(row_groups.clone())
-                    } else {
-                        None
-                    };
-                let metadata = scan_task
-                    .sources
-                    .first()
-                    .and_then(|s| s.get_parquet_metadata().cloned());
-                daft_parquet::read::stream_parquet(
-                    url,
-                    file_column_names,
-                    scan_task.pushdowns.limit,
-                    row_groups,
-                    scan_task.pushdowns.filters.clone(),
-                    io_client,
-                    Some(io_stats),
-                    &inference_options,
-                    field_id_mapping.clone(),
-                    metadata,
-                    maintain_order,
-                    delete_rows,
-                    parquet_chunk_size,
-                )
-                .await?
-            }
-        }
-        FileFormatConfig::Csv(cfg) => {
-            let schema_of_file = scan_task.schema.clone();
-            let col_names = if !cfg.has_headers {
-                Some(schema_of_file.field_names().collect::<Vec<_>>())
-            } else {
-                None
-            };
-            let convert_options = CsvConvertOptions::new_internal(
-                scan_task.pushdowns.limit,
-                file_column_names
-                    .as_ref()
-                    .map(|cols| cols.iter().map(|col| (*col).clone()).collect()),
-                col_names
-                    .as_ref()
-                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
-                Some(schema_of_file),
-                scan_task.pushdowns.filters.clone(),
-            );
-            let parse_options = CsvParseOptions::new_with_defaults(
-                cfg.has_headers,
-                cfg.delimiter,
-                cfg.double_quote,
-                cfg.quote,
-                cfg.allow_variable_columns,
-                cfg.escape_char,
-                cfg.comment,
-            )?;
-            let csv_chunk_size = cfg.chunk_size.or(Some(chunk_size));
-            let read_options = CsvReadOptions::new_internal(cfg.buffer_size, csv_chunk_size);
-            daft_csv::stream_csv(
-                url.to_string(),
-                Some(convert_options),
-                Some(parse_options),
-                Some(read_options),
-                io_client,
-                Some(io_stats.clone()),
-                None,
-                // maintain_order, TODO: Implement maintain_order for CSV
-            )
-            .await?
-        }
-        FileFormatConfig::Json(cfg) => {
-            let schema_of_file = scan_task.schema.clone();
-            let convert_options = JsonConvertOptions::new_internal(
-                scan_task.pushdowns.limit,
-                file_column_names
-                    .as_ref()
-                    .map(|cols| cols.iter().map(|col| (*col).clone()).collect()),
-                Some(schema_of_file),
-                scan_task.pushdowns.filters.clone(),
-            );
-            let parse_options = JsonParseOptions::new_internal(cfg.skip_empty_files);
-            let json_chunk_size = cfg.chunk_size.or(Some(chunk_size));
-            let read_options = JsonReadOptions::new_internal(cfg.buffer_size, json_chunk_size);
-
-            let range = source.get_chunk_spec().and_then(|spec| match spec {
-                daft_scan::ChunkSpec::Bytes { start, end } => Some(GetRange::Bounded(*start..*end)),
-                _ => None,
-            });
-            daft_json::read::stream_json(
-                url.to_string(),
-                Some(convert_options),
-                Some(parse_options),
-                Some(read_options),
-                io_client,
-                Some(io_stats),
-                None,
-                range,
-                // maintain_order, TODO: Implement maintain_order for JSON
-            )
-            .await?
-        }
-        FileFormatConfig::Warc(_) => {
-            let convert_options = WarcConvertOptions {
-                limit: scan_task.pushdowns.limit,
-                include_columns: None,
-                schema: scan_task.schema.clone(),
-                predicate: scan_task.pushdowns.filters.clone(),
-            };
-            daft_warc::stream_warc(url, io_client, Some(io_stats), convert_options, None).await?
-        }
-        #[cfg(feature = "python")]
-        FileFormatConfig::Database(common_file_formats::DatabaseSourceConfig { sql, conn }) => {
-            use pyo3::Python;
-
-            use crate::PyIOSnafu;
-            let predicate = scan_task
-                .pushdowns
-                .filters
-                .as_ref()
-                .map(|p| (*p.as_ref()).clone().into());
-            let table = Python::attach(|py| {
-                daft_micropartition::python::read_sql_into_py_table(
-                    py,
-                    sql,
-                    conn,
-                    predicate.clone(),
-                    scan_task.schema.clone().into(),
-                    scan_task
-                        .pushdowns
-                        .columns
-                        .as_ref()
-                        .map(|cols| cols.as_ref().clone()),
-                    scan_task.pushdowns.limit,
-                )
-                .map(|t| t.into())
-                .context(PyIOSnafu)
-            })?;
-            Box::pin(futures::stream::once(async { Ok(table) }))
-        }
-        #[cfg(feature = "python")]
-        FileFormatConfig::PythonFunction { .. } => {
-            let iter = daft_micropartition::python::read_pyfunc_into_table_iter(scan_task.clone())?;
-            let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
-            Box::pin(stream)
-        }
-    };
+    // TODO(rchowell): remove the scan_task_reader module in the near future with a more general DataSource (TableProvider-like) trait.
+    let table_stream = scan_task_reader::read_scan_task(
+        &scan_task,
+        url,
+        file_column_names,
+        io_client,
+        io_stats,
+        delete_map,
+        maintain_order,
+        chunk_size,
+    )
+    .await?;
 
     Ok(table_stream.map(move |table| {
         let table = table?;
@@ -680,11 +526,11 @@ async fn stream_scan_task(
             })
             .transpose()?;
 
-        let mp = Arc::new(MicroPartition::new_loaded(
+        let mp = MicroPartition::new_loaded(
             scan_task.materialized_schema(),
             Arc::new(vec![casted_table]),
             stats,
-        ));
+        );
         Ok(mp)
     }))
 }

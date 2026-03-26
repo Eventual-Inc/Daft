@@ -12,14 +12,16 @@ use serde::{Deserialize, Serialize};
 
 /// Format of a file, e.g. Parquet, CSV, JSON.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", eq, eq_int, from_py_object)
+)]
 pub enum FileFormat {
     Parquet,
     Csv,
     Json,
     Warc,
-    Database,
-    Python,
+    Text,
 }
 
 #[cfg(feature = "python")]
@@ -31,8 +33,7 @@ impl FileFormat {
             Self::Csv => "csv",
             Self::Json => "json",
             Self::Warc => "warc",
-            Self::Database => "db",
-            Self::Python => "py",
+            Self::Text => "txt",
         }
     }
 }
@@ -41,7 +42,7 @@ impl FromStr for FileFormat {
     type Err = DaftError;
 
     fn from_str(file_format: &str) -> DaftResult<Self> {
-        use FileFormat::{Csv, Database, Json, Parquet, Warc};
+        use FileFormat::{Csv, Json, Parquet, Text, Warc};
 
         if file_format.trim().eq_ignore_ascii_case("parquet") {
             Ok(Parquet)
@@ -51,8 +52,8 @@ impl FromStr for FileFormat {
             Ok(Json)
         } else if file_format.trim().eq_ignore_ascii_case("warc") {
             Ok(Warc)
-        } else if file_format.trim().eq_ignore_ascii_case("database") {
-            Ok(Database)
+        } else if file_format.trim().eq_ignore_ascii_case("txt") {
+            Ok(Text)
         } else {
             Err(DaftError::TypeError(format!(
                 "FileFormat {file_format} not supported!"
@@ -64,7 +65,10 @@ impl FromStr for FileFormat {
 impl_bincode_py_state_serialization!(FileFormat);
 
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
-#[cfg_attr(feature = "python", pyclass(module = "daft.daft", eq, eq_int))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", eq, eq_int, from_py_object)
+)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub enum WriteMode {
     Overwrite,

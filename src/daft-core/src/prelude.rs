@@ -2,8 +2,6 @@
 //!
 //! This module re-exports commonly used items from the Daft core library.
 
-// Re-export arrow2 bitmap
-pub use daft_arrow::bitmap;
 pub use daft_schema::image_property::ImageProperty;
 // Re-export core series structures
 pub use daft_schema::schema::{Schema, SchemaRef};
@@ -14,6 +12,8 @@ pub use crate::count_mode::CountMode;
 pub use crate::datatypes::prelude::*;
 // Re-export join-related types
 pub use crate::join::{JoinStrategy, JoinType};
+// Re-export operator enum
+pub use crate::operator::Operator;
 pub use crate::{
     array::prelude::*,
     lit::Literal,

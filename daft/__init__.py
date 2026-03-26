@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING
 
 from daft.scarf_telemetry import track_import_on_scarf
 
@@ -104,6 +105,7 @@ from daft.session import (
     drop_namespace,
     drop_table,
     get_catalog,
+    get_function,
     get_provider,
     get_table,
     has_catalog,
@@ -112,6 +114,7 @@ from daft.session import (
     has_table,
     list_catalogs,
     list_tables,
+    load_extension,
     read_table,
     session,
     set_catalog,
@@ -122,20 +125,19 @@ from daft.session import (
     write_table,
 )
 from daft.udf import udf, func, cls, method, metrics
+from daft.io._range import _range
 from daft.io import (
-    DataCatalogTable,
-    DataCatalogType,
     IOConfig,
     from_glob_path,
-    _range as range,
-    read_lance,
     read_csv,
     read_deltalake,
     read_hudi,
     read_iceberg,
     read_json,
+    read_kafka,
     read_parquet,
     read_sql,
+    read_text,
     read_video_frames,
     read_warc,
     read_huggingface,
@@ -147,18 +149,29 @@ from daft.viz import register_viz_hook
 from daft.window import Window
 from daft.file import File, VideoFile, AudioFile
 
-import daft.context as context
-import daft.io as io
-import daft.runners as runners
-import daft.datasets as datasets
-import daft.functions as functions
-import daft.gravitino as gravitino
+range = _range  # type: ignore[no-redef,unused-ignore]
+
+from daft import context
+from daft import io
+from daft import runners
+from daft import datasets
+from daft import functions
+
+
+# Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.
+if TYPE_CHECKING:
+    from daft.io import read_lance
+
+
+def __getattr__(name: str) -> object:
+    if name == "read_lance":
+        return getattr(io, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "AudioFile",
     "Catalog",
-    "DataCatalogTable",
-    "DataCatalogType",
     "DataFrame",
     "DataType",
     "Expression",
@@ -214,11 +227,11 @@ __all__ = [
     "func",
     "functions",
     "get_catalog",
+    "get_function",
     "get_or_create_runner",
     "get_or_infer_runner_type",
     "get_provider",
     "get_table",
-    "gravitino",
     "has_catalog",
     "has_namespace",
     "has_provider",
@@ -228,6 +241,7 @@ __all__ = [
     "list_catalogs",
     "list_tables",
     "lit",
+    "load_extension",
     "method",
     "metrics",
     "planning_config_ctx",
@@ -238,11 +252,13 @@ __all__ = [
     "read_huggingface",
     "read_iceberg",
     "read_json",
+    "read_kafka",
     "read_lance",
     "read_mcap",
     "read_parquet",
     "read_sql",
     "read_table",
+    "read_text",
     "read_video_frames",
     "read_warc",
     "refresh_logger",

@@ -16,7 +16,11 @@ pub struct Sign;
 
 #[typetag::serde]
 impl ScalarUDF for Sign {
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
 
         match input.data_type() {
@@ -63,7 +67,11 @@ pub struct Negate;
 
 #[typetag::serde]
 impl ScalarUDF for Negate {
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
 
         match input.data_type() {

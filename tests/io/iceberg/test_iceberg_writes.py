@@ -11,9 +11,6 @@ from tests.conftest import get_tests_daft_runner_name
 
 pyiceberg = pytest.importorskip("pyiceberg")
 
-PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
-pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="iceberg not supported on old versions of pyarrow")
-
 
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
@@ -75,7 +72,8 @@ def local_catalog(tmpdir):
         },
     )
     catalog.create_namespace("default")
-    return catalog
+    yield catalog
+    catalog.engine.dispose()
 
 
 @pytest.fixture(
@@ -200,6 +198,38 @@ def test_read_and_overwrite(simple_local_table):
 
     read_back = daft.read_iceberg(table)
     assert df.to_arrow() == read_back.to_arrow().sort_by("x")
+
+
+def _get_snapshot_property(table, key: str) -> str | None:
+    table.refresh()
+    current_snapshot = table.current_snapshot()
+    assert current_snapshot is not None
+
+    return current_snapshot.summary.get(key)
+
+
+def test_write_append_with_snapshot_properties(simple_local_table):
+    table, _ = simple_local_table
+
+    snapshot_properties = {"mypath.myproperty": "my-property-value"}
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    df.write_iceberg(table, mode="append", snapshot_properties=snapshot_properties)
+
+    assert _get_snapshot_property(table, "mypath.myproperty") == "my-property-value"
+
+
+def test_write_overwrite_with_snapshot_properties(simple_local_table):
+    table, _ = simple_local_table
+
+    first_df = daft.from_pydict({"x": [1, 2, 3]})
+    first_df.write_iceberg(table, mode="append")
+    assert _get_snapshot_property(table, "mypath.myproperty") is None
+
+    snapshot_properties = {"mypath.myproperty": "my-property-value"}
+    overwrite_df = daft.from_pydict({"x": [4, 5, 6]})
+    overwrite_df.write_iceberg(table, mode="overwrite", snapshot_properties=snapshot_properties)
+
+    assert _get_snapshot_property(table, "mypath.myproperty") == "my-property-value"
 
 
 def test_missing_columns_write(simple_local_table):

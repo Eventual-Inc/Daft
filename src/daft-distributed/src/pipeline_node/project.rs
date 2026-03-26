@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
@@ -7,9 +8,7 @@ use daft_schema::schema::SchemaRef;
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-    },
+    pipeline_node::{DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
 };
 
@@ -21,7 +20,7 @@ pub(crate) struct ProjectNode {
 }
 
 impl ProjectNode {
-    const NODE_NAME: NodeName = "Project";
+    const NODE_NAME: &'static str = "Project";
 
     pub fn new(
         node_id: NodeID,
@@ -34,7 +33,9 @@ impl ProjectNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
+            NodeType::Project,
+            NodeCategory::Intermediate,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -53,10 +54,6 @@ impl ProjectNode {
             projection,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
@@ -108,10 +105,7 @@ impl PipelineNodeImpl for ProjectNode {
                 projection.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(node_id as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(node_id as usize)),
             )
         };
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-import uuid
+import sys
 from typing import TYPE_CHECKING
 
 from daft.context import get_context
@@ -10,14 +10,15 @@ from daft.daft import (
     FileInfos,
     IOConfig,
     LocalPhysicalPlan,
-    PyQueryMetadata,
     PyQueryResult,
     QueryEndState,
     set_compute_runtime_num_worker_threads,
 )
 from daft.errors import UDFException
+from daft.execution.metadata import ExecutionMetadata
 from daft.execution.native_executor import NativeExecutor
 from daft.filesystem import glob_path_with_stats
+from daft.naming import generate_query_name
 from daft.recordbatch import MicroPartition
 from daft.runners import runner_io
 from daft.runners.partitioning import (
@@ -30,7 +31,7 @@ from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
 from daft.scarf_telemetry import track_runner_on_scarf
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator, Iterator
 
     from daft.logical.builder import LogicalPlanBuilder
 
@@ -67,54 +68,91 @@ class NativeRunner(Runner[MicroPartition]):
         if num_threads is not None:
             set_compute_runtime_num_worker_threads(num_threads)
 
+        self.native_executor = NativeExecutor()
+
     def initialize_partition_set_cache(self) -> PartitionSetCache:
         return LOCAL_PARTITION_SET_CACHE
 
     def runner_io(self) -> NativeRunnerIO:
         return NativeRunnerIO()
 
-    def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
-        results = list(self.run_iter(builder))
-
-        result_pset = LocalPartitionSet()
-        for i, result in enumerate(results):
-            result_pset.set_partition(i, result)
-
-        pset_entry = self.put_partition_set_into_cache(result_pset)
-        return pset_entry
-
     def run_iter(
         self,
         builder: LogicalPlanBuilder,
         results_buffer_size: int | None = None,
-    ) -> Iterator[LocalMaterializedResult]:
+    ) -> Generator[LocalMaterializedResult, None, ExecutionMetadata]:
         track_runner_on_scarf(runner=self.name)
 
         # NOTE: Freeze and use this same execution config for the entire execution
         ctx = get_context()
-        query_id = str(uuid.uuid4())
+        query_id = generate_query_name()
         output_schema = builder.schema()
 
-        # Optimize the logical plan.
-        ctx._notify_query_start(query_id, PyQueryMetadata(output_schema._schema, builder.repr_json()))
-        ctx._notify_optimization_start(query_id)
-        builder = builder.optimize(ctx.daft_execution_config)
-        ctx._notify_optimization_end(query_id, builder.repr_json())
+        entrypoint = "python " + " ".join(sys.argv)
 
-        plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
-        executor = NativeExecutor()
-        results_gen = executor.run(
+        try:
+            # Try to send notifications, but don't fail the query if they fail
+            from daft.daft import PyQueryMetadata
+
+            ctx._notify_query_start(
+                query_id,
+                PyQueryMetadata(
+                    output_schema._schema,
+                    builder.repr_json(),
+                    "Native (Swordfish)",
+                    ray_dashboard_url=None,
+                    entrypoint=entrypoint,
+                ),
+            )
+            ctx._notify_optimization_start(query_id)
+        except Exception as e:
+            logger.warning("Failed to send notifications: %s", e)
+            pass
+
+        # Optimize the logical plan.
+        builder = builder.optimize(ctx.daft_execution_config)
+
+        try:
+            ctx._notify_optimization_end(query_id, builder.repr_json())
+        except Exception as e:
+            logger.warning("Failed to send optimization end notification: %s", e)
+            pass
+
+        psets = {
+            k: [v.micropartition()._micropartition for v in v.values()]
+            for k, v in self._part_set_cache.get_all_partition_sets().items()
+        }
+        plan, inputs = LocalPhysicalPlan.from_logical_plan_builder(builder._builder, psets)
+
+        results_gen = self.native_executor.run(
             plan,
-            {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
+            inputs,
             ctx,
-            results_buffer_size,
             {"query_id": query_id},
         )
 
         try:
-            for result in results_gen:
-                ctx._notify_result_out(query_id, result.partition())
+            while True:
+                result = next(results_gen)
+                try:
+                    ctx._notify_result_out(query_id, result.partition())
+                except Exception:
+                    pass
                 yield result
+        except GeneratorExit:
+            # Generator was abandoned (e.g., .show() breaking out early after collecting
+            # enough rows). Notify subscribers so the dashboard transitions out of Finalizing.
+            try:
+                query_result = PyQueryResult(QueryEndState.Finished, "Query finished")
+                ctx._notify_query_end(query_id, query_result)
+            except Exception as e:
+                logger.warning("Failed to send query end notification: %s", e)
+            return  # type: ignore[return-value]
+        except StopIteration as e:
+            query_result = PyQueryResult(QueryEndState.Finished, "Query finished")
+            ctx._notify_query_end(query_id, query_result)
+            physical_plan_json, execution_stats = e.value
+            return ExecutionMetadata._from_runner_output(execution_stats, query_id, physical_plan_json)
         except KeyboardInterrupt as e:
             query_result = PyQueryResult(QueryEndState.Canceled, "Query canceled by the user.")
             ctx._notify_query_end(query_id, query_result)
@@ -129,12 +167,25 @@ class NativeRunner(Runner[MicroPartition]):
             query_result = PyQueryResult(QueryEndState.Failed, err_msg)
             ctx._notify_query_end(query_id, query_result)
             raise e
-        else:
-            query_result = PyQueryResult(QueryEndState.Finished, "")
-            ctx._notify_query_end(query_id, query_result)
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
     ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield result.partition()
+
+    def run(self, builder: LogicalPlanBuilder) -> tuple[PartitionCacheEntry, ExecutionMetadata]:
+        results_gen = self.run_iter(builder)
+        result_pset = LocalPartitionSet()
+
+        try:
+            i = 0
+            while True:
+                result = next(results_gen)
+                result_pset.set_partition(i, result)
+                i += 1
+        except StopIteration as e:
+            metadata = e.value
+
+        pset_entry = self.put_partition_set_into_cache(result_pset)
+        return pset_entry, metadata

@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
@@ -16,21 +15,20 @@ use daft_dsl::{AggExpr, Expr, ExprRef};
 use daft_io::{IOClient, IOConfig, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::{
-    infer_arrow_schema_from_metadata,
+    DaftParquetMetadata,
     read::{ParquetSchemaInferenceOptions, read_parquet_bulk, read_parquet_metadata_bulk},
 };
 use daft_recordbatch::RecordBatch;
 use daft_stats::{ColumnRangeStatistics, PartitionSpec, TableMetadata, TableStatistics};
 use daft_warc::WarcConvertOptions;
-use futures::{Future, Stream};
-use parquet2::metadata::FileMetaData;
+use futures::{Future, Stream, TryStreamExt};
 use snafu::ResultExt;
 
 use crate::DaftCoreComputeSnafu;
 
 pub type MicroPartitionRef = Arc<MicroPartition>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MicroPartition {
     /// Schema of the MicroPartition
     ///
@@ -247,7 +245,7 @@ fn prune_fields_from_schema(
         }
         let filtered_columns = schema
             .into_iter()
-            .filter(|field| names_to_keep.contains(field.name.as_str()))
+            .filter(|field| names_to_keep.contains(field.name.as_ref()))
             .cloned();
         Ok(Arc::new(Schema::new(filtered_columns)))
     } else {
@@ -307,6 +305,11 @@ pub fn read_csv_into_micropartition(
     }
 }
 
+/// Reads JSON/JSONL files into a MicroPartition.
+///
+/// Exposed to Python via `MicroPartition.read_json()`.
+/// Only used by test paths (`tests/recordbatch/` and `tests/integration/io/jsonl/`).
+/// The production path uses `stream_scan_task` → `stream_json` instead.
 pub fn read_json_into_micropartition(
     uris: &[&str],
     convert_options: Option<JsonConvertOptions>,
@@ -321,19 +324,54 @@ pub fn read_json_into_micropartition(
     match uris {
         [] => Ok(MicroPartition::empty(None)),
         uris => {
-            // Perform a bulk read of URIs, materializing a table per URI.
-            let tables = daft_json::read_json_bulk(
-                uris,
-                convert_options,
-                parse_options,
-                read_options,
-                io_client,
-                io_stats,
-                multithreaded_io,
-                None,
-                8,
-            )
-            .context(DaftCoreComputeSnafu)?;
+            let schema_hint = convert_options
+                .as_ref()
+                .and_then(|opts| opts.schema.clone());
+            let runtime_handle = get_io_runtime(multithreaded_io);
+            let mut remaining_rows = convert_options
+                .as_ref()
+                .and_then(|opts| opts.limit.map(|limit| limit as i64));
+            let tables = runtime_handle
+                .block_on_current_thread(async move {
+                    let mut out = Vec::new();
+                    for uri in uris {
+                        if remaining_rows.is_some_and(|rows_left| rows_left <= 0) {
+                            break;
+                        }
+
+                        let convert_options_for_uri = convert_options.clone().map(|mut co| {
+                            if let Some(rows_left) = remaining_rows {
+                                co.limit = Some(usize::try_from(rows_left.max(0)).unwrap_or(0));
+                            }
+                            co
+                        });
+
+                        let stream = daft_json::read::stream_json(
+                            (*uri).to_string(),
+                            convert_options_for_uri,
+                            parse_options.clone(),
+                            read_options.clone(),
+                            io_client.clone(),
+                            io_stats.clone(),
+                            None,
+                            None,
+                        )
+                        .await?;
+
+                        let mut tables = stream.try_collect::<Vec<_>>().await?;
+                        if let Some(rows_left) = remaining_rows {
+                            let read_rows = tables.iter().map(|t| t.len() as i64).sum::<i64>();
+                            remaining_rows = Some(rows_left - read_rows);
+                        }
+                        out.append(&mut tables);
+                    }
+                    DaftResult::Ok(out)
+                })
+                .context(DaftCoreComputeSnafu)?;
+
+            if tables.is_empty() {
+                return Ok(MicroPartition::empty(schema_hint));
+            }
 
             // Union all schemas and cast all tables to the same schema
             let unioned_schema = tables
@@ -364,7 +402,7 @@ pub fn read_warc_into_micropartition(
     schema: SchemaRef,
     io_config: Arc<IOConfig>,
     multithreaded_io: bool,
-    io_stats: Option<IOStatsRef>,
+    io_stats: IOStatsRef,
 ) -> DaftResult<MicroPartition> {
     let io_client = daft_io::get_io_client(multithreaded_io, io_config)?;
     let convert_options = WarcConvertOptions {
@@ -593,7 +631,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     schema_infer_options: &ParquetSchemaInferenceOptions,
     catalog_provided_schema: Option<SchemaRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
-    parquet_metadata: Option<Vec<Arc<FileMetaData>>>,
+    parquet_metadata: Option<Vec<Arc<DaftParquetMetadata>>>,
     chunk_size: Option<usize>,
     aggregation_pushdown: Option<&Expr>,
 ) -> DaftResult<MicroPartition> {
@@ -643,9 +681,8 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema =
-                    infer_arrow_schema_from_metadata(m, Some((*schema_infer_options).into()))?;
-                let daft_schema = Schema::from(schema);
+                let daft_schema =
+                    daft_parquet::infer_schema_from_daft_metadata(m, *schema_infer_options)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;
@@ -668,9 +705,8 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         let schemas = metadata
             .iter()
             .map(|m| {
-                let schema =
-                    infer_arrow_schema_from_metadata(m, Some((*schema_infer_options).into()))?;
-                let daft_schema = schema.into();
+                let daft_schema =
+                    daft_parquet::infer_schema_from_daft_metadata(m, *schema_infer_options)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;
@@ -679,7 +715,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
 
     // Handle count pushdown aggregation optimization.
     if let Some(Expr::Agg(AggExpr::Count(_, _))) = aggregation_pushdown {
-        let count: usize = metadata.iter().map(|m| m.num_rows).sum();
+        let count: usize = metadata.iter().map(|m| m.num_rows()).sum();
         let count_field = daft_core::datatypes::Field::new(
             aggregation_pushdown.unwrap().name(),
             daft_core::datatypes::DataType::UInt64,
@@ -806,8 +842,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_mp_stream() -> DaftResult<()> {
-        let columns = vec![Int32Array::from_values("a", vec![1].into_iter()).into_series()];
-        let columns2 = vec![Int32Array::from_values("a", vec![2].into_iter()).into_series()];
+        let columns = vec![Int32Array::from_slice("a", &[1]).into_series()];
+        let columns2 = vec![Int32Array::from_slice("a", &[2]).into_series()];
         let schema = Schema::new(vec![Field::new("a", DataType::Int32)]);
 
         let table1 = RecordBatch::from_nonempty_columns(columns)?;
@@ -832,15 +868,15 @@ mod tests {
     fn test_ipc_roundtrip() -> DaftResult<()> {
         let string_values = vec!["a", "bb", "ccc"];
         let batch1 = RecordBatch::from_nonempty_columns(vec![
-            Int32Array::from(("a", vec![1, 2, 3])).into_series(),
-            Float64Array::from(("b", vec![1., 2., 3.])).into_series(),
-            Utf8Array::from_values("c", string_values.iter()).into_series(),
+            Int32Array::from_slice("a", &[1, 2, 3]).into_series(),
+            Float64Array::from_slice("b", &[1., 2., 3.]).into_series(),
+            Utf8Array::from_slice("c", string_values.as_slice()).into_series(),
         ])?;
 
         let batch2 = RecordBatch::from_nonempty_columns(vec![
-            Int32Array::from(("a", vec![4, 5, 6])).into_series(),
-            Float64Array::from(("b", vec![4., 5., 6.])).into_series(),
-            Utf8Array::from_values("c", string_values.iter()).into_series(),
+            Int32Array::from_slice("a", &[4, 5, 6]).into_series(),
+            Float64Array::from_slice("b", &[4., 5., 6.]).into_series(),
+            Utf8Array::from_slice("c", string_values.as_slice()).into_series(),
         ])?;
 
         assert_eq!(batch1.schema, batch2.schema);

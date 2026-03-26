@@ -6,10 +6,7 @@ import pytest
 
 from daft import Series
 from daft.datatype import DataType
-from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.conftest import get_tests_daft_runner_name
-
-ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
 @pytest.mark.parametrize("if_true_value", [1, None])
@@ -249,7 +246,7 @@ def test_series_if_else_fixed_size_list(if_true, if_false, expected) -> None:
                 [[("a", 8), ("b", 9)], [("c", 10)], None, [("a", 12), ("b", 13)]],
                 type=pa.map_(pa.string(), pa.int64()),
             ),
-            [[("a", 1), ("b", 2)], [("c", 10)], None, [("a", 5), ("c", 7)]],
+            [{"a": 1, "b": 2}, {"c": 10}, None, {"a": 5, "c": 7}],
         ),
         # Same length, different super-castable data type
         (
@@ -261,7 +258,7 @@ def test_series_if_else_fixed_size_list(if_true, if_false, expected) -> None:
                 [[("a", 8), ("b", 9)], [("c", 10)], None, [("a", 12), ("b", 13)]],
                 type=pa.map_(pa.string(), pa.int64()),
             ),
-            [[("a", 1), ("b", 2)], [("c", 10)], None, [("a", 5), ("c", 7)]],
+            [{"a": 1, "b": 2}, {"c": 10}, None, {"a": 5, "c": 7}],
         ),
         # Broadcast left
         (
@@ -270,7 +267,7 @@ def test_series_if_else_fixed_size_list(if_true, if_false, expected) -> None:
                 [[("a", 8), ("b", 9)], [("c", 10)], None, [("a", 12), ("b", 13)]],
                 type=pa.map_(pa.string(), pa.int64()),
             ),
-            [[("a", 1), ("b", 2)], [("c", 10)], None, [("a", 1), ("b", 2)]],
+            [{"a": 1, "b": 2}, {"c": 10}, None, {"a": 1, "b": 2}],
         ),
         # Broadcast right
         (
@@ -279,13 +276,13 @@ def test_series_if_else_fixed_size_list(if_true, if_false, expected) -> None:
                 type=pa.map_(pa.string(), pa.int64()),
             ),
             pa.array([[("a", 8), ("b", 9)]], type=pa.map_(pa.string(), pa.int64())),
-            [[("a", 1), ("b", 2)], [("a", 8), ("b", 9)], None, [("a", 5), ("c", 7)]],
+            [{"a": 1, "b": 2}, {"a": 8, "b": 9}, None, {"a": 5, "c": 7}],
         ),
         # Broadcast both
         (
             pa.array([[("a", 1), ("b", 2)]], type=pa.map_(pa.string(), pa.int64())),
             pa.array([[("a", 8), ("b", 9)]], type=pa.map_(pa.string(), pa.int64())),
-            [[("a", 1), ("b", 2)], [("a", 8), ("b", 9)], None, [("a", 1), ("b", 2)]],
+            [{"a": 1, "b": 2}, {"a": 8, "b": 9}, None, {"a": 1, "b": 2}],
         ),
     ],
 )
@@ -295,7 +292,7 @@ def test_series_if_else_map(if_true, if_false, expected) -> None:
     predicate_series = Series.from_arrow(pa.array([True, False, None, True]))
     result = predicate_series.if_else(if_true_series, if_false_series)
     assert result.datatype() == DataType.map(DataType.string(), DataType.int64())
-    assert result.to_pylist() == expected
+    assert result.to_pylist(maps_as_pydicts="lossy") == expected
 
 
 @pytest.mark.parametrize(
@@ -415,10 +412,6 @@ def test_series_if_else_extension_type(uuid_ext_type, if_true_storage, if_false_
     assert result_arrow == expected_arrow
 
 
-@pytest.mark.skipif(
-    not pyarrow_supports_fixed_shape_tensor(),
-    reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
-)
 @pytest.mark.parametrize(
     ["if_true", "if_false", "expected"],
     [

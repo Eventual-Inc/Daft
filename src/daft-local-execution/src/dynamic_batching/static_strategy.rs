@@ -64,14 +64,14 @@ mod tests {
     fn test_static_calculate_requirements_ignores_reports() {
         let req = MorselSizeRequirement::Flexible(2, NonZeroUsize::new(64).unwrap());
         let strategy = StaticBatchingStrategy::new(req);
-        let mut state = strategy.make_state();
+        strategy.make_state();
 
         // Empty batch report
-        let result = strategy.calculate_new_requirements(&mut state);
+        let result = strategy.calculate_new_requirements(&mut ());
         assert_eq!(result, req);
 
         // Non-empty batch report (would need actual BatchReport data structure)
-        let result2 = strategy.calculate_new_requirements(&mut state);
+        let result2 = strategy.calculate_new_requirements(&mut ());
         assert_eq!(result2, req);
     }
 
@@ -79,12 +79,12 @@ mod tests {
     fn test_static_consistency_across_calls() {
         let req = MorselSizeRequirement::Flexible(1, NonZeroUsize::new(256).unwrap());
         let strategy = StaticBatchingStrategy::new(req);
-        let mut state = strategy.make_state();
+        strategy.make_state();
 
         // Multiple calls should return same result
-        let result1 = strategy.calculate_new_requirements(&mut state);
-        let result2 = strategy.calculate_new_requirements(&mut state);
-        let result3 = strategy.calculate_new_requirements(&mut state);
+        let result1 = strategy.calculate_new_requirements(&mut ());
+        let result2 = strategy.calculate_new_requirements(&mut ());
+        let result3 = strategy.calculate_new_requirements(&mut ());
 
         assert_eq!(result1, req);
         assert_eq!(result2, req);

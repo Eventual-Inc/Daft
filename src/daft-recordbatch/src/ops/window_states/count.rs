@@ -1,5 +1,5 @@
+use arrow::buffer::NullBuffer;
 use common_error::DaftResult;
-use daft_arrow::buffer::NullBuffer;
 use daft_core::{count_mode::CountMode, prelude::*};
 
 use super::WindowAggStateOps;
@@ -72,6 +72,6 @@ impl WindowAggStateOps for CountWindowState {
     }
 
     fn build(&self) -> DaftResult<Series> {
-        Ok(DataArray::<UInt64Type>::from(("", self.count_vec.clone())).into_series())
+        Ok(DataArray::<UInt64Type>::from_vec("", self.count_vec.clone()).into_series())
     }
 }

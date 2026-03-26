@@ -3,13 +3,10 @@ use std::{collections::BTreeMap, sync::Arc};
 use bytes::{Bytes, BytesMut};
 use common_error::DaftResult;
 use daft_core::datatypes::Field;
-use daft_dsl::common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_io::{GetRange, IOClient, IOStatsRef};
-pub use parquet2::metadata::{FileMetaData, RowGroupMetaData};
-use parquet2::{read::deserialize_metadata, schema::types::ParquetType};
 use snafu::ResultExt;
 
-use crate::{Error, JoinSnafu, UnableToParseMetadataSnafu};
+use crate::{Error, JoinSnafu};
 
 const FOOTER_SIZE: usize = 8;
 
@@ -17,203 +14,340 @@ fn metadata_len(buffer: &[u8], len: usize) -> i32 {
     i32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
 }
 
-struct ParquetTypeWrapper(ParquetType);
+// ---------------------------------------------------------------------------
+// Arrow-rs field ID mapping
+// ---------------------------------------------------------------------------
 
-impl TreeNode for ParquetTypeWrapper {
-    fn apply_children<F: FnMut(&Self) -> DaftResult<TreeNodeRecursion>>(
-        &self,
-        mut op: F,
-    ) -> DaftResult<TreeNodeRecursion> {
-        match &self.0 {
-            ParquetType::PrimitiveType(..) => Ok(TreeNodeRecursion::Jump),
-            ParquetType::GroupType { fields, .. } => {
-                for child in fields {
-                    // TODO: Expensive clone here because of ParquetTypeWrapper type, can we get rid of this?
-                    match op(&Self(child.clone()))? {
-                        TreeNodeRecursion::Continue => {}
-                        TreeNodeRecursion::Jump => return Ok(TreeNodeRecursion::Continue),
-                        TreeNodeRecursion::Stop => return Ok(TreeNodeRecursion::Stop),
-                    }
-                }
-                Ok(TreeNodeRecursion::Continue)
-            }
-        }
-    }
-
-    fn map_children<F: FnMut(Self) -> DaftResult<Transformed<Self>>>(
-        self,
-        transform: F,
-    ) -> DaftResult<Transformed<Self>> {
-        let mut transform = transform;
-
-        match self.0 {
-            ParquetType::PrimitiveType(..) => Ok(Transformed::no(self)),
-            ParquetType::GroupType {
-                field_info,
-                logical_type,
-                converted_type,
-                fields,
-            } => Ok(Transformed::yes(Self(ParquetType::GroupType {
-                fields: fields
-                    .into_iter()
-                    .map(|child| transform(Self(child)).map(|wrapper| wrapper.data.0))
-                    .collect::<DaftResult<Vec<_>>>()?,
-                field_info,
-                logical_type,
-                converted_type,
-            }))),
-        }
-    }
+/// Extract the optional field ID from a parquet `BasicTypeInfo`.
+fn get_field_id(info: &parquet::schema::types::BasicTypeInfo) -> Option<i32> {
+    info.has_id().then(|| info.id())
 }
 
-fn rewrite_parquet_type_with_field_id_mapping(
-    mut pq_type: ParquetTypeWrapper,
+/// Rewrite children of a group type per the field_id_mapping.
+///
+/// When the parent has a logical type (LIST/MAP), intermediate children without
+/// a field ID are preserved (with their own children recursed). Otherwise
+/// (plain struct), unmapped children are dropped.
+fn rewrite_children(
+    fields: &[std::sync::Arc<parquet::schema::types::Type>],
+    has_logical_type: bool,
     field_id_mapping: &BTreeMap<i32, Field>,
-) -> DaftResult<Transformed<ParquetTypeWrapper>> {
-    match pq_type.0 {
-        ParquetType::PrimitiveType(ref mut primitive_type) => {
-            let field_id = primitive_type.field_info.id;
-            if let Some(mapped_field) =
-                field_id.and_then(|field_id| field_id_mapping.get(&field_id))
-            {
-                // Fix the `pq_type`'s name
-                primitive_type
-                    .field_info
-                    .name
-                    .clone_from(&mapped_field.name);
-                return Ok(Transformed::yes(pq_type));
+) -> Vec<std::sync::Arc<parquet::schema::types::Type>> {
+    fields
+        .iter()
+        .filter_map(|child| {
+            if has_logical_type {
+                // LIST/MAP intermediate nodes may lack field IDs but still
+                // contain mapped descendants (e.g. struct fields inside a list).
+                Some(std::sync::Arc::new(
+                    rewrite_arrowrs_type_with_field_ids(child, field_id_mapping)
+                        .unwrap_or_else(|| recurse_children_only(child, field_id_mapping)),
+                ))
+            } else {
+                // Plain struct: drop children not in mapping.
+                rewrite_arrowrs_type_with_field_ids(child, field_id_mapping)
+                    .map(std::sync::Arc::new)
             }
-        }
-        ParquetType::GroupType {
-            ref mut field_info,
-            ref mut fields,
-            ref logical_type,
+        })
+        .collect()
+}
+
+/// Recursively rewrite an arrow-rs `Type`, renaming fields per the mapping and
+/// dropping unmapped struct children.  Returns `None` if this field should be
+/// dropped entirely (no field ID, or ID not in the mapping).
+fn rewrite_arrowrs_type_with_field_ids(
+    tp: &parquet::schema::types::Type,
+    field_id_mapping: &BTreeMap<i32, Field>,
+) -> Option<parquet::schema::types::Type> {
+    use parquet::schema::types::Type;
+
+    let info = tp.get_basic_info();
+    let mapped_field = get_field_id(info).and_then(|fid| field_id_mapping.get(&fid))?;
+
+    match tp {
+        Type::PrimitiveType {
+            physical_type,
+            type_length,
+            scale,
+            precision,
             ..
         } => {
-            let field_id = field_info.id;
-            if let Some(mapped_field) =
-                field_id.and_then(|field_id| field_id_mapping.get(&field_id))
-            {
-                // Fix the `pq_type`'s name
-                field_info.name.clone_from(&mapped_field.name);
-
-                // Fix the `pq_type`'s fields, keeping only the fields that are correctly mapped to a field_id
-                match logical_type {
-                    // GroupTypes with logical types List/Map have intermediate child nested fields without field_ids,
-                    // but we need to keep recursing on them to keep renaming on their children.
-                    Some(_) => {}
-                    // GroupTypes without logical_types are just structs, and we can go ahead with removing
-                    // any fields that don't have field IDs with a corresponding match in the mapping
-                    None => {
-                        fields.retain(|f| {
-                            f.get_field_info()
-                                .id
-                                .is_some_and(|field_id| field_id_mapping.contains_key(&field_id))
-                        });
-                    }
-                }
-
-                return Ok(Transformed::yes(pq_type));
-            }
+            let new_type = Type::primitive_type_builder(&mapped_field.name, *physical_type)
+                .with_repetition(info.repetition())
+                .with_converted_type(info.converted_type())
+                .with_logical_type(info.logical_type_ref().cloned())
+                .with_length(*type_length)
+                .with_precision(*precision)
+                .with_scale(*scale)
+                .with_id(get_field_id(info))
+                .build()
+                .expect("rebuilding primitive type with same attributes should not fail");
+            Some(new_type)
+        }
+        Type::GroupType { fields, .. } => {
+            let new_children =
+                rewrite_children(fields, info.logical_type_ref().is_some(), field_id_mapping);
+            let new_type = Type::group_type_builder(&mapped_field.name)
+                .with_repetition(info.repetition())
+                .with_converted_type(info.converted_type())
+                .with_logical_type(info.logical_type_ref().cloned())
+                .with_fields(new_children)
+                .with_id(get_field_id(info))
+                .build()
+                .expect("rebuilding group type with same attributes should not fail");
+            Some(new_type)
         }
     }
-    Ok(Transformed::no(pq_type))
 }
 
-/// Applies field_ids to a ParquetType, returns `None` if the field ID is not found
-/// in the `field_id_mapping`, or if the field has no field ID.
-fn apply_field_ids_to_parquet_type(
-    parquet_type: ParquetType,
+/// Rebuild a group node preserving its original name/attributes, but still
+/// recursing into its children to rename/filter them per the field_id_mapping.
+/// For primitive nodes, returns an unchanged clone.
+fn recurse_children_only(
+    tp: &parquet::schema::types::Type,
     field_id_mapping: &BTreeMap<i32, Field>,
-) -> Option<ParquetType> {
-    let field_id = parquet_type.get_field_info().id;
-    if field_id.is_some_and(|field_id| field_id_mapping.contains_key(&field_id)) {
-        let rewritten_pq_type = ParquetTypeWrapper(parquet_type)
-            .transform(&|pq_type| {
-                rewrite_parquet_type_with_field_id_mapping(pq_type, field_id_mapping)
-            })
-            .unwrap()
-            .data
-            .0;
-        Some(rewritten_pq_type)
-    } else {
-        None
+) -> parquet::schema::types::Type {
+    use parquet::schema::types::Type;
+    match tp {
+        Type::PrimitiveType { .. } => tp.clone(),
+        Type::GroupType { fields, .. } => {
+            let info = tp.get_basic_info();
+            let new_children =
+                rewrite_children(fields, info.logical_type_ref().is_some(), field_id_mapping);
+            Type::group_type_builder(info.name())
+                .with_repetition(info.repetition())
+                .with_converted_type(info.converted_type())
+                .with_logical_type(info.logical_type_ref().cloned())
+                .with_fields(new_children)
+                .with_id(get_field_id(info))
+                .build()
+                .expect("rebuilding group type with same attributes should not fail")
+        }
     }
 }
 
-/// Applies field_ids to a parquet2 FileMetaData struct
+/// Applies field_ids to an arrow-rs `ParquetMetaData`:
 /// 1. Rename columns based on the `field_id_mapping`
-/// 2. Drop any columns that don't have a `field_id`, or that don't have a corresponding entry in the `field_id_mapping`
-fn apply_field_ids_to_parquet_file_metadata(
-    file_metadata: FileMetaData,
+/// 2. Drop columns without a field_id or without a corresponding mapping entry
+pub(crate) fn apply_field_ids_to_arrowrs_parquet_metadata(
+    metadata: Arc<parquet::file::metadata::ParquetMetaData>,
     field_id_mapping: &BTreeMap<i32, Field>,
-) -> super::Result<FileMetaData> {
-    use parquet2::metadata::{ColumnChunkMetaData, SchemaDescriptor};
+) -> DaftResult<Arc<parquet::file::metadata::ParquetMetaData>> {
+    use parquet::{
+        file::metadata::{
+            ColumnChunkMetaData, FileMetaData as ArrowrsFileMetaData, ParquetMetaData,
+            RowGroupMetaData,
+        },
+        schema::types::{SchemaDescriptor, Type},
+    };
 
-    // Construct a new Parquet Schema after applying renaming using field_ids
-    let new_schema_descr = SchemaDescriptor::new(
-        file_metadata.schema_descr.name().to_string(),
-        file_metadata
-            .schema_descr
-            .fields()
-            .iter()
-            .filter_map(|pq_type| {
-                apply_field_ids_to_parquet_type(pq_type.clone(), field_id_mapping)
-            })
-            .collect(),
-    );
+    let old_schema = metadata.file_metadata().schema_descr();
+    let old_root = old_schema.root_schema();
 
-    // Get a mapping of {field_id: ColumnDescriptor} to use in modifying the redundant ColumnDescriptors in our RowGroupMetadata
-    let field_id_to_column_descriptor_mapping = new_schema_descr
+    // 1. Rewrite the schema type tree: rename + filter by field_id_mapping
+    let new_fields: Vec<_> = old_root
+        .get_fields()
+        .iter()
+        .filter_map(|field| {
+            rewrite_arrowrs_type_with_field_ids(field, field_id_mapping).map(Arc::new)
+        })
+        .collect();
+
+    let new_root = Type::group_type_builder(old_root.name())
+        .with_fields(new_fields)
+        .build()
+        .map_err(|e| common_error::DaftError::External(e.into()))?;
+    let new_schema_descr = Arc::new(SchemaDescriptor::new(Arc::new(new_root)));
+
+    // 2. Build field_id → new ColumnDescriptor mapping
+    let field_id_to_col_descr: BTreeMap<i32, _> = new_schema_descr
         .columns()
         .iter()
         .filter_map(|col_descr| {
-            col_descr
-                .descriptor
-                .primitive_type
-                .field_info
-                .id
-                .map(|field_id| (field_id, col_descr))
+            let info = col_descr.self_type().get_basic_info();
+            get_field_id(info).map(|fid| (fid, col_descr.clone()))
         })
-        .collect::<BTreeMap<_, _>>();
-
-    let new_row_groups = file_metadata
-        .row_groups
-        .iter()
-        .map(|(_, rg)| {
-            let new_columns = rg
-                .columns()
-                .iter()
-                .filter_map(|column| {
-                    let field_id = column.descriptor().descriptor.primitive_type.field_info.id;
-                    field_id
-                        .and_then(|field_id| field_id_to_column_descriptor_mapping.get(&field_id))
-                        .map(|col_descr| {
-                            ColumnChunkMetaData::new(
-                                column.column_chunk().clone(),
-                                (*col_descr).clone(),
-                            )
-                        })
-                })
-                .collect::<Vec<_>>();
-            let new_total_uncompressed_size = new_columns
-                .iter()
-                .map(|c| c.uncompressed_size() as usize)
-                .sum::<usize>();
-            parquet2::metadata::RowGroupMetaData::new(
-                new_columns,
-                rg.num_rows(),
-                new_total_uncompressed_size,
-            )
-        })
-        .enumerate()
         .collect();
 
-    Ok(FileMetaData {
-        row_groups: new_row_groups,
-        schema_descr: new_schema_descr,
-        ..file_metadata
-    })
+    // 3. Rebuild row groups with filtered/renamed column descriptors
+    let new_row_groups: Result<Vec<RowGroupMetaData>, _> = metadata
+        .row_groups()
+        .iter()
+        .map(|rg| {
+            let new_columns: Vec<ColumnChunkMetaData> = rg
+                .columns()
+                .iter()
+                .filter_map(|col| {
+                    let col_info = col.column_descr().self_type().get_basic_info();
+                    let new_descr =
+                        get_field_id(col_info).and_then(|fid| field_id_to_col_descr.get(&fid))?;
+
+                    // Rebuild ColumnChunkMetaData with new descriptor.
+                    // No set_column_descr on the builder, so we construct from scratch.
+                    let mut builder = ColumnChunkMetaData::builder(new_descr.clone())
+                        .set_encodings_mask(*col.encodings_mask())
+                        .set_num_values(col.num_values())
+                        .set_compression(col.compression())
+                        .set_data_page_offset(col.data_page_offset())
+                        .set_total_compressed_size(col.compressed_size())
+                        .set_total_uncompressed_size(col.uncompressed_size())
+                        .set_index_page_offset(col.index_page_offset())
+                        .set_dictionary_page_offset(col.dictionary_page_offset())
+                        .set_bloom_filter_offset(col.bloom_filter_offset())
+                        .set_bloom_filter_length(col.bloom_filter_length())
+                        .set_offset_index_offset(col.offset_index_offset())
+                        .set_offset_index_length(col.offset_index_length())
+                        .set_column_index_offset(col.column_index_offset())
+                        .set_column_index_length(col.column_index_length())
+                        .set_unencoded_byte_array_data_bytes(col.unencoded_byte_array_data_bytes());
+                    if let Some(stats) = col.statistics() {
+                        builder = builder.set_statistics(stats.clone());
+                    }
+                    if let Some(path) = col.file_path() {
+                        builder = builder.set_file_path(path.to_string());
+                    }
+                    Some(
+                        builder
+                            .build()
+                            .expect("column chunk rebuild should not fail"),
+                    )
+                })
+                .collect();
+
+            let total_byte_size: i64 = new_columns.iter().map(|c| c.uncompressed_size()).sum();
+            RowGroupMetaData::builder(new_schema_descr.clone())
+                .set_num_rows(rg.num_rows())
+                .set_total_byte_size(total_byte_size)
+                .set_column_metadata(new_columns)
+                .build()
+                .map_err(|e| common_error::DaftError::External(e.into()))
+        })
+        .collect();
+
+    // 4. Rebuild FileMetaData and ParquetMetaData
+    let fm = metadata.file_metadata();
+    let new_file_metadata = ArrowrsFileMetaData::new(
+        fm.version(),
+        fm.num_rows(),
+        fm.created_by().map(|s| s.to_string()),
+        fm.key_value_metadata().cloned(),
+        new_schema_descr,
+        fm.column_orders().cloned(),
+    );
+
+    Ok(Arc::new(ParquetMetaData::new(
+        new_file_metadata,
+        new_row_groups?,
+    )))
+}
+
+/// Strip STRING/UTF8 logical types from BYTE_ARRAY columns in parquet metadata.
+///
+/// This makes arrow-rs infer `Binary` instead of `Utf8` for string columns,
+/// which avoids UTF-8 validation during decode. Used to implement
+/// `StringEncoding::Raw` which reads string columns as raw bytes.
+pub(crate) fn strip_string_types_from_parquet_metadata(
+    metadata: Arc<parquet::file::metadata::ParquetMetaData>,
+) -> DaftResult<Arc<parquet::file::metadata::ParquetMetaData>> {
+    use parquet::{
+        file::metadata::{FileMetaData as ArrowrsFileMetaData, ParquetMetaData, RowGroupMetaData},
+        schema::types::{SchemaDescriptor, Type},
+    };
+
+    let old_schema = metadata.file_metadata().schema_descr();
+    let old_root = old_schema.root_schema();
+
+    let new_fields: Vec<_> = old_root
+        .get_fields()
+        .iter()
+        .map(|field| Arc::new(strip_string_type(field)))
+        .collect();
+
+    let new_root = Type::group_type_builder(old_root.name())
+        .with_fields(new_fields)
+        .build()
+        .map_err(|e| common_error::DaftError::External(e.into()))?;
+    let new_schema_descr = Arc::new(SchemaDescriptor::new(Arc::new(new_root)));
+
+    // Rebuild row groups with the new schema descriptor.
+    let new_row_groups: Result<Vec<RowGroupMetaData>, _> = metadata
+        .row_groups()
+        .iter()
+        .map(|rg| {
+            RowGroupMetaData::builder(new_schema_descr.clone())
+                .set_num_rows(rg.num_rows())
+                .set_total_byte_size(rg.total_byte_size())
+                .set_column_metadata(rg.columns().to_vec())
+                .build()
+                .map_err(|e| common_error::DaftError::External(e.into()))
+        })
+        .collect();
+
+    let fm = metadata.file_metadata();
+    let new_file_metadata = ArrowrsFileMetaData::new(
+        fm.version(),
+        fm.num_rows(),
+        fm.created_by().map(|s| s.to_string()),
+        fm.key_value_metadata().cloned(),
+        new_schema_descr,
+        fm.column_orders().cloned(),
+    );
+
+    Ok(Arc::new(ParquetMetaData::new(
+        new_file_metadata,
+        new_row_groups?,
+    )))
+}
+
+/// Recursively strip STRING/UTF8 annotations from a parquet type.
+fn strip_string_type(tp: &parquet::schema::types::Type) -> parquet::schema::types::Type {
+    use parquet::{
+        basic::{ConvertedType, LogicalType},
+        schema::types::Type,
+    };
+
+    match tp {
+        Type::PrimitiveType {
+            physical_type,
+            type_length,
+            scale,
+            precision,
+            ..
+        } => {
+            let info = tp.get_basic_info();
+            let is_string = matches!(info.logical_type_ref(), Some(LogicalType::String))
+                || info.converted_type() == ConvertedType::UTF8;
+
+            if is_string {
+                // Rebuild without String/UTF8 annotations so arrow-rs infers Binary.
+                Type::primitive_type_builder(info.name(), *physical_type)
+                    .with_repetition(info.repetition())
+                    .with_length(*type_length)
+                    .with_precision(*precision)
+                    .with_scale(*scale)
+                    .with_id(get_field_id(info))
+                    .build()
+                    .expect("rebuilding primitive type should not fail")
+            } else {
+                tp.clone()
+            }
+        }
+        Type::GroupType { fields, .. } => {
+            let info = tp.get_basic_info();
+            let new_children: Vec<_> = fields
+                .iter()
+                .map(|child| Arc::new(strip_string_type(child)))
+                .collect();
+            Type::group_type_builder(info.name())
+                .with_repetition(info.repetition())
+                .with_converted_type(info.converted_type())
+                .with_logical_type(info.logical_type_ref().cloned())
+                .with_fields(new_children)
+                .with_id(get_field_id(info))
+                .build()
+                .expect("rebuilding group type should not fail")
+        }
+    }
 }
 
 pub(crate) fn validate_footer_magic(uri: &str, buffer: &[u8]) -> super::Result<()> {
@@ -235,14 +369,22 @@ pub(crate) fn validate_footer_magic(uri: &str, buffer: &[u8]) -> super::Result<(
     Ok(())
 }
 
-pub(crate) async fn read_parquet_metadata(
+// ---------------------------------------------------------------------------
+// Shared footer I/O
+// ---------------------------------------------------------------------------
+
+/// Fetches raw parquet footer bytes from a URI, handling suffix range fallback
+/// and two-pass reads for large footers.
+///
+/// Returns `(footer_bytes, remaining_offset)` where `remaining_offset` is the
+/// byte offset within `footer_bytes` where the thrift metadata starts.
+async fn fetch_parquet_footer_bytes(
     uri: &str,
     file_size: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     default_footer_read_size: Option<usize>,
-) -> super::Result<FileMetaData> {
+) -> super::Result<(Bytes, usize)> {
     async fn fetch_data(
         io_client: Arc<IOClient>,
         uri: &str,
@@ -329,22 +471,57 @@ pub(crate) async fn read_parquet_metadata(
     let buffer = data.as_ref();
     validate_footer_magic(uri, buffer)?;
 
-    // use rayon here
-    let file_metadata = tokio::task::spawn_blocking(move || {
-        let reader = &data.as_ref()[remaining..];
-        let max_size = reader.len() * 2 + 1024;
-        deserialize_metadata(reader, max_size)
+    Ok((data, remaining))
+}
+
+// ---------------------------------------------------------------------------
+// Arrow-rs metadata deserialization
+// ---------------------------------------------------------------------------
+
+/// Read parquet metadata using arrow-rs deserialization.
+///
+/// Returns `Arc<parquet::file::metadata::ParquetMetaData>`.
+pub(crate) async fn read_parquet_metadata(
+    uri: &str,
+    file_size: Option<usize>,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    default_footer_read_size: Option<usize>,
+) -> super::Result<Arc<parquet::file::metadata::ParquetMetaData>> {
+    let (data, remaining) = fetch_parquet_footer_bytes(
+        uri,
+        file_size,
+        io_client,
+        io_stats,
+        default_footer_read_size,
+    )
+    .await?;
+
+    let metadata = tokio::task::spawn_blocking(move || {
+        let thrift_bytes = &data.as_ref()[remaining..data.len() - FOOTER_SIZE];
+        parquet::file::metadata::ParquetMetaDataReader::decode_metadata(thrift_bytes)
     })
     .await
     .context(JoinSnafu {
         path: uri.to_string(),
     })?
-    .context(UnableToParseMetadataSnafu { path: uri });
+    .map_err(|e| Error::UnableToParseMetadataArrowRs {
+        path: uri.to_string(),
+        source: e,
+    })?;
+
+    let metadata = Arc::new(metadata);
 
     if let Some(field_id_mapping) = field_id_mapping {
-        apply_field_ids_to_parquet_file_metadata(file_metadata?, field_id_mapping.as_ref())
+        apply_field_ids_to_arrowrs_parquet_metadata(metadata, field_id_mapping.as_ref()).map_err(
+            |e| Error::UnableToParseMetadataArrowRs {
+                path: uri.to_string(),
+                source: parquet::errors::ParquetError::External(e.into()),
+            },
+        )
     } else {
-        file_metadata
+        Ok(metadata)
     }
 }
 
@@ -370,28 +547,28 @@ mod tests {
         // Read metadata with actual file size.
         let metadata =
             read_parquet_metadata(file, Some(size), io_client.clone(), None, None, None).await?;
-        assert_eq!(metadata.num_rows, 100);
+        assert_eq!(metadata.file_metadata().num_rows(), 100);
 
         // Read metadata without a file size.
         let metadata =
             read_parquet_metadata(file, None, io_client.clone(), None, None, None).await?;
-        assert_eq!(metadata.num_rows, 100);
+        assert_eq!(metadata.file_metadata().num_rows(), 100);
 
         // Overwrite the default footer read size which less than footer length but without a file size.
         let metadata =
             read_parquet_metadata(file, None, io_client.clone(), None, None, Some(500)).await?;
-        assert_eq!(metadata.num_rows, 100);
+        assert_eq!(metadata.file_metadata().num_rows(), 100);
 
         // Overwrite the default footer read size which less than footer length and a file size.
         let metadata =
             read_parquet_metadata(file, Some(size), io_client.clone(), None, None, Some(500))
                 .await?;
-        assert_eq!(metadata.num_rows, 100);
+        assert_eq!(metadata.file_metadata().num_rows(), 100);
 
         // Overwrite the default footer read size less than 8 bytes.
         let metadata =
             read_parquet_metadata(file, None, io_client.clone(), None, None, Some(5)).await?;
-        assert_eq!(metadata.num_rows, 100);
+        assert_eq!(metadata.file_metadata().num_rows(), 100);
 
         // Test with invalid file size, assume file size is 10 bytes.
         let result =

@@ -68,6 +68,9 @@ export type QuerySummary = {
   id: string;
   start_sec: number;
   status: QueryStatus;
+  runner: string;
+  ray_dashboard_url?: string;
+  entrypoint?: string;
 };
 
 export type QuerySummaryMap = { [_: string]: QuerySummary };

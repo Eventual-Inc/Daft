@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::{ArrowPrimitiveType, LargeStringArray};
+use arrow::array::ArrowPrimitiveType;
 use common_error::DaftResult;
 
 use super::{DaftCompareAggable, GroupIndices, full::FullNull};
@@ -18,6 +18,7 @@ fn grouped_cmp_native<T, F>(
 ) -> DaftResult<DataArray<T>>
 where
     T: DaftPrimitiveType,
+    <T::Native as NumericNative>::ARROWTYPE: ArrowPrimitiveType<Native = T::Native>,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
     let cmp_per_group = if array.null_count() > 0 {
@@ -35,7 +36,7 @@ where
         });
         DataArray::<T>::from_iter(array.field.clone(), cmp_values_iter)
     } else {
-        DataArray::<T>::from_values_iter(
+        DataArray::<T>::from_field_and_values(
             array.field.clone(),
             groups.iter().map(|g| {
                 g.iter()
@@ -54,28 +55,22 @@ impl<T> DaftCompareAggable for DataArray<T>
 where
     T: DaftPrimitiveType,
     T::Native: PartialOrd,
-    <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native: Into<T::Native>,
+    <T::Native as NumericNative>::ARROWTYPE: ArrowPrimitiveType<Native = T::Native>,
 {
     type Output = DaftResult<Self>;
 
     fn min(&self) -> Self::Output {
         let primitive_arr = self.as_arrow()?;
 
-        let result = arrow::compute::min(&primitive_arr);
-        Ok(Self::from_iter(
-            self.field.clone(),
-            std::iter::once(result.map(Into::into)),
-        ))
+        let result = arrow::compute::min(primitive_arr);
+        Ok(Self::from_iter(self.field.clone(), std::iter::once(result)))
     }
 
     fn max(&self) -> Self::Output {
         let primitive_arr = self.as_arrow()?;
 
-        let result = arrow::compute::max(&primitive_arr);
-        Ok(Self::from_iter(
-            self.field.clone(),
-            std::iter::once(result.map(Into::into)),
-        ))
+        let result = arrow::compute::max(primitive_arr);
+        Ok(Self::from_iter(self.field.clone(), std::iter::once(result)))
     }
     fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
         grouped_cmp_native(
@@ -123,16 +118,15 @@ where
         });
         Ok(Utf8Array::from_iter(data_array.name(), cmp_values_iter))
     } else {
-        let arrow_result = LargeStringArray::from_iter_values(groups.iter().map(|g| {
-            g.iter()
-                .map(|i| data_array.get(*i as usize).unwrap())
-                .reduce(|l, r| op(l, r))
-                .unwrap()
-        }));
-        Utf8Array::from_arrow(
-            Field::new(data_array.name(), DataType::Utf8),
-            Arc::new(arrow_result),
-        )
+        Ok(Utf8Array::from_values(
+            data_array.name(),
+            groups.iter().map(|g| {
+                g.iter()
+                    .map(|i| data_array.get(*i as usize).unwrap())
+                    .reduce(|l, r| op(l, r))
+                    .unwrap()
+            }),
+        ))
     }
 }
 
@@ -141,13 +135,13 @@ impl DaftCompareAggable for DataArray<Utf8Type> {
     fn min(&self) -> Self::Output {
         let arrow_array = self.as_arrow()?;
 
-        let result = arrow::compute::min_string(&arrow_array);
+        let result = arrow::compute::min_string(arrow_array);
         Ok(Self::from_iter(self.name(), std::iter::once(result)))
     }
     fn max(&self) -> Self::Output {
         let arrow_array = self.as_arrow()?;
 
-        let result = arrow::compute::max_string(&arrow_array);
+        let result = arrow::compute::max_string(arrow_array);
         Ok(Self::from_iter(self.name(), std::iter::once(result)))
     }
 
@@ -200,13 +194,13 @@ impl DaftCompareAggable for DataArray<BinaryType> {
     fn min(&self) -> Self::Output {
         let arrow_array = self.as_arrow()?;
 
-        let result = arrow::compute::min_binary(&arrow_array);
+        let result = arrow::compute::min_binary(arrow_array);
         Ok(Self::from_iter(self.name(), std::iter::once(result)))
     }
     fn max(&self) -> Self::Output {
         let arrow_array = self.as_arrow()?;
 
-        let result = arrow::compute::max_binary(&arrow_array);
+        let result = arrow::compute::max_binary(arrow_array);
         Ok(Self::from_iter(self.name(), std::iter::once(result)))
     }
 
@@ -270,7 +264,7 @@ impl DaftCompareAggable for DataArray<FixedSizeBinaryType> {
             unreachable!("FixedSizeBinaryArray must have DataType::FixedSizeBinary(..)");
         };
 
-        let result = arrow::compute::min_fixed_size_binary(&arrow_array);
+        let result = arrow::compute::min_fixed_size_binary(arrow_array);
         Ok(Self::from_iter(self.name(), std::iter::once(result), *size))
     }
     fn max(&self) -> Self::Output {
@@ -280,7 +274,7 @@ impl DaftCompareAggable for DataArray<FixedSizeBinaryType> {
             unreachable!("FixedSizeBinaryArray must have DataType::FixedSizeBinary(..)");
         };
 
-        let result = arrow::compute::max_fixed_size_binary(&arrow_array);
+        let result = arrow::compute::max_fixed_size_binary(arrow_array);
         Ok(Self::from_iter(self.name(), std::iter::once(result), *size))
     }
 
@@ -334,13 +328,13 @@ impl DaftCompareAggable for DataArray<BooleanType> {
     fn min(&self) -> Self::Output {
         let arrow_array = self.as_arrow()?;
 
-        let result = arrow::compute::min_boolean(&arrow_array);
+        let result = arrow::compute::min_boolean(arrow_array);
         Ok(Self::from_iter(self.name(), std::iter::once(result)))
     }
     fn max(&self) -> Self::Output {
         let arrow_array = self.as_arrow()?;
 
-        let result = arrow::compute::max_boolean(&arrow_array);
+        let result = arrow::compute::max_boolean(arrow_array);
         Ok(Self::from_iter(self.name(), std::iter::once(result)))
     }
 

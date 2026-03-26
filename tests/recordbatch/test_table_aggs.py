@@ -53,12 +53,12 @@ def test_multipartition_count_empty(mp):
 @pytest.mark.parametrize(
     "mp",
     [
-        MicroPartition.from_pydict({"a": [1, None, 3, None], "b": ["a", "a", "b", "b"]}),  # 1 table
+        MicroPartition.from_pydict({"a": [1, None, 3, None, 2], "b": ["a", "a", "b", "b", "b"]}),  # 1 table
         MicroPartition.concat(
             [
                 MicroPartition.from_pydict({"a": np.array([]).astype(np.int64), "b": pa.array([], type=pa.string())}),
                 MicroPartition.from_pydict({"a": [1], "b": ["a"]}),
-                MicroPartition.from_pydict({"a": [None, 3, None], "b": ["a", "b", "b"]}),
+                MicroPartition.from_pydict({"a": [None, 3, None, 2], "b": ["a", "b", "b", "b"]}),
             ]
         ),  # 3 tables
     ],
@@ -66,11 +66,11 @@ def test_multipartition_count_empty(mp):
 def test_multipartition_count(mp):
     counted = mp.agg([col("a").count()])
     assert len(counted) == 1
-    assert counted.to_pydict() == {"a": [2]}
+    assert counted.to_pydict() == {"a": [3]}
 
-    counted = mp.agg([col("a").count()], group_by=[col("b")])
+    counted = mp.agg([col("a").count()], group_by=[col("b")]).sort([col("b")])
     assert len(counted) == 2
-    assert counted.to_pydict() == {"b": ["a", "b"], "a": [1, 1]}
+    assert counted.to_pydict() == {"b": ["a", "b"], "a": [1, 2]}
 
 
 @pytest.mark.parametrize("idx_dtype", daft_nonnull_types, ids=[f"{_}" for _ in daft_nonnull_types])
@@ -1080,10 +1080,24 @@ def test_agg_concat_on_string() -> None:
     assert res["a"] == ["the quick brown fox"]
 
 
+def test_agg_concat_on_string_with_delimiter() -> None:
+    df3 = from_pydict({"a": ["the", "quick", "brown", "fox"]})
+    res = df3.agg(col("a").string_agg(delimiter=" ")).to_pydict()
+    assert res["a"] == ["the quick brown fox"]
+
+
 def test_agg_concat_on_string_groupby() -> None:
     df3 = from_pydict({"a": ["the", " quick", " brown", " fox"], "b": [1, 2, 1, 2]})
     res = df3.groupby("b").string_agg("a").to_pydict()
     expected = ["the brown", " quick fox"]
+    for txt in expected:
+        assert txt in res["a"]
+
+
+def test_agg_concat_on_string_groupby_with_delimiter() -> None:
+    df3 = from_pydict({"a": ["the", "quick", "brown", "fox"], "b": [1, 1, 2, 2]})
+    res = df3.groupby("b").string_agg("a", delimiter="|").to_pydict()
+    expected = ["the|quick", "brown|fox"]
     for txt in expected:
         assert txt in res["a"]
 

@@ -3,6 +3,7 @@ pub mod python;
 
 mod azure;
 mod config;
+mod cos;
 mod gcs;
 mod gravitino;
 mod http;
@@ -22,6 +23,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 pub use crate::{
     azure::AzureConfig,
     config::IOConfig,
+    cos::CosConfig,
     gcs::GCSConfig,
     gravitino::GravitinoConfig,
     http::HTTPConfig,

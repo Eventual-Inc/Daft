@@ -45,8 +45,8 @@ impl TableStatistics {
             .iter()
             .map(|col| {
                 Ok(ColumnRangeStatistics::new(
-                    Some(col.slice(0, 1)?),
-                    Some(col.slice(1, 2)?),
+                    Some(col.slice(0, 1)?.take_materialized_series()),
+                    Some(col.slice(1, 2)?.take_materialized_series()),
                 )?)
             })
             .collect::<DaftResult<_>>()?;
@@ -62,7 +62,7 @@ impl TableStatistics {
         let columns = table
             .columns()
             .iter()
-            .map(ColumnRangeStatistics::from_series)
+            .map(|col| ColumnRangeStatistics::from_series(col.as_materialized_series()))
             .collect();
         Self {
             columns,
@@ -134,7 +134,7 @@ impl TableStatistics {
             Expr::BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(&BoundExpr::new_unchecked(left.clone()))?;
                 let rhs = self.eval_expression(&BoundExpr::new_unchecked(right.clone()))?;
-                use daft_dsl::Operator::{And, Eq, Gt, GtEq, Lt, LtEq, Minus, NotEq, Or, Plus};
+                use daft_core::prelude::Operator::*;
                 match op {
                     Lt => lhs.lt(&rhs),
                     LtEq => lhs.lte(&rhs),
@@ -181,7 +181,7 @@ impl TableStatistics {
         let exprs: Vec<_> = schema
             .into_iter()
             .map(|field| {
-                if current_col_names.contains(field.name.as_str()) {
+                if current_col_names.contains(field.name.as_ref()) {
                     // For any fields already in the table, perform a cast
                     resolved_col(field.name.clone()).cast(&field.dtype)
                 } else {
@@ -189,7 +189,7 @@ impl TableStatistics {
                     // If no entry for column name, fall back to null literal (i.e.s create a null array for that column).
                     fill_map
                         .as_ref()
-                        .and_then(|m| m.get(field.name.as_str()))
+                        .and_then(|m| m.get(field.name.as_ref()))
                         .unwrap_or(&null_lit)
                         .clone()
                         .alias(field.name.clone())
@@ -247,7 +247,7 @@ mod test {
     #[test]
     fn test_equal() -> crate::Result<()> {
         let table = RecordBatch::from_nonempty_columns(vec![
-            Int64Array::from(("a", vec![1, 2, 3, 4])).into_series(),
+            Int64Array::from_slice("a", &[1, 2, 3, 4]).into_series(),
         ])
         .unwrap();
         let table_stats = TableStatistics::from_table(&table);
@@ -266,7 +266,7 @@ mod test {
 
         // True case
         let table = RecordBatch::from_nonempty_columns(vec![
-            Int64Array::from(("a", vec![0, 0, 0])).into_series(),
+            Int64Array::from_slice("a", &[0, 0, 0]).into_series(),
         ])
         .unwrap();
         let table_stats = TableStatistics::from_table(&table);

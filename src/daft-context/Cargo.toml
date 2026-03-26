@@ -6,7 +6,6 @@ common-error = {path = "../common/error", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
-daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-dashboard = {path = "../daft-dashboard", default-features = false}
 daft-runners = {workspace = true}
@@ -15,7 +14,11 @@ log = {workspace = true}
 # For debug subscriber
 dashmap = {workspace = true}
 # Client for submitting to dashboard server
-reqwest = {workspace = true, default-features = false}
+reqwest = {workspace = true, default_features = false}
+serde = {workspace = true}
+serde_json = {workspace = true}
+tokio = {workspace = true}
+uuid = {workspace = true, features = ["v4"]}
 
 [features]
 python = [
@@ -26,8 +29,7 @@ python = [
   "daft-core/python",
   "daft-logical-plan/python",
   "daft-micropartition/python",
-  "daft-runners/python",
-  "daft-recordbatch/python"
+  "daft-runners/python"
 ]
 
 [lints]

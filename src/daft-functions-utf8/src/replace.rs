@@ -21,7 +21,11 @@ impl ScalarUDF for RegexpReplace {
     fn name(&self) -> &'static str {
         "regexp_replace"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let pattern = inputs.required((1, "pattern"))?;
         let replacement = inputs.required((2, "replacement"))?;
@@ -49,7 +53,11 @@ impl ScalarUDF for Replace {
     fn name(&self) -> &'static str {
         "replace"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let pattern = inputs.required((1, "pattern"))?;
         let replacement = inputs.required((2, "replacement"))?;

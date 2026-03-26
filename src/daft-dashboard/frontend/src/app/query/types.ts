@@ -4,13 +4,18 @@ export type PlanInfo = {
   optimized_plan: string;
 };
 
-export type OperatorStatus = "Pending" | "Executing" | "Finished";
+export type OperatorStatus = "Pending" | "Executing" | "Finished" | "Failed";
 
 export type NodeInfo = {
   name: string;
   id: number;
   node_category: "Intermediate" | "Source" | "StreamingSink" | "BlockingSink";
   context: Record<string, string>;
+};
+
+export type DurationValue = {
+  secs: number;
+  nanos: number;
 };
 
 export type Stat =
@@ -32,18 +37,29 @@ export type Stat =
     }
   | {
       type: "Duration";
-      value: number;
+      value: DurationValue;
     };
 
 export type OperatorInfo = {
   status: OperatorStatus;
   node_info: NodeInfo;
   stats: Record<string, Stat>;
+  start_sec?: number;
+  end_sec?: number;
+};
+
+export type PhysicalPlanNode = {
+  id: number;
+  name: string;
+  type: string;
+  category: string;
+  children?: PhysicalPlanNode[];
 };
 
 export type ExecInfo = {
   exec_start_sec: number;
   operators: Record<number, OperatorInfo>;
+  physical_plan: string;
   // TODO: Logs
 };
 
@@ -97,5 +113,14 @@ export type QueryInfo = {
   id: string;
   start_sec: number;
   unoptimized_plan: string;
+  runner: string;
+  ray_dashboard_url?: string;
+  entrypoint?: string;
   state: QueryState;
+};
+
+export type ResultPreview = {
+  html: string | null;
+  num_rows: number;
+  total_rows: number | null;
 };

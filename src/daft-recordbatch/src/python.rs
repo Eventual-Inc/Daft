@@ -21,7 +21,7 @@ use crate::{
     preview::{Preview, PreviewFormat, PreviewOptions},
 };
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PyRecordBatch {
     pub record_batch: RecordBatch,
@@ -432,8 +432,7 @@ impl PyRecordBatch {
         self.record_batch
             .columns()
             .iter()
-            .cloned()
-            .map(Into::into)
+            .map(|c| c.as_materialized_series().clone().into())
             .collect()
     }
 
@@ -509,10 +508,15 @@ impl PyRecordBatch {
         })
     }
     #[staticmethod]
-    pub fn from_pyseries_list(pycolumns: Vec<PySeries>) -> PyResult<Self> {
+    #[pyo3(signature = (pycolumns, num_rows=None))]
+    pub fn from_pyseries_list(pycolumns: Vec<PySeries>, num_rows: Option<usize>) -> PyResult<Self> {
         if pycolumns.is_empty() {
             return Ok(Self {
-                record_batch: RecordBatch::empty(None),
+                record_batch: RecordBatch::new_unchecked(
+                    Arc::new(Schema::empty()),
+                    vec![],
+                    num_rows.unwrap_or(0),
+                ),
             });
         }
 

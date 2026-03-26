@@ -6,6 +6,7 @@ import pyarrow as pa
 import pytest
 
 import daft
+from daft import DataType
 from tests.integration.io.conftest import minio_create_bucket
 
 TABLE_NAME = "my_table"
@@ -256,3 +257,25 @@ def test_append_mode_fails_when_dataset_does_not_exist(lance_dataset_path):
     # Attempt to append to non-existent dataset should raise ValueError
     with pytest.raises(ValueError, match="Cannot append to non-existent Lance dataset"):
         df.write_lance(lance_dataset_path, mode="append")
+
+
+def test_embedding_type_read_without_write(lance_dataset_path):
+    """Test that Embedding type is preserved when reading without writing first in same process."""
+    import subprocess
+    import sys
+
+    # Write in separate process so extension type isn't registered in this process
+    script = f'''
+import daft
+from daft import DataType
+import numpy as np
+
+embeddings = [np.random.randn(4).astype(np.float32).tolist() for _ in range(3)]
+df = daft.from_pydict({{"embedding": embeddings}})
+df = df.with_column("embedding", df["embedding"].cast(DataType.embedding(DataType.float32(), 4)))
+df.write_lance("{lance_dataset_path}", mode="create")
+'''
+    subprocess.run([sys.executable, "-c", script], check=True)
+
+    df_loaded = daft.read_lance(lance_dataset_path)
+    assert df_loaded.schema()["embedding"].dtype == DataType.embedding(DataType.float32(), 4)

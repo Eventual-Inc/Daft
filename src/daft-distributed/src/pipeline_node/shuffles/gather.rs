@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_logical_plan::partitioning::UnknownClusteringConfig;
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -25,7 +26,7 @@ pub(crate) struct GatherNode {
 }
 
 impl GatherNode {
-    const NODE_NAME: NodeName = "Gather";
+    const NODE_NAME: &'static str = "Gather";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -38,7 +39,9 @@ impl GatherNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
+            NodeType::Repartition,
+            NodeCategory::BlockingSink,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -50,10 +53,6 @@ impl GatherNode {
             context,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 
     // Async execution to get all partitions out
@@ -79,7 +78,8 @@ impl GatherNode {
             self.config.schema.clone(),
             self.node_id(),
         );
-        let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+        let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+            .with_psets(self.node_id(), psets);
 
         let _ = result_tx.send(builder).await;
         Ok(())

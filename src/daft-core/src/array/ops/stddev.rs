@@ -1,5 +1,4 @@
 use common_error::DaftResult;
-use daft_arrow::array::PrimitiveArray;
 
 use crate::{
     array::{
@@ -13,22 +12,22 @@ use crate::{
 impl DaftStddevAggable for DataArray<Float64Type> {
     type Output = DaftResult<Self>;
 
-    fn stddev(&self) -> Self::Output {
+    fn stddev(&self, ddof: usize) -> Self::Output {
         let stats = stats::calculate_stats(self)?;
-        let values = self.into_iter().flatten().copied();
-        let stddev = stats::calculate_stddev(stats, values);
-        let field = self.field.clone();
-        let data = PrimitiveArray::<f64>::from([stddev]).boxed();
-        Self::new(field, data)
+        let values = self.into_iter().flatten();
+        let stddev = stats::calculate_stddev(stats, values, ddof);
+        Ok(Self::from_iter(
+            self.field().clone(),
+            std::iter::once(stddev),
+        ))
     }
 
-    fn grouped_stddev(&self, groups: &GroupIndices) -> Self::Output {
+    fn grouped_stddev(&self, groups: &GroupIndices, ddof: usize) -> Self::Output {
         let grouped_stddevs_iter = stats::grouped_stats(self, groups)?.map(|(stats, group)| {
             let values = group.iter().filter_map(|&index| self.get(index as _));
-            stats::calculate_stddev(stats, values)
+            stats::calculate_stddev(stats, values, ddof)
         });
-        let field = self.field.clone();
-        let data = PrimitiveArray::<f64>::from_iter(grouped_stddevs_iter).boxed();
-        Self::new(field, data)
+
+        Ok(Self::from_iter(self.field().clone(), grouped_stddevs_iter))
     }
 }

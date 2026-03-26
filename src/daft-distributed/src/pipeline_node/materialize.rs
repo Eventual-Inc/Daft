@@ -222,9 +222,7 @@ mod tests {
         verify_materialized_results(
             &results,
             &partition_specs,
-            &std::iter::repeat(false)
-                .take(partition_specs.len())
-                .collect::<Vec<_>>(),
+            &std::iter::repeat_n(false, partition_specs.len()).collect::<Vec<_>>(),
         );
         test_context.cleanup().await?;
         Ok(())
@@ -243,9 +241,9 @@ mod tests {
         let partition_specs = create_incremental_partition_specs(num_partitions);
         let partitions = create_test_partitions(&partition_specs);
 
-        let mut rng = rand::rngs::StdRng::from_entropy();
+        let mut rng = rand::rngs::StdRng::from_os_rng();
         let task_iter = (0..num_partitions).map(move |i| {
-            let sleep_duration = Duration::from_millis(rng.gen_range(100..300));
+            let sleep_duration = Duration::from_millis(rng.random_range(100..300));
             SubmittableTask::task_only(
                 MockTaskBuilder::new(partitions[i].clone())
                     .with_task_id(i as u32)
@@ -265,9 +263,7 @@ mod tests {
         verify_materialized_results(
             &results,
             &partition_specs,
-            &std::iter::repeat(false)
-                .take(partition_specs.len())
-                .collect::<Vec<_>>(),
+            &std::iter::repeat_n(false, partition_specs.len()).collect::<Vec<_>>(),
         );
         test_context.cleanup().await?;
         Ok(())
@@ -279,14 +275,14 @@ mod tests {
         let worker_slots = 10;
         let error_probability = 0.1;
         let task_sleep_ms = 100;
-        let mut rng = rand::rngs::StdRng::from_entropy();
+        let mut rng = rand::rngs::StdRng::from_os_rng();
 
         let test_context = TestContext::new(&[("worker1".into(), worker_slots)])?;
         let partition_specs = create_incremental_partition_specs(num_partitions);
         let partitions = create_test_partitions(&partition_specs);
 
         let should_error = (0..num_partitions)
-            .map(move |_| rng.gen_bool(error_probability))
+            .map(move |_| rng.random_bool(error_probability))
             .collect::<Vec<_>>();
 
         let task_iter = (0..num_partitions)

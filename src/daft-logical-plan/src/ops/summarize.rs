@@ -16,8 +16,8 @@ pub fn summarize(input: &LogicalPlanBuilder) -> DaftResult<LogicalPlanBuilder> {
     let mut nuls: Vec<ExprRef> = vec![]; // nulls              :: int64
     let mut unqs: Vec<ExprRef> = vec![]; // approx_distinct    :: int64
     for field in input.schema().as_ref() {
-        let col = daft_dsl::resolved_col(field.name.as_str());
-        cols.push(lit(field.name.clone()));
+        let col = daft_dsl::resolved_col(field.name.as_ref());
+        cols.push(lit(field.name.to_string()));
         typs.push(lit(field.dtype.to_string()));
         mins.push(col.clone().min().cast(&DataType::Utf8));
         maxs.push(col.clone().max().cast(&DataType::Utf8));
@@ -39,7 +39,7 @@ pub fn summarize(input: &LogicalPlanBuilder) -> DaftResult<LogicalPlanBuilder> {
         vec![],
     )?;
     // apply explode for all columns
-    input.explode(input.columns(), None)
+    input.explode(input.columns(), false, None)
 }
 
 /// Creates a list constructor for the given items.

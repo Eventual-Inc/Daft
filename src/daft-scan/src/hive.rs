@@ -15,15 +15,11 @@ fn parse_hive_value_to_dtype(
     if value.is_empty() {
         return Ok(Series::full_null(field_name, target_dtype, 1));
     }
-    #[allow(deprecated, reason = "arrow2 migration")]
-    let arrow_dtype = target_dtype.to_arrow2().map_err(|e| {
+    let arrow_dtype = target_dtype.to_arrow().map_err(|e| {
         common_error::DaftError::ValueError(format!("Failed to convert dtype to arrow: {}", e))
     })?;
     let arrow_array = deserialize_single_value_to_arrow(value.as_bytes(), arrow_dtype)?;
-    Series::try_from_field_and_arrow_array(
-        Field::new(field_name, target_dtype.clone()),
-        arrow_array,
-    )
+    Series::from_arrow(Field::new(field_name, target_dtype.clone()), arrow_array)
 }
 
 /// Parses hive-style /key=value/ components from a uri.
@@ -110,7 +106,10 @@ pub fn hive_partitions_to_fields(partitions: &IndexMap<String, String>) -> Vec<F
                 inferred_type
             };
             // daft_decoding::inference::infer should always return a valid Daft DataType
-            Field::new(key, DaftDataType::try_from(&inferred_type).unwrap())
+            Field::new(
+                key.as_str(),
+                DaftDataType::try_from(&inferred_type).unwrap(),
+            )
         })
         .collect()
 }
@@ -149,7 +148,7 @@ mod tests {
         let partitions = parse_hive_partitioning(uri).unwrap();
 
         assert_eq!(partitions.get("year"), Some(&"2024".to_string()));
-        assert_eq!(partitions.get("region"), Some(&"".to_string()));
+        assert_eq!(partitions.get("region"), Some(&String::new()));
     }
 
     #[test]
@@ -266,7 +265,7 @@ mod tests {
         let partitions = parse_hive_partitioning(uri).unwrap();
 
         assert_eq!(partitions.len(), 2);
-        assert_eq!(partitions.get("empty_key"), Some(&"".to_string()));
-        assert_eq!(partitions.get("another"), Some(&"".to_string()));
+        assert_eq!(partitions.get("empty_key"), Some(&String::new()));
+        assert_eq!(partitions.get("another"), Some(&String::new()));
     }
 }

@@ -2,17 +2,12 @@ from __future__ import annotations
 
 import pyarrow as pa
 import pytest
+from deltalake.exceptions import TableNotFoundError
 
 import daft
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.logical.schema import Schema
 from tests.utils import assert_pyarrow_tables_equal
-
-PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
-pytestmark = pytest.mark.skipif(
-    PYARROW_LOWER_BOUND_SKIP,
-    reason="deltalake not supported on older versions of pyarrow",
-)
 
 
 def test_deltalake_read_basic(tmp_path, base_table):
@@ -37,8 +32,8 @@ def test_deltalake_read_basic_sql(tmp_path, base_table):
 
 def test_deltalake_read_full(deltalake_table):
     deltalake = pytest.importorskip("deltalake")
-    path, catalog_table, io_config, parts = deltalake_table
-    df = daft.read_deltalake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
+    path, io_config, parts = deltalake_table
+    df = daft.read_deltalake(str(path), io_config=io_config)
     delta_schema = deltalake.DeltaTable(path, storage_options=io_config_to_storage_options(io_config, path)).schema()
     expected_schema = Schema.from_pyarrow_schema(pa.schema(delta_schema.to_arrow()))
     assert df.schema() == expected_schema
@@ -46,8 +41,8 @@ def test_deltalake_read_full(deltalake_table):
 
 
 def test_deltalake_read_show(deltalake_table):
-    path, catalog_table, io_config, _ = deltalake_table
-    df = daft.read_deltalake(str(path) if catalog_table is None else catalog_table, io_config=io_config)
+    path, io_config, _ = deltalake_table
+    df = daft.read_deltalake(str(path), io_config=io_config)
     df.show()
 
 
@@ -107,6 +102,21 @@ def test_deltalake_read_versioned(tmp_path, base_table):
         expected_schema = Schema.from_pyarrow_schema(pa.schema(deltalake.DeltaTable(path).schema().to_arrow()))
         assert df.schema() == expected_schema
         assert_pyarrow_tables_equal(df.to_arrow(), updated_table)
+
+    df = daft.read_deltalake(str(path), version=0)
+    expected_schema = Schema.from_pyarrow_schema(pa.schema(deltalake.DeltaTable(path, version=0).schema().to_arrow()))
+    assert df.schema() == expected_schema
+    assert_pyarrow_tables_equal(df.to_arrow(), base_table)
+
+
+def test_deltalake_read_invalid_integer_version(tmp_path, base_table):
+    deltalake = pytest.importorskip("deltalake")
+    path = tmp_path / "some_table"
+    deltalake.write_deltalake(path, base_table)
+
+    for invalid_version in [-1, 1000]:
+        with pytest.raises(TableNotFoundError):
+            daft.read_deltalake(str(path), version=invalid_version)
 
     df = daft.read_deltalake(str(path), version=0)
     expected_schema = Schema.from_pyarrow_schema(pa.schema(deltalake.DeltaTable(path, version=0).schema().to_arrow()))

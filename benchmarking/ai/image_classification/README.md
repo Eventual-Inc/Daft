@@ -1,6 +1,6 @@
 # Image Classification Benchmark
 
-Classifies **803,580 images** using ResNet18 model. Downloads images, applies preprocessing transforms, and runs inference to predict ImageNet labels across distributed GPU nodes.
+Classifies **803,580 rows** (80,358 unique images, each repeated 10x) using ResNet18 model. Downloads images, applies preprocessing transforms, and runs inference to predict ImageNet labels across distributed GPU nodes.
 
 **Input Dataset**: ImageNet benchmark dataset (S3 parquet format)
 **Output Format**: Parquet with image URLs and predicted labels

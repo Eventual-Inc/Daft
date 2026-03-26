@@ -10,6 +10,7 @@ import pytest
 
 import daft.exceptions
 from daft import DataType, Series
+from daft.series import SeriesStringNamespace
 
 
 @pytest.mark.parametrize(
@@ -371,6 +372,22 @@ def test_series_utf8_rstrip(data, expected) -> None:
 @pytest.mark.parametrize(
     ["data", "expected"],
     [
+        (["\ta\t", "\nb\n", "\vc\t", "\td ", "e"], ["a", "b", "c", "d", "e"]),
+        # With at least one null
+        (["\ta\t", None, "\vc\t", "\td ", "e"], ["a", None, "c", "d", "e"]),
+        # With all nulls
+        ([None] * 4, [None] * 4),
+    ],
+)
+def test_series_utf8_strip(data, expected) -> None:
+    s = Series.from_arrow(pa.array(data))
+    result = s.str.strip()
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ["data", "expected"],
+    [
         (["abc", "def", "ghi"], ["cba", "fed", "ihg"]),
         # With at least one null
         (["abc", None, "def", "ghi"], ["cba", None, "fed", "ihg"]),
@@ -409,6 +426,24 @@ def test_series_utf8_reverse(data, expected) -> None:
 def test_series_utf8_capitalize(data, expected) -> None:
     s = Series.from_arrow(pa.array(data))
     result = s.str.capitalize()
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ("convert", "expected"),
+    [
+        (SeriesStringNamespace.to_camel_case, ["helloWorld", "helloWorld", "helloWorld", None]),
+        (SeriesStringNamespace.to_upper_camel_case, ["HelloWorld", "HelloWorld", "HelloWorld", None]),
+        (SeriesStringNamespace.to_snake_case, ["hello_world", "hello_world", "hello_world", None]),
+        (SeriesStringNamespace.to_upper_snake_case, ["HELLO_WORLD", "HELLO_WORLD", "HELLO_WORLD", None]),
+        (SeriesStringNamespace.to_kebab_case, ["hello-world", "hello-world", "hello-world", None]),
+        (SeriesStringNamespace.to_upper_kebab_case, ["HELLO-WORLD", "HELLO-WORLD", "HELLO-WORLD", None]),
+        (SeriesStringNamespace.to_title_case, ["Hello World", "Hello World", "Hello World", None]),
+    ],
+)
+def test_series_utf8_case_conversions(convert, expected) -> None:
+    s = Series.from_arrow(pa.array(["helloWorld", "hello-world", "HelloWorld", None]))
+    result = convert(s.str)
     assert result.to_pylist() == expected
 
 

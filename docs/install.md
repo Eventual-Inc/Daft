@@ -121,6 +121,7 @@ Depending on your use case, you may need to install Daft with additional depende
         </div>
       </label>
     </div>
+
   </div>
 
   <div class="command-output">
@@ -152,7 +153,16 @@ You can also install Daft with all extra dependencies:
 pip install -U "daft[all]"
 ```
 
+## Nightly Builds
 
+Nightly builds are published daily from the latest `main` branch. These are useful for testing upcoming features and bug fixes before they are released on PyPI.
+
+```bash
+pip install daft --pre --extra-index-url https://nightly.daft.ai
+```
+
+!!! warning "Stability"
+Nightly builds may contain unstable or experimental changes. They are not recommended for production use.
 
 ## Troubleshooting Legacy CPU Support
 
@@ -163,7 +173,7 @@ pip install -U daft-lts
 ```
 
 !!! warning "Performance Impact"
-    The LTS version uses limited CPU instructions and cannot leverage vectorized operations, resulting in slower performance. Only use this if the standard package fails to run.
+The LTS version uses limited CPU instructions and cannot leverage vectorized operations, resulting in slower performance. Only use this if the standard package fails to run.
 
 <style>
 .daft-install-tool {

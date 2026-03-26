@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import warnings
+
 import pytest
+
+# This module tests legacy @daft.udf features (ray_options, override_options) with no new-API equivalent.
+warnings.filterwarnings("ignore", category=DeprecationWarning, message=r".*@daft\.udf.*")
+pytestmark = pytest.mark.filterwarnings(r"ignore:.*@daft\.udf.*:DeprecationWarning")
 
 import daft
 from daft import col, get_or_infer_runner_type, udf
@@ -11,39 +17,42 @@ from tests.utils import clean_explain_output, explain_to_text
 
 
 @pytest.fixture
-def input_df(tmp_path):
+def input_df_with_uri(tmp_path):
+    dataset_uri = f"{tmp_path}/test.lance"
     lance = pytest.importorskip("lance")
-    lance.write_dataset(pa.Table.from_pydict({"id": [id for id in range(16)]}), uri=tmp_path)
-    return daft.read_lance(uri=str(tmp_path))
+    lance.write_dataset(pa.Table.from_pydict({"id": [id for id in range(16)]}), uri=dataset_uri)
+    return daft.read_lance(uri=dataset_uri), dataset_uri
 
 
 @pytest.mark.skipif(
     condition=get_tests_daft_runner_name() == "native",
-    reason="The physical plan displayed in Native and Ray mode is inconsistent",
+    reason="Native Runner does not currently support obtaining related information",
 )
-def test_explain_with_empty_scantask(input_df):
-    expected = """
-    * ScanTaskSource:
-    |   Num Scan Tasks = 1
-    |   Estimated Scan Bytes = 130
-    |   Schema: {id#Int64}
-    |   Scan Tasks: [
-    |   {daft.io.lance.lance_scan:_lancedb_table_factory_function}
-    |   ]
-    """
+def test_explain_with_python_function_datasource(input_df_with_uri):
+    input_df, dataset_uri = input_df_with_uri
+    expected = f"""
+        * ScanTaskSource:
+        |   Num Scan Tasks = 1
+        |   Estimated Scan Bytes = 130
+        |   Source = LanceDBScanOperator({dataset_uri})
+        |   Schema: {{id#Int64}}
+        |   Scan Tasks: [
+        |   {{daft.io.lance.lance_scan:_lancedb_table_factory_function}}
+        |   ]
+        """
     assert clean_explain_output(explain_to_text(input_df, only_physical_plan=True)) == clean_explain_output(expected)
 
     expected = """
-    * Limit: 0
-    |
-    * ScanTaskSource:
-    |   Num Scan Tasks = 0
-    |   Estimated Scan Bytes = 0
-    |   Pushdowns: {limit: 0}
-    |   Schema: {id#Int64}
-    |   Scan Tasks: [
-    |   ]
-    """
+        * Limit: 0
+        |
+        * ScanTaskSource:
+        |   Num Scan Tasks = 0
+        |   Estimated Scan Bytes = 0
+        |   Pushdowns: {limit: 0}
+        |   Schema: {id#Int64}
+        |   Scan Tasks: [
+        |   ]
+        """
     assert clean_explain_output(explain_to_text(input_df.limit(0), only_physical_plan=True)) == clean_explain_output(
         expected
     )
@@ -81,7 +90,7 @@ def large_df(tmp_path_factory):
 
 @pytest.mark.skipif(
     condition=get_tests_daft_runner_name() == "native",
-    reason="Native Runner doesn't currently support displaying the ID of the nodes participating in the Join",
+    reason="Native Runner uses Hash Join instead",
 )
 def test_explain_with_broadcast_join(small_df, large_df):
     df = small_df.join(other=large_df, left_on="s_name", right_on="l_name", strategy="broadcast")
@@ -105,57 +114,81 @@ def test_explain_with_broadcast_join(small_df, large_df):
     assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
 
 
-@pytest.mark.skipif(
-    condition=get_tests_daft_runner_name() == "native",
-    reason="Native Runner doesn't currently support displaying the ID of the nodes participating in the Join",
-)
 def test_explain_with_cross_join(small_df, large_df):
-    df = small_df.join(other=large_df, how="cross")
-    expected = """
-    * CrossJoin
-    |   Left: Node name = ScanSource
-    |   Right: Node name = Project
-        """
-    assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
+    runner_type = get_or_infer_runner_type()
+    if runner_type == "native":
+        df = small_df.join(other=large_df, how="cross")
+        expected = """
+        * Cross Join
+        |   Stream Side = Right
+            """
+        assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
 
-    df = large_df.join(other=small_df, how="cross")
-    expected = """
-    * CrossJoin
-    |   Left: Node name = ScanSource
-    |   Right: Node name = Project
-        """
-    assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
+        df = large_df.join(other=small_df, how="cross")
+        expected = """
+        * Cross Join
+        |   Stream Side = Left
+            """
+        assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
+    else:
+        df = small_df.join(other=large_df, how="cross")
+        expected = """
+        * CrossJoin
+        |   Left: Node name = ScanTaskSource
+        |   Right: Node name = Project
+            """
+        assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
+
+        df = large_df.join(other=small_df, how="cross")
+        expected = """
+        * CrossJoin
+        |   Left: Node name = ScanTaskSource
+        |   Right: Node name = Project
+            """
+        assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
 
 
-@pytest.mark.skipif(
-    condition=get_tests_daft_runner_name() == "native",
-    reason="Native Runner doesn't currently support displaying the ID of the nodes participating in the Join",
-)
 def test_explain_with_hash_join(small_df, large_df):
-    df = small_df.join(other=large_df, left_on="s_name", right_on="l_name", strategy="hash", how="left")
-    expected = """
-    * HashJoin
-    |   Type: Left
-    |   Left: Join key = col(1: s_name)
-    |   Right: Join key = col(1: l_name)
-    |   Null equals nulls: [false]
-        """
-    assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
+    runner_type = get_or_infer_runner_type()
+    if runner_type == "native":
+        df = small_df.join(other=large_df, left_on="s_name", right_on="l_name", strategy="hash", how="left")
+        expected = """
+        * Hash Join (Left):
+        |   Build on left: true
+            """
+        assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
 
-    df = large_df.join(other=small_df, left_on="l_name", right_on="s_name", strategy="hash", how="right")
-    expected = """
-    * HashJoin
-    |   Type: Right
-    |   Left: Join key = col(1: l_name)
-    |   Right: Join key = col(1: s_name)
-    |   Null equals nulls: [false]
-        """
-    assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
+        df = large_df.join(other=small_df, left_on="l_name", right_on="s_name", strategy="hash", how="right")
+        expected = """
+        * Hash Join (Right):
+        |   Build on left: false
+            """
+        assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
+    else:
+        df = small_df.join(other=large_df, left_on="s_name", right_on="l_name", strategy="hash", how="left")
+        expected = """
+        * HashJoin
+        |   Type: Left
+        |   Left: Join key = col(1: s_name)
+        |   Right: Join key = col(1: l_name)
+        |   Null equals nulls: [false]
+            """
+        assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
+
+        df = large_df.join(other=small_df, left_on="l_name", right_on="s_name", strategy="hash", how="right")
+        expected = """
+        * HashJoin
+        |   Type: Right
+        |   Left: Join key = col(1: l_name)
+        |   Right: Join key = col(1: s_name)
+        |   Null equals nulls: [false]
+            """
+        assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
 
 
 @pytest.mark.skipif(
     condition=get_tests_daft_runner_name() == "native",
-    reason="Native Runner doesn't currently support displaying the ID of the nodes participating in the Join",
+    reason="Native Runner uses Hash Join instead",
 )
 def test_explain_with_sort_merged_join(small_df, large_df):
     df = small_df.join(other=large_df, left_on="s_name", right_on="l_name", strategy="sort_merge")
@@ -191,7 +224,9 @@ def gen_email(ids):
     get_or_infer_runner_type() == "native",
     reason="Native runner doesn't support setting the ray_options parameter.",
 )
-def test_explain_with_ray_options(input_df):
+def test_explain_with_ray_options(input_df_with_uri):
+    input_df, dataset_uri = input_df_with_uri
+
     # Currently only supports 'conda' option
     with pytest.raises(ValueError) as exc_info:
         gen_email_udf = gen_email.override_options(
@@ -209,7 +244,7 @@ def test_explain_with_ray_options(input_df):
     gen_email_udf = gen_email.override_options(ray_options={"runtime_env": {"conda": "punks"}}).with_concurrency(1)
     df = input_df.with_column("email", gen_email_udf(col("id")))
     text = explain_to_text(df)
-    assert "{'runtime_env': {'conda': 'punks'}}" in text, f"Unexpected Explain result: {text}"
+    assert "'runtime_env': {'conda': 'punks'}" in text, f"Unexpected Explain result: {text}"
 
     # Configure via Conda YAML File
     gen_email_udf = gen_email.override_options(
@@ -217,13 +252,13 @@ def test_explain_with_ray_options(input_df):
     ).with_concurrency(1)
     df = input_df.with_column("email", gen_email_udf(col("id")))
     text = explain_to_text(df)
-    assert "{'runtime_env': {'conda': '/tmp/daft/conda_env.yaml'}}" in text, f"Unexpected Explain result: {text}"
+    assert "'runtime_env': {'conda': '/tmp/daft/conda_env.yaml'}" in text, f"Unexpected Explain result: {text}"
 
     # Configure via Conda YAML Config
     gen_email_udf = gen_email.override_options(ray_options={"runtime_env": {}}).with_concurrency(1)
     df = input_df.with_column("email", gen_email_udf(col("id")))
     text = explain_to_text(df)
-    assert "{'runtime_env': {}}" in text, f"Unexpected Explain result: {text}"
+    assert "'runtime_env': {}" in text, f"Unexpected Explain result: {text}"
 
     gen_email_udf = gen_email.override_options(
         ray_options={
@@ -238,7 +273,7 @@ def test_explain_with_ray_options(input_df):
 
     df = input_df.with_column("email", gen_email_udf(col("id")))
     text = explain_to_text(df)
-    assert "{'runtime_env': {'conda': {'name': 'simple', 'channels': ['conda-forge']}}}" in text, (
+    assert "'runtime_env': {'conda': {'name': 'simple', 'channels': ['conda-forge']}}" in text, (
         f"Unexpected Explain result: {text}"
     )
 
@@ -249,3 +284,25 @@ def test_explain_with_explode_index_column():
     output = explain_to_text(df)
     assert "Explode" in output
     assert "Index column = idx" in output
+
+
+def test_explain_when_join_with_download():
+    df1 = daft.from_pydict(
+        {
+            "name": ["a", "b"],
+            "url": ["https://www.daft.ai/"] * 2,
+        }
+    ).with_column("bytes", col("url").download())
+
+    df2 = daft.from_pydict(
+        {
+            "name": ["a", "b"],
+            "value": [1, 2],
+        }
+    )
+
+    df = df1.join(df2, on="name", prefix="df2_")
+
+    output = explain_to_text(df, only_physical_plan=True)
+    assert "url_download" in output
+    assert "Join" in output

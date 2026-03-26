@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::stats::StatsState;
@@ -7,9 +8,7 @@ use daft_schema::schema::SchemaRef;
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-    },
+    pipeline_node::{DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
 };
 
@@ -24,7 +23,7 @@ pub(crate) struct UnpivotNode {
 }
 
 impl UnpivotNode {
-    const NODE_NAME: NodeName = "Unpivot";
+    const NODE_NAME: &'static str = "Unpivot";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -41,7 +40,9 @@ impl UnpivotNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Self::NODE_NAME,
+            Arc::from(Self::NODE_NAME),
+            NodeType::Unpivot,
+            NodeCategory::Intermediate,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -57,10 +58,6 @@ impl UnpivotNode {
             value_name,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 }
 
@@ -109,10 +106,7 @@ impl PipelineNodeImpl for UnpivotNode {
                 self_clone.value_name.clone(),
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self_clone.node_id() as usize),
-                    additional: None,
-                },
+                LocalNodeContext::new(Some(self_clone.node_id() as usize)),
             )
         };
 

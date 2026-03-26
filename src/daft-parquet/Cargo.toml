@@ -1,9 +1,11 @@
+[[bench]]
+harness = false
+name = "parquet_read"
+
 [dependencies]
-async-compat = {workspace = true}
-daft-arrow = {path = "../daft-arrow"}
-async-stream = {workspace = true}
+arrow = {workspace = true}
+common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional = true}
 bytes = {workspace = true}
-common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
@@ -13,23 +15,32 @@ daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-stats = {path = "../daft-stats", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
-itertools = {workspace = true}
-log = {workspace = true}
-parquet2 = {workspace = true}
+parquet = {workspace = true, features = ["async"]}
 pyo3 = {workspace = true, optional = true}
 rayon = {workspace = true}
 serde = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tokio-stream = {workspace = true}
-tokio-util = {workspace = true}
 
 [dev-dependencies]
 bincode = {workspace = true}
+fastrand = "2.1.0"
+parquet = {workspace = true}
 path_macro = {workspace = true}
+tango-bench.workspace = true
 
 [features]
-python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-io/python", "daft-recordbatch/python", "daft-stats/python", "daft-dsl/python", "common-arrow-ffi/python"]
+python = [
+  "dep:pyo3",
+  "dep:common-arrow-ffi",
+  "common-error/python",
+  "daft-core/python",
+  "daft-io/python",
+  "daft-recordbatch/python",
+  "daft-stats/python",
+  "daft-dsl/python"
+]
 
 [lints]
 workspace = true

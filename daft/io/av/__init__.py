@@ -27,6 +27,8 @@ def read_video_frames(
     image_height: int,
     image_width: int,
     is_key_frame: bool | None = None,
+    *,
+    sample_interval_seconds: float | None = None,
     io_config: IOConfig | None = None,
 ) -> DataFrame:
     """Creates a DataFrame by reading the frames of one or more video files.
@@ -54,6 +56,10 @@ def read_video_frames(
         image_height (int): Height to which each frame will be resized.
         image_width (int): Width to which each frame will be resized.
         is_key_frame (bool|None): If True, only include key frames; if False, only non-key frames; if None, include all frames.
+        sample_interval_seconds (float|None): If provided and > 0, sample frames at approximately this time interval in seconds based on ``frame_time``.
+            The algorithm selects the first frame whose timestamp is >= target time (0, interval, 2*interval, ...).
+            This is an approximate sampling strategy; actual sampling times depend on the video's frame timestamps.
+            Frames without valid timestamps (frame_time=None) are skipped.
         io_config (IOConfig|None): Optional IOConfig.
 
     Returns:
@@ -64,6 +70,21 @@ def read_video_frames(
         >>> df = daft.read_video_frames("/path/to/directory", image_height=480, image_width=640)
         >>> df = daft.read_video_frames("/path/to/files-*.mp4", image_height=480, image_width=640)
         >>> df = daft.read_video_frames("s3://path/to/files-*.mp4", image_height=480, image_width=640)
+
+        Sample approximately one frame per second:
+        >>> df = daft.read_video_frames(
+        ...     "/path/to/file.mp4", image_height=480, image_width=640, sample_interval_seconds=1.0
+        ... )
+
+        Sample approximately one frame every 5 seconds:
+        >>> df = daft.read_video_frames(
+        ...     "/path/to/file.mp4", image_height=480, image_width=640, sample_interval_seconds=5.0
+        ... )
+
+        Combine with key frame filtering:
+        >>> df = daft.read_video_frames(
+        ...     "/path/to/file.mp4", image_height=480, image_width=640, is_key_frame=True, sample_interval_seconds=1.0
+        ... )
     """
     try:
         from daft.io.av._read_video_frames import _VideoFramesSource
@@ -77,4 +98,5 @@ def read_video_frames(
         image_width=image_width,
         is_key_frame=is_key_frame,
         io_config=io_config,
+        sample_interval_seconds=sample_interval_seconds,
     ).read()

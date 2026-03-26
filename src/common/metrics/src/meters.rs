@@ -1,12 +1,17 @@
 use std::{
     borrow::Cow,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicI64, AtomicU64, Ordering},
 };
 
 use atomic_float::AtomicF64;
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::{InstrumentationScope, KeyValue, global};
 
-fn normalize_name(name: Cow<'static, str>) -> String {
+use crate::{
+    ATTR_QUERY_ID, DURATION_KEY, QueryID, ROWS_IN_KEY, ROWS_OUT_KEY, UNIT_MICROSECONDS, UNIT_ROWS,
+};
+
+pub fn normalize_name(name: impl Into<Cow<'static, str>>) -> String {
+    let name = name.into();
     if name.starts_with("daft.") {
         name.to_string()
     } else {
@@ -20,15 +25,21 @@ pub struct Counter {
 }
 
 impl Counter {
-    pub fn new(
-        meter: &Meter,
+    fn new(
+        meter: &opentelemetry::metrics::Meter,
         name: impl Into<Cow<'static, str>>,
         description: Option<Cow<'static, str>>,
+        unit: Option<Cow<'static, str>>,
     ) -> Self {
-        let normalized_name = normalize_name(name.into());
+        let normalized_name = normalize_name(name);
         let builder = meter.u64_counter(normalized_name);
         let builder = if let Some(description) = description {
             builder.with_description(description)
+        } else {
+            builder
+        };
+        let builder = if let Some(unit) = unit {
+            builder.with_unit(unit)
         } else {
             builder
         };
@@ -55,15 +66,21 @@ pub struct Gauge {
 }
 
 impl Gauge {
-    pub fn new(
-        meter: &Meter,
+    fn new(
+        meter: &opentelemetry::metrics::Meter,
         name: impl Into<Cow<'static, str>>,
         description: Option<Cow<'static, str>>,
+        unit: Option<Cow<'static, str>>,
     ) -> Self {
-        let normalized_name = normalize_name(name.into());
+        let normalized_name = normalize_name(name);
         let builder = meter.f64_gauge(normalized_name);
         let builder = if let Some(description) = description {
             builder.with_description(description)
+        } else {
+            builder
+        };
+        let builder = if let Some(unit) = unit {
+            builder.with_unit(unit)
         } else {
             builder
         };
@@ -80,5 +97,112 @@ impl Gauge {
 
     pub fn load(&self, ordering: Ordering) -> f64 {
         self.value.load(ordering)
+    }
+}
+
+pub struct UpDownCounter {
+    value: AtomicI64,
+    otel: opentelemetry::metrics::UpDownCounter<i64>,
+}
+
+impl UpDownCounter {
+    fn new(meter: &opentelemetry::metrics::Meter, name: impl Into<Cow<'static, str>>) -> Self {
+        let normalized_name = normalize_name(name);
+        let builder = meter.i64_up_down_counter(normalized_name);
+        Self {
+            value: AtomicI64::new(0),
+            otel: builder.build(),
+        }
+    }
+
+    pub fn add(&self, value: i64, key_values: &[KeyValue]) {
+        self.value.fetch_add(value, Ordering::Relaxed);
+        self.otel.add(value, key_values);
+    }
+
+    pub fn load(&self, ordering: Ordering) -> i64 {
+        self.value.load(ordering)
+    }
+}
+
+#[derive(Clone)]
+pub struct Meter {
+    otel: opentelemetry::metrics::Meter,
+}
+
+impl Meter {
+    pub fn query_scope(query_id: QueryID, name: impl Into<Cow<'static, str>>) -> Self {
+        let scope = InstrumentationScope::builder(name)
+            .with_attributes(vec![KeyValue::new(ATTR_QUERY_ID, query_id)])
+            .build();
+
+        let otel = global::meter_with_scope(scope);
+        Self { otel }
+    }
+
+    pub fn global_scope(name: &'static str) -> Self {
+        let otel = global::meter(name);
+        Self { otel }
+    }
+
+    pub fn test_scope(name: &'static str) -> Self {
+        Self::global_scope(name)
+    }
+
+    pub fn u64_counter(&self, name: impl Into<Cow<'static, str>>) -> Counter {
+        Counter::new(&self.otel, name, None, None)
+    }
+
+    pub fn u64_counter_with_desc_and_unit(
+        &self,
+        name: impl Into<Cow<'static, str>>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Cow<'static, str>>,
+    ) -> Counter {
+        Counter::new(&self.otel, name, description, unit)
+    }
+
+    pub fn f64_gauge(&self, name: impl Into<Cow<'static, str>>) -> Gauge {
+        Gauge::new(&self.otel, name, None, None)
+    }
+
+    pub fn f64_gauge_with_desc_and_unit(
+        &self,
+        name: impl Into<Cow<'static, str>>,
+        description: Option<Cow<'static, str>>,
+        unit: Option<Cow<'static, str>>,
+    ) -> Gauge {
+        Gauge::new(&self.otel, name, description, unit)
+    }
+
+    pub fn i64_up_down_counter(&self, name: impl Into<Cow<'static, str>>) -> UpDownCounter {
+        UpDownCounter::new(&self.otel, name)
+    }
+
+    pub fn duration_us_metric(&self) -> Counter {
+        Counter::new(
+            &self.otel,
+            DURATION_KEY,
+            None,
+            Some(Cow::Borrowed(UNIT_MICROSECONDS)),
+        )
+    }
+
+    pub fn rows_in_metric(&self) -> Counter {
+        Counter::new(
+            &self.otel,
+            ROWS_IN_KEY,
+            None,
+            Some(Cow::Borrowed(UNIT_ROWS)),
+        )
+    }
+
+    pub fn rows_out_metric(&self) -> Counter {
+        Counter::new(
+            &self.otel,
+            ROWS_OUT_KEY,
+            None,
+            Some(Cow::Borrowed(UNIT_ROWS)),
+        )
     }
 }
