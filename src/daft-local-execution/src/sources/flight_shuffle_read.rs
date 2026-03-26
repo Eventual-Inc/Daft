@@ -157,18 +157,21 @@ impl Source for FlightShuffleReadSource {
 
     #[instrument(skip_all, name = "FlightShuffleReadSource::get_data")]
     fn get_data(
-        &mut self,
+        self: Box<Self>,
         _maintain_order: bool,
         _io_stats: IOStatsRef,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
-        let input_receiver = self.receiver.take().expect("Receiver not found");
+        let mut this = *self;
+        let input_receiver = this.receiver.take().expect("Receiver not found");
 
         let processor_task =
-            self.spawn_flight_shuffle_processor(input_receiver, output_sender, self.schema.clone());
+            this.spawn_flight_shuffle_processor(input_receiver, output_sender, this.schema.clone());
 
-        let result_stream = output_receiver.into_stream().map(Ok);
+        let result_stream = output_receiver
+            .into_stream()
+            .map(|mp| Ok(Arc::try_unwrap(mp).unwrap_or_else(|arc| (*arc).clone())));
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
 
         Ok(Box::pin(combined_stream))
