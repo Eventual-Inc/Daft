@@ -11,7 +11,7 @@ from daft.logical.builder import LogicalPlanBuilder
 
 @PublicAPI
 def from_files(path: str | list[str], io_config: IOConfig | None = None) -> DataFrame:
-    """Creates a DataFrame of :class:`~daft.File` references from a glob path.
+    """Creates a DataFrame of `daft.File` references from a glob path.
 
     This method supports wildcards:
 
