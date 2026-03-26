@@ -174,7 +174,6 @@ impl FromArrow for StructArray {
 impl FromArrow for UnionArray {
     fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
         let field: FieldRef = field.into();
-        println!("from arrow array: {:?}", arrow_arr);
 
         match (&field.dtype, arrow_arr.data_type()) {
             (

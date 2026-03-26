@@ -738,25 +738,12 @@ def test_union_dtype_inferred() -> None:
     assert str(dense_daft.union_mode) == "Dense"
 
 
-@pytest.mark.parametrize("make_arr,label", [(_make_dense_union, "dense")])
+@pytest.mark.parametrize("make_arr,label", [(_make_sparse_union, "sparse"), (_make_dense_union, "dense")])
 @pytest.mark.parametrize("slice_", list(itertools.combinations(range(6), 2)))
 def test_union_sliced_roundtrip(make_arr, label, slice_) -> None:
     offset, end = slice_
     length = end - offset
     arrow_arr = make_arr().slice(offset, length)
-    print("arrow_arr:", arrow_arr)
-    daft_recordbatch = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
-    result = daft_recordbatch.to_arrow()["a"].combine_chunks()
-    assert result.equals(arrow_arr)
-
-
-@pytest.mark.parametrize("make_arr,label", [(_make_sparse_union, "sparse")])
-@pytest.mark.parametrize("slice_", list(itertools.combinations(range(3), 2)))
-def test_union_sparse_sliced_roundtrip(make_arr, label, slice_) -> None:
-    offset, end = slice_
-    length = end - offset
-    arrow_arr = make_arr().slice(offset, length)
-    print("arrow_arr:", arrow_arr)
     daft_recordbatch = MicroPartition.from_arrow(pa.table({"a": arrow_arr}))
     result = daft_recordbatch.to_arrow()["a"].combine_chunks()
     assert result.equals(arrow_arr)

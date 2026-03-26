@@ -388,6 +388,7 @@ impl MapGroupsFn {
 }
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[allow(clippy::large_enum_variant)]
 pub enum AggExpr {
     #[display("count({_0}, {_1})")]
     Count(ExprRef, CountMode),
