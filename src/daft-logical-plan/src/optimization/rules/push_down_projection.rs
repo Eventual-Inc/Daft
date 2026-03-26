@@ -143,22 +143,49 @@ impl PushDownProjection {
                 match source.source_info.as_ref() {
                     SourceInfo::Physical(external_info) => {
                         if required_columns.len() < upstream_schema.names().len() {
-                            let pruned_upstream_schema = upstream_schema
-                                .into_iter()
-                                .filter(|field| required_columns.contains(&*field.name))
-                                .cloned()
-                                .collect::<Vec<_>>();
-                            let schema = Schema::new(pruned_upstream_schema);
+                            let can_absorb = external_info
+                                .scan_state
+                                .get_scan_op()
+                                .0
+                                .can_absorb_select();
+
+                            // Always pass the column list as a hint so the
+                            // source can optimise I/O (e.g. skip reading
+                            // unneeded columns from disk / network).
+                            let new_pushdowns =
+                                external_info.pushdowns.with_columns(Some(Arc::new(
+                                    required_columns.iter().cloned().collect(),
+                                )));
+
+                            // Only prune the Source node's schema when the
+                            // scan operator can absorb the select.  When
+                            // can_absorb_select() is false the Project node
+                            // above stays and handles projection; pruning
+                            // the schema here would make downstream
+                            // operators (e.g. HashJoin) see a narrower
+                            // schema than the data actually produced.
+                            let new_schema: SchemaRef = if can_absorb {
+                                let pruned = upstream_schema
+                                    .into_iter()
+                                    .filter(|field| {
+                                        required_columns.contains(&*field.name)
+                                    })
+                                    .cloned()
+                                    .collect::<Vec<_>>();
+                                Schema::new(pruned).into()
+                            } else {
+                                source.output_schema.clone()
+                            };
+
                             let new_source: LogicalPlan = Source::new(
-                                schema.into(),
-                                Arc::new(SourceInfo::Physical(external_info.with_pushdowns(
-                                    external_info.pushdowns.with_columns(Some(Arc::new(
-                                        required_columns.iter().cloned().collect(),
-                                    ))),
-                                ))),
+                                new_schema,
+                                Arc::new(SourceInfo::Physical(
+                                    external_info.with_pushdowns(new_pushdowns),
+                                )),
                             )
                             .into();
-                            let new_plan = Arc::new(plan.with_new_children(&[new_source.into()]));
+                            let new_plan =
+                                Arc::new(plan.with_new_children(&[new_source.into()]));
                             // Retry optimization now that the upstream node is different.
                             let new_plan = self
                                 .try_optimize_node(new_plan.clone())?
