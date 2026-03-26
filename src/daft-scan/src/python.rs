@@ -183,7 +183,8 @@ pub mod pylib {
     use super::{PyFileFormatConfig, PythonTablesFactoryArgs};
     use crate::{
         DatabaseSourceConfig, FileFormatConfig, PartitionField, Pushdowns, ScanOperator,
-        ScanOperatorRef, ScanSource, ScanTask, ScanTaskRef, SourceConfig, SupportsPushdownFilters,
+        ScanOperatorRef, ScanSource, ScanSourceKind, ScanTask, ScanTaskRef, SourceConfig,
+        SupportsPushdownFilters,
         anonymous::AnonymousScanOperator,
         glob::GlobScanOperator,
         python::pylib_scan_info::{PyPartitionField, PyPushdowns},
@@ -600,15 +601,17 @@ pub mod pylib {
 
             let metadata = num_rows.map(|n| TableMetadata { length: n as usize });
 
-            let data_source = ScanSource::File {
-                path: file,
-                chunk_spec: None,
+            let data_source = ScanSource {
                 size_bytes,
-                iceberg_delete_files,
                 metadata,
-                partition_spec: Some(pspec),
                 statistics,
-                parquet_metadata: None,
+                partition_spec: Some(pspec),
+                kind: ScanSourceKind::File {
+                    path: file,
+                    chunk_spec: None,
+                    iceberg_delete_files,
+                    parquet_metadata: None,
+                },
             };
 
             let file_format_config: Arc<FileFormatConfig> = file_format.into();
@@ -648,11 +651,12 @@ pub mod pylib {
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.record_batch))
                 .transpose()?;
-            let data_source = ScanSource::Database {
-                path: url,
+            let data_source = ScanSource {
                 size_bytes,
                 metadata: num_rows.map(|n| TableMetadata { length: n as usize }),
                 statistics,
+                partition_spec: None,
+                kind: ScanSourceKind::Database { path: url },
             };
 
             let scan_task = ScanTask::new(
@@ -693,18 +697,20 @@ pub mod pylib {
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.record_batch))
                 .transpose()?;
-            let data_source = ScanSource::PythonFactoryFunction {
-                module: module.clone(),
-                func_name: func_name.clone(),
-                func_args: PythonTablesFactoryArgs::new(
-                    func_args.into_iter().map(Arc::new).collect(),
-                ),
+            let data_source = ScanSource {
                 size_bytes,
                 metadata: num_rows.map(|num_rows| TableMetadata {
                     length: num_rows as usize,
                 }),
                 statistics,
                 partition_spec: None,
+                kind: ScanSourceKind::PythonFactoryFunction {
+                    module: module.clone(),
+                    func_name: func_name.clone(),
+                    func_args: PythonTablesFactoryArgs::new(
+                        func_args.into_iter().map(Arc::new).collect(),
+                    ),
+                },
             };
 
             let source_config = Arc::new(SourceConfig::PythonFunction {
@@ -781,11 +787,8 @@ pub mod pylib {
                 None,
             ),
         )?;
-        let data_source = ScanSource::File {
-            path: uri.to_string(),
-            chunk_spec: None,
+        let data_source = ScanSource {
             size_bytes: Some(file_size),
-            iceberg_delete_files: None,
             metadata: if has_metadata.unwrap_or(false) {
                 Some(TableMetadata {
                     length: metadata.num_rows(),
@@ -793,9 +796,14 @@ pub mod pylib {
             } else {
                 None
             },
-            partition_spec: None,
             statistics: None,
-            parquet_metadata: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: uri.to_string(),
+                chunk_spec: None,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+            },
         };
         let st = ScanTask::new(
             vec![data_source],

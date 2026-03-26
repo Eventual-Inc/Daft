@@ -4,7 +4,7 @@
 //! - <https://arrow.apache.org/docs/format/CDataInterface.html>
 //! - <https://arrow.apache.org/docs/format/CStreamInterface.html>
 //!
-//! By owning these types, `daft-ext-abi` has **zero** dependency on any
+//! By owning these types, `daft-ext` has **zero** dependency on any
 //! Arrow Rust implementation (arrow-rs, arrow2, etc.).
 
 use std::ffi::{c_char, c_int, c_void};

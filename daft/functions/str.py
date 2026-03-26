@@ -336,6 +336,36 @@ def rstrip(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("rstrip", expr)
 
 
+def strip(expr: Expression) -> Expression:
+    """Strip whitespace from both sides of string.
+
+    Returns:
+        Expression: a String expression which is `self` with leading and trailing whitespace stripped
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import strip
+        >>> df = daft.from_pydict({"x": ["foo", "bar", "  baz   "]})
+        >>> df = df.select(strip(df["x"]))
+        >>> df.show()
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ foo    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ bar    │
+        ├╌╌╌╌╌╌╌╌┤
+        │ baz    │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("strip", expr)
+
+
 def reverse(expr: Expression) -> Expression:
     """Reverse a UTF-8 string.
 

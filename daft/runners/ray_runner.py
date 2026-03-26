@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, cast
 import pyarrow as pa  # noqa: TID253
 import ray.experimental  # noqa: TID253
 
-from daft.arrow_utils import ensure_array
 from daft.context import get_context
 from daft.daft import DistributedPhysicalPlan, PyExecutionStats
 from daft.daft import PyRecordBatch as _PyRecordBatch
@@ -216,10 +215,10 @@ def _series_from_arrow_with_ray_data_extensions(
                 numpy_data = np.concatenate(numpy_arrays, axis=0)
             else:
                 numpy_data = array.to_numpy(zero_copy_only=False)
-            return Series.from_numpy(numpy_data, name=name)
+            daft_dtype = _from_arrow_type_with_ray_data_extensions(array_type)
+            return Series.from_numpy(numpy_data, name=name, dtype=daft_dtype)
         elif isinstance(array, pa.Array):
             # Handle ArrowTensorType (has storage attribute)
-            array = ensure_array(array)
             if hasattr(array.type, "shape") and array.type.shape is not None and hasattr(array, "storage"):
                 tensor_array = cast("ArrowTensorArray", array)
                 storage_series = _series_from_arrow_with_ray_data_extensions(tensor_array.storage, name=name)
@@ -299,7 +298,7 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
             assert ids_and_partitions[0][0] == 0
             assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
 
-        all_partitions = ray.get([part.partition() for id, part in ids_and_partitions])
+        all_partitions = ray.get([part.partition() for _, part in ids_and_partitions])
         return MicroPartition.concat_or_empty(all_partitions, schema)
 
     def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:

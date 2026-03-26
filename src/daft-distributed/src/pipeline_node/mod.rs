@@ -69,6 +69,9 @@ mod window;
 pub(crate) use translate::logical_plan_to_pipeline_node;
 pub(crate) type NodeID = u32;
 pub(crate) type NodeName = Arc<str>;
+/// Fingerprint identifying tasks with functionally identical plans.
+/// Tasks sharing a fingerprint can reuse the same pipeline.
+pub(crate) type PlanFingerprint = u32;
 
 /// The materialized output of a completed pipeline node.
 /// Contains both the partition data as well as metadata about the partition.
@@ -262,7 +265,7 @@ impl PipelineNodeContext {
 pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn context(&self) -> &PipelineNodeContext;
     fn config(&self) -> &PipelineNodeConfig;
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(DefaultRuntimeStats::new(meter, self.context()))
     }
 
@@ -281,13 +284,19 @@ pub(crate) trait PipelineNodeImpl: Send + Sync {
 #[derive(Clone)]
 pub(crate) struct DistributedPipelineNode {
     op: Arc<dyn PipelineNodeImpl>,
+    runtime_stats: RuntimeStatsRef,
     children: Vec<DistributedPipelineNode>,
 }
 
 impl DistributedPipelineNode {
-    pub fn new(op: Arc<dyn PipelineNodeImpl>) -> Self {
+    pub fn new(op: Arc<dyn PipelineNodeImpl>, meter: &Meter) -> Self {
         let children = op.children();
-        Self { op, children }
+        let runtime_stats = op.make_runtime_stats(meter);
+        Self {
+            op,
+            runtime_stats,
+            children,
+        }
     }
 
     pub fn context(&self) -> &PipelineNodeContext {
@@ -305,8 +314,8 @@ impl DistributedPipelineNode {
     pub fn num_partitions(&self) -> usize {
         self.op.config().clustering_spec.num_partitions()
     }
-    pub fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        self.op.runtime_stats(meter)
+    pub fn runtime_stats(&self) -> RuntimeStatsRef {
+        self.runtime_stats.clone()
     }
     pub fn produce_tasks(self, plan_context: &mut PlanExecutionContext) -> TaskBuilderStream {
         self.op.produce_tasks(plan_context)
@@ -328,8 +337,9 @@ impl ConcreteTreeNode for DistributedPipelineNode {
 
     fn with_new_children(self, children: Vec<Self>) -> DaftResult<Self> {
         Ok(Self {
-            op: self.op.clone(),
+            op: self.op,
             children,
+            runtime_stats: self.runtime_stats,
         })
     }
 }
@@ -440,5 +450,136 @@ impl Stream for TaskBuilderStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.task_builder_stream.poll_next_unpin(cx)
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use std::sync::Arc;
+
+    use common_daft_config::DaftExecutionConfig;
+    use common_metrics::{
+        QueryID,
+        ops::{NodeCategory, NodeType},
+    };
+    use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+    use daft_logical_plan::{ClusteringSpec, stats::StatsState};
+    use daft_schema::schema::Schema;
+    use futures::{StreamExt, stream};
+
+    use super::*;
+    use crate::scheduling::task::SwordfishTaskBuilder;
+
+    /// Mock pipeline node for tests. Implements PipelineNodeImpl with minimal setup.
+    pub struct MockNode {
+        config: PipelineNodeConfig,
+        context: PipelineNodeContext,
+    }
+
+    impl MockNode {
+        pub fn new(node_id: NodeID) -> Self {
+            Self {
+                config: PipelineNodeConfig::new(
+                    Arc::new(Schema::empty()),
+                    Arc::new(DaftExecutionConfig::default()),
+                    Arc::new(ClusteringSpec::unknown()),
+                ),
+                context: PipelineNodeContext::new(
+                    0,
+                    QueryID::default(),
+                    node_id,
+                    Arc::from("Mock"),
+                    NodeType::Project,
+                    NodeCategory::Intermediate,
+                ),
+            }
+        }
+    }
+
+    impl PipelineNodeImpl for MockNode {
+        fn context(&self) -> &PipelineNodeContext {
+            &self.context
+        }
+        fn config(&self) -> &PipelineNodeConfig {
+            &self.config
+        }
+        fn children(&self) -> Vec<DistributedPipelineNode> {
+            vec![]
+        }
+        fn produce_tasks(
+            self: Arc<Self>,
+            _: &mut crate::plan::PlanExecutionContext,
+        ) -> TaskBuilderStream {
+            unimplemented!()
+        }
+        fn multiline_display(&self, _: bool) -> Vec<String> {
+            vec![]
+        }
+    }
+
+    pub fn make_builder(node: &MockNode, fp: PlanFingerprint) -> SwordfishTaskBuilder {
+        let plan = LocalPhysicalPlan::in_memory_scan(
+            0,
+            Arc::new(Schema::empty()),
+            0,
+            StatsState::NotMaterialized,
+            LocalNodeContext::default(),
+        );
+        SwordfishTaskBuilder::new(plan, node, fp)
+    }
+
+    pub fn make_source_stream(node: &Arc<MockNode>, n: usize) -> TaskBuilderStream {
+        let fp = node.node_id();
+        let node = node.clone();
+        TaskBuilderStream::new(stream::iter((0..n).map(move |_| make_builder(&node, fp))).boxed())
+    }
+
+    pub async fn collect_fingerprints(stream: TaskBuilderStream) -> Vec<PlanFingerprint> {
+        stream.map(|b| b.fingerprint()).collect().await
+    }
+
+    #[tokio::test]
+    async fn chaining_nodes_produce_same_fingerprint_across_tasks() {
+        let source = Arc::new(MockNode::new(10));
+        let fps = collect_fingerprints(
+            make_source_stream(&source, 3)
+                .pipeline_instruction(Arc::new(MockNode::new(20)), |p| p)
+                .pipeline_instruction(Arc::new(MockNode::new(30)), |p| p),
+        )
+        .await;
+        assert!(fps.iter().all(|fp| *fp == fps[0]));
+    }
+
+    #[tokio::test]
+    async fn join_produces_same_fingerprint_across_tasks() {
+        let (left_src, right_src) = (Arc::new(MockNode::new(10)), Arc::new(MockNode::new(20)));
+        let join: Arc<MockNode> = Arc::new(MockNode::new(30));
+        let j = join.clone();
+        let fps = collect_fingerprints(TaskBuilderStream::new(
+            make_source_stream(&left_src, 3)
+                .zip(make_source_stream(&right_src, 3))
+                .map(move |(l, r)| SwordfishTaskBuilder::combine_with(&l, &r, j.as_ref(), |l, _| l))
+                .boxed(),
+        ))
+        .await;
+        assert!(fps.iter().all(|fp| *fp == fps[0]));
+    }
+
+    #[tokio::test]
+    async fn fingerprint_override_produces_different_fingerprints_across_tasks() {
+        let source = Arc::new(MockNode::new(10));
+        let node: Arc<dyn PipelineNodeImpl> = Arc::new(MockNode::new(20));
+        let counter = std::sync::atomic::AtomicU32::new(0);
+        let fps = collect_fingerprints(TaskBuilderStream::new(
+            make_source_stream(&source, 4)
+                .map(move |b| {
+                    let id = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    b.map_plan(node.as_ref(), |p| p).extend_fingerprint(id)
+                })
+                .boxed(),
+        ))
+        .await;
+        let unique: std::collections::HashSet<_> = fps.into_iter().collect();
+        assert_eq!(unique.len(), 4);
     }
 }

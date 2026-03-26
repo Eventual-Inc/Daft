@@ -7,7 +7,7 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_ai::provider::ProviderRef;
 use daft_catalog::{Bindings, CatalogRef, Identifier, LookupMode, TableRef, TableSource, View};
-use daft_ext_abi::{FFI_ScalarFunction, FFI_SessionContext};
+use daft_ext::abi::{FFI_ScalarFunction, FFI_SessionContext};
 use daft_ext_internal::module::ModuleHandle;
 use uuid::Uuid;
 

@@ -14,6 +14,7 @@ pub enum Codec {
     Base64,
     Deflate,
     Gzip,
+    Hex,
     Utf8,
     Zlib,
 }
@@ -23,6 +24,7 @@ impl std::fmt::Debug for Codec {
             Self::Base64 => "base64",
             Self::Deflate => "deflate",
             Self::Gzip => "gzip",
+            Self::Hex => "hex",
             Self::Utf8 => "utf8",
             Self::Zlib => "zlib",
         })
@@ -71,6 +73,7 @@ impl Codec {
             Self::Base64 => base64_encoder,
             Self::Deflate => deflate_encoder,
             Self::Gzip => gzip_encoder,
+            Self::Hex => hex_encoder,
             Self::Utf8 => utf8_encoder,
             Self::Zlib => zlib_encoder,
         }
@@ -81,6 +84,7 @@ impl Codec {
             Self::Base64 => base64_decoder,
             Self::Deflate => deflate_decoder,
             Self::Gzip => gzip_decoder,
+            Self::Hex => hex_decoder,
             Self::Utf8 => utf8_decoder,
             Self::Zlib => zlib_decoder,
         }
@@ -91,6 +95,7 @@ impl Codec {
             Self::Base64 => CodecKind::Binary,
             Self::Deflate => CodecKind::Binary,
             Self::Gzip => CodecKind::Binary,
+            Self::Hex => CodecKind::Binary,
             Self::Utf8 => CodecKind::Text,
             Self::Zlib => CodecKind::Binary,
         }
@@ -112,6 +117,7 @@ impl FromStr for Codec {
             "base64" => Ok(Self::Base64),
             "deflate" => Ok(Self::Deflate),
             "gzip" | "gz" => Ok(Self::Gzip),
+            "hex" => Ok(Self::Hex),
             "zlib" => Ok(Self::Zlib),
             "utf-8" | "utf8" => Ok(Self::Utf8),
             _ => Err(DaftError::not_implemented(format!(
@@ -174,6 +180,11 @@ fn zlib_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
     Ok(encoder.finish()?)
 }
 
+#[inline]
+fn hex_encoder(input: &[u8]) -> DaftResult<Vec<u8>> {
+    Ok(hex::encode(input).into_bytes())
+}
+
 //
 // DECODERS
 //
@@ -229,6 +240,11 @@ fn zlib_decoder(input: &[u8]) -> DaftResult<Vec<u8>> {
     let mut decoded = Vec::new();
     decoder.read_to_end(&mut decoded)?;
     Ok(decoded)
+}
+
+#[inline]
+fn hex_decoder(input: &[u8]) -> DaftResult<Vec<u8>> {
+    hex::decode(input).map_err(|e| DaftError::ValueError(format!("Invalid hex input: {}", e)))
 }
 
 #[cfg(test)]

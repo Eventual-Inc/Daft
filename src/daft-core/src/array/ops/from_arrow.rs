@@ -141,6 +141,14 @@ impl FromArrow for StructArray {
                     .downcast_ref::<arrow::array::StructArray>()
                     .unwrap();
 
+                if fields.is_empty() {
+                    return Ok(Self::new_empty(
+                        field.clone(),
+                        arrow_arr.len(),
+                        arrow_arr.nulls().cloned().map(Into::into),
+                    ));
+                }
+
                 let child_series = fields
                     .iter()
                     .zip(arrow_arr.columns().iter())

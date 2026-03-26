@@ -2,7 +2,6 @@ use std::{collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::partitioning::RepartitionSpec;
@@ -57,8 +56,9 @@ impl BlockingSink for RepartitionSink {
     #[instrument(skip_all, name = "RepartitionSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let repartition_spec = self.repartition_spec.clone();
@@ -115,7 +115,7 @@ impl BlockingSink for RepartitionSink {
                             .collect::<Vec<_>>();
                         let schema = schema.clone();
                         let fut = tokio::spawn(async move {
-                            let together = MicroPartition::concat(&data)?;
+                            let together = MicroPartition::concat(data)?;
                             let concated = together.concat_or_get()?;
                             let mp = MicroPartition::new_loaded(
                                 schema,
@@ -126,7 +126,7 @@ impl BlockingSink for RepartitionSink {
                                 }),
                                 None,
                             );
-                            Ok(Arc::new(mp))
+                            Ok(mp)
                         });
                         outputs.push(fut);
                     }
@@ -176,10 +176,6 @@ impl BlockingSink for RepartitionSink {
                 ]
             }
         }
-    }
-
-    fn max_concurrency(&self) -> usize {
-        get_compute_pool_num_threads()
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {

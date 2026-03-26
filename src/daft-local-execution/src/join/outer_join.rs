@@ -58,11 +58,11 @@ pub(crate) async fn merge_bitmaps_and_construct_null_table(
 }
 
 pub(crate) fn probe_outer(
-    input: &Arc<MicroPartition>,
+    input: &MicroPartition,
     probe_state: &ProbeState,
     bitmap_builder: Option<&mut IndexBitmapBuilder>,
     params: &HashJoinParams,
-) -> DaftResult<Arc<MicroPartition>> {
+) -> DaftResult<MicroPartition> {
     let bitmap_builder = bitmap_builder.expect("Bitmap builder should be set for outer join probe");
     let build_side_tables = probe_state.get_record_batches().iter().collect::<Vec<_>>();
 
@@ -152,24 +152,24 @@ pub(crate) fn probe_outer(
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
-    Ok(Arc::new(MicroPartition::new_loaded(
+    Ok(MicroPartition::new_loaded(
         params.output_schema.clone(),
         Arc::new(final_tables),
         None,
-    )))
+    ))
 }
 
 pub(crate) async fn finalize_outer(
     states: Vec<HashJoinProbeState>,
     params: &HashJoinParams,
-) -> DaftResult<Option<Arc<MicroPartition>>> {
+) -> DaftResult<Option<MicroPartition>> {
     let build_side_table = merge_bitmaps_and_construct_null_table(states).await?;
 
     // If build_side_table is empty, return empty result with correct schema
     if build_side_table.is_empty() {
-        return Ok(Some(Arc::new(MicroPartition::empty(Some(
+        return Ok(Some(MicroPartition::empty(Some(
             params.output_schema.clone(),
-        )))));
+        ))));
     }
 
     // Compute outer common column schema
@@ -216,9 +216,9 @@ pub(crate) async fn finalize_outer(
         let left = match get_columns_by_name(&build_side_table, &left_non_join_columns) {
             Ok(cols) => cols,
             Err(_) => {
-                return Ok(Some(Arc::new(MicroPartition::empty(Some(
+                return Ok(Some(MicroPartition::empty(Some(
                     params.output_schema.clone(),
-                )))));
+                ))));
             }
         };
         let right = {
@@ -233,9 +233,9 @@ pub(crate) async fn finalize_outer(
         let join_table = match get_columns_by_name(&build_side_table, &common_join_cols) {
             Ok(cols) => cols.cast_to_schema(&outer_common_col_schema)?,
             Err(_) => {
-                return Ok(Some(Arc::new(MicroPartition::empty(Some(
+                return Ok(Some(MicroPartition::empty(Some(
                     params.output_schema.clone(),
-                )))));
+                ))));
             }
         };
         (left, right, join_table)
@@ -248,9 +248,9 @@ pub(crate) async fn finalize_outer(
         let right = match get_columns_by_name(&build_side_table, &right_non_join_columns) {
             Ok(cols) => cols,
             Err(_) => {
-                return Ok(Some(Arc::new(MicroPartition::empty(Some(
+                return Ok(Some(MicroPartition::empty(Some(
                     params.output_schema.clone(),
-                )))));
+                ))));
             }
         };
         let left = {
@@ -275,17 +275,17 @@ pub(crate) async fn finalize_outer(
             Ok(cols) => cols.cast_to_schema(&outer_common_col_schema)?,
             Err(_) => {
                 // Build side table doesn't have the expected join columns - return empty
-                return Ok(Some(Arc::new(MicroPartition::empty(Some(
+                return Ok(Some(MicroPartition::empty(Some(
                     params.output_schema.clone(),
-                )))));
+                ))));
             }
         };
         (left, right, join_table)
     };
     let final_table = join_table.union(&left)?.union(&right)?;
-    Ok(Some(Arc::new(MicroPartition::new_loaded(
+    Ok(Some(MicroPartition::new_loaded(
         final_table.schema.clone(),
         Arc::new(vec![final_table]),
         None,
-    ))))
+    )))
 }

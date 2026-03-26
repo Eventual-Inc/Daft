@@ -42,7 +42,7 @@ struct AsyncUdfParams {
     required_cols: Vec<usize>,
 }
 
-struct AsyncUdfRuntimeStats {
+pub(crate) struct AsyncUdfRuntimeStats {
     meter: Meter,
     node_kv: Vec<KeyValue>,
     duration_us: Counter,
@@ -52,8 +52,17 @@ struct AsyncUdfRuntimeStats {
 }
 
 impl RuntimeStats for AsyncUdfRuntimeStats {
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
-        self
+    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = node_info.to_key_values();
+
+        Self {
+            meter: meter.clone(), // Cheap to clone, Arc under the hood
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
+            custom_counters: Mutex::new(HashMap::new()),
+            node_kv,
+        }
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
@@ -78,25 +87,12 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
         self.rows_out.add(rows, self.node_kv.as_slice());
     }
 
-    fn add_cpu_us(&self, cpu_us: u64) {
+    fn add_duration_us(&self, cpu_us: u64) {
         self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
 impl AsyncUdfRuntimeStats {
-    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
-        let node_kv = node_info.to_key_values();
-
-        Self {
-            meter: meter.clone(), // Cheap to clone, Arc under the hood
-            duration_us: meter.duration_us_metric(),
-            rows_in: meter.rows_in_metric(),
-            rows_out: meter.rows_out_metric(),
-            custom_counters: Mutex::new(HashMap::new()),
-            node_kv,
-        }
-    }
-
     fn update_metrics(&self, metrics: OperatorMetrics) {
         let mut counters = self.custom_counters.lock().unwrap();
         for (name, counter_data) in metrics {
@@ -174,23 +170,19 @@ pub struct AsyncUdfState {
 
 impl StreamingSink for AsyncUdfSink {
     type State = AsyncUdfState;
+    type Stats = AsyncUdfRuntimeStats;
     type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "AsyncUdfSink::execute")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self> {
         #[cfg(feature = "python")]
         {
             let params = self.params.clone();
-            let runtime_stats = spawner
-                .runtime_stats
-                .clone()
-                .as_any_arc()
-                .downcast::<AsyncUdfRuntimeStats>()
-                .expect("Expected AsyncUdfRuntimeStats in task_spawner.runtime_stats");
             spawner
                 .spawn(
                     {
@@ -262,11 +254,11 @@ impl StreamingSink for AsyncUdfSink {
                             if ready_batches.is_empty() {
                                 Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
                             } else {
-                                let output = Arc::new(MicroPartition::new_loaded(
+                                let output = MicroPartition::new_loaded(
                                     params.output_schema.clone(),
                                     Arc::new(ready_batches),
                                     None,
-                                ));
+                                );
                                 Ok((state, StreamingSinkOutput::NeedMoreInput(Some(output))))
                             }
                         }
@@ -296,11 +288,11 @@ impl StreamingSink for AsyncUdfSink {
                         let batch = join_res??;
                         Ok(StreamingSinkFinalizeOutput::HasMoreOutput {
                             states,
-                            output: Some(Arc::new(MicroPartition::new_loaded(
+                            output: Some(MicroPartition::new_loaded(
                                 params.output_schema.clone(),
                                 Arc::new(vec![batch]),
                                 None,
-                            ))),
+                            )),
                         })
                     } else {
                         Ok(StreamingSinkFinalizeOutput::Finished(None))
@@ -366,10 +358,6 @@ impl StreamingSink for AsyncUdfSink {
             task_set: JoinSet::new(),
             udf_initialized: false,
         })
-    }
-
-    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
-        Arc::new(AsyncUdfRuntimeStats::new(meter, node_info))
     }
 
     fn max_concurrency(&self) -> usize {

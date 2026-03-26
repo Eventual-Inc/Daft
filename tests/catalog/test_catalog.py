@@ -31,9 +31,9 @@ def test_try_from_iceberg(tmpdir):
 
 
 def test_try_from_unity():
-    from daft.unity_catalog import UnityCatalog
+    from daft.catalog.__unity._client import UnityCatalogClient
 
-    unity_catalog = UnityCatalog("-", token="-")
+    unity_catalog = UnityCatalogClient("-", token="-")
     # assert doesn't throw!
     assert Catalog._from_obj(unity_catalog) is not None
     assert Catalog.from_unity(unity_catalog) is not None

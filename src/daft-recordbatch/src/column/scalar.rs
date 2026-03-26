@@ -76,7 +76,11 @@ impl ScalarColumn {
         }
     }
 
-    fn to_series(&self) -> Series {
+    /// Constructs a new [`Series`] from the scalar value.
+    ///
+    /// This always allocates; prefer [`as_materialized_series`][Self::as_materialized_series]
+    /// to reuse a cached result.
+    pub fn to_series(&self) -> Series {
         Self::_to_series(&self.name, &self.scalar, &self.dtype, self.length)
     }
 

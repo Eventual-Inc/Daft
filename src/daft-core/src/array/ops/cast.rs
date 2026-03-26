@@ -1665,13 +1665,13 @@ impl StructArray {
                             Some(field_idx) => self.children[*field_idx].cast(&field.dtype),
                         },
                     )
-                    .collect::<DaftResult<Vec<Series>>>();
-                Ok(Self::new(
-                    Field::new(self.name(), dtype.clone()),
-                    casted_series?,
-                    self.nulls().cloned(),
-                )
-                .into_series())
+                    .collect::<DaftResult<Vec<Series>>>()?;
+                let field = Field::new(self.name(), dtype.clone());
+                if other_fields.is_empty() {
+                    Ok(Self::new_empty(field, self.len(), self.nulls().cloned()).into_series())
+                } else {
+                    Ok(Self::new(field, casted_series, self.nulls().cloned()).into_series())
+                }
             }
             (DataType::Struct(..), DataType::Tensor(..)) => {
                 let casted_struct_array =

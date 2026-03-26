@@ -190,8 +190,16 @@ impl Column {
         match self {
             Self::Series(s) => s.filter(mask).map(Self::Series),
             Self::Scalar(s) => {
-                let true_count = mask.into_iter().flatten().filter(|b| *b).count();
-                Ok(Self::Scalar(s.resize(true_count)))
+                if mask.len() == 1 {
+                    if Some(true) == mask.get(0) {
+                        Ok(Self::Scalar(s.clone()))
+                    } else {
+                        Ok(Self::Scalar(s.resize(0)))
+                    }
+                } else {
+                    let true_count = mask.into_iter().flatten().filter(|b| *b).count();
+                    Ok(Self::Scalar(s.resize(true_count)))
+                }
             }
         }
     }
@@ -203,7 +211,13 @@ impl Column {
     pub fn take(&self, idx: &daft_core::prelude::UInt64Array) -> DaftResult<Self> {
         match self {
             Self::Series(s) => s.take(idx).map(Self::Series),
-            Self::Scalar(s) => Ok(Self::Scalar(s.resize(idx.len()))),
+            Self::Scalar(s) => {
+                if idx.null_count() > 0 && !matches!(s.scalar(), Literal::Null) {
+                    s.as_materialized_series().take(idx).map(Self::Series)
+                } else {
+                    Ok(Self::Scalar(s.resize(idx.len())))
+                }
+            }
         }
     }
 
@@ -491,16 +505,6 @@ mod tests {
     }
 
     #[test]
-    fn column_take_scalar_stays_scalar() -> DaftResult<()> {
-        let col = Column::new_scalar("x", DataType::Int64, Literal::Int64(3), 100);
-        let idx = UInt64Array::from_vec("idx", vec![0, 5, 10]);
-        let taken = col.take(&idx)?;
-        assert!(taken.is_scalar());
-        assert_eq!(taken.len(), 3);
-        Ok(())
-    }
-
-    #[test]
     fn column_broadcast_scalar() -> DaftResult<()> {
         let col = Column::new_scalar("x", DataType::Int64, Literal::Int64(1), 1);
         let broadcasted = col.broadcast(1000)?;
@@ -697,16 +701,74 @@ mod tests {
     }
 
     #[test]
-    fn column_take_null_indices() -> DaftResult<()> {
-        // take with null indices on a scalar — should still produce the right length
+    fn column_take_null_indices_materializes() -> DaftResult<()> {
         let col = Column::new_scalar("x", DataType::Int64, Literal::Int64(42), 100);
         let idx = UInt64Array::from_iter(
             Field::new("idx", DataType::UInt64),
             vec![Some(0u64), None, Some(2)].into_iter(),
         );
         let taken = col.take(&idx)?;
+        // null indices produce null values, so must materialize
+        assert!(!taken.is_scalar());
+        assert_eq!(taken.len(), 3);
+        let s = taken.as_materialized_series();
+        assert_eq!(s.i64().unwrap().get(0).unwrap(), 42);
+        assert!(s.i64().unwrap().get(1).is_none());
+        assert_eq!(s.i64().unwrap().get(2).unwrap(), 42);
+        Ok(())
+    }
+
+    #[test]
+    fn column_take_null_indices_null_scalar_stays_scalar() -> DaftResult<()> {
+        let col = Column::new_scalar("x", DataType::Int64, Literal::Null, 100);
+        let idx = UInt64Array::from_iter(
+            Field::new("idx", DataType::UInt64),
+            vec![Some(0u64), None, Some(2)].into_iter(),
+        );
+        let taken = col.take(&idx)?;
+        // null scalar + null indices = still all nulls, stays scalar
         assert!(taken.is_scalar());
         assert_eq!(taken.len(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn column_take_no_null_indices_stays_scalar() -> DaftResult<()> {
+        let col = Column::new_scalar("x", DataType::Int64, Literal::Int64(42), 100);
+        let idx = UInt64Array::from_vec("idx", vec![0, 5, 10]);
+        let taken = col.take(&idx)?;
+        assert!(taken.is_scalar());
+        assert_eq!(taken.len(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn column_filter_broadcast_true_scalar() -> DaftResult<()> {
+        let col = Column::new_scalar("x", DataType::Int64, Literal::Int64(1), 50);
+        let mask = BooleanArray::from_iter("mask", vec![Some(true)].into_iter());
+        let filtered = col.filter(&mask)?;
+        assert!(filtered.is_scalar());
+        assert_eq!(filtered.len(), 50);
+        Ok(())
+    }
+
+    #[test]
+    fn column_filter_broadcast_false_scalar() -> DaftResult<()> {
+        let col = Column::new_scalar("x", DataType::Int64, Literal::Int64(1), 50);
+        let mask = BooleanArray::from_iter("mask", vec![Some(false)].into_iter());
+        let filtered = col.filter(&mask)?;
+        assert!(filtered.is_scalar());
+        assert_eq!(filtered.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn column_filter_broadcast_null_scalar() -> DaftResult<()> {
+        let col = Column::new_scalar("x", DataType::Int64, Literal::Int64(1), 50);
+        let mask = BooleanArray::from_iter("mask", vec![None::<bool>].into_iter());
+        let filtered = col.filter(&mask)?;
+        assert!(filtered.is_scalar());
+        assert_eq!(filtered.len(), 0);
         Ok(())
     }
 

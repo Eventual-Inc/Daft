@@ -145,10 +145,6 @@ impl UDFNode {
             child,
         }
     }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
 }
 
 impl PipelineNodeImpl for UDFNode {
@@ -199,7 +195,7 @@ impl PipelineNodeImpl for UDFNode {
         res
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(UdfStats::new(meter, self.context()))
     }
 

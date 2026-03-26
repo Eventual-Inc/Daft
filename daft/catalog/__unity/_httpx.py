@@ -7,7 +7,7 @@ import httpx
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-    from .auth import TokenProvider
+    from ._auth import TokenProvider
 
 
 class AuthProvider(httpx.Auth):  # type: ignore[misc]
