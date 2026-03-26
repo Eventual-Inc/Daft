@@ -55,10 +55,6 @@ pub(crate) struct UdfRuntimeStats {
 }
 
 impl RuntimeStats for UdfRuntimeStats {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
         let node_kv = node_info.to_key_values();
 
@@ -568,10 +564,7 @@ impl IntermediateOperator for UdfOperator {
                     let reqs = self.morsel_size_requirement().unwrap_or_default();
                     let MorselSizeRequirement::Flexible(min_batch_size, max_batch_size) = reqs
                     else {
-                        return Err(DaftError::ValueError(
-                            "cannot use strict batch size requirement with dynamic batching"
-                                .to_string(),
-                        ));
+                        return Ok(StaticBatchingStrategy::new(morsel_size_requirement).into());
                     };
                     LatencyConstrainedBatchingStrategy {
                         target_batch_latency: Duration::from_millis(5000),

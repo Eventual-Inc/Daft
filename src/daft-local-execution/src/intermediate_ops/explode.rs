@@ -1,83 +1,29 @@
-use std::{num::NonZeroUsize, sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_metrics::{
-    Meter, StatSnapshot,
-    meters::Counter,
-    ops::{NodeInfo, NodeType},
-    snapshot::ExplodeSnapshot,
+use common_metrics::ops::NodeType;
+use daft_core::count_mode::CountMode;
+use daft_dsl::{
+    Expr,
+    expr::{Column, bound_expr::BoundExpr},
 };
-use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_functions_list::explode;
+use daft_functions_list::{SeriesListExtension, explode};
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{
     ExecutionTaskSpawner,
-    dynamic_batching::{BatchingState, BatchingStrategy},
+    buffer::RowBasedBuffer,
+    dynamic_batching::BatchingStrategy,
     pipeline::{MorselSizeRequirement, NodeName},
-    runtime_stats::RuntimeStats,
 };
-
-pub struct ExplodeStats {
-    duration_us: Counter,
-    rows_in: Counter,
-    rows_out: Counter,
-    node_kv: Vec<KeyValue>,
-}
-
-impl RuntimeStats for ExplodeStats {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
-        let node_kv = node_info.to_key_values();
-
-        Self {
-            duration_us: meter.duration_us_metric(),
-            rows_in: meter.rows_in_metric(),
-            rows_out: meter.rows_out_metric(),
-            node_kv,
-        }
-    }
-    fn build_snapshot(&self, ordering: std::sync::atomic::Ordering) -> StatSnapshot {
-        let cpu_us = self.duration_us.load(ordering);
-        let rows_in = self.rows_in.load(ordering);
-        let rows_out = self.rows_out.load(ordering);
-
-        let amplification = if rows_in == 0 {
-            1.
-        } else {
-            rows_out as f64 / rows_in as f64
-        };
-
-        StatSnapshot::Explode(ExplodeSnapshot {
-            cpu_us,
-            rows_in,
-            rows_out,
-            amplification,
-        })
-    }
-
-    fn add_rows_in(&self, rows: u64) {
-        self.rows_in.add(rows, self.node_kv.as_slice());
-    }
-
-    fn add_rows_out(&self, rows: u64) {
-        self.rows_out.add(rows, self.node_kv.as_slice());
-    }
-
-    fn add_duration_us(&self, cpu_us: u64) {
-        self.duration_us.add(cpu_us, self.node_kv.as_slice());
-    }
-}
 
 pub struct ExplodeOperator {
     to_explode: Arc<Vec<BoundExpr>>,
+    explode_col_indices: Vec<usize>,
+    ignore_empty_and_null: bool,
     index_column: Option<String>,
 }
 
@@ -87,6 +33,13 @@ impl ExplodeOperator {
         ignore_empty_and_null: bool,
         index_column: Option<String>,
     ) -> Self {
+        let explode_col_indices = to_explode
+            .iter()
+            .filter_map(|expr| match expr.inner().as_ref() {
+                Expr::Column(Column::Bound(bound)) => Some(bound.index),
+                _ => None,
+            })
+            .collect();
         Self {
             to_explode: Arc::new(
                 to_explode
@@ -99,6 +52,8 @@ impl ExplodeOperator {
                     })
                     .collect(),
             ),
+            explode_col_indices,
+            ignore_empty_and_null,
             index_column,
         }
     }
@@ -154,351 +109,304 @@ impl IntermediateOperator for ExplodeOperator {
         morsel_size_requirement: MorselSizeRequirement,
     ) -> DaftResult<Self::BatchingStrategy> {
         let cfg = daft_context::get_context().execution_config();
-        Ok(if cfg.enable_dynamic_batching {
-            ExpansionAwareBatchingStrategy::new(morsel_size_requirement).into()
-        } else {
-            crate::dynamic_batching::StaticBatchingStrategy::new(morsel_size_requirement).into()
-        })
+        Ok(
+            if cfg.enable_dynamic_batching && !self.explode_col_indices.is_empty() {
+                ExpansionAwareBatchingStrategy::new(
+                    morsel_size_requirement,
+                    self.explode_col_indices.clone(),
+                    self.ignore_empty_and_null,
+                )
+                .into()
+            } else {
+                crate::dynamic_batching::StaticBatchingStrategy::new(morsel_size_requirement).into()
+            },
+        )
     }
 }
 
-const MIN_EXPANSION: f64 = 1.0; // Prevent reduction when no expansion
-const MAX_REDUCTION: f64 = 0.001; // Cap reduction factor (1000x reduction max)
-const SMOOTHING_FACTOR: f64 = 0.3; // EMA smoothing for expansion ratio
-
-/// A batching strategy that dynamically adjusts upstream batch size requirements based on
-/// observed explode expansion ratio to prevent excessive downstream batch sizes.
+/// A batching strategy that proactively determines optimal batch sizes for explode
+/// by scanning list column lengths in buffered data before forming batches.
 ///
-/// # Problem
-/// When an explode operator has high expansion (one input row produces many output rows),
-/// normal-sized input batches produce very large output batches. If a downstream operator
-/// has a strict batch size requirement, it receives far more rows than needed, causing
-/// memory pressure and inefficient execution.
-///
-/// # Solution
-/// This strategy monitors the explode's expansion ratio (output_rows / input_rows) and
-/// reduces the upstream batch size requirement accordingly. If expansion is 100x, the
-/// explode requests ~100x fewer rows from upstream to produce the right output size.
+/// Instead of reactively adjusting after observing expansion, this strategy reads
+/// list lengths directly from the buffered columns to determine exactly how many
+/// input rows will produce the desired output size.
 ///
 /// # Example
-/// - Downstream operator requires `Strict(100)` rows
-/// - Explode has 50x expansion
-/// - Strategy reduces upstream requirement to `Strict(2)` rows
-/// - Explode processes 2 rows → outputs ~100 rows → downstream executes efficiently
-///
-/// # Smoothing
-/// Uses exponential moving average (EMA) to smooth expansion measurements across batches,
-/// preventing wild swings in batch size from transient expansion changes.
-///
-/// # Safety Bounds
-/// - `MIN_EXPANSION`: Prevents amplification when expansion is less than 1x
-/// - `MAX_REDUCTION`: Caps minimum batch size to prevent fetching too few rows
+/// - Downstream operator requires 100 output rows
+/// - Buffered rows have list lengths: [5, 20, 30, 50, 10, ...]
+/// - Strategy scans and determines: first 4 rows produce 5+20+30+50 = 105 rows (>= 100)
+/// - Takes exactly 4 rows from buffer → explode → ~105 rows → downstream is satisfied
 #[derive(Debug, Clone)]
 struct ExpansionAwareBatchingStrategy {
     downstream_requirement: MorselSizeRequirement,
+    col_indices: Vec<usize>,
+    ignore_empty_and_null: bool,
 }
 
 impl ExpansionAwareBatchingStrategy {
-    pub fn new(downstream_requirement: MorselSizeRequirement) -> Self {
+    pub fn new(
+        downstream_requirement: MorselSizeRequirement,
+        col_indices: Vec<usize>,
+        ignore_empty_and_null: bool,
+    ) -> Self {
         Self {
             downstream_requirement,
+            col_indices,
+            ignore_empty_and_null,
         }
     }
 
-    fn reduce_requirement(
-        &self,
-        requirement: MorselSizeRequirement,
-        factor: f64,
-    ) -> MorselSizeRequirement {
-        match requirement {
-            MorselSizeRequirement::Strict(size) => {
-                let new_size = ((size.get() as f64) * factor).ceil() as usize;
-                MorselSizeRequirement::Strict(NonZeroUsize::new(new_size.max(1)).unwrap())
-            }
-            MorselSizeRequirement::Flexible(lower, upper) => {
-                let new_lower = ((lower as f64) * factor).ceil() as usize;
-                let new_upper = ((upper.get() as f64) * factor).ceil() as usize;
-                MorselSizeRequirement::Flexible(
-                    new_lower.max(1),
-                    NonZeroUsize::new(new_upper.max(1)).unwrap(),
-                )
-            }
+    fn output_rows_for_length(&self, length: Option<u64>) -> usize {
+        if self.ignore_empty_and_null {
+            length.unwrap_or(0) as usize
+        } else {
+            std::cmp::max(length.unwrap_or(1), 1) as usize
         }
     }
 }
 
 impl BatchingStrategy for ExpansionAwareBatchingStrategy {
-    type State = ExpansionState;
+    type State = ();
 
-    fn make_state(&self) -> Self::State {
-        ExpansionState {
-            downstream_requirement: self.downstream_requirement,
-            input_rows: 0,
-            output_rows: 0,
-            smoothed_expansion: None,
-        }
-    }
+    fn make_state(&self) -> Self::State {}
 
-    fn calculate_new_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement {
-        if let Some(expansion) = state.smoothed_expansion {
-            let clamped_expansion = expansion.max(MIN_EXPANSION);
-            let reduction = (1.0 / clamped_expansion).max(MAX_REDUCTION);
-            self.reduce_requirement(state.downstream_requirement, reduction)
-        } else {
-            state.downstream_requirement
-        }
+    fn calculate_new_requirements(&self, _state: &mut Self::State) -> MorselSizeRequirement {
+        self.downstream_requirement
     }
 
     fn initial_requirements(&self) -> MorselSizeRequirement {
         self.downstream_requirement
     }
-}
 
-#[derive(Debug)]
-struct ExpansionState {
-    downstream_requirement: MorselSizeRequirement,
-    input_rows: u64,
-    output_rows: u64,
-    smoothed_expansion: Option<f64>,
-}
+    fn next_batch(
+        &self,
+        _state: &mut Self::State,
+        buffer: &mut RowBasedBuffer,
+    ) -> DaftResult<Option<MicroPartition>> {
+        if buffer.total_rows() == 0 {
+            return Ok(None);
+        }
 
-impl BatchingState for ExpansionState {
-    fn record_execution_stat(
-        &mut self,
-        stats: &dyn RuntimeStats,
-        _batch_size: usize,
-        _duration: Duration,
-    ) {
-        if let Some(explode_stats) = stats.as_any().downcast_ref::<ExplodeStats>() {
-            self.input_rows = explode_stats
-                .rows_in
-                .load(std::sync::atomic::Ordering::Relaxed);
-            self.output_rows = explode_stats
-                .rows_out
-                .load(std::sync::atomic::Ordering::Relaxed);
+        let (lower, upper) = self.downstream_requirement.values();
+        let target = upper.get();
 
-            if self.input_rows > 0 {
-                let current_expansion = (self.output_rows as f64) / (self.input_rows as f64);
+        // we are just assuming that all columns expand to the same number of rows.
+        // This is actually validated during execution.
+        // so its pretty safe to just get the first column and assume all others expand the same.
+        let col_idx = self.col_indices[0];
 
-                self.smoothed_expansion = Some(match self.smoothed_expansion {
-                    Some(prev) => {
-                        SMOOTHING_FACTOR.mul_add(current_expansion, (1.0 - SMOOTHING_FACTOR) * prev)
+        let mut cumulative_output = 0usize;
+        let mut cumulative_input = 0usize;
+
+        for partition in buffer.peek() {
+            for batch in partition.record_batches() {
+                let series = batch.get_column(col_idx);
+                let lengths = series.list_count(CountMode::All)?;
+
+                for length in &lengths {
+                    cumulative_output += self.output_rows_for_length(length);
+                    cumulative_input += 1;
+
+                    if cumulative_output >= target {
+                        return buffer.take_rows(cumulative_input);
                     }
-                    None => current_expansion,
-                });
+                }
             }
+        }
+
+        if cumulative_output >= lower {
+            buffer.pop_all()
+        } else {
+            Ok(None)
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::num::NonZeroUsize;
+
+    use arrow_buffer::OffsetBuffer;
+    use daft_core::{
+        array::ListArray,
+        datatypes::{DataType, Field, Int32Array},
+        prelude::Schema,
+        series::IntoSeries,
+    };
+    use daft_recordbatch::RecordBatch;
 
     use super::*;
+    use crate::buffer::RowBasedBuffer;
 
-    fn new_explode_stats(rows_in: u64, rows_out: u64) -> ExplodeStats {
-        let stats = ExplodeStats::new(&Meter::global_scope("test"), &Default::default());
-        stats.add_rows_in(rows_in);
-        stats.add_rows_out(rows_out);
-        stats
-    }
+    fn make_list_mp(list_lengths: &[usize]) -> MicroPartition {
+        let total_elements: usize = list_lengths.iter().sum();
+        let flat_child = Int32Array::from_field_and_values(
+            Field::new("item", DataType::Int32),
+            0..total_elements as i32,
+        )
+        .into_series();
 
-    #[test]
-    fn test_initial_requirements_match_downstream() {
-        let strategy = ExpansionAwareBatchingStrategy::new(MorselSizeRequirement::Strict(
-            NonZeroUsize::new(10).unwrap(),
-        ));
-        assert_eq!(
-            strategy.initial_requirements(),
-            MorselSizeRequirement::Strict(NonZeroUsize::new(10).unwrap())
-        );
-
-        let strategy = ExpansionAwareBatchingStrategy::new(MorselSizeRequirement::Flexible(
-            5,
-            NonZeroUsize::new(20).unwrap(),
-        ));
-        assert_eq!(
-            strategy.initial_requirements(),
-            MorselSizeRequirement::Flexible(5, NonZeroUsize::new(20).unwrap())
-        );
-    }
-
-    #[test]
-    fn test_no_reduction_without_stats() {
-        let strategy = ExpansionAwareBatchingStrategy::new(MorselSizeRequirement::Strict(
-            NonZeroUsize::new(10).unwrap(),
-        ));
-        let mut state = strategy.make_state();
-
-        let requirement = strategy.calculate_new_requirements(&mut state);
-        assert_eq!(
-            requirement,
-            MorselSizeRequirement::Strict(NonZeroUsize::new(10).unwrap())
-        );
-    }
-
-    #[test]
-    fn test_high_expansion_reduces_requirement() {
-        let strategy = ExpansionAwareBatchingStrategy::new(MorselSizeRequirement::Strict(
-            NonZeroUsize::new(1000).unwrap(),
-        ));
-        let mut state = strategy.make_state();
-
-        // Simulate 100x expansion (10 in, 1000 out)
-        let stats: Arc<dyn RuntimeStats> = Arc::new(new_explode_stats(10, 1000));
-        state.record_execution_stat(stats.as_ref(), 10, Duration::from_millis(100));
-
-        let requirement = strategy.calculate_new_requirements(&mut state);
-        match requirement {
-            MorselSizeRequirement::Strict(size) => {
-                // Should reduce by ~100x for 100x expansion
-                assert!(size.get() < 20, "Expected reduced size < 20, got {}", size);
-            }
-            _ => panic!("Expected Strict requirement"),
+        let mut offsets = Vec::with_capacity(list_lengths.len() + 1);
+        offsets.push(0i64);
+        let mut running = 0i64;
+        for &len in list_lengths {
+            running += len as i64;
+            offsets.push(running);
         }
+
+        let list_field = Field::new("my_list", DataType::List(Box::new(DataType::Int32)));
+        let list_array = ListArray::new(
+            list_field.clone(),
+            flat_child,
+            OffsetBuffer::new(offsets.into()),
+            None,
+        );
+        let list_series = list_array.into_series();
+
+        let schema = Arc::new(Schema::new(vec![list_field]));
+        let rb = RecordBatch::new_unchecked(
+            schema.clone(),
+            vec![list_series.into()],
+            list_lengths.len(),
+        );
+        MicroPartition::new_loaded(schema.into(), vec![rb].into(), None)
+    }
+
+    fn make_strategy(requirement: MorselSizeRequirement) -> ExpansionAwareBatchingStrategy {
+        // "my_list" is at column index 0 in make_list_mp
+        ExpansionAwareBatchingStrategy::new(requirement, vec![0], false)
     }
 
     #[test]
-    fn test_low_expansion_minimal_reduction() {
-        let strategy = ExpansionAwareBatchingStrategy::new(MorselSizeRequirement::Strict(
+    fn test_empty_buffer_returns_none() -> DaftResult<()> {
+        let strategy = make_strategy(MorselSizeRequirement::Strict(
             NonZeroUsize::new(100).unwrap(),
         ));
-        let mut state = strategy.make_state();
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1000).unwrap());
 
-        // Simulate 1.1x expansion (100 in, 110 out)
-        let stats: Arc<dyn RuntimeStats> = Arc::new(new_explode_stats(100, 110));
-        state.record_execution_stat(stats.as_ref(), 100, Duration::from_millis(100));
-
-        let requirement = strategy.calculate_new_requirements(&mut state);
-        match requirement {
-            MorselSizeRequirement::Strict(size) => {
-                // Should only reduce by ~1.1x for 1.1x expansion
-                assert!(
-                    size.get() >= 85 && size.get() <= 100,
-                    "Expected size 85-100, got {}",
-                    size
-                );
-            }
-            _ => panic!("Expected Strict requirement"),
-        }
+        assert!(strategy.next_batch(&mut (), &mut buffer)?.is_none());
+        Ok(())
     }
 
     #[test]
-    fn test_flexible_requirement_reduction() {
-        let strategy = ExpansionAwareBatchingStrategy::new(MorselSizeRequirement::Flexible(
-            100,
-            NonZeroUsize::new(1000).unwrap(),
-        ));
-        let mut state = strategy.make_state();
-
-        // Simulate 10x expansion
-        let stats = Arc::new(new_explode_stats(100, 1000));
-        state.record_execution_stat(stats.as_ref(), 100, Duration::from_millis(100));
-
-        let requirement = strategy.calculate_new_requirements(&mut state);
-        match requirement {
-            MorselSizeRequirement::Flexible(lower, upper) => {
-                // Should reduce by ~10x for 10x expansion
-                assert!(lower <= 15, "Expected lower <= 15, got {}", lower);
-                assert!(upper.get() <= 150, "Expected upper <= 150, got {}", upper);
-            }
-            _ => panic!("Expected Flexible requirement"),
-        }
-    }
-
-    #[test]
-    fn test_max_reduction_cap() {
-        let strategy = ExpansionAwareBatchingStrategy::new(MorselSizeRequirement::Strict(
-            NonZeroUsize::new(10000).unwrap(),
-        ));
-        let mut state = strategy.make_state();
-
-        // Simulate 100000x expansion (should hit max cap)
-        let stats: Arc<dyn RuntimeStats> = Arc::new(new_explode_stats(1, 100000));
-        state.record_execution_stat(stats.as_ref(), 1, Duration::from_millis(100));
-
-        let requirement = strategy.calculate_new_requirements(&mut state);
-        match requirement {
-            MorselSizeRequirement::Strict(size) => {
-                // Should be capped at MAX_REDUCTION * 10000
-                assert!(
-                    size.get() >= (MAX_REDUCTION * 10000.0) as usize,
-                    "Expected floor at {}, got {}",
-                    MAX_REDUCTION * 10000.0,
-                    size
-                );
-            }
-            _ => panic!("Expected Strict requirement"),
-        }
-    }
-
-    #[test]
-    fn test_smoothing_across_multiple_recordings() {
-        let strategy = ExpansionAwareBatchingStrategy::new(MorselSizeRequirement::Strict(
-            NonZeroUsize::new(1000).unwrap(),
-        ));
-        let mut state = strategy.make_state();
-
-        // First recording: 2x expansion
-        let stats1: Arc<dyn RuntimeStats> = Arc::new(new_explode_stats(100, 200));
-        state.record_execution_stat(stats1.as_ref(), 100, Duration::from_millis(100));
-        let first_expansion = state.smoothed_expansion.unwrap();
-
-        // Second recording: 10x expansion
-        let stats2: Arc<dyn RuntimeStats> = Arc::new(new_explode_stats(200, 2000));
-        state.record_execution_stat(stats2.as_ref(), 100, Duration::from_millis(100));
-        let second_expansion = state.smoothed_expansion.unwrap();
-
-        // Should be smoothed between the two
-        assert!(
-            second_expansion > first_expansion,
-            "Expansion should increase"
-        );
-        assert!(
-            second_expansion < 10.0,
-            "Should be smoothed, not instantaneous"
-        );
-    }
-
-    #[test]
-    fn test_no_expansion_handled_gracefully() {
-        let strategy = ExpansionAwareBatchingStrategy::new(MorselSizeRequirement::Strict(
+    fn test_takes_exact_rows_to_meet_target() -> DaftResult<()> {
+        let strategy = make_strategy(MorselSizeRequirement::Strict(
             NonZeroUsize::new(100).unwrap(),
         ));
-        let mut state = strategy.make_state();
 
-        // Simulate 1x expansion (no change)
-        let stats: Arc<dyn RuntimeStats> = Arc::new(new_explode_stats(100, 100));
-        state.record_execution_stat(stats.as_ref(), 100, Duration::from_millis(100));
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1000).unwrap());
 
-        let requirement = strategy.calculate_new_requirements(&mut state);
-        match requirement {
-            MorselSizeRequirement::Strict(size) => {
-                // Should not reduce with 1x expansion
-                assert_eq!(size.get(), 100);
-            }
-            _ => panic!("Expected Strict requirement"),
-        }
+        // 5 rows with list lengths [20, 30, 25, 35, 10] → cumulative: 20, 50, 75, 110
+        // Target = 100, so should take 4 rows (cumulative 110 >= 100)
+        buffer.push(make_list_mp(&[20, 30, 25, 35, 10]));
+
+        let batch = strategy.next_batch(&mut (), &mut buffer)?.unwrap();
+        assert_eq!(batch.len(), 4);
+        assert_eq!(buffer.total_rows(), 1);
+        Ok(())
     }
 
     #[test]
-    fn test_cumulative_stats_update() {
-        let strategy = ExpansionAwareBatchingStrategy::new(MorselSizeRequirement::Strict(
-            NonZeroUsize::new(1000).unwrap(),
+    fn test_single_large_row_exceeds_target() -> DaftResult<()> {
+        let strategy = make_strategy(MorselSizeRequirement::Strict(
+            NonZeroUsize::new(10).unwrap(),
         ));
-        let mut state = strategy.make_state();
 
-        // Stats should be cumulative, not incremental
-        let stats1 = Arc::new(new_explode_stats(100, 200));
-        state.record_execution_stat(stats1.as_ref(), 100, Duration::from_millis(100));
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1000).unwrap());
 
-        let stats2 = Arc::new(new_explode_stats(200, 400));
-        state.record_execution_stat(stats2.as_ref(), 100, Duration::from_millis(100));
+        // Single row with list length 1000 — must still take it
+        buffer.push(make_list_mp(&[1000, 5]));
 
-        // State should reflect latest cumulative values
-        assert_eq!(state.input_rows, 200);
-        assert_eq!(state.output_rows, 400);
-        assert_eq!(state.smoothed_expansion, Some(2.0));
+        let batch = strategy.next_batch(&mut (), &mut buffer)?.unwrap();
+        assert_eq!(batch.len(), 1);
+        assert_eq!(buffer.total_rows(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_waits_for_lower_bound() -> DaftResult<()> {
+        let strategy = make_strategy(MorselSizeRequirement::Flexible(
+            50,
+            NonZeroUsize::new(100).unwrap(),
+        ));
+
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1000).unwrap());
+
+        // 3 rows with list lengths [5, 5, 5] → total output = 15 < lower bound 50
+        buffer.push(make_list_mp(&[5, 5, 5]));
+
+        assert!(strategy.next_batch(&mut (), &mut buffer)?.is_none());
+        assert_eq!(buffer.total_rows(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn test_emits_when_above_lower_bound() -> DaftResult<()> {
+        let strategy = make_strategy(MorselSizeRequirement::Flexible(
+            50,
+            NonZeroUsize::new(100).unwrap(),
+        ));
+
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1000).unwrap());
+
+        // 3 rows with list lengths [20, 20, 20] → total output = 60 >= lower bound 50, < upper 100
+        buffer.push(make_list_mp(&[20, 20, 20]));
+
+        let batch = strategy.next_batch(&mut (), &mut buffer)?.unwrap();
+        assert_eq!(batch.len(), 3);
+        assert_eq!(buffer.total_rows(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_partitions_in_buffer() -> DaftResult<()> {
+        let strategy = make_strategy(MorselSizeRequirement::Strict(
+            NonZeroUsize::new(100).unwrap(),
+        ));
+
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1000).unwrap());
+
+        // Push two partitions
+        buffer.push(make_list_mp(&[30, 30])); // partition 1: 60 total output
+        buffer.push(make_list_mp(&[25, 25, 10])); // partition 2: 60 total output
+
+        // Target = 100. Scan: 30, 60, 85, 110 → take 4 rows (spans both partitions)
+        let batch = strategy.next_batch(&mut (), &mut buffer)?.unwrap();
+        assert_eq!(batch.len(), 4);
+        assert_eq!(buffer.total_rows(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_all_single_element_lists() -> DaftResult<()> {
+        let strategy = make_strategy(MorselSizeRequirement::Strict(NonZeroUsize::new(5).unwrap()));
+
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1000).unwrap());
+
+        // 10 rows each with list length 1 → 1:1 expansion
+        buffer.push(make_list_mp(&[1, 1, 1, 1, 1, 1, 1, 1, 1, 1]));
+
+        let batch = strategy.next_batch(&mut (), &mut buffer)?.unwrap();
+        assert_eq!(batch.len(), 5);
+        assert_eq!(buffer.total_rows(), 5);
+        Ok(())
+    }
+
+    #[test]
+    fn test_first_batch_is_correctly_sized() -> DaftResult<()> {
+        let strategy = make_strategy(MorselSizeRequirement::Strict(
+            NonZeroUsize::new(50).unwrap(),
+        ));
+
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1000).unwrap());
+
+        // High expansion: each row expands to 100 elements
+        // Target = 50, so should take just 1 row on the very first batch
+        buffer.push(make_list_mp(&[100, 100, 100]));
+
+        let batch = strategy.next_batch(&mut (), &mut buffer)?.unwrap();
+        assert_eq!(batch.len(), 1);
+        assert_eq!(buffer.total_rows(), 2);
+        Ok(())
     }
 }

@@ -189,9 +189,10 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         ctx: &mut ExecutionContext<Op>,
     ) -> DaftResult<()> {
         // Check buffer for ready batches and spawn tasks while states available
-        while !ctx.state_pool.is_empty()
-            && let Some(batch) = buffer.next_batch_if_ready()?
-        {
+        while !ctx.state_pool.is_empty() {
+            let Some(batch) = ctx.batch_manager.next_batch(buffer)? else {
+                break;
+            };
             let state_id = *ctx
                 .state_pool
                 .keys()

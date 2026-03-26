@@ -6,7 +6,6 @@ use opentelemetry::KeyValue;
 // ----------------------- General Traits for Runtime Stat Collection ----------------------- //
 
 pub trait RuntimeStats: Send + Sync + std::any::Any {
-    fn as_any(&self) -> &dyn std::any::Any;
     fn new(meter: &Meter, node_info: &NodeInfo) -> Self
     where
         Self: Sized;
@@ -36,9 +35,6 @@ pub struct DefaultRuntimeStats {
 }
 
 impl RuntimeStats for DefaultRuntimeStats {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
     fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
         let node_kv = node_info.to_key_values();
         Self {

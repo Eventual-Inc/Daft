@@ -52,10 +52,6 @@ pub(crate) struct AsyncUdfRuntimeStats {
 }
 
 impl RuntimeStats for AsyncUdfRuntimeStats {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
         let node_kv = node_info.to_key_values();
 
