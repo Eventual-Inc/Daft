@@ -115,10 +115,6 @@ impl ScalarUDF for CurrentTimezone {
         Series::from_arrow(Arc::new(Field::new("", DataType::Utf8)), arrow_arr)
     }
 
-    fn is_deterministic(&self) -> bool {
-        false
-    }
-
     fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,

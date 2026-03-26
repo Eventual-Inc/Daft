@@ -10,6 +10,7 @@ import pytz
 
 import daft
 from daft import DataType, col
+from daft.functions import current_date, current_timestamp, current_timezone
 
 
 def test_temporal_arithmetic_with_same_type() -> None:
@@ -762,8 +763,6 @@ def test_datetime_to_string_errors(value):
 
 
 def test_current_date_returns_date_type() -> None:
-    from daft.functions import current_date
-
     df = daft.from_pydict({"x": [1, 2, 3]})
     df = df.select(current_date().alias("today"))
     assert df.schema()["today"].dtype == DataType.date()
@@ -776,8 +775,6 @@ def test_current_date_returns_date_type() -> None:
 
 
 def test_current_timestamp_returns_timestamp_type() -> None:
-    from daft.functions import current_timestamp
-
     df = daft.from_pydict({"x": [1, 2, 3]})
     df = df.select(current_timestamp().alias("now"))
     assert df.schema()["now"].dtype == DataType.timestamp("us")
@@ -791,8 +788,6 @@ def test_current_timestamp_returns_timestamp_type() -> None:
 
 
 def test_current_timezone_returns_utc() -> None:
-    from daft.functions import current_timezone
-
     df = daft.from_pydict({"x": [1, 2, 3]})
     df = df.select(current_timezone().alias("tz"))
     result = df.to_pydict()
