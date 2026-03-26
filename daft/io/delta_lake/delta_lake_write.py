@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import TYPE_CHECKING, Any
 
 from daft.context import get_context
@@ -152,10 +153,19 @@ def make_deltalake_fs(path: str, io_config: IOConfig | None = None) -> pafs.PyFi
     from deltalake.fs import DeltaStorageHandler
     from pyarrow.fs import PyFileSystem
 
+    from daft.filesystem import get_protocol_from_path
     from daft.io.object_store_options import io_config_to_storage_options
 
     io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
     storage_options = io_config_to_storage_options(io_config, path)
+
+    protocol = get_protocol_from_path(path)
+    if protocol == "file":
+        from urllib.parse import urlparse
+
+        local_path = urlparse(path).path if path.startswith("file://") else path
+        os.makedirs(local_path, exist_ok=True)
+
     return PyFileSystem(DeltaStorageHandler(path, storage_options))
 
 

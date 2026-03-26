@@ -1572,7 +1572,7 @@ class DataFrame:
             )
         else:
             if mode == "overwrite":
-                old_actions = pa.record_batch(table.get_add_actions())
+                old_actions = pa.table(table.get_add_actions())
                 old_actions_dict = old_actions.to_pydict()
                 for i in range(old_actions.num_rows):
                     operations.append("DELETE")
