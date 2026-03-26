@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import queue
 import warnings
 from typing import TYPE_CHECKING, TypeVar
 
@@ -11,6 +12,7 @@ from daft.daft import (
     PyRecordBatch,
     ScanTask,
 )
+from daft.event_loop import get_or_init_event_loop
 from daft.io.pushdowns import Pushdowns, SupportsPushdownFilters
 from daft.io.scan import ScanOperator
 from daft.io.source import _PyDataSourceTask
@@ -24,21 +26,46 @@ if TYPE_CHECKING:
 _T = TypeVar("_T")
 
 
-def _drain_async_iter(async_iter: AsyncIterator[_T]) -> Iterator[_T]:
-    """Synchronously drain an async iterator using a fresh event loop.
+class _Sentinel:
+    """Sentinel value for the queue to indicate the end of the iterator."""
 
-    Uses ``asyncio.new_event_loop()`` instead of ``asyncio.run()`` to avoid
-    nesting issues when called from within an existing event loop.
+    pass
+
+
+_SENTINEL: _Sentinel = _Sentinel()
+
+
+def _drain_async_iter(async_iter: AsyncIterator[_T]) -> Iterator[_T]:
+    """Synchronously drain an async iterator.
+
+    Uses the shared ``BackgroundEventLoop`` (a persistent daemon thread running
+    ``loop.run_forever()``) so that this works regardless of whether an event
+    loop is already running in the calling thread (e.g., pytest-asyncio,
+    Jupyter).  Items are streamed through a ``queue.Queue`` so memory is
+    bounded even for large iterators.
     """
-    loop = asyncio.new_event_loop()
-    try:
-        while True:
-            try:
-                yield loop.run_until_complete(async_iter.__anext__())
-            except StopAsyncIteration:
-                break
-    finally:
-        loop.close()
+    results: queue.Queue[_T | BaseException | _Sentinel] = queue.Queue()
+    event_loop = get_or_init_event_loop()
+
+    async def _produce() -> None:
+        try:
+            async for item in async_iter:
+                results.put(item)
+        except BaseException as ex:
+            results.put(ex)
+        finally:
+            results.put(_SENTINEL)
+
+    # Submit without blocking so the background loop produces while we consume.
+    asyncio.run_coroutine_threadsafe(_produce(), event_loop.loop)
+
+    while True:
+        item = results.get()
+        if isinstance(item, _Sentinel):
+            break
+        if isinstance(item, BaseException):
+            raise item
+        yield item
 
 
 class _DataSourceShim(ScanOperator):

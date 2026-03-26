@@ -77,7 +77,7 @@ class DataSource(ABC):
 class DataSourceTask(ABC):
     """DataSourceTask represents a partition of data that can be processed independently.
 
-    - :meth:`DataSourceTask.parquet` — read a Parquet file with the native reader
+    - DataSourceTask.parquet — read a Parquet file with the native reader
 
     Warning:
         This API is early in its development and is subject to change.
@@ -93,7 +93,7 @@ class DataSourceTask(ABC):
         """Yields record batches. Called from an async execution context.
 
         The default implementation delegates to the deprecated
-        :meth:`get_micro_partitions` for backwards compatibility.
+        get_micro_partitions for backwards compatibility.
         New subclasses should override this method directly.
         """
         try:
@@ -112,7 +112,7 @@ class DataSourceTask(ABC):
                 yield rb
 
     def get_micro_partitions(self) -> Iterator[MicroPartition]:
-        """Deprecated: override :meth:`read` instead."""
+        """Deprecated: override read instead."""
         raise NotImplementedError
 
     @staticmethod
@@ -130,30 +130,26 @@ class DataSourceTask(ABC):
         """Create a task that reads a Parquet file using the native reader.
 
         This is the recommended way to create scan tasks for Parquet files when
-        building custom :class:`DataSource` implementations (e.g., catalog
+        building custom DataSource implementations (e.g., catalog
         connectors like Iceberg or Paimon).
 
-        Partition pruning is the :class:`DataSource`'s responsibility — decide
-        which files to yield in :meth:`~DataSource.get_tasks` rather than
+        Partition pruning is the DataSource's responsibility — decide
+        which files to yield in get_tasks rather than
         relying on the task factory to filter them out.
 
         Args:
             path: Path or URI of the Parquet file (e.g., ``"s3://bucket/file.parquet"``).
             schema: Schema to read the file with.
             pushdowns: Query pushdowns (filters, column projection, limit). Pass
-                through the pushdowns received by :meth:`DataSource.get_tasks`.
+                through the pushdowns received by DataSource.get_tasks.
             num_rows: Exact row count, if known. Enables metadata-only optimizations.
             size_bytes: On-disk file size in bytes. Used for task coalescing heuristics.
             partition_values: Single-row RecordBatch of partition column values to inject.
             stats: Column statistics as a RecordBatch for predicate pushdown evaluation.
-            storage_config: Optional :class:`StorageConfig` for IO credentials/settings.
+            storage_config: Optional StorageConfig for IO credentials/settings.
                 Defaults to ``StorageConfig(multithreaded_io=True)``.
 
-        Returns:
-            A DataSourceTask executed by the native Parquet reader.
-
-        Example::
-
+        Example:
             class MyCatalogSource(DataSource):
                 async def get_tasks(self, pushdowns):
                     for file in self.list_files():
@@ -164,6 +160,9 @@ class DataSourceTask(ABC):
                             num_rows=file.row_count,
                             size_bytes=file.size_bytes,
                         )
+
+        Returns:
+            A DataSourceTask executed by the native Parquet reader.
         """
         sc = storage_config if storage_config is not None else StorageConfig(multithreaded_io=True, io_config=None)
 

@@ -125,10 +125,10 @@ from daft.session import (
     write_table,
 )
 from daft.udf import udf, func, cls, method, metrics
+from daft.io._range import _range
 from daft.io import (
     IOConfig,
     from_glob_path,
-    _range,
     read_csv,
     read_deltalake,
     read_hudi,

@@ -4,8 +4,8 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, overload
 
-from daft import DataType
 from daft.api_annotations import PublicAPI
+from daft.datatype import DataType
 from daft.io.source import DataSource, DataSourceTask
 from daft.recordbatch import RecordBatch
 from daft.schema import Schema
