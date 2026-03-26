@@ -10,7 +10,7 @@ Feel free to open an issue or PR on [GitHub ↗](https://github.com/Eventual-Inc
 
 ## Performance
 
-1. **Performant large scale shuffles** - Support for native shuffling services for data transfer in our distributed engine (Flotilla). This includes a specialized peer-to-peer service based on Arrow Flight RPC. ([discussion #6472](https://github.com/Eventual-Inc/Daft/discussions/6472))
+1. **Performant large scale shuffles** - Support for native shuffling services for data transfer in our distributed engine (Flotilla). This includes a specialized peer-to-peer service based on Arrow Flight RPC. ([discussion #6472 ↗](https://github.com/Eventual-Inc/Daft/discussions/6472))
 2. **Distributed engine optimization** - Optimizing our distributed engine (Flotilla) to dynamically schedule and execute tasks to minimize worker setup overhead and contention, add dynamic partitioning.
 3. **Memory management** - Tracking and managing memory usage within our local runner to reduce chances of OOMs, inform backpressure and dynamic batching.
 4. **Hash-based operator improvements** - Improve partitioning and hash-table building techniques within various hash-based operators, particularly groupby aggregations and hash joins in low-cardinality cases.
