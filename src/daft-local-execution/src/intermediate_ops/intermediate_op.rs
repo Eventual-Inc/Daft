@@ -25,7 +25,9 @@ use crate::{
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
-    runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
+    runtime_stats::{
+        DefaultRuntimeStats, IntermediateRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle,
+    },
 };
 
 pub type IntermediateOperatorResult = MicroPartition;
@@ -38,7 +40,7 @@ pub(crate) type IntermediateOpExecuteResult<Op> = OperatorOutput<
 >;
 pub(crate) trait IntermediateOperator: Send + Sync {
     type State: Send + Sync + Unpin;
-    type Stats: RuntimeStats = DefaultRuntimeStats;
+    type Stats: IntermediateRuntimeStats = DefaultRuntimeStats;
     type BatchingStrategy: BatchingStrategy + 'static;
     fn execute(
         &self,
@@ -110,7 +112,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
             NodeCategory::Intermediate,
             context,
         );
-        let runtime_stats = Arc::new(Op::Stats::new(&ctx.meter, &info));
+        let runtime_stats = Arc::new(Op::Stats::new(&ctx.meter, &info, child.runtime_stats()));
         let morsel_size_requirement = intermediate_op
             .morsel_size_requirement()
             .unwrap_or_default();

@@ -16,7 +16,7 @@ use common_metrics::{
     meters::Counter,
     operator_metrics::OperatorCounter,
     ops::{NodeInfo, NodeType},
-    snapshot::UdfSnapshot,
+    snapshot::{StatSnapshotImpl as _, UdfSnapshot},
 };
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
@@ -42,12 +42,13 @@ use crate::{
         DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
     },
     pipeline::{MorselSizeRequirement, NodeName},
-    runtime_stats::RuntimeStats,
+    runtime_stats::{IntermediateRuntimeStats, RuntimeStats, RuntimeStatsRef},
 };
 
 pub(crate) struct UdfRuntimeStats {
     meter: Meter,
     node_kv: Vec<KeyValue>,
+    child_stats: RuntimeStatsRef,
     duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
@@ -55,19 +56,6 @@ pub(crate) struct UdfRuntimeStats {
 }
 
 impl RuntimeStats for UdfRuntimeStats {
-    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
-        let node_kv = node_info.to_key_values();
-
-        Self {
-            duration_us: meter.duration_us_metric(),
-            rows_in: meter.rows_in_metric(),
-            rows_out: meter.rows_out_metric(),
-            custom_counters: Mutex::new(HashMap::new()),
-            node_kv,
-            meter: meter.clone(), // Cheap to clone, Arc under the hood
-        }
-    }
-
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         let counters = self.custom_counters.lock().unwrap();
 
@@ -84,7 +72,28 @@ impl RuntimeStats for UdfRuntimeStats {
             rows_in,
             rows_out,
             custom_counters,
+            estimated_total_rows: self.child_stats.build_snapshot(ordering).total(),
         })
+    }
+
+    fn add_duration_us(&self, cpu_us: u64) {
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
+    }
+}
+
+impl IntermediateRuntimeStats for UdfRuntimeStats {
+    fn new(meter: &Meter, node_info: &NodeInfo, child_stats: RuntimeStatsRef) -> Self {
+        let node_kv = node_info.to_key_values();
+
+        Self {
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
+            custom_counters: Mutex::new(HashMap::new()),
+            node_kv,
+            child_stats,
+            meter: meter.clone(), // Cheap to clone, Arc under the hood
+        }
     }
 
     fn add_rows_in(&self, rows: u64) {
@@ -93,10 +102,6 @@ impl RuntimeStats for UdfRuntimeStats {
 
     fn add_rows_out(&self, rows: u64) {
         self.rows_out.add(rows, self.node_kv.as_slice());
-    }
-
-    fn add_duration_us(&self, cpu_us: u64) {
-        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 

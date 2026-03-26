@@ -1,11 +1,9 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_io_runtime};
 use daft_core::prelude::SchemaRef;
-use daft_io::IOStatsRef;
 use daft_local_plan::InputId;
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use futures::{FutureExt, StreamExt};
@@ -15,7 +13,7 @@ use super::source::Source;
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
     pipeline::NodeName,
-    sources::source::SourceStream,
+    sources::source::{SourceStats, SourceStream},
 };
 
 pub struct InMemorySource {
@@ -41,6 +39,7 @@ impl InMemorySource {
         mut receiver: UnboundedReceiver<(InputId, Vec<MicroPartitionRef>)>,
         output_sender: Sender<MicroPartition>,
         schema: SchemaRef,
+        runtime_stats: Arc<SourceStats>,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
 
@@ -53,6 +52,8 @@ impl InMemorySource {
                     recv_result = receiver.recv(), if !receiver_exhausted => {
                         match recv_result {
                             Some((_input_id, partitions)) => {
+                                runtime_stats.set_estimated_total_rows(partitions.iter().map(|p| p.len()).sum::<usize>() as u64);
+                                runtime_stats.io_stats.mark_bytes_read(partitions.iter().map(|p| p.size_bytes()).sum::<usize>());
                                 task_set.spawn(forward_partition_batch(
                                     partitions,
                                     schema.clone(),
@@ -102,21 +103,23 @@ async fn forward_partition_batch(
     Ok(())
 }
 
-#[async_trait]
 impl Source for InMemorySource {
     #[instrument(name = "InMemorySource::get_data", level = "info", skip_all)]
     fn get_data(
         self: Box<Self>,
         _maintain_order: bool,
-        io_stats: IOStatsRef,
+        runtime_stats: Arc<SourceStats>,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        io_stats.mark_bytes_read(self.size_bytes);
         let (output_sender, output_receiver) = create_channel::<MicroPartition>(1);
         let input_receiver = self.receiver;
 
-        let processor_task =
-            Self::spawn_partition_set_processor(input_receiver, output_sender, self.schema.clone());
+        let processor_task = Self::spawn_partition_set_processor(
+            input_receiver,
+            output_sender,
+            self.schema.clone(),
+            runtime_stats,
+        );
 
         let result_stream = output_receiver.into_stream().map(Ok);
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));

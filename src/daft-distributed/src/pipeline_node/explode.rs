@@ -74,6 +74,7 @@ impl RuntimeStats for ExplodeStats {
             rows_in,
             rows_out,
             amplification,
+            estimated_total_rows: rows_out,
         })
     }
 }

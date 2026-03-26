@@ -75,11 +75,13 @@ impl RuntimeStats for WriteStats {
     }
 
     fn export_snapshot(&self) -> StatSnapshot {
+        let rows_written = self.rows_written.load(Ordering::SeqCst);
         StatSnapshot::Write(WriteSnapshot {
-            cpu_us: self.duration_us.load(Ordering::Relaxed),
-            rows_in: self.rows_in.load(Ordering::Relaxed),
-            rows_written: self.rows_written.load(Ordering::Relaxed),
-            bytes_written: self.bytes_written.load(Ordering::Relaxed),
+            cpu_us: self.duration_us.load(Ordering::SeqCst),
+            rows_in: self.rows_in.load(Ordering::SeqCst),
+            rows_written,
+            bytes_written: self.bytes_written.load(Ordering::SeqCst),
+            estimated_total_rows: rows_written,
         })
     }
 }

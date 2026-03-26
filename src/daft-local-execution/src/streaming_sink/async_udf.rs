@@ -10,7 +10,7 @@ use common_metrics::{
     Counter, Meter, StatSnapshot,
     operator_metrics::OperatorCounter,
     ops::{NodeInfo, NodeType},
-    snapshot::UdfSnapshot,
+    snapshot::{StatSnapshotImpl as _, UdfSnapshot},
 };
 use common_runtime::JoinSet;
 use daft_core::{prelude::SchemaRef, series::Series};
@@ -31,7 +31,7 @@ use super::base::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{MorselSizeRequirement, NodeName},
-    runtime_stats::RuntimeStats,
+    runtime_stats::{IntermediateRuntimeStats, RuntimeStats, RuntimeStatsRef},
 };
 
 struct AsyncUdfParams {
@@ -45,6 +45,8 @@ struct AsyncUdfParams {
 pub(crate) struct AsyncUdfRuntimeStats {
     meter: Meter,
     node_kv: Vec<KeyValue>,
+    child_stats: RuntimeStatsRef,
+
     duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
@@ -52,19 +54,6 @@ pub(crate) struct AsyncUdfRuntimeStats {
 }
 
 impl RuntimeStats for AsyncUdfRuntimeStats {
-    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
-        let node_kv = node_info.to_key_values();
-
-        Self {
-            meter: meter.clone(), // Cheap to clone, Arc under the hood
-            duration_us: meter.duration_us_metric(),
-            rows_in: meter.rows_in_metric(),
-            rows_out: meter.rows_out_metric(),
-            custom_counters: Mutex::new(HashMap::new()),
-            node_kv,
-        }
-    }
-
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         let counters = self.custom_counters.lock().unwrap();
 
@@ -72,11 +61,31 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
             cpu_us: self.duration_us.load(ordering),
             rows_in: self.rows_in.load(ordering),
             rows_out: self.rows_out.load(ordering),
+            estimated_total_rows: self.child_stats.build_snapshot(ordering).total(),
             custom_counters: counters
                 .iter()
                 .map(|(name, counter)| (name.clone(), counter.load(ordering)))
                 .collect(),
         })
+    }
+
+    fn add_duration_us(&self, cpu_us: u64) {
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
+    }
+}
+
+impl IntermediateRuntimeStats for AsyncUdfRuntimeStats {
+    fn new(meter: &Meter, node_info: &NodeInfo, child_stats: RuntimeStatsRef) -> Self {
+        Self {
+            meter: meter.clone(), // Cheap to clone, Arc under the hood
+            node_kv: node_info.to_key_values(),
+            child_stats,
+
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
+            custom_counters: Mutex::new(HashMap::new()),
+        }
     }
 
     fn add_rows_in(&self, rows: u64) {
@@ -85,10 +94,6 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
 
     fn add_rows_out(&self, rows: u64) {
         self.rows_out.add(rows, self.node_kv.as_slice());
-    }
-
-    fn add_duration_us(&self, cpu_us: u64) {
-        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 

@@ -10,31 +10,13 @@ use common_metrics::{
 use indicatif::{ProgressDrawTarget, ProgressStyle};
 use log::Log;
 
-use crate::{PythonPrintTarget, STDOUT};
+use crate::{PythonPrintTarget, STDOUT, runtime_stats::RuntimeStatsRef};
 
 pub(crate) trait ProgressBar: Send + Sync {
     fn initialize_node(&self, node_id: NodeID);
     fn finalize_node(&self, node_id: NodeID, last_snapshot: &StatSnapshot);
     fn handle_event(&self, node_id: NodeID, event: &StatSnapshot);
     fn finish(self: Box<Self>) -> DaftResult<()>;
-}
-
-pub enum ProgressBarColor {
-    Blue,
-    Magenta,
-    Cyan,
-    Yellow,
-}
-
-impl ProgressBarColor {
-    fn to_str(&self) -> &'static str {
-        match self {
-            Self::Blue => "blue",
-            Self::Magenta => "magenta",
-            Self::Cyan => "cyan",
-            Self::Yellow => "yellow",
-        }
-    }
 }
 
 const TICK_INTERVAL: Duration = Duration::from_millis(100);
@@ -91,7 +73,7 @@ struct IndicatifProgressBarManager {
 }
 
 impl IndicatifProgressBarManager {
-    fn new(node_info_map: &HashMap<NodeID, Arc<NodeInfo>>) -> Self {
+    fn new(node_info_map: &HashMap<NodeID, (Arc<NodeInfo>, RuntimeStatsRef)>) -> Self {
         let multi_progress = indicatif::MultiProgress::new();
 
         if cfg!(feature = "python") {
@@ -119,34 +101,41 @@ impl IndicatifProgressBarManager {
         // Use char count (not byte count) since this controls terminal column width
         let max_name_len = (node_info_map
             .values()
-            .map(|v| v.name.chars().count())
+            .map(|(v, _)| v.name.chars().count())
             .max()
             .unwrap_or(0))
         .min(MAX_PIPELINE_NAME_LEN);
 
         // For Swordfish only, so node ids should be consecutive
         for node_id in 0..total {
-            let node_info = node_info_map
+            let (node_info, runtime_stats) = node_info_map
                 .get(&node_id)
                 .expect("Expected node info for all node ids in range 0..total");
-            manager.make_new_bar(node_info.as_ref(), max_name_len);
+            let initial_snapshot = runtime_stats.snapshot();
+            manager.make_new_bar(node_info.as_ref(), initial_snapshot, max_name_len);
         }
 
         manager
     }
 
-    fn make_new_bar(&mut self, node_info: &NodeInfo, max_name_len: usize) {
+    fn make_new_bar(
+        &mut self,
+        node_info: &NodeInfo,
+        initial_snapshot: StatSnapshot,
+        max_name_len: usize,
+    ) {
         let color = match node_info.node_category {
-            NodeCategory::Source => ProgressBarColor::Blue,
-            NodeCategory::Intermediate => ProgressBarColor::Magenta,
-            NodeCategory::BlockingSink => ProgressBarColor::Cyan,
-            NodeCategory::StreamingSink => ProgressBarColor::Yellow,
+            NodeCategory::Source => "blue",
+            NodeCategory::Intermediate => "magenta",
+            NodeCategory::BlockingSink => "cyan",
+            NodeCategory::StreamingSink => "yellow",
         };
+        let initial_total_estimate = initial_snapshot.total();
 
         #[allow(clippy::literal_string_with_formatting_args)]
         let template_str = format!(
-            "🗡️ 🐟[{node_id:>total_len$}/{total}] {{spinner:.green}} {{prefix:.{color}/bold}} | [{{elapsed_precise}}] {{msg}}",
-            color = color.to_str(),
+            "🗡️ 🐟[{node_id:>total_len$}/{total}] {{spinner:.green}} {{prefix:.{color}/bold}} [{{elapsed_precise}}] {{bar:25.#F92672/#525252}} ({{percent}}%) {{human_pos}}/{{human_len}} rows{{wide_msg}}",
+            color = color,
             node_id = (node_info.id + 1),
             total = self.total,
             total_len = self.total.to_string().len(),
@@ -163,11 +152,12 @@ impl IndicatifProgressBarManager {
             format!("{:>1$}", node_info.name, max_name_len)
         };
 
-        let pb = indicatif::ProgressBar::new_spinner()
+        let pb = indicatif::ProgressBar::new(initial_total_estimate)
             .with_style(
                 ProgressStyle::with_template(template_str.as_str())
                     .unwrap()
-                    .tick_chars("⠁⠁⠉⠙⠚⠒⠂⠂⠒⠲⠴⠤⠄⠄⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈⠈✓"),
+                    .progress_chars("━╸━")
+                    .tick_chars("⠁⠁⠉⠙⠚⠒⠂⠂⠒⠲⠴⠤⠄⠄⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈⠈ "),
             )
             .with_prefix(formatted_prefix);
         self.multi_progress.add(pb.clone());
@@ -210,7 +200,7 @@ impl ProgressBar for IndicatifProgressBarManager {
 }
 
 pub fn make_progress_bar_manager(
-    node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
+    node_info_map: &HashMap<NodeID, (Arc<NodeInfo>, RuntimeStatsRef)>,
 ) -> Box<dyn ProgressBar> {
     #[cfg(feature = "python")]
     {
@@ -253,7 +243,7 @@ mod python {
     }
 
     impl TqdmProgressBarManager {
-        pub fn new(node_info_map: &HashMap<NodeID, Arc<NodeInfo>>) -> Self {
+        pub fn new(node_info_map: &HashMap<NodeID, (Arc<NodeInfo>, RuntimeStatsRef)>) -> Self {
             let mut node_id_to_pb_id = HashMap::new();
 
             Python::attach(|py| {
@@ -263,7 +253,7 @@ mod python {
 
                 // For Swordfish only, so node ids should be consecutive
                 for node_id in 0..node_info_map.len() {
-                    let node_info = node_info_map
+                    let (node_info, _) = node_info_map
                         .get(&node_id)
                         .expect("Expected node info for all node ids in range 0..total");
                     let bar_format = format!(
@@ -331,7 +321,20 @@ mod python {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::Ordering;
+
     use super::*;
+    use crate::runtime_stats::RuntimeStats;
+
+    struct MockRuntimeStats;
+    impl RuntimeStats for MockRuntimeStats {
+        fn build_snapshot(&self, _ordering: Ordering) -> StatSnapshot {
+            unimplemented!()
+        }
+        fn add_duration_us(&self, _duration_us: u64) {
+            unimplemented!()
+        }
+    }
 
     #[test]
     fn test_progress_bar_truncation_on_multibyte_utf8() {
@@ -343,10 +346,13 @@ mod tests {
             id: 0,
             ..Default::default()
         });
-        let mut node_info_map = HashMap::new();
-        node_info_map.insert(0, node_info);
+        let mut node_map = HashMap::new();
+        node_map.insert(
+            0,
+            (node_info, Arc::new(MockRuntimeStats) as RuntimeStatsRef),
+        );
 
         // This panics in make_new_bar due to byte-level string slicing on multi-byte UTF-8
-        let _manager = IndicatifProgressBarManager::new(&node_info_map);
+        let _manager = IndicatifProgressBarManager::new(&node_map);
     }
 }

@@ -58,10 +58,12 @@ impl RuntimeStats for SourceStats {
     }
 
     fn export_snapshot(&self) -> StatSnapshot {
+        let rows_out = self.rows_out.load(Ordering::SeqCst);
         StatSnapshot::Source(SourceSnapshot {
-            cpu_us: self.duration_us.load(Ordering::Relaxed),
-            rows_out: self.rows_out.load(Ordering::Relaxed),
-            bytes_read: self.bytes_read.load(Ordering::Relaxed),
+            cpu_us: self.duration_us.load(Ordering::SeqCst),
+            rows_out,
+            bytes_read: self.bytes_read.load(Ordering::SeqCst),
+            estimated_total_rows: rows_out,
         })
     }
 }

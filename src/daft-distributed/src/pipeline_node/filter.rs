@@ -74,6 +74,7 @@ impl RuntimeStats for FilterStats {
             rows_in,
             rows_out,
             selectivity,
+            estimated_total_rows: rows_out,
         })
     }
 }

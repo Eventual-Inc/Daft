@@ -25,7 +25,10 @@ use crate::{
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
-    runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
+    runtime_stats::{
+        DefaultRuntimeStats, IntermediateRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle,
+        RuntimeStatsRef,
+    },
 };
 
 pub enum StreamingSinkOutput {
@@ -52,7 +55,7 @@ pub(crate) type StreamingSinkFinalizeResult<Op> =
     OperatorOutput<DaftResult<StreamingSinkFinalizeOutput<Op>>>;
 pub(crate) trait StreamingSink: Send + Sync {
     type State: Send + Sync + Unpin;
-    type Stats: RuntimeStats = DefaultRuntimeStats;
+    type Stats: IntermediateRuntimeStats = DefaultRuntimeStats;
     type BatchingStrategy: BatchingStrategy + 'static;
 
     /// Execute the StreamingSink operator on the morsel of input data,
@@ -138,7 +141,11 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         let name: Arc<str> = op.name().into();
         let node_info =
             ctx.next_node_info(name, op.op_type(), NodeCategory::StreamingSink, context);
-        let runtime_stats = Arc::new(Op::Stats::new(&ctx.meter, &node_info));
+        let runtime_stats = Arc::new(Op::Stats::new(
+            &ctx.meter,
+            &node_info,
+            child.runtime_stats(),
+        ));
 
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
@@ -541,7 +548,8 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()
     }
-    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
+
+    fn runtime_stats(&self) -> RuntimeStatsRef {
         self.runtime_stats.clone()
     }
 }

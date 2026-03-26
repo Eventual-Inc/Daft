@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_metrics::{
     Counter, Gauge, Meter, StatSnapshot,
     ops::{NodeInfo, NodeType},
-    snapshot::FilterSnapshot,
+    snapshot::{FilterSnapshot, StatSnapshotImpl as _},
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -12,7 +12,11 @@ use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::NodeName,
+    runtime_stats::{IntermediateRuntimeStats, RuntimeStats, RuntimeStatsRef},
+};
 
 pub struct FilterStats {
     duration_us: Counter,
@@ -20,6 +24,7 @@ pub struct FilterStats {
     rows_out: Counter,
     selectivity: Gauge,
     node_kv: Vec<KeyValue>,
+    child_stats: RuntimeStatsRef,
 }
 
 impl FilterStats {
@@ -35,30 +40,38 @@ impl FilterStats {
 }
 
 impl RuntimeStats for FilterStats {
-    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
-        let node_kv = node_info.to_key_values();
-
-        Self {
-            duration_us: meter.duration_us_metric(),
-            rows_in: meter.rows_in_metric(),
-            rows_out: meter.rows_out_metric(),
-            selectivity: meter.f64_gauge("selectivity"),
-            node_kv,
-        }
-    }
-
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         let cpu_us = self.duration_us.load(ordering);
         let rows_in = self.rows_in.load(ordering);
         let rows_out = self.rows_out.load(ordering);
         let selectivity = self.selectivity.load(ordering);
+        let child_estimated_total = self.child_stats.build_snapshot(ordering).total();
 
         StatSnapshot::Filter(FilterSnapshot {
             cpu_us,
             rows_in,
             rows_out,
             selectivity,
+            estimated_total_rows: (child_estimated_total as f64 * selectivity) as u64,
         })
+    }
+
+    fn add_duration_us(&self, cpu_us: u64) {
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
+    }
+}
+
+impl IntermediateRuntimeStats for FilterStats {
+    fn new(meter: &Meter, node_info: &NodeInfo, child_stats: RuntimeStatsRef) -> Self {
+        let node_kv = node_info.to_key_values();
+        Self {
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
+            selectivity: meter.f64_gauge("selectivity"),
+            child_stats,
+            node_kv,
+        }
     }
 
     fn add_rows_in(&self, rows: u64) {
@@ -69,10 +82,6 @@ impl RuntimeStats for FilterStats {
     fn add_rows_out(&self, rows: u64) {
         let rows_out = self.rows_out.add(rows, self.node_kv.as_slice());
         self.update_selectivity(self.rows_in.load(Ordering::Relaxed), rows_out);
-    }
-
-    fn add_duration_us(&self, cpu_us: u64) {
-        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
@@ -132,12 +141,12 @@ impl IntermediateOperator for FilterOperator {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::Ordering;
+    use std::sync::{Arc, atomic::Ordering};
 
-    use common_metrics::{Meter, ops::NodeInfo};
+    use common_metrics::{Meter, StatSnapshot, ops::NodeInfo};
 
     use super::FilterStats;
-    use crate::runtime_stats::RuntimeStats;
+    use crate::runtime_stats::{IntermediateRuntimeStats as _, RuntimeStats};
 
     fn node_info_from_id(id: usize) -> NodeInfo {
         NodeInfo {
@@ -146,9 +155,27 @@ mod tests {
         }
     }
 
+    struct MockRuntimeStats;
+    impl RuntimeStats for MockRuntimeStats {
+        fn build_snapshot(&self, _ordering: Ordering) -> StatSnapshot {
+            unimplemented!()
+        }
+        fn add_duration_us(&self, _duration_us: u64) {
+            unimplemented!()
+        }
+    }
+
+    fn make_stats() -> FilterStats {
+        FilterStats::new(
+            &Meter::test_scope("test_stats"),
+            &node_info_from_id(42),
+            Arc::new(MockRuntimeStats),
+        )
+    }
+
     #[test]
     fn selectivity_updates_after_rows_events() {
-        let stats = FilterStats::new(&Meter::test_scope("test_stats"), &node_info_from_id(42));
+        let stats = make_stats();
 
         stats.add_rows_in(200);
         stats.add_rows_out(50);
@@ -164,7 +191,7 @@ mod tests {
 
     #[test]
     fn selectivity_defaults_to_100_percent_on_zero_rows_in() {
-        let stats = FilterStats::new(&Meter::test_scope("test_stats"), &node_info_from_id(1));
+        let stats = make_stats();
 
         stats.add_rows_out(10);
 
@@ -178,7 +205,7 @@ mod tests {
 
     #[test]
     fn selectivity_handles_multiple_updates() {
-        let stats = FilterStats::new(&Meter::test_scope("test_stats"), &node_info_from_id(99));
+        let stats = make_stats();
 
         stats.add_rows_in(100);
         stats.add_rows_out(40);

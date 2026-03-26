@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_metrics::{
     BYTES_WRITTEN_KEY, Counter, Meter, ROWS_WRITTEN_KEY, StatSnapshot, UNIT_BYTES, UNIT_ROWS,
     ops::{NodeInfo, NodeType},
-    snapshot::WriteSnapshot,
+    snapshot::{StatSnapshotImpl as _, WriteSnapshot},
 };
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -17,7 +17,11 @@ use tracing::{Span, instrument};
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::NodeName,
+    runtime_stats::{IntermediateRuntimeStats, RuntimeStats, RuntimeStatsRef},
+};
 
 pub(crate) struct WriteStats {
     duration_us: Counter,
@@ -26,6 +30,7 @@ pub(crate) struct WriteStats {
     bytes_written: Counter,
 
     node_kv: Vec<KeyValue>,
+    child_stats: RuntimeStatsRef,
 }
 
 impl WriteStats {
@@ -38,7 +43,27 @@ impl WriteStats {
 }
 
 impl RuntimeStats for WriteStats {
-    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
+        let cpu_us = self.duration_us.load(ordering);
+        let rows_in = self.rows_in.load(ordering);
+        let rows_written = self.rows_written.load(ordering);
+        let bytes_written = self.bytes_written.load(ordering);
+        StatSnapshot::Write(WriteSnapshot {
+            cpu_us,
+            rows_in,
+            rows_written,
+            bytes_written,
+            estimated_total_rows: self.child_stats.build_snapshot(ordering).total(),
+        })
+    }
+
+    fn add_duration_us(&self, cpu_us: u64) {
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
+    }
+}
+
+impl IntermediateRuntimeStats for WriteStats {
+    fn new(meter: &Meter, node_info: &NodeInfo, child_stats: RuntimeStatsRef) -> Self {
         let node_kv = node_info.to_key_values();
 
         Self {
@@ -56,20 +81,8 @@ impl RuntimeStats for WriteStats {
             ),
 
             node_kv,
+            child_stats,
         }
-    }
-
-    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        let cpu_us = self.duration_us.load(ordering);
-        let rows_in = self.rows_in.load(ordering);
-        let rows_written = self.rows_written.load(ordering);
-        let bytes_written = self.bytes_written.load(ordering);
-        StatSnapshot::Write(WriteSnapshot {
-            cpu_us,
-            rows_in,
-            rows_written,
-            bytes_written,
-        })
     }
 
     fn add_rows_in(&self, rows: u64) {
@@ -79,10 +92,6 @@ impl RuntimeStats for WriteStats {
     // The 'rows_out' for a WriteSink is the number of files written, which we only know upon 'finalize',
     // so there's no benefit to adding it in runtime stats as it is not real time.
     fn add_rows_out(&self, _rows: u64) {}
-
-    fn add_duration_us(&self, cpu_us: u64) {
-        self.duration_us.add(cpu_us, self.node_kv.as_slice());
-    }
 }
 
 #[derive(Debug)]

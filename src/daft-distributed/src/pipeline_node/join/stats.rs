@@ -63,11 +63,13 @@ impl RuntimeStats for BasicJoinStats {
     }
 
     fn export_snapshot(&self) -> StatSnapshot {
+        let probe_rows_out = self.probe_rows_out.load(Ordering::SeqCst);
         StatSnapshot::Join(JoinSnapshot {
-            cpu_us: self.duration_us.load(Ordering::SeqCst),
+            duration_us: self.duration_us.load(Ordering::SeqCst),
             build_rows_inserted: self.build_rows_inserted.load(Ordering::SeqCst),
             probe_rows_in: self.probe_rows_in.load(Ordering::SeqCst),
-            probe_rows_out: self.probe_rows_out.load(Ordering::SeqCst),
+            probe_rows_out,
+            estimated_total_probe_rows: probe_rows_out,
         })
     }
 }

@@ -100,6 +100,41 @@ impl Gauge {
     }
 }
 
+pub struct U64Gauge {
+    value: AtomicU64,
+    otel: opentelemetry::metrics::Gauge<u64>,
+}
+
+impl U64Gauge {
+    fn new(
+        meter: &opentelemetry::metrics::Meter,
+        name: impl Into<Cow<'static, str>>,
+        unit: Option<Cow<'static, str>>,
+    ) -> Self {
+        let normalized_name = normalize_name(name);
+        let builder = meter.u64_gauge(normalized_name);
+        let builder = if let Some(unit) = unit {
+            builder.with_unit(unit)
+        } else {
+            builder
+        };
+        Self {
+            value: AtomicU64::new(0),
+            otel: builder.build(),
+        }
+    }
+
+    pub fn set_max(&self, value: u64, key_values: &[KeyValue]) {
+        let old_val = self.value.fetch_max(value, Ordering::Relaxed);
+        let value = std::cmp::max(old_val, value);
+        self.otel.record(value, key_values);
+    }
+
+    pub fn load(&self, ordering: Ordering) -> u64 {
+        self.value.load(ordering)
+    }
+}
+
 pub struct UpDownCounter {
     value: AtomicI64,
     otel: opentelemetry::metrics::UpDownCounter<i64>,
@@ -177,6 +212,14 @@ impl Meter {
 
     pub fn i64_up_down_counter(&self, name: impl Into<Cow<'static, str>>) -> UpDownCounter {
         UpDownCounter::new(&self.otel, name)
+    }
+
+    pub fn u64_gauge_with_unit(
+        &self,
+        name: impl Into<Cow<'static, str>>,
+        unit: Option<Cow<'static, str>>,
+    ) -> U64Gauge {
+        U64Gauge::new(&self.otel, name, unit)
     }
 
     pub fn duration_us_metric(&self) -> Counter {

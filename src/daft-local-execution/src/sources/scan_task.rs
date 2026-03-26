@@ -3,7 +3,6 @@ use std::{
     sync::Arc,
 };
 
-use async_trait::async_trait;
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
@@ -23,7 +22,7 @@ use crate::{
     pipeline::NodeName,
     sources::{
         scan_task_reader,
-        source::{Source, SourceStream},
+        source::{Source, SourceStats, SourceStream},
     },
 };
 
@@ -177,19 +176,19 @@ impl ScanTaskSource {
     }
 }
 
-#[async_trait]
 impl Source for ScanTaskSource {
     #[instrument(name = "ScanTaskSource::get_data", level = "info", skip_all)]
     fn get_data(
         self: Box<Self>,
         maintain_order: bool,
-        io_stats: IOStatsRef,
+        runtime_stats: Arc<SourceStats>,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<MicroPartition>(1);
         let input_receiver = self.receiver;
         let num_parallel_tasks = self.num_parallel_tasks;
 
+        let io_stats = runtime_stats.io_stats.clone();
         let processor_task = Self::spawn_scan_task_processor(
             num_parallel_tasks,
             input_receiver,
