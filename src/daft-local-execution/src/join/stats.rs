@@ -1,7 +1,4 @@
-use std::{
-    borrow::Cow,
-    sync::{Arc, atomic::Ordering},
-};
+use std::{borrow::Cow, sync::atomic::Ordering};
 
 use common_metrics::{
     Counter, JOIN_BUILD_ROWS_INSERTED_KEY, JOIN_PROBE_ROWS_IN_KEY, JOIN_PROBE_ROWS_OUT_KEY, Meter,
@@ -20,7 +17,21 @@ pub(crate) struct JoinStats {
 }
 
 impl JoinStats {
-    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+    pub(crate) fn add_build_rows_inserted(&self, rows: u64) {
+        self.build_rows_inserted.add(rows, self.node_kv.as_slice());
+    }
+
+    pub(crate) fn add_probe_rows_in(&self, rows: u64) {
+        self.probe_rows_in.add(rows, self.node_kv.as_slice());
+    }
+
+    pub(crate) fn add_probe_rows_out(&self, rows: u64) {
+        self.probe_rows_out.add(rows, self.node_kv.as_slice());
+    }
+}
+
+impl RuntimeStats for JoinStats {
+    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
         let node_kv = node_info.to_key_values();
         Self {
             duration_us: meter.duration_us_metric(),
@@ -43,24 +54,6 @@ impl JoinStats {
         }
     }
 
-    pub(crate) fn add_build_rows_inserted(&self, rows: u64) {
-        self.build_rows_inserted.add(rows, self.node_kv.as_slice());
-    }
-
-    pub(crate) fn add_probe_rows_in(&self, rows: u64) {
-        self.probe_rows_in.add(rows, self.node_kv.as_slice());
-    }
-
-    pub(crate) fn add_probe_rows_out(&self, rows: u64) {
-        self.probe_rows_out.add(rows, self.node_kv.as_slice());
-    }
-}
-
-impl RuntimeStats for JoinStats {
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
-        self
-    }
-
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         StatSnapshot::Join(JoinSnapshot {
             cpu_us: self.duration_us.load(ordering),
@@ -81,7 +74,7 @@ impl RuntimeStats for JoinStats {
         unreachable!("Join Nodes shouldn't receive rows. Use add_probe_rows_out instead.")
     }
 
-    fn add_cpu_us(&self, cpu_us: u64) {
-        self.duration_us.add(cpu_us, self.node_kv.as_slice());
+    fn add_duration_us(&self, duration_us: u64) {
+        self.duration_us.add(duration_us, self.node_kv.as_slice());
     }
 }

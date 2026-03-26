@@ -4,11 +4,8 @@ mod values;
 
 use std::{
     collections::{HashMap, HashSet},
-    future::Future,
-    pin::Pin,
     sync::Arc,
-    task::{Context, Poll},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use common_error::DaftResult;
@@ -24,7 +21,6 @@ use tokio::{
     sync::{mpsc, oneshot},
     time::interval,
 };
-use tracing::{Instrument, instrument::Instrumented};
 pub use values::{DefaultRuntimeStats, RuntimeStats};
 
 use crate::pipeline::PipelineNode;
@@ -317,42 +313,6 @@ impl RuntimeStatsManager {
         self.stats_manager_task
             .await
             .expect("The finish_tx channel was closed")
-    }
-}
-
-#[pin_project::pin_project]
-pub struct TimedFuture<F: Future> {
-    start: Option<Instant>,
-    #[pin]
-    future: Instrumented<F>,
-    runtime_stats: Arc<dyn RuntimeStats>,
-}
-
-impl<F: Future> TimedFuture<F> {
-    pub fn new(future: F, runtime_stats: Arc<dyn RuntimeStats>, span: tracing::Span) -> Self {
-        let instrumented = future.instrument(span);
-        Self {
-            start: None,
-            future: instrumented,
-            runtime_stats,
-        }
-    }
-}
-
-impl<F: Future> Future for TimedFuture<F> {
-    type Output = F::Output;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let mut this = self.project();
-        let start = this.start.get_or_insert_with(Instant::now);
-        let inner_poll = this.future.as_mut().poll(cx);
-        let elapsed = start.elapsed();
-        this.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
-
-        match inner_poll {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(output) => Poll::Ready(output),
-        }
     }
 }
 
@@ -727,7 +687,7 @@ mod tests {
         // Simulate a fast query that completes within the throttle interval (500ms)
         node_stat.add_rows_in(100);
         node_stat.add_rows_out(50);
-        node_stat.add_cpu_us(1000);
+        node_stat.add_duration_us(1000);
 
         handle.finalize_node(0);
 

@@ -111,14 +111,16 @@ mod tests {
         time::Duration,
     };
 
+    use common_metrics::{Meter, ops::NodeInfo};
+
     use super::*;
     use crate::runtime_stats::RuntimeStats;
 
     // Mock RuntimeStats for testing
     pub(crate) struct MockRuntimeStats;
     impl RuntimeStats for MockRuntimeStats {
-        fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
-            unimplemented!()
+        fn new(_meter: &Meter, _node_info: &NodeInfo) -> Self {
+            Self {}
         }
 
         fn build_snapshot(
@@ -136,7 +138,7 @@ mod tests {
             unimplemented!()
         }
 
-        fn add_cpu_us(&self, _cpu_us: u64) {
+        fn add_duration_us(&self, _cpu_us: u64) {
             unimplemented!()
         }
     }

@@ -31,6 +31,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _partition_bounds_are_degenerate(bounds: list[Any]) -> bool:
+    """True when each adjacent pair is equal (zero-width between consecutive bounds)."""
+    if len(bounds) < 2:
+        return True
+    return all(bounds[i] == bounds[i + 1] for i in range(len(bounds) - 1))
+
+
 class PartitionBoundStrategy(Enum):
     PERCENTILE = "percentile"
     MIN_MAX = "min-max"
@@ -96,6 +103,13 @@ class SQLScanOperator(ScanOperator):
         if partition_bounds is None:
             warnings.warn(
                 "Unable to partition the data using the specified column. Falling back to a single scan task."
+            )
+            return self._single_scan_task(pushdowns, total_rows, total_size)
+
+        if _partition_bounds_are_degenerate(partition_bounds):
+            warnings.warn(
+                "Partition bounds are degenerate (e.g. min equals max, zero-width ranges). "
+                "Falling back to a single scan task."
             )
             return self._single_scan_task(pushdowns, total_rows, total_size)
 

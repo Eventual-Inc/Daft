@@ -3,9 +3,11 @@ use std::{
     sync::Arc,
 };
 
-use daft_ext_abi::{ArrowArray, ArrowData, ArrowSchema, FFI_ScalarFunction};
-
-use crate::{error::DaftResult, ffi::trampoline::trampoline};
+use crate::{
+    abi::{ArrowArray, ArrowData, ArrowSchema, FFI_ScalarFunction},
+    error::DaftResult,
+    ffi::trampoline::trampoline,
+};
 
 /// Trait that extension authors implement to define a scalar function.
 pub trait DaftScalarFunction {
@@ -94,39 +96,79 @@ unsafe extern "C" fn ffi_fini(ctx: *mut c_void) {
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "arrow-57"))]
 mod tests {
-    use arrow_array::{Array, ArrayRef, Int32Array};
-    use arrow_schema::{DataType, Field, Schema};
-    use daft_ext_abi::ffi::strings::free_string;
+    use arrow_schema_57::{DataType, Field, Schema};
 
     use super::*;
-    use crate::error::DaftError;
+    use crate::{abi::ffi::strings::free_string, error::DaftError};
 
-    fn export_array(array: &dyn Array) -> ArrowData {
-        let (ffi_array, ffi_schema) = arrow::ffi::to_ffi(&array.to_data()).unwrap();
-        ArrowData {
-            array: unsafe { ArrowArray::from_owned(ffi_array) },
-            schema: unsafe { ArrowSchema::from_owned(ffi_schema) },
-        }
-    }
+    // ── Raw-level test helpers (no arrow-array dependency) ──────────
 
-    fn import_array(data: ArrowData) -> ArrayRef {
-        let ffi_array: arrow::ffi::FFI_ArrowArray = unsafe { data.array.into_owned() };
-        let ffi_schema: arrow::ffi::FFI_ArrowSchema = unsafe { data.schema.into_owned() };
-        let arrow_data = unsafe { arrow::ffi::from_ffi(ffi_array, &ffi_schema) }.unwrap();
-        arrow_array::make_array(arrow_data)
-    }
-
+    /// Create an [`ArrowSchema`] from an `arrow_schema_57::Schema`.
     fn export_schema(schema: &Schema) -> ArrowSchema {
-        let ffi = arrow::ffi::FFI_ArrowSchema::try_from(schema).unwrap();
+        let ffi = arrow_schema_57::ffi::FFI_ArrowSchema::try_from(schema).unwrap();
         unsafe { ArrowSchema::from_owned(ffi) }
     }
 
+    /// Read an [`ArrowSchema`] back into an `arrow_schema_57::Schema`.
     fn import_schema(schema: &ArrowSchema) -> Schema {
-        let ffi: &arrow::ffi::FFI_ArrowSchema = unsafe { schema.as_raw() };
+        let ffi: &arrow_schema_57::ffi::FFI_ArrowSchema = unsafe { schema.as_raw() };
         Schema::try_from(ffi).unwrap()
     }
+
+    /// Build an [`ArrowData`] containing an Int32 column from raw values.
+    ///
+    /// Allocates buffers on the heap; the release callback frees them.
+    fn make_int32(values: &[i32]) -> ArrowData {
+        let schema = {
+            let field = Field::new("", DataType::Int32, false);
+            let ffi = arrow_schema_57::ffi::FFI_ArrowSchema::try_from(&field).unwrap();
+            unsafe { ArrowSchema::from_owned(ffi) }
+        };
+
+        let values: Box<[i32]> = values.into();
+        let len = values.len();
+
+        // Arrow Int32 layout: [validity (null), values]
+        let buffers = Box::new([std::ptr::null::<c_void>(), values.as_ptr().cast::<c_void>()]);
+
+        // Pack both allocations into private_data so `release` can free them.
+        let private = Box::new((values, std::ptr::null::<c_void>()));
+        let array = ArrowArray {
+            length: len as i64,
+            null_count: 0,
+            offset: 0,
+            n_buffers: 2,
+            n_children: 0,
+            buffers: Box::into_raw(buffers).cast::<*const c_void>(),
+            children: std::ptr::null_mut(),
+            dictionary: std::ptr::null_mut(),
+            release: Some(release_int32),
+            private_data: Box::into_raw(private).cast::<c_void>(),
+        };
+
+        ArrowData { schema, array }
+    }
+
+    unsafe extern "C" fn release_int32(array: *mut ArrowArray) {
+        let a = unsafe { &mut *array };
+        // Free the (values, _) tuple.
+        drop(unsafe { Box::from_raw(a.private_data.cast::<(Box<[i32]>, *const c_void)>()) });
+        // Free the buffers pointer array.
+        drop(unsafe { Box::from_raw(a.buffers.cast::<[*const c_void; 2]>()) });
+        a.release = None;
+    }
+
+    /// Read the i32 values out of an [`ArrowData`] (non-null, zero-offset).
+    fn read_int32(data: &ArrowData) -> &[i32] {
+        unsafe {
+            let bufs = std::slice::from_raw_parts(data.array.buffers.cast_const(), 2);
+            std::slice::from_raw_parts(bufs[1].cast::<i32>(), data.array.length as usize)
+        }
+    }
+
+    // ── Test function impls ─────────────────────────────────────────
 
     struct IncrementFn;
 
@@ -141,15 +183,16 @@ mod tests {
         }
 
         fn call(&self, args: Vec<ArrowData>) -> DaftResult<ArrowData> {
-            let input_array = import_array(args.into_iter().next().unwrap());
-            let input = input_array
-                .as_any()
-                .downcast_ref::<Int32Array>()
-                .ok_or_else(|| DaftError::TypeError("expected Int32".into()))?;
-            let output: Int32Array = input.iter().map(|v| v.map(|x| x + 1)).collect();
-            Ok(export_array(&output))
+            let input = args
+                .first()
+                .ok_or_else(|| DaftError::TypeError("expected at least one argument".into()))?;
+            let values = read_int32(input);
+            let output: Vec<i32> = values.iter().map(|x| x + 1).collect();
+            Ok(make_int32(&output))
         }
     }
+
+    // ── Tests ───────────────────────────────────────────────────────
 
     #[test]
     fn vtable_name_roundtrip() {
@@ -194,8 +237,7 @@ mod tests {
     fn vtable_call_roundtrip() {
         let vtable = into_ffi(Arc::new(IncrementFn));
 
-        let input = Int32Array::from(vec![1, 2, 3]);
-        let data = export_array(&input);
+        let data = make_int32(&[1, 2, 3]);
 
         let mut ret_array = ArrowArray::empty();
         let mut ret_schema = ArrowSchema::empty();
@@ -215,12 +257,11 @@ mod tests {
 
         assert_eq!(rc, 0, "call should succeed");
 
-        let result_array = import_array(ArrowData {
+        let result = ArrowData {
             schema: ret_schema,
             array: ret_array,
-        });
-        let result = result_array.as_any().downcast_ref::<Int32Array>().unwrap();
-        assert_eq!(result.values(), &[2, 3, 4]);
+        };
+        assert_eq!(read_int32(&result), &[2, 3, 4]);
 
         unsafe { (vtable.fini)(vtable.ctx.cast_mut()) };
     }
@@ -286,8 +327,7 @@ mod tests {
 
         let vtable = into_ffi(Arc::new(CallFailFn));
 
-        let input = Int32Array::from(vec![1]);
-        let data = export_array(&input);
+        let data = make_int32(&[1]);
 
         let mut ret_array = ArrowArray::empty();
         let mut ret_schema = ArrowSchema::empty();
@@ -334,8 +374,7 @@ mod tests {
                 )])))
             }
             fn call(&self, _: Vec<ArrowData>) -> DaftResult<ArrowData> {
-                let output = Int32Array::from(vec![42]);
-                Ok(export_array(&output))
+                Ok(make_int32(&[42]))
             }
         }
 
@@ -376,8 +415,7 @@ mod tests {
                 )])))
             }
             fn call(&self, _: Vec<ArrowData>) -> DaftResult<ArrowData> {
-                let output = Int32Array::from(vec![0]);
-                Ok(export_array(&output))
+                Ok(make_int32(&[0]))
             }
         }
 

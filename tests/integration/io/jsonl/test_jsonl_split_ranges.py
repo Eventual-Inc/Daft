@@ -9,7 +9,7 @@ pytestmark = pytest.mark.skipif(
     get_tests_daft_runner_name() != "ray", reason="Merge scan tasks are only supported on the Ray runner"
 )
 
-ASSET_S3 = "s3://daft-public-data/test_fixtures/json-dev/sampled-tpch.jsonl"
+ASSET_S3 = "s3://daft-oss-public-data/test_fixtures/json-dev/sampled-tpch.jsonl"
 
 
 @pytest.mark.integration()

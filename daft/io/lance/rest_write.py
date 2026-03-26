@@ -135,6 +135,15 @@ def create_lance_table_rest(
     Returns:
         Dictionary containing creation metadata
     """
+    import warnings
+
+    warnings.warn(
+        "daft.io.lance.create_lance_table_rest is deprecated and will be removed in a future release. "
+        "Please use daft_lance.create_lance_table_rest from the daft-lance package instead: pip install daft-lance",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+
     if lance_namespace is None:
         raise ImportError(
             "Unable to import the `lance_namespace` package, please ensure it is installed: `pip install lance-namespace`"
@@ -179,6 +188,15 @@ def register_lance_table_rest(
     Returns:
         Dictionary containing registration metadata
     """
+    import warnings
+
+    warnings.warn(
+        "daft.io.lance.register_lance_table_rest is deprecated and will be removed in a future release. "
+        "Please use daft_lance.register_lance_table_rest from the daft-lance package instead: pip install daft-lance",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+
     if lance_namespace is None:
         raise ImportError(
             "Unable to import the `lance_namespace` package, please ensure it is installed: `pip install lance-namespace`"

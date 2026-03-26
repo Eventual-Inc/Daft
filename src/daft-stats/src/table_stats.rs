@@ -45,8 +45,8 @@ impl TableStatistics {
             .iter()
             .map(|col| {
                 Ok(ColumnRangeStatistics::new(
-                    Some(col.slice(0, 1)?),
-                    Some(col.slice(1, 2)?),
+                    Some(col.slice(0, 1)?.take_materialized_series()),
+                    Some(col.slice(1, 2)?.take_materialized_series()),
                 )?)
             })
             .collect::<DaftResult<_>>()?;
@@ -62,7 +62,7 @@ impl TableStatistics {
         let columns = table
             .columns()
             .iter()
-            .map(ColumnRangeStatistics::from_series)
+            .map(|col| ColumnRangeStatistics::from_series(col.as_materialized_series()))
             .collect();
         Self {
             columns,

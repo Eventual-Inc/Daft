@@ -32,10 +32,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 
 env:
-  S3_BUCKET: s3://github-actions-artifacts-bucket/builds/dev/${{ github.sha }}/
+  S3_BUCKET: s3://daft-oss-github-actions-artifacts/builds/dev/${{ github.sha }}/
   S3_KEY: builds/dev/${{ github.sha }}
   AWS_REGION: us-west-2
-  CLOUDFRONT_DIST_ID: E3H8WN738AJ1D4
+  CLOUDFRONT_DIST_ID: E1QUPAB4XXQ64R
   DAFT_ANALYTICS_ENABLED: '0'
   DAFT_PROGRESS_BAR: 0
 
@@ -57,10 +57,10 @@ jobs:
         role-session-name: DaftPythonPackageGitHubWorkflow
     - id: check_step
       run: |
-        OBJECT_EXISTS=$(aws s3api head-object --bucket github-actions-artifacts-bucket --key ${{ env.S3_KEY }}/index.html > /dev/null 2>&1 && echo "true" || echo "false")
+        OBJECT_EXISTS=$(aws s3api head-object --bucket daft-oss-github-actions-artifacts --key ${{ env.S3_KEY }}/index.html > /dev/null 2>&1 && echo "true" || echo "false")
         if [[ "$OBJECT_EXISTS" = "true" ]]; then
           echo "Package already exists for this commit, skipping publish. To install, run:"
-          echo "pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/${{ env.S3_KEY }}"
+          echo "pip install daft --pre --extra-index-url https://ds0gqyebztuyf.cloudfront.net/${{ env.S3_KEY }}"
         fi
 
         echo "build_exists=$OBJECT_EXISTS" >> "$GITHUB_OUTPUT"
@@ -126,4 +126,4 @@ jobs:
     - name: Print install instructions
       run: |
         echo "To install the dev build, run:"
-        echo "pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/${{ env.S3_KEY }}"
+        echo "pip install daft --pre --extra-index-url https://ds0gqyebztuyf.cloudfront.net/${{ env.S3_KEY }}"
