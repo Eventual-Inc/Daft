@@ -6,10 +6,7 @@ use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
     DistributedPipelineNode,
-    shuffles::{
-        gather::GatherNode, pre_shuffle_merge::PreShuffleMergeNode, repartition::RepartitionNode,
-        shuffle::ShuffleNode,
-    },
+    shuffles::{gather::GatherNode, pre_shuffle_merge::PreShuffleMergeNode, shuffle::ShuffleNode},
     translate::LogicalPlanToPipelineNodeTranslator,
 };
 
@@ -38,7 +35,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             let compression = None;
             let node_id = self.get_next_pipeline_node_id();
             return Ok(DistributedPipelineNode::new(
-                Arc::new(ShuffleNode::new(
+                Arc::new(ShuffleNode::new_flight(
                     node_id,
                     &self.plan_config,
                     repartition_spec,
@@ -71,12 +68,12 @@ impl LogicalPlanToPipelineNodeTranslator {
         };
 
         Ok(DistributedPipelineNode::new(
-            Arc::new(RepartitionNode::new(
+            Arc::new(ShuffleNode::new_ray(
                 self.get_next_pipeline_node_id(),
                 &self.plan_config,
                 repartition_spec,
-                num_partitions,
                 schema,
+                num_partitions,
                 child_node,
             )),
             &self.meter,
