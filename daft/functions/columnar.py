@@ -164,3 +164,61 @@ def columns_max(*exprs: Expression | str) -> Expression:
         raise ValueError("columns_max requires at least one expression")
     exprs_list = [col(e) if isinstance(e, str) else e for e in exprs]
     return to_list(*exprs_list).list_max().alias("columns_max")
+
+
+def min_of(*exprs: Expression | str) -> Expression:
+    """Find the minimum value across 2+ expressions (row-wise)."""
+    if len(exprs) < 2:
+        raise ValueError("min_of requires at least 2 expressions")
+    exprs_list = [col(e) if isinstance(e, str) else e for e in exprs]
+    return Expression._call_builtin_scalar_fn("min_of", *exprs_list).alias("min_of")
+
+
+def max_of(*exprs: Expression | str) -> Expression:
+    """Find the maximum value across 2+ expressions (row-wise)."""
+    if len(exprs) < 2:
+        raise ValueError("max_of requires at least 2 expressions")
+    exprs_list = [col(e) if isinstance(e, str) else e for e in exprs]
+    return Expression._call_builtin_scalar_fn("max_of", *exprs_list).alias("max_of")
+
+
+def sum_of(*exprs: Expression | str) -> Expression:
+    """Sum values across 2+ expressions (row-wise)."""
+    if len(exprs) < 2:
+        raise ValueError("sum_of requires at least 2 expressions")
+    exprs_list = [col(e) if isinstance(e, str) else e for e in exprs]
+    return Expression._call_builtin_scalar_fn("sum_of", *exprs_list).alias("sum_of")
+
+
+def mean_of(*exprs: Expression | str) -> Expression:
+    """Mean values across 2+ expressions (row-wise)."""
+    if len(exprs) < 2:
+        raise ValueError("mean_of requires at least 2 expressions")
+    exprs_list = [col(e) if isinstance(e, str) else e for e in exprs]
+    return Expression._call_builtin_scalar_fn("mean_of", *exprs_list).alias("mean_of")
+
+
+def all_of(*exprs: Expression | str) -> Expression:
+    """Boolean AND across 2+ expressions (row-wise, null-aware)."""
+    if len(exprs) < 2:
+        raise ValueError("all_of requires at least 2 expressions")
+    exprs_list = [col(e) if isinstance(e, str) else e for e in exprs]
+    return Expression._call_builtin_scalar_fn("all_of", *exprs_list).alias("all_of")
+
+
+def any_of(*exprs: Expression | str) -> Expression:
+    """Boolean OR across 2+ expressions (row-wise, null-aware)."""
+    if len(exprs) < 2:
+        raise ValueError("any_of requires at least 2 expressions")
+    exprs_list = [col(e) if isinstance(e, str) else e for e in exprs]
+    return Expression._call_builtin_scalar_fn("any_of", *exprs_list).alias("any_of")
+
+
+def LEAST(*exprs: Expression | str) -> Expression:
+    """Alias of :func:`min_of`."""
+    return min_of(*exprs).alias("LEAST")
+
+
+def GREATEST(*exprs: Expression | str) -> Expression:
+    """Alias of :func:`max_of`."""
+    return max_of(*exprs).alias("GREATEST")

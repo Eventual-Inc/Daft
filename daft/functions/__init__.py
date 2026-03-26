@@ -30,6 +30,14 @@ from .columnar import (
     columns_avg,
     columns_min,
     columns_max,
+    min_of,
+    max_of,
+    sum_of,
+    mean_of,
+    all_of,
+    any_of,
+    LEAST,
+    GREATEST,
 )
 from .process import run_process
 from .datetime import (
@@ -251,7 +259,11 @@ from .window import (
 )
 
 __all__ = [
+    "GREATEST",
+    "LEAST",
     "abs",
+    "all_of",
+    "any_of",
     "any_value",
     "approx_count_distinct",
     "approx_percentiles",
@@ -391,10 +403,13 @@ __all__ = [
     "lstrip",
     "map_get",
     "max",
+    "max_of",
     "mean",
+    "mean_of",
     "microsecond",
     "millisecond",
     "min",
+    "min_of",
     "minhash",
     "minute",
     "monotonically_increasing_id",
@@ -458,6 +473,7 @@ __all__ = [
     "strip",
     "substr",
     "sum",
+    "sum_of",
     "tan",
     "tanh",
     "time",

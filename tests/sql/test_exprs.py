@@ -113,6 +113,38 @@ def test_random_exprs_invalid_arguments():
         daft.sql("SELECT random_int(foo:=1) as ri FROM df").collect()
 
 
+def test_least_greatest_of_sql() -> None:
+    df = daft.from_pydict(
+        {
+            "a": [1, 2, None, None],
+            "b": [4, 1, None, None],
+            "c": [0, 5, 3, None],
+        }
+    )
+    bindings = {"df": df}
+
+    actual = daft.sql(
+        "SELECT LEAST(a, b, c) AS least, GREATEST(a, b, c) AS greatest FROM df",
+        **bindings,
+    ).to_pydict()
+
+    expected = {
+        "least": [0, 1, 3, None],
+        "greatest": [4, 5, 3, None],
+    }
+    assert actual == expected
+
+    # case-insensitive function name lookup (planner lowercases SQL function names)
+    actual_lower = daft.sql(
+        "SELECT least(a, b, c) AS least, greatest(a, b, c) AS greatest FROM df",
+        **bindings,
+    ).to_pydict()
+    assert actual_lower == expected
+
+    with pytest.raises(Exception, match="requires at least 2 input args"):
+        daft.sql("SELECT LEAST(a) AS least FROM df", **bindings).collect()
+
+
 def test_count_star():
     df = daft.from_pydict(
         {
