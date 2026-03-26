@@ -18,7 +18,7 @@ use crate::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, ShufflePartitionRef, TaskBuilderStream, TaskOutput,
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, QueryIdx, TaskIDCounter},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
@@ -29,8 +29,8 @@ use crate::{
     },
 };
 
-fn make_shuffle_id(context: &PipelineNodeContext) -> u64 {
-    ((context.query_idx as u64) << 32) | (context.node_id as u64)
+fn make_shuffle_id(query_idx: QueryIdx, node_id: NodeID) -> u64 {
+    ((query_idx as u64) << 32) | (node_id as u64)
 }
 
 struct FlightDistributedShuffleConfig {
@@ -49,6 +49,15 @@ enum DistributedShuffleBackend {
     Flight(FlightDistributedShuffleConfig),
 }
 
+impl DistributedShuffleBackend {
+    fn display_name(&self) -> &'static str {
+        match self {
+            Self::Ray => "ray",
+            Self::Flight(_) => "flight",
+        }
+    }
+}
+
 pub(crate) struct ShuffleNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
@@ -59,8 +68,6 @@ pub(crate) struct ShuffleNode {
 }
 
 impl ShuffleNode {
-    const NODE_NAME: &'static str = "Repartition";
-
     pub fn new_ray(
         node_id: NodeID,
         plan_config: &PlanConfig,
@@ -91,15 +98,7 @@ impl ShuffleNode {
         compression: Option<String>,
         child: DistributedPipelineNode,
     ) -> Self {
-        let context = PipelineNodeContext::new(
-            plan_config.query_idx,
-            plan_config.query_id.clone(),
-            node_id,
-            Arc::from(Self::NODE_NAME),
-            NodeType::Repartition,
-            NodeCategory::BlockingSink,
-        );
-        let shuffle_id = make_shuffle_id(&context);
+        let shuffle_id = make_shuffle_id(plan_config.query_idx, node_id);
 
         Self::new(
             node_id,
@@ -125,11 +124,12 @@ impl ShuffleNode {
         backend: DistributedShuffleBackend,
         child: DistributedPipelineNode,
     ) -> Self {
+        let node_name = format!("Repartition ({})", backend.display_name());
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Arc::from(Self::NODE_NAME),
+            Arc::from(node_name),
             NodeType::Repartition,
             NodeCategory::BlockingSink,
         );
@@ -403,7 +403,11 @@ impl PipelineNodeImpl for ShuffleNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let mut res = vec![format!("Repartition: {}", self.repartition_spec.var_name())];
+        let mut res = vec![format!(
+            "Repartition ({}): {}",
+            self.backend.display_name(),
+            self.repartition_spec.var_name()
+        )];
         res.extend(self.repartition_spec.multiline_display());
         res
     }
