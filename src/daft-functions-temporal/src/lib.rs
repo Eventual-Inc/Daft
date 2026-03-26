@@ -6,6 +6,7 @@ pub mod truncate;
 mod unix_timestamp;
 
 use common_error::{DaftResult, ensure};
+use current::{CurrentDate, CurrentTimestamp, CurrentTimezone};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
@@ -14,7 +15,6 @@ use daft_dsl::{
     ExprRef,
     functions::{FunctionArgs, FunctionModule, FunctionRegistry, ScalarUDF, UnaryArg},
 };
-use current::{CurrentDate, CurrentTimestamp, CurrentTimezone};
 use serde::{Deserialize, Serialize};
 use time::Time;
 use truncate::Truncate;

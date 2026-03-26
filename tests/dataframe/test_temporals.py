@@ -775,19 +775,6 @@ def test_current_date_returns_date_type() -> None:
         assert abs((val - today).days) <= 1
 
 
-def test_curdate_is_alias() -> None:
-    from daft.functions import curdate
-
-    df = daft.from_pydict({"x": [1, 2, 3]})
-    df = df.select(curdate().alias("today"))
-    assert df.schema()["today"].dtype == DataType.date()
-    result = df.to_pydict()
-    today = date.today()
-    for val in result["today"]:
-        assert isinstance(val, date)
-        assert abs((val - today).days) <= 1
-
-
 def test_current_timestamp_returns_timestamp_type() -> None:
     from daft.functions import current_timestamp
 
@@ -799,34 +786,6 @@ def test_current_timestamp_returns_timestamp_type() -> None:
     for val in result["now"]:
         assert isinstance(val, datetime)
         # Value should be within 60 seconds of now
-        diff = abs((now_utc.replace(tzinfo=None) - val).total_seconds())
-        assert diff < 60
-
-
-def test_now_is_alias() -> None:
-    from daft.functions import now
-
-    df = daft.from_pydict({"x": [1, 2, 3]})
-    df = df.select(now().alias("ts"))
-    assert df.schema()["ts"].dtype == DataType.timestamp("us")
-    result = df.to_pydict()
-    now_utc = datetime.now(timezone.utc)
-    for val in result["ts"]:
-        assert isinstance(val, datetime)
-        diff = abs((now_utc.replace(tzinfo=None) - val).total_seconds())
-        assert diff < 60
-
-
-def test_localtimestamp_is_alias() -> None:
-    from daft.functions import localtimestamp
-
-    df = daft.from_pydict({"x": [1, 2, 3]})
-    df = df.select(localtimestamp().alias("ts"))
-    assert df.schema()["ts"].dtype == DataType.timestamp("us")
-    result = df.to_pydict()
-    now_utc = datetime.now(timezone.utc)
-    for val in result["ts"]:
-        assert isinstance(val, datetime)
         diff = abs((now_utc.replace(tzinfo=None) - val).total_seconds())
         assert diff < 60
 
@@ -844,12 +803,8 @@ def test_current_timezone_returns_utc() -> None:
 
 
 def test_current_temporal_sql() -> None:
-    df = daft.from_pydict({"x": [1, 2, 3]})
-    sql = (
-        "SELECT current_date() as d, current_timestamp() as ts,"
-        " now() as n, curdate() as cd, localtimestamp() as lt,"
-        " current_timezone() as tz FROM df"
-    )
+    df = daft.from_pydict({"x": [1, 2, 3]})  # noqa: F841
+    sql = "SELECT current_date() as d, current_timestamp() as ts, current_timezone() as tz FROM df"
     result = daft.sql(sql).to_pydict()
     today = date.today()
     now_utc = datetime.now(timezone.utc)
@@ -857,13 +812,7 @@ def test_current_temporal_sql() -> None:
     for val in result["d"]:
         assert isinstance(val, date)
         assert abs((val - today).days) <= 1
-    for val in result["cd"]:
-        assert isinstance(val, date)
-        assert abs((val - today).days) <= 1
-    for col_name in ["ts", "n", "lt"]:
-        for val in result[col_name]:
-            assert isinstance(val, datetime)
-            diff = abs(
-                (now_utc.replace(tzinfo=None) - val).total_seconds()
-            )
-            assert diff < 60
+    for val in result["ts"]:
+        assert isinstance(val, datetime)
+        diff = abs((now_utc.replace(tzinfo=None) - val).total_seconds())
+        assert diff < 60

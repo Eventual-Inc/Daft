@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow_array::{builder::LargeStringBuilder, Date32Array, TimestampMicrosecondArray};
+use arrow_array::{Date32Array, TimestampMicrosecondArray, builder::LargeStringBuilder};
 use daft_core::datatypes::TimeUnit;
 use daft_dsl::functions::prelude::*;
 
@@ -22,8 +22,11 @@ impl ScalarUDF for CurrentDate {
     ) -> DaftResult<Series> {
         let len = ctx.row_count;
         let today = chrono::Utc::now().date_naive();
-        let days_since_epoch = today.signed_duration_since(chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()).num_days() as i32;
-        let arrow_arr: arrow_array::ArrayRef = Arc::new(Date32Array::from(vec![days_since_epoch; len]));
+        let days_since_epoch = today
+            .signed_duration_since(chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap())
+            .num_days() as i32;
+        let arrow_arr: arrow_array::ArrayRef =
+            Arc::new(Date32Array::from(vec![days_since_epoch; len]));
         Series::from_arrow(Arc::new(Field::new("", DataType::Date)), arrow_arr)
     }
 
@@ -59,9 +62,13 @@ impl ScalarUDF for CurrentTimestamp {
     ) -> DaftResult<Series> {
         let len = ctx.row_count;
         let now_us = chrono::Utc::now().timestamp_micros();
-        let arrow_arr: arrow_array::ArrayRef = Arc::new(TimestampMicrosecondArray::from(vec![now_us; len]));
+        let arrow_arr: arrow_array::ArrayRef =
+            Arc::new(TimestampMicrosecondArray::from(vec![now_us; len]));
         Series::from_arrow(
-            Arc::new(Field::new("", DataType::Timestamp(TimeUnit::Microseconds, None))),
+            Arc::new(Field::new(
+                "",
+                DataType::Timestamp(TimeUnit::Microseconds, None),
+            )),
             arrow_arr,
         )
     }
@@ -76,7 +83,10 @@ impl ScalarUDF for CurrentTimestamp {
         _schema: &Schema,
     ) -> DaftResult<Field> {
         ensure!(inputs.is_empty(), ValueError: "Expected 0 input args, got {}", inputs.len());
-        Ok(Field::new("", DataType::Timestamp(TimeUnit::Microseconds, None)))
+        Ok(Field::new(
+            "",
+            DataType::Timestamp(TimeUnit::Microseconds, None),
+        ))
     }
 }
 

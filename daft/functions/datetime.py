@@ -1221,23 +1221,6 @@ def current_date() -> Expression:
     return Expression._call_builtin_scalar_fn("current_date")
 
 
-def curdate() -> Expression:
-    """Alias for :func:`current_date`. Returns the current date (UTC).
-
-    Returns:
-        Expression: a Date expression containing today's date, broadcast to every row.
-
-    Examples:
-        >>> import daft
-        >>> from daft.functions import curdate
-        >>> df = daft.from_pydict({"x": [1, 2, 3]})
-        >>> df = df.with_column("today", curdate())
-        >>> df.schema()["today"].dtype == daft.DataType.date()
-        True
-    """
-    return current_date()
-
-
 def current_timestamp() -> Expression:
     """Returns the current timestamp (UTC) with microsecond precision.
 
@@ -1253,42 +1236,6 @@ def current_timestamp() -> Expression:
         True
     """
     return Expression._call_builtin_scalar_fn("current_timestamp")
-
-
-def now() -> Expression:
-    """Alias for :func:`current_timestamp`. Returns the current timestamp (UTC).
-
-    Returns:
-        Expression: a Timestamp[us] expression containing the current datetime, broadcast to every row.
-
-    Examples:
-        >>> import daft
-        >>> from daft.functions import now
-        >>> df = daft.from_pydict({"x": [1, 2, 3]})
-        >>> df = df.with_column("now", now())
-        >>> df.schema()["now"].dtype == daft.DataType.timestamp("us")
-        True
-    """
-    return current_timestamp()
-
-
-def localtimestamp() -> Expression:
-    """Alias for :func:`current_timestamp`. Returns the current timestamp (UTC).
-
-    Daft does not track local timezone, so this is equivalent to :func:`current_timestamp`.
-
-    Returns:
-        Expression: a Timestamp[us] expression containing the current datetime, broadcast to every row.
-
-    Examples:
-        >>> import daft
-        >>> from daft.functions import localtimestamp
-        >>> df = daft.from_pydict({"x": [1, 2, 3]})
-        >>> df = df.with_column("ts", localtimestamp())
-        >>> df.schema()["ts"].dtype == daft.DataType.timestamp("us")
-        True
-    """
-    return current_timestamp()
 
 
 def current_timezone() -> Expression:

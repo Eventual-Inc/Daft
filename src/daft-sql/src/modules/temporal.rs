@@ -5,8 +5,10 @@ use daft_dsl::{
     functions::{BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArg, FunctionArgs},
     lit, null_lit,
 };
-use daft_functions_temporal::current::{CurrentDate, CurrentTimestamp, CurrentTimezone};
-use daft_functions_temporal::truncate::Truncate;
+use daft_functions_temporal::{
+    current::{CurrentDate, CurrentTimestamp, CurrentTimezone},
+    truncate::Truncate,
+};
 use sqlparser::ast;
 
 use super::SQLModule;
@@ -23,10 +25,7 @@ impl SQLModule for SQLModuleTemporal {
         parent.add_fn("date_trunc", SQLDateTrunc);
         parent.add_fn("truncate", SQLDateTrunc);
         parent.add_fn("current_date", SQLCurrentDate);
-        parent.add_fn("curdate", SQLCurrentDate);
         parent.add_fn("current_timestamp", SQLCurrentTimestamp);
-        parent.add_fn("now", SQLCurrentTimestamp);
-        parent.add_fn("localtimestamp", SQLCurrentTimestamp);
         parent.add_fn("current_timezone", SQLCurrentTimezone);
     }
 }
@@ -118,10 +117,7 @@ impl SQLFunction for SQLCurrentDate {
         _planner: &crate::planner::SQLPlanner,
     ) -> SQLPlannerResult<ExprRef> {
         if !inputs.is_empty() {
-            invalid_operation_err!(
-                "current_date expects 0 arguments, got {}",
-                inputs.len()
-            );
+            invalid_operation_err!("current_date expects 0 arguments, got {}", inputs.len());
         }
         Ok(BuiltinScalarFn {
             func: BuiltinScalarFnVariant::Sync(Arc::new(CurrentDate)),
@@ -178,10 +174,7 @@ impl SQLFunction for SQLCurrentTimezone {
         _planner: &crate::planner::SQLPlanner,
     ) -> SQLPlannerResult<ExprRef> {
         if !inputs.is_empty() {
-            invalid_operation_err!(
-                "current_timezone expects 0 arguments, got {}",
-                inputs.len()
-            );
+            invalid_operation_err!("current_timezone expects 0 arguments, got {}", inputs.len());
         }
         Ok(BuiltinScalarFn {
             func: BuiltinScalarFnVariant::Sync(Arc::new(CurrentTimezone)),
