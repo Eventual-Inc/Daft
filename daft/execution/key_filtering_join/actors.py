@@ -20,14 +20,12 @@ from daft.series import Series
 from daft.udf import func
 
 if TYPE_CHECKING:
-    import pathlib
     from collections.abc import Callable
 
     from ray.actor import ActorHandle
     from ray.util.placement_group import PlacementGroup
 
     from daft import DataFrame
-    from daft.daft import IOConfig
     from daft.dependencies import np
     from daft.expressions import Expression
 
@@ -187,7 +185,7 @@ def build_key_filter_predicate(
 
 
 # ---------------------------------------------------------------------------
-# Key ingestion UDF (loads existing keys into actors)
+# Key ingestion UDF (loads right-side join keys into actors)
 # ---------------------------------------------------------------------------
 
 
@@ -249,40 +247,24 @@ def _ingest_keys_to_actors(
 
 
 def build_key_filter_resources(
-    existing_path: str | pathlib.Path | list[str | pathlib.Path],
-    io_config: IOConfig | None,
+    df_keys: DataFrame,
     key_spec: KeySpec,
     num_workers: int,
     cpus_per_worker: float,
-    read_fn: Callable[..., DataFrame],
     keys_load_batch_size: int,
     max_concurrency_per_worker: int,
-    read_kwargs: dict[str, Any] | None = None,
 ) -> tuple[list[ActorHandle], PlacementGroup | None]:
     if get_or_create_runner().name != "ray":
         raise RuntimeError("key_filtering_join is only supported on Ray runner")
 
-    existing_path = existing_path if isinstance(existing_path, list) else [existing_path]
-    existing_path_str = [str(p) for p in existing_path]
     key_columns = key_spec.key_columns
 
     logger.info(
-        "Preparing key filter existing_path=%s key_columns=%s num_workers=%s cpus_per_worker=%s",
-        existing_path_str,
+        "Preparing key filter key_columns=%s num_workers=%s cpus_per_worker=%s",
         key_columns,
         num_workers,
         cpus_per_worker,
     )
-
-    df_keys = None
-    try:
-        df_keys = read_fn(path=existing_path_str, io_config=io_config, **(read_kwargs or {}))
-        df_keys = df_keys.select(*key_columns)
-    except Exception as e:
-        raise RuntimeError(f"[key_filtering_join] Unable to read keys at {existing_path_str}: {e}") from e
-
-    if df_keys is None:
-        return [], None
 
     import ray
     from ray.exceptions import GetTimeoutError
@@ -321,18 +303,22 @@ def build_key_filter_resources(
             actor_handles.append(actor)
             actors_by_worker[i] = actor
 
-        _ingest_keys_to_actors(
-            df_keys,
-            key_spec,
-            actors_by_worker=actors_by_worker,
-            num_workers=num_workers,
-            keys_load_batch_size=keys_load_batch_size,
-        )
+        try:
+            _ingest_keys_to_actors(
+                df_keys,
+                key_spec,
+                actors_by_worker=actors_by_worker,
+                num_workers=num_workers,
+                keys_load_batch_size=keys_load_batch_size,
+            )
+        except Exception as e:
+            raise RuntimeError(f"[key_filtering_join] Unable to read keys from right side: {e}") from e
+    except RuntimeError:
+        cleanup_key_filter_resources(actor_handles, pg)
+        raise
     except Exception as e:
         cleanup_key_filter_resources(actor_handles, pg)
         raise RuntimeError(f"[key_filtering_join] Failed to create all key filter actors: {e}") from e
-    finally:
-        del df_keys
 
     return actor_handles, pg
 

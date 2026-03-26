@@ -6,7 +6,10 @@ use common_py_serde::PyObjectWrapper;
 use common_runtime::{JoinSet, python::execute_python_coroutine};
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, python::PyExpr};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{ops::SkipExistingSpec, stats::StatsState};
+use daft_logical_plan::{
+    LogicalPlanBuilder, LogicalPlanRef, PyLogicalPlanBuilder, ops::KeyFilteringConfig,
+    stats::StatsState,
+};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 use opentelemetry::metrics::Meter;
@@ -29,8 +32,11 @@ use crate::{
 /// actors are NOT created during node construction —
 /// they are lazily initialized on the first partition and reused across all batches.
 enum KeyFilterActors {
-    /// Actors have not been created yet; holds the spec for deferred initialization.
-    Uninitialized(Box<SkipExistingSpec>),
+    /// Actors have not been created yet; holds the config and right plan for deferred initialization.
+    Uninitialized {
+        config: Box<KeyFilteringConfig>,
+        right_plan: LogicalPlanRef,
+    },
     /// Actors are running and ready to filter.
     Initialized {
         /// The resolved filter predicate expression (an async-batch UDF that calls actors).
@@ -54,11 +60,16 @@ impl KeyFilterActors {
     /// "Cannot start a runtime from within a runtime" panics.
     ///
     /// Returns the new state.
-    async fn initialize(spec: &SkipExistingSpec, input_schema: &SchemaRef) -> DaftResult<Self> {
-        let spec_clone = spec.clone();
+    async fn initialize(
+        config: &KeyFilteringConfig,
+        right_plan: &LogicalPlanRef,
+        input_schema: &SchemaRef,
+    ) -> DaftResult<Self> {
+        let config_clone = config.clone();
+        let right_plan_clone = right_plan.clone();
         let input_schema = input_schema.clone();
 
-        // Call the async Python `initialize_key_filter(spec)` coroutine.
+        // Call the async Python `initialize_key_filter(config, right_builder)` coroutine.
         // It internally delegates blocking work to `asyncio.to_thread` so
         // the tokio runtime is never re-entered.
         //
@@ -66,13 +77,17 @@ impl KeyFilterActors {
         // [filter_expr, actor_handles, placement_group].
         // Vec<Py<PyAny>> satisfies the FromPyObject trait bounds.
         let result: Vec<Py<PyAny>> = execute_python_coroutine::<_, Vec<Py<PyAny>>>(move |py| {
-            let skip_existing_module = py.import(pyo3::intern!(
+            let module = py.import(pyo3::intern!(
                 py,
                 "daft.execution.key_filtering_join.bridge"
             ))?;
-            let py_spec: daft_logical_plan::ops::PySkipExistingSpec = spec_clone.into();
-            skip_existing_module
-                .call_method1(pyo3::intern!(py, "initialize_key_filter"), (py_spec,))
+            let py_config: daft_logical_plan::ops::PyKeyFilteringConfig = config_clone.into();
+            let py_right_builder: PyLogicalPlanBuilder =
+                LogicalPlanBuilder::from(right_plan_clone).into();
+            module.call_method1(
+                pyo3::intern!(py, "initialize_key_filter"),
+                (py_config, py_right_builder),
+            )
         })
         .await?;
 
@@ -102,8 +117,8 @@ impl KeyFilterActors {
         &mut self,
         input_schema: &SchemaRef,
     ) -> DaftResult<Option<BoundExpr>> {
-        if let Self::Uninitialized(spec) = self {
-            let new_state = Self::initialize(spec, input_schema).await?;
+        if let Self::Uninitialized { config, right_plan } = self {
+            let new_state = Self::initialize(config, right_plan, input_schema).await?;
             *self = new_state;
         }
         match self {
@@ -111,7 +126,7 @@ impl KeyFilterActors {
                 filter_predicate, ..
             } => Ok(Some(filter_predicate.clone())),
             Self::NoExistingData => Ok(None),
-            Self::Uninitialized(_) => unreachable!(),
+            Self::Uninitialized { .. } => unreachable!(),
         }
     }
 
@@ -146,17 +161,18 @@ impl KeyFilterActors {
 
 /// Pipeline node for `JoinStrategy::KeyFiltering`.
 ///
-/// This is the physical execution node for skip_existing anti-joins.
+/// This is the physical execution node for actor-backed key-filtering anti-joins.
 /// Like `ActorUDF`, it lazily creates Ray actors when the first partition arrives,
 /// then filters each partition through the actors.
 ///
-/// Only has a single child (the left/input side of the anti-join);
-/// the right side (PlaceHolder source) is replaced by live Ray actors.
+/// Only has a single child (the left/input side of the anti-join).
+/// The right logical plan is materialized lazily in Python to build the actor-backed key set.
 pub(crate) struct KeyFilteringJoinNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     child: DistributedPipelineNode,
-    spec: SkipExistingSpec,
+    key_filtering_config: KeyFilteringConfig,
+    right_plan: LogicalPlanRef,
     filter_batch_size: Option<usize>,
 }
 
@@ -166,11 +182,12 @@ impl KeyFilteringJoinNode {
     pub fn new(
         node_id: NodeID,
         plan_config: &PlanConfig,
-        spec: SkipExistingSpec,
+        key_filtering_config: KeyFilteringConfig,
+        right_plan: LogicalPlanRef,
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
-        let filter_batch_size = spec.filter_batch_size;
+        let filter_batch_size = key_filtering_config.filter_batch_size;
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
             plan_config.query_id.clone(),
@@ -188,7 +205,8 @@ impl KeyFilteringJoinNode {
             config,
             context,
             child,
-            spec,
+            key_filtering_config,
+            right_plan,
             filter_batch_size,
         }
     }
@@ -202,7 +220,10 @@ impl KeyFilteringJoinNode {
         mut input_task_stream: TaskBuilderStream,
         result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
-        let mut actors = KeyFilterActors::Uninitialized(Box::new(self.spec.clone()));
+        let mut actors = KeyFilterActors::Uninitialized {
+            config: Box::new(self.key_filtering_config.clone()),
+            right_plan: self.right_plan.clone(),
+        };
 
         let mut running_tasks = JoinSet::new();
         while let Some(builder) = input_task_stream.next().await {
@@ -288,9 +309,14 @@ impl PipelineNodeImpl for KeyFilteringJoinNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         vec![
-            format!("KeyFilteringJoin: keys={:?}", self.spec.key_column),
-            format!("  existing_path={:?}", self.spec.existing_path),
-            format!("  file_format={:?}", self.spec.file_format),
+            format!(
+                "KeyFilteringJoin: left_on={:?}",
+                self.key_filtering_config.left_key_columns
+            ),
+            format!(
+                "  right_on={:?}",
+                self.key_filtering_config.right_key_columns
+            ),
         ]
     }
 

@@ -43,7 +43,7 @@ impl OptimizerRule for SimplifyNullFilteredJoin {
                         on,
                         join_type,
                         join_strategy,
-                        skip_existing_spec,
+                        key_filtering_config,
                         ..
                     }) if matches!(
                         join_type,
@@ -83,7 +83,7 @@ impl OptimizerRule for SimplifyNullFilteredJoin {
                                 simplified_join_type,
                                 *join_strategy,
                             )?
-                            .with_skip_existing_spec(skip_existing_spec.clone())
+                            .with_key_filtering_config(key_filtering_config.clone())
                             .into();
                             return Ok(Transformed::yes(
                                 node.with_new_children(&[new_join]).into(),

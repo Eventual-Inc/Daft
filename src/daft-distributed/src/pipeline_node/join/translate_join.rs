@@ -336,17 +336,17 @@ impl LogicalPlanToPipelineNodeTranslator {
             JoinStrategy::KeyFiltering => {
                 #[cfg(feature = "python")]
                 {
-                    let spec = join.skip_existing_spec.clone().ok_or_else(|| {
-                        DaftError::InternalError(
-                            "KeyFiltering join must have a skip_existing_spec".to_string(),
-                        )
-                    })?;
-                    // KeyFiltering anti-join only uses the left (input) side.
-                    // The right side (PlaceHolder) is not needed — actors are lazily created during execution.
+                    let key_filtering_config =
+                        join.key_filtering_config.clone().ok_or_else(|| {
+                            DaftError::InternalError(
+                                "KeyFiltering join must have key_filtering_config".to_string(),
+                            )
+                        })?;
                     Ok(KeyFilteringJoinNode::new(
                         self.get_next_pipeline_node_id(),
                         &self.plan_config,
-                        spec,
+                        key_filtering_config,
+                        join.right.clone(),
                         join.output_schema.clone(),
                         left_node,
                     )

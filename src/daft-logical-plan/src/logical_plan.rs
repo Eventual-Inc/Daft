@@ -740,7 +740,7 @@ impl LogicalPlan {
                     on,
                     join_type,
                     join_strategy,
-                    skip_existing_spec,
+                    key_filtering_config,
                     ..
                 }) => Self::Join(
                     Join::try_new(
@@ -751,7 +751,7 @@ impl LogicalPlan {
                         *join_strategy,
                     )
                     .unwrap()
-                    .with_skip_existing_spec(skip_existing_spec.clone()),
+                    .with_key_filtering_config(key_filtering_config.clone()),
                 ),
                 _ => panic!("Logical op {} has one input, but got two", self),
             },

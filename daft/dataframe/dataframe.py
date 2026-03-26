@@ -2703,9 +2703,13 @@ class DataFrame:
             existing_path_strs = [str(p) for p in existing_path]
         else:
             existing_path_strs = [str(existing_path)]
+        if not existing_path_strs or any(path == "" for path in existing_path_strs):
+            raise ValueError("[skip_existing] existing_path must be a non-empty list of non-empty paths")
 
         if not isinstance(key_column, list):
             key_column = [key_column]
+        if not key_column or any(not isinstance(key, str) or key == "" for key in key_column):
+            raise ValueError("[skip_existing] key_column must be a non-empty list of non-empty column names")
 
         from pyarrow.fs import FileType
 
@@ -2736,40 +2740,40 @@ class DataFrame:
                 existing_path_strs,
             )
 
-        from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
-        from daft.daft import PySchema, SkipExistingSpec
+        from daft.daft import KeyFilteringConfig
 
-        # Build SkipExistingSpec
-        spec = SkipExistingSpec(
-            existing_path=existing_path_strs,
-            file_format=file_format,
-            key_column=key_column,
-            io_config=io_config,
-            read_kwargs=(reader_args or None),
+        read_fn: Callable[..., DataFrame]
+        if file_format == FileFormat.Parquet:
+            from daft.io._parquet import read_parquet
+
+            read_fn = read_parquet
+        elif file_format == FileFormat.Csv:
+            from daft.io._csv import read_csv
+
+            read_fn = read_csv
+        else:
+            from daft.io._json import read_json
+
+            read_fn = read_json
+
+        key_exprs = column_inputs_to_expressions(tuple(key_column))
+        key_filtering_config = KeyFilteringConfig(
             num_workers=num_workers,
             cpus_per_worker=cpus_per_worker,
             keys_load_batch_size=keys_load_batch_size,
             max_concurrency_per_worker=max_concurrency_per_worker,
             filter_batch_size=filter_batch_size,
         )
+        read_kwargs = dict(reader_args)
+        right_df = read_fn(path=existing_path_strs, io_config=io_config, **read_kwargs)
 
-        # Build a PlaceHolder source with key-only schema as the right side of the anti-join
-        current_schema = self._builder.schema()
-        key_fields = [current_schema._schema[col_name] for col_name in key_column]
-        key_schema = PySchema.from_fields(key_fields)
-        placeholder = _LogicalPlanBuilder.placeholder_scan(key_schema)
-        right_builder = LogicalPlanBuilder(placeholder)
-
-        # Build anti-join on key columns with KeyFiltering strategy
-        left_on = [col(c) for c in key_column]
-        right_on = [col(c) for c in key_column]
         builder = self._builder.join(
-            right_builder,
-            left_on=left_on,
-            right_on=right_on,
+            right=right_df._builder,
+            left_on=key_exprs,
+            right_on=key_exprs,
             how=JoinType.Anti,
             strategy=JoinStrategy.KeyFiltering,
-            skip_existing_spec=spec,
+            key_filtering_config=key_filtering_config,
         )
         return DataFrame(builder)
 

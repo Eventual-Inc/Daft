@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     LogicalPlan, LogicalPlanRef,
     logical_plan::{self},
-    ops::{Project, skip_existing::SkipExistingSpec},
+    ops::{Project, skip_existing::KeyFilteringConfig},
     stats::{ApproxStats, PlanStats, StatsState},
 };
 
@@ -186,8 +186,8 @@ pub struct Join {
     pub output_schema: SchemaRef,
     pub stats_state: StatsState,
     /// Only set when join_strategy == Some(KeyFiltering) and join_type == Anti.
-    /// Carries the configuration for the skip_existing key-filtering anti-join.
-    pub skip_existing_spec: Option<SkipExistingSpec>,
+    /// Carries the execution configuration for a key-filtering anti-join.
+    pub key_filtering_config: Option<KeyFilteringConfig>,
 }
 
 impl Join {
@@ -214,12 +214,12 @@ impl Join {
             join_strategy,
             output_schema,
             stats_state: StatsState::NotMaterialized,
-            skip_existing_spec: None,
+            key_filtering_config: None,
         })
     }
 
-    pub fn with_skip_existing_spec(mut self, spec: Option<SkipExistingSpec>) -> Self {
-        self.skip_existing_spec = spec;
+    pub fn with_key_filtering_config(mut self, config: Option<KeyFilteringConfig>) -> Self {
+        self.key_filtering_config = config;
         self
     }
 
@@ -380,20 +380,20 @@ impl Join {
             res.push(format!("On = {on_expr}",));
         }
 
-        if let Some(spec) = &self.skip_existing_spec {
-            let path_display = if spec.existing_path.len() == 1 {
-                spec.existing_path[0].as_str().to_string()
+        if let Some(config) = &self.key_filtering_config {
+            let left_key_display = if config.left_key_columns.len() == 1 {
+                config.left_key_columns[0].as_str().to_string()
             } else {
-                format!("{:?}", spec.existing_path)
+                format!("{:?}", config.left_key_columns)
             };
-            let key_display = if spec.key_column.len() == 1 {
-                spec.key_column[0].as_str().to_string()
+            let right_key_display = if config.right_key_columns.len() == 1 {
+                config.right_key_columns[0].as_str().to_string()
             } else {
-                format!("{:?}", spec.key_column)
+                format!("{:?}", config.right_key_columns)
             };
             res.push(format!(
-                "SkipExisting: path = {}, format = {:?}, on = {}",
-                path_display, spec.file_format, key_display
+                "KeyFiltering: left_on = {}, right_on = {}",
+                left_key_display, right_key_display
             ));
         }
 

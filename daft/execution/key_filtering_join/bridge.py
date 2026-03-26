@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
-from daft.daft import FileFormat
+from daft import col
+from daft.logical.builder import LogicalPlanBuilder
 
 from .actors import (
     KeySpec,
@@ -20,32 +21,27 @@ from .actors import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
-    from daft import DataFrame
-    from daft.daft import SkipExistingSpec
+    from daft.daft import KeyFilteringConfig
 
 logger = logging.getLogger("daft.execution.key_filtering_join")
 
 
 def _initialize_key_filter_sync(
-    spec: SkipExistingSpec,
+    config: KeyFilteringConfig,
+    right_builder: Any,
 ) -> tuple[Any, list[Any], Any] | None:
     """Synchronous core of key filter initialization.
 
-    Creates Ray actors, loads existing keys, and builds a filter predicate.
+    Creates Ray actors, loads right-side join keys, and builds a filter predicate.
     This is blocking (calls ``df.collect()`` internally) and MUST NOT be called
     from a tokio worker thread.
     """
-    existing_path = spec.existing_path
-    file_format = spec.file_format
-    key_column = spec.key_column
-    io_config = spec.io_config
-    num_workers = spec.num_workers
-    cpus_per_worker = spec.cpus_per_worker
-    read_kwargs = spec.read_kwargs
-    keys_load_batch_size = spec.keys_load_batch_size
-    max_concurrency_per_worker = spec.max_concurrency_per_worker
+    left_key_columns = config.left_key_columns
+    right_key_columns = config.right_key_columns
+    num_workers = config.num_workers
+    cpus_per_worker = config.cpus_per_worker
+    keys_load_batch_size = config.keys_load_batch_size
+    max_concurrency_per_worker = config.max_concurrency_per_worker
 
     if num_workers is None:
         raise RuntimeError("[key_filtering_join] num_workers must be provided")
@@ -56,33 +52,27 @@ def _initialize_key_filter_sync(
     if max_concurrency_per_worker is None:
         raise RuntimeError("[key_filtering_join] max_concurrency_per_worker must be provided")
 
-    key_spec = KeySpec(key_column)
+    key_spec = KeySpec(left_key_columns)
     key_expr = key_spec.to_expr()
 
-    read_fn: Callable[..., DataFrame]
-    if file_format == FileFormat.Parquet:
-        from daft.io._parquet import read_parquet
+    try:
+        from daft.dataframe.dataframe import DataFrame
 
-        read_fn = cast("Callable[..., DataFrame]", read_parquet)
-    elif file_format == FileFormat.Csv:
-        from daft.io._csv import read_csv
-
-        read_fn = cast("Callable[..., DataFrame]", read_csv)
-    elif file_format == FileFormat.Json:
-        from daft.io._json import read_json
-
-        read_fn = cast("Callable[..., DataFrame]", read_json)
-    else:
-        raise ValueError(f"[key_filtering_join] Unsupported file format: {file_format}")
+        right_df = DataFrame(LogicalPlanBuilder(right_builder))
+        df_keys = right_df.select(
+            *[
+                col(right_name).alias(left_name) if left_name != right_name else col(right_name)
+                for left_name, right_name in zip(left_key_columns, right_key_columns)
+            ]
+        )
+    except Exception as e:
+        raise RuntimeError(f"[key_filtering_join] Unable to prepare right-side key plan: {e}") from e
 
     actor_handles, placement_group = build_key_filter_resources(
-        existing_path=cast("Any", existing_path),
-        io_config=io_config,
+        df_keys=df_keys,
         key_spec=key_spec,
         num_workers=num_workers,
         cpus_per_worker=cpus_per_worker,
-        read_fn=read_fn,
-        read_kwargs=read_kwargs,
         keys_load_batch_size=keys_load_batch_size,
         max_concurrency_per_worker=max_concurrency_per_worker,
     )
@@ -101,7 +91,8 @@ def _initialize_key_filter_sync(
 
 
 async def initialize_key_filter(
-    spec: SkipExistingSpec,
+    config: KeyFilteringConfig,
+    right_builder: Any,
 ) -> list[Any]:
     """Async wrapper for key filter initialization.
 
@@ -113,7 +104,7 @@ async def initialize_key_filter(
         Empty list if no existing data, or ``[filter_expr, actor_handles, placement_group]``.
         We use a list (not tuple/None) so Rust can extract it as ``Vec<Py<PyAny>>``.
     """
-    result = await asyncio.to_thread(_initialize_key_filter_sync, spec)
+    result = await asyncio.to_thread(_initialize_key_filter_sync, config, right_builder)
     if result is None:
         return []
     return list(result)

@@ -2032,6 +2032,23 @@ class SkipExistingSpec:
         filter_batch_size: int | None = None,
     ) -> None: ...
 
+class KeyFilteringConfig:
+    left_key_columns: list[str]
+    right_key_columns: list[str]
+    num_workers: int | None
+    cpus_per_worker: float | None
+    keys_load_batch_size: int | None
+    max_concurrency_per_worker: int | None
+    filter_batch_size: int | None
+    def __init__(
+        self,
+        num_workers: int | None = None,
+        cpus_per_worker: float | None = None,
+        keys_load_batch_size: int | None = None,
+        max_concurrency_per_worker: int | None = None,
+        filter_batch_size: int | None = None,
+    ) -> None: ...
+
 class LogicalPlanBuilder:
     """A logical plan builder, which simplifies constructing logical plans via a fluent interface.
 
@@ -2108,7 +2125,7 @@ class LogicalPlanBuilder:
         join_strategy: JoinStrategy | None = None,
         prefix: str | None = None,
         suffix: str | None = None,
-        skip_existing_spec: SkipExistingSpec | None = None,
+        key_filtering_config: KeyFilteringConfig | None = None,
     ) -> LogicalPlanBuilder: ...
     def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder: ...
     def union(self, other: LogicalPlanBuilder, is_all: bool, is_by_name: bool) -> LogicalPlanBuilder: ...

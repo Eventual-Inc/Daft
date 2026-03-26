@@ -113,7 +113,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                 on,
                 join_type,
                 join_strategy,
-                skip_existing_spec,
+                key_filtering_config,
                 ..
             }) = node.as_ref()
                 && matches!(join_type, JoinType::Anti | JoinType::Semi)
@@ -202,7 +202,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                                 *join_type,
                                 *join_strategy,
                             )?
-                            .with_skip_existing_spec(skip_existing_spec.clone())
+                            .with_key_filtering_config(key_filtering_config.clone())
                             .into();
 
                             return Ok(Transformed::yes(Arc::new(
@@ -250,7 +250,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                                     *join_type,
                                     *join_strategy,
                                 )?
-                                .with_skip_existing_spec(skip_existing_spec.clone())
+                                .with_key_filtering_config(key_filtering_config.clone())
                                 .into();
 
                                 return Ok(Transformed::yes(Arc::new(
@@ -266,7 +266,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                                     *join_type,
                                     *join_strategy,
                                 )?
-                                .with_skip_existing_spec(skip_existing_spec.clone())
+                                .with_key_filtering_config(key_filtering_config.clone())
                                 .into();
 
                                 return Ok(Transformed::yes(Arc::new(
@@ -296,7 +296,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                             *join_type,
                             *join_strategy,
                         )?
-                        .with_skip_existing_spec(skip_existing_spec.clone())
+                        .with_key_filtering_config(key_filtering_config.clone())
                         .into();
 
                         return Ok(Transformed::yes(Arc::new(
