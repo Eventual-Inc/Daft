@@ -65,6 +65,8 @@ impl PythonPrintTarget for IndicatifPrintTarget {
 }
 
 pub const MAX_PIPELINE_NAME_LEN: usize = 18;
+pub const RED_BAR_COLOR: &str = "#F92672";
+pub const GRAY_BAR_COLOR: &str = "#525252";
 
 struct IndicatifProgressBarManager {
     multi_progress: indicatif::MultiProgress,
@@ -99,12 +101,12 @@ impl IndicatifProgressBarManager {
 
         // Determine max name for alignment and minimizing whitespace
         // Use char count (not byte count) since this controls terminal column width
-        let max_name_len = (node_info_map
+        let max_name_len = node_info_map
             .values()
             .map(|(v, _)| v.name.chars().count())
             .max()
-            .unwrap_or(0))
-        .min(MAX_PIPELINE_NAME_LEN);
+            .unwrap_or(0)
+            .min(MAX_PIPELINE_NAME_LEN);
 
         // For Swordfish only, so node ids should be consecutive
         for node_id in 0..total {
@@ -131,14 +133,18 @@ impl IndicatifProgressBarManager {
             NodeCategory::StreamingSink => "yellow",
         };
         let initial_total_estimate = initial_snapshot.total();
+        let total_key = initial_snapshot.total_key();
 
         #[allow(clippy::literal_string_with_formatting_args)]
         let template_str = format!(
-            "🗡️ 🐟[{node_id:>total_len$}/{total}] {{spinner:.green}} {{prefix:.{color}/bold}} [{{elapsed_precise}}] {{bar:25.#F92672/#525252}} ({{percent}}%) {{human_pos}}/{{human_len}} rows{{wide_msg}}",
+            "🗡️ 🐟[{node_id:>id_total_len$}/{id_total}] {{spinner:.green}} {{prefix:.{color}/bold}} [{{elapsed_precise}}] {{bar:25.{red_bar_color}/{gray_bar_color}}} ({{percent}}%) {{human_pos}}/{{human_len}} {total_key}{{wide_msg}}",
             color = color,
             node_id = (node_info.id + 1),
-            total = self.total,
-            total_len = self.total.to_string().len(),
+            id_total = self.total,
+            id_total_len = self.total.to_string().len(),
+            red_bar_color = RED_BAR_COLOR,
+            gray_bar_color = GRAY_BAR_COLOR,
+            total_key = total_key,
         );
 
         let formatted_prefix = if node_info.name.chars().count() > MAX_PIPELINE_NAME_LEN {

@@ -1,9 +1,8 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{borrow::Cow, collections::HashMap, fmt::Write, sync::Arc, time::Duration};
 
 use bincode::{Decode, Encode};
 use enum_dispatch::enum_dispatch;
 use indicatif::{HumanBytes, HumanCount};
-use itertools::Itertools as _;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
@@ -26,7 +25,7 @@ pub trait StatSnapshotImpl: Send + Sync + Serialize + Deserialize<'static> {
     fn duration_us(&self) -> u64;
     fn to_stats(&self) -> Stats;
     /// Render message for progress bars
-    fn to_message(&self) -> String;
+    fn to_message(&self) -> Cow<'static, str>;
     /// Current progress of the operator
     fn current_progress(&self) -> u64;
     /// "Total" count of the operator
@@ -57,8 +56,8 @@ impl StatSnapshotImpl for DefaultSnapshot {
         ]
     }
 
-    fn to_message(&self) -> String {
-        String::new()
+    fn to_message(&self) -> Cow<'static, str> {
+        Cow::Borrowed("")
     }
 
     fn current_progress(&self) -> u64 {
@@ -96,8 +95,8 @@ impl StatSnapshotImpl for SourceSnapshot {
         ]
     }
 
-    fn to_message(&self) -> String {
-        format!("{} read", HumanBytes(self.bytes_read))
+    fn to_message(&self) -> Cow<'static, str> {
+        Cow::Owned(format!(", {} read", HumanBytes(self.bytes_read)))
     }
 
     fn current_progress(&self) -> u64 {
@@ -137,8 +136,8 @@ impl StatSnapshotImpl for FilterSnapshot {
         ]
     }
 
-    fn to_message(&self) -> String {
-        format!("{:.2}% after filter", self.selectivity)
+    fn to_message(&self) -> Cow<'static, str> {
+        Cow::Owned(format!(", {:.2}% after filter", self.selectivity))
     }
 
     fn current_progress(&self) -> u64 {
@@ -178,8 +177,8 @@ impl StatSnapshotImpl for ExplodeSnapshot {
         ]
     }
 
-    fn to_message(&self) -> String {
-        format!(" {:.2}x after explode", self.amplification)
+    fn to_message(&self) -> Cow<'static, str> {
+        Cow::Owned(format!(", {:.2}x after explode", self.amplification))
     }
 
     fn current_progress(&self) -> u64 {
@@ -230,14 +229,16 @@ impl StatSnapshotImpl for UdfSnapshot {
         Stats(entries)
     }
 
-    fn to_message(&self) -> String {
+    fn to_message(&self) -> Cow<'static, str> {
         if self.custom_counters.is_empty() {
-            String::new()
+            Cow::Borrowed("")
         } else {
-            self.custom_counters
-                .iter()
-                .map(|(name, value)| format!("{} {}", HumanCount(*value), name.as_ref()))
-                .join(", ")
+            let mut custom_message = String::new();
+            for (name, value) in &self.custom_counters {
+                write!(custom_message, ", {} {}", HumanCount(*value), name.as_ref())
+                    .expect("Failed to construct message for progress bar");
+            }
+            Cow::Owned(custom_message)
         }
     }
 
@@ -278,13 +279,11 @@ impl StatSnapshotImpl for JoinSnapshot {
         ]
     }
 
-    fn to_message(&self) -> String {
-        format!(
-            "{} build rows inserted, {} probe rows in, {} probe rows out",
-            HumanCount(self.build_rows_inserted),
-            HumanCount(self.probe_rows_in),
-            HumanCount(self.probe_rows_out)
-        )
+    fn to_message(&self) -> Cow<'static, str> {
+        Cow::Owned(format!(
+            ", {} build rows inserted",
+            HumanCount(self.build_rows_inserted)
+        ))
     }
 
     fn current_progress(&self) -> u64 {
@@ -324,8 +323,8 @@ impl StatSnapshotImpl for WriteSnapshot {
         ]
     }
 
-    fn to_message(&self) -> String {
-        format!("{} written", HumanBytes(self.bytes_written))
+    fn to_message(&self) -> Cow<'static, str> {
+        Cow::Owned(format!(", {} written", HumanBytes(self.bytes_written)))
     }
 
     fn current_progress(&self) -> u64 {
