@@ -47,7 +47,7 @@ impl JoinOperator for CrossJoinOperator {
 
     fn build(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::BuildState,
         _spawner: &ExecutionTaskSpawner,
     ) -> BuildStateResult<Self> {
@@ -78,13 +78,13 @@ impl JoinOperator for CrossJoinOperator {
 
     fn probe(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::ProbeState,
         spawner: &ExecutionTaskSpawner,
     ) -> ProbeResult<Self> {
         // If there are no input tables or collect tables, return an empty output
         if input.is_empty() || state.collect_tables.is_empty() {
-            let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
+            let empty = MicroPartition::empty(Some(self.output_schema.clone()));
             return Ok((state, ProbeOutput::NeedMoreInput(Some(empty)))).into();
         }
         // If we've finished processing all stream tables, move to next input
@@ -92,7 +92,7 @@ impl JoinOperator for CrossJoinOperator {
             // Finished processing all stream tables, move to next input
             state.stream_idx = 0;
             state.collect_idx = 0;
-            let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
+            let empty = MicroPartition::empty(Some(self.output_schema.clone()));
             return Ok((state, ProbeOutput::NeedMoreInput(Some(empty)))).into();
         }
 
@@ -113,11 +113,8 @@ impl JoinOperator for CrossJoinOperator {
 
                     let output_tbl = left_tbl.cross_join(right_tbl, stream_side)?;
 
-                    let output_morsel = Arc::new(MicroPartition::new_loaded(
-                        output_schema,
-                        Arc::new(vec![output_tbl]),
-                        None,
-                    ));
+                    let output_morsel =
+                        MicroPartition::new_loaded(output_schema, Arc::new(vec![output_tbl]), None);
 
                     // Increment inner loop index
                     state.collect_idx = (state.collect_idx + 1) % state.collect_tables.len();

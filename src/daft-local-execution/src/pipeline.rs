@@ -162,7 +162,7 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>>;
+    ) -> crate::Result<crate::channel::Receiver<MicroPartition>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 

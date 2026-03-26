@@ -13,10 +13,10 @@ use crate::join::{
 };
 
 pub(crate) fn probe_anti_semi(
-    input: &Arc<MicroPartition>,
+    input: &MicroPartition,
     probe_state: &ProbeState,
     params: &HashJoinParams,
-) -> DaftResult<Arc<MicroPartition>> {
+) -> DaftResult<MicroPartition> {
     let is_semi = params.join_type == JoinType::Semi;
 
     let input_tables = input.record_batches();
@@ -44,15 +44,15 @@ pub(crate) fn probe_anti_semi(
             table.take(&idxs_arr)
         })
         .collect::<DaftResult<Vec<_>>>()?;
-    Ok(Arc::new(MicroPartition::new_loaded(
+    Ok(MicroPartition::new_loaded(
         probe_side_tables[0].schema.clone(),
         Arc::new(probe_side_tables),
         None,
-    )))
+    ))
 }
 
 pub(crate) fn probe_anti_semi_with_bitmap(
-    input: &Arc<MicroPartition>,
+    input: &MicroPartition,
     bitmap_builder: &mut IndexBitmapBuilder,
     probe_state: &ProbeState,
     params: &HashJoinParams,
@@ -73,7 +73,7 @@ pub(crate) fn probe_anti_semi_with_bitmap(
 pub(crate) async fn finalize_anti_semi(
     states: Vec<HashJoinProbeState>,
     is_semi: bool,
-) -> DaftResult<Option<Arc<MicroPartition>>> {
+) -> DaftResult<Option<MicroPartition>> {
     let mut states_iter = states.into_iter();
     let first_state = states_iter
         .next()
@@ -114,9 +114,9 @@ pub(crate) async fn finalize_anti_semi(
         .collect::<DaftResult<Vec<_>>>()?;
     let build_side_table = RecordBatch::concat(&leftovers)?;
 
-    Ok(Some(Arc::new(MicroPartition::new_loaded(
+    Ok(Some(MicroPartition::new_loaded(
         build_side_table.schema.clone(),
         Arc::new(vec![build_side_table]),
         None,
-    ))))
+    )))
 }

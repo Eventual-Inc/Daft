@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use daft_core::{join::JoinType, prelude::SchemaRef};
@@ -17,12 +15,12 @@ use crate::{
 };
 
 pub(crate) struct SortMergeJoinBuildState {
-    tables: Vec<Arc<MicroPartition>>,
+    tables: Vec<MicroPartition>,
 }
 
 pub(crate) struct SortMergeJoinProbeState {
-    build_contents: Vec<Arc<MicroPartition>>,
-    probe_contents: Vec<Arc<MicroPartition>>,
+    build_contents: Vec<MicroPartition>,
+    probe_contents: Vec<MicroPartition>,
 }
 
 pub struct SortMergeJoinOperator {
@@ -53,12 +51,12 @@ impl SortMergeJoinOperator {
 
 impl JoinOperator for SortMergeJoinOperator {
     type BuildState = SortMergeJoinBuildState;
-    type FinalizedBuildState = Vec<Arc<MicroPartition>>;
+    type FinalizedBuildState = Vec<MicroPartition>;
     type ProbeState = SortMergeJoinProbeState;
 
     fn build(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::BuildState,
         _spawner: &ExecutionTaskSpawner,
     ) -> BuildStateResult<Self> {
@@ -88,7 +86,7 @@ impl JoinOperator for SortMergeJoinOperator {
 
     fn probe(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::ProbeState,
         _spawner: &ExecutionTaskSpawner,
     ) -> ProbeResult<Self> {
@@ -117,14 +115,14 @@ impl JoinOperator for SortMergeJoinOperator {
             .spawn(
                 async move {
                     let left_mp =
-                        MicroPartition::concat_or_empty(&state.build_contents, left_schema)?;
+                        MicroPartition::concat_or_empty(state.build_contents, left_schema)?;
                     let right_mp =
-                        MicroPartition::concat_or_empty(&state.probe_contents, right_schema)?;
+                        MicroPartition::concat_or_empty(state.probe_contents, right_schema)?;
 
                     // TODO: Handle pre-sorted?
                     let joined = left_mp
                         .sort_merge_join(&right_mp, &left_on, &right_on, join_type, false)?;
-                    Ok(Some(Arc::new(joined)))
+                    Ok(Some(joined))
                 },
                 Span::current(),
             )

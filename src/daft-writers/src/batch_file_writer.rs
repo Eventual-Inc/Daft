@@ -67,7 +67,7 @@ impl<B: StorageBackend, W> BatchFileWriter<B, W> {
 impl<B: StorageBackend + Send + Sync, W: Send + Sync + 'static> AsyncFileWriter
     for BatchFileWriter<B, W>
 {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {

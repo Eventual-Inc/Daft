@@ -20,9 +20,7 @@ use pyo3::prelude::*;
 use rand::Rng;
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{MorselSizeRequirement, NodeName},
@@ -78,7 +76,7 @@ impl ActorHandle {
     }
 
     #[cfg(feature = "python")]
-    async fn eval_input(&self, input: Arc<MicroPartition>) -> DaftResult<Arc<MicroPartition>> {
+    async fn eval_input(&self, input: MicroPartition) -> DaftResult<MicroPartition> {
         let inner = self.inner.clone();
         let result =
             common_runtime::python::execute_python_coroutine::<_, PyMicroPartition>(move |py| {
@@ -90,7 +88,8 @@ impl ActorHandle {
                 Ok(coroutine.into_bound(py))
             })
             .await?;
-        Ok(result.into())
+        let mp: Arc<MicroPartition> = result.into();
+        Ok(Arc::try_unwrap(mp).unwrap_or_else(|a| a.as_ref().clone()))
     }
 }
 
@@ -157,8 +156,9 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
     #[instrument(skip_all, name = "DistributedActorPoolProjectOperator::execute")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         #[cfg(feature = "python")]
@@ -173,7 +173,7 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
                 async move {
                     // Prune input by required cols
                     let input_schema = input.schema();
-                    let pruned_input = Arc::new(MicroPartition::new_loaded(
+                    let pruned_input = MicroPartition::new_loaded(
                         Arc::new(Schema::new(
                             required_columns
                                 .iter()
@@ -181,17 +181,17 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
                         )),
                         Arc::new(
                             input
-                                .clone()
                                 .record_batches()
                                 .iter()
                                 .map(|batch| batch.get_columns(required_columns.as_slice()))
                                 .collect::<Vec<_>>(),
                         ),
                         None,
-                    ));
+                    );
+                    let input_num_rows = pruned_input.num_rows();
 
                     // Call the UDF with pruned input
-                    let eval_output = state.actor_handle.eval_input(pruned_input.clone()).await?;
+                    let eval_output = state.actor_handle.eval_input(pruned_input).await?;
                     if eval_output.schema().fields().len() != 1 {
                         return Err(DaftError::InternalError(format!(
                             "UDF output schema must be a single column, but got '{}'",
@@ -199,10 +199,10 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
                         )));
                     }
 
-                    if pruned_input.num_rows() != eval_output.num_rows() {
+                    if input_num_rows != eval_output.num_rows() {
                         return Err(DaftError::InternalError(format!(
                             "The number of rows is mismatch between UDF input {} and output {}",
-                            pruned_input.num_rows(),
+                            input_num_rows,
                             eval_output.num_rows()
                         )));
                     }
@@ -225,13 +225,11 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
 
                     Ok((
                         state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
-                            MicroPartition::new_loaded(
-                                output_schema.clone(),
-                                Arc::new(output_batches),
-                                None,
-                            ),
-                        ))),
+                        MicroPartition::new_loaded(
+                            output_schema.clone(),
+                            Arc::new(output_batches),
+                            None,
+                        ),
                     ))
                 },
                 Span::current(),

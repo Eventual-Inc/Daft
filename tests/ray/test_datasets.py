@@ -217,7 +217,7 @@ def test_from_ray_dataset_tensor(n_partitions: int):
     out_sorted = {"int": int_col, "np": np_col}
     expected = {
         "int": list(range(8)),
-        "np": [np.ones((3, 3)) for i in range(8)],
+        "np": [np.ones((3, 3)) for _ in range(8)],
     }
     np.testing.assert_equal(out_sorted, expected)
 
