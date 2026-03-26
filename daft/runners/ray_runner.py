@@ -143,8 +143,7 @@ def _glob_path_into_file_infos(
     return file_infos
 
 
-@ray.remote  # type: ignore[untyped-decorator]
-def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDatasetBlock | list[dict[str, Any]]:
+def _micropartition_to_ray_dataset_block(partition: MicroPartition) -> RayDatasetBlock | list[dict[str, Any]]:
     try:
         daft_schema = partition.schema()
         arrow_tbl = partition.to_arrow()
@@ -181,6 +180,11 @@ def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDataset
         return arrow_tbl
     except pa.ArrowInvalid:
         return partition.to_pylist()
+
+
+@ray.remote  # type: ignore[untyped-decorator]
+def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDatasetBlock | list[dict[str, Any]]:
+    return _micropartition_to_ray_dataset_block(partition)
 
 
 def _series_from_arrow_with_ray_data_extensions(
