@@ -360,6 +360,30 @@ class Catalog(ABC):
             raise ImportError("AWS Glue support not installed: pip install -U 'daft[aws]'")
 
     @staticmethod
+    def from_paimon(catalog: object, name: str = "paimon") -> Catalog:
+        """Create a Daft Catalog from a pypaimon catalog object.
+
+        Args:
+            catalog (object): a pypaimon catalog instance (e.g. from ``pypaimon.CatalogFactory.create(...)``)
+            name (str): name to assign to this catalog. Defaults to ``"paimon"``.
+
+        Returns:
+            Catalog: a new Catalog instance backed by the pypaimon catalog.
+
+        Examples:
+            >>> import pypaimon
+            >>> inner = pypaimon.CatalogFactory.create({"warehouse": "/path/to/warehouse"})
+            >>> catalog = Catalog.from_paimon(inner, name="my_paimon")
+            >>> catalog.list_tables()
+        """
+        try:
+            from daft.catalog.__paimon import PaimonCatalog
+
+            return PaimonCatalog._from_obj(catalog, name=name)
+        except ImportError:
+            raise ImportError("pypaimon is required: pip install pypaimon")
+
+    @staticmethod
     def from_postgres(connection_string: str, extensions: list[str] | None = ["vector"]) -> Catalog:
         """Create a Daft Catalog from a PostgreSQL connection string.
 
@@ -817,6 +841,29 @@ class Table(ABC):
             return UnityTable._from_obj(table)
         except ImportError:
             raise ImportError("Unity support not installed: pip install -U 'daft[unity]'")
+
+    @staticmethod
+    def from_paimon(table: object) -> Table:
+        """Create a Daft Table from a pypaimon table object.
+
+        Args:
+            table (object): a pypaimon table instance (e.g. from ``catalog.get_table(...)``)
+
+        Returns:
+            Table: a new Table instance backed by the pypaimon table.
+
+        Examples:
+            >>> import pypaimon
+            >>> inner_catalog = pypaimon.CatalogFactory.create({"warehouse": "/path/to/warehouse"})
+            >>> inner_table = inner_catalog.get_table("mydb.mytable")
+            >>> table = Table.from_paimon(inner_table)
+        """
+        try:
+            from daft.catalog.__paimon import PaimonTable
+
+            return PaimonTable._from_obj(table)
+        except ImportError:
+            raise ImportError("pypaimon is required: pip install pypaimon")
 
     @staticmethod
     def from_gravitino(table: object) -> Table:
