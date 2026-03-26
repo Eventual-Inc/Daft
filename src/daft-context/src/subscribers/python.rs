@@ -8,7 +8,10 @@ use pyo3::{IntoPyObject, Py, PyAny, Python, intern};
 
 use crate::{
     python::{PyQueryMetadata, PyQueryResult},
-    subscribers::{NodeID, QueryMetadata, QueryResult, Subscriber},
+    subscribers::{
+        NodeID, QueryMetadata, QueryResult, Subscriber,
+        events::{OperatorEndEvent, OperatorStartEvent, StatsEvent},
+    },
 };
 
 /// Wrapper around a Python object that implements the Subscriber trait
@@ -156,6 +159,53 @@ impl Subscriber for PySubscriberWrapper {
                 py,
                 intern!(py, "on_process_stats"),
                 (query_id.to_string(), py_stats),
+            )?;
+            Ok(())
+        })
+    }
+
+    async fn on_operator_start(&self, event: Arc<OperatorStartEvent>) -> DaftResult<()> {
+        Python::attach(|py| {
+            self.0.call_method1(
+                py,
+                intern!(py, "on_operator_start"),
+                (event.header.query_id.to_string(), event.operator.node_id),
+            )?;
+            Ok(())
+        })
+    }
+
+    async fn on_operator_end(&self, event: Arc<OperatorEndEvent>) -> DaftResult<()> {
+        Python::attach(|py| {
+            self.0.call_method1(
+                py,
+                intern!(py, "on_operator_end"),
+                (event.header.query_id.to_string(), event.operator.node_id),
+            )?;
+            Ok(())
+        })
+    }
+
+    async fn on_stats(&self, event: Arc<StatsEvent>) -> DaftResult<()> {
+        Python::attach(|py| {
+            let stats_map = event
+                .stats
+                .iter()
+                .map(|(node_id, stats)| {
+                    let stat_map = stats
+                        .iter()
+                        .map(|(name, stat)| {
+                            (name.to_string(), stat.clone().into_py_contents(py).unwrap())
+                        })
+                        .collect::<HashMap<_, _>>();
+                    (*node_id, stat_map)
+                })
+                .collect::<HashMap<_, _>>();
+            let py_stats = stats_map.into_pyobject(py)?;
+            self.0.call_method1(
+                py,
+                intern!(py, "on_stats"),
+                (event.header.query_id.to_string(), py_stats),
             )?;
             Ok(())
         })
