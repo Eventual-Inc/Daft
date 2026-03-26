@@ -48,6 +48,15 @@ See also [Apache Hudi](hudi.md) for detailed integration.
 
 See also [Iceberg](iceberg.md) for detailed integration.
 
+## Paimon
+
+| Function                                                    | Description                            |
+|-------------------------------------------------------------|----------------------------------------|
+| [`read_paimon`][daft.io.read_paimon]                        | Read a Paimon table into a DataFrame   |
+| [`write_paimon`][daft.dataframe.DataFrame.write_paimon]     | Write a DataFrame to a Paimon table    |
+
+See also [Apache Paimon](paimon.md) for detailed integration.
+
 
 ## JSON
 

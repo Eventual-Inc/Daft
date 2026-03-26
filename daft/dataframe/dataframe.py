@@ -59,6 +59,7 @@ if TYPE_CHECKING:
     import pandas
     import pyarrow
     import pyiceberg
+    import pypaimon
     import ray
     import torch
     from sqlalchemy.engine import Connection
@@ -1356,6 +1357,44 @@ class DataFrame:
         df = from_pydict(with_operations)
         df._metadata = write_df._metadata
         return df
+
+    @DataframePublicAPI
+    def write_paimon(
+        self,
+        table: "pypaimon.table.Table",
+        mode: str = "append",
+    ) -> "DataFrame":
+        """Writes the DataFrame to an Apache Paimon table, returning a summary DataFrame.
+
+        Args:
+            table (pypaimon.table.Table): Destination Paimon table obtained via
+                ``pypaimon.CatalogFactory.create(options).get_table(identifier)``.
+            mode (str, optional): Write mode – ``"append"`` adds new data,
+                ``"overwrite"`` replaces existing data. Defaults to ``"append"``.
+
+        Returns:
+            DataFrame: A summary DataFrame with columns ``operation``, ``rows``,
+            ``file_size``, and ``file_name`` describing each written file.
+
+        Note:
+            This call is **blocking** and will execute the DataFrame when called.
+
+        Examples:
+            >>> import pypaimon, daft  # doctest: +SKIP
+            >>>
+            >>> catalog = pypaimon.CatalogFactory.create({"warehouse": "/tmp/warehouse"})  # doctest: +SKIP
+            >>> table = catalog.get_table("mydb.mytable")  # doctest: +SKIP
+            >>> df = daft.from_pydict({"id": [1, 2, 3], "name": ["a", "b", "c"]})  # doctest: +SKIP
+            >>> df.write_paimon(table)  # doctest: +SKIP
+        """
+        try:
+            import pypaimon  # noqa: F401
+        except ImportError:
+            raise ImportError("pypaimon is required to use write_paimon. Install it with: `pip install pypaimon`")
+
+        from daft.io.paimon.paimon_data_sink import PaimonDataSink
+
+        return self.write_sink(PaimonDataSink(table, mode))
 
     @DataframePublicAPI
     def write_deltalake(
