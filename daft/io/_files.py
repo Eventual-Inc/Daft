@@ -20,7 +20,7 @@ def from_files(path: str | list[str], io_config: IOConfig | None = None) -> Data
     3. ``[...]`` matches any single character in the brackets
     4. ``**`` recursively matches any number of layers of directories
 
-    The returned DataFrame will have a single ``"file"`` column of type :meth:`~daft.DataType.file`.
+    The returned DataFrame will have a single ``"file"`` column of type `daft.DataType.file`.
     Files are not downloaded eagerly; the ``File`` type is a lazy reference that can be read on demand.
 
     Args:
@@ -28,7 +28,7 @@ def from_files(path: str | list[str], io_config: IOConfig | None = None) -> Data
         io_config (IOConfig): Configuration to use when running IO with remote services.
 
     Returns:
-        DataFrame: DataFrame with a single ``"file"`` column containing :class:`~daft.File` references.
+        DataFrame: DataFrame with a single ``"file"`` column containing `daft.File` references.
 
     Note:
         If no files match the glob pattern(s), an empty DataFrame is returned instead of raising an error.
