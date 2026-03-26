@@ -146,7 +146,7 @@ impl RuntimeStatsManager {
             None
         };
 
-        let throttle_interval = Duration::from_millis(200);
+        let throttle_interval = Duration::from_millis(250);
         let enable_process_monitor = should_enable_process_monitor();
         Ok(Self::new_impl(
             handle,

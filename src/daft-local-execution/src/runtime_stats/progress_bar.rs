@@ -195,6 +195,8 @@ impl ProgressBar for IndicatifProgressBarManager {
 
     fn handle_event(&self, node_id: NodeID, event: &StatSnapshot) {
         let pb = self.pbars.get(node_id).unwrap();
+        pb.set_position(event.current_progress());
+        pb.set_length(event.total());
         pb.set_message(event.to_message());
     }
 

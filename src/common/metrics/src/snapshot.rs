@@ -332,7 +332,7 @@ impl StatSnapshotImpl for WriteSnapshot {
     }
 
     fn total(&self) -> u64 {
-        self.rows_in
+        self.estimated_total_rows
     }
 
     fn total_key(&self) -> &'static str {

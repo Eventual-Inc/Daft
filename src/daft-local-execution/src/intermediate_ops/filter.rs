@@ -52,7 +52,7 @@ impl RuntimeStats for FilterStats {
             rows_in,
             rows_out,
             selectivity,
-            estimated_total_rows: (child_estimated_total as f64 * selectivity) as u64,
+            estimated_total_rows: (child_estimated_total as f64 * selectivity / 100.0) as u64,
         })
     }
 
