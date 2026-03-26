@@ -28,6 +28,7 @@ pub(crate) struct FlightShuffleNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     shuffle_id: u64,
+    query_id: String,
     repartition_spec: RepartitionSpec,
     num_partitions: usize,
     shuffle_dirs: Vec<String>,
@@ -70,6 +71,7 @@ impl FlightShuffleNode {
             config,
             context,
             shuffle_id,
+            query_id: plan_config.query_id.to_string(),
             repartition_spec,
             num_partitions,
             shuffle_dirs,
@@ -160,7 +162,7 @@ impl PipelineNodeImpl for FlightShuffleNode {
         let shuffle_dirs_to_register: Vec<String> = self
             .shuffle_dirs
             .iter()
-            .map(|base_dir| format!("{}/daft_shuffle/{}", base_dir, self.shuffle_id))
+            .map(|base_dir| format!("{}/daft_shuffle/{}", base_dir, self.query_id))
             .collect();
         plan_context.register_shuffle_dirs(shuffle_dirs_to_register);
 
@@ -179,6 +181,7 @@ impl PipelineNodeImpl for FlightShuffleNode {
                     self.num_partitions,
                     self.config.schema.clone(),
                     self.shuffle_id,
+                    self.query_id.clone(),
                     self.shuffle_dirs.clone(),
                     self.compression.clone(),
                     StatsState::NotMaterialized,

@@ -152,12 +152,20 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         let shuffle_dirs = std::mem::take(&mut plan_context.shuffle_dirs);
         let running_stage = RunningPlan::new(running_node, plan_context);
 
-        let mut materialized_result_stream = running_stage.materialize(scheduler_handle);
-        while let Some(result) = materialized_result_stream.next().await {
-            if sender.send(result?).await.is_err() {
-                break;
+        let exec_result: DaftResult<()> = async {
+            let mut materialized_result_stream = running_stage.materialize(scheduler_handle);
+            while let Some(result) = materialized_result_stream.next().await {
+                let mat = match result {
+                    Ok(v) => v,
+                    Err(e) => return Err(e),
+                };
+                if sender.send(mat).await.is_err() {
+                    break;
+                }
             }
+            Ok(())
         }
+        .await;
 
         // Clean up shuffle directories via Ray remote functions
         #[cfg(feature = "python")]
@@ -167,7 +175,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
             tracing::warn!("Failed to clear flight shuffle directories: {}", e);
         }
 
-        Ok(())
+        exec_result
     }
 
     pub fn run_plan(

@@ -8,10 +8,21 @@ use daft_writers::{AsyncFileWriter, make_ipc_writer};
 use itertools::Itertools;
 use tokio::sync::Mutex;
 
-fn get_shuffle_dirs(shuffle_dirs: &[String], cache_id: String, shuffle_id: u64) -> Vec<String> {
-    shuffle_dirs
+fn get_shuffle_dirs(
+    base_dirs: &[String],
+    shuffle_id: u64,
+    query_id: String,
+    cache_id: String,
+) -> Vec<String> {
+    // <base_dir>/daft_shuffle/<query_id>/<shuffle_id>/<cache_id>
+    base_dirs
         .iter()
-        .map(|dir| format!("{}/daft_shuffle/{}/{}", dir, shuffle_id, cache_id))
+        .map(|dir| {
+            format!(
+                "{}/daft_shuffle/{}/{}/{}",
+                dir, query_id, shuffle_id, cache_id
+            )
+        })
         .collect()
 }
 
@@ -49,13 +60,14 @@ impl InProgressShuffleCache {
         dirs: &[String],
         cache_id: String,
         shuffle_id: u64,
+        query_id: String,
         target_filesize: usize,
         compression: Option<&str>,
     ) -> DaftResult<Self> {
         // Create the directories
         // TODO: Add checks here, as well as periodic checks to ensure that the dirs are not too full. If so, we switch to directories with more space.
         // And raise an error if we can't find any directories with space.
-        let shuffle_dirs = get_shuffle_dirs(dirs, cache_id.clone(), shuffle_id);
+        let shuffle_dirs = get_shuffle_dirs(dirs, shuffle_id, query_id, cache_id.clone());
         for dir in &shuffle_dirs {
             // Check that the dir is a file
             let (source_type, _) = parse_url(dir)?;
