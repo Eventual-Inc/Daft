@@ -128,6 +128,7 @@ from daft.udf import udf, func, cls, method, metrics
 from daft.io._range import _range
 from daft.io import (
     IOConfig,
+    from_files,
     from_glob_path,
     read_csv,
     read_deltalake,
@@ -220,6 +221,7 @@ __all__ = [
     "execution_config_ctx",
     "from_arrow",
     "from_dask_dataframe",
+    "from_files",
     "from_glob_path",
     "from_pandas",
     "from_pydict",

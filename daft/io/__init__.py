@@ -30,6 +30,7 @@ from daft.io._warc import read_warc
 from daft.io.huggingface import read_huggingface
 from daft.io.mcap._mcap import read_mcap
 from daft.io._range import _range
+from daft.io._files import from_files
 from daft.io.file_path import from_glob_path
 from daft.io.sink import DataSink
 from daft.io.source import DataSource, DataSourceTask
@@ -64,6 +65,7 @@ __all__ = [
     "TosConfig",
     "UnityConfig",
     "_range",
+    "from_files",
     "from_glob_path",
     "read_csv",
     "read_deltalake",
