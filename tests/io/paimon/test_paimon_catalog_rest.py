@@ -15,7 +15,6 @@ from pypaimon.catalog.catalog_exception import (
     TableNotExistException,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers: build a mock inner catalog that mimics RESTCatalog's interface
 # ---------------------------------------------------------------------------
@@ -30,9 +29,7 @@ def _make_rest_inner(
 
     # REST-only methods (not on the abstract base):
     inner.list_databases = MagicMock(return_value=databases or [])
-    inner.list_tables = MagicMock(
-        side_effect=lambda db: (tables_by_db or {}).get(db, [])
-    )
+    inner.list_tables = MagicMock(side_effect=lambda db: (tables_by_db or {}).get(db, []))
     inner.drop_database = MagicMock()
     inner.drop_table = MagicMock()
 
