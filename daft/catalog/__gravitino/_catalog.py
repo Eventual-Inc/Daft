@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
 from daft.catalog.__gravitino._client import GravitinoClient as InnerCatalog
 from daft.catalog.__gravitino._client import GravitinoTable as InnerTable
+from daft.io._parquet import read_parquet
 from daft.io.iceberg._iceberg import read_iceberg
 
 if TYPE_CHECKING:
@@ -217,8 +218,6 @@ class GravitinoParquetTable(GravitinoTable):
 
     def read(self, **options: Any) -> DataFrame:
         Table._validate_options("Gravitino read", options, self._read_options)
-        from daft.io._parquet import read_parquet
-
         return read_parquet(
             path=self._inner.table_info.storage_location,
             io_config=self._inner.io_config,
