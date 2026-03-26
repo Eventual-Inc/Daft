@@ -37,9 +37,9 @@ pub(crate) struct SourceStats {
     node_kv: Vec<KeyValue>,
 }
 
-impl SourceStats {
-    pub fn new(meter: &Meter, id: usize) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+impl RuntimeStats for SourceStats {
+    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = node_info.to_key_values();
 
         Self {
             duration_us: meter.duration_us_metric(),
@@ -48,12 +48,6 @@ impl SourceStats {
 
             node_kv,
         }
-    }
-}
-
-impl RuntimeStats for SourceStats {
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
-        self
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
@@ -75,7 +69,7 @@ impl RuntimeStats for SourceStats {
         self.rows_out.add(rows, self.node_kv.as_slice());
     }
 
-    fn add_cpu_us(&self, cpu_us: u64) {
+    fn add_duration_us(&self, cpu_us: u64) {
         self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
@@ -84,12 +78,12 @@ impl RuntimeStats for SourceStats {
 pub trait Source: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
-    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<SourceStats> {
-        Arc::new(SourceStats::new(meter, id))
+    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<SourceStats> {
+        Arc::new(SourceStats::new(meter, node_info))
     }
     fn multiline_display(&self) -> Vec<String>;
     fn get_data(
-        &mut self,
+        self: Box<Self>,
         maintain_order: bool,
         io_stats: IOStatsRef,
         chunk_size: usize,
@@ -118,7 +112,7 @@ impl SourceNode {
             NodeCategory::Source,
             context,
         );
-        let runtime_stats = source.make_runtime_stats(&ctx.meter, info.id);
+        let runtime_stats = source.make_runtime_stats(&ctx.meter, &info);
         Self {
             source,
             runtime_stats,
@@ -209,13 +203,15 @@ impl PipelineNode for SourceNode {
         self.morsel_size_requirement = downstream_requirement;
     }
     fn start(
-        mut self: Box<Self>,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<crate::channel::Receiver<PipelineMessage>> {
         let io_stats = self.runtime_stats.io_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
+        let schema = self.source.schema().clone();
+        let name = self.name();
 
         let (destination_sender, destination_receiver) = create_channel(1);
         let chunk_size = match self.morsel_size_requirement {
@@ -227,10 +223,9 @@ impl PipelineNode for SourceNode {
             .source
             .get_data(maintain_order, io_stats, chunk_size.into())
             .with_context(|_| PipelineExecutionSnafu {
-                node_name: self.name().to_string(),
+                node_name: name.to_string(),
             })?;
         let runtime_stats = self.runtime_stats.clone();
-        let schema = self.source.schema().clone();
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;
@@ -263,10 +258,11 @@ impl PipelineNode for SourceNode {
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            &self.name(),
+            &name,
         );
         Ok(destination_receiver)
     }
+
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
     }

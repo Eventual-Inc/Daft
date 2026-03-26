@@ -48,7 +48,7 @@ impl DedupState {
         Self::Accumulating { inner_states }
     }
 
-    fn push(&mut self, input: Arc<MicroPartition>, columns: &[BoundExpr]) -> DaftResult<()> {
+    fn push(&mut self, input: MicroPartition, columns: &[BoundExpr]) -> DaftResult<()> {
         let Self::Accumulating { inner_states } = self else {
             panic!("DropDuplicatesSink should be in Accumulating state");
         };
@@ -95,8 +95,9 @@ impl BlockingSink for DedupSink {
     #[instrument(skip_all, name = "DedupSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let columns = self.columns.clone();
@@ -145,7 +146,7 @@ impl BlockingSink for DedupSink {
                         // Do this concurrently across all of the partitions
                         let columns = columns.clone();
                         per_partition_finalize_tasks.spawn(async move {
-                            MicroPartition::concat(&per_partition_micros)?.dedup(&columns)
+                            MicroPartition::concat(per_partition_micros)?.dedup(&columns)
                         });
                     }
                     // Join the tasks and collect the deduped partitions
@@ -156,10 +157,8 @@ impl BlockingSink for DedupSink {
                         .collect::<DaftResult<Vec<_>>>()?;
 
                     // Concatenate the results and return
-                    let concated = MicroPartition::concat(&results)?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        concated,
-                    )]))
+                    let concated = MicroPartition::concat(results)?;
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![concated]))
                 },
                 Span::current(),
             )

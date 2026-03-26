@@ -9,7 +9,6 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::StatSnapshotImpl,
 };
@@ -31,15 +30,7 @@ use crate::{
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 
-#[cfg_attr(debug_assertions, derive(Debug))]
-pub enum IntermediateOperatorResult {
-    NeedMoreInput(Option<Arc<MicroPartition>>),
-    #[allow(dead_code)]
-    HasMoreOutput {
-        input: Arc<MicroPartition>,
-        output: Arc<MicroPartition>,
-    },
-}
+pub type IntermediateOperatorResult = MicroPartition;
 
 pub(crate) type IntermediateOpExecuteResult<Op> = OperatorOutput<
     DaftResult<(
@@ -49,20 +40,19 @@ pub(crate) type IntermediateOpExecuteResult<Op> = OperatorOutput<
 >;
 pub(crate) trait IntermediateOperator: Send + Sync {
     type State: Send + Sync + Unpin;
+    type Stats: RuntimeStats = DefaultRuntimeStats;
     type BatchingStrategy: BatchingStrategy + 'static;
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
+        runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self>;
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> Self::State;
-    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::new(meter, node_info))
-    }
     /// The maximum number of concurrent workers that can be spawned for this operator.
     /// Each worker will has its own IntermediateOperatorState.
     /// This method should be overridden if the operator needs to limit the number of concurrent workers, i.e. UDFs with resource requests.
@@ -80,7 +70,7 @@ pub(crate) trait IntermediateOperator: Send + Sync {
 pub struct IntermediateNode<Op: IntermediateOperator> {
     intermediate_op: Arc<Op>,
     child: Box<dyn PipelineNode>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<Op::Stats>,
     plan_stats: StatsState,
     morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
@@ -107,7 +97,7 @@ impl InputTracker {
         self.pending_flush && self.in_flight == 0 && self.buffer.is_empty()
     }
 
-    fn next_batch_if_ready(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
+    fn next_batch_if_ready(&mut self) -> DaftResult<Option<MicroPartition>> {
         let batch = self.buffer.next_batch_if_ready()?;
         if batch.is_some() {
             Ok(batch)
@@ -126,7 +116,7 @@ struct ExecutionContext<Op: IntermediateOperator> {
     state_pool: HashMap<StateId, Op::State>,
     output_sender: Sender<PipelineMessage>,
     batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<Op::Stats>,
     input_trackers: HashMap<InputId, InputTracker>,
     stats_manager: RuntimeStatsManagerHandle,
     node_id: usize,
@@ -150,7 +140,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
             NodeCategory::Intermediate,
             context,
         );
-        let runtime_stats = intermediate_op.make_runtime_stats(&ctx.meter, &info);
+        let runtime_stats = Arc::new(Op::Stats::new(&ctx.meter, &info));
         let morsel_size_requirement = intermediate_op
             .morsel_size_requirement()
             .unwrap_or_default();
@@ -177,13 +167,16 @@ fn spawn_execution_task<Op: IntermediateOperator + 'static>(
     state_id: StateId,
     input_id: InputId,
     op_state: Op::State,
-    batch: Arc<MicroPartition>,
+    batch: MicroPartition,
 ) {
     let op = ctx.op.clone();
     let task_spawner = ctx.task_spawner.clone();
+    let runtime_stats = ctx.runtime_stats.clone();
     ctx.task_set.spawn(async move {
         let now = Instant::now();
-        let (new_op_state, result) = op.execute(batch, op_state, &task_spawner).await??;
+        let (new_op_state, result) = op
+            .execute(batch, op_state, runtime_stats, &task_spawner)
+            .await??;
         let elapsed = now.elapsed();
         Ok(ExecutionTaskResult {
             state_id,
@@ -275,23 +268,24 @@ async fn handle_task_completion<Op: IntermediateOperator + 'static>(
         elapsed,
     } = task_result;
 
-    ctx.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+    ctx.runtime_stats
+        .add_duration_us(elapsed.as_micros() as u64);
 
-    if let Some(mp) = result.output() {
-        ctx.runtime_stats.add_rows_out(mp.len() as u64);
-        ctx.batch_manager
-            .record_execution_stats(ctx.runtime_stats.as_ref(), mp.len(), elapsed);
-        if ctx
-            .output_sender
-            .send(PipelineMessage::Morsel {
-                input_id,
-                partition: mp.clone(),
-            })
-            .await
-            .is_err()
-        {
-            return Ok(ControlFlow::Break(()));
-        }
+    let mp = result;
+    ctx.batch_manager
+        .record_execution_stats(ctx.runtime_stats.as_ref(), mp.len(), elapsed);
+
+    ctx.runtime_stats.add_rows_out(mp.len() as u64);
+    if ctx
+        .output_sender
+        .send(PipelineMessage::Morsel {
+            input_id,
+            partition: Arc::new(mp),
+        })
+        .await
+        .is_err()
+    {
+        return Ok(ControlFlow::Break(()));
     }
 
     let new_requirements = ctx.batch_manager.calculate_batch_size();
@@ -299,18 +293,10 @@ async fn handle_task_completion<Op: IntermediateOperator + 'static>(
         input.buffer.update_bounds(new_requirements);
     }
 
-    match result {
-        IntermediateOperatorResult::NeedMoreInput(_) => {
-            ctx.input_trackers.get_mut(&input_id).unwrap().in_flight -= 1;
-            ctx.state_pool.insert(state_id, state);
-            try_spawn_tasks(ctx)?;
-            try_flush_input(ctx, input_id).await
-        }
-        IntermediateOperatorResult::HasMoreOutput { input, .. } => {
-            spawn_execution_task(ctx, state_id, input_id, state, input);
-            Ok(ControlFlow::Continue(()))
-        }
-    }
+    ctx.input_trackers.get_mut(&input_id).unwrap().in_flight -= 1;
+    ctx.state_pool.insert(state_id, state);
+    try_spawn_tasks(ctx)?;
+    try_flush_input(ctx, input_id).await
 }
 
 fn handle_morsel<Op: IntermediateOperator + 'static>(
@@ -332,7 +318,9 @@ fn handle_morsel<Op: IntermediateOperator + 'static>(
             in_flight: 0,
             pending_flush: false,
         });
-    input.buffer.push(partition);
+    input
+        .buffer
+        .push(Arc::try_unwrap(partition).unwrap_or_else(|a| (*a).clone()));
     try_spawn_tasks(ctx)
 }
 
@@ -409,16 +397,6 @@ async fn process_input<Op: IntermediateOperator + 'static>(
         }
     }
     Ok(())
-}
-
-impl IntermediateOperatorResult {
-    /// Get the output partition if present.
-    pub(crate) fn output(&self) -> Option<&Arc<MicroPartition>> {
-        match self {
-            Self::NeedMoreInput(mp) => mp.as_ref(),
-            Self::HasMoreOutput { output, .. } => Some(output),
-        }
-    }
 }
 
 impl<Op: IntermediateOperator + 'static> TreeDisplay for IntermediateNode<Op> {
@@ -530,7 +508,6 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let task_spawner = ExecutionTaskSpawner::new(
             compute_runtime,
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("IntermediateOp::execute"),
         );
 

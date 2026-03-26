@@ -184,7 +184,7 @@ impl NativeExecutor {
             translate_physical_plan_to_pipeline(local_physical_plan.as_ref(), &exec_cfg, &ctx)?;
         let plan_json = pipeline.repr_json();
 
-        let (tx, rx) = create_channel(1);
+        let (tx, rx) = create_channel::<PipelineMessage>(1);
 
         // Spawn execution on the global runtime - returns immediately
         let handle = get_global_runtime();
@@ -210,16 +210,9 @@ impl NativeExecutor {
                 drop(input_senders);
 
                 while let Some(msg) = receiver.recv().await {
-                    match msg {
-                        PipelineMessage::Morsel { partition, .. } => {
-                            if tx.send(partition).await.is_err() {
-                                runtime_handle.shutdown().await?;
-                                return Ok(());
-                            }
-                        }
-                        PipelineMessage::Flush(_) => {
-                            // No per-input-id routing in single-execution mode
-                        }
+                    if tx.send(msg).await.is_err() {
+                        runtime_handle.shutdown().await?;
+                        return Ok(());
                     }
                 }
 
@@ -316,12 +309,19 @@ impl Drop for NativeExecutor {
 pub struct ExecutionEngineResult {
     query_plan: QueryPlan,
     handle: RuntimeTask<DaftResult<ExecutionStats>>,
-    receiver: Receiver<Arc<MicroPartition>>,
+    receiver: Receiver<PipelineMessage>,
 }
 
 impl ExecutionEngineResult {
-    async fn next(&mut self) -> Option<Arc<MicroPartition>> {
-        self.receiver.recv().await
+    async fn next(&mut self) -> Option<MicroPartition> {
+        loop {
+            match self.receiver.recv().await? {
+                PipelineMessage::Morsel { partition, .. } => {
+                    return Some(Arc::try_unwrap(partition).unwrap_or_else(|a| (*a).clone()));
+                }
+                PipelineMessage::Flush(_) => {}
+            }
+        }
     }
 
     async fn finish(self) -> DaftResult<ExecutionStats> {

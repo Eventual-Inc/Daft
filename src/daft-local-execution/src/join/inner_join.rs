@@ -8,10 +8,10 @@ use daft_recordbatch::{GrowableRecordBatch, ProbeState};
 use crate::join::hash_join::HashJoinParams;
 
 pub(crate) fn probe_inner(
-    input: &Arc<MicroPartition>,
+    input: &MicroPartition,
     probe_state: &ProbeState,
     params: &HashJoinParams,
-) -> DaftResult<Arc<MicroPartition>> {
+) -> DaftResult<MicroPartition> {
     let build_side_tables = probe_state.get_record_batches().iter().collect::<Vec<_>>();
     const DEFAULT_GROWABLE_SIZE: usize = 20;
 
@@ -77,9 +77,9 @@ pub(crate) fn probe_inner(
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
-    Ok(Arc::new(MicroPartition::new_loaded(
+    Ok(MicroPartition::new_loaded(
         params.output_schema.clone(),
         Arc::new(result_tables),
         None,
-    )))
+    ))
 }

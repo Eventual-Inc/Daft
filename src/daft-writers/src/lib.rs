@@ -97,7 +97,7 @@ pub fn make_physical_writer_factory(
     file_info: &OutputFileInfo<BoundExpr>,
     file_schema: &SchemaRef,
     cfg: &DaftExecutionConfig,
-) -> DaftResult<Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>> {
+) -> DaftResult<Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>>> {
     let base_writer_factory = PhysicalWriterFactory::new(
         file_info.clone(),
         file_schema.clone(),
@@ -185,7 +185,7 @@ pub fn make_ipc_writer(
     dir: &str,
     target_filesize: usize,
     compression: Option<&str>,
-) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>> {
+) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>> {
     let compression = match compression {
         Some("lz4") => Some(arrow_ipc::CompressionType::LZ4_FRAME),
         Some("zstd") => Some(arrow_ipc::CompressionType::ZSTD),
@@ -215,7 +215,7 @@ pub fn make_catalog_writer_factory(
     catalog_info: &daft_logical_plan::CatalogType<BoundExpr>,
     partition_cols: &Option<Vec<BoundExpr>>,
     cfg: &DaftExecutionConfig,
-) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>> {
+) -> Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>> {
     use catalog::CatalogWriterFactory;
 
     let base_writer_factory = CatalogWriterFactory::new(catalog_info.clone());

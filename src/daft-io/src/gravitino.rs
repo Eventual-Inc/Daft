@@ -28,7 +28,7 @@ fn invalid_gravitino_path(path: &str) -> crate::Error {
 }
 
 pub struct GravitinoSource {
-    /// A `daft.gravitino.GravitinoClient` instance
+    /// A `daft.catalog.__gravitino._client.GravitinoClient` instance
     gravitino_client: pyo3::Py<pyo3::PyAny>,
     /// map of fileset name to io client and storage location
     cached_sources: tokio::sync::RwLock<HashMap<String, Arc<ClientAndLocation>>>,
@@ -75,7 +75,7 @@ impl GravitinoSource {
             }
 
             Ok::<_, PyErr>(
-                py.import(intern!(py, "daft.gravitino.gravitino_catalog"))?
+                py.import(intern!(py, "daft.catalog.__gravitino._client"))?
                     .getattr(intern!(py, "GravitinoClient"))?
                     .call((endpoint, metalake_name), Some(&kwargs))?
                     .unbind(),

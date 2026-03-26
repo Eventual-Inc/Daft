@@ -5,8 +5,8 @@ import time
 
 import pytest
 
+from daft.catalog.__gravitino._client import GravitinoClient
 from daft.dependencies import requests
-from daft.gravitino import GravitinoClient
 from daft.io import IOConfig
 
 _GRAVITINO_HEADERS = {

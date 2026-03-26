@@ -8,10 +8,10 @@ import pytest
 import requests
 
 from daft.catalog import Identifier, NotFoundError, Schema
-from daft.catalog.__gravitino import GravitinoCatalog as CatalogWrapper
-from daft.catalog.__gravitino import GravitinoTable as TableWrapper
-from daft.gravitino import GravitinoCatalog, GravitinoClient, GravitinoTable
-from daft.gravitino import GravitinoTable as InnerTable
+from daft.catalog.__gravitino._catalog import GravitinoCatalog as CatalogWrapper
+from daft.catalog.__gravitino._catalog import GravitinoTable as TableWrapper
+from daft.catalog.__gravitino._client import GravitinoCatalogInfo, GravitinoClient, GravitinoTable
+from daft.catalog.__gravitino._client import GravitinoTable as InnerTable
 
 
 def test_gravitino_client_init():
@@ -80,7 +80,7 @@ def test_load_catalog(mock_request):
     client = GravitinoClient("http://localhost:8090", "test_metalake", username="admin")
     catalog = client.load_catalog("test_catalog")
 
-    assert isinstance(catalog, GravitinoCatalog)
+    assert isinstance(catalog, GravitinoCatalogInfo)
     assert catalog.name == "test_catalog"
     assert catalog.type == "relational"
     assert catalog.provider == "hive"
@@ -432,7 +432,7 @@ class TestGravitinoTable:
         """Test _write_options class attribute."""
         assert isinstance(TableWrapper._write_options, set)
 
-    @patch("daft.catalog.__gravitino.read_iceberg")
+    @patch("daft.catalog.__gravitino._catalog.read_iceberg")
     def test_read_iceberg_table(self, mock_read_iceberg, gravitino_table):
         """Test reading an Iceberg table."""
         mock_df = Mock()
@@ -447,7 +447,7 @@ class TestGravitinoTable:
             io_config=gravitino_table._inner.io_config,
         )
 
-    @patch("daft.catalog.__gravitino.read_iceberg")
+    @patch("daft.catalog.__gravitino._catalog.read_iceberg")
     def test_read_iceberg_table_with_snapshot_id(self, mock_read_iceberg, gravitino_table):
         """Test reading an Iceberg table with snapshot_id option."""
         mock_df = Mock()
@@ -462,7 +462,7 @@ class TestGravitinoTable:
             io_config=gravitino_table._inner.io_config,
         )
 
-    @patch("daft.catalog.__gravitino.read_iceberg")
+    @patch("daft.catalog.__gravitino._catalog.read_iceberg")
     def test_read_iceberg_table_pyiceberg_not_installed(self, mock_read_iceberg, gravitino_table):
         """Test reading Iceberg table when pyiceberg is not installed."""
         mock_read_iceberg.side_effect = ImportError("No module named 'pyiceberg'")
@@ -532,7 +532,7 @@ class TestGravitinoTable:
         mock_inner_table.table_info.format = "ICEBERG/PARQUET"
         table = TableWrapper._from_obj(mock_inner_table)
 
-        with patch("daft.catalog.__gravitino.read_iceberg") as mock_read:
+        with patch("daft.catalog.__gravitino._catalog.read_iceberg") as mock_read:
             mock_read.return_value = Mock()
             table.read()
             mock_read.assert_called_once()

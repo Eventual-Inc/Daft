@@ -72,7 +72,8 @@ def local_catalog(tmpdir):
         },
     )
     catalog.create_namespace("default")
-    return catalog
+    yield catalog
+    catalog.engine.dispose()
 
 
 @pytest.fixture(

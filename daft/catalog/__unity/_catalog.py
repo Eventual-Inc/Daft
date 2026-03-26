@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING, Any
 from unitycatalog import NotFoundError as UnityNotFoundError
 
 from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
+from daft.catalog.__unity._client import UnityCatalogClient as InnerCatalog  # noqa: TID253
+from daft.catalog.__unity._client import UnityCatalogTable as InnerTable  # noqa: TID253
 from daft.io.delta_lake._deltalake import read_deltalake
-from daft.unity_catalog import UnityCatalog as InnerCatalog  # noqa: TID253
-from daft.unity_catalog import UnityCatalogTable as InnerTable  # noqa: TID253
 
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame

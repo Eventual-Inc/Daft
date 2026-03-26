@@ -29,7 +29,7 @@ impl DataSinkWriter {
 
 #[async_trait]
 impl AsyncFileWriter for DataSinkWriter {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Vec<RecordBatch>;
 
     async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
@@ -94,7 +94,7 @@ impl AsyncFileWriter for DataSinkWriter {
 
 pub fn make_data_sink_writer_factory(
     data_sink_info: DataSinkInfo,
-) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>> {
+) -> Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>> {
     Arc::new(DataSinkWriterFactory { data_sink_info })
 }
 
@@ -103,8 +103,7 @@ pub struct DataSinkWriterFactory {
 }
 
 impl WriterFactory for DataSinkWriterFactory {
-    type Input = Arc<MicroPartition>;
-
+    type Input = MicroPartition;
     type Result = Vec<RecordBatch>;
 
     fn create_writer(

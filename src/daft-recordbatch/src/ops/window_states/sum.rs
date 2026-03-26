@@ -135,6 +135,7 @@ pub fn create_for_type(
     let [source] = sources.columns() else {
         unreachable!("sum should only have one input")
     };
+    let source = source.as_materialized_series();
 
     match source.data_type() {
         DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {

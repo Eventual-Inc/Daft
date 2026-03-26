@@ -180,19 +180,16 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         let build_task_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("JoinNode::Build"),
         );
         let probe_task_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("JoinNode::Probe"),
         );
         let probe_finalize_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("JoinNode::FinalizeProbe"),
         );
 

@@ -2,6 +2,7 @@ mod brute_force_join_order;
 mod join_graph;
 #[cfg(test)]
 mod naive_left_deep_join_order;
+mod relation_set;
 
 use std::sync::Arc;
 

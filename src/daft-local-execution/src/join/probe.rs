@@ -82,7 +82,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
 
             Some(result) = task_set.join_next(), if !task_set.is_empty() => {
                 let (state, result, elapsed) = result??;
-                runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+                runtime_stats.add_duration_us(elapsed.as_micros() as u64);
 
                 // Send output if present
                 let output_mp = match &result {
@@ -94,7 +94,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
                     if output_sender
                         .send(PipelineMessage::Morsel {
                             input_id,
-                            partition: mp.clone(),
+                            partition: Arc::new(mp.clone()),
                         })
                         .await
                         .is_err()
@@ -124,7 +124,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
                 match msg {
                     Some(PipelineMessage::Morsel { partition, .. }) => {
                         runtime_stats.add_probe_rows_in(partition.len() as u64);
-                        buffer.push(partition);
+                        buffer.push(Arc::try_unwrap(partition).unwrap_or_else(|a| (*a).clone()));
                     }
                     Some(PipelineMessage::Flush(_)) | None => {
                         input_closed = true;
@@ -141,7 +141,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
             let now = Instant::now();
             let (new_state, result) = op.probe(partition, state, &task_spawner).await??;
             let elapsed = now.elapsed();
-            runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+            runtime_stats.add_duration_us(elapsed.as_micros() as u64);
 
             let output_mp = match &result {
                 ProbeOutput::NeedMoreInput(mp) => mp.as_ref(),
@@ -152,7 +152,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
                 if output_sender
                     .send(PipelineMessage::Morsel {
                         input_id,
-                        partition: mp.clone(),
+                        partition: Arc::new(mp.clone()),
                     })
                     .await
                     .is_err()
@@ -182,7 +182,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
         if output_sender
             .send(PipelineMessage::Morsel {
                 input_id,
-                partition: mp,
+                partition: Arc::new(mp),
             })
             .await
             .is_err()
