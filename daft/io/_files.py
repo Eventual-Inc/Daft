@@ -2,11 +2,11 @@
 # isort: dont-add-import: from __future__ import annotations
 
 from daft.api_annotations import PublicAPI
-from daft.context import get_context
 from daft.daft import IOConfig
 from daft.dataframe import DataFrame
+from daft.expressions import col
 from daft.functions.file_ import file as new_file
-from daft.logical.builder import LogicalPlanBuilder
+from daft.io.file_path import from_glob_path
 
 
 @PublicAPI
@@ -25,7 +25,7 @@ def from_files(path: str | list[str], io_config: IOConfig | None = None) -> Data
 
     Args:
         path (str | list[str]): Path to files on disk (allows wildcards). Supports remote URLs such as ``s3://``, ``gs://``, or ``az://``.
-        io_config (IOConfig): Configuration to use when running IO with remote services.
+        io_config (IOConfig | None): Configuration to use when running IO with remote services.
 
     Returns:
         DataFrame: DataFrame with a single ``"file"`` column containing `daft.File` references.
@@ -51,19 +51,4 @@ def from_files(path: str | list[str], io_config: IOConfig | None = None) -> Data
 
         >>> df = daft.from_files(["/path/to/files/*.jpeg", "/path/to/others/*.jpeg"])  # doctest: +SKIP
     """
-    if isinstance(path, str):
-        path = [path]
-
-    if len(path) == 0:
-        raise ValueError("Must specify at least one glob path")
-
-    context = get_context()
-    io_config = context.daft_planning_config.default_io_config if io_config is None else io_config
-
-    builder = LogicalPlanBuilder.from_glob_scan(
-        glob_paths=path,
-        io_config=io_config,
-    )
-    df = DataFrame(builder)
-
-    return df.select(new_file(df["path"], io_config=io_config).alias("file"))
+    return from_glob_path(path, io_config=io_config).select(new_file(col("path"), io_config=io_config).alias("file"))
