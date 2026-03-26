@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import os
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 from daft.context import get_context
 from daft.datatype import DataType
+from daft.filesystem import get_protocol_from_path
 from daft.io.common import _get_schema_from_dict
 from daft.recordbatch.micropartition import MicroPartition
 from daft.recordbatch.partitioning import PartitionedTable, partition_strings_to_path
@@ -153,7 +155,6 @@ def make_deltalake_fs(path: str, io_config: IOConfig | None = None) -> pafs.PyFi
     from deltalake.fs import DeltaStorageHandler
     from pyarrow.fs import PyFileSystem
 
-    from daft.filesystem import get_protocol_from_path
     from daft.io.object_store_options import io_config_to_storage_options
 
     io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
@@ -161,8 +162,6 @@ def make_deltalake_fs(path: str, io_config: IOConfig | None = None) -> pafs.PyFi
 
     protocol = get_protocol_from_path(path)
     if protocol == "file":
-        from urllib.parse import urlparse
-
         local_path = urlparse(path).path if path.startswith("file://") else path
         os.makedirs(local_path, exist_ok=True)
 
