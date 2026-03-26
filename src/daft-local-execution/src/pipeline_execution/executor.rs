@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
 use common_error::DaftResult;
 use common_runtime::OrderingAwareJoinSet;
 use daft_micropartition::MicroPartition;
 
 use crate::{
     channel::Receiver,
-    pipeline_message::{InputId, PipelineMessage},
+    pipeline::{InputId, PipelineMessage},
 };
 
 /// Events yielded by the `next_event()` function.
@@ -16,7 +14,7 @@ pub(crate) enum PipelineEvent<TaskResult> {
     /// A morsel arrived from the input channel.
     Morsel {
         input_id: InputId,
-        partition: Arc<MicroPartition>,
+        partition: MicroPartition,
     },
     /// A flush message arrived for this input_id.
     Flush(InputId),

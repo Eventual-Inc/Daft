@@ -21,8 +21,7 @@ use tracing::instrument;
 use super::source::Source;
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
-    pipeline::NodeName,
-    pipeline_message::{InputId, PipelineMessage},
+    pipeline::{InputId, NodeName, PipelineMessage},
     sources::source::SourceStream,
 };
 
@@ -162,7 +161,7 @@ impl GlobScanSource {
                             if output_sender
                                 .send(PipelineMessage::Morsel {
                                     input_id,
-                                    partition: Arc::new(partition),
+                                    partition,
                                 })
                                 .await
                                 .is_err()

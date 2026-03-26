@@ -9,7 +9,6 @@ mod intermediate_ops;
 mod join;
 mod pipeline;
 mod pipeline_execution;
-mod pipeline_message;
 mod resource_manager;
 mod run;
 mod runtime_stats;

@@ -24,9 +24,10 @@ use crate::{
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
-    pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
+    pipeline::{
+        BuilderContext, InputId, MorselSizeRequirement, NodeName, PipelineMessage, PipelineNode,
+    },
     pipeline_execution::{PipelineEvent, next_event},
-    pipeline_message::{InputId, PipelineMessage},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 
@@ -280,7 +281,7 @@ async fn handle_task_completion<Op: IntermediateOperator + 'static>(
         .output_sender
         .send(PipelineMessage::Morsel {
             input_id,
-            partition: Arc::new(mp),
+            partition: mp,
         })
         .await
         .is_err()
@@ -302,7 +303,7 @@ async fn handle_task_completion<Op: IntermediateOperator + 'static>(
 fn handle_morsel<Op: IntermediateOperator + 'static>(
     ctx: &mut ExecutionContext<Op>,
     input_id: InputId,
-    partition: Arc<MicroPartition>,
+    partition: MicroPartition,
 ) -> DaftResult<()> {
     if !ctx.node_initialized {
         ctx.stats_manager.activate_node(ctx.node_id);
@@ -318,9 +319,7 @@ fn handle_morsel<Op: IntermediateOperator + 'static>(
             in_flight: 0,
             pending_flush: false,
         });
-    input
-        .buffer
-        .push(Arc::try_unwrap(partition).unwrap_or_else(|a| (*a).clone()));
+    input.buffer.push(partition);
     try_spawn_tasks(ctx)
 }
 

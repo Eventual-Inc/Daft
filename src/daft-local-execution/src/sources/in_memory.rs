@@ -13,8 +13,7 @@ use tracing::instrument;
 use super::source::Source;
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
-    pipeline::NodeName,
-    pipeline_message::{InputId, PipelineMessage},
+    pipeline::{InputId, NodeName, PipelineMessage},
     sources::source::SourceStream,
 };
 
@@ -91,7 +90,7 @@ async fn forward_partition_batch(
     input_id: InputId,
 ) -> DaftResult<()> {
     if partitions.is_empty() {
-        let empty = Arc::new(MicroPartition::empty(Some(schema)));
+        let empty = MicroPartition::empty(Some(schema));
         let _ = sender
             .send(PipelineMessage::Morsel {
                 input_id,
@@ -100,10 +99,11 @@ async fn forward_partition_batch(
             .await;
     } else {
         for partition in partitions {
+            let owned = Arc::try_unwrap(partition).unwrap_or_else(|a| (*a).clone());
             if sender
                 .send(PipelineMessage::Morsel {
                     input_id,
-                    partition,
+                    partition: owned,
                 })
                 .await
                 .is_err()

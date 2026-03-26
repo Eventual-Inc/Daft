@@ -22,8 +22,9 @@ use tracing::info_span;
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
     channel::{Receiver, Sender, create_channel},
-    pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
-    pipeline_message::{InputId, PipelineMessage},
+    pipeline::{
+        BuilderContext, InputId, MorselSizeRequirement, NodeName, PipelineMessage, PipelineNode,
+    },
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 
@@ -189,7 +190,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                                 .remove(&state_id)
                                 .expect("State pool should have states when it is not empty");
 
-                            Self::spawn_execution_task(ctx, Arc::try_unwrap(partition).unwrap_or_else(|a| (*a).clone()), state, state_id);
+                            Self::spawn_execution_task(ctx, partition, state, state_id);
                         }
                         Some(PipelineMessage::Flush(_)) | None => {
                             input_closed = true;
@@ -219,7 +220,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                             .output_sender
                             .send(PipelineMessage::Morsel {
                                 input_id: ctx.input_id,
-                                partition: Arc::new(partition),
+                                partition,
                             })
                             .await
                             .is_err()
@@ -236,7 +237,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                             .output_sender
                             .send(PipelineMessage::Morsel {
                                 input_id: ctx.input_id,
-                                partition: Arc::new(partition),
+                                partition,
                             })
                             .await
                             .is_err()

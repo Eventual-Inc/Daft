@@ -17,7 +17,7 @@ use crate::{
         join_operator::{JoinOperator, ProbeOutput},
         stats::JoinStats,
     },
-    pipeline_message::{InputId, PipelineMessage},
+    pipeline::{InputId, PipelineMessage},
     runtime_stats::RuntimeStats,
 };
 
@@ -94,7 +94,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
                     if output_sender
                         .send(PipelineMessage::Morsel {
                             input_id,
-                            partition: Arc::new(mp.clone()),
+                            partition: mp.clone(),
                         })
                         .await
                         .is_err()
@@ -124,7 +124,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
                 match msg {
                     Some(PipelineMessage::Morsel { partition, .. }) => {
                         runtime_stats.add_probe_rows_in(partition.len() as u64);
-                        buffer.push(Arc::try_unwrap(partition).unwrap_or_else(|a| (*a).clone()));
+                        buffer.push(partition);
                     }
                     Some(PipelineMessage::Flush(_)) | None => {
                         input_closed = true;
@@ -152,7 +152,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
                 if output_sender
                     .send(PipelineMessage::Morsel {
                         input_id,
-                        partition: Arc::new(mp.clone()),
+                        partition: mp.clone(),
                     })
                     .await
                     .is_err()
@@ -182,7 +182,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
         if output_sender
             .send(PipelineMessage::Morsel {
                 input_id,
-                partition: Arc::new(mp),
+                partition: mp,
             })
             .await
             .is_err()

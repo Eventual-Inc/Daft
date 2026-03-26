@@ -22,8 +22,7 @@ use snafu::ResultExt;
 use crate::{
     ExecutionRuntimeContext, PipelineExecutionSnafu,
     channel::create_channel,
-    pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
-    pipeline_message::PipelineMessage,
+    pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineMessage, PipelineNode},
     runtime_stats::RuntimeStats,
 };
 
@@ -245,7 +244,7 @@ impl PipelineNode for SourceNode {
                     }
                 }
                 if !has_data {
-                    let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
+                    let empty = MicroPartition::empty(Some(schema.clone()));
                     let _ = destination_sender
                         .send(PipelineMessage::Morsel {
                             input_id: 0,

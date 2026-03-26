@@ -11,7 +11,7 @@ use crate::{
     ExecutionTaskSpawner,
     channel::{Receiver, Sender, create_channel},
     join::{join_operator::JoinOperator, stats::JoinStats},
-    pipeline_message::{InputId, PipelineMessage},
+    pipeline::{InputId, PipelineMessage},
     runtime_stats::RuntimeStatsManagerHandle,
 };
 
@@ -92,8 +92,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
         match msg {
             PipelineMessage::Morsel { partition, .. } => {
                 runtime_stats.add_build_rows_inserted(partition.len() as u64);
-                let owned = Arc::try_unwrap(partition).unwrap_or_else(|a| (*a).clone());
-                state = op.build(owned, state, &task_spawner).await??;
+                state = op.build(partition, state, &task_spawner).await??;
             }
             PipelineMessage::Flush(_) => {
                 break;

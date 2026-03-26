@@ -15,16 +15,17 @@ use common_metrics::{
 };
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
+pub use daft_local_plan::InputId;
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
-    HashAggregate, HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext,
-    LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
-    Sample, Sort, SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot,
-    VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
+    HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
+    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Sample, Sort,
+    SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
+    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
     WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
-use daft_micropartition::MicroPartitionRef;
+use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
@@ -42,7 +43,6 @@ use crate::{
         unpivot::UnpivotOperator,
     },
     join::{CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator},
-    pipeline_message::PipelineMessage,
     runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
@@ -72,6 +72,18 @@ use crate::{
         vllm::VLLMSink,
     },
 };
+
+/// Message that can flow through the pipeline - either data (Morsel) or a flush signal
+#[derive(Debug, Clone)]
+pub enum PipelineMessage {
+    /// Data morsel with input_id and partition
+    Morsel {
+        input_id: InputId,
+        partition: MicroPartition,
+    },
+    /// Flush signal for a specific input_id - indicates that input is finished
+    Flush(InputId),
+}
 
 pub type NodeName = Cow<'static, str>;
 

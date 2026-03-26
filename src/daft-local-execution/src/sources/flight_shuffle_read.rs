@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::collections::VecDeque;
 
 use async_trait::async_trait;
 use common_daft_config::DaftExecutionConfig;
@@ -16,8 +16,7 @@ use tracing::instrument;
 use super::source::{Source, SourceStream};
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
-    pipeline::NodeName,
-    pipeline_message::PipelineMessage,
+    pipeline::{NodeName, PipelineMessage},
 };
 
 pub struct FlightShuffleReadSource {
@@ -169,7 +168,7 @@ impl Source for FlightShuffleReadSource {
         let result_stream = output_receiver.into_stream().map(|mp| {
             Ok(PipelineMessage::Morsel {
                 input_id: 0,
-                partition: Arc::new(mp),
+                partition: mp,
             })
         });
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));

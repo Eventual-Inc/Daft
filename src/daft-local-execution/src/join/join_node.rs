@@ -20,8 +20,7 @@ use crate::{
         probe::ProbeExecutionContext,
         stats::JoinStats,
     },
-    pipeline::{BuilderContext, MorselSizeRequirement, PipelineNode},
-    pipeline_message::PipelineMessage,
+    pipeline::{BuilderContext, MorselSizeRequirement, PipelineMessage, PipelineNode},
     runtime_stats::RuntimeStats,
 };
 

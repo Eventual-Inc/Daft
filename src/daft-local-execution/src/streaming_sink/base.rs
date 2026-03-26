@@ -25,8 +25,9 @@ use crate::{
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
-    pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
-    pipeline_message::{InputId, PipelineMessage},
+    pipeline::{
+        BuilderContext, InputId, MorselSizeRequirement, NodeName, PipelineMessage, PipelineNode,
+    },
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 
@@ -224,7 +225,7 @@ async fn handle_task_completion_impl<Op: StreamingSink + 'static>(
                     .output_sender
                     .send(PipelineMessage::Morsel {
                         input_id: ctx.input_id,
-                        partition: Arc::new(mp),
+                        partition: mp,
                     })
                     .await
                     .is_err()
@@ -246,7 +247,7 @@ async fn handle_task_completion_impl<Op: StreamingSink + 'static>(
                     .output_sender
                     .send(PipelineMessage::Morsel {
                         input_id: ctx.input_id,
-                        partition: Arc::new(mp),
+                        partition: mp,
                     })
                     .await
                     .is_err()
@@ -268,7 +269,7 @@ async fn handle_task_completion_impl<Op: StreamingSink + 'static>(
                     .output_sender
                     .send(PipelineMessage::Morsel {
                         input_id: ctx.input_id,
-                        partition: Arc::new(mp),
+                        partition: mp,
                     })
                     .await;
             }
@@ -314,7 +315,7 @@ async fn process_input_impl<Op: StreamingSink + 'static>(
                             node_initialized = true;
                         }
                         ctx.runtime_stats.add_rows_in(partition.len() as u64);
-                        buffer.push(Arc::try_unwrap(partition).unwrap_or_else(|a| (*a).clone()));
+                        buffer.push(partition);
                         spawn_ready_batches_impl(&mut buffer, ctx)?;
                     }
                     Some(PipelineMessage::Flush(_)) | None => {
@@ -355,7 +356,7 @@ async fn process_input_impl<Op: StreamingSink + 'static>(
                     .output_sender
                     .send(PipelineMessage::Morsel {
                         input_id: ctx.input_id,
-                        partition: Arc::new(mp.clone()),
+                        partition: mp.clone(),
                     })
                     .await
                     .is_err()
@@ -399,7 +400,7 @@ async fn process_input_impl<Op: StreamingSink + 'static>(
                             .output_sender
                             .send(PipelineMessage::Morsel {
                                 input_id: ctx.input_id,
-                                partition: Arc::new(mp),
+                                partition: mp,
                             })
                             .await
                             .is_err()
@@ -416,7 +417,7 @@ async fn process_input_impl<Op: StreamingSink + 'static>(
                             .output_sender
                             .send(PipelineMessage::Morsel {
                                 input_id: ctx.input_id,
-                                partition: Arc::new(mp),
+                                partition: mp,
                             })
                             .await
                             .is_err()

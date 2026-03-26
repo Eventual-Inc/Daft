@@ -13,8 +13,7 @@ use daft_logical_plan::stats::StatsState;
 use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, Sender, create_channel},
-    pipeline::{BuilderContext, MorselSizeRequirement, PipelineNode},
-    pipeline_message::PipelineMessage,
+    pipeline::{BuilderContext, MorselSizeRequirement, PipelineMessage, PipelineNode},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 

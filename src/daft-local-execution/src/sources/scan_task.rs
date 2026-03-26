@@ -23,8 +23,7 @@ use crate::{
         Receiver, Sender, UnboundedReceiver, UnboundedSender, create_channel,
         create_unbounded_channel,
     },
-    pipeline::NodeName,
-    pipeline_message::{InputId, PipelineMessage},
+    pipeline::{InputId, NodeName, PipelineMessage},
     sources::{
         scan_task_reader,
         source::{Source, SourceStream},
@@ -103,7 +102,7 @@ impl ScanTaskSource {
                     let (scan_task, delete_map, input_id, is_last) = pending_tasks.pop_front().unwrap();
                     let sender = match &flattener_state {
                         Some((agg_tx, _)) => {
-                            let (stream_tx, stream_rx) = create_channel::<Arc<MicroPartition>>(1);
+                            let (stream_tx, stream_rx) = create_channel::<MicroPartition>(1);
                             let _ = agg_tx.send(FlattenerMessage { input_id, inner_rx: stream_rx, is_last });
                             ScanTaskOutputSender::OrderPreserving(stream_tx)
                         }
@@ -124,11 +123,11 @@ impl ScanTaskSource {
                     recv_result = receiver.recv(), if !receiver_exhausted => {
                         match recv_result {
                             Some((input_id, scan_tasks_batch)) if scan_tasks_batch.is_empty() => {
-                                let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
+                                let empty = MicroPartition::empty(Some(schema.clone()));
                                 match &flattener_state {
                                     Some((agg_tx, _)) => {
                                         let (stream_tx, stream_rx) =
-                                            create_channel::<Arc<MicroPartition>>(1);
+                                            create_channel::<MicroPartition>(1);
                                         let _ = stream_tx.send(empty).await;
                                         drop(stream_tx);
                                         let _ = agg_tx.send(FlattenerMessage { input_id, inner_rx: stream_rx, is_last: true });
@@ -434,7 +433,7 @@ async fn get_delete_map(
 
 struct FlattenerMessage {
     input_id: InputId,
-    inner_rx: Receiver<Arc<MicroPartition>>,
+    inner_rx: Receiver<MicroPartition>,
     is_last: bool,
 }
 
@@ -474,7 +473,7 @@ async fn run_order_preserving_flattener(
 /// MicroPartition-only for the order-preserving flattener to wrap.
 enum ScanTaskOutputSender {
     Pipeline(Sender<PipelineMessage>),
-    OrderPreserving(Sender<Arc<MicroPartition>>),
+    OrderPreserving(Sender<MicroPartition>),
 }
 
 async fn forward_scan_task_stream(
@@ -492,7 +491,7 @@ async fn forward_scan_task_stream(
     let mut has_data = false;
     while let Some(result) = stream.next().await {
         has_data = true;
-        let partition = Arc::new(result?);
+        let partition = result?;
         match &sender {
             ScanTaskOutputSender::Pipeline(s) => {
                 if s.send(PipelineMessage::Morsel {
@@ -515,7 +514,7 @@ async fn forward_scan_task_stream(
 
     // If no data was emitted, send empty micropartition
     if !has_data {
-        let empty = Arc::new(MicroPartition::empty(Some(schema)));
+        let empty = MicroPartition::empty(Some(schema));
         match &sender {
             ScanTaskOutputSender::Pipeline(s) => {
                 let _ = s
