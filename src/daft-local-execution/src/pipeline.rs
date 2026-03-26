@@ -43,7 +43,6 @@ use crate::{
         unpivot::UnpivotOperator,
     },
     join::{CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator},
-    runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
@@ -183,8 +182,6 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn node_id(&self) -> usize;
     // General Node Info
     fn node_info(&self) -> Arc<NodeInfo>;
-    // Runtime Stats
-    fn runtime_stats(&self) -> Arc<dyn RuntimeStats>;
 }
 
 impl ConcreteTreeNode for Box<dyn PipelineNode> {

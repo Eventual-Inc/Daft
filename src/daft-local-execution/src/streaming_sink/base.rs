@@ -5,12 +5,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
+    Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
-    snapshot::StatSnapshotImpl,
 };
 use common_runtime::{
     JoinSet, OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime,
@@ -104,7 +103,7 @@ pub(crate) trait StreamingSink: Send + Sync {
 pub struct StreamingSinkNode<Op: StreamingSink> {
     op: Arc<Op>,
     child: Box<dyn PipelineNode>,
-    runtime_stats: Arc<Op::Stats>,
+    meter: Meter,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
     morsel_size_requirement: MorselSizeRequirement,
@@ -143,13 +142,11 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         let name: Arc<str> = op.name().into();
         let node_info =
             ctx.next_node_info(name, op.op_type(), NodeCategory::StreamingSink, context);
-        let runtime_stats = Arc::new(Op::Stats::new(&ctx.meter, &node_info));
-
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
             op,
             child,
-            runtime_stats,
+            meter: ctx.meter.clone(),
             plan_stats,
             node_info: Arc::new(node_info),
             morsel_size_requirement,
@@ -466,19 +463,13 @@ impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
             DisplayLevel::Compact => {
                 writeln!(display, "{}", self.op.name()).unwrap();
             }
-            level => {
+            _ => {
                 let multiline_display = self.op.multiline_display().join("\n");
                 writeln!(display, "{}", multiline_display).unwrap();
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
                 writeln!(display, "Batch Size = {}", self.morsel_size_requirement).unwrap();
-                if matches!(level, DisplayLevel::Verbose) {
-                    let rt_result = self.runtime_stats.snapshot();
-                    for (name, value) in rt_result.to_stats() {
-                        writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
-                    }
-                }
             }
         }
         display
@@ -565,8 +556,9 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
 
         let batch_manager = Arc::new(BatchManager::new(self.op.batching_strategy()));
         let op = self.op.clone();
-        let runtime_stats = self.runtime_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
+        let meter = self.meter.clone();
+        let node_info = self.node_info.clone();
 
         runtime_handle.spawn(
             async move {
@@ -599,10 +591,12 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                                 let (tx, rx) = create_channel(1);
                                 e.insert(tx);
 
+                                let runtime_stats = Arc::new(Op::Stats::new(&meter, &node_info));
+                                stats_manager.register_input_stats(node_id, input_id, runtime_stats.clone());
+
                                 let op = op.clone();
                                 let task_spawner = task_spawner.clone();
                                 let finalize_spawner = finalize_spawner.clone();
-                                let runtime_stats = runtime_stats.clone();
                                 let batch_manager = batch_manager.clone();
                                 let stats_manager = stats_manager.clone();
                                 let state_pool = (0..op.max_concurrency())
@@ -657,8 +651,5 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
     }
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()
-    }
-    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        self.runtime_stats.clone()
     }
 }

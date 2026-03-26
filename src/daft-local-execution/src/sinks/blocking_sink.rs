@@ -5,12 +5,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::{DaftError, DaftResult};
 use common_metrics::{
+    Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
-    snapshot::StatSnapshotImpl,
 };
 use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
 use daft_local_plan::LocalNodeContext;
@@ -93,7 +92,7 @@ struct ExecutionContext<Op: BlockingSink> {
 pub struct BlockingSinkNode<Op: BlockingSink> {
     op: Arc<Op>,
     child: Box<dyn PipelineNode>,
-    runtime_stats: Arc<Op::Stats>,
+    meter: Meter,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
 }
@@ -108,12 +107,10 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
     ) -> Self {
         let name: Arc<str> = op.name().into();
         let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::BlockingSink, context);
-        let runtime_stats = Arc::new(Op::Stats::new(&ctx.meter, &node_info));
-
         Self {
             op,
             child,
-            runtime_stats,
+            meter: ctx.meter.clone(),
             plan_stats,
             node_info: Arc::new(node_info),
         }
@@ -275,17 +272,11 @@ impl<Op: BlockingSink + 'static> TreeDisplay for BlockingSinkNode<Op> {
             DisplayLevel::Compact => {
                 writeln!(display, "{}", self.op.name()).unwrap();
             }
-            level => {
+            _ => {
                 let multiline_display = self.op.multiline_display().join("\n");
                 writeln!(display, "{}", multiline_display).unwrap();
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
-                }
-                if matches!(level, DisplayLevel::Verbose) {
-                    let rt_result = self.runtime_stats.snapshot();
-                    for (name, value) in rt_result.to_stats() {
-                        writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
-                    }
                 }
             }
         }
@@ -370,7 +361,8 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
 
         // Spawn process_input task
         let stats_manager = runtime_handle.stats_manager();
-        let runtime_stats = self.runtime_stats.clone();
+        let meter = self.meter.clone();
+        let node_info = self.node_info.clone();
 
         // Create task set
         let mut task_set: OrderingAwareJoinSet<DaftResult<ControlFlow<()>>> =
@@ -406,10 +398,12 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                                 let (tx, rx) = create_channel(1);
                                 e.insert(tx);
 
+                                let runtime_stats = Arc::new(Op::Stats::new(&meter, &node_info));
+                                stats_manager.register_input_stats(node_id, input_id, runtime_stats.clone());
+
                                 let op = op.clone();
                                 let task_spawner = task_spawner.clone();
                                 let finalize_spawner = finalize_spawner.clone();
-                                let runtime_stats = runtime_stats.clone();
                                 let output_sender = destination_sender.clone();
                                 let stats_manager = stats_manager.clone();
 
@@ -471,8 +465,5 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
     }
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()
-    }
-    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        self.runtime_stats.clone()
     }
 }

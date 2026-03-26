@@ -5,12 +5,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
+    Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
-    snapshot::StatSnapshotImpl,
 };
 use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
 use daft_local_plan::LocalNodeContext;
@@ -71,7 +70,7 @@ pub(crate) trait IntermediateOperator: Send + Sync {
 pub struct IntermediateNode<Op: IntermediateOperator> {
     intermediate_op: Arc<Op>,
     child: Box<dyn PipelineNode>,
-    runtime_stats: Arc<Op::Stats>,
+    meter: Meter,
     plan_stats: StatsState,
     morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
@@ -141,14 +140,13 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
             NodeCategory::Intermediate,
             context,
         );
-        let runtime_stats = Arc::new(Op::Stats::new(&ctx.meter, &info));
         let morsel_size_requirement = intermediate_op
             .morsel_size_requirement()
             .unwrap_or_default();
         Self {
             intermediate_op,
             child,
-            runtime_stats,
+            meter: ctx.meter.clone(),
             plan_stats,
             morsel_size_requirement,
             node_info: Arc::new(info),
@@ -158,244 +156,223 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
         Box::new(self)
     }
-}
 
-// ========== Helper Functions ==========
+    // ========== Helper Functions ==========
 
-/// Spawn a single task for the given input_id, consuming a state from the pool.
-fn spawn_execution_task<Op: IntermediateOperator + 'static>(
-    ctx: &mut ExecutionContext<Op>,
-    state_id: StateId,
-    input_id: InputId,
-    op_state: Op::State,
-    batch: MicroPartition,
-) {
-    let op = ctx.op.clone();
-    let task_spawner = ctx.task_spawner.clone();
-    let runtime_stats = ctx.runtime_stats.clone();
-    ctx.task_set.spawn(async move {
-        let now = Instant::now();
-        let (new_op_state, result) = op
-            .execute(batch, op_state, runtime_stats, &task_spawner)
-            .await??;
-        let elapsed = now.elapsed();
-        Ok(ExecutionTaskResult {
-            state_id,
-            input_id,
-            state: new_op_state,
-            result,
-            elapsed,
-        })
-    });
-}
+    fn spawn_execution_task(
+        ctx: &mut ExecutionContext<Op>,
+        input: MicroPartition,
+        state: Op::State,
+        state_id: StateId,
+        input_id: InputId,
+    ) {
+        let op = ctx.op.clone();
+        let task_spawner = ctx.task_spawner.clone();
+        let runtime_stats = ctx.runtime_stats.clone();
+        ctx.task_set.spawn(async move {
+            let now = Instant::now();
+            let (new_state, result) = op
+                .execute(input, state, runtime_stats, &task_spawner)
+                .await??;
+            let elapsed = now.elapsed();
 
-fn try_spawn_tasks<Op: IntermediateOperator + 'static>(
-    ctx: &mut ExecutionContext<Op>,
-) -> DaftResult<()> {
-    let mut input_ids: Vec<InputId> = ctx.input_trackers.keys().copied().collect();
-    input_ids.sort_unstable();
-    for input_id in input_ids {
-        if ctx.task_set.len() >= ctx.op.max_concurrency() || ctx.state_pool.is_empty() {
-            break;
-        }
-        try_spawn_tasks_for_input(ctx, input_id)?;
-    }
-    Ok(())
-}
-
-fn try_spawn_tasks_for_input<Op: IntermediateOperator + 'static>(
-    ctx: &mut ExecutionContext<Op>,
-    input_id: InputId,
-) -> DaftResult<()> {
-    while !ctx.state_pool.is_empty() {
-        let input = {
-            let tracker = ctx
-                .input_trackers
-                .get_mut(&input_id)
-                .expect("Input should be present");
-            let batch = tracker.next_batch_if_ready()?;
-            let Some(batch) = batch else {
-                break;
-            };
-            tracker.in_flight += 1;
-            batch
-        };
-        let state_id = *ctx
-            .state_pool
-            .keys()
-            .next()
-            .expect("State pool should have states when non-empty");
-        let op_state = ctx
-            .state_pool
-            .remove(&state_id)
-            .expect("State pool should have states when non-empty");
-        spawn_execution_task(ctx, state_id, input_id, op_state, input);
-    }
-    Ok(())
-}
-
-async fn try_flush_input<Op: IntermediateOperator + 'static>(
-    ctx: &mut ExecutionContext<Op>,
-    input_id: InputId,
-) -> DaftResult<ControlFlow<(), ()>> {
-    let input_state = ctx
-        .input_trackers
-        .get_mut(&input_id)
-        .expect("Input should be present");
-    if input_state.can_flush() {
-        ctx.input_trackers.remove(&input_id);
-        if ctx
-            .output_sender
-            .send(PipelineMessage::Flush(input_id))
-            .await
-            .is_err()
-        {
-            return Ok(ControlFlow::Break(()));
-        }
-        return Ok(ControlFlow::Continue(()));
-    }
-    Ok(ControlFlow::Continue(()))
-}
-
-async fn handle_task_completion<Op: IntermediateOperator + 'static>(
-    ctx: &mut ExecutionContext<Op>,
-    task_result: ExecutionTaskResult<Op::State>,
-) -> DaftResult<ControlFlow<(), ()>> {
-    let ExecutionTaskResult {
-        state_id,
-        input_id,
-        state,
-        result,
-        elapsed,
-    } = task_result;
-
-    ctx.runtime_stats
-        .add_duration_us(elapsed.as_micros() as u64);
-
-    let mp = result;
-    ctx.batch_manager
-        .record_execution_stats(ctx.runtime_stats.as_ref(), mp.len(), elapsed);
-
-    ctx.runtime_stats.add_rows_out(mp.len() as u64);
-    if ctx
-        .output_sender
-        .send(PipelineMessage::Morsel {
-            input_id,
-            partition: mp,
-        })
-        .await
-        .is_err()
-    {
-        return Ok(ControlFlow::Break(()));
-    }
-
-    let new_requirements = ctx.batch_manager.calculate_batch_size();
-    for input in ctx.input_trackers.values_mut() {
-        input.buffer.update_bounds(new_requirements);
-    }
-
-    ctx.input_trackers.get_mut(&input_id).unwrap().in_flight -= 1;
-    ctx.state_pool.insert(state_id, state);
-    try_spawn_tasks(ctx)?;
-    try_flush_input(ctx, input_id).await
-}
-
-fn handle_morsel<Op: IntermediateOperator + 'static>(
-    ctx: &mut ExecutionContext<Op>,
-    input_id: InputId,
-    partition: MicroPartition,
-) -> DaftResult<()> {
-    if !ctx.node_initialized {
-        ctx.stats_manager.activate_node(ctx.node_id);
-        ctx.node_initialized = true;
-    }
-    ctx.runtime_stats.add_rows_in(partition.len() as u64);
-    let (lower, upper) = ctx.batch_manager.calculate_batch_size().values();
-    let input = ctx
-        .input_trackers
-        .entry(input_id)
-        .or_insert_with(|| InputTracker {
-            buffer: RowBasedBuffer::new(lower, upper),
-            in_flight: 0,
-            pending_flush: false,
+            Ok(ExecutionTaskResult {
+                state_id,
+                input_id,
+                state: new_state,
+                result,
+                elapsed,
+            })
         });
-    input.buffer.push(partition);
-    try_spawn_tasks(ctx)
-}
+    }
 
-async fn handle_flush<Op: IntermediateOperator + 'static>(
-    ctx: &mut ExecutionContext<Op>,
-    input_id: InputId,
-) -> DaftResult<ControlFlow<(), ()>> {
-    let Some(input) = ctx.input_trackers.get_mut(&input_id) else {
-        return Ok(
+    fn spawn_ready_batches(ctx: &mut ExecutionContext<Op>, input_id: InputId) -> DaftResult<()> {
+        while !ctx.state_pool.is_empty() {
+            let batch = {
+                let tracker = ctx
+                    .input_trackers
+                    .get_mut(&input_id)
+                    .expect("Input should be present");
+                let batch = tracker.next_batch_if_ready()?;
+                let Some(batch) = batch else {
+                    break;
+                };
+                tracker.in_flight += 1;
+                batch
+            };
+            let state_id = *ctx
+                .state_pool
+                .keys()
+                .next()
+                .expect("State pool should have states when non-empty");
+            let state = ctx
+                .state_pool
+                .remove(&state_id)
+                .expect("State pool should have states when non-empty");
+
+            Self::spawn_execution_task(ctx, batch, state, state_id, input_id);
+        }
+        Ok(())
+    }
+
+    fn try_spawn_tasks(ctx: &mut ExecutionContext<Op>) -> DaftResult<()> {
+        let mut input_ids: Vec<InputId> = ctx.input_trackers.keys().copied().collect();
+        input_ids.sort_unstable();
+        for input_id in input_ids {
+            if ctx.task_set.len() >= ctx.op.max_concurrency() || ctx.state_pool.is_empty() {
+                break;
+            }
+            Self::spawn_ready_batches(ctx, input_id)?;
+        }
+        Ok(())
+    }
+
+    async fn try_flush_input(
+        ctx: &mut ExecutionContext<Op>,
+        input_id: InputId,
+    ) -> DaftResult<ControlFlow<(), ()>> {
+        let input_state = ctx
+            .input_trackers
+            .get_mut(&input_id)
+            .expect("Input should be present");
+        if input_state.can_flush() {
+            ctx.input_trackers.remove(&input_id);
             if ctx
                 .output_sender
                 .send(PipelineMessage::Flush(input_id))
                 .await
                 .is_err()
             {
-                ControlFlow::Break(())
-            } else {
-                ControlFlow::Continue(())
-            },
-        );
-    };
-    input.pending_flush = true;
-    try_spawn_tasks(ctx)?;
-    try_flush_input(ctx, input_id).await
-}
-
-async fn handle_input_closed<Op: IntermediateOperator + 'static>(
-    ctx: &mut ExecutionContext<Op>,
-) -> DaftResult<ControlFlow<(), ()>> {
-    for input_state in ctx.input_trackers.values_mut() {
-        input_state.pending_flush = true;
+                return Ok(ControlFlow::Break(()));
+            }
+            return Ok(ControlFlow::Continue(()));
+        }
+        Ok(ControlFlow::Continue(()))
     }
-    try_spawn_tasks(ctx)?;
-    let mut input_ids: Vec<InputId> = ctx.input_trackers.keys().copied().collect();
-    input_ids.sort_unstable();
-    for input_id in input_ids {
-        if try_flush_input(ctx, input_id).await?.is_break() {
+
+    async fn handle_task_completion(
+        result: ExecutionTaskResult<Op::State>,
+        ctx: &mut ExecutionContext<Op>,
+    ) -> DaftResult<ControlFlow<(), ()>> {
+        let ExecutionTaskResult {
+            state_id,
+            input_id,
+            state,
+            result,
+            elapsed,
+        } = result;
+
+        // Record execution stats
+        ctx.runtime_stats
+            .add_duration_us(elapsed.as_micros() as u64);
+
+        let mp = result;
+        ctx.batch_manager
+            .record_execution_stats(ctx.runtime_stats.as_ref(), mp.len(), elapsed);
+
+        // Send output
+        ctx.runtime_stats.add_rows_out(mp.len() as u64);
+        if ctx
+            .output_sender
+            .send(PipelineMessage::Morsel {
+                input_id,
+                partition: mp,
+            })
+            .await
+            .is_err()
+        {
             return Ok(ControlFlow::Break(()));
         }
-    }
-    Ok(ControlFlow::Continue(()))
-}
 
-async fn process_input<Op: IntermediateOperator + 'static>(
-    ctx: &mut ExecutionContext<Op>,
-    receiver: &mut Receiver<PipelineMessage>,
-) -> DaftResult<()> {
-    let mut input_closed = false;
-
-    while !input_closed || !ctx.task_set.is_empty() || !ctx.input_trackers.is_empty() {
-        let event = next_event(
-            &mut ctx.task_set,
-            ctx.op.max_concurrency(),
-            receiver,
-            &mut input_closed,
-        )
-        .await?;
-        let cf = match event {
-            PipelineEvent::TaskCompleted(task_result) => {
-                handle_task_completion(ctx, task_result).await?
-            }
-            PipelineEvent::Morsel {
-                input_id,
-                partition,
-            } => {
-                handle_morsel(ctx, input_id, partition)?;
-                ControlFlow::Continue(())
-            }
-            PipelineEvent::Flush(input_id) => handle_flush(ctx, input_id).await?,
-            PipelineEvent::InputClosed => handle_input_closed(ctx).await?,
-        };
-        if cf.is_break() {
-            return Ok(());
+        // After completing a task, update bounds and try to spawn more tasks
+        let new_requirements = ctx.batch_manager.calculate_batch_size();
+        for input in ctx.input_trackers.values_mut() {
+            input.buffer.update_bounds(new_requirements);
         }
+
+        // Return state to pool
+        ctx.input_trackers.get_mut(&input_id).unwrap().in_flight -= 1;
+        ctx.state_pool.insert(state_id, state);
+        Self::try_spawn_tasks(ctx)?;
+        Self::try_flush_input(ctx, input_id).await
     }
-    Ok(())
+
+    async fn process_input(
+        ctx: &mut ExecutionContext<Op>,
+        receiver: &mut Receiver<PipelineMessage>,
+    ) -> DaftResult<()> {
+        let mut input_closed = false;
+
+        // Main processing loop
+        while !input_closed || !ctx.task_set.is_empty() || !ctx.input_trackers.is_empty() {
+            let event = next_event(
+                &mut ctx.task_set,
+                ctx.op.max_concurrency(),
+                receiver,
+                &mut input_closed,
+            )
+            .await?;
+            let cf = match event {
+                PipelineEvent::TaskCompleted(task_result) => {
+                    Self::handle_task_completion(task_result, ctx).await?
+                }
+                PipelineEvent::Morsel {
+                    input_id,
+                    partition,
+                } => {
+                    if !ctx.node_initialized {
+                        ctx.stats_manager.activate_node(ctx.node_id);
+                        ctx.node_initialized = true;
+                    }
+                    ctx.runtime_stats.add_rows_in(partition.len() as u64);
+                    let (lower, upper) = ctx.batch_manager.calculate_batch_size().values();
+                    let input =
+                        ctx.input_trackers
+                            .entry(input_id)
+                            .or_insert_with(|| InputTracker {
+                                buffer: RowBasedBuffer::new(lower, upper),
+                                in_flight: 0,
+                                pending_flush: false,
+                            });
+                    input.buffer.push(partition);
+                    Self::try_spawn_tasks(ctx)?;
+                    ControlFlow::Continue(())
+                }
+                PipelineEvent::Flush(input_id) => {
+                    let Some(input) = ctx.input_trackers.get_mut(&input_id) else {
+                        let _ = ctx
+                            .output_sender
+                            .send(PipelineMessage::Flush(input_id))
+                            .await;
+                        return Ok(());
+                    };
+                    input.pending_flush = true;
+                    Self::try_spawn_tasks(ctx)?;
+                    Self::try_flush_input(ctx, input_id).await?
+                }
+                PipelineEvent::InputClosed => {
+                    for input_state in ctx.input_trackers.values_mut() {
+                        input_state.pending_flush = true;
+                    }
+                    Self::try_spawn_tasks(ctx)?;
+                    let mut input_ids: Vec<InputId> = ctx.input_trackers.keys().copied().collect();
+                    input_ids.sort_unstable();
+                    let mut cf = ControlFlow::Continue(());
+                    for input_id in input_ids {
+                        if Self::try_flush_input(ctx, input_id).await?.is_break() {
+                            cf = ControlFlow::Break(());
+                            break;
+                        }
+                    }
+                    cf
+                }
+            };
+            if cf.is_break() {
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
 }
 
 impl<Op: IntermediateOperator + 'static> TreeDisplay for IntermediateNode<Op> {
@@ -412,20 +389,13 @@ impl<Op: IntermediateOperator + 'static> TreeDisplay for IntermediateNode<Op> {
             DisplayLevel::Compact => {
                 writeln!(display, "{}", self.intermediate_op.name()).unwrap();
             }
-            level => {
+            _ => {
                 let multiline_display = self.intermediate_op.multiline_display().join("\n");
                 writeln!(display, "{}", multiline_display).unwrap();
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
                 writeln!(display, "Batch Size = {}", self.morsel_size_requirement).unwrap();
-                if matches!(level, DisplayLevel::Verbose) {
-                    writeln!(display).unwrap();
-                    let rt_result = self.runtime_stats.snapshot();
-                    for (name, value) in rt_result.to_stats() {
-                        writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
-                    }
-                }
             }
         }
         display
@@ -512,21 +482,30 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
 
         // 4. Spawn process_input task
         let stats_manager = runtime_handle.stats_manager();
-        let runtime_stats = self.runtime_stats.clone();
+        let meter = self.meter.clone();
+        let node_info = self.node_info.clone();
         runtime_handle.spawn(
             async move {
+                let runtime_stats = Arc::new(Op::Stats::new(&meter, &node_info));
+                stats_manager.register_input_stats(node_id, 0, runtime_stats.clone());
+                // Initialize state pool with max_concurrency states
+                let state_pool = (0..op.max_concurrency())
+                    .map(|i| (i, op.make_state()))
+                    .collect();
+
+                // Create batch manager and task set
                 let batch_manager = Arc::new(BatchManager::new(op.batching_strategy().context(
                     PipelineExecutionSnafu {
                         node_name: op.name().to_string(),
                     },
                 )?));
-                let state_pool = (0..op.max_concurrency())
-                    .map(|i| (i, op.make_state()))
-                    .collect();
+                let task_set = OrderingAwareJoinSet::new(maintain_order);
+
+                // Process each child receiver sequentially
                 let mut ctx = ExecutionContext {
                     op,
                     task_spawner,
-                    task_set: OrderingAwareJoinSet::new(maintain_order),
+                    task_set,
                     state_pool,
                     output_sender: destination_sender,
                     batch_manager,
@@ -536,10 +515,11 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
                     node_id,
                     node_initialized: false,
                 };
+                Self::process_input(&mut ctx, &mut child_result_receiver).await?;
 
-                process_input(&mut ctx, &mut child_result_receiver).await?;
-
+                // Finalize node after processing completes
                 stats_manager.finalize_node(node_id);
+
                 Ok(())
             },
             &name,
@@ -557,9 +537,5 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
 
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()
-    }
-
-    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        self.runtime_stats.clone()
     }
 }

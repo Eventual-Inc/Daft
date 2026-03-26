@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
-use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_metrics::{
+    Meter,
     ops::{NodeCategory, NodeInfo},
-    snapshot::StatSnapshotImpl,
 };
 use common_runtime::get_compute_runtime;
 use daft_local_plan::LocalNodeContext;
@@ -28,7 +27,7 @@ pub struct JoinNode<Op: JoinOperator> {
     op: Arc<Op>,
     left: Box<dyn PipelineNode>,
     right: Box<dyn PipelineNode>,
-    runtime_stats: Arc<JoinStats>,
+    meter: Meter,
     plan_stats: StatsState,
     morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
@@ -45,14 +44,12 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
     ) -> Self {
         let name: Arc<str> = op.name().into();
         let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::Intermediate, context);
-        let runtime_stats = Arc::new(JoinStats::new(&ctx.meter, &node_info));
-
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
             op,
             left,
             right,
-            runtime_stats,
+            meter: ctx.meter.clone(),
             plan_stats,
             morsel_size_requirement,
             node_info: Arc::new(node_info),
@@ -78,19 +75,13 @@ impl<Op: JoinOperator + 'static> TreeDisplay for JoinNode<Op> {
             DisplayLevel::Compact => {
                 writeln!(display, "{}", self.op.name()).unwrap();
             }
-            level => {
+            _ => {
                 let multiline_display = self.op.multiline_display().join("\n");
                 writeln!(display, "{}", multiline_display).unwrap();
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
                 writeln!(display, "Batch Size = {}", self.morsel_size_requirement).unwrap();
-                if matches!(level, DisplayLevel::Verbose) {
-                    let rt_result = self.runtime_stats.snapshot();
-                    for (name, value) in rt_result.to_stats() {
-                        writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
-                    }
-                }
             }
         }
         display
@@ -195,12 +186,16 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         // Create BuildStateBridge shared between build and probe sides
         let build_state_bridge = Arc::new(BuildStateBridge::new());
 
+        // Create per-node stats and register with sentinel input_id=0
+        let runtime_stats = Arc::new(JoinStats::new(&self.meter, &self.node_info));
+        stats_manager.register_input_stats(node_id, 0, runtime_stats.clone());
+
         // Initialize build side
         let build_ctx = BuildExecutionContext::new(
             self.op.clone(),
             build_task_spawner,
             build_state_bridge.clone(),
-            self.runtime_stats.clone(),
+            runtime_stats.clone(),
             stats_manager.clone(),
             node_id,
         );
@@ -212,7 +207,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
             probe_finalize_spawner,
             destination_sender,
             build_state_bridge,
-            self.runtime_stats.clone(),
+            runtime_stats,
             maintain_order,
         );
 
@@ -245,9 +240,5 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
 
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()
-    }
-
-    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        self.runtime_stats.clone()
     }
 }

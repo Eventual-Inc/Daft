@@ -1,13 +1,12 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use async_trait::async_trait;
-use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
     Counter, Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
-    snapshot::{SourceSnapshot, StatSnapshotImpl},
+    snapshot::SourceSnapshot,
 };
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
@@ -92,7 +91,7 @@ pub trait Source: Send + Sync {
 
 pub(crate) struct SourceNode {
     source: Box<dyn Source>,
-    runtime_stats: Arc<SourceStats>,
+    meter: Meter,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
     morsel_size_requirement: MorselSizeRequirement,
@@ -111,10 +110,9 @@ impl SourceNode {
             NodeCategory::Source,
             context,
         );
-        let runtime_stats = source.make_runtime_stats(&ctx.meter, &info);
         Self {
             source,
-            runtime_stats,
+            meter: ctx.meter.clone(),
             plan_stats,
             node_info: Arc::new(info),
             morsel_size_requirement: MorselSizeRequirement::default(),
@@ -139,7 +137,7 @@ impl TreeDisplay for SourceNode {
             DisplayLevel::Compact => {
                 writeln!(display, "{}", self.source.name()).unwrap();
             }
-            level => {
+            _ => {
                 let multiline_display = self.source.multiline_display().join("\n");
                 writeln!(display, "{}", multiline_display).unwrap();
 
@@ -147,15 +145,6 @@ impl TreeDisplay for SourceNode {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
                 writeln!(display, "Batch Size = {}", self.morsel_size_requirement).unwrap();
-
-                if matches!(level, DisplayLevel::Verbose) {
-                    let rt_result = self.runtime_stats.snapshot();
-
-                    writeln!(display).unwrap();
-                    for (name, value) in rt_result.to_stats() {
-                        writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
-                    }
-                }
             }
         }
         display
@@ -206,11 +195,15 @@ impl PipelineNode for SourceNode {
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<crate::channel::Receiver<PipelineMessage>> {
-        let io_stats = self.runtime_stats.io_stats.clone();
+        let runtime_stats = self.source.make_runtime_stats(&self.meter, &self.node_info);
+        let io_stats = runtime_stats.io_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
         let schema = self.source.schema().clone();
         let name = self.name();
+
+        // Register stats with sentinel input_id=0
+        stats_manager.register_input_stats(node_id, 0, runtime_stats.clone());
 
         let (destination_sender, destination_receiver) = create_channel(1);
         let chunk_size = match self.morsel_size_requirement {
@@ -224,7 +217,6 @@ impl PipelineNode for SourceNode {
             .with_context(|_| PipelineExecutionSnafu {
                 node_name: name.to_string(),
             })?;
-        let runtime_stats = self.runtime_stats.clone();
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;
@@ -272,9 +264,5 @@ impl PipelineNode for SourceNode {
 
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()
-    }
-
-    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        self.runtime_stats.clone()
     }
 }

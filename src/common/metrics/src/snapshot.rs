@@ -275,3 +275,76 @@ pub enum StatSnapshot {
     Join(JoinSnapshot),
     Write(WriteSnapshot),
 }
+
+impl StatSnapshot {
+    /// Sum two same-variant snapshots. Mismatched variants return `self` unchanged.
+    pub fn merge(self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Default(a), Self::Default(b)) => Self::Default(DefaultSnapshot {
+                cpu_us: a.cpu_us + b.cpu_us,
+                rows_in: a.rows_in + b.rows_in,
+                rows_out: a.rows_out + b.rows_out,
+            }),
+            (Self::Source(a), Self::Source(b)) => Self::Source(SourceSnapshot {
+                cpu_us: a.cpu_us + b.cpu_us,
+                rows_out: a.rows_out + b.rows_out,
+                bytes_read: a.bytes_read + b.bytes_read,
+            }),
+            (Self::Filter(a), Self::Filter(b)) => {
+                let rows_in = a.rows_in + b.rows_in;
+                let rows_out = a.rows_out + b.rows_out;
+                let selectivity = if rows_in > 0 {
+                    (rows_out as f64 / rows_in as f64) * 100.0
+                } else {
+                    0.0
+                };
+                Self::Filter(FilterSnapshot {
+                    cpu_us: a.cpu_us + b.cpu_us,
+                    rows_in,
+                    rows_out,
+                    selectivity,
+                })
+            }
+            (Self::Explode(a), Self::Explode(b)) => {
+                let rows_in = a.rows_in + b.rows_in;
+                let rows_out = a.rows_out + b.rows_out;
+                let amplification = if rows_in > 0 {
+                    rows_out as f64 / rows_in as f64
+                } else {
+                    0.0
+                };
+                Self::Explode(ExplodeSnapshot {
+                    cpu_us: a.cpu_us + b.cpu_us,
+                    rows_in,
+                    rows_out,
+                    amplification,
+                })
+            }
+            (Self::Udf(a), Self::Udf(b)) => {
+                let mut custom_counters = a.custom_counters;
+                for (k, v) in &b.custom_counters {
+                    *custom_counters.entry(k.clone()).or_insert(0) += v;
+                }
+                Self::Udf(UdfSnapshot {
+                    cpu_us: a.cpu_us + b.cpu_us,
+                    rows_in: a.rows_in + b.rows_in,
+                    rows_out: a.rows_out + b.rows_out,
+                    custom_counters,
+                })
+            }
+            (Self::Join(a), Self::Join(b)) => Self::Join(JoinSnapshot {
+                cpu_us: a.cpu_us + b.cpu_us,
+                build_rows_inserted: a.build_rows_inserted + b.build_rows_inserted,
+                probe_rows_in: a.probe_rows_in + b.probe_rows_in,
+                probe_rows_out: a.probe_rows_out + b.probe_rows_out,
+            }),
+            (Self::Write(a), Self::Write(b)) => Self::Write(WriteSnapshot {
+                cpu_us: a.cpu_us + b.cpu_us,
+                rows_in: a.rows_in + b.rows_in,
+                rows_written: a.rows_written + b.rows_written,
+                bytes_written: a.bytes_written + b.bytes_written,
+            }),
+            (s, _) => s,
+        }
+    }
+}
