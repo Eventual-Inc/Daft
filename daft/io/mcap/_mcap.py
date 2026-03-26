@@ -10,11 +10,11 @@ from daft.dependencies import pafs
 from daft.filesystem import _resolve_paths_and_filesystem, get_protocol_from_path
 from daft.io.source import DataSource, DataSourceTask
 from daft.logical.schema import Schema
-from daft.recordbatch.micropartition import MicroPartition
+from daft.recordbatch import RecordBatch
 
 if TYPE_CHECKING:
     import pathlib
-    from collections.abc import Iterator
+    from collections.abc import AsyncIterator
     from types import TracebackType
 
     from daft import DataFrame
@@ -141,10 +141,10 @@ class MCAPSource(DataSource):
             normalize_storage_path(file_path, io_config) for file_path in list_files(file_path, io_config)
         ]
 
-        if self._file_paths is None or len(self._file_paths) == 0:
+        if not self._file_paths:
             raise FileNotFoundError(f"Path not found: {file_path}")
 
-        self._schema = self._infer_schema(self._file_paths[0])
+        self._schema = self._infer_schema()
         self._io_config = io_config
 
     @property
@@ -164,7 +164,7 @@ class MCAPSource(DataSource):
             f"Schema = {self._schema}",
         ]
 
-    def _infer_schema(self, sample_path: str) -> Schema:
+    def _infer_schema(self) -> Schema:
         import pyarrow as pa
 
         schema = pa.schema(
@@ -178,7 +178,7 @@ class MCAPSource(DataSource):
         )
         return Schema.from_pyarrow_schema(schema)
 
-    def get_tasks(self, pushdowns: Pushdowns | None = None) -> Iterator[MCAPSourceTask]:
+    async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[MCAPSourceTask]:
         for file_path in self._file_paths:
             keyframes: dict[str, int] | None = None
             if self._topic_start_time_resolver is not None:
@@ -234,7 +234,11 @@ class MCAPSourceTask(DataSourceTask):
     _topics: list[str] | None = None
     _io_config: IOConfig | None = None
 
-    def execute(self) -> Iterator[MicroPartition]:
+    @property
+    def schema(self) -> Schema:
+        return self._schema
+
+    async def read(self) -> AsyncIterator[RecordBatch]:
         import importlib
 
         make_reader = importlib.import_module("mcap.reader").make_reader
@@ -280,42 +284,32 @@ class MCAPSourceTask(DataSourceTask):
         in_memory_file = BytesIO(file_content)
         reader = make_reader(_NonSeekableStreamWrapper(in_memory_file), decoder_factories=[])
 
-        buffer = []
-        try:
-            for _, channel, message in reader.iter_messages(
-                topics=self._topics,
-                start_time=self._start_time,
-                end_time=self._end_time,
-                log_time_order=True,
-            ):
-                buffer.append(
-                    {
-                        "topic": channel.topic,
-                        "log_time": message.log_time,
-                        "publish_time": message.publish_time,
-                        "sequence": message.sequence,
-                        "data": str(message.data),
-                    }
-                )
+        buffer: list[dict[str, object]] = []
+        for _, channel, message in reader.iter_messages(
+            topics=self._topics,
+            start_time=self._start_time,
+            end_time=self._end_time,
+            log_time_order=True,
+        ):
+            buffer.append(
+                {
+                    "topic": channel.topic,
+                    "log_time": message.log_time,
+                    "publish_time": message.publish_time,
+                    "sequence": message.sequence,
+                    "data": str(message.data),
+                }
+            )
 
-                if len(buffer) >= self._batch_size:
-                    yield self._create_micropartition(buffer)
-                    buffer.clear()
+            if len(buffer) >= self._batch_size:
+                yield self._create_recordbatch(buffer)
+                buffer.clear()
 
-            if buffer:
-                yield self._create_micropartition(buffer)
-        finally:
-            pass
+        if buffer:
+            yield self._create_recordbatch(buffer)
 
-    def _create_micropartition(self, data: list[dict[str, object]]) -> MicroPartition:
+    def _create_recordbatch(self, data: list[dict[str, object]]) -> RecordBatch:
         import pyarrow as pa
 
         arrow_batch = pa.RecordBatch.from_pylist(data, schema=self._schema.to_pyarrow_schema())
-        return MicroPartition.from_arrow_record_batches([arrow_batch], arrow_schema=self._schema.to_pyarrow_schema())
-
-    def get_micro_partitions(self) -> Iterator[MicroPartition]:
-        yield from self.execute()
-
-    @property
-    def schema(self) -> Schema:
-        return self._schema
+        return RecordBatch.from_arrow_record_batches([arrow_batch], arrow_schema=self._schema.to_pyarrow_schema())

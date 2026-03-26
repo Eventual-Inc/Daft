@@ -13,21 +13,18 @@ from daft.daft import FileInfos, ImageMode
 from daft.datatype import DataType
 from daft.filesystem import _infer_filesystem, glob_path_with_stats
 from daft.io import DataSource, DataSourceTask
-from daft.recordbatch import MicroPartition
+from daft.recordbatch import RecordBatch
 from daft.schema import Schema
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterator
+    from collections.abc import AsyncIterator, Generator
     from fractions import Fraction
 
     from av.video import VideoFrame
 
     from daft.daft import IOConfig
-    from daft.io.pushdowns import Pushdowns
-
-
-if TYPE_CHECKING:
     from daft.dependencies import np
+    from daft.io.pushdowns import Pushdowns
 
     _VideoFrameData: TypeAlias = np.typing.NDArray[Any]
 else:
@@ -103,7 +100,7 @@ class _VideoFramesSource(DataSource):
             for file_infos in self._list_file_infos():
                 yield from file_infos.file_paths
 
-    def get_tasks(self, pushdowns: Pushdowns) -> Iterator[DataSourceTask]:
+    async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
         for path in self._list_file_paths():
             yield _VideoFramesSourceTask(
                 path=path,
@@ -117,7 +114,7 @@ class _VideoFramesSource(DataSource):
 
 @dataclass
 class _VideoFramesSourceTask(DataSourceTask):
-    """DataSourceTask which yields micropartitions of images from a video file."""
+    """DataSourceTask which yields record batches of images from a video file."""
 
     path: str
     image_height: int
@@ -269,7 +266,7 @@ class _VideoFramesSourceTask(DataSourceTask):
             if os.path.exists(temp_file):
                 os.remove(temp_file)
 
-    def get_micro_partitions(self) -> Iterator[MicroPartition]:
+    async def read(self) -> AsyncIterator[RecordBatch]:
         with self._open() as file:
             buffer = _VideoFramesBuffer(
                 image_height=self.image_height,
@@ -277,25 +274,21 @@ class _VideoFramesSourceTask(DataSourceTask):
             )
             for frame in self._list_frames(self.path, file):
                 buffer.append(frame)
-                # yield when full
                 if buffer.size() >= self._max_partition_size:
-                    yield buffer.to_micropartition()
+                    yield buffer.to_recordbatch()
                     buffer.clear()
-            # yield if non-empty
             if buffer and buffer.size() > 0:
-                yield buffer.to_micropartition()
+                yield buffer.to_recordbatch()
 
 
 class _VideoFramesBuffer:
-    """A micropartition buffer/builder for video frames.
+    """A record batch buffer/builder for video frames.
 
-    Note:
-        This enables decoupling the video source from a particular
-        library, making it possible for the VideoSource to leverage
-        an Iterable[_VideoFrame[T]] at some later time. How the iterator
-        is implemented e.g. open-cv vs. PyAV or other library is not
-        important, just that we have an Iterable of frames which this
-        builder and the source and stream as appropriately sized partitions.
+    This enables decoupling the video source from a particular library,
+    making it possible for the VideoSource to leverage an Iterable[_VideoFrame[T]]
+    at some later time. How the iterator is implemented (e.g. OpenCV vs PyAV)
+    is not important, just that we have an iterable of frames which this builder
+    and the source can stream as appropriately sized record batches.
     """
 
     image_height: int
@@ -352,9 +345,9 @@ class _VideoFramesBuffer:
         self._arr_data.append(frame.data)
         self._size_in_bytes += frame.data.nbytes + self._size_of_metadata
 
-    def to_micropartition(self) -> MicroPartition:
-        """Returns a MicroPartition for this builder."""
-        return MicroPartition.from_pydict(
+    def to_recordbatch(self) -> RecordBatch:
+        """Returns a RecordBatch for this builder."""
+        return RecordBatch.from_pydict(
             {
                 "path": self._arr_path,
                 "frame_index": self._arr_frame_index,
