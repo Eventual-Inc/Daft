@@ -70,7 +70,7 @@ impl ProbeSet {
         let input_arrays = input
             .columns
             .iter()
-            .map(|s| s.as_physical()?.to_arrow())
+            .map(|s| s.as_physical()?.as_materialized_series().to_arrow())
             .collect::<DaftResult<Vec<_>>>()?;
 
         let comparators: Vec<_> = self
@@ -120,7 +120,7 @@ impl ProbeSet {
         let current_arrays = table
             .columns
             .iter()
-            .map(|s| s.as_physical()?.to_arrow())
+            .map(|s| s.as_physical()?.as_materialized_series().to_arrow())
             .collect::<DaftResult<Vec<_>>>()?;
 
         let mut comparators: Vec<Box<dyn Fn(usize, usize) -> bool + Send + Sync>> = self

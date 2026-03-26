@@ -86,6 +86,7 @@ pub fn create_for_type(
     let [source] = sources.columns() else {
         unreachable!("sum should only have one input")
     };
+    let source = source.as_materialized_series();
 
     let target_type = try_mean_aggregation_supertype(source.data_type())?;
     match target_type {

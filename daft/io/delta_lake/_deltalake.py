@@ -58,7 +58,7 @@ def read_deltalake(
         Read a Delta Lake table from a public S3 bucket:
         >>> from daft.io import S3Config, IOConfig
         >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
-        >>> df = daft.read_deltalake("s3://daft-public-data/test_fixtures/delta_table/", io_config=io_config)
+        >>> df = daft.read_deltalake("s3://daft-oss-public-data/test_fixtures/delta_table/", io_config=io_config)
         >>> df.show()
     """
     from daft.io.delta_lake.delta_lake_scan import DeltaLakeScanOperator

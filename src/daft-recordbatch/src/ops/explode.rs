@@ -133,7 +133,10 @@ impl RecordBatch {
         let capacity_expected = exploded_columns.first().unwrap().len();
         let take_idx = lengths_to_indices(&first_len, capacity_expected, ignore_empty_and_null)?;
 
-        let mut new_series = Arc::unwrap_or_clone(self.columns.clone());
+        let mut new_series: Vec<Series> = Arc::unwrap_or_clone(self.columns.clone())
+            .into_iter()
+            .map(|c| c.take_materialized_series())
+            .collect();
 
         for i in 0..self.num_columns() {
             let name = new_series.get(i).unwrap().name();

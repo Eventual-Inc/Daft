@@ -2400,7 +2400,6 @@ dependencies = [
  "daft-dashboard",
  "daft-logical-plan",
  "daft-micropartition",
- "daft-recordbatch",
  "daft-runners",
  "dashmap",
  "log",
@@ -2595,16 +2594,7 @@ dependencies = [
 
 [[package]]
 name = "daft-ext"
-version = "0.3.0-dev0"
-dependencies = [
- "daft-ext-abi",
- "daft-ext-core",
- "daft-ext-macros",
-]
-
-[[package]]
-name = "daft-ext-abi"
-version = "0.3.0-dev0"
+version = "0.1.1"
 dependencies = [
  "arrow-data 56.2.0",
  "arrow-data 57.3.0",
@@ -2612,16 +2602,7 @@ dependencies = [
  "arrow-schema 56.2.0",
  "arrow-schema 57.3.0",
  "arrow-schema 58.0.0",
-]
-
-[[package]]
-name = "daft-ext-core"
-version = "0.3.0-dev0"
-dependencies = [
- "arrow",
- "arrow-array",
- "arrow-schema 57.3.0",
- "daft-ext-abi",
+ "daft-ext-macros",
 ]
 
 [[package]]
@@ -2634,7 +2615,7 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
- "daft-ext-abi",
+ "daft-ext",
  "libloading 0.9.0",
  "serde",
  "serde_json",
@@ -2643,7 +2624,7 @@ dependencies = [
 
 [[package]]
 name = "daft-ext-macros"
-version = "0.3.0-dev0"
+version = "0.1.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2695,6 +2676,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "flate2",
+ "hex",
  "serde",
  "simdutf8",
  "typetag",
@@ -3240,7 +3222,7 @@ dependencies = [
  "daft-catalog",
  "daft-core",
  "daft-dsl",
- "daft-ext-abi",
+ "daft-ext",
  "daft-ext-internal",
  "daft-logical-plan",
  "pyo3",

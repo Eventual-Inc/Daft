@@ -8,9 +8,7 @@ import io
 
 NUM_GPU_NODES = 8
 YOLO_MODEL = "yolo11n.pt"
-INPUT_PATH = (
-    "s3://daft-public-data/videos/Hollywood2-actions-videos/Hollywood2/AVIClips/"
-)
+INPUT_PATH = "s3://daft-oss-public-data/videos/Hollywood2-actions-videos/Hollywood2/AVIClips/"
 OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/video-object-detection-result"
 IMAGE_HEIGHT = 640
 IMAGE_WIDTH = 640
@@ -32,9 +30,7 @@ class ExtractImageFeatures:
                 "confidence": confidence.item(),
                 "bbox": bbox.tolist(),
             }
-            for label, confidence, bbox in zip(
-                res.names, res.boxes.conf, res.boxes.xyxy
-            )
+            for label, confidence, bbox in zip(res.names, res.boxes.conf, res.boxes.xyxy)
         ]
 
     def __call__(self, batch):
@@ -42,10 +38,7 @@ class ExtractImageFeatures:
         if len(frames) == 0:
             batch["features"] = []
             return batch
-        tensor_batch = [
-            torchvision.transforms.functional.to_tensor(Image.fromarray(frame))
-            for frame in frames
-        ]
+        tensor_batch = [torchvision.transforms.functional.to_tensor(Image.fromarray(frame)) for frame in frames]
         stack = torch.stack(tensor_batch, dim=0)
         results = self.model(stack)
         features = [self.to_features(res) for res in results]
@@ -86,9 +79,7 @@ def crop_image(row):
 
 ds = ray.data.read_videos(INPUT_PATH)
 ds = ds.map(resize_frame)
-ds = ds.map_batches(
-    ExtractImageFeatures, batch_size=BATCH_SIZE, num_gpus=1.0, concurrency=NUM_GPU_NODES
-)
+ds = ds.map_batches(ExtractImageFeatures, batch_size=BATCH_SIZE, num_gpus=1.0, concurrency=NUM_GPU_NODES)
 ds = ds.flat_map(explode_features)
 ds = ds.map(crop_image)
 ds = ds.drop_columns(["frame"])

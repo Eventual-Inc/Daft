@@ -8,7 +8,7 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use daft_ext_abi::{DAFT_ABI_VERSION, DAFT_MODULE_MAGIC_SYMBOL, FFI_Module};
+use daft_ext::abi::{DAFT_ABI_VERSION, DAFT_MODULE_MAGIC_SYMBOL, FFI_Module};
 use libloading::Library;
 
 /// A shared handle to a loaded extension module.
@@ -132,7 +132,7 @@ fn resolve_module(library: &Library, path: &Path) -> DaftResult<FFI_Module> {
 mod tests {
     use std::ffi::c_int;
 
-    use daft_ext_abi::{DAFT_ABI_VERSION, FFI_Module, FFI_SessionContext};
+    use daft_ext::abi::{DAFT_ABI_VERSION, FFI_Module, FFI_SessionContext};
 
     use super::*;
 

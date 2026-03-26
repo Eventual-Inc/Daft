@@ -1,6 +1,6 @@
 //! Stable C ABI contract between Daft and extension cdylibs.
 //!
-//! This crate defines the `repr(C)` types that Daft and extension shared
+//! This module defines the `repr(C)` types that Daft and extension shared
 //! libraries use to communicate. It has zero Daft internal dependencies
 //! and zero Arrow implementation dependencies (unless a feature flag is enabled).
 //!
