@@ -19,7 +19,7 @@ pub(crate) trait ProgressBar: Send + Sync {
     fn finish(self: Box<Self>) -> DaftResult<()>;
 }
 
-const TICK_INTERVAL: Duration = Duration::from_millis(100);
+const TICK_INTERVAL: Duration = Duration::from_millis(125);
 
 struct IndicatifLogger<L: Log> {
     pbar: indicatif::MultiProgress,
@@ -67,10 +67,12 @@ impl PythonPrintTarget for IndicatifPrintTarget {
 pub const MAX_PIPELINE_NAME_LEN: usize = 18;
 pub const RED_BAR_COLOR: &str = "#F92672";
 pub const GRAY_BAR_COLOR: &str = "#525252";
+pub const FINISHED_BAR_COLOR: &str = "#729c1f";
 
 struct IndicatifProgressBarManager {
     multi_progress: indicatif::MultiProgress,
     pbars: Vec<indicatif::ProgressBar>,
+    templates: Vec<String>,
     total: usize,
 }
 
@@ -96,6 +98,7 @@ impl IndicatifProgressBarManager {
         let mut manager = Self {
             multi_progress,
             pbars: Vec::new(),
+            templates: Vec::new(),
             total,
         };
 
@@ -158,17 +161,18 @@ impl IndicatifProgressBarManager {
             format!("{:>1$}", node_info.name, max_name_len)
         };
 
+        let style = ProgressStyle::with_template(template_str.as_str())
+            .unwrap()
+            .progress_chars("━╸━");
+
         let pb = indicatif::ProgressBar::new(initial_total_estimate)
-            .with_style(
-                ProgressStyle::with_template(template_str.as_str())
-                    .unwrap()
-                    .progress_chars("━╸━")
-                    .tick_chars("⠁⠁⠉⠙⠚⠒⠂⠂⠒⠲⠴⠤⠄⠄⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈⠈ "),
-            )
+            .with_style(style)
             .with_prefix(formatted_prefix);
         self.multi_progress.add(pb.clone());
         // Additional reference for updating bar directly
         self.pbars.push(pb);
+        // Another reference for changing the bar color on finalize
+        self.templates.push(template_str);
     }
 }
 
@@ -189,8 +193,16 @@ impl ProgressBar for IndicatifProgressBarManager {
 
     fn finalize_node(&self, node_id: NodeID, last_snapshot: &StatSnapshot) {
         let pb = self.pbars.get(node_id).unwrap();
-        pb.set_message(last_snapshot.to_message());
-        pb.finish();
+        let template = self
+            .templates
+            .get(node_id)
+            .unwrap()
+            .replace(RED_BAR_COLOR, FINISHED_BAR_COLOR);
+        pb.set_style(pb.style().template(template.as_str()).unwrap());
+
+        pb.set_position(last_snapshot.current_progress());
+        pb.set_length(last_snapshot.current_progress());
+        pb.finish_with_message(last_snapshot.to_message());
     }
 
     fn handle_event(&self, node_id: NodeID, event: &StatSnapshot) {
