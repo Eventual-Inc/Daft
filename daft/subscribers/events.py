@@ -193,7 +193,7 @@ class EventLogSubscriber(Subscriber):
         self._write_event(query_id, "execution_started", {})
         self._write_event(query_id, "plan_physical", {"plan": physical_plan})
 
-    def on_exec_operator_start(self, query_id: str, node_id: int) -> None:
+    def on_operator_start(self, query_id: str, node_id: int) -> None:
         self._operator_starts[(query_id, node_id)] = _mono_ms()
         self._write_event(
             query_id,
@@ -203,7 +203,7 @@ class EventLogSubscriber(Subscriber):
             },
         )
 
-    def on_exec_emit_stats(self, query_id: str, stats: Mapping[int, Mapping[str, tuple[StatType, Any]]]) -> None:
+    def on_stats(self, query_id: str, stats: Mapping[int, Mapping[str, tuple[StatType, Any]]]) -> None:
         for node_id, node_stats in stats.items():
             metrics: dict[str, Any] = {}
             for name, (_stat_type, value) in node_stats.items():
@@ -223,7 +223,7 @@ class EventLogSubscriber(Subscriber):
             metrics[name] = value
         self._write_event(query_id, "process_stats", {"metrics": metrics})
 
-    def on_exec_operator_end(self, query_id: str, node_id: int) -> None:
+    def on_operator_end(self, query_id: str, node_id: int) -> None:
         start = self._operator_starts.pop((query_id, node_id), None)
         duration_ms = round(_mono_ms() - start) if start is not None else None
 

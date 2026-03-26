@@ -125,10 +125,10 @@ from daft.session import (
     write_table,
 )
 from daft.udf import udf, func, cls, method, metrics
+from daft.io._range import _range
 from daft.io import (
     IOConfig,
     from_glob_path,
-    _range as range,
     read_csv,
     read_deltalake,
     read_hudi,
@@ -148,6 +148,8 @@ from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
 from daft.file import File, VideoFile, AudioFile
+
+range = _range  # type: ignore[no-redef,unused-ignore]
 
 from daft import context
 from daft import io

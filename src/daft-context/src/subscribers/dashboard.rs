@@ -16,7 +16,10 @@ use reqwest::{Client, RequestBuilder};
 use tokio::{sync::mpsc, task::JoinHandle};
 use uuid::Uuid;
 
-use crate::subscribers::{QueryMetadata, QueryResult, Subscriber};
+use crate::subscribers::{
+    QueryMetadata, QueryResult, Subscriber,
+    events::{OperatorEndEvent, OperatorStartEvent, StatsEvent},
+};
 
 const TOTAL_ROWS: usize = 10;
 const DASHBOARD_EVENT_LIMIT: usize = 512;
@@ -447,5 +450,66 @@ impl Subscriber for DashboardSubscriber {
 
     async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
         self.on_exec_end_with_id(query_id, "unknown").await
+    }
+
+    async fn on_operator_start(&self, event: Arc<OperatorStartEvent>) -> DaftResult<()> {
+        self.enqueue_no_body(
+            format!(
+                "engine/query/{}/exec/{}/start",
+                event.header.query_id, event.operator.node_id
+            ),
+            "exec_operator_start",
+        );
+        Ok(())
+    }
+
+    async fn on_stats(&self, event: Arc<StatsEvent>) -> DaftResult<()> {
+        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+            return Ok(());
+        }
+
+        let query_id = event.header.query_id.clone();
+        let source_id = if let Some(worker_id) = &self.worker_id {
+            worker_id.clone()
+        } else {
+            self.execution_ids
+                .get(&query_id)
+                .map(|id| id.clone())
+                .unwrap_or_else(|| "unknown".to_string())
+        };
+
+        self.enqueue_json(
+            format!("engine/query/{}/exec/emit_stats", query_id),
+            "exec_emit_stats",
+            &daft_dashboard::engine::ExecEmitStatsArgsSend {
+                source_id,
+                stats: event
+                    .stats
+                    .iter()
+                    .map(|(node_id, snapshot)| {
+                        (
+                            *node_id,
+                            snapshot
+                                .0
+                                .iter()
+                                .map(|(name, stat)| (name.to_string(), stat.clone()))
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            },
+        );
+        Ok(())
+    }
+
+    async fn on_operator_end(&self, event: Arc<OperatorEndEvent>) -> DaftResult<()> {
+        self.enqueue_no_body(
+            format!(
+                "engine/query/{}/exec/{}/end",
+                event.header.query_id, event.operator.node_id
+            ),
+            "exec_operator_end",
+        );
+        Ok(())
     }
 }
