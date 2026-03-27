@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    sync::Arc,
-};
+use std::collections::{HashMap, VecDeque};
 
 use async_trait::async_trait;
 use common_daft_config::DaftExecutionConfig;
@@ -56,7 +53,7 @@ impl FlightShuffleReadSource {
     fn spawn_flight_shuffle_processor(
         &self,
         mut receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
-        output_sender: Sender<Arc<MicroPartition>>,
+        output_sender: Sender<MicroPartition>,
         schema: SchemaRef,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
@@ -93,7 +90,7 @@ impl FlightShuffleReadSource {
                     recv_result = receiver.recv(), if !receiver_exhausted => {
                         match recv_result {
                             Some((_input_id, inputs)) if inputs.is_empty() => {
-                                let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
+                                let empty = MicroPartition::empty(Some(schema.clone()));
                                 if output_sender.send(empty).await.is_err() {
                                     return Ok(());
                                 }
@@ -126,11 +123,11 @@ impl FlightShuffleReadSource {
 async fn forward_partition_stream(
     mut stream: BoxStream<'static, DaftResult<daft_recordbatch::RecordBatch>>,
     schema: SchemaRef,
-    sender: Sender<Arc<MicroPartition>>,
+    sender: Sender<MicroPartition>,
 ) -> DaftResult<()> {
     while let Some(batch) = stream.next().await {
         let mp = MicroPartition::new_loaded(schema.clone(), vec![batch?].into(), None);
-        if sender.send(Arc::new(mp)).await.is_err() {
+        if sender.send(mp).await.is_err() {
             break;
         }
     }
@@ -162,16 +159,14 @@ impl Source for FlightShuffleReadSource {
         _io_stats: IOStatsRef,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
+        let (output_sender, output_receiver) = create_channel::<MicroPartition>(1);
         let mut this = *self;
         let input_receiver = this.receiver.take().expect("Receiver not found");
 
         let processor_task =
             this.spawn_flight_shuffle_processor(input_receiver, output_sender, this.schema.clone());
 
-        let result_stream = output_receiver
-            .into_stream()
-            .map(|mp| Ok(Arc::try_unwrap(mp).unwrap_or_else(|arc| (*arc).clone())));
+        let result_stream = output_receiver.into_stream().map(Ok);
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
 
         Ok(Box::pin(combined_stream))
