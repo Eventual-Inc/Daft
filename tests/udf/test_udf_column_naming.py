@@ -32,15 +32,14 @@ def test_udf_result_column_uses_func_name():
 def test_udf_no_column_name_conflict_with_star():
     """Select *, udf(col) should not produce duplicate column names."""
 
-    @daft.udf(return_dtype=DataType.int64())
-    def double_value(a):
-        return [x * 2 for x in a.to_pylist()]
+    @daft.func(return_dtype=DataType.int64())
+    def double_value(a) -> int:
+        return a * 2
 
+    daft.attach_function(double_value, "double_value")
     df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
     bindings = {"test": df}
     df = daft.sql("select *, double_value(a) from test", **bindings)
-    # result = df.with_column("double_value", double_value(col("a")))
-    print(df.collect())
 
     result_dict = df.to_pydict()
     assert "a" in result_dict
