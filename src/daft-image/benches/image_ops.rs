@@ -238,7 +238,7 @@ fn bench_image_hash(c: &mut Criterion) {
         let label = format!("{method}_224x224");
         let s = images_224.clone();
         group.bench_function(&label, |b| {
-            b.iter(|| series::image_hash(&s, method, 8, 3).unwrap());
+            b.iter(|| series::image_hash(&s, method, 8, 3, 3).unwrap());
         });
     }
 
@@ -247,7 +247,7 @@ fn bench_image_hash(c: &mut Criterion) {
         let label = format!("colorhash_224x224_binbits{binbits}");
         let s = images_224.clone();
         group.bench_function(&label, |b| {
-            b.iter(|| series::image_hash(&s, HashMethod::ColorHash, 8, binbits).unwrap());
+            b.iter(|| series::image_hash(&s, HashMethod::ColorHash, 8, binbits, 3).unwrap());
         });
     }
 
@@ -256,14 +256,14 @@ fn bench_image_hash(c: &mut Criterion) {
         let label = format!("phash_224x224_size{hash_size}");
         let s = images_224.clone();
         group.bench_function(&label, |b| {
-            b.iter(|| series::image_hash(&s, HashMethod::PHash, hash_size, 3).unwrap());
+            b.iter(|| series::image_hash(&s, HashMethod::PHash, hash_size, 3, 3).unwrap());
         });
     }
 
     // Small image baseline
     let label = "phash_64x64";
     group.bench_function(label, |b| {
-        b.iter(|| series::image_hash(&images_64, HashMethod::PHash, 8, 3).unwrap());
+        b.iter(|| series::image_hash(&images_64, HashMethod::PHash, 8, 3, 3).unwrap());
     });
 
     group.finish();

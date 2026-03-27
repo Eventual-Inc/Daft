@@ -230,15 +230,16 @@ pub fn image_hash(
     method: HashMethod,
     hash_size: u32,
     binbits: u32,
+    segments: u32,
 ) -> DaftResult<Series> {
     match s.data_type() {
         DataType::Image(_) => s
             .downcast::<ImageArray>()?
-            .image_hash(method, hash_size, binbits)
+            .image_hash(method, hash_size, binbits, segments)
             .map(|arr| arr.into_series()),
         DataType::FixedShapeImage(..) => s
             .fixed_size_image()?
-            .image_hash(method, hash_size, binbits)
+            .image_hash(method, hash_size, binbits, segments)
             .map(|arr| arr.into_series()),
         dt => Err(DaftError::ValueError(format!(
             "image_hash requires an Image or FixedShapeImage column, but got: {dt}"

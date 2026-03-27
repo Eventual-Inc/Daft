@@ -15,6 +15,8 @@ struct ImageHashArgs<T> {
     hash_size: Option<u32>,
     #[arg(optional)]
     binbits: Option<u32>,
+    #[arg(optional)]
+    segments: Option<u32>,
 }
 
 #[typetag::serde]
@@ -33,11 +35,13 @@ impl ScalarUDF for ImageHash {
             method,
             hash_size,
             binbits,
+            segments,
         } = inputs.try_into()?;
         let method = method.unwrap_or(HashMethod::PHash);
         let hash_size = hash_size.unwrap_or(8);
         let binbits = binbits.unwrap_or(3);
-        crate::series::image_hash(&input, method, hash_size, binbits)
+        let segments = segments.unwrap_or(3);
+        crate::series::image_hash(&input, method, hash_size, binbits, segments)
     }
 
     fn get_return_field(
@@ -50,12 +54,14 @@ impl ScalarUDF for ImageHash {
             method,
             hash_size,
             binbits,
+            segments,
         } = inputs.try_into()?;
         let field = input.to_field(schema)?;
         let method = method.unwrap_or(HashMethod::PHash);
         let hash_size = hash_size.unwrap_or(8);
         let binbits = binbits.unwrap_or(3);
-        let n_bytes = hash_output_bytes(method, hash_size, binbits);
+        let segments = segments.unwrap_or(3);
+        let n_bytes = hash_output_bytes(method, hash_size, binbits, segments);
 
         match &field.dtype {
             DataType::Image(_) | DataType::FixedShapeImage(..) => {
@@ -75,7 +81,7 @@ Returns a ``FixedSizeBinary`` column.
 Output size by method:
 
 - Single-segment methods: ``hash_size * hash_size`` bits.
-- ``'crop_resistant'``: ``9 * hash_size * hash_size`` bits (3×3 grid).
+- ``'crop_resistant'``: ``segments * segments * hash_size * hash_size`` bits.
 - ``'colorhash'``: ``14 * binbits`` bits (14 colour/intensity bins).
 
 Supported methods:
@@ -85,14 +91,15 @@ Supported methods:
 - ``'dhash'``: Horizontal difference / gradient hash — fast and accurate.
 - ``'dhash_vertical'``: Vertical difference hash — compares top/bottom neighbours.
 - ``'ahash'``: Average hash — fastest, least robust.
-- ``'whash'``: Multi-level Haar wavelet hash (pywt-compatible, DC-removed).
-- ``'crop_resistant'``: Segment-based hash robust against cropping.
+- ``'whash'``: Multi-level Haar wavelet hash (pywt-compatible, DC-removed). Requires ``hash_size`` to be a power of 2.
+- ``'crop_resistant'``: Segment-based hash robust against cropping (``segments × segments`` grid).
 - ``'colorhash'``: Color distribution hash in HSV space.
 
 Args:
     input: Image expression to hash.
     method: Hash algorithm (default: ``'phash'``).
-    hash_size: Grid size for spatial hash methods (default: 8).
-    binbits: Bits per bin for ``'colorhash'`` (default: 3, giving 42-bit hashes)."
+    hash_size: Grid size for spatial hash methods (default: 8). Must be a power of 2 for ``'whash'``.
+    binbits: Bits per bin for ``'colorhash'`` (default: 3, giving 42-bit hashes).
+    segments: Grid dimension for ``'crop_resistant'`` (default: 3, giving a 3×3 = 9-segment grid)."
     }
 }

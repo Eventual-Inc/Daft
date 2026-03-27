@@ -54,6 +54,7 @@ pub trait ImageOps {
         method: HashMethod,
         hash_size: u32,
         binbits: u32,
+        segments: u32,
     ) -> DaftResult<FixedSizeBinaryArray>;
 }
 
@@ -128,24 +129,9 @@ impl ImageOps for ImageArray {
         method: HashMethod,
         hash_size: u32,
         binbits: u32,
+        segments: u32,
     ) -> DaftResult<FixedSizeBinaryArray> {
-        let n_bytes = hash_output_bytes(method, hash_size, binbits);
-        let hashes: Vec<Option<Vec<u8>>> = (0..self.len())
-            .into_par_iter()
-            .map(|i| {
-                self.as_image_obj(i)
-                    .map(|img| {
-                        let dyn_img: DynamicImage = img.into();
-                        perceptual_hash(&dyn_img, method, hash_size, binbits)
-                    })
-                    .transpose()
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-        Ok(FixedSizeBinaryArray::from_iter(
-            self.name(),
-            hashes.iter().map(|h| h.as_deref()),
-            n_bytes,
-        ))
+        hash_images(self, self.name(), method, hash_size, binbits, segments)
     }
 }
 
@@ -249,24 +235,9 @@ impl ImageOps for FixedShapeImageArray {
         method: HashMethod,
         hash_size: u32,
         binbits: u32,
+        segments: u32,
     ) -> DaftResult<FixedSizeBinaryArray> {
-        let n_bytes = hash_output_bytes(method, hash_size, binbits);
-        let hashes: Vec<Option<Vec<u8>>> = (0..self.len())
-            .into_par_iter()
-            .map(|i| {
-                self.as_image_obj(i)
-                    .map(|img| {
-                        let dyn_img: DynamicImage = img.into();
-                        perceptual_hash(&dyn_img, method, hash_size, binbits)
-                    })
-                    .transpose()
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-        Ok(FixedSizeBinaryArray::from_iter(
-            self.name(),
-            hashes.iter().map(|h| h.as_deref()),
-            n_bytes,
-        ))
+        hash_images(self, self.name(), method, hash_size, binbits, segments)
     }
 }
 
@@ -838,6 +809,11 @@ fn waverec2(ll: &[f64], levels: &[WaveDec2Level]) -> Vec<f64> {
 /// 3. Re-decompose at `dwt_level = ll_max_level - log2(hash_size)`.
 /// 4. Take `coeffs[0]` (hash_size × hash_size), min-max normalise, compare to mean.
 fn whash(img: &DynamicImage, hash_size: u32) -> DaftResult<Vec<u8>> {
+    if !hash_size.is_power_of_two() {
+        return Err(DaftError::ValueError(format!(
+            "whash requires hash_size to be a power of 2, but got {hash_size}"
+        )));
+    }
     let (w, h) = (img.width(), img.height());
     let min_dim = w.min(h);
     // Largest power of 2 ≤ min_dim, clamped to ≥ hash_size
@@ -964,7 +940,6 @@ fn colorhash(img: &DynamicImage, binbits: u32) -> DaftResult<Vec<u8>> {
 
         let is_black = intensity < 32; // 256 / 8
         let is_gray = !is_black && s < 85; // 256 / 3
-        let is_color = !is_black && !is_gray;
 
         if is_black {
             n_black += 1;
@@ -974,9 +949,9 @@ fn colorhash(img: &DynamicImage, binbits: u32) -> DaftResult<Vec<u8>> {
             n_colors += 1;
             // faint: S < 256*2/3 ≈ 170.67  →  S ≤ 170
             // bright: S > 256*2/3            →  S ≥ 171
-            if is_color && (s as f64) < 256.0 * 2.0 / 3.0 {
+            if (s as f64) < 256.0 * 2.0 / 3.0 {
                 h_faint[hue_bin(h)] += 1;
-            } else if is_color && (s as f64) > 256.0 * 2.0 / 3.0 {
+            } else if (s as f64) > 256.0 * 2.0 / 3.0 {
                 h_bright[hue_bin(h)] += 1;
             }
         }
@@ -1130,16 +1105,50 @@ fn dct1d_naive(x: &[f64]) -> Vec<f64> {
     output
 }
 
+/// Shared implementation of `image_hash` for any `AsImageObj` array type.
+fn hash_images<Arr: AsImageObj + Sync>(
+    arr: &Arr,
+    name: &str,
+    method: HashMethod,
+    hash_size: u32,
+    binbits: u32,
+    segments: u32,
+) -> DaftResult<FixedSizeBinaryArray> {
+    let n_bytes = hash_output_bytes(method, hash_size, binbits, segments);
+    let hashes: Vec<Option<Vec<u8>>> = (0..arr.len())
+        .into_par_iter()
+        .map(|i| {
+            arr.as_image_obj(i)
+                .map(|img| {
+                    let dyn_img: DynamicImage = img.into();
+                    perceptual_hash(&dyn_img, method, hash_size, binbits, segments)
+                })
+                .transpose()
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
+    Ok(FixedSizeBinaryArray::from_iter(
+        name,
+        hashes.iter().map(|h| h.as_deref()),
+        n_bytes,
+    ))
+}
+
 /// Number of output bytes for the given method and parameters.
 ///
 /// - Single-segment methods: `hash_size * hash_size` bits.
-/// - `crop_resistant`: `9 * hash_size * hash_size` bits (3×3 grid).
+/// - `crop_resistant`: `segments * segments * hash_size * hash_size` bits.
 /// - `colorhash`: `14 * binbits` bits (14 colour/intensity bins).
-pub(crate) fn hash_output_bytes(method: HashMethod, hash_size: u32, binbits: u32) -> usize {
+pub(crate) fn hash_output_bytes(
+    method: HashMethod,
+    hash_size: u32,
+    binbits: u32,
+    segments: u32,
+) -> usize {
     match method {
         HashMethod::ColorHash => (14 * binbits as usize).div_ceil(8),
         HashMethod::CropResistant => {
-            let bits = 9 * hash_size as usize * hash_size as usize;
+            let bits =
+                segments as usize * segments as usize * hash_size as usize * hash_size as usize;
             bits.div_ceil(8)
         }
         _ => {
@@ -1155,6 +1164,7 @@ pub(crate) fn perceptual_hash(
     method: HashMethod,
     hash_size: u32,
     binbits: u32,
+    segments: u32,
 ) -> DaftResult<Vec<u8>> {
     match method {
         HashMethod::AHash => ahash(img, hash_size),
@@ -1163,27 +1173,26 @@ pub(crate) fn perceptual_hash(
         HashMethod::PHash => phash(img, hash_size),
         HashMethod::PHashSimple => phash_simple(img, hash_size),
         HashMethod::WHash => whash(img, hash_size),
-        HashMethod::CropResistant => crop_resistant(img, hash_size),
+        HashMethod::CropResistant => crop_resistant(img, hash_size, segments),
         HashMethod::ColorHash => colorhash(img, binbits),
     }
 }
 
-/// Crop-resistant hash: divide the image into a 3×3 grid of segments,
+/// Crop-resistant hash: divide the image into a `segments × segments` grid,
 /// compute a pHash for each segment, and concatenate the results.
 ///
-/// This matches the spirit of the Python `imagehash.crop_resistant_hash` with
-/// `segments=9` (3×3).  The output size is 9 × `hash_size` × `hash_size` bits.
-fn crop_resistant(img: &DynamicImage, hash_size: u32) -> DaftResult<Vec<u8>> {
+/// Matches `imagehash.crop_resistant_hash` with an NxN uniform grid approach.
+/// The output size is `segments² × hash_size²` bits.
+fn crop_resistant(img: &DynamicImage, hash_size: u32, segments: u32) -> DaftResult<Vec<u8>> {
     let (w, h) = (img.width(), img.height());
-    const GRID: u32 = 3;
     let mut all_bits: Vec<u8> = Vec::new();
-    for row in 0..GRID {
-        for col in 0..GRID {
+    for row in 0..segments {
+        for col in 0..segments {
             // Compute the pixel boundary for this segment.
-            let x0 = col * w / GRID;
-            let x1 = (col + 1) * w / GRID;
-            let y0 = row * h / GRID;
-            let y1 = (row + 1) * h / GRID;
+            let x0 = col * w / segments;
+            let x1 = (col + 1) * w / segments;
+            let y0 = row * h / segments;
+            let y1 = (row + 1) * h / segments;
             let seg = img.crop_imm(x0, y0, x1 - x0, y1 - y0);
             let seg_hash = phash(&seg, hash_size)?;
             all_bits.extend(seg_hash);
