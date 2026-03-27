@@ -62,7 +62,10 @@ pub(crate) trait IntermediateOperator: Send + Sync {
         None
     }
 
-    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy>;
+    fn batching_strategy(
+        &self,
+        morsel_size_requirement: MorselSizeRequirement,
+    ) -> DaftResult<Self::BatchingStrategy>;
 }
 
 pub struct IntermediateNode<Op: IntermediateOperator> {
@@ -186,9 +189,10 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         ctx: &mut ExecutionContext<Op>,
     ) -> DaftResult<()> {
         // Check buffer for ready batches and spawn tasks while states available
-        while !ctx.state_pool.is_empty()
-            && let Some(batch) = buffer.next_batch_if_ready()?
-        {
+        while !ctx.state_pool.is_empty() {
+            let Some(batch) = ctx.batch_manager.next_batch(buffer)? else {
+                break;
+            };
             let state_id = *ctx
                 .state_pool
                 .keys()
@@ -401,6 +405,11 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         // 4. Spawn process_input task
         let stats_manager = runtime_handle.stats_manager();
         let runtime_stats = self.runtime_stats.clone();
+        let strategy =
+            op.batching_strategy(self.morsel_size_requirement)
+                .context(PipelineExecutionSnafu {
+                    node_name: op.name().to_string(),
+                })?;
         runtime_handle.spawn(
             async move {
                 // Initialize state pool with max_concurrency states
@@ -409,11 +418,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
                     .collect();
 
                 // Create batch manager and task set
-                let batch_manager = Arc::new(BatchManager::new(op.batching_strategy().context(
-                    PipelineExecutionSnafu {
-                        node_name: op.name().to_string(),
-                    },
-                )?));
+                let batch_manager = Arc::new(BatchManager::new(strategy));
                 let task_set = OrderingAwareJoinSet::new(maintain_order);
 
                 // Process each child receiver sequentially

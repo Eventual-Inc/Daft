@@ -65,6 +65,56 @@ impl RowBasedBuffer {
         }
     }
 
+    pub fn peek(&self) -> &VecDeque<MicroPartition> {
+        &self.buffer
+    }
+
+    pub fn total_rows(&self) -> usize {
+        self.curr_len
+    }
+
+    pub fn take_rows(&mut self, n: usize) -> DaftResult<Option<MicroPartition>> {
+        if n == 0 || self.buffer.is_empty() {
+            return Ok(None);
+        }
+
+        let n = n.min(self.curr_len);
+
+        if n == self.curr_len {
+            return self.pop_all();
+        }
+
+        let mut taken = Vec::new();
+        let mut rows_taken = 0;
+
+        while let Some(front) = self.buffer.front() {
+            if rows_taken + front.len() <= n {
+                let part = self.buffer.pop_front().unwrap();
+                rows_taken += part.len();
+                self.curr_len -= part.len();
+                taken.push(part);
+            } else {
+                let remaining = n - rows_taken;
+                let part = self.buffer.pop_front().unwrap();
+                let part_len = part.len();
+                let head = part.slice(0, remaining)?;
+                let tail = part.slice(remaining, part_len)?;
+                self.curr_len -= remaining;
+                taken.push(head);
+                self.buffer.push_front(tail);
+                break;
+            }
+        }
+
+        if taken.is_empty() {
+            Ok(None)
+        } else if taken.len() == 1 {
+            Ok(Some(taken.pop().unwrap()))
+        } else {
+            Ok(Some(MicroPartition::concat(taken)?))
+        }
+    }
+
     // Pop all morsels in the buffer regardless of the threshold
     pub fn pop_all(&mut self) -> DaftResult<Option<MicroPartition>> {
         if self.buffer.is_empty() {

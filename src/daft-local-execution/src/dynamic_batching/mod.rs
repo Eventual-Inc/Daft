@@ -3,18 +3,15 @@ mod latency_constrained_strategy;
 mod static_strategy;
 use std::{sync::Arc, time::Duration};
 
+use common_error::DaftResult;
+use daft_micropartition::MicroPartition;
 pub use dyn_strategy::*;
 pub use latency_constrained_strategy::*;
 use parking_lot::Mutex;
 pub use static_strategy::*;
 
-use crate::{pipeline::MorselSizeRequirement, runtime_stats::RuntimeStats};
+use crate::{buffer::RowBasedBuffer, pipeline::MorselSizeRequirement, runtime_stats::RuntimeStats};
 
-/// Trait for algorithms that dynamically adjust batch sizes based on execution performance.
-///
-/// Dynamic batching is a technique used to optimize throughput and latency by adjusting
-/// the number of items processed together in a batch based on runtime performance metrics.
-/// Different algorithms use various strategies to find the optimal batch size.
 #[cfg(not(debug_assertions))]
 pub trait BatchingStrategy: Send + Sync {
     type State: BatchingState + Send + Sync + Unpin;
@@ -23,14 +20,39 @@ pub trait BatchingStrategy: Send + Sync {
     fn calculate_new_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement;
 
     fn initial_requirements(&self) -> MorselSizeRequirement;
+
+    /// Form the next batch from the buffer. Override for data-aware batch formation.
+    /// Default delegates to the buffer's row-count-based logic.
+    fn next_batch(
+        &self,
+        _state: &mut Self::State,
+        buffer: &mut RowBasedBuffer,
+    ) -> DaftResult<Option<MicroPartition>> {
+        buffer.next_batch_if_ready()
+    }
 }
 
+/// Trait for algorithms that dynamically adjust batch sizes based on execution performance.
+///
+/// Dynamic batching is a technique used to optimize throughput and latency by adjusting
+/// the number of items processed together in a batch based on runtime performance metrics.
+/// Different algorithms use various strategies to find the optimal batch size.
 #[cfg(debug_assertions)]
 pub trait BatchingStrategy: Send + Sync + std::fmt::Debug {
     type State: BatchingState + Send + Sync + Unpin;
     fn make_state(&self) -> Self::State;
     fn calculate_new_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement;
     fn initial_requirements(&self) -> MorselSizeRequirement;
+
+    /// Form the next batch from the buffer. Override for data-aware batch formation.
+    /// Default delegates to the buffer's row-count-based logic.
+    fn next_batch(
+        &self,
+        _state: &mut Self::State,
+        buffer: &mut RowBasedBuffer,
+    ) -> DaftResult<Option<MicroPartition>> {
+        buffer.next_batch_if_ready()
+    }
 }
 
 pub trait BatchingState {
@@ -100,6 +122,11 @@ where
 
     pub fn initial_requirements(&self) -> MorselSizeRequirement {
         self.strategy.initial_requirements()
+    }
+
+    pub fn next_batch(&self, buffer: &mut RowBasedBuffer) -> DaftResult<Option<MicroPartition>> {
+        let mut state = self.state.lock();
+        self.strategy.next_batch(&mut state, buffer)
     }
 }
 

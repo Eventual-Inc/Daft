@@ -44,7 +44,6 @@ impl RuntimeStats for DefaultRuntimeStats {
             node_kv,
         }
     }
-
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         StatSnapshot::Default(DefaultSnapshot {
             cpu_us: self.duration_us.load(ordering),
