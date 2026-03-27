@@ -56,6 +56,16 @@ impl StatSnapshotImpl for DefaultSnapshot {
     }
 }
 
+impl DefaultSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        Self {
+            cpu_us: self.cpu_us + other.cpu_us,
+            rows_in: self.rows_in + other.rows_in,
+            rows_out: self.rows_out + other.rows_out,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct SourceSnapshot {
     pub cpu_us: u64,
@@ -82,6 +92,16 @@ impl StatSnapshotImpl for SourceSnapshot {
             HumanCount(self.rows_out),
             HumanBytes(self.bytes_read)
         )
+    }
+}
+
+impl SourceSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        Self {
+            cpu_us: self.cpu_us + other.cpu_us,
+            rows_out: self.rows_out + other.rows_out,
+            bytes_read: self.bytes_read + other.bytes_read,
+        }
     }
 }
 
@@ -117,6 +137,24 @@ impl StatSnapshotImpl for FilterSnapshot {
     }
 }
 
+impl FilterSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        let rows_in = self.rows_in + other.rows_in;
+        let rows_out = self.rows_out + other.rows_out;
+        let selectivity = if rows_in > 0 {
+            (rows_out as f64 / rows_in as f64) * 100.0
+        } else {
+            0.0
+        };
+        Self {
+            cpu_us: self.cpu_us + other.cpu_us,
+            rows_in,
+            rows_out,
+            selectivity,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct ExplodeSnapshot {
     pub cpu_us: u64,
@@ -146,6 +184,24 @@ impl StatSnapshotImpl for ExplodeSnapshot {
             HumanCount(self.rows_out),
             self.amplification
         )
+    }
+}
+
+impl ExplodeSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        let rows_in = self.rows_in + other.rows_in;
+        let rows_out = self.rows_out + other.rows_out;
+        let amplification = if rows_in > 0 {
+            rows_out as f64 / rows_in as f64
+        } else {
+            0.0
+        };
+        Self {
+            cpu_us: self.cpu_us + other.cpu_us,
+            rows_in,
+            rows_out,
+            amplification,
+        }
     }
 }
 
@@ -200,6 +256,21 @@ impl StatSnapshotImpl for UdfSnapshot {
     }
 }
 
+impl UdfSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        let mut custom_counters = self.custom_counters;
+        for (k, v) in &other.custom_counters {
+            *custom_counters.entry(k.clone()).or_insert(0) += v;
+        }
+        Self {
+            cpu_us: self.cpu_us + other.cpu_us,
+            rows_in: self.rows_in + other.rows_in,
+            rows_out: self.rows_out + other.rows_out,
+            custom_counters,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct JoinSnapshot {
     pub cpu_us: u64,
@@ -229,6 +300,17 @@ impl StatSnapshotImpl for JoinSnapshot {
             HumanCount(self.probe_rows_in),
             HumanCount(self.probe_rows_out)
         )
+    }
+}
+
+impl JoinSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        Self {
+            cpu_us: self.cpu_us + other.cpu_us,
+            build_rows_inserted: self.build_rows_inserted + other.build_rows_inserted,
+            probe_rows_in: self.probe_rows_in + other.probe_rows_in,
+            probe_rows_out: self.probe_rows_out + other.probe_rows_out,
+        }
     }
 }
 
@@ -264,6 +346,17 @@ impl StatSnapshotImpl for WriteSnapshot {
     }
 }
 
+impl WriteSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        Self {
+            cpu_us: self.cpu_us + other.cpu_us,
+            rows_in: self.rows_in + other.rows_in,
+            rows_written: self.rows_written + other.rows_written,
+            bytes_written: self.bytes_written + other.bytes_written,
+        }
+    }
+}
+
 #[enum_dispatch(StatSnapshotImpl)]
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub enum StatSnapshot {
@@ -280,70 +373,13 @@ impl StatSnapshot {
     /// Sum two same-variant snapshots. Mismatched variants return `self` unchanged.
     pub fn merge(self, other: &Self) -> Self {
         match (self, other) {
-            (Self::Default(a), Self::Default(b)) => Self::Default(DefaultSnapshot {
-                cpu_us: a.cpu_us + b.cpu_us,
-                rows_in: a.rows_in + b.rows_in,
-                rows_out: a.rows_out + b.rows_out,
-            }),
-            (Self::Source(a), Self::Source(b)) => Self::Source(SourceSnapshot {
-                cpu_us: a.cpu_us + b.cpu_us,
-                rows_out: a.rows_out + b.rows_out,
-                bytes_read: a.bytes_read + b.bytes_read,
-            }),
-            (Self::Filter(a), Self::Filter(b)) => {
-                let rows_in = a.rows_in + b.rows_in;
-                let rows_out = a.rows_out + b.rows_out;
-                let selectivity = if rows_in > 0 {
-                    (rows_out as f64 / rows_in as f64) * 100.0
-                } else {
-                    0.0
-                };
-                Self::Filter(FilterSnapshot {
-                    cpu_us: a.cpu_us + b.cpu_us,
-                    rows_in,
-                    rows_out,
-                    selectivity,
-                })
-            }
-            (Self::Explode(a), Self::Explode(b)) => {
-                let rows_in = a.rows_in + b.rows_in;
-                let rows_out = a.rows_out + b.rows_out;
-                let amplification = if rows_in > 0 {
-                    rows_out as f64 / rows_in as f64
-                } else {
-                    0.0
-                };
-                Self::Explode(ExplodeSnapshot {
-                    cpu_us: a.cpu_us + b.cpu_us,
-                    rows_in,
-                    rows_out,
-                    amplification,
-                })
-            }
-            (Self::Udf(a), Self::Udf(b)) => {
-                let mut custom_counters = a.custom_counters;
-                for (k, v) in &b.custom_counters {
-                    *custom_counters.entry(k.clone()).or_insert(0) += v;
-                }
-                Self::Udf(UdfSnapshot {
-                    cpu_us: a.cpu_us + b.cpu_us,
-                    rows_in: a.rows_in + b.rows_in,
-                    rows_out: a.rows_out + b.rows_out,
-                    custom_counters,
-                })
-            }
-            (Self::Join(a), Self::Join(b)) => Self::Join(JoinSnapshot {
-                cpu_us: a.cpu_us + b.cpu_us,
-                build_rows_inserted: a.build_rows_inserted + b.build_rows_inserted,
-                probe_rows_in: a.probe_rows_in + b.probe_rows_in,
-                probe_rows_out: a.probe_rows_out + b.probe_rows_out,
-            }),
-            (Self::Write(a), Self::Write(b)) => Self::Write(WriteSnapshot {
-                cpu_us: a.cpu_us + b.cpu_us,
-                rows_in: a.rows_in + b.rows_in,
-                rows_written: a.rows_written + b.rows_written,
-                bytes_written: a.bytes_written + b.bytes_written,
-            }),
+            (Self::Default(a), Self::Default(b)) => Self::Default(a.merge(b)),
+            (Self::Source(a), Self::Source(b)) => Self::Source(a.merge(b)),
+            (Self::Filter(a), Self::Filter(b)) => Self::Filter(a.merge(b)),
+            (Self::Explode(a), Self::Explode(b)) => Self::Explode(a.merge(b)),
+            (Self::Udf(a), Self::Udf(b)) => Self::Udf(a.merge(b)),
+            (Self::Join(a), Self::Join(b)) => Self::Join(a.merge(b)),
+            (Self::Write(a), Self::Write(b)) => Self::Write(a.merge(b)),
             (s, _) => s,
         }
     }
