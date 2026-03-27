@@ -6,7 +6,6 @@ use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_io_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
-use daft_local_plan::InputId;
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use futures::{FutureExt, StreamExt};
 use tracing::instrument;
@@ -14,7 +13,7 @@ use tracing::instrument;
 use super::source::Source;
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
-    pipeline::NodeName,
+    pipeline::{InputId, NodeName, PipelineMessage},
     sources::source::SourceStream,
 };
 
@@ -39,7 +38,7 @@ impl InMemorySource {
 
     fn spawn_partition_set_processor(
         mut receiver: UnboundedReceiver<(InputId, Vec<MicroPartitionRef>)>,
-        output_sender: Sender<MicroPartition>,
+        output_sender: Sender<PipelineMessage>,
         schema: SchemaRef,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
@@ -52,11 +51,12 @@ impl InMemorySource {
                 tokio::select! {
                     recv_result = receiver.recv(), if !receiver_exhausted => {
                         match recv_result {
-                            Some((_input_id, partitions)) => {
+                            Some((input_id, partitions)) => {
                                 task_set.spawn(forward_partition_batch(
                                     partitions,
                                     schema.clone(),
                                     output_sender.clone(),
+                                    input_id,
                                 ));
                             }
                             None => {
@@ -77,8 +77,6 @@ impl InMemorySource {
                     }
                 }
             }
-            debug_assert!(receiver_exhausted, "Receiver should be exhausted");
-            debug_assert!(task_set.is_empty(), "Task set should be empty");
 
             Ok(())
         })
@@ -88,17 +86,33 @@ impl InMemorySource {
 async fn forward_partition_batch(
     partitions: Vec<MicroPartitionRef>,
     schema: SchemaRef,
-    sender: Sender<MicroPartition>,
+    sender: Sender<PipelineMessage>,
+    input_id: InputId,
 ) -> DaftResult<()> {
     if partitions.is_empty() {
         let empty = MicroPartition::empty(Some(schema));
-        let _ = sender.send(empty).await;
+        let _ = sender
+            .send(PipelineMessage::Morsel {
+                input_id,
+                partition: empty,
+            })
+            .await;
     } else {
         for partition in partitions {
             let owned = Arc::try_unwrap(partition).unwrap_or_else(|a| (*a).clone());
-            let _ = sender.send(owned).await;
+            if sender
+                .send(PipelineMessage::Morsel {
+                    input_id,
+                    partition: owned,
+                })
+                .await
+                .is_err()
+            {
+                break;
+            }
         }
     }
+    let _ = sender.send(PipelineMessage::Flush(input_id)).await;
     Ok(())
 }
 
@@ -112,7 +126,7 @@ impl Source for InMemorySource {
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         io_stats.mark_bytes_read(self.size_bytes);
-        let (output_sender, output_receiver) = create_channel::<MicroPartition>(1);
+        let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
         let input_receiver = self.receiver;
 
         let processor_task =

@@ -30,7 +30,7 @@ use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, create_channel},
     pipeline::{
-        BuilderContext, translate_physical_plan_to_pipeline, viz_pipeline_ascii,
+        BuilderContext, PipelineMessage, translate_physical_plan_to_pipeline, viz_pipeline_ascii,
         viz_pipeline_mermaid,
     },
     resource_manager::get_or_init_memory_manager,
@@ -208,10 +208,17 @@ impl NativeExecutor {
                 }
                 drop(input_senders);
 
-                while let Some(val) = receiver.recv().await {
-                    if tx.send(val).await.is_err() {
-                        runtime_handle.shutdown().await?;
-                        return Ok(());
+                while let Some(msg) = receiver.recv().await {
+                    match msg {
+                        PipelineMessage::Morsel { partition, .. } => {
+                            if tx.send(partition).await.is_err() {
+                                runtime_handle.shutdown().await?;
+                                return Ok(());
+                            }
+                        }
+                        PipelineMessage::Flush(_) => {
+                            // No per-input-id routing in single-execution mode
+                        }
                     }
                 }
 

@@ -16,7 +16,7 @@ use tracing::instrument;
 use super::source::{Source, SourceStream};
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
-    pipeline::NodeName,
+    pipeline::{NodeName, PipelineMessage},
 };
 
 pub struct FlightShuffleReadSource {
@@ -166,7 +166,12 @@ impl Source for FlightShuffleReadSource {
         let processor_task =
             this.spawn_flight_shuffle_processor(input_receiver, output_sender, this.schema.clone());
 
-        let result_stream = output_receiver.into_stream().map(Ok);
+        let result_stream = output_receiver.into_stream().map(|mp| {
+            Ok(PipelineMessage::Morsel {
+                input_id: 0,
+                partition: mp,
+            })
+        });
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
 
         Ok(Box::pin(combined_stream))
