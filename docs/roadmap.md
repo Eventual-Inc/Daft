@@ -36,12 +36,12 @@ Feel free to open an issue or PR on [GitHub ↗](https://github.com/Eventual-Inc
 
 ## Future Work
 
-The following features are in consideration, but are not currently on our roadmap. We're sharing these to highlight opportunities for open source contributions, invite discussion around implementation approaches, and provide visibility into longer-term possibilities. These features have been tagged with `help wanted` and `good first issue` on [Daft repo ↗](https://github.com/Eventual-Inc/Daft).
+The following features are in consideration, but are not currently on our roadmap. We're sharing these to highlight opportunities for open source contributions, invite discussion around implementation approaches, and provide further visibility. These features have been tagged with `help wanted` and `good first issue` on [Daft repo ↗](https://github.com/Eventual-Inc/Daft).
 
 1. **Improved Delta Lake support** (see [roadmap for Delta Lake ↗](https://github.com/Eventual-Inc/Daft/issues/2457))
     - Support for reading tables with deletion vectors ([issue #1954 ↗](https://github.com/Eventual-Inc/Daft/issues/1954))
     - Support for reading tables with column mappings ([issue #1955 ↗](https://github.com/Eventual-Inc/Daft/issues/1955))
 2. **VARIANT type** - Support for the VARIANT type into Daft's type system which is compatible with the parquet VARIANT.
-3. **Result\<T\> type** - Add a Result\<T\> type (Either) to Daft's type system to support graceful handling of fallible operations.
+3. **`Result<T>` type** - Add a `Result<T>` type (Either) to Daft's type system to support graceful handling of fallible operations.
 
 If you are interested in working on any of these features, feel free to open an issue or start a discussion on [GitHub ↗](https://github.com/Eventual-Inc/Daft) or join our [Daft Slack Community ↗](https://daft.ai/slack). Our team can provide technical direction and help scope the work appropriately. Thank you in advance 💜
