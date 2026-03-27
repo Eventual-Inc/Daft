@@ -14,7 +14,7 @@ use tracing::instrument;
 
 use super::{PendingTask, Scheduler, default::DefaultScheduler, linear::LinearScheduler};
 use crate::{
-    pipeline_node::MaterializedOutput,
+    pipeline_node::TaskOutput,
     scheduling::{
         dispatcher::Dispatcher,
         task::{Task, TaskID},
@@ -319,7 +319,7 @@ impl<T: Task> SubmittableTask<T> {
 #[derive(Debug)]
 pub(crate) struct SubmittedTask {
     _task_id: TaskID,
-    result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
+    result_rx: OneshotReceiver<DaftResult<Option<TaskOutput>>>,
     cancel_token: Option<CancellationToken>,
     notify_tokens: Vec<OneshotSender<()>>,
     finished: bool,
@@ -328,7 +328,7 @@ pub(crate) struct SubmittedTask {
 impl SubmittedTask {
     fn new(
         task_id: TaskID,
-        result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
+        result_rx: OneshotReceiver<DaftResult<Option<TaskOutput>>>,
         cancel_token: Option<CancellationToken>,
         notify_tokens: Vec<OneshotSender<()>>,
     ) -> Self {
@@ -348,7 +348,7 @@ impl SubmittedTask {
 }
 
 impl Future for SubmittedTask {
-    type Output = DaftResult<Option<MaterializedOutput>>;
+    type Output = DaftResult<Option<TaskOutput>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.result_rx.poll_unpin(cx) {
@@ -390,6 +390,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        pipeline_node::TaskOutput,
         scheduling::{
             scheduler::test_utils::setup_workers,
             task::tests::MockTaskFailure,
@@ -432,6 +433,13 @@ mod tests {
         }
     }
 
+    fn unwrap_materialized(result: Option<TaskOutput>) -> crate::pipeline_node::MaterializedOutput {
+        match result.expect("expected task output") {
+            TaskOutput::Materialized(materialized_output) => materialized_output,
+            TaskOutput::ShuffleWrite(_) => panic!("expected materialized output"),
+        }
+    }
+
     #[tokio::test]
     async fn test_scheduler_actor_basic_task() -> DaftResult<()> {
         let test_context = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1)]);
@@ -444,7 +452,7 @@ mod tests {
 
         let result = submitted_task.await?;
         assert!(Arc::ptr_eq(
-            &result.unwrap().partitions()[0],
+            &unwrap_materialized(result).partitions()[0],
             &partition_ref
         ));
 
@@ -474,7 +482,7 @@ mod tests {
         let mut counter = 0;
         for submitted_task in submitted_tasks {
             let result = submitted_task.await?;
-            let partition = result.unwrap().partitions()[0].clone();
+            let partition = unwrap_materialized(result).partitions()[0].clone();
             assert_eq!(partition.num_rows(), 100 + counter);
             assert_eq!(partition.size_bytes(), 1024 + 1);
             counter += 1;
@@ -529,7 +537,7 @@ mod tests {
         drop(submitted_task_tx);
         while let Some((submitted_task, num_rows, num_bytes)) = submitted_task_rx.recv().await {
             let result = submitted_task.await?;
-            let partition = result.unwrap().partitions()[0].clone();
+            let partition = unwrap_materialized(result).partitions()[0].clone();
             assert_eq!(partition.num_rows(), num_rows);
             assert_eq!(partition.size_bytes(), num_bytes);
         }
@@ -625,7 +633,7 @@ mod tests {
                 cancel_receiver.await.unwrap();
             } else {
                 let result = submitted_task.await?;
-                let partition = result.unwrap().partitions()[0].clone();
+                let partition = unwrap_materialized(result).partitions()[0].clone();
                 assert_eq!(partition.num_rows(), num_rows);
                 assert_eq!(partition.size_bytes(), num_bytes);
             }
@@ -684,7 +692,7 @@ mod tests {
         let submittable_task = SubmittableTask::task_only(task);
         let submitted_task = submittable_task.submit(&test_context.scheduler_handle_ref)?;
         let result = submitted_task.await?;
-        assert_eq!(result.unwrap().partitions().len(), 1);
+        assert_eq!(unwrap_materialized(result).partitions().len(), 1);
 
         test_context.cleanup().await?;
         Ok(())
