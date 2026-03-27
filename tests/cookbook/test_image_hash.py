@@ -44,13 +44,23 @@ def test_image_hash_hash_size_16_returns_32_bytes():
 
 
 def test_crop_resistant_returns_correct_dtype():
-    """crop_resistant with hash_size=8 produces 9*64/8 = 72 bytes."""
+    """crop_resistant with default segments=3, hash_size=8 produces 3*3*64/8 = 72 bytes."""
     df = make_image_df([gradient_rgb(h=32, w=32)])
     result = df.with_column("h", image_hash(df["img"], method="crop_resistant")).collect()
     dtype = result.schema()["h"].dtype
     assert dtype == DataType.fixed_size_binary(72), f"Expected Binary[72], got {dtype}"
     hashes = result.to_pydict()["h"]
     assert len(hashes[0]) == 72
+
+
+def test_crop_resistant_custom_segments():
+    """crop_resistant with segments=4 produces 4*4*64/8 = 128 bytes."""
+    df = make_image_df([gradient_rgb(h=32, w=32)])
+    result = df.with_column("h", image_hash(df["img"], method="crop_resistant", segments=4)).collect()
+    dtype = result.schema()["h"].dtype
+    assert dtype == DataType.fixed_size_binary(128), f"Expected Binary[128], got {dtype}"
+    hashes = result.to_pydict()["h"]
+    assert len(hashes[0]) == 128
 
 
 def test_colorhash_output_size():
@@ -231,7 +241,7 @@ def test_colorhash_similar_colors_closer_than_dissimilar():
 def test_crop_resistant_small_crop_low_distance():
     """A slightly cropped image should have low absolute Hamming distance.
 
-    crop_resistant produces a 9-segment hash (576 bits total for hash_size=8).
+    crop_resistant with default segments=3 produces 576 bits total for hash_size=8.
     A 4-pixel edge crop on a 48×48 image shifts the segments only slightly, so
     far fewer than half the bits should flip.
     """
@@ -260,6 +270,18 @@ def test_image_hash_invalid_hash_size_raises():
     """Non-positive hash_size raises a ValueError at call time."""
     with pytest.raises(ValueError, match="hash_size must be a positive integer"):
         image_hash(daft.col("img"), hash_size=0)
+
+
+def test_whash_non_power_of_two_hash_size_raises():
+    """Whash with a non-power-of-2 hash_size raises a ValueError at call time."""
+    with pytest.raises(ValueError, match="power of 2"):
+        image_hash(daft.col("img"), method="whash", hash_size=5)
+
+
+def test_image_hash_invalid_segments_raises():
+    """Non-positive segments raises a ValueError at call time."""
+    with pytest.raises(ValueError, match="segments must be a positive integer"):
+        image_hash(daft.col("img"), method="crop_resistant", segments=0)
 
 
 def test_image_hash_multiple_rows():
