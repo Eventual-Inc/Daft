@@ -28,7 +28,7 @@ impl PythonArray {
 
         use common_py_serde::pickle_dumps;
         use pyo3::Python;
-        use rand::{SeedableRng, rngs::StdRng, seq::IndexedRandom};
+        use rand::{SeedableRng, rngs::StdRng, seq::IndexedRandom as _};
 
         // Sample up to 1MB or 10000 items to determine total size.
         const MAX_SAMPLE_QUANTITY: usize = 10000;

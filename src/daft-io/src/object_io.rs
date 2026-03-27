@@ -97,7 +97,7 @@ impl GetResult {
                             | super::Error::UnableToOpenFile { .. },
                         ) if let Some(rp) = &retry_params => {
                             let jitter =
-                                rand::thread_rng().gen_range(0..((1 << (attempt - 1)) * JITTER_MS));
+                                rand::rng().random_range(0..((1 << (attempt - 1)) * JITTER_MS));
                             let jitter = jitter.min(MAX_BACKOFF_MS);
 
                             log::warn!(
@@ -200,7 +200,8 @@ impl ResumableByteStream {
                                     break;
                                 }
 
-                                let jitter = rand::thread_rng().gen_range(0..((1 << (self.attempt - 1)) * JITTER_MS));
+                                let jitter = rand::rng()
+                                    .random_range(0..((1 << (self.attempt - 1)) * JITTER_MS));
                                 let backoff_ms = jitter.min(MAX_BACKOFF_MS);
                                 tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
 

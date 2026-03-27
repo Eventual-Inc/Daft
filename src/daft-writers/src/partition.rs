@@ -18,20 +18,18 @@ struct PartitionedWriter {
     #[allow(clippy::type_complexity)]
     per_partition_writers: HashMap<
         IndexHash,
-        Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+        Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
         IdentityBuildHasher,
     >,
     saved_partition_values: Vec<RecordBatch>,
-    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+    writer_factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>>,
     partition_by: Vec<BoundExpr>,
     is_closed: bool,
 }
 
 impl PartitionedWriter {
     pub fn new(
-        writer_factory: Arc<
-            dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>,
-        >,
+        writer_factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>>,
         partition_by: Vec<BoundExpr>,
     ) -> Self {
         Self {
@@ -48,7 +46,7 @@ impl PartitionedWriter {
 
     fn partition(
         partition_cols: &[BoundExpr],
-        data: Arc<MicroPartition>,
+        data: MicroPartition,
     ) -> DaftResult<(Vec<RecordBatch>, RecordBatch)> {
         let table = data.concat_or_get()?.unwrap();
         let (split_tables, partition_values) = table.partition_by_value(partition_cols)?;
@@ -58,10 +56,10 @@ impl PartitionedWriter {
 
 #[async_trait]
 impl AsyncFileWriter for PartitionedWriter {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Vec<RecordBatch>;
 
-    async fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<WriteResult> {
+    async fn write(&mut self, input: MicroPartition) -> DaftResult<WriteResult> {
         assert!(
             !self.is_closed,
             "Cannot write to a closed PartitionedWriter"
@@ -81,7 +79,7 @@ impl AsyncFileWriter for PartitionedWriter {
         let mut joinset: JoinSet<
             DaftResult<(
                 IndexHash,
-                Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+                Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
                 WriteResult,
                 RecordBatch,
             )>,
@@ -104,11 +102,8 @@ impl AsyncFileWriter for PartitionedWriter {
                 },
             );
 
-            let table_data = Arc::new(MicroPartition::new_loaded(
-                table.schema.clone(),
-                vec![table].into(),
-                None,
-            ));
+            let table_data =
+                MicroPartition::new_loaded(table.schema.clone(), vec![table].into(), None);
 
             match entry {
                 RawEntryMut::Vacant(_entry) => {
@@ -197,15 +192,13 @@ impl AsyncFileWriter for PartitionedWriter {
 }
 
 pub(crate) struct PartitionedWriterFactory {
-    writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+    writer_factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>>,
     partition_cols: Vec<BoundExpr>,
 }
 
 impl PartitionedWriterFactory {
     pub(crate) fn new(
-        writer_factory: Arc<
-            dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>,
-        >,
+        writer_factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>>,
         partition_cols: Vec<BoundExpr>,
     ) -> Self {
         Self {
@@ -215,7 +208,7 @@ impl PartitionedWriterFactory {
     }
 }
 impl WriterFactory for PartitionedWriterFactory {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Vec<RecordBatch>;
 
     fn create_writer(

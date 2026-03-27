@@ -177,6 +177,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        pipeline_node::TaskOutput,
         scheduling::{
             scheduler::{
                 SchedulerHandle, SubmittableTask, SubmittedTask, test_utils::setup_workers,
@@ -203,6 +204,13 @@ mod tests {
         (Dispatcher::new(), worker_manager)
     }
 
+    fn unwrap_materialized(result: Option<TaskOutput>) -> crate::pipeline_node::MaterializedOutput {
+        match result.expect("expected task output") {
+            TaskOutput::Materialized(materialized_output) => materialized_output,
+            TaskOutput::ShuffleWrite(_) => panic!("expected materialized output"),
+        }
+    }
+
     #[tokio::test]
     async fn test_dispatcher_basic_task() -> DaftResult<()> {
         let worker_id: WorkerId = Arc::from("worker1");
@@ -225,7 +233,7 @@ mod tests {
         assert!(failed_tasks.is_empty());
 
         let result = submitted_task.await?;
-        let partition = result.unwrap().partitions()[0].clone();
+        let partition = unwrap_materialized(result).partitions()[0].clone();
         assert!(Arc::ptr_eq(&partition, &partition_ref));
 
         Ok(())
@@ -238,12 +246,14 @@ mod tests {
             setup_dispatcher_test_context(&[(worker_id.clone(), 4)]);
 
         let num_tasks = 100;
-        let mut rng = StdRng::from_entropy();
+        let mut rng = StdRng::from_os_rng();
         let (scheduled_tasks, submitted_tasks) = (0..num_tasks)
             .map(|i| {
                 let task = MockTaskBuilder::new(create_mock_partition_ref(100 + i, 1024 * (i + 1)))
                     .with_task_id(i as u32)
-                    .with_sleep_duration(std::time::Duration::from_millis(rng.gen_range(50..100)))
+                    .with_sleep_duration(std::time::Duration::from_millis(
+                        rng.random_range(50..100),
+                    ))
                     .build();
                 let submittable_task = SubmittableTask::task_only(task);
                 let (schedulable_task, submitted_task) =
@@ -268,7 +278,7 @@ mod tests {
         // Verify results
         for (i, submitted_task) in submitted_tasks.into_iter().enumerate() {
             let result = submitted_task.await?;
-            let partition = result.unwrap().partitions()[0].clone();
+            let partition = unwrap_materialized(result).partitions()[0].clone();
             assert_eq!(partition.num_rows(), 100 + i);
             assert_eq!(partition.size_bytes(), 1024 * (i + 1));
         }
@@ -518,7 +528,7 @@ mod tests {
             .iter()
             .map(|task| task.task_context().task_id)
             .collect();
-        failed_task_ids.sort();
+        failed_task_ids.sort_unstable();
         assert_eq!(failed_task_ids, vec![1, 2, 3]);
 
         // Verify worker state: Workers 1 and 3 should be dead, worker 2 should be alive

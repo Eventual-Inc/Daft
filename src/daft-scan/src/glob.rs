@@ -1,7 +1,7 @@
 use std::{sync::Arc, vec};
 
 use common_error::{DaftError, DaftResult};
-use common_file_formats::{CsvSourceConfig, FileFormat, FileFormatConfig, ParquetSourceConfig};
+use common_file_formats::FileFormat;
 use common_runtime::RuntimeRef;
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
@@ -19,7 +19,8 @@ use futures::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
 use snafu::Snafu;
 
 use crate::{
-    ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
+    ChunkSpec, CsvSourceConfig, FileFormatConfig, ParquetSourceConfig, PartitionField, Pushdowns,
+    ScanOperator, ScanSource, ScanSourceKind, ScanTask, ScanTaskRef, SourceConfig,
     hive::{hive_partitions_to_fields, hive_partitions_to_series, parse_hive_partitioning},
     storage_config::StorageConfig,
 };
@@ -321,18 +322,6 @@ impl GlobScanOperator {
                         "Warc schemas do not need to be inferred".to_string(),
                     ));
                 }
-                #[cfg(feature = "python")]
-                FileFormatConfig::Database(_) => {
-                    return Err(DaftError::ValueError(
-                        "Cannot glob a database source".to_string(),
-                    ));
-                }
-                #[cfg(feature = "python")]
-                FileFormatConfig::PythonFunction { .. } => {
-                    return Err(DaftError::ValueError(
-                        "Cannot glob a PythonFunction source".to_string(),
-                    ));
-                }
                 FileFormatConfig::Text(..) => {
                     return Err(DaftError::ValueError("Text schema is fixed".to_string()));
                 }
@@ -402,6 +391,25 @@ impl GlobScanOperator {
                 .collect::<Result<Vec<_>, _>>()?;
             (partitioning_keys, generated_fields)
         };
+
+        let mut final_schema = (*schema).clone();
+        if let (true, Some(hint)) = (infer_schema, &user_provided_schema) {
+            let mut added = false;
+            let mut current_fields = final_schema.fields().to_vec();
+            for hint_field in hint.fields() {
+                if !final_schema.has_field(hint_field.name.as_ref())
+                    && !generated_fields.has_field(hint_field.name.as_ref())
+                {
+                    current_fields.push(hint_field.clone());
+                    added = true;
+                }
+            }
+            if added {
+                final_schema = Schema::new(current_fields);
+            }
+        }
+        let schema = Arc::new(final_schema);
+
         Ok(Self {
             glob_paths,
             file_format_config,
@@ -506,7 +514,7 @@ impl ScanOperator for GlobScanOperator {
             )?)
         };
 
-        let file_format_config = self.file_format_config.clone();
+        let source_config = Arc::new(SourceConfig::File(self.file_format_config.as_ref().clone()));
         let schema = self.schema.clone();
         let storage_config = self.storage_config.clone();
 
@@ -587,7 +595,7 @@ impl ScanOperator for GlobScanOperator {
                         .flatten();
                     let chunk_spec = row_group.map(ChunkSpec::Parquet);
                     Ok(Some(ScanTask::new(
-                        vec![DataSource::File {
+                        vec![ScanSource {
                             metadata: if let Some(first_filepath) = first_filepath
                                 && path == *first_filepath
                             {
@@ -595,15 +603,17 @@ impl ScanOperator for GlobScanOperator {
                             } else {
                                 None
                             },
-                            path,
-                            chunk_spec,
                             size_bytes,
-                            iceberg_delete_files: None,
                             partition_spec,
                             statistics: None,
-                            parquet_metadata: None,
+                            kind: ScanSourceKind::File {
+                                path,
+                                chunk_spec,
+                                iceberg_delete_files: None,
+                                parquet_metadata: None,
+                            },
                         }],
-                        file_format_config.clone(),
+                        source_config.clone(),
                         schema.clone(),
                         storage_config.clone(),
                         pushdowns.clone(),

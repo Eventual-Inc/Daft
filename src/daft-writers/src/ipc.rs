@@ -54,7 +54,7 @@ impl IPCWriter {
 
 #[async_trait]
 impl AsyncFileWriter for IPCWriter {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {
@@ -114,7 +114,7 @@ impl IPCWriterFactory {
 }
 
 impl WriterFactory for IPCWriterFactory {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     fn create_writer(

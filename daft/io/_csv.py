@@ -38,7 +38,7 @@ def read_csv(
     Args:
         path (str): Path to CSV (allows for wildcards; supports remote URLs to object stores such as ``s3://`` or ``gs://``)
         infer_schema (bool): Whether to infer the schema of the CSV, defaults to True.
-        schema (dict[str, DataType]): A schema that is used as the definitive schema for the CSV if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred.
+        schema (dict[str, DataType]): A schema that is used as the definitive schema for the CSV if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred (overriding the types of inferred columns, and appending any new columns not found during inference).
         has_headers (bool): Whether the CSV has a header or not, defaults to True
         delimiter (Str): Delimiter used in the CSV, defaults to ","
         double_quote (bool): Whether to support double quote escapes, defaults to True

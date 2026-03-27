@@ -200,7 +200,7 @@ mod tests {
             true,
         );
 
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .aggregate(vec![unresolved_col("a").count(CountMode::Valid)], vec![])?
             .build();
 
@@ -220,7 +220,7 @@ mod tests {
             true,
         );
 
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .aggregate(vec![unresolved_col("a").count(CountMode::Null)], vec![])?
             .build();
 
@@ -240,7 +240,7 @@ mod tests {
             true,
         );
 
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .aggregate(
                 vec![unresolved_col("a").count(CountMode::Null)],
                 vec![unresolved_col("b")],
@@ -263,7 +263,7 @@ mod tests {
             true,
         );
 
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .filter(resolved_col("a").lt(lit(2)))?
             .aggregate(vec![unresolved_col("*").count(CountMode::Null)], vec![])?
             .build();
@@ -284,7 +284,7 @@ mod tests {
             true,
         );
 
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .select(vec![resolved_col("a")])?
             .aggregate(vec![unresolved_col("a").count(CountMode::Null)], vec![])?
             .build();
@@ -333,7 +333,7 @@ mod tests {
 
         let unpushable_filter = resolved_col("a").is_in(vec![lit(2)]);
         let plan = dummy_scan_node_with_pushdowns(
-            scan_op.clone(),
+            scan_op,
             Pushdowns::default().with_filters(Some(unpushable_filter)),
         )
         .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
@@ -351,7 +351,7 @@ mod tests {
         let scan_op =
             dummy_scan_operator_for_aggregation(vec![Field::new("a", DataType::UInt64)], true);
         let plan = dummy_scan_node_with_pushdowns(
-            scan_op.clone(),
+            scan_op,
             Pushdowns::default().with_filters(Some(resolved_col("a").lt(lit(10)))),
         )
         .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
@@ -380,7 +380,7 @@ mod tests {
             ],
             true,
         );
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .aggregate(
                 vec![unresolved_col("a").count(CountMode::All)],
                 vec![unresolved_col("b")],
@@ -396,7 +396,7 @@ mod tests {
     fn agg_multiple_aggs_should_not_pushdown() -> DaftResult<()> {
         let scan_op =
             dummy_scan_operator_for_aggregation(vec![Field::new("a", DataType::Int64)], true);
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .aggregate(
                 vec![
                     unresolved_col("a").count(CountMode::All),
@@ -414,7 +414,7 @@ mod tests {
     fn agg_sum_only_should_not_pushdown() -> DaftResult<()> {
         let scan_op =
             dummy_scan_operator_for_aggregation(vec![Field::new("a", DataType::Int64)], true);
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .aggregate(vec![unresolved_col("a").sum()], vec![])?
             .build();
         let expected = plan.clone();
@@ -428,7 +428,7 @@ mod tests {
             vec![Field::new("a", DataType::Int64)],
             false, // does not support count pushdown
         );
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
             .build();
         let expected = plan.clone();

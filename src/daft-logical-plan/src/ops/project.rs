@@ -681,7 +681,7 @@ mod tests {
     /// ->
     /// 1. aaaa+aaaa as x
     /// 2. aa+aa as aaaa
-    /// 3: a+a as aa
+    /// 3. a+a as aa
     #[test]
     fn test_nested_subexpression() -> DaftResult<()> {
         let source = dummy_scan_node(dummy_scan_operator(vec![

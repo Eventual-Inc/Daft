@@ -55,10 +55,6 @@ impl GatherNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     // Async execution to get all partitions out
     async fn execution_loop(
         self: Arc<Self>,
@@ -82,8 +78,8 @@ impl GatherNode {
             self.config.schema.clone(),
             self.node_id(),
         );
-        let builder =
-            SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
+        let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+            .with_psets(self.node_id(), psets);
 
         let _ = result_tx.send(builder).await;
         Ok(())

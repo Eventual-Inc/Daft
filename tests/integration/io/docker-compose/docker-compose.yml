@@ -43,3 +43,25 @@ services:
     command: gcloud beta emulators bigtable start --host-port=0.0.0.0:8086
     environment:
     - BIGTABLE_EMULATOR_HOST=0.0.0.0:8086
+
+  redpanda:
+    image: redpandadata/redpanda:v25.1.3
+    ports:
+    - "9092:9092"
+    command:
+    - redpanda
+    - start
+    - --overprovisioned
+    - --smp
+    - "1"
+    - --memory
+    - "1G"
+    - --reserve-memory
+    - "0M"
+    - --node-id
+    - "0"
+    - --check=false
+    - --kafka-addr
+    - PLAINTEXT://0.0.0.0:9092
+    - --advertise-kafka-addr
+    - PLAINTEXT://127.0.0.1:9092

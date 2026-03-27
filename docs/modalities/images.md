@@ -17,7 +17,7 @@ import daft
 from daft import col
 
 # Read parquet file containing sample dog owners
-df = daft.read_parquet("s3://daft-public-data/tutorials/10-min/sample-data-dog-owners-partitioned.pq/**")
+df = daft.read_parquet("s3://daft-oss-public-data/tutorials/10-min/sample-data-dog-owners-partitioned.pq/**")
 
 # Combine "first_name" and "last_name" to create new column "full_name"
 df = df.with_column("full_name", col("first_name") + " " + col("last_name"))

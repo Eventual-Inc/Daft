@@ -4,12 +4,14 @@ mod split_jsonl;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use daft_io::IOStatsContext;
 use daft_parquet::{RowGroupList, read::read_parquet_metadata};
 use indexmap::IndexMap;
 
-use crate::{ChunkSpec, DataSource, Pushdowns, ScanTask, ScanTaskRef};
+use crate::{
+    ChunkSpec, FileFormatConfig, ParquetSourceConfig, Pushdowns, ScanSourceKind, ScanTask,
+    ScanTaskRef, SourceConfig,
+};
 
 type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
 
@@ -120,7 +122,7 @@ impl MergeByFileSize<'_> {
         }
 
         let child_matches_accumulator = other.partition_spec() == accumulator.partition_spec()
-            && other.file_format_config == accumulator.file_format_config
+            && other.source_config == accumulator.source_config
             && other.schema == accumulator.schema
             && other.storage_config == accumulator.storage_config
             && other.pushdowns == accumulator.pushdowns;
@@ -213,19 +215,19 @@ fn split_by_row_groups(
                         - no iceberg delete files
                     */
                     if let (
-                        FileFormatConfig::Parquet(ParquetSourceConfig {
+                        SourceConfig::File(FileFormatConfig::Parquet(ParquetSourceConfig {
                             field_id_mapping, ..
-                        }),
+                        })),
                         [source],
                         Some(None),
                         None,
                     ) = (
-                        t.file_format_config.as_ref(),
+                        t.source_config.as_ref(),
                         &t.sources[..],
-                        t.sources.first().map(DataSource::get_chunk_spec),
+                        t.sources.first().map(|s| s.get_chunk_spec()),
                         t.pushdowns.limit,
                     ) && source
-                        .get_size_bytes()
+                        .size_bytes
                         .is_none_or(|s| s > max_size_bytes as u64)
                       && source
                         .get_iceberg_delete_files()
@@ -264,28 +266,23 @@ fn split_by_row_groups(
                             if curr_size_bytes >= min_size_bytes || Some(i) == last_original_index {
                                 let mut new_source = source.clone();
 
-                                if let DataSource::File {
+                                if let ScanSourceKind::File {
                                     chunk_spec,
-                                    size_bytes,
                                     parquet_metadata,
                                     ..
-                                } = &mut new_source
+                                } = &mut new_source.kind
                                 {
                                     // only keep relevant row groups in the metadata
                                     let new_metadata = file_metadata.clone_with_row_groups(curr_num_rows, curr_row_groups);
                                     *parquet_metadata = Some(Arc::new(new_metadata));
 
                                     *chunk_spec = Some(ChunkSpec::Parquet(curr_row_group_indices));
-                                    *size_bytes = Some(curr_size_bytes as u64);
+                                    new_source.size_bytes = Some(curr_size_bytes as u64);
                                 } else {
-                                    unreachable!("Parquet file format should only be used with DataSource::File");
+                                    unreachable!("Parquet file format should only be used with ScanSourceKind::File");
                                 }
 
-                                if let DataSource::File {
-                                    metadata: Some(metadata),
-                                    ..
-                                } = &mut new_source
-                                {
+                                if let Some(metadata) = &mut new_source.metadata {
                                     metadata.length = curr_num_rows;
                                 }
 
@@ -297,7 +294,7 @@ fn split_by_row_groups(
 
                                 new_tasks.push(Ok(ScanTask::new(
                                     vec![new_source],
-                                    t.file_format_config.clone(),
+                                    t.source_config.clone(),
                                     t.schema.clone(),
                                     t.storage_config.clone(),
                                     t.pushdowns.clone(),
@@ -322,10 +319,12 @@ pub fn split_and_merge_pass(
     pushdowns: &Pushdowns,
     cfg: &DaftExecutionConfig,
 ) -> DaftResult<Arc<Vec<ScanTaskRef>>> {
-    if scan_tasks
-        .iter()
-        .any(|st| matches!(st.file_format_config.as_ref(), FileFormatConfig::Warc(_)))
-    {
+    if scan_tasks.iter().any(|st| {
+        matches!(
+            st.source_config.as_ref(),
+            SourceConfig::File(FileFormatConfig::Warc(_))
+        )
+    }) {
         return Ok(scan_tasks);
     }
 

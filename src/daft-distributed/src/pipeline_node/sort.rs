@@ -16,7 +16,7 @@ use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext,
+        PipelineNodeContext, TaskOutput,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -147,7 +147,7 @@ pub(crate) fn create_sample_tasks(
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(pipeline_node.node_id() as usize)),
             );
-            let builder = SwordfishTaskBuilder::new(plan, pipeline_node)
+            let builder = SwordfishTaskBuilder::new(plan, pipeline_node, pipeline_node.node_id())
                 .with_psets(pipeline_node.node_id(), psets);
             let submittable_task = builder.build(context.query_idx, task_id_counter);
             let submitted_task = submittable_task.submit(scheduler_handle)?;
@@ -195,7 +195,7 @@ pub(crate) fn create_range_repartition_tasks(
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(node_id as usize)),
             );
-            let builder = SwordfishTaskBuilder::new(plan, pipeline_node)
+            let builder = SwordfishTaskBuilder::new(plan, pipeline_node, pipeline_node.node_id())
                 .with_psets(node_id, mo.into_inner().0);
             let submittable_task = builder.build(context.query_idx, task_id_counter);
             let submitted_task = submittable_task.submit(scheduler_handle)?;
@@ -251,10 +251,6 @@ impl SortNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     async fn execution_loop(
         self: Arc<Self>,
         input_node: TaskBuilderStream,
@@ -290,8 +286,8 @@ impl SortNode {
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(self.node_id() as usize)),
             );
-            let task =
-                SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
+            let task = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+                .with_psets(self.node_id(), psets);
             let _ = result_tx.send(task).await;
             return Ok(());
         }
@@ -312,7 +308,8 @@ impl SortNode {
             .await?
             .into_iter()
             .flatten()
-            .collect::<Vec<_>>();
+            .map(TaskOutput::into_materialized)
+            .collect::<DaftResult<Vec<_>>>()?;
 
         // Compute partition boundaries from samples
         let boundaries = get_partition_boundaries_from_samples(
@@ -340,7 +337,8 @@ impl SortNode {
             .await?
             .into_iter()
             .flatten()
-            .collect::<Vec<_>>();
+            .map(TaskOutput::into_materialized)
+            .collect::<DaftResult<Vec<_>>>()?;
 
         let transposed_outputs =
             transpose_materialized_outputs_from_vec(partitioned_outputs, num_partitions);
@@ -359,8 +357,8 @@ impl SortNode {
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(self.node_id() as usize)),
             );
-            let task =
-                SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
+            let task = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+                .with_psets(self.node_id(), psets);
             let _ = result_tx.send(task).await;
         }
         Ok(())

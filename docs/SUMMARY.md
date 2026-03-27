@@ -38,6 +38,7 @@
         * [Apache Gravitino](connectors/gravitino.md)
         * [Apache Hudi](connectors/hudi.md)
         * [Apache Iceberg](connectors/iceberg.md)
+        * [Apache Kafka](connectors/kafka.md)
         * [Azure Blob Store](connectors/azure.md)
         * [Delta Lake](connectors/delta_lake.md)
         * [Lance](connectors/lance.md)
@@ -116,7 +117,7 @@
     * [Overview](contributing/overview.md)
     * [Development Guide](contributing/development.md)
     * [Contributing AI Functions](contributing/contributing-ai-functions.md)
-* [Daft Cloud](https://www.daft.ai/cloud)
+* [Daft Skills](skills.md)
 
 <!--
 TODO

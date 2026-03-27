@@ -15,7 +15,6 @@ use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_com
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
-use opentelemetry::metrics::Meter;
 use snafu::ResultExt;
 use tracing::info_span;
 
@@ -30,9 +29,9 @@ pub enum BlockingSinkFinalizeOutput<Op: BlockingSink> {
     #[allow(dead_code)]
     HasMoreOutput {
         states: Vec<Op::State>,
-        output: Vec<Arc<MicroPartition>>,
+        output: Vec<MicroPartition>,
     },
-    Finished(Vec<Arc<MicroPartition>>),
+    Finished(Vec<MicroPartition>),
 }
 
 pub(crate) type BlockingSinkSinkResult<Op> =
@@ -41,11 +40,13 @@ pub(crate) type BlockingSinkFinalizeResult<Op> =
     OperatorOutput<DaftResult<BlockingSinkFinalizeOutput<Op>>>;
 pub(crate) trait BlockingSink: Send + Sync {
     type State: Send + Sync + Unpin;
+    type Stats: RuntimeStats = DefaultRuntimeStats;
 
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self>
     where
@@ -61,9 +62,6 @@ pub(crate) trait BlockingSink: Send + Sync {
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Self::State>;
-    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::new(meter, node_info))
-    }
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
     }
@@ -82,15 +80,15 @@ struct ExecutionContext<Op: BlockingSink> {
     task_spawner: ExecutionTaskSpawner,
     task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
     state_pool: HashMap<StateId, Op::State>,
-    output_sender: Sender<Arc<MicroPartition>>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    output_sender: Sender<MicroPartition>,
+    runtime_stats: Arc<Op::Stats>,
     stats_manager: RuntimeStatsManagerHandle,
 }
 
 pub struct BlockingSinkNode<Op: BlockingSink> {
     op: Arc<Op>,
     child: Box<dyn PipelineNode>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<Op::Stats>,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
 }
@@ -105,7 +103,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
     ) -> Self {
         let name: Arc<str> = op.name().into();
         let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::BlockingSink, context);
-        let runtime_stats = op.make_runtime_stats(&ctx.meter, &node_info);
+        let runtime_stats = Arc::new(Op::Stats::new(&ctx.meter, &node_info));
 
         Self {
             op,
@@ -123,15 +121,18 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
 
     fn spawn_execution_task(
         ctx: &mut ExecutionContext<Op>,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Op::State,
         state_id: StateId,
     ) {
         let op = ctx.op.clone();
         let task_spawner = ctx.task_spawner.clone();
+        let runtime_stats = ctx.runtime_stats.clone();
         ctx.task_set.spawn(async move {
             let now = Instant::now();
-            let new_state = op.sink(input, state, &task_spawner).await??;
+            let new_state = op
+                .sink(input, state, runtime_stats, &task_spawner)
+                .await??;
             let elapsed = now.elapsed();
 
             Ok(ExecutionTaskResult {
@@ -144,7 +145,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
 
     async fn process_input(
         node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
+        mut receiver: Receiver<MicroPartition>,
         ctx: &mut ExecutionContext<Op>,
     ) -> DaftResult<()> {
         let mut input_closed = false;
@@ -159,7 +160,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                 Some(result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
                     // Record execution stats
                     let ExecutionTaskResult { state_id, state, elapsed } = result??;
-                    ctx.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+                    ctx.runtime_stats.add_duration_us(elapsed.as_micros() as u64);
 
                     // Return state to pool
                     ctx.state_pool.insert(state_id, state);
@@ -286,7 +287,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<Receiver<MicroPartition>> {
         let node_id = self.node_id();
         let name = self.name();
 
@@ -301,13 +302,11 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         let task_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("BlockingSink::Sink"),
         );
         let finalize_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
             info_span!("BlockingSink::Finalize"),
         );
 
@@ -325,7 +324,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
             task_set,
             state_pool: HashMap::new(),
             output_sender: destination_sender,
-            runtime_stats: runtime_stats.clone(),
+            runtime_stats,
             stats_manager: stats_manager.clone(),
         };
 

@@ -128,11 +128,11 @@ class SQLConnection:
                 return True
         return False
 
-    def execute_sql_query(self, sql: str) -> pa.Table:
-        if self._should_use_connectorx():
+    def execute_sql_query(self, sql: str, schema: pa.Schema | None = None) -> pa.Table:
+        if schema is None and self._should_use_connectorx():
             return self._execute_sql_query_with_connectorx(sql)
         else:
-            return self._execute_sql_query_with_sqlalchemy(sql)
+            return self._execute_sql_query_with_sqlalchemy(sql, schema=schema)
 
     def _execute_sql_query_with_connectorx(self, sql: str) -> pa.Table:
         import connectorx as cx
@@ -145,7 +145,7 @@ class SQLConnection:
         except Exception as e:
             raise RuntimeError(f"Failed to execute sql: {sql} with url: {self.conn}, error: {e}") from e
 
-    def _execute_sql_query_with_sqlalchemy(self, sql: str) -> pa.Table:
+    def _execute_sql_query_with_sqlalchemy(self, sql: str, schema: pa.Schema | None = None) -> pa.Table:
         from sqlalchemy import create_engine, text
 
         logger.info("Using sqlalchemy to execute sql: %s", sql)
@@ -160,8 +160,7 @@ class SQLConnection:
                     rows = result.fetchall()
 
             pydict = {column_name: [row[i] for row in rows] for i, column_name in enumerate(result.keys())}
-            # TODO: Use type codes from cursor description to create pyarrow schema
-            return pa.Table.from_pydict(pydict)
+            return pa.Table.from_pydict(pydict, schema=schema)
         except Exception as e:
             connection_str = self.conn if isinstance(self.conn, str) else self.conn.__name__
             raise RuntimeError(f"Failed to execute sql: {sql} from connection: {connection_str}, error: {e}") from e

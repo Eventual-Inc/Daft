@@ -62,6 +62,9 @@ from .datetime import (
     to_datetime,
     date_trunc,
     to_unix_epoch,
+    current_date,
+    current_timestamp,
+    current_timezone,
 )
 from .distance import cosine_distance, dot_product, euclidean_distance
 from .similarity import (
@@ -187,6 +190,7 @@ from .str import (
     upper,
     lstrip,
     rstrip,
+    strip,
     reverse,
     capitalize,
     to_camel_case,
@@ -282,6 +286,9 @@ __all__ = [
     "count_matches",
     "crop",
     "csc",
+    "current_date",
+    "current_timestamp",
+    "current_timezone",
     "date",
     "date_trunc",
     "day",
@@ -424,6 +431,7 @@ __all__ = [
     "stddev",
     "strftime",
     "string_agg",
+    "strip",
     "substr",
     "sum",
     "tan",

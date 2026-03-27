@@ -1,60 +1,47 @@
 # Roadmap
 
-_Last updated: May 2025_
+*Last updated: March 2026*
 
-What is in store for Daft in 2025? This roadmap outlines the big picture of what the Daft team plans to work on in the coming year, as well as some of the features to expect from these.
+This roadmap outlines the big picture of what the Daft team plans to work on in the coming year, as well as some of the features to expect from these.
 
-Please note that items on this roadmap are subject to change any time. If there are features you would like to implement, we highly welcome and encourage open source contributions! Our team is happy to provide guidance, help scope the work, and review PRs. Feel free to open an issue or PR on [GitHub](https://github.com/Eventual-Inc/Daft) or join our [Daft Slack Community](https://join.slack.com/t/dist-data/shared_invite/zt-3rh9jr9iv-tmmTNOlQpfvhEy2NTMWS_w).
+Please note that items on this roadmap are subject to change at any time. If there are features you would like to implement, we welcome and encourage open-source contributions. Our team is happy to provide guidance, help scope the work, and review PRs.
 
-<!-- See also [Contribute to Daft](contributing.md) for information. -->
+Feel free to open an issue or PR on [GitHub ↗](https://github.com/Eventual-Inc/Daft) or join our [Daft Slack Community ↗](https://daft.ai/slack).
 
-## Multimodality
+## Performance
 
-- Support generic data source and data sink interfaces that can be implemented outside of Daft
-- Enhanced support for JSON with a VARIANT data type and JSON_TABLE
-- More in-built and optimized expressions for multimodal and nested datatypes
+1. **Performant large scale shuffles** - Support for native shuffling services for data transfer in our distributed engine (Flotilla). This includes a specialized peer-to-peer service based on Arrow Flight RPC. ([discussion #6472 ↗](https://github.com/Eventual-Inc/Daft/discussions/6472))
+2. **Distributed engine optimization** - Optimizing our distributed engine (Flotilla) to dynamically schedule and execute tasks to minimize worker setup overhead and contention, add dynamic partitioning.
+3. **Memory management** - Tracking and managing memory usage within our local runner to reduce chances of OOMs, inform backpressure and dynamic batching.
+4. **Hash-based operator improvements** - Improve partitioning and hash-table building techniques within various hash-based operators, particularly groupby aggregations and hash joins in low-cardinality cases.
 
-## AI
+## Key Features
 
-- Higher level abstractions for building AI applications on top of Daft
-- Better AI-specific observability and metrics in AI functions
-    - Tokens per second
-    - Estimated API costs
-- Better primitives for AI workloads ([discussion #3547](https://github.com/Eventual-Inc/Daft/discussions/3547))
-    - Async UDFs
-    - Streaming UDFs
-- Native LLM inference functions with Pydantic integration ([discussion #2774](https://github.com/Eventual-Inc/Daft/discussions/2774))
+1. **Checkpointing** - Ability to checkpoint and resume long running workloads from a given checkpoint. ([discussion #6446](https://github.com/Eventual-Inc/Daft/discussions/6446))
+2. **Kubernetes support** - Distributed Daft running directly on Kubernetes.
+3. **Multiple distributed backends** - Enable Daft to run distributed on multiple backends with a generic interface and continued support of Ray as a backend.
 
-## Performance & Scalability
+## Observability
 
-- Incorporate our local streaming execution engine (Swordfish) into distributed ray runner
-    - Handle Map-only workloads at any scale factor (100TB+)
-    - Handle 10TB+ Shuffle workloads
-- More powerful cost-based optimizer, implementing advanced optimizations
-    - Improve the join ordering algorithm to be dynamic-programming based
-    - Semi-join reduction
-    - Common subquery elimination
-- To complement our blazing fast S3 readers, we aim to build the fastest S3 writes in the wild west
+1. **Daft Dashboard** - Observability dashboard with support for Flotilla, providing cluster, task and partition level observability.
+2. **Improved Debugging** - Support for capturing and retrieving debugging information and run history.
+3. **Memory and CPU observability** - Ability to capture and retrieve resource utilization metrics.
 
-## Out-of-the-box Experience
+## Extensibility
 
-- Improve catalog and table integrations
-    - Support for Iceberg deletion vectors and upserts (see [roadmap for Iceberg](https://github.com/Eventual-Inc/Daft/issues/2458))
-    - Better Unity Catalog support ([issue #2482](https://github.com/Eventual-Inc/Daft/issues/2482))
-- Improve observability tools (logging/metrics/traces) ([issue #4380](https://github.com/Eventual-Inc/Daft/issues/4380))
-- Improve experience working with AI tools
-    - LLM context file ([issue #4293](https://github.com/Eventual-Inc/Daft/issues/4293))
+1. **Native extensions** - Support for Daft native extensions via the Arrow C interfaces; enabling developers to extend Daft in any language which supports C-based interop.
+2. **Data Source refactor** - Simplify the source pipeline to make adding native Rust sources straightforward.
+3. **Arrow2 deprecation** ([discussion #5741](https://github.com/Eventual-Inc/Daft/discussions/5741))
+
 
 ## Future Work
 
-The following features would be valuable additions to Daft, but are not currently on our immediate development roadmap. We're sharing these to highlight opportunities for open source contributions, invite discussion around implementation approaches, and provide visibility into longer-term possibilities. These features have been tagged with `help wanted` and `good first issue` on [Daft repo](https://github.com/Eventual-Inc/Daft).
+The following features are in consideration, but are not currently on our roadmap. We're sharing these to highlight opportunities for open source contributions, invite discussion around implementation approaches, and provide further visibility. These features have been tagged with `help wanted` and `good first issue` on [Daft repo ↗](https://github.com/Eventual-Inc/Daft).
 
-- Improved Delta Lake support (see [roadmap for Delta Lake](https://github.com/Eventual-Inc/Daft/issues/2457))
-    - Support for reading tables with deletion vectors ([issue #1954](https://github.com/Eventual-Inc/Daft/issues/1954))
-    - Support for reading tables with column mappings ([issue #1955](https://github.com/Eventual-Inc/Daft/issues/1955))
-- Improved Apache Hudi support (see [roadmap for Apache Hudi](https://github.com/Eventual-Inc/Daft/issues/4389))
+1. **Improved Delta Lake support** (see [roadmap for Delta Lake ↗](https://github.com/Eventual-Inc/Daft/issues/2457))
+    - Support for reading tables with deletion vectors ([issue #1954 ↗](https://github.com/Eventual-Inc/Daft/issues/1954))
+    - Support for reading tables with column mappings ([issue #1955 ↗](https://github.com/Eventual-Inc/Daft/issues/1955))
+2. **VARIANT type** - Support for the VARIANT type into Daft's type system which is compatible with the parquet VARIANT.
+3. **`Result<T>` type** - Add a `Result<T>` type (Either) to Daft's type system to support graceful handling of fallible operations.
 
-
-If you are interested in working on any of these features, feel free to open an issue or start a discussion on [GitHub](https://github.com/Eventual-Inc/Daft) or join our [Daft Slack Community](https://join.slack.com/t/dist-data/shared_invite/zt-3rh9jr9iv-tmmTNOlQpfvhEy2NTMWS_w). Our team can provide technical direction and help scope the work appropriately. Thank you in advance 💜
-
-<!-- See also [Contribute to Daft](contributing.md) for information. -->
+If you are interested in working on any of these features, feel free to open an issue or start a discussion on [GitHub ↗](https://github.com/Eventual-Inc/Daft) or join our [Daft Slack Community ↗](https://daft.ai/slack). Our team can provide technical direction and help scope the work appropriately. Thank you in advance 💜

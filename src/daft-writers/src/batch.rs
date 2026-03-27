@@ -28,7 +28,7 @@ impl SizeBasedBuffer {
         }
     }
 
-    fn push(&mut self, mp: Arc<MicroPartition>) -> DaftResult<()> {
+    fn push(&mut self, mp: MicroPartition) -> DaftResult<()> {
         for table in mp.record_batches() {
             let size_bytes = table.size_bytes();
             self.size_bytes += size_bytes;
@@ -38,11 +38,7 @@ impl SizeBasedBuffer {
     }
 
     // Pop tables from the buffer we've popped between min_bytes and max_bytes.
-    fn pop(
-        &mut self,
-        min_bytes: usize,
-        max_bytes: usize,
-    ) -> DaftResult<Option<Arc<MicroPartition>>> {
+    fn pop(&mut self, min_bytes: usize, max_bytes: usize) -> DaftResult<Option<MicroPartition>> {
         assert!(min_bytes <= max_bytes);
         if self.size_bytes < min_bytes || self.buffer.is_empty() {
             return Ok(None);
@@ -90,14 +86,14 @@ impl SizeBasedBuffer {
 
         self.size_bytes -= bytes_taken;
 
-        Ok(Some(Arc::new(MicroPartition::new_loaded(
+        Ok(Some(MicroPartition::new_loaded(
             tables[0].schema.clone(),
             tables.into(),
             None,
-        ))))
+        )))
     }
 
-    fn pop_all(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
+    fn pop_all(&mut self) -> DaftResult<Option<MicroPartition>> {
         if self.buffer.is_empty() {
             return Ok(None);
         }
@@ -110,11 +106,11 @@ impl SizeBasedBuffer {
 
         self.size_bytes = 0;
 
-        Ok(Some(Arc::new(MicroPartition::new_loaded(
+        Ok(Some(MicroPartition::new_loaded(
             tables[0].schema.clone(),
             tables.into(),
             None,
-        ))))
+        )))
     }
 }
 
@@ -122,7 +118,7 @@ impl SizeBasedBuffer {
 // a row group at a time.
 pub struct TargetBatchWriter {
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
-    writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
+    writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>,
     buffer: SizeBasedBuffer,
     is_closed: bool,
 }
@@ -134,7 +130,7 @@ impl TargetBatchWriter {
 
     pub fn new(
         size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
-        writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
+        writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>,
     ) -> Self {
         Self {
             size_calculator,
@@ -146,7 +142,7 @@ impl TargetBatchWriter {
 
     async fn write_and_update_inflation_factor(
         &mut self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         in_memory_size_bytes: usize,
     ) -> DaftResult<WriteResult> {
         let write_result = self.writer.write(input).await?;
@@ -158,10 +154,10 @@ impl TargetBatchWriter {
 
 #[async_trait]
 impl AsyncFileWriter for TargetBatchWriter {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
-    async fn write(&mut self, input: Arc<MicroPartition>) -> DaftResult<WriteResult> {
+    async fn write(&mut self, input: MicroPartition) -> DaftResult<WriteResult> {
         assert!(
             !self.is_closed,
             "Cannot write to a closed TargetBatchWriter"
@@ -217,15 +213,14 @@ impl AsyncFileWriter for TargetBatchWriter {
 }
 
 pub struct TargetBatchWriterFactory {
-    writer_factory:
-        Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
+    writer_factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Option<RecordBatch>>>,
     size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
 }
 
 impl TargetBatchWriterFactory {
     pub fn new(
         writer_factory: Arc<
-            dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>,
+            dyn WriterFactory<Input = MicroPartition, Result = Option<RecordBatch>>,
         >,
         size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
     ) -> Self {
@@ -237,7 +232,7 @@ impl TargetBatchWriterFactory {
 }
 
 impl WriterFactory for TargetBatchWriterFactory {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     fn create_writer(

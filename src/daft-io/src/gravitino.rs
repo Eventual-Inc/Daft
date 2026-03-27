@@ -28,7 +28,7 @@ fn invalid_gravitino_path(path: &str) -> crate::Error {
 }
 
 pub struct GravitinoSource {
-    /// A `daft.gravitino.GravitinoClient` instance
+    /// A `daft.catalog.__gravitino._client.GravitinoClient` instance
     gravitino_client: pyo3::Py<pyo3::PyAny>,
     /// map of fileset name to io client and storage location
     cached_sources: tokio::sync::RwLock<HashMap<String, Arc<ClientAndLocation>>>,
@@ -75,7 +75,7 @@ impl GravitinoSource {
             }
 
             Ok::<_, PyErr>(
-                py.import(intern!(py, "daft.gravitino.gravitino_catalog"))?
+                py.import(intern!(py, "daft.catalog.__gravitino._client"))?
                     .getattr(intern!(py, "GravitinoClient"))?
                     .call((endpoint, metalake_name), Some(&kwargs))?
                     .unbind(),
@@ -527,12 +527,11 @@ mod tests {
         let catalog_name = segments.next().unwrap();
         let schema_name = segments.next().unwrap();
         let fileset_name = segments.next().unwrap();
-        let remaining: Vec<&str> = segments.collect();
 
         assert_eq!(catalog_name, "catalog");
         assert_eq!(schema_name, "schema");
         assert_eq!(fileset_name, "fileset");
-        assert!(remaining.is_empty());
+        assert_eq!(segments.next(), None);
     }
 
     #[test]
@@ -543,12 +542,9 @@ mod tests {
         assert_eq!(url.scheme(), "gvfs");
         assert_eq!(url.host_str(), Some("fileset"));
 
-        let segments: Vec<&str> = url
-            .path_segments()
-            .unwrap()
-            .filter(|s| !s.is_empty())
-            .collect();
-        assert_eq!(segments.len(), 3);
+        let segments = url.path_segments().unwrap().filter(|s| !s.is_empty());
+
+        assert_eq!(segments.count(), 3);
     }
 
     // Tests for glob path base extraction logic
@@ -630,8 +626,7 @@ mod tests {
         let gvfs_base_path = "gvfs://fileset/catalog/schema/fileset/";
         let file_path = "s3://bucket/path/data/file.parquet";
 
-        if file_path.starts_with(storage_base_path) {
-            let relative_path = &file_path[storage_base_path.len()..];
+        if let Some(relative_path) = file_path.strip_prefix(storage_base_path) {
             let transformed_path = format!("{}{}", gvfs_base_path, relative_path);
             assert_eq!(
                 transformed_path,
@@ -646,8 +641,7 @@ mod tests {
         let gvfs_base_path = "gvfs://fileset/cat/sch/fs/";
         let file_path = "s3://bucket/prefix/year=2023/month=01/data.parquet";
 
-        if file_path.starts_with(storage_base_path) {
-            let relative_path = &file_path[storage_base_path.len()..];
+        if let Some(relative_path) = file_path.strip_prefix(storage_base_path) {
             let transformed_path = format!("{}{}", gvfs_base_path, relative_path);
             assert_eq!(
                 transformed_path,
@@ -686,10 +680,10 @@ mod tests {
     fn test_path_segments_with_empty_components() {
         let path = "gvfs://fileset/catalog//fileset/file.parquet";
         let url = url::Url::parse(path).unwrap();
-        let segments: Vec<&str> = url.path_segments().unwrap().collect();
+        let mut segments = url.path_segments().unwrap();
 
         // URL parsing normalizes empty segments
-        assert!(segments.contains(&""));
+        assert!(segments.any(|x| x.is_empty()));
     }
 
     // Tests for combined name format
@@ -730,7 +724,7 @@ mod tests {
     // Tests for itertools join usage
     #[test]
     fn test_path_segments_join() {
-        let segments = vec!["path", "to", "file.parquet"];
+        let segments = ["path", "to", "file.parquet"];
         let joined = segments.iter().join("/");
         assert_eq!(joined, "path/to/file.parquet");
     }
@@ -744,7 +738,7 @@ mod tests {
 
     #[test]
     fn test_path_segments_join_single() {
-        let segments = vec!["file.parquet"];
+        let segments = ["file.parquet"];
         let joined = segments.iter().join("/");
         assert_eq!(joined, "file.parquet");
     }

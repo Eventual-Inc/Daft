@@ -175,6 +175,11 @@ impl_bincode_py_state_serialization!(JsonParseOptions);
 )]
 pub struct JsonReadOptions {
     pub buffer_size: Option<usize>,
+    /// Target chunk size in bytes (approximate).
+    ///
+    /// Controls how data is split into RecordBatches for parallel processing.
+    /// Each chunk may be slightly larger than this value because splits are aligned
+    /// to line boundaries.
     pub chunk_size: Option<usize>,
 }
 

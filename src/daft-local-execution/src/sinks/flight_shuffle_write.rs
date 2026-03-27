@@ -69,8 +69,9 @@ impl BlockingSink for FlightShuffleWriteSink {
     #[instrument(skip_all, name = "FlightShuffleWriteSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         _state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let num_partitions = self.num_partitions;
@@ -88,8 +89,8 @@ impl BlockingSink for FlightShuffleWriteSink {
                         None => input.partition_by_random(num_partitions, 0)?,
                     };
 
-                    // Convert Vec<MicroPartition> to Vec<Arc<MicroPartition>>
-                    let partitioned = partitioned.into_iter().map(Arc::new).collect();
+                    // Convert Vec<MicroPartition> to Vec<MicroPartition>
+                    let partitioned = partitioned.into_iter().collect();
 
                     // Send partitioned data to writers
                     shuffle_cache.push_partitioned_data(partitioned).await?;
@@ -145,9 +146,7 @@ impl BlockingSink for FlightShuffleWriteSink {
                     let result_mp =
                         MicroPartition::new_loaded(schema.into(), Arc::new(vec![result]), None);
 
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        result_mp,
-                    )]))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![result_mp]))
                 },
                 Span::current(),
             )

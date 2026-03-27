@@ -15,9 +15,9 @@ on:
 permissions: {}
 
 env:
-  S3_BUCKET: s3://github-actions-artifacts-bucket/builds/nightly/
+  S3_BUCKET: s3://daft-oss-github-actions-artifacts/builds/nightly/
   AWS_REGION: us-west-2
-  CLOUDFRONT_DIST_ID: E3H8WN738AJ1D4
+  CLOUDFRONT_DIST_ID: E1QUPAB4XXQ64R
 
   DAFT_ANALYTICS_ENABLED: "0"
   PYTHON_VERSION: "3.10"
@@ -86,7 +86,7 @@ jobs:
     - name: Print install instructions
       run: |
         echo "To install the nightly build, run:"
-        echo "pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly"
+        echo "pip install daft --pre --extra-index-url https://ds0gqyebztuyf.cloudfront.net/builds/nightly"
 
   on-failure:
     name: Send Slack notification on failure
@@ -155,7 +155,7 @@ jobs:
         command: |
           source activate
           uv sync --no-install-project --all-extras --all-groups
-          uv pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
+          uv pip install daft --pre --extra-index-url https://ds0gqyebztuyf.cloudfront.net/builds/nightly --force-reinstall
           rm -rf daft
     - uses: actions/cache@v5
       env:
@@ -251,7 +251,7 @@ jobs:
         command: |
           source activate
           uv sync --no-install-project --all-extras --all-groups
-          uv pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
+          uv pip install daft --pre --extra-index-url https://ds0gqyebztuyf.cloudfront.net/builds/nightly --force-reinstall
           rm -rf daft
     - name: Prepare tmpdirs for IO services
       run: |

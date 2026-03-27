@@ -82,7 +82,7 @@ impl PartitionSet<MicroPartitionRef> for MicroPartitionSet {
     fn get_merged_partitions(&self) -> DaftResult<MicroPartitionRef> {
         // Sort the partitions by partition id before concatenating
         let guard = self.partitions.read().unwrap();
-        let parts = guard.values().cloned();
+        let parts: Vec<_> = guard.values().map(|v| v.as_ref().clone()).collect();
         MicroPartition::concat(parts).map(Arc::new)
     }
 

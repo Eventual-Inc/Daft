@@ -354,11 +354,11 @@ impl Drop for NativeExecutor {
 pub struct ExecutionEngineResult {
     query_plan: QueryPlan,
     handle: RuntimeTask<DaftResult<ExecutionStats>>,
-    receiver: Receiver<Arc<MicroPartition>>,
+    receiver: Receiver<MicroPartition>,
 }
 
 impl ExecutionEngineResult {
-    async fn next(&mut self) -> Option<Arc<MicroPartition>> {
+    async fn next(&mut self) -> Option<MicroPartition> {
         self.receiver.recv().await
     }
 

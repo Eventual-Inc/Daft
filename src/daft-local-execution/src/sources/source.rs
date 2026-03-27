@@ -5,7 +5,7 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, DURATION_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
+    Counter, Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::{SourceSnapshot, StatSnapshotImpl},
 };
@@ -15,7 +15,7 @@ use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{StreamExt, stream::BoxStream};
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::KeyValue;
 use snafu::ResultExt;
 
 use crate::{
@@ -24,7 +24,7 @@ use crate::{
     runtime_stats::RuntimeStats,
 };
 
-pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
+pub type SourceStream<'a> = BoxStream<'a, DaftResult<MicroPartition>>;
 
 pub(crate) struct SourceStats {
     duration_us: Counter,
@@ -34,23 +34,17 @@ pub(crate) struct SourceStats {
     node_kv: Vec<KeyValue>,
 }
 
-impl SourceStats {
-    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+impl RuntimeStats for SourceStats {
+    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
         let node_kv = node_info.to_key_values();
 
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
+            duration_us: meter.duration_us_metric(),
+            rows_out: meter.rows_out_metric(),
             io_stats: IOStatsRef::default(),
 
             node_kv,
         }
-    }
-}
-
-impl RuntimeStats for SourceStats {
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
-        self
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
@@ -72,7 +66,7 @@ impl RuntimeStats for SourceStats {
         self.rows_out.add(rows, self.node_kv.as_slice());
     }
 
-    fn add_cpu_us(&self, cpu_us: u64) {
+    fn add_duration_us(&self, cpu_us: u64) {
         self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
@@ -86,7 +80,7 @@ pub trait Source: Send + Sync {
     }
     fn multiline_display(&self) -> Vec<String>;
     fn get_data(
-        &mut self,
+        self: Box<Self>,
         maintain_order: bool,
         io_stats: IOStatsRef,
         chunk_size: usize,
@@ -206,13 +200,15 @@ impl PipelineNode for SourceNode {
         self.morsel_size_requirement = downstream_requirement;
     }
     fn start(
-        mut self: Box<Self>,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<crate::channel::Receiver<MicroPartition>> {
         let io_stats = self.runtime_stats.io_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
+        let schema = self.source.schema().clone();
+        let name = self.name();
 
         let (destination_sender, destination_receiver) = crate::channel::create_channel(1);
         let chunk_size = match self.morsel_size_requirement {
@@ -224,10 +220,9 @@ impl PipelineNode for SourceNode {
             .source
             .get_data(maintain_order, io_stats, chunk_size.into())
             .with_context(|_| PipelineExecutionSnafu {
-                node_name: self.name().to_string(),
+                node_name: name.to_string(),
             })?;
         let runtime_stats = self.runtime_stats.clone();
-        let schema = self.source.schema().clone();
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;
@@ -242,7 +237,7 @@ impl PipelineNode for SourceNode {
                     }
                 }
                 if !has_data {
-                    let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
+                    let empty = MicroPartition::empty(Some(schema.clone()));
                     let _ = destination_sender.send(empty).await;
                     runtime_stats.add_rows_out(0);
                 }
@@ -250,10 +245,11 @@ impl PipelineNode for SourceNode {
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            &self.name(),
+            &name,
         );
         Ok(destination_receiver)
     }
+
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
     }

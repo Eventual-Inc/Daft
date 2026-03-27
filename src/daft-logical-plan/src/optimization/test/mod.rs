@@ -75,8 +75,5 @@ pub fn optimize_with_rules(
     let config = OptimizerConfig::default();
     let optimizer = Optimizer::with_rule_batches(rule_batches, config);
 
-    match optimizer.optimize(plan, |_, _, _, _, _| {}) {
-        Ok(data) => Ok(data),
-        Err(e) => Err(e),
-    }
+    optimizer.optimize(plan, |_, _, _, _, _| {})
 }

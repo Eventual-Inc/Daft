@@ -92,8 +92,7 @@ pub(crate) fn create_native_parquet_writer(
     file_idx: usize,
     partition_values: Option<&RecordBatch>,
     io_config: Option<IOConfig>,
-) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
-{
+) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
     // Parse the root directory and add partition values if present.
     let (source_type, root_dir) = parse_url(root_dir)?;
     let filename = build_filename(
@@ -279,7 +278,7 @@ impl<B: StorageBackend> ParquetWriter<B> {
 
 #[async_trait]
 impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     async fn write(&mut self, data: Self::Input) -> DaftResult<WriteResult> {

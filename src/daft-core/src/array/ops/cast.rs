@@ -1665,13 +1665,13 @@ impl StructArray {
                             Some(field_idx) => self.children[*field_idx].cast(&field.dtype),
                         },
                     )
-                    .collect::<DaftResult<Vec<Series>>>();
-                Ok(Self::new(
-                    Field::new(self.name(), dtype.clone()),
-                    casted_series?,
-                    self.nulls().cloned(),
-                )
-                .into_series())
+                    .collect::<DaftResult<Vec<Series>>>()?;
+                let field = Field::new(self.name(), dtype.clone());
+                if other_fields.is_empty() {
+                    Ok(Self::new_empty(field, self.len(), self.nulls().cloned()).into_series())
+                } else {
+                    Ok(Self::new(field, casted_series, self.nulls().cloned()).into_series())
+                }
             }
             (DataType::Struct(..), DataType::Tensor(..)) => {
                 let casted_struct_array =
@@ -1984,26 +1984,26 @@ mod tests {
     fn test_utf8_to_float64_with_whitespace() {
         let utf8_array = Utf8Array::from_iter(
             "test",
-            vec![Some("  3.14  "), Some("-2.5"), Some("  1e10  "), None].into_iter(),
+            vec![Some("  3.13  "), Some("-2.5"), Some("  1e10  "), None].into_iter(),
         );
         let result = utf8_array
             .cast(&DataType::Float64)
             .expect("Failed to cast Utf8 to Float64");
 
         let values: Vec<Option<f64>> = result.f64().unwrap().into_iter().collect();
-        assert_eq!(values, vec![Some(3.14), Some(-2.5), Some(1e10), None]);
+        assert_eq!(values, vec![Some(3.13), Some(-2.5), Some(1e10), None]);
     }
 
     #[test]
     fn test_utf8_to_float32_with_whitespace() {
         let utf8_array =
-            Utf8Array::from_iter("test", vec![Some("  3.14  "), Some("  -2.5  ")].into_iter());
+            Utf8Array::from_iter("test", vec![Some("  3.13  "), Some("  -2.5  ")].into_iter());
         let result = utf8_array
             .cast(&DataType::Float32)
             .expect("Failed to cast Utf8 to Float32");
 
         let values: Vec<Option<f32>> = result.f32().unwrap().into_iter().collect();
-        assert_eq!(values, vec![Some(3.14_f32), Some(-2.5_f32)]);
+        assert_eq!(values, vec![Some(3.13_f32), Some(-2.5_f32)]);
     }
 
     #[test]

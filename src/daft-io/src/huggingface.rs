@@ -717,7 +717,7 @@ mod tests {
         let checksum = format!("{:x}", md5::compute(all_bytes));
         assert_eq!(checksum, expected_md5);
 
-        test_full_get(client, &test_file_path, &bytes).await
+        test_full_get(client, test_file_path, &bytes).await
     }
 
     #[test]

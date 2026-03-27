@@ -1,4 +1,7 @@
-use super::join_graph::{JoinGraph, JoinOrderTree, JoinOrderer};
+use super::{
+    join_graph::{JoinGraph, JoinOrderTree, JoinOrderer},
+    relation_set::RelationSet,
+};
 
 pub(crate) struct NaiveLeftDeepJoinOrderer {}
 
@@ -6,18 +9,17 @@ impl NaiveLeftDeepJoinOrderer {
     fn extend_order(
         graph: &JoinGraph,
         current_order: JoinOrderTree,
-        mut available: Vec<usize>,
+        available: RelationSet,
     ) -> JoinOrderTree {
         if available.is_empty() {
             return current_order;
         }
-        for (index, candidate_node_id) in available.iter().enumerate() {
-            let right = JoinOrderTree::Relation(*candidate_node_id, 0);
+        for candidate_id in available.iter() {
+            let right = JoinOrderTree::Relation(candidate_id, 0);
             let (connections, _) = graph.adj_list.get_connections(&current_order, &right);
             if !connections.is_empty() {
                 let new_order = current_order.join(right, connections, 0);
-                available.remove(index);
-                return Self::extend_order(graph, new_order, available);
+                return Self::extend_order(graph, new_order, available.remove(candidate_id));
             }
         }
         panic!("There should be at least one naive join order.");
@@ -26,7 +28,7 @@ impl NaiveLeftDeepJoinOrderer {
 
 impl JoinOrderer for NaiveLeftDeepJoinOrderer {
     fn order(&self, graph: &JoinGraph) -> JoinOrderTree {
-        let available: Vec<usize> = (1..graph.adj_list.max_id).collect();
+        let available = RelationSet::from_range(graph.adj_list.max_id).remove(0);
         // Take a starting order of the node with id 0.
         let starting_order = JoinOrderTree::Relation(0, 0);
         Self::extend_order(graph, starting_order, available)
@@ -100,7 +102,7 @@ mod tests {
 
     #[test]
     fn test_order_basic_join_graph() {
-        let nodes = vec!["a", "b", "c", "d"];
+        let nodes = ["a", "b", "c", "d"];
         let edges = vec![
             (0, 2), // node_a <-> node_c
             (1, 2), // node_b <-> node_c
@@ -116,7 +118,7 @@ mod tests {
 
     impl UnionFind {
         pub fn create(num_nodes: usize) -> Self {
-            UnionFind {
+            Self {
                 parent: (0..num_nodes).collect(),
                 size: vec![1; num_nodes],
             }
@@ -165,7 +167,7 @@ mod tests {
             // Check if we have a minimum spanning tree.
             if edges.len() >= num_nodes - 1 {
                 // Once we have a minimum spanning tree, we let a random number of extra edges be added to the graph.
-                if rng.gen_bool(0.3) {
+                if rng.random_bool(0.3) {
                     break;
                 }
                 edges.push((a, b));

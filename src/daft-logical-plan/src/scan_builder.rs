@@ -1,12 +1,12 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use common_error::DaftResult;
-use common_file_formats::{
-    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig,
-};
 use common_io_config::IOConfig;
 use daft_core::prelude::TimeUnit;
-use daft_scan::{ScanOperatorRef, glob::GlobScanOperator, storage_config::StorageConfig};
+use daft_scan::{
+    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, ScanOperatorRef,
+    glob::GlobScanOperator, storage_config::StorageConfig,
+};
 use daft_schema::{field::Field, schema::SchemaRef};
 #[cfg(feature = "python")]
 use {daft_scan::python::pylib::ScanOperatorHandle, pyo3::prelude::*};

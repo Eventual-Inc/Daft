@@ -19,7 +19,7 @@ from daft.daft import (
     JsonReadOptions,
     StorageConfig,
 )
-from daft.dependencies import pa, pads
+from daft.dependencies import pa, pads, pafs
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
@@ -370,9 +370,10 @@ def write_iceberg(
         path_str = base_path
 
     protocol = get_protocol_from_path(path_str)
-    canonicalized_protocol = canonicalize_protocol(protocol)
 
-    is_local_fs = canonicalized_protocol == "file"
+    # Determine locality from the resolved filesystem type so that custom
+    # schemes aliased to file:// still trigger local directory creation.
+    is_local_fs = isinstance(fs, pafs.LocalFileSystem)
 
     execution_config = get_context().daft_execution_config
     inflation_factor = execution_config.parquet_inflation_factor

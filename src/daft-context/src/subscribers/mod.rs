@@ -1,5 +1,6 @@
 pub mod dashboard;
 mod debug;
+pub mod events;
 #[cfg(feature = "python")]
 pub mod python;
 
@@ -10,6 +11,8 @@ use common_error::{DaftError, DaftResult};
 use common_metrics::{NodeID, QueryEndState, QueryID, QueryPlan, Stats};
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartitionRef;
+
+use crate::subscribers::events::{OperatorEndEvent, OperatorStartEvent, StatsEvent};
 
 pub struct QueryMetadata {
     pub output_schema: SchemaRef,
@@ -41,12 +44,18 @@ pub trait Subscriber: Send + Sync + std::fmt::Debug + 'static {
     ) -> DaftResult<()> {
         self.on_exec_start(query_id, physical_plan)
     }
-    async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()>;
+    /// Deprecated: use on_operator_start instead
+    async fn on_exec_operator_start(&self, _query_id: QueryID, _node_id: NodeID) -> DaftResult<()> {
+        Ok(())
+    }
+    /// Deprecated: use on_stats instead
     async fn on_exec_emit_stats(
         &self,
-        query_id: QueryID,
-        stats: Arc<Vec<(NodeID, Stats)>>,
-    ) -> DaftResult<()>;
+        _query_id: QueryID,
+        _stats: Arc<Vec<(NodeID, Stats)>>,
+    ) -> DaftResult<()> {
+        Ok(())
+    }
     async fn on_exec_emit_stats_with_id(
         &self,
         query_id: QueryID,
@@ -55,10 +64,30 @@ pub trait Subscriber: Send + Sync + std::fmt::Debug + 'static {
     ) -> DaftResult<()> {
         self.on_exec_emit_stats(query_id, stats).await
     }
-    async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()>;
+    /// Deprecated: use on_operator_end instead
+    async fn on_exec_operator_end(&self, _query_id: QueryID, _node_id: NodeID) -> DaftResult<()> {
+        Ok(())
+    }
     async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()>;
+    /// Called with process-level stats (memory, CPU) on each tick.
+    /// Default no-op; only subscribers interested in process stats need to override.
+    async fn on_process_stats(&self, _query_id: QueryID, _stats: Stats) -> DaftResult<()> {
+        Ok(())
+    }
     async fn on_exec_end_with_id(&self, query_id: QueryID, _execution_id: &str) -> DaftResult<()> {
         self.on_exec_end(query_id).await
+    }
+
+    async fn on_operator_start(&self, _event: Arc<OperatorStartEvent>) -> DaftResult<()> {
+        Ok(())
+    }
+
+    async fn on_operator_end(&self, _event: Arc<OperatorEndEvent>) -> DaftResult<()> {
+        Ok(())
+    }
+
+    async fn on_stats(&self, _event: Arc<StatsEvent>) -> DaftResult<()> {
+        Ok(())
     }
 }
 

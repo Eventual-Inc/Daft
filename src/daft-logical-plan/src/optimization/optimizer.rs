@@ -716,7 +716,7 @@ mod tests {
         let inputs = vec![resolved_col("a").into()];
         let actor_pool_expr = Arc::new(Expr::Function {
             func: FunctionExpr::Python(LegacyPythonUDF::new_testing_udf()),
-            inputs: inputs.clone(),
+            inputs,
         })
         .alias("a");
 
@@ -734,9 +734,9 @@ mod tests {
         .limit(limit, false)?
         .build();
         let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected.clone(),
+            expected,
             // Internally, splitting an actor pool project always re-aliases the column to its original name.
-            actor_pool_expr.clone(),
+            actor_pool_expr,
             vec![],
         )?)
         .arced();
@@ -784,7 +784,7 @@ mod tests {
         let plan = dummy_scan_node(scan_op.clone())
             .select(vec![
                 resolved_col("a"),
-                actor_pool_expr.clone().alias("renamed_col"),
+                actor_pool_expr.alias("renamed_col"),
             ])?
             .filter(resolved_col("a").lt(lit(2)))?
             .build();
@@ -796,9 +796,9 @@ mod tests {
         )
         .build();
         let expected = LogicalPlan::UDFProject(UDFProject::try_new(
-            expected.clone(),
+            expected,
             // Internally, splitting an actor pool project always re-aliases the column to its original name.
-            actor_pool_expr.clone(),
+            actor_pool_expr,
             vec![resolved_col("a")],
         )?)
         .arced();
