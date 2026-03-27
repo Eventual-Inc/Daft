@@ -177,6 +177,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        pipeline_node::TaskOutput,
         scheduling::{
             scheduler::{
                 SchedulerHandle, SubmittableTask, SubmittedTask, test_utils::setup_workers,
@@ -203,6 +204,13 @@ mod tests {
         (Dispatcher::new(), worker_manager)
     }
 
+    fn unwrap_materialized(result: Option<TaskOutput>) -> crate::pipeline_node::MaterializedOutput {
+        match result.expect("expected task output") {
+            TaskOutput::Materialized(materialized_output) => materialized_output,
+            TaskOutput::ShuffleWrite(_) => panic!("expected materialized output"),
+        }
+    }
+
     #[tokio::test]
     async fn test_dispatcher_basic_task() -> DaftResult<()> {
         let worker_id: WorkerId = Arc::from("worker1");
@@ -225,7 +233,7 @@ mod tests {
         assert!(failed_tasks.is_empty());
 
         let result = submitted_task.await?;
-        let partition = result.unwrap().partitions()[0].clone();
+        let partition = unwrap_materialized(result).partitions()[0].clone();
         assert!(Arc::ptr_eq(&partition, &partition_ref));
 
         Ok(())
@@ -270,7 +278,7 @@ mod tests {
         // Verify results
         for (i, submitted_task) in submitted_tasks.into_iter().enumerate() {
             let result = submitted_task.await?;
-            let partition = result.unwrap().partitions()[0].clone();
+            let partition = unwrap_materialized(result).partitions()[0].clone();
             assert_eq!(partition.num_rows(), 100 + i);
             assert_eq!(partition.size_bytes(), 1024 * (i + 1));
         }

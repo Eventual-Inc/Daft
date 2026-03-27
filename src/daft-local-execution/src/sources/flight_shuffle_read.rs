@@ -1,4 +1,7 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
@@ -19,7 +22,9 @@ use crate::{
 };
 
 pub struct FlightShuffleReadSource {
-    receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
+    receiver: Option<UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>>,
+    shuffle_id: u64,
+    server_cache_mapping: HashMap<String, Vec<u32>>,
     schema: SchemaRef,
     num_parallel_tasks: usize,
 }
@@ -27,6 +32,8 @@ pub struct FlightShuffleReadSource {
 impl FlightShuffleReadSource {
     pub fn new(
         receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
+        shuffle_id: u64,
+        server_cache_mapping: HashMap<String, Vec<u32>>,
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
     ) -> Self {
@@ -37,20 +44,24 @@ impl FlightShuffleReadSource {
             num_cpus
         };
         Self {
-            receiver,
+            receiver: Some(receiver),
+            shuffle_id,
+            server_cache_mapping,
             schema,
             num_parallel_tasks,
         }
     }
 
     fn spawn_flight_shuffle_processor(
-        num_parallel_tasks: usize,
+        &self,
         mut receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
         output_sender: Sender<MicroPartition>,
         schema: SchemaRef,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
-
+        let num_parallel_tasks = self.num_parallel_tasks;
+        let shuffle_id = self.shuffle_id;
+        let server_cache_mapping = self.server_cache_mapping.clone();
         io_runtime.spawn(async move {
             let mut client_manager = FlightClientManager::new();
             let mut task_set = JoinSet::new();
@@ -64,9 +75,9 @@ impl FlightShuffleReadSource {
                         .expect("Pending tasks should not be empty");
                     let stream = client_manager
                         .fetch_partition(
-                            input.shuffle_id,
+                            shuffle_id,
                             input.partition_idx,
-                            &input.server_cache_mapping,
+                            &server_cache_mapping,
                             schema.clone(),
                         )
                         .await?;
@@ -99,15 +110,12 @@ impl FlightShuffleReadSource {
                     Some(join_result) = task_set.join_next(), if !task_set.is_empty() => {
                         match join_result {
                             Ok(Ok(())) => {}
-                            Ok(Err(e)) => return Err(e.into()),
+                            Ok(Err(e)) => return Err(e),
                             Err(e) => return Err(e.into()),
                         }
                     }
                 }
             }
-            debug_assert!(pending_tasks.is_empty(), "Pending tasks should be empty");
-            debug_assert!(task_set.is_empty(), "Task set should be empty");
-            debug_assert!(receiver_exhausted, "Receiver should be exhausted");
 
             Ok(())
         })
@@ -142,7 +150,7 @@ impl Source for FlightShuffleReadSource {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        vec!["FlightShuffleRead".to_string()]
+        vec![format!("FlightShuffleRead: shuffle_id={}", self.shuffle_id)]
     }
 
     #[instrument(skip_all, name = "FlightShuffleReadSource::get_data")]
@@ -153,15 +161,11 @@ impl Source for FlightShuffleReadSource {
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<MicroPartition>(1);
-        let input_receiver = self.receiver;
-        let num_parallel_tasks = self.num_parallel_tasks;
+        let mut this = *self;
+        let input_receiver = this.receiver.take().expect("Receiver not found");
 
-        let processor_task = Self::spawn_flight_shuffle_processor(
-            num_parallel_tasks,
-            input_receiver,
-            output_sender,
-            self.schema.clone(),
-        );
+        let processor_task =
+            this.spawn_flight_shuffle_processor(input_receiver, output_sender, this.schema.clone());
 
         let result_stream = output_receiver.into_stream().map(Ok);
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));

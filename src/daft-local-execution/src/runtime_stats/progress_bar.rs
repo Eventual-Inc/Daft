@@ -74,10 +74,14 @@ struct IndicatifProgressBarManager {
     pbars: Vec<indicatif::ProgressBar>,
     templates: Vec<String>,
     total: usize,
+    persist_on_finish: bool,
 }
 
 impl IndicatifProgressBarManager {
-    fn new(node_info_map: &HashMap<NodeID, (Arc<NodeInfo>, RuntimeStatsRef)>) -> Self {
+    fn new(
+        node_info_map: &HashMap<NodeID, (Arc<NodeInfo>, RuntimeStatsRef)>,
+        persist_on_finish: bool,
+    ) -> Self {
         let multi_progress = indicatif::MultiProgress::new();
 
         if cfg!(feature = "python") {
@@ -100,6 +104,7 @@ impl IndicatifProgressBarManager {
             pbars: Vec::new(),
             templates: Vec::new(),
             total,
+            persist_on_finish,
         };
 
         // Determine max name for alignment and minimizing whitespace
@@ -213,27 +218,36 @@ impl ProgressBar for IndicatifProgressBarManager {
     }
 
     fn finish(mut self: Box<Self>) -> DaftResult<()> {
-        self.pbars.clear();
-        self.multi_progress.clear()?;
+        if !self.persist_on_finish {
+            self.pbars.clear();
+            self.multi_progress.clear()?;
+        }
         Ok(())
     }
 }
 
 pub fn make_progress_bar_manager(
     node_info_map: &HashMap<NodeID, (Arc<NodeInfo>, RuntimeStatsRef)>,
+    persist_on_finish: bool,
 ) -> Box<dyn ProgressBar> {
     #[cfg(feature = "python")]
     {
         if python::in_notebook() {
             Box::new(python::TqdmProgressBarManager::new(node_info_map))
         } else {
-            Box::new(IndicatifProgressBarManager::new(node_info_map))
+            Box::new(IndicatifProgressBarManager::new(
+                node_info_map,
+                persist_on_finish,
+            ))
         }
     }
 
     #[cfg(not(feature = "python"))]
     {
-        Box::new(IndicatifProgressBarManager::new(node_info_map))
+        Box::new(IndicatifProgressBarManager::new(
+            node_info_map,
+            persist_on_finish,
+        ))
     }
 }
 
@@ -373,6 +387,6 @@ mod tests {
         );
 
         // This panics in make_new_bar due to byte-level string slicing on multi-byte UTF-8
-        let _manager = IndicatifProgressBarManager::new(&node_map);
+        let _manager = IndicatifProgressBarManager::new(&node_map, false);
     }
 }

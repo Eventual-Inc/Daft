@@ -15,7 +15,7 @@ use futures::{TryStreamExt, future::try_join_all};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, TaskOutput,
         sort::{
             create_range_repartition_tasks, create_sample_tasks,
             get_partition_boundaries_from_samples,
@@ -208,7 +208,8 @@ impl SortMergeJoinNode {
         .await?
         .into_iter()
         .flatten()
-        .collect::<Vec<_>>();
+        .map(TaskOutput::into_materialized)
+        .collect::<DaftResult<Vec<_>>>()?;
 
         // Compute partition boundaries from combined samples
         let left_partition_boundaries = get_partition_boundaries_from_samples(
@@ -276,12 +277,14 @@ impl SortMergeJoinNode {
         let left_partitioned_outputs = left_partitioned_outputs
             .into_iter()
             .flatten()
-            .collect::<Vec<_>>();
+            .map(TaskOutput::into_materialized)
+            .collect::<DaftResult<Vec<_>>>()?;
 
         let right_partitioned_outputs = right_partitioned_outputs
             .into_iter()
             .flatten()
-            .collect::<Vec<_>>();
+            .map(TaskOutput::into_materialized)
+            .collect::<DaftResult<Vec<_>>>()?;
 
         // Transpose outputs to group by partition index
         let left_transposed_outputs =
