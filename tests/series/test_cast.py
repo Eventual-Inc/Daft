@@ -486,6 +486,18 @@ def test_series_cast_numpy_to_image() -> None:
     np.testing.assert_equal(data[:-1], pydata[:-1])
 
 
+def test_series_cast_numpy_to_image_preserves_name() -> None:
+    data = [
+        np.arange(12, dtype=np.uint8).reshape((2, 2, 3)),
+        None,
+    ]
+    s = Series.from_pylist(data, name="frame", dtype=DataType.python())
+
+    casted = s.cast(DataType.image("RGB"))
+
+    assert casted.name() == "frame"
+
+
 def test_series_cast_numpy_to_image_infer_mode() -> None:
     data = [
         np.arange(6, dtype=np.uint8).reshape((2, 3)),
