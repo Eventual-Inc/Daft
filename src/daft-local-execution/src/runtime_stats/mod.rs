@@ -51,8 +51,8 @@ enum ProgressBarMode {
     Persist,
 }
 
-fn progress_bar_mode() -> ProgressBarMode {
-    if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+fn progress_bar_mode(is_flotilla_worker: bool) -> ProgressBarMode {
+    if is_flotilla_worker {
         return ProgressBarMode::Disabled;
     }
     match std::env::var("DAFT_PROGRESS_BAR")
@@ -164,6 +164,7 @@ impl RuntimeStatsManager {
         pipeline: &Box<dyn PipelineNode>,
         subscribers: Vec<Arc<dyn Subscriber>>,
         query_id: QueryID,
+        is_flotilla_worker: bool,
     ) -> DaftResult<Self> {
         // Construct mapping between node id and their node info and runtime stats
         let mut node_map = HashMap::new();
@@ -189,7 +190,7 @@ impl RuntimeStatsManager {
             subscriber.on_exec_start(query_id.clone(), serialized_plan.clone())?;
         }
 
-        let progress_bar = match progress_bar_mode() {
+        let progress_bar = match progress_bar_mode(is_flotilla_worker) {
             ProgressBarMode::Disabled => None,
             ProgressBarMode::Enabled => Some(make_progress_bar_manager(&node_info_map, false)),
             ProgressBarMode::Persist => Some(make_progress_bar_manager(&node_info_map, true)),

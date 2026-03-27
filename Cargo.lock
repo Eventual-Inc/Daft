@@ -3249,7 +3249,6 @@ dependencies = [
  "daft-writers",
  "futures",
  "itertools 0.14.0",
- "pyo3",
  "tokio",
  "tonic",
 ]

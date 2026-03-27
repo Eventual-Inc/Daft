@@ -10,7 +10,7 @@ use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_shuffles::{
-    server::flight_server::register_shuffle_cache, shuffle_cache::InProgressShuffleCache,
+    server::flight_server::ShuffleFlightServer, shuffle_cache::InProgressShuffleCache,
 };
 use tracing::{Span, instrument};
 
@@ -26,6 +26,8 @@ pub struct FlightShuffleWriteSink {
     partition_by: Option<Vec<ExprRef>>,
     // Shared shuffle cache
     shuffle_cache: Arc<InProgressShuffleCache>,
+    // Flight shuffle server registry for this node (if enabled)
+    shuffle_server: Arc<ShuffleFlightServer>,
 }
 
 impl FlightShuffleWriteSink {
@@ -36,6 +38,7 @@ impl FlightShuffleWriteSink {
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
         cache_id: String,
+        shuffle_server: Arc<ShuffleFlightServer>,
     ) -> DaftResult<Self> {
         const TARGET_TOTAL_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 2000; // 2000MB = ~2GB
 
@@ -55,6 +58,7 @@ impl FlightShuffleWriteSink {
             cache_id,
             partition_by,
             shuffle_cache: Arc::new(shuffle_cache),
+            shuffle_server,
         })
     }
 }
@@ -106,6 +110,7 @@ impl BlockingSink for FlightShuffleWriteSink {
         let num_partitions = self.num_partitions;
         let shuffle_id = self.shuffle_id;
         let shuffle_cache = self.shuffle_cache.clone();
+        let shuffle_server = self.shuffle_server.clone();
         spawner
             .spawn(
                 async move {
@@ -115,7 +120,9 @@ impl BlockingSink for FlightShuffleWriteSink {
                     let bytes_per_partition = finalized_cache.bytes_per_partition();
 
                     // Register the shuffle cache with the flight server
-                    register_shuffle_cache(shuffle_id, finalized_cache.into()).await?;
+                    shuffle_server
+                        .register_shuffle_cache(shuffle_id, finalized_cache.into())
+                        .await?;
 
                     let rows_per_partition = Int32Array::from_values(
                         "rows_per_partition",
