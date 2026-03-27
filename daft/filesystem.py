@@ -110,6 +110,17 @@ def canonicalize_protocol(protocol: str) -> str:
     return _CANONICAL_PROTOCOLS.get(protocol, protocol)
 
 
+def _apply_protocol_alias(path: str, aliases: dict[str, str]) -> str:
+    """Rewrite the URI scheme of *path* if it matches an entry in *aliases*."""
+    sep = path.find("://")
+    if sep == -1:
+        return path
+    target = aliases.get(path[:sep].lower())
+    if target is None:
+        return path
+    return target + path[sep:]
+
+
 def _resolve_paths_and_filesystem(
     paths: str | pathlib.Path | list[str],
     io_config: IOConfig | None = None,
@@ -131,6 +142,15 @@ def _resolve_paths_and_filesystem(
     assert isinstance(paths, list), paths
     assert all(isinstance(p, str) for p in paths), paths
     assert len(paths) > 0, paths
+
+    # Apply protocol aliases from io_config (e.g. {"foo": "s3"}).
+    # This mirrors resolve_url_alias() in Rust so that custom URI schemes are
+    # handled by the appropriate PyArrow filesystem.  The original scheme is
+    # preserved by callers (e.g. Iceberg DataFile file_path entries).
+    if io_config is not None:
+        aliases = io_config.protocol_aliases
+        if aliases:
+            paths = [_apply_protocol_alias(p, aliases) for p in paths]
 
     # Sanitize s3a/s3n protocols, which are produced by Hadoop-based systems as a way of denoting which s3
     # filesystem client to use. However this doesn't matter for Daft, and PyArrow cannot recognize these protocols.
