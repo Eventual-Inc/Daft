@@ -45,7 +45,9 @@ def test_random_seeded_calls_are_stable_within_test_run(make_df) -> None:
 def test_random_int_invalid_inputs_raise(make_df) -> None:
     df = make_df({"a": [1, 2, 3]})
 
-    with pytest.raises(ValueError, match=r"lower bound \(`low`\) must be strictly less than the upper bound \(`high`\)"):
+    with pytest.raises(
+        ValueError, match=r"lower bound \(`low`\) must be strictly less than the upper bound \(`high`\)"
+    ):
         df.with_column("r", random_int(low=10, high=10)).collect()
 
     with pytest.raises(ValueError, match="`high` to be a literal"):
