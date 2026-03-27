@@ -203,7 +203,7 @@ impl PipelineNode for ConcatNode {
             async move {
                 let runtime_stats: Arc<dyn RuntimeStats> =
                     Arc::new(DefaultRuntimeStats::new(&meter, &node_info));
-                stats_manager.register_input_stats(node_id, 0, runtime_stats.clone());
+                stats_manager.register_runtime_stats(node_id, 0, runtime_stats.clone());
 
                 // Process both children sequentially - first left, then right
                 let mut node_initialized = false;

@@ -399,7 +399,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                                 e.insert(tx);
 
                                 let runtime_stats = Arc::new(Op::Stats::new(&meter, &node_info));
-                                stats_manager.register_input_stats(node_id, input_id, runtime_stats.clone());
+                                stats_manager.register_runtime_stats(node_id, input_id, runtime_stats.clone());
 
                                 let op = op.clone();
                                 let task_spawner = task_spawner.clone();

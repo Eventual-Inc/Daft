@@ -116,11 +116,27 @@ struct ExecutionContext<Op: IntermediateOperator> {
     state_pool: HashMap<StateId, Op::State>,
     output_sender: Sender<PipelineMessage>,
     batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
-    runtime_stats: Arc<Op::Stats>,
+    per_input_stats: HashMap<InputId, Arc<Op::Stats>>,
     input_trackers: HashMap<InputId, InputTracker>,
     stats_manager: RuntimeStatsManagerHandle,
+    meter: Meter,
+    node_info: Arc<NodeInfo>,
     node_id: usize,
     node_initialized: bool,
+}
+
+impl<Op: IntermediateOperator> ExecutionContext<Op> {
+    fn get_or_create_stats(&mut self, input_id: InputId) -> Arc<Op::Stats> {
+        self.per_input_stats
+            .entry(input_id)
+            .or_insert_with(|| {
+                let stats = Arc::new(Op::Stats::new(&self.meter, &self.node_info));
+                self.stats_manager
+                    .register_runtime_stats(self.node_id, input_id, stats.clone());
+                stats
+            })
+            .clone()
+    }
 }
 
 // ========== IntermediateNode Implementation ==========
@@ -168,7 +184,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     ) {
         let op = ctx.op.clone();
         let task_spawner = ctx.task_spawner.clone();
-        let runtime_stats = ctx.runtime_stats.clone();
+        let runtime_stats = ctx.get_or_create_stats(input_id);
         ctx.task_set.spawn(async move {
             let now = Instant::now();
             let (new_state, result) = op
@@ -237,6 +253,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
             .expect("Input should be present");
         if input_state.can_flush() {
             ctx.input_trackers.remove(&input_id);
+            ctx.per_input_stats.remove(&input_id);
             if ctx
                 .output_sender
                 .send(PipelineMessage::Flush(input_id))
@@ -263,15 +280,15 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         } = result;
 
         // Record execution stats
-        ctx.runtime_stats
-            .add_duration_us(elapsed.as_micros() as u64);
+        let runtime_stats = ctx.get_or_create_stats(input_id);
+        runtime_stats.add_duration_us(elapsed.as_micros() as u64);
 
         let mp = result;
         ctx.batch_manager
-            .record_execution_stats(ctx.runtime_stats.as_ref(), mp.len(), elapsed);
+            .record_execution_stats(runtime_stats.as_ref(), mp.len(), elapsed);
 
         // Send output
-        ctx.runtime_stats.add_rows_out(mp.len() as u64);
+        runtime_stats.add_rows_out(mp.len() as u64);
         if ctx
             .output_sender
             .send(PipelineMessage::Morsel {
@@ -324,7 +341,8 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                         ctx.stats_manager.activate_node(ctx.node_id);
                         ctx.node_initialized = true;
                     }
-                    ctx.runtime_stats.add_rows_in(partition.len() as u64);
+                    ctx.get_or_create_stats(input_id)
+                        .add_rows_in(partition.len() as u64);
                     let (lower, upper) = ctx.batch_manager.calculate_batch_size().values();
                     let input =
                         ctx.input_trackers
@@ -486,8 +504,6 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let node_info = self.node_info.clone();
         runtime_handle.spawn(
             async move {
-                let runtime_stats = Arc::new(Op::Stats::new(&meter, &node_info));
-                stats_manager.register_input_stats(node_id, 0, runtime_stats.clone());
                 // Initialize state pool with max_concurrency states
                 let state_pool = (0..op.max_concurrency())
                     .map(|i| (i, op.make_state()))
@@ -509,9 +525,11 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
                     state_pool,
                     output_sender: destination_sender,
                     batch_manager,
-                    runtime_stats,
+                    per_input_stats: HashMap::new(),
                     input_trackers: HashMap::new(),
                     stats_manager: stats_manager.clone(),
+                    meter,
+                    node_info,
                     node_id,
                     node_initialized: false,
                 };

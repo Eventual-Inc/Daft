@@ -4,6 +4,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+use common_metrics::{Meter, ops::NodeInfo};
 use common_runtime::JoinSet;
 use tokio::sync::oneshot;
 
@@ -12,7 +13,7 @@ use crate::{
     channel::{Receiver, Sender, create_channel},
     join::{join_operator::JoinOperator, stats::JoinStats},
     pipeline::{InputId, PipelineMessage},
-    runtime_stats::RuntimeStatsManagerHandle,
+    runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle},
 };
 
 /// Slot for one input_id: either probe will receive (sender stored) or build already sent (value stored).
@@ -109,27 +110,31 @@ pub(crate) struct BuildExecutionContext<Op: JoinOperator> {
     op: Arc<Op>,
     task_spawner: ExecutionTaskSpawner,
     build_state_bridge: Arc<BuildStateBridge<Op>>,
-    runtime_stats: Arc<JoinStats>,
     stats_manager: RuntimeStatsManagerHandle,
     node_id: usize,
+    meter: Meter,
+    node_info: Arc<NodeInfo>,
 }
 
 impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         op: Arc<Op>,
         task_spawner: ExecutionTaskSpawner,
         build_state_bridge: Arc<BuildStateBridge<Op>>,
-        runtime_stats: Arc<JoinStats>,
         stats_manager: RuntimeStatsManagerHandle,
         node_id: usize,
+        meter: Meter,
+        node_info: Arc<NodeInfo>,
     ) -> Self {
         Self {
             op,
             task_spawner,
             build_state_bridge,
-            runtime_stats,
             stats_manager,
             node_id,
+            meter,
+            node_info,
         }
     }
 
@@ -169,7 +174,8 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
                         let op = self.op.clone();
                         let task_spawner = self.task_spawner.clone();
                         let build_state_bridge = self.build_state_bridge.clone();
-                        let runtime_stats = self.runtime_stats.clone();
+                        let runtime_stats = Arc::new(JoinStats::new(&self.meter, &self.node_info));
+                        self.stats_manager.register_runtime_stats(self.node_id, input_id, runtime_stats.clone());
                         processor_set.spawn(async move {
                             process_single_input(
                                 input_id, rx, op, task_spawner,

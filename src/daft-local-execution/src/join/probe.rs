@@ -6,6 +6,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+use common_metrics::{Meter, ops::NodeInfo};
 use common_runtime::JoinSet;
 
 use crate::{
@@ -18,7 +19,7 @@ use crate::{
         stats::JoinStats,
     },
     pipeline::{InputId, PipelineMessage},
-    runtime_stats::RuntimeStats,
+    runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle},
 };
 
 /// Process all morsels for a single input_id on the probe side, finalize, and send output.
@@ -208,8 +209,11 @@ pub(crate) struct ProbeExecutionContext<Op: JoinOperator> {
     finalize_spawner: ExecutionTaskSpawner,
     output_sender: Sender<PipelineMessage>,
     build_state_bridge: Arc<BuildStateBridge<Op>>,
-    runtime_stats: Arc<JoinStats>,
     maintain_order: bool,
+    stats_manager: RuntimeStatsManagerHandle,
+    node_id: usize,
+    meter: Meter,
+    node_info: Arc<NodeInfo>,
 }
 
 impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
@@ -220,8 +224,11 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
         finalize_spawner: ExecutionTaskSpawner,
         output_sender: Sender<PipelineMessage>,
         build_state_bridge: Arc<BuildStateBridge<Op>>,
-        runtime_stats: Arc<JoinStats>,
         maintain_order: bool,
+        stats_manager: RuntimeStatsManagerHandle,
+        node_id: usize,
+        meter: Meter,
+        node_info: Arc<NodeInfo>,
     ) -> Self {
         Self {
             op,
@@ -229,8 +236,11 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
             finalize_spawner,
             output_sender,
             build_state_bridge,
-            runtime_stats,
             maintain_order,
+            stats_manager,
+            node_id,
+            meter,
+            node_info,
         }
     }
 
@@ -264,7 +274,8 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
                         let op = self.op.clone();
                         let task_spawner = self.task_spawner.clone();
                         let finalize_spawner = self.finalize_spawner.clone();
-                        let runtime_stats = self.runtime_stats.clone();
+                        let runtime_stats = Arc::new(JoinStats::new(&self.meter, &self.node_info));
+                        self.stats_manager.register_runtime_stats(self.node_id, input_id, runtime_stats.clone());
                         let output_sender = self.output_sender.clone();
                         let build_state_bridge = self.build_state_bridge.clone();
                         let maintain_order = self.maintain_order;

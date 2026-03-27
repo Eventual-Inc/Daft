@@ -17,10 +17,8 @@ use crate::{
         build::{BuildExecutionContext, BuildStateBridge},
         join_operator::JoinOperator,
         probe::ProbeExecutionContext,
-        stats::JoinStats,
     },
     pipeline::{BuilderContext, MorselSizeRequirement, PipelineMessage, PipelineNode},
-    runtime_stats::RuntimeStats,
 };
 
 pub struct JoinNode<Op: JoinOperator> {
@@ -186,18 +184,15 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         // Create BuildStateBridge shared between build and probe sides
         let build_state_bridge = Arc::new(BuildStateBridge::new());
 
-        // Create per-node stats and register with sentinel input_id=0
-        let runtime_stats = Arc::new(JoinStats::new(&self.meter, &self.node_info));
-        stats_manager.register_input_stats(node_id, 0, runtime_stats.clone());
-
         // Initialize build side
         let build_ctx = BuildExecutionContext::new(
             self.op.clone(),
             build_task_spawner,
             build_state_bridge.clone(),
-            runtime_stats.clone(),
             stats_manager.clone(),
             node_id,
+            self.meter.clone(),
+            self.node_info.clone(),
         );
 
         // Initialize probe side
@@ -207,8 +202,11 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
             probe_finalize_spawner,
             destination_sender,
             build_state_bridge,
-            runtime_stats,
             maintain_order,
+            stats_manager.clone(),
+            node_id,
+            self.meter.clone(),
+            self.node_info.clone(),
         );
 
         runtime_handle.spawn(

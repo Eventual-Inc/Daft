@@ -36,7 +36,7 @@ use crate::pipeline::PipelineNode;
 #[allow(dead_code)]
 pub enum StatsManagerMessage {
     NodeEvent(usize, bool),
-    RegisterInputStats(NodeID, InputId, Arc<dyn RuntimeStats>),
+    RegisterRuntimeStats(NodeID, InputId, Arc<dyn RuntimeStats>),
     TakeInputSnapshot(InputId, oneshot::Sender<ExecutionStats>),
 }
 
@@ -96,17 +96,19 @@ impl RuntimeStatsManagerHandle {
         }
     }
 
-    /// Register a per-input_id RuntimeStats with the stats manager.
-    pub fn register_input_stats(
+    /// Register a RuntimeStats with the stats manager for a given node and input.
+    pub fn register_runtime_stats(
         &self,
         node_id: NodeID,
         input_id: InputId,
         stats: Arc<dyn RuntimeStats>,
     ) {
-        if let Err(e) = self.0.send(StatsManagerMessage::RegisterInputStats(
+        if let Err(e) = self.0.send(StatsManagerMessage::RegisterRuntimeStats(
             node_id, input_id, stats,
         )) {
-            log::warn!("Unable to register input stats for node {node_id}, input {input_id}: {e}");
+            log::warn!(
+                "Unable to register runtime stats for node {node_id}, input {input_id}: {e}"
+            );
         }
     }
 
@@ -348,7 +350,7 @@ impl RuntimeStatsManager {
                                     .await;
                                 }
                             }
-                            StatsManagerMessage::RegisterInputStats(node_id, input_id, stats) => {
+                            StatsManagerMessage::RegisterRuntimeStats(node_id, input_id, stats) => {
                                 input_stats.insert((node_id, input_id), stats);
                             }
                             StatsManagerMessage::TakeInputSnapshot(input_id, respond_tx) => {
@@ -535,7 +537,9 @@ mod tests {
             HashMap::from([(0, Arc::new(OperatorMeta::from(&NodeInfo::default())))]),
         );
         // Register stats via the handle (mimics what nodes do in start())
-        stats_manager.handle().register_input_stats(0, 0, node_stat);
+        stats_manager
+            .handle()
+            .register_runtime_stats(0, 0, node_stat);
         stats_manager
     }
 
