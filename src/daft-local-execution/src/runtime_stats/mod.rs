@@ -841,6 +841,11 @@ mod tests {
         async fn on_stats(&self, _: Arc<StatsEvent>) -> DaftResult<()> {
             Ok(())
         }
+        async fn on_process_stats(&self, _: QueryID, _: Stats) -> DaftResult<()> {
+            self.process_stats_calls
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
     }
 
     #[tokio::test(start_paused = true)]
@@ -851,7 +856,7 @@ mod tests {
 
         let stats_manager = make_stats_manager(
             vec![subscriber.clone()],
-            node_stat.clone(),
+            node_stat,
             throttle_interval,
             "test_ps_enabled",
             true,

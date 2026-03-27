@@ -1853,7 +1853,6 @@ dependencies = [
  "common-py-serde",
  "enum_dispatch",
  "indicatif",
- "itertools 0.14.0",
  "opentelemetry",
  "pyo3",
  "serde",

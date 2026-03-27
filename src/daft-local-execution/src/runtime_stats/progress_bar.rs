@@ -357,13 +357,21 @@ mod python {
 mod tests {
     use std::sync::atomic::Ordering;
 
+    use common_metrics::snapshot::DefaultSnapshot;
+
     use super::*;
     use crate::runtime_stats::RuntimeStats;
 
     struct MockRuntimeStats;
     impl RuntimeStats for MockRuntimeStats {
         fn build_snapshot(&self, _ordering: Ordering) -> StatSnapshot {
-            unimplemented!()
+            // Need to return for first generation of the progress bar
+            StatSnapshot::Default(DefaultSnapshot {
+                cpu_us: 0,
+                rows_in: 0,
+                rows_out: 0,
+                estimated_total_rows: 0,
+            })
         }
         fn add_duration_us(&self, _duration_us: u64) {
             unimplemented!()
