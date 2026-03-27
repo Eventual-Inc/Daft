@@ -413,7 +413,7 @@ fn translate_helper(
                     }
                     JoinStrategy::KeyFiltering => {
                         return Err(DaftError::not_implemented(
-                            "DataFrame.skip_existing() is only supported on the Ray runner. Please use daft.set_runner_ray().",
+                            "JoinStrategy::KeyFiltering is only supported on the Ray runner. Please use daft.set_runner_ray().",
                         ));
                     }
                     _ => {}

@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     LogicalPlan, LogicalPlanRef,
     logical_plan::{self},
-    ops::{Project, skip_existing::KeyFilteringConfig},
+    ops::{KeyFilteringConfig, Project},
     stats::{ApproxStats, PlanStats, StatsState},
 };
 

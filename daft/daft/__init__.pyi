@@ -2007,31 +2007,6 @@ class PyFormatSinkOption:
     @classmethod
     def parquet(cls) -> PyFormatSinkOption: ...
 
-class SkipExistingSpec:
-    existing_path: list[str]
-    file_format: FileFormat
-    key_column: list[str]
-    io_config: IOConfig | None
-    read_kwargs: dict[str, Any] | None
-    num_workers: int | None
-    cpus_per_worker: float | None
-    keys_load_batch_size: int | None
-    max_concurrency_per_worker: int | None
-    filter_batch_size: int | None
-    def __init__(
-        self,
-        existing_path: str | list[str],
-        file_format: FileFormat,
-        key_column: str | list[str],
-        io_config: IOConfig | None = None,
-        read_kwargs: dict[str, Any] | None = None,
-        num_workers: int | None = None,
-        cpus_per_worker: float | None = None,
-        keys_load_batch_size: int | None = None,
-        max_concurrency_per_worker: int | None = None,
-        filter_batch_size: int | None = None,
-    ) -> None: ...
-
 class KeyFilteringConfig:
     left_key_columns: list[str]
     right_key_columns: list[str]

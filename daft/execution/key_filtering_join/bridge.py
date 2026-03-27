@@ -59,6 +59,10 @@ def _initialize_key_filter_sync(
         from daft.dataframe.dataframe import DataFrame
 
         right_df = DataFrame(LogicalPlanBuilder(right_builder))
+        # KeyFiltering currently requires the right side to be a replayable scan-backed plan.
+        # Actor initialization performs a nested collect during key ingestion, so an in-memory
+        # right DataFrame is not yet supported on this path.
+        # TODO: Plumb in-memory partition sets through the nested execution path if needed.
         df_keys = right_df.select(
             *[
                 col(right_name).alias(left_name) if left_name != right_name else col(right_name)
