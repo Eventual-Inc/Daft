@@ -50,7 +50,7 @@ impl RepartitionSpec {
                     by.clone(),
                 ))
             }
-            Self::Random(RandomShuffleConfig { num_partitions }) => ClusteringSpec::Random(
+            Self::Random(RandomShuffleConfig { num_partitions, .. }) => ClusteringSpec::Random(
                 RandomClusteringConfig::new(num_partitions.unwrap_or(upstream_num_partitions)),
             ),
             Self::Range(RangeRepartitionConfig {
@@ -92,11 +92,22 @@ impl HashRepartitionConfig {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct RandomShuffleConfig {
     pub num_partitions: Option<usize>,
+    pub seed: Option<u64>,
 }
 
 impl RandomShuffleConfig {
     pub fn new(num_partitions: Option<usize>) -> Self {
-        Self { num_partitions }
+        Self {
+            num_partitions,
+            seed: None,
+        }
+    }
+
+    pub fn new_with_seed(num_partitions: Option<usize>, seed: u64) -> Self {
+        Self {
+            num_partitions,
+            seed: Some(seed),
+        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

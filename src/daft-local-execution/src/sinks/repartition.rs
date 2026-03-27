@@ -76,8 +76,9 @@ impl BlockingSink for RepartitionSink {
                                 .collect::<DaftResult<Vec<_>>>()?;
                             input.partition_by_hash(&bound_exprs, num_partitions)?
                         }
-                        RepartitionSpec::Random(_) => {
-                            input.partition_by_random(num_partitions, 0)?
+                        RepartitionSpec::Random(config) => {
+                            // TODO: Should default seed be 0?
+                            input.partition_by_random(num_partitions, config.seed.unwrap_or(0))?
                         }
                         RepartitionSpec::Range(config) => input.partition_by_range(
                             &config.by,

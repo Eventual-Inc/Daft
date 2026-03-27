@@ -1,0 +1,186 @@
+use std::{
+    hash::{DefaultHasher, Hash as _, Hasher as _},
+    sync::Arc,
+};
+
+use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeType};
+use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_functions::random::random_int_expr;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+use daft_logical_plan::{
+    partitioning::{RandomShuffleConfig, RepartitionSpec},
+    stats::StatsState,
+};
+use daft_schema::schema::SchemaRef;
+
+use super::{PipelineNodeImpl, TaskBuilderStream};
+use crate::{
+    pipeline_node::{
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
+        PipelineNodeContext,
+    },
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    scheduling::{
+        scheduler::SchedulerHandle,
+        task::{SwordfishTask, SwordfishTaskBuilder},
+    },
+    utils::{
+        channel::{Sender, create_channel},
+        transpose::transpose_materialized_outputs_from_stream,
+    },
+};
+
+pub(crate) struct RandomShuffleNode {
+    config: PipelineNodeConfig,
+    context: PipelineNodeContext,
+    seed: Option<u64>,
+    child: DistributedPipelineNode,
+}
+
+impl RandomShuffleNode {
+    const NODE_NAME: &'static str = "RandomShuffle";
+
+    pub fn new(
+        node_id: NodeID,
+        plan_config: &PlanConfig,
+        seed: Option<u64>,
+        output_schema: SchemaRef,
+        child: DistributedPipelineNode,
+    ) -> Self {
+        let context = PipelineNodeContext::new(
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
+            node_id,
+            Arc::from(Self::NODE_NAME),
+            NodeType::RandomShuffle,
+            NodeCategory::BlockingSink,
+        );
+
+        let config = PipelineNodeConfig::new(
+            output_schema,
+            plan_config.config.clone(),
+            child.config().clustering_spec.clone(),
+        );
+        Self {
+            config,
+            context,
+            seed,
+            child,
+        }
+    }
+
+    fn local_sort_with_random_key(
+        &self,
+        partition_group: Vec<MaterializedOutput>,
+        partition_idx: usize,
+    ) -> DaftResult<SwordfishTaskBuilder> {
+        let (in_memory_scan, psets) = MaterializedOutput::into_in_memory_scan_with_psets(
+            partition_group,
+            self.config.schema.clone(),
+            self.node_id(),
+        );
+
+        let partition_seed = self.seed.map(|s| {
+            let mut hasher = DefaultHasher::new();
+            s.hash(&mut hasher);
+            partition_idx.hash(&mut hasher);
+            hasher.finish()
+        });
+
+        let sort_by = BoundExpr::bind_all(
+            &[random_int_expr(i64::MIN, i64::MAX, partition_seed)],
+            &self.config.schema,
+        )?;
+        let plan = LocalPhysicalPlan::sort(
+            in_memory_scan,
+            sort_by,
+            vec![false],
+            vec![false],
+            StatsState::NotMaterialized,
+            LocalNodeContext::new(Some(self.node_id() as usize)),
+        );
+        Ok(SwordfishTaskBuilder::new(plan, self, self.node_id()).with_psets(self.node_id(), psets))
+    }
+
+    async fn execution_loop(
+        self: Arc<Self>,
+        input_node: TaskBuilderStream,
+        task_id_counter: TaskIDCounter,
+        result_tx: Sender<SwordfishTaskBuilder>,
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
+    ) -> DaftResult<()> {
+        let num_partitions = self.child.config().clustering_spec.num_partitions();
+        let materialized_stream = input_node.materialize(
+            scheduler_handle.clone(),
+            self.context.query_idx,
+            task_id_counter.clone(),
+        );
+
+        let transposed_outputs =
+            transpose_materialized_outputs_from_stream(materialized_stream, num_partitions).await?;
+
+        for (partition_idx, partition_group) in transposed_outputs.into_iter().enumerate() {
+            let task = self.local_sort_with_random_key(partition_group, partition_idx)?;
+            let _ = result_tx.send(task).await;
+        }
+        Ok(())
+    }
+}
+
+impl PipelineNodeImpl for RandomShuffleNode {
+    fn context(&self) -> &PipelineNodeContext {
+        &self.context
+    }
+
+    fn config(&self) -> &PipelineNodeConfig {
+        &self.config
+    }
+
+    fn children(&self) -> Vec<DistributedPipelineNode> {
+        vec![self.child.clone()]
+    }
+
+    fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        vec![
+            "RandomShuffle: random row order (via random repartition + random_int + sort)"
+                .to_string(),
+            format!("Seed = {:?}", self.seed),
+        ]
+    }
+
+    fn produce_tasks(
+        self: Arc<Self>,
+        plan_context: &mut PlanExecutionContext,
+    ) -> TaskBuilderStream {
+        let input_node = self.child.clone().produce_tasks(plan_context);
+
+        let num_partitions = self.child.config().clustering_spec.num_partitions();
+        let seed = self.seed.unwrap();
+        let node_id = self.node_id();
+        let schema = self.config.schema.clone();
+
+        let partitioned_input = input_node.pipeline_instruction(self.clone(), move |input| {
+            LocalPhysicalPlan::repartition(
+                input,
+                RepartitionSpec::Random(RandomShuffleConfig::new_with_seed(
+                    Some(num_partitions),
+                    seed,
+                )),
+                num_partitions,
+                schema.clone(),
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(node_id as usize)),
+            )
+        });
+
+        let (result_tx, result_rx) = create_channel(1);
+        plan_context.spawn(self.execution_loop(
+            partitioned_input,
+            plan_context.task_id_counter(),
+            result_tx,
+            plan_context.scheduler_handle(),
+        ));
+        TaskBuilderStream::from(result_rx)
+    }
+}

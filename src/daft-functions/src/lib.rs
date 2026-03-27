@@ -12,6 +12,7 @@ pub mod monotonically_increasing_id;
 pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
+pub mod random;
 pub mod similarity;
 pub mod slice;
 pub mod to_struct;
