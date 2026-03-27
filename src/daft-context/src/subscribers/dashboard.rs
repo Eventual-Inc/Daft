@@ -17,7 +17,7 @@ use tokio::{sync::mpsc, task::JoinHandle};
 use uuid::Uuid;
 
 use crate::subscribers::{
-    QueryMetadata, QueryResult, Subscriber,
+    Event, QueryMetadata, QueryResult, Subscriber,
     events::{OperatorEndEvent, OperatorStartEvent, StatsEvent},
 };
 
@@ -510,6 +510,15 @@ impl Subscriber for DashboardSubscriber {
             ),
             "exec_operator_end",
         );
+        Ok(())
+    }
+
+    async fn on_event(&self, event: Event) -> DaftResult<()> {
+        match event {
+            Event::Stats(e) => self.on_stats(e).await?,
+            Event::OperatorStart(e) => self.on_operator_start(e).await?,
+            Event::OperatorEnd(e) => self.on_operator_end(e).await?,
+        }
         Ok(())
     }
 }

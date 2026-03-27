@@ -6,6 +6,13 @@ use common_metrics::{
 };
 
 #[derive(Debug, Clone)]
+pub enum Event {
+    OperatorStart(Arc<OperatorStartEvent>),
+    OperatorEnd(Arc<OperatorEndEvent>),
+    Stats(Arc<StatsEvent>),
+}
+
+#[derive(Debug, Clone)]
 pub struct EventHeader {
     pub query_id: QueryID,
     pub timestamp_epoch_secs: f64,

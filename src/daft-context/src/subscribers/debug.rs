@@ -7,7 +7,7 @@ use daft_micropartition::MicroPartitionRef;
 use dashmap::DashMap;
 
 use crate::subscribers::{
-    QueryMetadata, QueryResult, Subscriber,
+    Event, QueryMetadata, QueryResult, Subscriber,
     events::{OperatorEndEvent, OperatorStartEvent, StatsEvent},
 };
 
@@ -170,6 +170,15 @@ impl Subscriber for DebugSubscriber {
                 "stats query_id={} node_id={} {}",
                 event.header.query_id, node_id, rendered,
             );
+        }
+        Ok(())
+    }
+
+    async fn on_event(&self, event: Event) -> DaftResult<()> {
+        match event {
+            Event::Stats(e) => self.on_stats(e).await?,
+            Event::OperatorStart(e) => self.on_operator_start(e).await?,
+            Event::OperatorEnd(e) => self.on_operator_end(e).await?,
         }
         Ok(())
     }
