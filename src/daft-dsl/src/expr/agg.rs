@@ -35,6 +35,9 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                     AggExpr::MergeSketch(Expr::Alias(e, name.clone()).into(), sketch_type)
                 }
                 AggExpr::Mean(e) => AggExpr::Mean(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Percentile(e, percentile) => {
+                    AggExpr::Percentile(Expr::Alias(e, name.clone()).into(), percentile)
+                }
                 AggExpr::Stddev(e, ddof) => {
                     AggExpr::Stddev(Expr::Alias(e, name.clone()).into(), ddof)
                 }
