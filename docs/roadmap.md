@@ -36,7 +36,7 @@ Feel free to open an issue or PR on [GitHub ↗](https://github.com/Eventual-Inc
 
 ## Future Work
 
-The following features would be valuable additions to Daft, but are not currently on our roadmap. We're sharing these to highlight opportunities for open source contributions, invite discussion around implementation approaches, and provide visibility into longer-term possibilities. These features have been tagged with `help wanted` and `good first issue` on [Daft repo ↗](https://github.com/Eventual-Inc/Daft).
+The following features are in consideration, but are not currently on our roadmap. We're sharing these to highlight opportunities for open source contributions, invite discussion around implementation approaches, and provide visibility into longer-term possibilities. These features have been tagged with `help wanted` and `good first issue` on [Daft repo ↗](https://github.com/Eventual-Inc/Daft).
 
 1. **Improved Delta Lake support** (see [roadmap for Delta Lake ↗](https://github.com/Eventual-Inc/Daft/issues/2457))
     - Support for reading tables with deletion vectors ([issue #1954 ↗](https://github.com/Eventual-Inc/Daft/issues/1954))
