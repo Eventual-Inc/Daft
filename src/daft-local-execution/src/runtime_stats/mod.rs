@@ -55,14 +55,24 @@ fn should_enable_process_monitor() -> bool {
     }
 }
 
-fn should_enable_progress_bar() -> bool {
+enum ProgressBarMode {
+    Disabled,
+    Enabled,
+    Persist,
+}
+
+fn progress_bar_mode() -> ProgressBarMode {
     if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
-        return false;
+        return ProgressBarMode::Disabled;
     }
-    if let Ok(val) = std::env::var("DAFT_PROGRESS_BAR") {
-        matches!(val.trim().to_lowercase().as_str(), "1" | "true")
-    } else {
-        true // Return true when env var is not set
+    match std::env::var("DAFT_PROGRESS_BAR")
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("true")
+    {
+        val if val.eq_ignore_ascii_case("persist") => ProgressBarMode::Persist,
+        val if matches!(val.to_lowercase().as_str(), "1" | "true") => ProgressBarMode::Enabled,
+        _ => ProgressBarMode::Disabled,
     }
 }
 
@@ -241,10 +251,10 @@ impl RuntimeStatsManager {
             subscriber.on_exec_start(query_id.clone(), serialized_plan.clone())?;
         }
 
-        let progress_bar = if should_enable_progress_bar() {
-            Some(make_progress_bar_manager(&node_info_map))
-        } else {
-            None
+        let progress_bar = match progress_bar_mode() {
+            ProgressBarMode::Disabled => None,
+            ProgressBarMode::Enabled => Some(make_progress_bar_manager(&node_info_map, false)),
+            ProgressBarMode::Persist => Some(make_progress_bar_manager(&node_info_map, true)),
         };
 
         let throttle_interval = Duration::from_millis(200);
