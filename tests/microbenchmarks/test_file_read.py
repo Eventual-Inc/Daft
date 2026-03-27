@@ -54,7 +54,7 @@ def test_csv_read(gen_simple_csvs, benchmark):
 @pytest.mark.benchmark(group="file_read")
 @pytest.mark.parametrize("prune", [True, False])
 def test_s3_parquet_read_1x64mb(benchmark, prune):
-    parquet_glob = "s3://daft-public-data/test_fixtures/parquet/95c7fba0-265d-440b-88cb-2897047fc5f9-0.parquet"
+    parquet_glob = "s3://daft-oss-public-data/test_fixtures/parquet/95c7fba0-265d-440b-88cb-2897047fc5f9-0.parquet"
     expected_rows = 1500000
 
     def bench() -> DataFrame:
@@ -70,7 +70,7 @@ def test_s3_parquet_read_1x64mb(benchmark, prune):
 @pytest.mark.benchmark(group="file_read")
 @pytest.mark.parametrize("prune", [True, False])
 def test_s3_parquet_read_32x2mb(benchmark, prune):
-    parquet_glob = "s3://daft-public-data/test_fixtures/parquet_small/*"
+    parquet_glob = "s3://daft-oss-public-data/test_fixtures/parquet_small/*"
     expected_rows = 2000000
 
     def bench() -> DataFrame:

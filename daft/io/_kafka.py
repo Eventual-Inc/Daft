@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -10,10 +10,12 @@ from daft import DataType
 from daft.api_annotations import PublicAPI
 from daft.dependencies import confluent_kafka
 from daft.io.source import DataSource, DataSourceTask
-from daft.recordbatch import MicroPartition
+from daft.recordbatch import RecordBatch
 from daft.schema import Schema
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from daft.dataframe import DataFrame
     from daft.io.pushdowns import Pushdowns
 
@@ -308,7 +310,7 @@ class KafkaSource(DataSource):
     def schema(self) -> Schema:
         return _KAFKA_SCHEMA
 
-    def get_tasks(self, pushdowns: Pushdowns) -> Iterator[KafkaSourceTask]:
+    async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[KafkaSourceTask]:
         timeout_s = self._timeout_ms / 1000.0
 
         cfg = _make_consumer_config(
@@ -429,7 +431,7 @@ class KafkaSourceTask(DataSourceTask):
     def schema(self) -> Schema:
         return _KAFKA_SCHEMA
 
-    def get_micro_partitions(self) -> Iterator[MicroPartition]:
+    async def read(self) -> AsyncIterator[RecordBatch]:
         timeout_s = self._timeout_ms / 1000.0
 
         cfg = _make_consumer_config(
@@ -451,7 +453,7 @@ class KafkaSourceTask(DataSourceTask):
                 return
 
             while True:
-                # Build up to `chunk_size` rows for the next MicroPartition.
+                # Build up to `chunk_size` rows for the next RecordBatch.
                 topics: list[str] = []
                 partitions: list[int] = []
                 offsets: list[int] = []
@@ -462,7 +464,7 @@ class KafkaSourceTask(DataSourceTask):
                 stop = False
 
                 # `consume(n)` may return fewer than `n` messages, so we keep consuming until we either
-                # fill a chunk (for larger MicroPartitions) or hit a stop condition.
+                # fill a chunk or hit a stop condition.
                 while len(topics) < self._chunk_size and remaining != 0:
                     fetch_n = self._chunk_size - len(topics)
                     if remaining is not None:
@@ -470,9 +472,6 @@ class KafkaSourceTask(DataSourceTask):
 
                     msgs = consumer.consume(fetch_n, timeout=timeout_s)
                     if not msgs:
-                        # Avoid spinning indefinitely when no messages are returned: flush the current chunk (if any),
-                        # otherwise terminate this KafkaSourceTask generator (no more MicroPartitions will be yielded
-                        # for this partition).
                         last_offset = offsets[-1] if offsets else None
                         if last_offset is None:
                             logger.warning(
@@ -505,7 +504,6 @@ class KafkaSourceTask(DataSourceTask):
 
                         offset = msg.offset()
                         if offset >= self._end_offset:
-                            # Stop once we hit the bounded end offset for this task.
                             stop = True
                             break
 
@@ -529,7 +527,6 @@ class KafkaSourceTask(DataSourceTask):
                                 break
 
                         if offset == self._end_offset - 1:
-                            # Early exit: this is the last offset in range, skip one more consume() round-trip.
                             stop = True
                             break
 
@@ -537,10 +534,9 @@ class KafkaSourceTask(DataSourceTask):
                         break
 
                 if not topics:
-                    # No rows accumulated for this chunk (e.g. consume() returned empty immediately), so terminate.
                     return
 
-                yield MicroPartition.from_pydict(
+                yield RecordBatch.from_pydict(
                     {
                         "topic": topics,
                         "partition": partitions,
@@ -601,7 +597,7 @@ def read_kafka(
             "daft-bounded-kafka-reader".
         partitions (Sequence[int] | None): Optional sequence of partition IDs to read from.
             If None, reads from all partitions of the specified topic(s). Defaults to None.
-        chunk_size (int): Maximum number of messages per MicroPartition. Defaults to 1024.
+        chunk_size (int): Maximum number of messages per RecordBatch. Defaults to 1024.
         kafka_client_config (Mapping[str, object] | None): Optional additional configuration
             options passed directly to the underlying Kafka consumer. These are merged with
             the default configuration. Defaults to None.
@@ -662,7 +658,7 @@ def read_kafka(
     if isinstance(bootstrap_servers, str):
         bootstrap_servers_str = bootstrap_servers
     else:
-        bootstrap_servers_str = ",".join([str(s) for s in bootstrap_servers])
+        bootstrap_servers_str = ",".join(str(s) for s in bootstrap_servers)
 
     if isinstance(topics, str):
         topics = [topics]
