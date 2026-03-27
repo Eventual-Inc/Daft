@@ -2068,8 +2068,6 @@ class LogicalPlanBuilder:
         num_rows: int,
     ) -> LogicalPlanBuilder: ...
     @staticmethod
-    def placeholder_scan(schema: PySchema) -> LogicalPlanBuilder: ...
-    @staticmethod
     def from_glob_scan(
         glob_paths: list[str],
         io_config: IOConfig | None = None,

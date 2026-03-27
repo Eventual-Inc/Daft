@@ -46,10 +46,9 @@ use crate::{
         join::{JoinOptions, JoinPredicate},
     },
     optimization::{OptimizerBuilder, OptimizerConfig},
-    partitioning::{ClusteringSpec, HashRepartitionConfig, RandomShuffleConfig, RepartitionSpec},
+    partitioning::{HashRepartitionConfig, RandomShuffleConfig, RepartitionSpec},
     sink_info::{FormatSinkOption, OutputFileInfo, SinkInfo},
-    source_info::{GlobScanInfo, InMemoryInfo, PlaceHolderInfo, SourceInfo},
-    stats::StatsState,
+    source_info::{GlobScanInfo, InMemoryInfo, SourceInfo},
 };
 
 /// A logical plan builder, which simplifies constructing logical plans via
@@ -166,20 +165,6 @@ impl LogicalPlanBuilder {
         let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
 
         Ok(Self::from(Arc::new(logical_plan)))
-    }
-
-    pub fn placeholder_scan(schema: SchemaRef) -> Self {
-        let source = LogicalPlan::Source(ops::Source {
-            plan_id: None,
-            node_id: None,
-            output_schema: schema.clone(),
-            source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo::new(
-                schema,
-                Arc::new(ClusteringSpec::unknown()),
-            ))),
-            stats_state: StatsState::NotMaterialized,
-        });
-        Self::from(Arc::new(source))
     }
 
     /// Creates a `LogicalPlan::Source` from glob paths.
@@ -1105,11 +1090,6 @@ impl PyLogicalPlanBuilder {
             num_rows,
         )?
         .into())
-    }
-
-    #[staticmethod]
-    pub fn placeholder_scan(schema: PySchema) -> Self {
-        LogicalPlanBuilder::placeholder_scan(schema.into()).into()
     }
 
     #[staticmethod]

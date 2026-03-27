@@ -2639,16 +2639,22 @@ class DataFrame:
     ) -> "DataFrame":
         """Filter out rows whose key(s) already exist in existing data (i.e., already processed rows).
 
-        This method reads existing data from the given path(s), builds an in-memory key filter,
-        and filters the current DataFrame to only include rows whose key(s) are not present
-        in the existing data. This is useful for incremental data processing pipelines where
-        you want to avoid re-processing data that has already been written.
+        This method reads existing data from the given path(s), builds a Ray actor-backed
+        distributed key filter from the existing key columns, and filters the current
+        DataFrame to only include rows whose key(s) are not present in the existing data.
+        This is useful for incremental data processing pipelines where you want to avoid
+        re-processing data that has already been written.
+
+        Missing paths are treated permissively:
+        if none of the provided paths exist, the current DataFrame is returned unchanged;
+        if only some paths exist, Daft logs a warning and continues with the existing subset.
 
         Args:
             existing_path: Path or list of paths to the existing data directory/file(s).
             key_column: Column name(s) to use as the key for matching. Can be a single column name
                 or a list of column names for composite keys.
-            file_format: Format of the existing data files. Supported formats: Parquet, CSV, JSON.
+            file_format: Format of the existing data files. Supported formats are Parquet, CSV,
+                and JSON/JSONL/NDJSON.
             io_config: IO configuration for reading the existing data.
             num_workers: Number of Ray actors to spawn for key filtering. Each actor holds a
                 shard of existing keys and filters incoming partitions in parallel. Higher values
@@ -2662,7 +2668,8 @@ class DataFrame:
                 (total memory ≈ num_tasks × filter_batch_size × avg_key_size). For lightweight
                 keys (int, short string), 10000-50000 works well. For large keys (URLs, long
                 strings), keep this lower to avoid excessive memory usage. Defaults to 10000.
-            **reader_args: Additional arguments passed to the file reader (e.g., delimiter for CSV).
+            **reader_args: Additional keyword arguments forwarded to the underlying reader for
+                `file_format` when scanning `existing_path`.
 
         Returns:
             DataFrame: A new DataFrame with rows filtered to exclude those whose keys exist
@@ -2670,7 +2677,8 @@ class DataFrame:
 
         Raises:
             ValueError: If key columns are invalid, paths are empty, or parameters are out of range.
-            RuntimeError: If the existing data cannot be read or key filter resources cannot be allocated.
+            RuntimeError: If the existing data cannot be read during execution or key filter
+                resources cannot be allocated.
 
         Examples:
             >>> import daft
