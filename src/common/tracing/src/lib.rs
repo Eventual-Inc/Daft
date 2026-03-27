@@ -16,7 +16,8 @@ use opentelemetry_sdk::{
     trace::{Sampler, SdkTracerProvider},
 };
 use tracing_subscriber::{
-    EnvFilter, Registry, filter::LevelFilter, layer::SubscriberExt, prelude::*,
+    EnvFilter, Registry, filter::LevelFilter, fmt::format::FmtSpan, layer::SubscriberExt,
+    prelude::*,
 };
 
 static GLOBAL_TRACER_PROVIDER: LazyLock<Mutex<Option<SdkTracerProvider>>> =
@@ -28,6 +29,27 @@ static GLOBAL_METER_PROVIDER: LazyLock<
 
 pub static GLOBAL_LOGGER_PROVIDER: LazyLock<Mutex<Option<SdkLoggerProvider>>> =
     LazyLock::new(|| Mutex::new(None));
+
+#[derive(Debug, Clone, Copy)]
+enum TraceFormat {
+    Compact,
+    Pretty,
+    Json,
+}
+
+impl TraceFormat {
+    fn from_env() -> Self {
+        match std::env::var("DAFT_TRACE_FORMAT")
+            .unwrap_or_else(|_| "compact".to_string())
+            .to_lowercase()
+            .as_str()
+        {
+            "pretty" => Self::Pretty,
+            "json" => Self::Json,
+            _ => Self::Compact,
+        }
+    }
+}
 
 pub fn init_tracing() {
     let config = Config::from_env();
@@ -54,12 +76,49 @@ pub fn init_tracing() {
 
     let mut layers: Vec<Box<dyn tracing_subscriber::Layer<Registry> + Send + Sync>> = Vec::new();
 
-    if let Ok(filter) = EnvFilter::try_from_default_env() {
-        layers.push(Box::new(
-            tracing_subscriber::fmt::layer()
-                .with_target(true)
-                .with_filter(filter),
-        ));
+    if let Ok(daft_trace) = std::env::var("DAFT_TRACE") {
+        // A bare level enables Daft-owned targets only. Users can opt into additional
+        // crates by passing an explicit EnvFilter directive, e.g.
+        // `DAFT_TRACE=daft_=info,Daft=info,hyper=debug`.
+        let filter_directive = if daft_trace.parse::<LevelFilter>().is_ok() {
+            format!("daft_={daft_trace},Daft={daft_trace}")
+        } else {
+            daft_trace.clone()
+        };
+        match EnvFilter::try_new(&filter_directive) {
+            Ok(filter) => {
+                let layer = match TraceFormat::from_env() {
+                    TraceFormat::Compact => tracing_subscriber::fmt::layer()
+                        .compact()
+                        .with_target(true)
+                        .with_writer(std::io::stderr)
+                        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+                        .boxed(),
+                    TraceFormat::Pretty => tracing_subscriber::fmt::layer()
+                        .pretty()
+                        .with_target(true)
+                        .with_writer(std::io::stderr)
+                        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+                        .boxed(),
+                    TraceFormat::Json => tracing_subscriber::fmt::layer()
+                        .json()
+                        .with_target(true)
+                        .with_current_span(true)
+                        .with_span_list(true)
+                        .with_writer(std::io::stderr)
+                        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+                        .boxed(),
+                };
+                layers.push(Box::new(layer.with_filter(filter)));
+            }
+            Err(err) => {
+                eprintln!(
+                    "DAFT_TRACE: invalid filter {daft_trace:?}, console tracing disabled: {err}. \
+                     Use a bare level like `info` for Daft logs only, or an explicit directive \
+                     like `daft_=info,Daft=info,hyper=debug` to include other crates."
+                );
+            }
+        }
     }
 
     if let Some(tracer_provider) = tracer_provider {
