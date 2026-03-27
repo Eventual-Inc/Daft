@@ -35,9 +35,7 @@ use opentelemetry::KeyValue;
 use pyo3::{Py, prelude::*};
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::{
@@ -47,7 +45,7 @@ use crate::{
     runtime_stats::RuntimeStats,
 };
 
-struct UdfRuntimeStats {
+pub(crate) struct UdfRuntimeStats {
     meter: Meter,
     node_kv: Vec<KeyValue>,
     duration_us: Counter,
@@ -57,8 +55,17 @@ struct UdfRuntimeStats {
 }
 
 impl RuntimeStats for UdfRuntimeStats {
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
-        self
+    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = node_info.to_key_values();
+
+        Self {
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
+            custom_counters: Mutex::new(HashMap::new()),
+            node_kv,
+            meter: meter.clone(), // Cheap to clone, Arc under the hood
+        }
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
@@ -88,25 +95,12 @@ impl RuntimeStats for UdfRuntimeStats {
         self.rows_out.add(rows, self.node_kv.as_slice());
     }
 
-    fn add_cpu_us(&self, cpu_us: u64) {
+    fn add_duration_us(&self, cpu_us: u64) {
         self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
 impl UdfRuntimeStats {
-    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
-        let node_kv = node_info.to_key_values();
-
-        Self {
-            duration_us: meter.duration_us_metric(),
-            rows_in: meter.rows_in_metric(),
-            rows_out: meter.rows_out_metric(),
-            custom_counters: Mutex::new(HashMap::new()),
-            node_kv,
-            meter: meter.clone(), // Cheap to clone, Arc under the hood
-        }
-    }
-
     fn update_metrics(&self, metrics: OperatorMetrics) {
         let mut counters = self.custom_counters.lock().unwrap();
         for (name, counter_data) in metrics {
@@ -265,9 +259,9 @@ impl UdfHandle {
         expr: &mut BoundExpr,
         params: &UdfParams,
         worker_idx: usize,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         runtime_stats: Arc<UdfRuntimeStats>,
-    ) -> DaftResult<Arc<MicroPartition>> {
+    ) -> DaftResult<MicroPartition> {
         let input_batches = input.record_batches();
         let mut output_batches = Vec::with_capacity(input_batches.len());
 
@@ -301,11 +295,11 @@ impl UdfHandle {
             output_batches.push(output_batch);
         }
 
-        Ok(Arc::new(MicroPartition::new_loaded(
+        Ok(MicroPartition::new_loaded(
             params.output_schema.clone(),
             Arc::new(output_batches),
             None,
-        )))
+        ))
     }
 }
 
@@ -422,22 +416,18 @@ impl UdfOperator {
 
 impl IntermediateOperator for UdfOperator {
     type State = UdfState;
+    type Stats = UdfRuntimeStats;
     type BatchingStrategy = DynBatchingStrategy;
 
     #[instrument(skip_all, name = "UdfOperator::execute")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         let memory_request = self.memory_request;
-        let runtime_stats = task_spawner
-            .runtime_stats
-            .clone()
-            .as_any_arc()
-            .downcast::<UdfRuntimeStats>()
-            .expect("Expected UdfRuntimeStats in task_spawner.runtime_stats");
         let params = self.params.clone();
         let fut = task_spawner.spawn_with_memory_request(
             memory_request,
@@ -451,8 +441,7 @@ impl IntermediateOperator for UdfOperator {
                         input,
                         runtime_stats,
                     )?;
-                    let res = IntermediateOperatorResult::NeedMoreInput(Some(result));
-                    Ok((state, res))
+                    Ok((state, result))
                 }
                 #[cfg(not(feature = "python"))]
                 {
@@ -482,10 +471,6 @@ impl IntermediateOperator for UdfOperator {
 
     fn op_type(&self) -> NodeType {
         NodeType::UDFProject
-    }
-
-    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
-        Arc::new(UdfRuntimeStats::new(meter, node_info))
     }
 
     fn multiline_display(&self) -> Vec<String> {

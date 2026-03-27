@@ -1,6 +1,7 @@
-use daft_ext_abi::FFI_SessionContext;
-
-use crate::function::{DaftScalarFunctionRef, into_ffi};
+use crate::{
+    abi::FFI_SessionContext,
+    function::{DaftScalarFunctionRef, into_ffi},
+};
 
 /// Trait for installing an extension within a session.
 pub trait DaftSession {
@@ -34,31 +35,38 @@ impl DaftSession for SessionContext<'_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "arrow-57"))]
 mod tests {
     use std::{
         ffi::{CStr, c_int, c_void},
         sync::{Arc, Mutex},
     };
 
-    use arrow_array::{Array, Int32Array};
-    use arrow_schema::{DataType, Field, Schema};
-    use daft_ext_abi::{ArrowArray, ArrowData, ArrowSchema, FFI_ScalarFunction};
+    use arrow_schema_57::{DataType, Field, Schema};
 
     use super::*;
-    use crate::{error::DaftResult, function::DaftScalarFunction};
-
-    fn export_array(array: &dyn Array) -> ArrowData {
-        let (ffi_array, ffi_schema) = arrow::ffi::to_ffi(&array.to_data()).unwrap();
-        ArrowData {
-            array: unsafe { ArrowArray::from_owned(ffi_array) },
-            schema: unsafe { ArrowSchema::from_owned(ffi_schema) },
-        }
-    }
+    use crate::{
+        abi::{ArrowData, ArrowSchema, FFI_ScalarFunction},
+        error::DaftResult,
+        function::DaftScalarFunction,
+    };
 
     fn export_schema(schema: &Schema) -> ArrowSchema {
-        let ffi = arrow::ffi::FFI_ArrowSchema::try_from(schema).unwrap();
+        let ffi = arrow_schema_57::ffi::FFI_ArrowSchema::try_from(schema).unwrap();
         unsafe { ArrowSchema::from_owned(ffi) }
+    }
+
+    /// Minimal stub [`ArrowData`] for tests that never inspect the array.
+    fn stub_int32() -> ArrowData {
+        let schema = {
+            let field = Field::new("", DataType::Int32, false);
+            let ffi = arrow_schema_57::ffi::FFI_ArrowSchema::try_from(&field).unwrap();
+            unsafe { ArrowSchema::from_owned(ffi) }
+        };
+        ArrowData {
+            schema,
+            array: crate::abi::ArrowArray::empty(),
+        }
     }
 
     #[test]
@@ -95,8 +103,7 @@ mod tests {
                 )])))
             }
             fn call(&self, _: Vec<ArrowData>) -> DaftResult<ArrowData> {
-                let output = Int32Array::from(vec![0]);
-                Ok(export_array(&output))
+                Ok(stub_int32())
             }
         }
 
@@ -143,8 +150,7 @@ mod tests {
                 )])))
             }
             fn call(&self, _: Vec<ArrowData>) -> DaftResult<ArrowData> {
-                let output = Int32Array::from(vec![0]);
-                Ok(export_array(&output))
+                Ok(stub_int32())
             }
         }
 
@@ -161,8 +167,7 @@ mod tests {
                 )])))
             }
             fn call(&self, _: Vec<ArrowData>) -> DaftResult<ArrowData> {
-                let output = Int32Array::from(vec![0]);
-                Ok(export_array(&output))
+                Ok(stub_int32())
             }
         }
 

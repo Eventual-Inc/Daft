@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from daft.udf.legacy import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
 
-    ENCODING_CHARSET = Literal["utf-8", "utf8", "base64"]
+    ENCODING_CHARSET = Literal["utf-8", "utf8", "base64", "hex"]
     COMPRESSION_CODEC = Literal["deflate", "gzip", "gz", "zlib"]
 
 
@@ -1959,6 +1959,16 @@ class Expression:
         from daft.functions import rstrip
 
         return rstrip(self)
+
+    def strip(self) -> Expression:
+        """Strip whitespace from both sides of a UTF-8 string.
+
+        Tip: See Also
+            [`daft.functions.strip`](https://docs.daft.ai/en/stable/api/functions/strip/)
+        """
+        from daft.functions import strip
+
+        return strip(self)
 
     def reverse(self) -> Expression:
         """Reverse a UTF-8 string.

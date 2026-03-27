@@ -33,7 +33,7 @@ def test_decode_8bit_and_16bit_images():
 
         # Create a 16-bit grayscale image (TIFF format supports 16-bit)
         img_16bit_array = np.random.randint(0, 65536, size=(10, 10), dtype=np.uint16)
-        img_16bit = Image.fromarray(img_16bit_array, mode="I;16")
+        img_16bit = Image.fromarray(img_16bit_array)
         img_16bit_path = tmpdir_path / "image_16bit.tiff"
         img_16bit.save(img_16bit_path, format="TIFF")
 

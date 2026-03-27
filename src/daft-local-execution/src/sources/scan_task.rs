@@ -28,7 +28,7 @@ use crate::{
 };
 
 pub struct ScanTaskSource {
-    receiver: Option<UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>>,
+    receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
     source_config: Option<Arc<SourceConfig>>,
     pushdowns: Pushdowns,
     schema: SchemaRef,
@@ -50,7 +50,7 @@ impl ScanTaskSource {
             num_cpus
         };
         Self {
-            receiver: Some(receiver),
+            receiver,
             source_config,
             pushdowns,
             schema,
@@ -59,20 +59,19 @@ impl ScanTaskSource {
     }
 
     fn spawn_scan_task_processor(
-        &self,
+        num_parallel_tasks: usize,
         mut receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
-        output_sender: Sender<Arc<MicroPartition>>,
+        output_sender: Sender<MicroPartition>,
         io_stats: IOStatsRef,
         chunk_size: usize,
         schema: SchemaRef,
         maintain_order: bool,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
-        let num_parallel_tasks = self.num_parallel_tasks;
 
         // When maintain_order is true, spawn flattener outside so it drains stream outputs in order.
         let mut flattener_state = if maintain_order {
-            let (agg_tx, agg_rx) = create_unbounded_channel::<Receiver<Arc<MicroPartition>>>();
+            let (agg_tx, agg_rx) = create_unbounded_channel::<Receiver<MicroPartition>>();
             let flattener_handle = io_runtime.spawn(run_order_preserving_flattener(
                 agg_rx,
                 output_sender.clone(),
@@ -114,7 +113,7 @@ impl ScanTaskSource {
                     recv_result = receiver.recv(), if !receiver_exhausted => {
                         match recv_result {
                             Some((_input_id, scan_tasks_batch)) if scan_tasks_batch.is_empty() => {
-                                let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
+                                let empty = MicroPartition::empty(Some(schema.clone()));
                                 match &flattener_state {
                                     Some((agg_tx, _)) => {
                                         let (tx, rx) = create_channel(1);
@@ -182,15 +181,17 @@ impl ScanTaskSource {
 impl Source for ScanTaskSource {
     #[instrument(name = "ScanTaskSource::get_data", level = "info", skip_all)]
     fn get_data(
-        &mut self,
+        self: Box<Self>,
         maintain_order: bool,
         io_stats: IOStatsRef,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
-        let input_receiver = self.receiver.take().expect("Receiver not found");
+        let (output_sender, output_receiver) = create_channel::<MicroPartition>(1);
+        let input_receiver = self.receiver;
+        let num_parallel_tasks = self.num_parallel_tasks;
 
-        let processor_task = self.spawn_scan_task_processor(
+        let processor_task = Self::spawn_scan_task_processor(
+            num_parallel_tasks,
             input_receiver,
             output_sender,
             io_stats,
@@ -398,8 +399,8 @@ async fn get_delete_map(
 /// Drains a "receiver of receivers" in order, forwarding each inner stream's
 /// micropartitions to `output_sender`. Used when `maintain_order` is true.
 async fn run_order_preserving_flattener(
-    mut agg_rx: UnboundedReceiver<Receiver<Arc<MicroPartition>>>,
-    output_sender: Sender<Arc<MicroPartition>>,
+    mut agg_rx: UnboundedReceiver<Receiver<MicroPartition>>,
+    output_sender: Sender<MicroPartition>,
 ) {
     while let Some(mut inner_rx) = agg_rx.recv().await {
         while let Some(mp) = inner_rx.recv().await {
@@ -416,7 +417,7 @@ async fn forward_scan_task_stream(
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
     chunk_size: usize,
-    sender: Sender<Arc<MicroPartition>>,
+    sender: Sender<MicroPartition>,
     input_id: InputId,
 ) -> DaftResult<InputId> {
     let schema = scan_task.materialized_schema();
@@ -433,7 +434,7 @@ async fn forward_scan_task_stream(
 
     // If no data was emitted, send empty micropartition
     if !has_data {
-        let empty = Arc::new(MicroPartition::empty(Some(schema)));
+        let empty = MicroPartition::empty(Some(schema));
         let _ = sender.send(empty).await;
     }
 
@@ -446,7 +447,7 @@ async fn stream_scan_task(
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
     chunk_size: usize,
-) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
+) -> DaftResult<impl Stream<Item = DaftResult<MicroPartition>> + Send> {
     let pushdown_columns = scan_task
         .pushdowns
         .columns
@@ -525,11 +526,11 @@ async fn stream_scan_task(
             })
             .transpose()?;
 
-        let mp = Arc::new(MicroPartition::new_loaded(
+        let mp = MicroPartition::new_loaded(
             scan_task.materialized_schema(),
             Arc::new(vec![casted_table]),
             stats,
-        ));
+        );
         Ok(mp)
     }))
 }

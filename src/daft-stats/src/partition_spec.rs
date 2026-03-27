@@ -33,7 +33,7 @@ impl PartitionSpec {
                 (
                     column.name(),
                     Arc::new(Expr::Literal(
-                        Literal::try_from_single_value_series(column)
+                        Literal::try_from_single_value_series(column.as_materialized_series())
                             .expect("column should have one row"),
                     )),
                 )
@@ -87,8 +87,7 @@ impl Hash for PartitionSpec {
         self.keys.schema.hash(state);
 
         for column in self.keys.columns() {
-            let column_hashes = column.hash(None).expect("Failed to hash column");
-            column_hashes.into_iter().for_each(|h| h.hash(state));
+            column.hash(state);
         }
     }
 }

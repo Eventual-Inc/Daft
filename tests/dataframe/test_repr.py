@@ -275,6 +275,27 @@ def test_repr_with_html_string():
         )
 
 
+@pytest.mark.parametrize(
+    "kwargs,expected_keys",
+    [
+        ({}, {"text/plain", "text/html"}),
+        ({"include": {"text/plain"}}, {"text/plain"}),
+        ({"exclude": {"text/html"}}, {"text/plain"}),
+        ({"include": {"text/plain"}, "exclude": {"text/plain"}}, set()),
+    ],
+)
+def test_repr_mimebundle(make_df, kwargs, expected_keys):
+    df = make_df({"A": [1, 2, 3], "B": ["x", "y", "z"]})
+
+    bundle = df._repr_mimebundle_(**kwargs)
+
+    assert set(bundle.keys()) == expected_keys
+    if "text/plain" in bundle:
+        assert bundle["text/plain"] == df.__repr__()
+    if "text/html" in bundle:
+        assert bundle["text/html"] == df._repr_html_()
+
+
 class MyObj:
     def __repr__(self) -> str:
         return "myobj-custom-repr"
