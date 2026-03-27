@@ -6,13 +6,14 @@ use common_metrics::{
 };
 use opentelemetry::KeyValue;
 
-use crate::runtime_stats::RuntimeStats;
+use crate::runtime_stats::{BytesRetainedTracker, RuntimeStats};
 
 pub(crate) struct JoinStats {
     duration_us: Counter,
     build_rows_inserted: Counter,
     probe_rows_in: Counter,
     probe_rows_out: Counter,
+    retained: BytesRetainedTracker,
     node_kv: Vec<KeyValue>,
 }
 
@@ -50,6 +51,7 @@ impl RuntimeStats for JoinStats {
                 None,
                 Some(Cow::Borrowed(UNIT_ROWS)),
             ),
+            retained: BytesRetainedTracker::new(meter),
             node_kv,
         }
     }
@@ -60,6 +62,8 @@ impl RuntimeStats for JoinStats {
             build_rows_inserted: self.build_rows_inserted.load(ordering),
             probe_rows_in: self.probe_rows_in.load(ordering),
             probe_rows_out: self.probe_rows_out.load(ordering),
+            bytes_retained: self.retained.load_current(ordering),
+            peak_bytes_retained: self.retained.load_peak(ordering),
         })
     }
 
@@ -76,5 +80,13 @@ impl RuntimeStats for JoinStats {
 
     fn add_duration_us(&self, duration_us: u64) {
         self.duration_us.add(duration_us, self.node_kv.as_slice());
+    }
+
+    fn add_bytes_retained(&self, bytes: u64) {
+        self.retained.add(bytes, self.node_kv.as_slice());
+    }
+
+    fn reset_bytes_retained(&self) {
+        self.retained.reset(self.node_kv.as_slice());
     }
 }

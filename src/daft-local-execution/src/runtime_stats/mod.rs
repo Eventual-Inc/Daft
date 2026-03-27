@@ -26,6 +26,7 @@ use tokio::{
     sync::{mpsc, oneshot},
     time::interval,
 };
+pub(crate) use values::BytesRetainedTracker;
 pub use values::{DefaultRuntimeStats, RuntimeStats};
 
 use crate::pipeline::PipelineNode;

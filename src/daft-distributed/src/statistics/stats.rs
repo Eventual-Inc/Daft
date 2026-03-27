@@ -131,6 +131,8 @@ impl BaseCounters {
             cpu_us: self.duration_us.load(Ordering::Relaxed),
             rows_in: self.rows_in.load(Ordering::Relaxed),
             rows_out: self.rows_out.load(Ordering::Relaxed),
+            bytes_retained: 0,
+            peak_bytes_retained: 0,
         })
     }
 }

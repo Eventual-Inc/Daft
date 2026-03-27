@@ -497,6 +497,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
 
                 let mut finished_states: Vec<_> =
                     ctx.state_pool.drain().map(|(_, state)| state).collect();
+
                 loop {
                     let now = Instant::now();
                     let finalized_result = ctx

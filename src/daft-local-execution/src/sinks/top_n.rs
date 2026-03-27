@@ -10,7 +10,7 @@ use tracing::{Span, instrument};
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 /// Parameters for the TopN that both the state and sinker need
 struct TopNParams {
@@ -86,7 +86,7 @@ impl BlockingSink for TopNSink {
         &self,
         input: MicroPartition,
         mut state: Self::State,
-        _runtime_stats: Arc<Self::Stats>,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.params.clone();
@@ -105,6 +105,7 @@ impl BlockingSink for TopNSink {
                     )?;
 
                     // Append to the collection of existing top N values
+                    runtime_stats.add_bytes_retained(top_input_rows.size_bytes() as u64);
                     state.append(top_input_rows);
                     Ok(state)
                 },

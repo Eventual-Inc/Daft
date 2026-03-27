@@ -10,7 +10,7 @@ use tracing::{Span, instrument};
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 pub(crate) enum SortState {
     Building(Vec<MicroPartition>),
@@ -66,9 +66,10 @@ impl BlockingSink for SortSink {
         &self,
         input: MicroPartition,
         mut state: Self::State,
-        _runtime_stats: Arc<Self::Stats>,
+        runtime_stats: Arc<Self::Stats>,
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
+        runtime_stats.add_bytes_retained(input.size_bytes() as u64);
         state.push(input);
         Ok(state).into()
     }

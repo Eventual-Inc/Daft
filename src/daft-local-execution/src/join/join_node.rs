@@ -155,6 +155,9 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
                                 node_initialized = true;
                             }
                             ctx.runtime_stats.add_build_rows_inserted(morsel.len() as u64);
+                            // Tracks raw Arrow data size. The actual hash table memory
+                            // (index structures, padding) is not captured here.
+                            ctx.runtime_stats.add_bytes_retained(morsel.size_bytes() as u64);
                             let state = ctx.build_state.take()
                                 .expect("Build state should be available for build task if ctx.build_state is some");
 
@@ -178,6 +181,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
             .take()
             .expect("Build state should be available for finalize build");
         let finalized = ctx.op.finalize_build(build_state)?;
+        ctx.runtime_stats.reset_bytes_retained();
         // Send finalized build state to probe side
         let _ = finalized_build_state_sender.send(finalized);
 

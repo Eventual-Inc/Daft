@@ -345,6 +345,9 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                 let mut finished_states: Vec<_> =
                     ctx.state_pool.drain().map(|(_, state)| state).collect();
 
+                // Reset retained bytes: all accumulated data is consumed during finalize
+                ctx.runtime_stats.reset_bytes_retained();
+
                 // Finalize
                 loop {
                     let finalized_result = ctx
