@@ -170,6 +170,7 @@ impl SortMergeJoinNode {
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
+            Some(0),
         )?;
 
         let left_boundary_key_names = self
@@ -197,6 +198,7 @@ impl SortMergeJoinNode {
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
+            Some(1),
         )?;
 
         // Collect all samples
@@ -233,6 +235,7 @@ impl SortMergeJoinNode {
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
+            Some(0),
         )?;
 
         let right_boundary_names = self
@@ -266,6 +269,7 @@ impl SortMergeJoinNode {
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
+            Some(1),
         )?;
 
         // Wait for both sides to be partitioned
