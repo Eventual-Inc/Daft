@@ -472,6 +472,10 @@ impl RuntimeStatsManager {
         RuntimeStatsManagerHandle(self.node_tx.clone())
     }
 
+    pub fn snapshot_handle(&self) -> RuntimeStatsManagerHandle {
+        self.handle()
+    }
+
     pub async fn finish(self, status: QueryEndState) -> ExecutionStats {
         self.finish_tx
             .send(status)
