@@ -62,6 +62,9 @@ from .datetime import (
     to_datetime,
     date_trunc,
     to_unix_epoch,
+    current_date,
+    current_timestamp,
+    current_timezone,
 )
 from .distance import cosine_distance, dot_product, euclidean_distance
 from .similarity import (
@@ -283,6 +286,9 @@ __all__ = [
     "count_matches",
     "crop",
     "csc",
+    "current_date",
+    "current_timestamp",
+    "current_timezone",
     "date",
     "date_trunc",
     "day",

@@ -1,3 +1,4 @@
+pub mod current;
 mod time;
 mod to_string;
 mod total;
@@ -5,6 +6,7 @@ pub mod truncate;
 mod unix_timestamp;
 
 use common_error::{DaftResult, ensure};
+use current::{CurrentDate, CurrentTimestamp, CurrentTimezone};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
@@ -109,5 +111,8 @@ impl FunctionModule for TemporalFunctions {
         parent.add_fn(WeekOfYear);
         parent.add_fn(Year);
         parent.add_fn(UnixTimestamp);
+        parent.add_fn(CurrentDate);
+        parent.add_fn(CurrentTimestamp);
+        parent.add_fn(CurrentTimezone);
     }
 }

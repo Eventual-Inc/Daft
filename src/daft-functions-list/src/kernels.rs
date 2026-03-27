@@ -9,6 +9,7 @@ use daft_core::{
     array::{
         FixedSizeListArray, ListArray, StructArray,
         growable::{Growable, make_growable},
+        ops::GroupIndices,
     },
     datatypes::{try_mean_aggregation_supertype, try_sum_supertype},
     prelude::{
@@ -1019,49 +1020,113 @@ macro_rules! impl_aggs_list_array {
     ($la:ident, $agg_helper:ident) => {
         impl ListArrayAggExtension for $la {
             fn sum(&self) -> DaftResult<Series> {
-                $agg_helper(self, |s| s.sum(None), try_sum_supertype)
+                let target_dtype = try_sum_supertype(self.child_data_type())?;
+                $agg_helper(self, |child, groups| child.sum(Some(groups)), &target_dtype)
             }
 
             fn mean(&self) -> DaftResult<Series> {
-                $agg_helper(self, |s| s.mean(None), try_mean_aggregation_supertype)
+                let target_dtype = try_mean_aggregation_supertype(self.child_data_type())?;
+                $agg_helper(
+                    self,
+                    |child, groups| child.mean(Some(groups)),
+                    &target_dtype,
+                )
             }
 
             fn min(&self) -> DaftResult<Series> {
-                $agg_helper(self, |s| s.min(None), |dtype| Ok(dtype.clone()))
+                let target_dtype = self.child_data_type();
+                $agg_helper(self, |child, groups| child.min(Some(groups)), &target_dtype)
             }
 
             fn max(&self) -> DaftResult<Series> {
-                $agg_helper(self, |s| s.max(None), |dtype| Ok(dtype.clone()))
-            }
-        }
-
-        fn $agg_helper<T, F>(arr: &$la, op: T, target_type_getter: F) -> DaftResult<Series>
-        where
-            T: Fn(&Series) -> DaftResult<Series>,
-            F: Fn(&DataType) -> DaftResult<DataType>,
-        {
-            // TODO(Kevin): Currently this requires full materialization of one Series for every list. We could avoid this by implementing either sorted aggregation or an array builder
-
-            // Assumes `op`` returns a null Series given an empty Series
-            let aggs = arr
-                .into_iter()
-                .map(|s| s.unwrap_or(Series::empty("", arr.child_data_type())))
-                .map(|s| op(&s))
-                .collect::<DaftResult<Vec<_>>>()?;
-
-            let agg_refs: Vec<_> = aggs.iter().collect();
-
-            if agg_refs.is_empty() {
-                let target_type = target_type_getter(arr.child_data_type())?;
-                Ok(Series::empty(arr.name(), &target_type))
-            } else {
-                Series::concat(agg_refs.as_slice()).map(|s| s.rename(arr.name()))
+                let target_dtype = self.child_data_type();
+                $agg_helper(self, |child, groups| child.max(Some(groups)), &target_dtype)
             }
         }
     };
 }
-impl_aggs_list_array!(ListArray, list_agg_helper);
-impl_aggs_list_array!(FixedSizeListArray, fsl_agg_helper);
+
+fn scatter_grouped_aggs(
+    name: &str,
+    target_dtype: &DataType,
+    scatter_indices: Vec<Option<u64>>,
+    grouped_aggs: Option<Series>,
+) -> DaftResult<Series> {
+    let idx = UInt64Array::from_iter(
+        Field::new("", DataType::UInt64),
+        scatter_indices.into_iter(),
+    );
+
+    Ok(match grouped_aggs {
+        Some(series) => series.take(&idx)?.rename(name),
+        None => Series::full_null(name, target_dtype, idx.len()),
+    })
+}
+
+fn agg_list_helper<T>(arr: &ListArray, op: T, target_dtype: &DataType) -> DaftResult<Series>
+where
+    T: Fn(&Series, &GroupIndices) -> DaftResult<Series>,
+{
+    let mut groups = GroupIndices::with_capacity(arr.len());
+    let mut scatter_indices = Vec::with_capacity(arr.len());
+
+    for i in 0..arr.len() {
+        let start = arr.offsets()[i] as u64;
+        let end = arr.offsets()[i + 1] as u64;
+
+        if arr.is_valid(i) && start < end {
+            scatter_indices.push(Some(groups.len() as u64));
+            groups.push((start..end).collect());
+        } else {
+            scatter_indices.push(None);
+        }
+    }
+
+    let grouped_aggs = if groups.is_empty() {
+        None
+    } else {
+        Some(op(&arr.flat_child, &groups)?)
+    };
+
+    scatter_grouped_aggs(arr.name(), target_dtype, scatter_indices, grouped_aggs)
+}
+
+/// Helper to construct group indices for fixed size list arrays.
+/// Used for list_sum, list_mean, list_min, list_max.
+fn agg_fsl_helper<T>(arr: &FixedSizeListArray, op: T, target_dtype: &DataType) -> DaftResult<Series>
+where
+    T: Fn(&Series, &GroupIndices) -> DaftResult<Series>,
+{
+    let fixed_size = arr.fixed_element_len();
+    if fixed_size == 0 {
+        return Ok(Series::full_null(arr.name(), target_dtype, arr.len()));
+    }
+
+    let mut groups = GroupIndices::with_capacity(arr.len());
+    let mut scatter_indices = Vec::with_capacity(arr.len());
+
+    for i in 0..arr.len() {
+        if arr.is_valid(i) {
+            scatter_indices.push(Some(groups.len() as u64));
+            let start = (i * fixed_size) as u64;
+            let end = start + fixed_size as u64;
+            groups.push((start..end).collect());
+        } else {
+            scatter_indices.push(None);
+        }
+    }
+
+    let grouped_aggs = if groups.is_empty() {
+        None
+    } else {
+        Some(op(&arr.flat_child, &groups)?)
+    };
+
+    scatter_grouped_aggs(arr.name(), target_dtype, scatter_indices, grouped_aggs)
+}
+
+impl_aggs_list_array!(ListArray, agg_list_helper);
+impl_aggs_list_array!(FixedSizeListArray, agg_fsl_helper);
 
 #[cfg(test)]
 mod tests {
@@ -1544,11 +1609,29 @@ mod tests {
     }
 
     #[test]
+    fn test_list_min_empty_and_null() {
+        let arr = make_list_i64("a", vec![Some(vec![]), None, Some(vec![3, 1, 2])]);
+        let result = arr.min().unwrap();
+        assert_eq!(result.i64().unwrap().get(0), None);
+        assert_eq!(result.i64().unwrap().get(1), None);
+        assert_eq!(result.i64().unwrap().get(2), Some(1));
+    }
+
+    #[test]
     fn test_list_max() {
         let arr = make_list_i64("a", vec![Some(vec![3, 1, 2]), Some(vec![6, 4, 5])]);
         let result = arr.max().unwrap();
         assert_eq!(result.i64().unwrap().get(0), Some(3));
         assert_eq!(result.i64().unwrap().get(1), Some(6));
+    }
+
+    #[test]
+    fn test_list_max_empty_and_null() {
+        let arr = make_list_i64("a", vec![Some(vec![]), None, Some(vec![3, 1, 2])]);
+        let result = arr.max().unwrap();
+        assert_eq!(result.i64().unwrap().get(0), None);
+        assert_eq!(result.i64().unwrap().get(1), None);
+        assert_eq!(result.i64().unwrap().get(2), Some(3));
     }
 
     // ── fsl aggregation ─────────────────────────────────────────────────
