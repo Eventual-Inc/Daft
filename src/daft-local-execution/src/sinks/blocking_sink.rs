@@ -22,7 +22,9 @@ use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
     channel::{Receiver, Sender, create_channel},
     pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
-    runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
+    runtime_stats::{
+        DefaultRuntimeStats, IntermediateRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle,
+    },
 };
 
 pub enum BlockingSinkFinalizeOutput<Op: BlockingSink> {
@@ -40,7 +42,7 @@ pub(crate) type BlockingSinkFinalizeResult<Op> =
     OperatorOutput<DaftResult<BlockingSinkFinalizeOutput<Op>>>;
 pub(crate) trait BlockingSink: Send + Sync {
     type State: Send + Sync + Unpin;
-    type Stats: RuntimeStats = DefaultRuntimeStats;
+    type Stats: IntermediateRuntimeStats = DefaultRuntimeStats;
 
     fn sink(
         &self,
@@ -103,7 +105,11 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
     ) -> Self {
         let name: Arc<str> = op.name().into();
         let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::BlockingSink, context);
-        let runtime_stats = Arc::new(Op::Stats::new(&ctx.meter, &node_info));
+        let runtime_stats = Arc::new(Op::Stats::new(
+            &ctx.meter,
+            &node_info,
+            child.runtime_stats(),
+        ));
 
         Self {
             op,

@@ -6,7 +6,6 @@ bincode = {workspace = true}
 smallvec = {workspace = true, features = ["serde"]}
 pyo3 = {workspace = true, optional = true}
 enum_dispatch = "0.3"
-itertools = {workspace = true}
 opentelemetry = {workspace = true}
 atomic_float = "*"
 

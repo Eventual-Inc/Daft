@@ -3,7 +3,6 @@ use std::{
     sync::Arc,
 };
 
-use async_trait::async_trait;
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
@@ -23,9 +22,45 @@ use crate::{
     pipeline::NodeName,
     sources::{
         scan_task_reader,
-        source::{Source, SourceStream},
+        source::{Source, SourceStats, SourceStream},
     },
 };
+
+struct RowEstimator {
+    finished_files_read: u64,
+    finished_rows_read: u64,
+    total_scan_tasks: u64,
+    runtime_stats: Arc<SourceStats>,
+}
+
+impl RowEstimator {
+    fn new(runtime_stats: Arc<SourceStats>) -> Self {
+        Self {
+            finished_files_read: 0,
+            finished_rows_read: 0,
+            total_scan_tasks: 0,
+            runtime_stats,
+        }
+    }
+
+    fn update_estimate(&self) {
+        let estimated_total_rows = self.finished_rows_read as f64
+            * (self.total_scan_tasks as f64 / self.finished_files_read as f64);
+        self.runtime_stats
+            .set_estimated_total_rows(estimated_total_rows as u64);
+    }
+
+    fn add_scan_tasks(&mut self, scan_tasks: usize) {
+        self.total_scan_tasks += scan_tasks as u64;
+        self.update_estimate();
+    }
+
+    fn inc_finished_file(&mut self, num_rows: usize) {
+        self.finished_files_read += 1;
+        self.finished_rows_read += num_rows as u64;
+        self.update_estimate();
+    }
+}
 
 pub struct ScanTaskSource {
     receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
@@ -62,7 +97,7 @@ impl ScanTaskSource {
         num_parallel_tasks: usize,
         mut receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
         output_sender: Sender<MicroPartition>,
-        io_stats: IOStatsRef,
+        runtime_stats: Arc<SourceStats>,
         chunk_size: usize,
         schema: SchemaRef,
         maintain_order: bool,
@@ -81,10 +116,14 @@ impl ScanTaskSource {
             None
         };
 
+        let io_stats = runtime_stats.io_stats.clone();
         io_runtime.spawn(async move {
             let mut task_set = JoinSet::new();
             let mut pending_tasks = VecDeque::new();
             let mut receiver_exhausted = false;
+
+            // State to track estimated total rows
+            let mut row_estimator = RowEstimator::new(runtime_stats);
 
             while !receiver_exhausted || !pending_tasks.is_empty() || !task_set.is_empty() {
                 while task_set.len() < num_parallel_tasks && !pending_tasks.is_empty() {
@@ -137,6 +176,7 @@ impl ScanTaskSource {
                                     .flat_map(|scan_task| scan_task.split())
                                     .collect();
 
+                                row_estimator.add_scan_tasks(split_tasks.len());
                                 for scan_task in split_tasks {
                                     pending_tasks.push_back((scan_task, delete_map.clone(), input_id));
                                 }
@@ -148,7 +188,9 @@ impl ScanTaskSource {
                     }
                     Some(join_result) = task_set.join_next(), if !task_set.is_empty() => {
                         match join_result {
-                            Ok(Ok(_)) => {}
+                            Ok(Ok((_, total_rows_from_task))) => {
+                                row_estimator.inc_finished_file(total_rows_from_task);
+                            }
                             Ok(Err(e)) => {
                                 let _ = flattener_state.take();
                                 return Err(e.into());
@@ -177,13 +219,12 @@ impl ScanTaskSource {
     }
 }
 
-#[async_trait]
 impl Source for ScanTaskSource {
     #[instrument(name = "ScanTaskSource::get_data", level = "info", skip_all)]
     fn get_data(
         self: Box<Self>,
         maintain_order: bool,
-        io_stats: IOStatsRef,
+        runtime_stats: Arc<SourceStats>,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<MicroPartition>(1);
@@ -194,7 +235,7 @@ impl Source for ScanTaskSource {
             num_parallel_tasks,
             input_receiver,
             output_sender,
-            io_stats,
+            runtime_stats,
             chunk_size,
             self.schema.clone(),
             maintain_order,
@@ -419,14 +460,17 @@ async fn forward_scan_task_stream(
     chunk_size: usize,
     sender: Sender<MicroPartition>,
     input_id: InputId,
-) -> DaftResult<InputId> {
+) -> DaftResult<(InputId, usize)> {
     let schema = scan_task.materialized_schema();
     let mut stream =
         stream_scan_task(scan_task, io_stats, delete_map, maintain_order, chunk_size).await?;
+
+    let mut total_rows = 0;
     let mut has_data = false;
     while let Some(result) = stream.next().await {
         has_data = true;
         let partition = result?;
+        total_rows += partition.len();
         if sender.send(partition).await.is_err() {
             break;
         }
@@ -438,7 +482,7 @@ async fn forward_scan_task_stream(
         let _ = sender.send(empty).await;
     }
 
-    Ok(input_id)
+    Ok((input_id, total_rows))
 }
 
 async fn stream_scan_task(

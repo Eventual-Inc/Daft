@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
 use common_metrics::ops::NodeType;
@@ -22,7 +21,7 @@ use super::source::Source;
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
     pipeline::NodeName,
-    sources::source::SourceStream,
+    sources::source::{SourceStats, SourceStream},
 };
 
 pub struct GlobScanSource {
@@ -182,13 +181,12 @@ impl GlobScanSource {
     }
 }
 
-#[async_trait]
 impl Source for GlobScanSource {
     #[instrument(name = "GlobScanSource::get_data", level = "info", skip_all)]
     fn get_data(
         self: Box<Self>,
         _maintain_order: bool,
-        io_stats: IOStatsRef,
+        runtime_stats: Arc<SourceStats>,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<MicroPartition>(1);
@@ -200,7 +198,7 @@ impl Source for GlobScanSource {
         let processor_task = Self::spawn_glob_path_processor(
             input_receiver,
             output_sender,
-            io_stats,
+            runtime_stats.io_stats.clone(),
             chunk_size,
             pushdowns,
             schema,

@@ -122,11 +122,13 @@ pub const DURATION_KEY: &str = "duration";
 pub const ROWS_IN_KEY: &str = "rows.in";
 pub const ROWS_OUT_KEY: &str = "rows.out";
 pub const ROWS_WRITTEN_KEY: &str = "rows.written";
+pub const ESTIMATED_TOTAL_ROWS_KEY: &str = "rows.estimated_total";
 
 // Join metrics
 pub const JOIN_BUILD_ROWS_INSERTED_KEY: &str = "rows.join.build_inserted";
 pub const JOIN_PROBE_ROWS_IN_KEY: &str = "rows.join.probe_in";
 pub const JOIN_PROBE_ROWS_OUT_KEY: &str = "rows.join.probe_out";
+pub const ESTIMATED_TOTAL_PROBE_ROWS_KEY: &str = "rows.join.probe_estimated_total";
 
 // Task metrics
 pub const TASK_ACTIVE_KEY: &str = "task.active";

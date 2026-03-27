@@ -1,12 +1,13 @@
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
 
-use async_trait::async_trait;
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use daft_core::prelude::SchemaRef;
-use daft_io::IOStatsRef;
 use daft_local_plan::{FlightShuffleReadInput, InputId};
 use daft_micropartition::MicroPartition;
 use daft_shuffles::client::FlightClientManager;
@@ -17,6 +18,7 @@ use super::source::{Source, SourceStream};
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
     pipeline::NodeName,
+    sources::source::SourceStats,
 };
 
 pub struct FlightShuffleReadSource {
@@ -134,7 +136,6 @@ async fn forward_partition_stream(
     Ok(())
 }
 
-#[async_trait]
 impl Source for FlightShuffleReadSource {
     fn name(&self) -> NodeName {
         "FlightShuffleRead".into()
@@ -156,7 +157,7 @@ impl Source for FlightShuffleReadSource {
     fn get_data(
         self: Box<Self>,
         _maintain_order: bool,
-        _io_stats: IOStatsRef,
+        _runtime_stats: Arc<SourceStats>,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<MicroPartition>(1);

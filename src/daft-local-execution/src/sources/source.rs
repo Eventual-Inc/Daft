@@ -1,11 +1,11 @@
 use std::sync::{Arc, atomic::Ordering};
 
-use async_trait::async_trait;
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, Meter, StatSnapshot,
+    Counter, ESTIMATED_TOTAL_ROWS_KEY, Meter, StatSnapshot, UNIT_ROWS,
+    meters::U64Gauge,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::{SourceSnapshot, StatSnapshotImpl},
 };
@@ -29,12 +29,13 @@ pub type SourceStream<'a> = BoxStream<'a, DaftResult<MicroPartition>>;
 pub(crate) struct SourceStats {
     duration_us: Counter,
     rows_out: Counter,
-    io_stats: IOStatsRef,
+    pub io_stats: IOStatsRef,
+    estimated_total_rows: U64Gauge,
 
     node_kv: Vec<KeyValue>,
 }
 
-impl RuntimeStats for SourceStats {
+impl SourceStats {
     fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
         let node_kv = node_info.to_key_values();
 
@@ -42,28 +43,34 @@ impl RuntimeStats for SourceStats {
             duration_us: meter.duration_us_metric(),
             rows_out: meter.rows_out_metric(),
             io_stats: IOStatsRef::default(),
+            estimated_total_rows: meter
+                .u64_gauge_with_unit(ESTIMATED_TOTAL_ROWS_KEY, Some(UNIT_ROWS.into())),
 
             node_kv,
         }
     }
 
-    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        let cpu_us = self.duration_us.load(ordering);
-        let rows_out = self.rows_out.load(ordering);
-        let bytes_read = self.io_stats.load_bytes_read() as u64;
-        StatSnapshot::Source(SourceSnapshot {
-            cpu_us,
-            rows_out,
-            bytes_read,
-        })
-    }
-
-    fn add_rows_in(&self, _: u64) {
-        unreachable!("Source Nodes shouldn't receive rows")
-    }
-
     fn add_rows_out(&self, rows: u64) {
         self.rows_out.add(rows, self.node_kv.as_slice());
+        let rows_out = self.rows_out.load(Ordering::Relaxed);
+        self.estimated_total_rows
+            .set_max(rows_out, self.node_kv.as_slice());
+    }
+
+    pub(crate) fn set_estimated_total_rows(&self, estimated_total_rows: u64) {
+        self.estimated_total_rows
+            .set_max(estimated_total_rows, self.node_kv.as_slice());
+    }
+}
+
+impl RuntimeStats for SourceStats {
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
+        StatSnapshot::Source(SourceSnapshot {
+            cpu_us: self.duration_us.load(ordering),
+            rows_out: self.rows_out.load(ordering),
+            bytes_read: self.io_stats.load_bytes_read() as u64,
+            estimated_total_rows: self.estimated_total_rows.load(ordering),
+        })
     }
 
     fn add_duration_us(&self, cpu_us: u64) {
@@ -71,7 +78,6 @@ impl RuntimeStats for SourceStats {
     }
 }
 
-#[async_trait]
 pub trait Source: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
@@ -82,7 +88,7 @@ pub trait Source: Send + Sync {
     fn get_data(
         self: Box<Self>,
         maintain_order: bool,
-        io_stats: IOStatsRef,
+        runtime_stats: Arc<SourceStats>,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>>;
     fn schema(&self) -> &SchemaRef;
@@ -204,7 +210,7 @@ impl PipelineNode for SourceNode {
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<crate::channel::Receiver<MicroPartition>> {
-        let io_stats = self.runtime_stats.io_stats.clone();
+        let runtime_stats = self.runtime_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
         let schema = self.source.schema().clone();
@@ -218,11 +224,10 @@ impl PipelineNode for SourceNode {
 
         let mut source_stream = self
             .source
-            .get_data(maintain_order, io_stats, chunk_size.into())
+            .get_data(maintain_order, runtime_stats.clone(), chunk_size.into())
             .with_context(|_| PipelineExecutionSnafu {
                 node_name: name.to_string(),
             })?;
-        let runtime_stats = self.runtime_stats.clone();
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;

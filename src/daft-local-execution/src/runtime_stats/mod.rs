@@ -26,7 +26,7 @@ use tokio::{
     sync::{mpsc, oneshot},
     time::interval,
 };
-pub use values::{DefaultRuntimeStats, RuntimeStats};
+pub use values::{DefaultRuntimeStats, IntermediateRuntimeStats, RuntimeStats, RuntimeStatsRef};
 
 use crate::pipeline::PipelineNode;
 
@@ -167,17 +167,16 @@ impl RuntimeStatsManager {
     ) -> DaftResult<Self> {
         // Construct mapping between node id and their node info and runtime stats
         let mut node_map = HashMap::new();
-        let mut node_info_map = HashMap::new();
-        let mut operator_meta_map: HashMap<NodeID, Arc<OperatorMeta>> = HashMap::new();
+        let mut operator_meta_map = HashMap::new();
+
         let _ = pipeline.apply(|node| {
             let node_info = node.node_info();
             let runtime_stats = node.runtime_stats();
-            node_info_map.insert(node_info.id, node_info.clone());
-            node_map.insert(node_info.id, (node_info.clone(), runtime_stats));
             operator_meta_map.insert(
                 node_info.id,
                 Arc::new(OperatorMeta::from(node_info.as_ref())),
             );
+            node_map.insert(node_info.id, (node_info, runtime_stats));
             Ok(TreeNodeRecursion::Continue)
         });
 
@@ -191,11 +190,11 @@ impl RuntimeStatsManager {
 
         let progress_bar = match progress_bar_mode() {
             ProgressBarMode::Disabled => None,
-            ProgressBarMode::Enabled => Some(make_progress_bar_manager(&node_info_map, false)),
-            ProgressBarMode::Persist => Some(make_progress_bar_manager(&node_info_map, true)),
+            ProgressBarMode::Enabled => Some(make_progress_bar_manager(&node_map, false)),
+            ProgressBarMode::Persist => Some(make_progress_bar_manager(&node_map, true)),
         };
 
-        let throttle_interval = Duration::from_millis(200);
+        let throttle_interval = Duration::from_millis(250);
         let enable_process_monitor = should_enable_process_monitor();
         Ok(Self::new_impl(
             handle,
@@ -393,13 +392,17 @@ impl RuntimeStatsManager {
 mod tests {
     use std::{
         collections::HashMap,
-        sync::{Arc, Mutex, atomic::AtomicU64},
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicU64, Ordering},
+        },
     };
 
     use async_trait::async_trait;
     use common_error::DaftResult;
     use common_metrics::{
         DURATION_KEY, Meter, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, Stats,
+        snapshot::DefaultSnapshot,
     };
     use daft_context::{QueryMetadata, QueryResult, Subscriber};
     use daft_micropartition::MicroPartitionRef;
@@ -508,15 +511,36 @@ mod tests {
         }
     }
 
+    struct MockRuntimeStats {}
+
+    impl RuntimeStats for MockRuntimeStats {
+        fn build_snapshot(&self, _ordering: Ordering) -> StatSnapshot {
+            StatSnapshot::Default(DefaultSnapshot {
+                cpu_us: 0,
+                rows_in: 0,
+                rows_out: 0,
+                estimated_total_rows: 0,
+            })
+        }
+        fn add_duration_us(&self, _cpu_us: u64) {}
+    }
+
+    fn make_template_stats() -> Arc<DefaultRuntimeStats> {
+        let meter = Meter::test_scope("test_stats");
+        let source_stats = Arc::new(MockRuntimeStats {});
+        Arc::new(DefaultRuntimeStats::new(
+            &meter,
+            &node_info_from_id(0),
+            source_stats,
+        ))
+    }
+
     #[tokio::test(start_paused = true)]
     async fn test_interval_respected() {
         let mock_subscriber = Arc::new(MockSubscriber::new());
         let mock_state = mock_subscriber.state.clone();
+        let node_stat = make_template_stats();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::new(
-            &Meter::test_scope("test_stats"),
-            &node_info_from_id(0),
-        )) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = make_stats_manager(
             vec![mock_subscriber],
@@ -575,11 +599,8 @@ mod tests {
         let subscriber2 = Arc::new(MockSubscriber::new());
         let state1 = subscriber1.state.clone();
         let state2 = subscriber2.state.clone();
+        let node_stat = make_template_stats();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::new(
-            &Meter::test_scope("test_stats"),
-            &node_info_from_id(0),
-        )) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = make_stats_manager(
             vec![subscriber1, subscriber2],
@@ -646,11 +667,8 @@ mod tests {
         let failing_subscriber = Arc::new(FailingSubscriber);
         let mock_subscriber = Arc::new(MockSubscriber::new());
         let state = mock_subscriber.state.clone();
+        let node_stat = make_template_stats();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::new(
-            &Meter::test_scope("test_stats"),
-            &node_info_from_id(0),
-        )) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = make_stats_manager(
             vec![failing_subscriber, mock_subscriber],
@@ -671,10 +689,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_runtime_stats_context_operations() {
-        let node_stat = Arc::new(DefaultRuntimeStats::new(
-            &Meter::test_scope("test_stats"),
-            &node_info_from_id(0),
-        ));
+        let node_stat = make_template_stats();
 
         // Test initial state
         let StatSnapshot::Default(stats) = node_stat.snapshot() else {
@@ -704,11 +719,8 @@ mod tests {
     async fn test_events_without_init() {
         let mock_subscriber = Arc::new(MockSubscriber::new());
         let state = mock_subscriber.state.clone();
+        let node_stat = make_template_stats();
 
-        let node_stat = Arc::new(DefaultRuntimeStats::new(
-            &Meter::test_scope("test_stats"),
-            &node_info_from_id(0),
-        )) as Arc<dyn RuntimeStats>;
         let throttle_interval = Duration::from_millis(50);
         let stats_manager = make_stats_manager(
             vec![mock_subscriber],
@@ -738,13 +750,10 @@ mod tests {
     async fn test_final_event_before_interval() {
         let mock_subscriber = Arc::new(MockSubscriber::new());
         let state = mock_subscriber.state.clone();
+        let node_stat = make_template_stats();
 
         // Use 500ms for the throttle interval.
         let throttle_interval = Duration::from_millis(500);
-        let node_stat = Arc::new(DefaultRuntimeStats::new(
-            &Meter::test_scope("test_stats"),
-            &node_info_from_id(0),
-        )) as Arc<dyn RuntimeStats>;
         let stats_manager = make_stats_manager(
             vec![mock_subscriber],
             node_stat.clone(),
@@ -843,14 +852,11 @@ mod tests {
     async fn test_process_stats_delivered_to_subscriber_when_enabled() {
         let subscriber = Arc::new(ProcessStatsMockSubscriber::new());
         let throttle_interval = Duration::from_millis(50);
-        let node_stat = Arc::new(DefaultRuntimeStats::new(
-            &Meter::test_scope("test_process_stats_enabled"),
-            &node_info_from_id(0),
-        )) as Arc<dyn RuntimeStats>;
+        let node_stat = make_template_stats();
 
         let stats_manager = make_stats_manager(
             vec![subscriber.clone()],
-            node_stat.clone(),
+            node_stat,
             throttle_interval,
             "test_ps_enabled",
             true,
@@ -872,10 +878,7 @@ mod tests {
     async fn test_process_stats_not_delivered_when_disabled() {
         let subscriber = Arc::new(ProcessStatsMockSubscriber::new());
         let throttle_interval = Duration::from_millis(50);
-        let node_stat = Arc::new(DefaultRuntimeStats::new(
-            &Meter::test_scope("test_process_stats_disabled"),
-            &node_info_from_id(0),
-        )) as Arc<dyn RuntimeStats>;
+        let node_stat = make_template_stats();
 
         let stats_manager = make_stats_manager(
             vec![subscriber.clone()],

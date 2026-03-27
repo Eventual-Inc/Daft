@@ -1,27 +1,87 @@
-use std::{ops::ControlFlow, sync::Arc};
+use std::{
+    ops::ControlFlow,
+    sync::{Arc, atomic::Ordering},
+};
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
+    Counter, Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
-    snapshot::StatSnapshotImpl,
+    snapshot::{DefaultSnapshot, StatSnapshotImpl},
 };
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
+use opentelemetry::KeyValue;
 
 use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, Sender, create_channel},
     pipeline::{BuilderContext, MorselSizeRequirement, PipelineNode},
-    runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
+    runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle, RuntimeStatsRef},
 };
+
+struct ConcatRuntimeStats {
+    duration_us: Counter,
+    rows_in: Counter,
+    rows_out: Counter,
+
+    left_stats: RuntimeStatsRef,
+    right_stats: RuntimeStatsRef,
+    node_kv: Vec<KeyValue>,
+}
+
+impl ConcatRuntimeStats {
+    pub fn new(
+        meter: &Meter,
+        node_info: &NodeInfo,
+        left_stats: RuntimeStatsRef,
+        right_stats: RuntimeStatsRef,
+    ) -> Self {
+        let node_kv = node_info.to_key_values();
+
+        Self {
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
+
+            left_stats,
+            right_stats,
+            node_kv,
+        }
+    }
+
+    fn add_rows_in(&self, rows: u64) {
+        self.rows_in.add(rows, self.node_kv.as_slice());
+    }
+
+    fn add_rows_out(&self, rows: u64) {
+        self.rows_out.add(rows, self.node_kv.as_slice());
+    }
+}
+
+impl RuntimeStats for ConcatRuntimeStats {
+    fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
+        StatSnapshot::Default(DefaultSnapshot {
+            cpu_us: self.duration_us.load(ordering),
+            rows_in: self.rows_in.load(ordering),
+            rows_out: self.rows_out.load(ordering),
+            estimated_total_rows: self.left_stats.build_snapshot(ordering).total()
+                + self.right_stats.build_snapshot(ordering).total(),
+        })
+    }
+
+    fn add_duration_us(&self, duration_us: u64) {
+        self.duration_us.add(duration_us, self.node_kv.as_slice());
+    }
+}
 
 pub struct ConcatNode {
     left: Box<dyn PipelineNode>,
     right: Box<dyn PipelineNode>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    runtime_stats: Arc<ConcatRuntimeStats>,
     plan_stats: StatsState,
     morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
@@ -38,7 +98,12 @@ impl ConcatNode {
         let name: Arc<str> = "Concat".into();
         let node_info =
             ctx.next_node_info(name, NodeType::Concat, NodeCategory::Intermediate, context);
-        let runtime_stats = Arc::new(DefaultRuntimeStats::new(&ctx.meter, &node_info));
+        let runtime_stats = Arc::new(ConcatRuntimeStats::new(
+            &ctx.meter,
+            &node_info,
+            left.runtime_stats(),
+            right.runtime_stats(),
+        ));
         let morsel_size_requirement = MorselSizeRequirement::default();
 
         Self {
@@ -59,7 +124,7 @@ impl ConcatNode {
         node_id: usize,
         mut receiver: Receiver<MicroPartition>,
         sender: Sender<MicroPartition>,
-        runtime_stats: Arc<dyn RuntimeStats>,
+        runtime_stats: Arc<ConcatRuntimeStats>,
         stats_manager: &RuntimeStatsManagerHandle,
         node_initialized: &mut bool,
     ) -> DaftResult<ControlFlow<()>> {

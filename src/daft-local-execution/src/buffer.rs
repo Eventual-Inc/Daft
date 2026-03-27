@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, num::NonZeroUsize};
+use std::num::NonZeroUsize;
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
@@ -14,7 +14,7 @@ enum BufferState {
 
 // A buffer that accumulates morsels until a threshold is reached
 pub struct RowBasedBuffer {
-    buffer: VecDeque<MicroPartition>,
+    buffer: Vec<MicroPartition>,
     curr_len: usize,
     lower_bound: usize,
     upper_bound: NonZeroUsize,
@@ -29,7 +29,7 @@ impl RowBasedBuffer {
             upper_bound.get()
         );
         Self {
-            buffer: VecDeque::new(),
+            buffer: Vec::new(),
             curr_len: 0,
             lower_bound,
             upper_bound,
@@ -50,7 +50,7 @@ impl RowBasedBuffer {
     // Push a morsel to the buffer
     pub fn push(&mut self, part: MicroPartition) {
         self.curr_len += part.len();
-        self.buffer.push_back(part);
+        self.buffer.push(part);
     }
 
     fn buffer_state(&self) -> BufferState {
@@ -85,7 +85,7 @@ impl RowBasedBuffer {
                 BufferState::WithinRange => {
                     // Return all data as one batch
                     if self.buffer.len() == 1 {
-                        let part = self.buffer.pop_front().unwrap();
+                        let part = self.buffer.pop().unwrap();
                         self.curr_len = 0;
                         Ok(Some(part))
                     } else {
@@ -106,7 +106,7 @@ impl RowBasedBuffer {
                     if self.upper_bound.get() < concated.len() {
                         let remainder = concated.slice(self.upper_bound.get(), concated.len())?;
                         self.curr_len = remainder.len();
-                        self.buffer.push_back(remainder);
+                        self.buffer.push(remainder);
                     } else {
                         self.curr_len = 0;
                     }
