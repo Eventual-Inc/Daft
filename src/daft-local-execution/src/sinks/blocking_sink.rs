@@ -175,7 +175,6 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                                 node_initialized = true;
                             }
                             ctx.runtime_stats.add_rows_in(morsel.len() as u64);
-                            ctx.runtime_stats.add_bytes_retained(morsel.size_bytes() as u64);
                             let state_id = *ctx
                                 .state_pool
                                 .keys()

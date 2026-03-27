@@ -61,6 +61,7 @@ impl StatSnapshotImpl for DefaultSnapshot {
         Stats(entries)
     }
 
+    // During execution: show live retained. After finalize (retained=0): show peak.
     fn to_message(&self) -> String {
         if self.bytes_retained > 0 {
             format!(
@@ -269,6 +270,7 @@ impl StatSnapshotImpl for JoinSnapshot {
         Stats(entries)
     }
 
+    // During execution: show live retained. After finalize (retained=0): show peak.
     fn to_message(&self) -> String {
         let base = format!(
             "{} build rows inserted, {} probe rows in, {} probe rows out",

@@ -14,7 +14,7 @@ use tracing::{Span, instrument};
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 struct WindowOrderByOnlyParams {
     window_exprs: Vec<BoundWindowExpr>,
@@ -75,13 +75,14 @@ impl BlockingSink for WindowOrderByOnlySink {
         &self,
         input: MicroPartition,
         mut state: Self::State,
-        _runtime_stats: Arc<Self::Stats>,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let sink_name = self.name().to_string();
         spawner
             .spawn(
                 async move {
+                    runtime_stats.add_bytes_retained(input.size_bytes() as u64);
                     state.push(input, &sink_name)?;
                     Ok(state)
                 },

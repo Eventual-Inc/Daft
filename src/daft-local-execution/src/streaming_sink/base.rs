@@ -310,7 +310,6 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                                 node_initialized = true;
                             }
                             ctx.runtime_stats.add_rows_in(morsel.len() as u64);
-                            ctx.runtime_stats.add_bytes_retained(morsel.size_bytes() as u64);
                             buffer.push(morsel);
                             Self::spawn_ready_batches(&mut buffer, ctx)?;
                         }
@@ -498,9 +497,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
 
                 let mut finished_states: Vec<_> =
                     ctx.state_pool.drain().map(|(_, state)| state).collect();
-
-                // Reset retained bytes: all accumulated data is consumed during finalize
-                ctx.runtime_stats.reset_bytes_retained();
 
                 loop {
                     let now = Instant::now();

@@ -12,7 +12,7 @@ use tracing::{Span, instrument};
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 pub(crate) struct RepartitionState {
     states: VecDeque<Vec<MicroPartition>>,
@@ -58,7 +58,7 @@ impl BlockingSink for RepartitionSink {
         &self,
         input: MicroPartition,
         mut state: Self::State,
-        _runtime_stats: Arc<Self::Stats>,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let repartition_spec = self.repartition_spec.clone();
@@ -67,6 +67,8 @@ impl BlockingSink for RepartitionSink {
         spawner
             .spawn(
                 async move {
+                    // Repartition preserves total data size, so input size is accurate
+                    runtime_stats.add_bytes_retained(input.size_bytes() as u64);
                     let partitioned = match repartition_spec {
                         RepartitionSpec::Hash(config) => {
                             let bound_exprs = config

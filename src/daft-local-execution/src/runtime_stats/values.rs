@@ -30,25 +30,56 @@ pub trait RuntimeStats: Send + Sync + std::any::Any {
 
     /// Add bytes currently retained by this operator (e.g. when a morsel is sinked).
     fn add_bytes_retained(&self, _bytes: u64) {}
-    /// Subtract bytes no longer retained by this operator (e.g. on finalize).
-    #[allow(dead_code)]
-    fn sub_bytes_retained(&self, _bytes: u64) {}
     /// Reset bytes retained to zero (e.g. when all state is consumed on finalize).
     fn reset_bytes_retained(&self) {}
-    /// Get the current bytes retained value (used by Phase 2 peak attribution).
-    #[allow(dead_code)]
-    fn get_bytes_retained(&self) -> u64 {
-        0
+}
+
+// ----------------------- Shared Bytes Retained Tracker ----------------------- //
+
+/// Tracks current and peak bytes retained by an operator, backed by atomics and an OTEL gauge.
+/// Shared between DefaultRuntimeStats and JoinStats to avoid duplicate implementations.
+pub(crate) struct BytesRetainedTracker {
+    current: AtomicU64,
+    peak: AtomicU64,
+    gauge: Gauge,
+}
+
+impl BytesRetainedTracker {
+    pub(crate) fn new(meter: &Meter) -> Self {
+        Self {
+            current: AtomicU64::new(0),
+            peak: AtomicU64::new(0),
+            gauge: meter.bytes_retained_metric(),
+        }
+    }
+
+    pub(crate) fn add(&self, bytes: u64, attrs: &[opentelemetry::KeyValue]) {
+        let new_val = self.current.fetch_add(bytes, Ordering::Relaxed) + bytes;
+        self.peak.fetch_max(new_val, Ordering::Relaxed);
+        self.gauge.update(new_val as f64, attrs);
+    }
+
+    pub(crate) fn reset(&self, attrs: &[opentelemetry::KeyValue]) {
+        self.current.store(0, Ordering::Relaxed);
+        self.gauge.update(0.0, attrs);
+    }
+
+    pub(crate) fn load_current(&self, ordering: Ordering) -> u64 {
+        self.current.load(ordering)
+    }
+
+    pub(crate) fn load_peak(&self, ordering: Ordering) -> u64 {
+        self.peak.load(ordering)
     }
 }
+
+// ----------------------- Default Runtime Stats ----------------------- //
 
 pub struct DefaultRuntimeStats {
     duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
-    bytes_retained: AtomicU64,
-    peak_bytes_retained: AtomicU64,
-    bytes_retained_gauge: Gauge,
+    retained: BytesRetainedTracker,
     node_kv: Vec<KeyValue>,
 }
 
@@ -59,9 +90,7 @@ impl RuntimeStats for DefaultRuntimeStats {
             duration_us: meter.duration_us_metric(),
             rows_in: meter.rows_in_metric(),
             rows_out: meter.rows_out_metric(),
-            bytes_retained: AtomicU64::new(0),
-            peak_bytes_retained: AtomicU64::new(0),
-            bytes_retained_gauge: meter.bytes_retained_metric(),
+            retained: BytesRetainedTracker::new(meter),
             node_kv,
         }
     }
@@ -71,8 +100,8 @@ impl RuntimeStats for DefaultRuntimeStats {
             cpu_us: self.duration_us.load(ordering),
             rows_in: self.rows_in.load(ordering),
             rows_out: self.rows_out.load(ordering),
-            bytes_retained: self.bytes_retained.load(ordering),
-            peak_bytes_retained: self.peak_bytes_retained.load(ordering),
+            bytes_retained: self.retained.load_current(ordering),
+            peak_bytes_retained: self.retained.load_peak(ordering),
         })
     }
 
@@ -89,26 +118,10 @@ impl RuntimeStats for DefaultRuntimeStats {
     }
 
     fn add_bytes_retained(&self, bytes: u64) {
-        let new_val = self.bytes_retained.fetch_add(bytes, Ordering::Relaxed) + bytes;
-        self.peak_bytes_retained
-            .fetch_max(new_val, Ordering::Relaxed);
-        self.bytes_retained_gauge
-            .update(new_val as f64, self.node_kv.as_slice());
-    }
-
-    fn sub_bytes_retained(&self, bytes: u64) {
-        let new_val = self.bytes_retained.fetch_sub(bytes, Ordering::Relaxed) - bytes;
-        self.bytes_retained_gauge
-            .update(new_val as f64, self.node_kv.as_slice());
+        self.retained.add(bytes, self.node_kv.as_slice());
     }
 
     fn reset_bytes_retained(&self) {
-        self.bytes_retained.store(0, Ordering::Relaxed);
-        self.bytes_retained_gauge
-            .update(0.0, self.node_kv.as_slice());
-    }
-
-    fn get_bytes_retained(&self) -> u64 {
-        self.bytes_retained.load(Ordering::Relaxed)
+        self.retained.reset(self.node_kv.as_slice());
     }
 }
