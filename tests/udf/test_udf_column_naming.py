@@ -64,3 +64,17 @@ def test_sql_udf_explicit_alias_overrides_function_name():
 
     assert "plus_ten" in result_dict, f"Expected column 'plus_ten', got columns: {list(result_dict.keys())}"
     assert result_dict["plus_ten"] == [11, 12, 13]
+
+
+def test_udf_result_column_uses_func_name_without_star():
+    """SELECT udf(col) FROM t should produce a column named after the UDF, not the argument."""
+
+    @daft.func(return_dtype=DataType.string())
+    def my_func(col: int) -> str:
+        return f"my: {col}"
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    daft.attach_function(my_func, "my_func")
+    result_dict = daft.sql("select my_func(x) from test", test=df).collect().to_pydict()
+    assert list(result_dict.keys()) == ["my_func"], f"Got: {list(result_dict.keys())}"
+    assert result_dict["my_func"] == ["my: 1", "my: 2", "my: 3"]

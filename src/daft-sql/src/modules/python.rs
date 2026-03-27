@@ -1,4 +1,3 @@
-use common_error::DaftResult;
 use daft_dsl::{Expr, functions::python::WrappedUDFClass};
 #[cfg(feature = "python")]
 use {
@@ -50,7 +49,7 @@ impl SQLFunction for WrappedUDFClass {
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
         #[cfg(feature = "python")]
         {
-            let e: DaftResult<PyExpr> = pyo3::Python::attach(|py| {
+            let (e, func_name) = pyo3::Python::attach(|py| {
                 let mut args = Vec::with_capacity(inputs.len());
                 let kwargs = PyDict::new(py);
 
@@ -89,14 +88,22 @@ impl SQLFunction for WrappedUDFClass {
                 }
                 let args = PyTuple::new(py, &args)?;
 
-                Ok(self.call(py, args, Some(&kwargs))?)
-            });
-            let e = e?;
+                // Retrieve the UDF function name while we already hold the GIL,
+                // avoiding a redundant GIL acquisition after the closure.
+                let full_name: String = self.inner.getattr(py, "name")?.extract(py)?;
+                let func_name = if full_name.contains('.') {
+                    full_name.split('.').next_back().unwrap().to_string()
+                } else {
+                    full_name
+                };
+
+                Ok::<_, PyErr>((self.call(py, args, Some(&kwargs))?, func_name))
+            })
+            .map_err(|e| common_error::DaftError::External(e.into()))?;
 
             // Alias the result expression with the UDF function name so that
             // `SELECT *, my_func(x) FROM t` produces columns ["x", "my_func"]
             // instead of two columns both named "x".
-            let func_name: String = self.name().map_err(DaftError::from)?;
             Ok(e.expr.alias(func_name))
         }
 
