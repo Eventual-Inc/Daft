@@ -151,5 +151,9 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
         DataType::Unknown => {
             panic!("Unknown data type")
         }
+        DataType::Union { .. } => {
+            let arr = s.union().unwrap();
+            arr.html_value(idx, truncate)
+        }
     }
 }

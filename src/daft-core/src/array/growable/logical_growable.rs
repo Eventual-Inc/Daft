@@ -44,6 +44,10 @@ where
         );
         Ok(arr.into_series())
     }
+
+    fn len(&self) -> usize {
+        self.physical_growable.len()
+    }
 }
 
 macro_rules! impl_logical_growable {

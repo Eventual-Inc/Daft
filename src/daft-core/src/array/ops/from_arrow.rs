@@ -7,7 +7,7 @@ use arrow::{
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray},
     datatypes::{
         DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field, FieldRef,
         logical::LogicalArray,
@@ -165,6 +165,88 @@ impl FromArrow for StructArray {
             }
             (d, a) => Err(DaftError::TypeError(format!(
                 "Attempting to create Daft StructArray with type {} from arrow array with type {:?}",
+                d, a
+            ))),
+        }
+    }
+}
+
+impl FromArrow for UnionArray {
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        let field: FieldRef = field.into();
+
+        match (&field.dtype, arrow_arr.data_type()) {
+            (
+                DataType::Union(fields, ids, mode),
+                arrow::datatypes::DataType::Union(arrow_fields, arrow_mode),
+            ) => {
+                if fields.len() != arrow_fields.len() {
+                    return Err(DaftError::ValueError(format!(
+                        "Attempting to create Daft UnionArray with {} fields from Arrow array with {} fields: {} vs {}",
+                        fields.len(),
+                        arrow_fields.len(),
+                        &field.dtype,
+                        arrow_arr.data_type(),
+                    )));
+                }
+
+                for (id, (arrow_id, _)) in ids.iter().zip(arrow_fields.iter()) {
+                    if *id != arrow_id {
+                        return Err(DaftError::ValueError(format!(
+                            "Attempting to create Daft UnionArray with id {} from Arrow array with id {}",
+                            id, arrow_id,
+                        )));
+                    }
+                }
+
+                let arrow_arr = arrow_arr
+                    .as_any()
+                    .downcast_ref::<arrow::array::UnionArray>()
+                    .unwrap();
+
+                if mode.is_dense() != arrow_arr.is_dense() {
+                    return Err(DaftError::ValueError(format!(
+                        "Attempting to create Daft UnionArray with mode {} from Arrow array with mode {:?}",
+                        mode, arrow_mode,
+                    )));
+                }
+
+                let sparse_offset = if mode.is_dense() {
+                    0
+                } else {
+                    let first_child_len = ids
+                        .first()
+                        .map(|id| arrow_arr.child(*id).len())
+                        .unwrap_or(0);
+                    if first_child_len > arrow_arr.len() {
+                        arrow_arr.type_ids().inner().ptr_offset()
+                    } else {
+                        0
+                    }
+                };
+                let sparse_len = arrow_arr.len();
+
+                let child_series = fields
+                    .iter()
+                    .zip(ids.iter())
+                    .map(|(field, id)| {
+                        let arrow_child = arrow_arr.child(*id);
+                        let sliced = if mode.is_dense() {
+                            arrow_child.clone()
+                        } else {
+                            arrow_child.slice(sparse_offset, sparse_len)
+                        };
+                        Series::from_arrow(Arc::new(field.clone()), sliced)
+                    })
+                    .collect::<DaftResult<Vec<Series>>>()?;
+
+                let ids = arrow_arr.type_ids().clone();
+                let offsets = arrow_arr.offsets().cloned();
+
+                Ok(Self::new(field, ids, child_series, offsets))
+            }
+            (d, a) => Err(DaftError::TypeError(format!(
+                "Attempting to create Daft UnionArray with type {} from arrow array with type {}",
                 d, a
             ))),
         }

@@ -134,6 +134,13 @@ impl StructArray {
         ))
     }
 }
+impl UnionArray {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
+        let result =
+            arrow::compute::take(self.to_arrow()?.as_ref(), idx.to_arrow().as_ref(), None)?;
+        Self::from_arrow(self.field.clone(), result)
+    }
+}
 impl<T> FileArray<T>
 where
     T: DaftMediaType,

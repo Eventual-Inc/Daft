@@ -6,7 +6,7 @@ use super::{DaftIsNull, DaftNotNull};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{ListArray, StructArray},
+    array::{ListArray, StructArray, UnionArray},
     datatypes::*,
 };
 
@@ -153,10 +153,12 @@ macro_rules! impl_not_null_nested_array {
 impl_is_null_nested_array!(ListArray);
 impl_is_null_nested_array!(FixedSizeListArray);
 impl_is_null_nested_array!(StructArray);
+impl_is_null_nested_array!(UnionArray);
 
 impl_not_null_nested_array!(ListArray);
 impl_not_null_nested_array!(FixedSizeListArray);
 impl_not_null_nested_array!(StructArray);
+impl_not_null_nested_array!(UnionArray);
 
 impl<T> DataArray<T>
 where
@@ -198,5 +200,12 @@ impl StructArray {
             None => true,
             Some(nulls) => nulls.is_valid(idx),
         }
+    }
+}
+
+impl UnionArray {
+    #[inline]
+    pub fn is_valid(&self, _idx: usize) -> bool {
+        true
     }
 }

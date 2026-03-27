@@ -6,7 +6,7 @@ use common_error::{DaftError, DaftResult};
 use super::ArrayWrapper;
 use crate::{
     array::{
-        FixedSizeListArray, ListArray, StructArray,
+        FixedSizeListArray, ListArray, StructArray, UnionArray,
         ops::{DaftIsNull, DaftNotNull, DaftSetAggable, GroupIndices, broadcast::Broadcastable},
     },
     datatypes::{BooleanArray, DataType, Field},
@@ -165,3 +165,4 @@ macro_rules! impl_series_like_for_nested_arrays {
 impl_series_like_for_nested_arrays!(FixedSizeListArray);
 impl_series_like_for_nested_arrays!(StructArray);
 impl_series_like_for_nested_arrays!(ListArray);
+impl_series_like_for_nested_arrays!(UnionArray);
