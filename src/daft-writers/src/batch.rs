@@ -275,6 +275,7 @@ mod tests {
 
         let write_count = res
             .get_column(write_count_index)
+            .as_materialized_series()
             .u64()
             .unwrap()
             .get(0)
@@ -303,6 +304,7 @@ mod tests {
 
         let write_count = res
             .get_column(write_count_index)
+            .as_materialized_series()
             .u64()
             .unwrap()
             .get(0)
@@ -329,6 +331,7 @@ mod tests {
 
         let write_count = res
             .get_column(write_count_index)
+            .as_materialized_series()
             .u64()
             .unwrap()
             .get(0)

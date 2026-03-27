@@ -134,7 +134,7 @@ impl BlockingSink for CommitWriteSink {
                             .flat_map(|res| {
                                 let path_index =
                                     res.schema.get_index("path").expect("path to be a column");
-                                let s = res.get_column(path_index);
+                                let s = res.get_column(path_index).as_materialized_series();
                                 s.utf8()
                                     .expect("path to be utf8")
                                     .into_iter()

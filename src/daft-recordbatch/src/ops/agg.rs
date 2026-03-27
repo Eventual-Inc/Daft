@@ -100,7 +100,7 @@ impl RecordBatch {
 
         let evaluated_inputs = inputs
             .iter()
-            .map(|e| self.eval_expression(e))
+            .map(|e| Ok(self.eval_expression(e)?.take_materialized_series()))
             .collect::<DaftResult<Vec<_>>>()?;
 
         let (groupkeys_table, grouped_col) = match func {

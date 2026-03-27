@@ -286,11 +286,34 @@ impl Column {
             Self::Scalar(s) => Ok(s.resize(1).as_materialized_series().str_value(0)),
         }
     }
+
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        match self {
+            Self::Series(s) => s.get_lit(idx),
+            Self::Scalar(s) => s.scalar().clone(),
+        }
+    }
+
+    pub fn null_count(&self) -> usize {
+        match self {
+            Self::Series(s) => s.null_count(),
+            Self::Scalar(s) => s.null_count(),
+        }
+    }
 }
 
 impl From<Series> for Column {
     fn from(s: Series) -> Self {
-        Self::Series(s)
+        if s.len() == 1 {
+            Self::Scalar(ScalarColumn::new(
+                Arc::from(s.name()),
+                s.data_type().clone(),
+                s.get_lit(0),
+                1,
+            ))
+        } else {
+            Self::Series(s)
+        }
     }
 }
 

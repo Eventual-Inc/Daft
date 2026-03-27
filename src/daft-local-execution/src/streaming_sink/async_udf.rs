@@ -212,7 +212,8 @@ impl StreamingSink for AsyncUdfSink {
                                             expr,
                                             &mut collected_metrics,
                                         )
-                                        .await?;
+                                        .await?
+                                        .take_materialized_series();
                                     runtime_stats.update_metrics(collected_metrics);
 
                                     if result.len() == 1 {

@@ -497,7 +497,7 @@ fn read_delete_files(
 
         let get_column_by_name = |name| {
             if let [(idx, _)] = table.schema.get_fields_with_name(name)[..] {
-                Ok(table.get_column(idx))
+                Ok(table.get_column(idx).as_materialized_series())
             } else {
                 Err(DaftError::SchemaMismatch(format!(
                     "Iceberg delete files must have columns \"file_path\" and \"pos\", found: {}",

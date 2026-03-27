@@ -336,7 +336,9 @@ impl VLLMSink {
         let expr = self.expr.inner();
         let expr_input = BoundExpr::new_unchecked(expr.input.clone());
 
-        let prompts = batch.eval_expression(&expr_input)?;
+        let prompts = batch
+            .eval_expression(&expr_input)?
+            .take_materialized_series();
 
         // TODO: handle nulls
         Ok(prompts

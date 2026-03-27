@@ -84,8 +84,10 @@ impl RecordBatch {
         // - If a name in the names vector does not exist in the pivot column, a new column with null values is created.
 
         let groupby_table = self.eval_expression_list(group_by)?;
-        let pivot_series = self.eval_expression(&pivot_col)?;
-        let value_series = self.eval_expression(&values_col)?;
+        let pivot_series = self.eval_expression(&pivot_col)?.take_materialized_series();
+        let value_series = self
+            .eval_expression(&values_col)?
+            .take_materialized_series();
 
         let (group_keys_indices, group_vals_indices) = groupby_table.make_groups()?;
         let (pivot_keys_indices, pivot_vals_indices) = pivot_series.make_groups()?;

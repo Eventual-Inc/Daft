@@ -580,7 +580,7 @@ pub mod pylib {
                     BoundExpr::try_new(partition_filters.clone(), &table.schema)?;
                 let eval_pred = table.eval_expression_list(&[partition_filters])?;
                 assert_eq!(eval_pred.num_columns(), 1);
-                let series = eval_pred.get_column(0);
+                let series = eval_pred.get_column(0).as_materialized_series();
                 assert_eq!(series.data_type(), &daft_core::datatypes::DataType::Boolean);
                 let boolean = series.bool()?;
                 assert_eq!(boolean.len(), 1);

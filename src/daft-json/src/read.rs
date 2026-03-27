@@ -96,8 +96,10 @@ pub(crate) fn tables_concat(mut tables: Vec<RecordBatch>) -> DaftResult<RecordBa
     let new_series = (0..num_columns)
         .into_par_iter()
         .map(|i| {
-            let series_to_cat: Vec<&Series> =
-                tables.iter().map(|s| s.as_ref().get_column(i)).collect();
+            let series_to_cat: Vec<&Series> = tables
+                .iter()
+                .map(|s| s.as_ref().get_column(i).as_materialized_series())
+                .collect();
             Series::concat(series_to_cat.as_slice())
         })
         .collect::<DaftResult<Vec<_>>>()?;
@@ -764,7 +766,7 @@ mod tests {
         let daft_schema = Schema::try_from(&schema).unwrap();
         assert_eq!(out.schema.as_ref(), &daft_schema);
         let out_columns: Vec<ArrayRef> = (0..out.num_columns())
-            .map(|i| out.get_column(i).to_arrow())
+            .map(|i| out.get_column(i).as_materialized_series().to_arrow())
             .collect::<DaftResult<Vec<_>>>()
             .unwrap();
         assert_eq!(out_columns, columns);
@@ -1135,7 +1137,7 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.null().unwrap(),
+            null_column.as_materialized_series().null().unwrap(),
             &NullArray::full_null("petalLength", &DataType::Null, 6)
         );
 
@@ -1189,7 +1191,7 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.null().unwrap(),
+            null_column.as_materialized_series().null().unwrap(),
             &NullArray::full_null("petalLength", &DataType::Null, 6)
         );
 

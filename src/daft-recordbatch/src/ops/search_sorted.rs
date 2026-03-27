@@ -26,9 +26,10 @@ impl RecordBatch {
         }
 
         if self.num_columns() == 1 {
-            return self
-                .get_column(0)
-                .search_sorted(keys.get_column(0), *descending.first().unwrap());
+            return self.get_column(0).as_materialized_series().search_sorted(
+                keys.get_column(0).as_materialized_series(),
+                *descending.first().unwrap(),
+            );
         }
         let self_cols: Vec<Series> = self.as_materialized_series().into_iter().cloned().collect();
         let keys_cols: Vec<Series> = keys.as_materialized_series().into_iter().cloned().collect();

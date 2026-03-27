@@ -127,6 +127,9 @@ impl ScalarColumn {
     pub fn has_nulls(&self) -> bool {
         self.length != 0 && matches!(self.scalar, Literal::Null)
     }
+    pub fn null_count(&self) -> usize {
+        if self.has_nulls() { self.length } else { 0 }
+    }
 
     /// Returns the approximate in-memory size in bytes (scalar storage only,
     /// not the expanded array).
