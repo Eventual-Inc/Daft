@@ -2541,6 +2541,7 @@ dependencies = [
  "common-treenode",
  "daft-context",
  "daft-dsl",
+ "daft-functions",
  "daft-io",
  "daft-local-plan",
  "daft-logical-plan",

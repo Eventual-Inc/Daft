@@ -26,9 +26,9 @@ use crate::{
         in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode,
         into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
-        project::ProjectNode, sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode,
-        sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode, vllm::VLLMNode,
-        window::WindowNode,
+        project::ProjectNode, random_shuffle::RandomShuffleNode, sample::SampleNode,
+        scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode, top_n::TopNNode, udf::UDFNode,
+        unpivot::UnpivotNode, vllm::VLLMNode, window::WindowNode,
     },
     plan::PlanConfig,
 };
@@ -615,12 +615,21 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     &self.meter,
                 )
             }
+            LogicalPlan::Shuffle(shuffle) => DistributedPipelineNode::new(
+                Arc::new(RandomShuffleNode::new(
+                    self.get_next_pipeline_node_id(),
+                    &self.plan_config,
+                    shuffle.seed,
+                    shuffle.input.schema(),
+                    self.curr_node.pop().unwrap(),
+                )),
+                &self.meter,
+            ),
             LogicalPlan::SubqueryAlias(_)
             | LogicalPlan::Union(_)
             | LogicalPlan::Intersect(_)
             | LogicalPlan::Shard(_)
-            | LogicalPlan::Offset(_)
-            | LogicalPlan::Shuffle(_) => {
+            | LogicalPlan::Offset(_) => {
                 panic!(
                     "Logical plan operator {} should be handled by the optimizer",
                     node.name()

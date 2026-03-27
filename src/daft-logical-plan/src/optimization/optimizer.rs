@@ -12,9 +12,9 @@ use super::{
         LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAggregation,
         PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
         PushDownProjection, PushDownShard, ReorderJoins, RewriteCountDistinct, RewriteOffset,
-        RewriteShuffle, ShardScans, SimplifyExpressionsRule, SimplifyNullFilteredJoin,
-        SplitExplodeFromProject, SplitGranularProjection, SplitUDFs, SplitUDFsFromFilters,
-        UnnestPredicateSubquery, UnnestScalarSubquery,
+        ShardScans, SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitExplodeFromProject,
+        SplitGranularProjection, SplitUDFs, SplitUDFsFromFilters, UnnestPredicateSubquery,
+        UnnestScalarSubquery,
     },
 };
 use crate::{LogicalPlan, optimization::rules::SplitVLLM};
@@ -195,7 +195,6 @@ impl OptimizerBuilder {
                     Box::new(SplitVLLM),
                     Box::new(PushDownProjection::new()),
                     Box::new(DetectMonotonicId::new()),
-                    Box::new(RewriteShuffle::new()),
                 ],
                 RuleExecutionStrategy::Once,
             ),

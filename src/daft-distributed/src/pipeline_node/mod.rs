@@ -54,6 +54,7 @@ pub(crate) mod metrics;
 mod monotonically_increasing_id;
 mod pivot;
 mod project;
+mod random_shuffle;
 mod sample;
 mod scan_source;
 mod shuffles;
