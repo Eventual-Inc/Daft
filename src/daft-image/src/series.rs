@@ -3,7 +3,7 @@ use common_image::CowImage;
 use daft_core::{array::ops::image::image_array_from_img_buffers, prelude::*};
 use daft_schema::image_property::ImageProperty;
 
-use crate::ops::ImageOps;
+use crate::{functions::hash_method::HashMethod, ops::ImageOps};
 
 fn image_decode_impl(
     ba: &BinaryArray,
@@ -221,6 +221,27 @@ pub fn attribute(s: &Series, attr: ImageProperty) -> DaftResult<Series> {
             "datatype: {} does not support Image attributes. Occurred while processing Series: {}",
             dt,
             s.name()
+        ))),
+    }
+}
+
+pub fn image_hash(
+    s: &Series,
+    method: HashMethod,
+    hash_size: u32,
+    binbits: u32,
+) -> DaftResult<Series> {
+    match s.data_type() {
+        DataType::Image(_) => s
+            .downcast::<ImageArray>()?
+            .image_hash(method, hash_size, binbits)
+            .map(|arr| arr.into_series()),
+        DataType::FixedShapeImage(..) => s
+            .fixed_size_image()?
+            .image_hash(method, hash_size, binbits)
+            .map(|arr| arr.into_series()),
+        dt => Err(DaftError::ValueError(format!(
+            "image_hash requires an Image or FixedShapeImage column, but got: {dt}"
         ))),
     }
 }
