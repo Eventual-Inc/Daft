@@ -5,6 +5,7 @@ import tempfile
 from collections.abc import Callable
 from contextlib import contextmanager
 from functools import partial
+from io import StringIO
 
 import numpy as np
 import pyarrow as pa
@@ -36,6 +37,26 @@ def generator(
         num_rows = num_rows_fn()
         bytes_per_row = bytes_per_row_fn()
         yield partial(generate, num_rows, bytes_per_row)
+
+
+def shuffle_plan_text(input_partitions: int, output_partitions: int) -> str:
+    df = read_generator(
+        generator(
+            input_partitions,
+            lambda: output_partitions,
+            lambda: 200,
+        ),
+        schema=daft.Schema._from_field_name_and_types(
+            [
+                ("ints", daft.DataType.uint64()),
+                ("bytes", daft.DataType.fixed_size_binary(200)),
+            ]
+        ),
+    ).repartition(output_partitions, "ints")
+
+    plan_io = StringIO()
+    df.explain(True, file=plan_io)
+    return plan_io.getvalue()
 
 
 @pytest.fixture(scope="function")
@@ -204,3 +225,58 @@ def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions)
             .collect()
         )
         assert len(df) == input_partitions * output_partitions
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+def test_map_reduce_shuffle_plan_display():
+    with daft.execution_config_ctx(shuffle_algorithm="map_reduce"):
+        captured = shuffle_plan_text(input_partitions=16, output_partitions=8)
+
+    assert "Repartition (ray)" in captured, captured
+    assert "Pre-Shuffle Merge" not in captured, captured
+    assert "Repartition (flight)" not in captured, captured
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+def test_pre_shuffle_merge_plan_display(pre_shuffle_merge_ctx):
+    with pre_shuffle_merge_ctx(threshold=1):
+        captured = shuffle_plan_text(input_partitions=16, output_partitions=8)
+
+    assert "Pre-Shuffle Merge" in captured, captured
+    assert "Repartition (ray)" in captured, captured
+    assert "Repartition (flight)" not in captured, captured
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+def test_flight_shuffle_plan_display(flight_shuffle_ctx):
+    with flight_shuffle_ctx():
+        captured = shuffle_plan_text(input_partitions=16, output_partitions=8)
+
+    assert "Repartition (flight)" in captured, captured
+    assert "Pre-Shuffle Merge" not in captured, captured
+    assert "Repartition (ray)" not in captured, captured
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+def test_auto_shuffle_plan_display_uses_pre_shuffle_merge():
+    with daft.execution_config_ctx(
+        shuffle_algorithm="auto",
+        pre_shuffle_merge_partition_threshold=10,
+    ):
+        captured = shuffle_plan_text(input_partitions=100, output_partitions=100)
+
+    assert "Pre-Shuffle Merge" in captured, captured
+    assert "Repartition (ray)" in captured, captured
+    assert "Repartition (flight)" not in captured, captured

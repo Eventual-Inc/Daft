@@ -15,19 +15,22 @@ use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
-        ShufflePartitionRef, TaskBuilderStream, TaskOutput,
+        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
+        PipelineNodeContext, PipelineNodeImpl, ShufflePartitionRef, TaskBuilderStream, TaskOutput,
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    plan::{PlanConfig, PlanExecutionContext, QueryIdx, TaskIDCounter},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
-    utils::channel::{Sender, create_channel},
+    utils::{
+        channel::{Sender, create_channel},
+        transpose::transpose_materialized_outputs_from_stream,
+    },
 };
 
-fn make_shuffle_id(context: &PipelineNodeContext) -> u64 {
-    ((context.query_idx as u64) << 32) | (context.node_id as u64)
+fn make_shuffle_id(query_idx: QueryIdx, node_id: NodeID) -> u64 {
+    ((query_idx as u64) << 32) | (node_id as u64)
 }
 
 struct FlightDistributedShuffleConfig {
@@ -42,7 +45,17 @@ struct FlightReadSpec {
 }
 
 enum DistributedShuffleBackend {
+    Ray,
     Flight(FlightDistributedShuffleConfig),
+}
+
+impl DistributedShuffleBackend {
+    fn display_name(&self) -> &'static str {
+        match self {
+            Self::Ray => "ray",
+            Self::Flight(_) => "flight",
+        }
+    }
 }
 
 pub(crate) struct ShuffleNode {
@@ -55,10 +68,27 @@ pub(crate) struct ShuffleNode {
 }
 
 impl ShuffleNode {
-    const NODE_NAME: &'static str = "FlightShuffle";
+    pub fn new_ray(
+        node_id: NodeID,
+        plan_config: &PlanConfig,
+        repartition_spec: RepartitionSpec,
+        schema: SchemaRef,
+        num_partitions: usize,
+        child: DistributedPipelineNode,
+    ) -> Self {
+        Self::new(
+            node_id,
+            plan_config,
+            repartition_spec,
+            schema,
+            num_partitions,
+            DistributedShuffleBackend::Ray,
+            child,
+        )
+    }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub fn new_flight(
         node_id: NodeID,
         plan_config: &PlanConfig,
         repartition_spec: RepartitionSpec,
@@ -68,15 +98,41 @@ impl ShuffleNode {
         compression: Option<String>,
         child: DistributedPipelineNode,
     ) -> Self {
+        let shuffle_id = make_shuffle_id(plan_config.query_idx, node_id);
+
+        Self::new(
+            node_id,
+            plan_config,
+            repartition_spec,
+            schema,
+            num_partitions,
+            DistributedShuffleBackend::Flight(FlightDistributedShuffleConfig {
+                shuffle_id,
+                shuffle_dirs,
+                compression,
+            }),
+            child,
+        )
+    }
+
+    fn new(
+        node_id: NodeID,
+        plan_config: &PlanConfig,
+        repartition_spec: RepartitionSpec,
+        schema: SchemaRef,
+        num_partitions: usize,
+        backend: DistributedShuffleBackend,
+        child: DistributedPipelineNode,
+    ) -> Self {
+        let node_name = format!("Repartition ({})", backend.display_name());
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Arc::from(Self::NODE_NAME),
+            Arc::from(node_name),
             NodeType::Repartition,
             NodeCategory::BlockingSink,
         );
-        let shuffle_id = make_shuffle_id(&context);
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
@@ -90,13 +146,26 @@ impl ShuffleNode {
             context,
             repartition_spec,
             num_partitions,
-            backend: DistributedShuffleBackend::Flight(FlightDistributedShuffleConfig {
-                shuffle_id,
-                shuffle_dirs,
-                compression,
-            }),
+            backend,
             child,
         }
+    }
+
+    fn build_ray_repartition_stage(
+        self: Arc<Self>,
+        input_node: TaskBuilderStream,
+    ) -> TaskBuilderStream {
+        let self_clone = self.clone();
+        input_node.pipeline_instruction(self, move |input| {
+            LocalPhysicalPlan::repartition(
+                input,
+                self_clone.repartition_spec.clone(),
+                self_clone.num_partitions,
+                self_clone.config.schema.clone(),
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(self_clone.node_id() as usize)),
+            )
+        })
     }
 
     fn register_flight_cleanup(
@@ -209,8 +278,27 @@ impl ShuffleNode {
         Ok(())
     }
 
-    // Async execution to handle flight shuffle write and read operations
-    async fn execution_loop(
+    async fn emit_ray_read_tasks(
+        &self,
+        transposed_outputs: Vec<Vec<MaterializedOutput>>,
+        result_tx: Sender<SwordfishTaskBuilder>,
+    ) -> DaftResult<()> {
+        for partition_group in transposed_outputs {
+            let (in_memory_source_plan, psets) = MaterializedOutput::into_in_memory_scan_with_psets(
+                partition_group,
+                self.config.schema.clone(),
+                self.node_id(),
+            );
+            let builder = SwordfishTaskBuilder::new(in_memory_source_plan, self, self.node_id())
+                .with_psets(self.node_id(), psets);
+
+            let _ = result_tx.send(builder).await;
+        }
+
+        Ok(())
+    }
+
+    async fn execution_loop_flight(
         self: Arc<Self>,
         local_shuffle_write_node: TaskBuilderStream,
         task_id_counter: TaskIDCounter,
@@ -226,14 +314,33 @@ impl ShuffleNode {
             .try_collect::<Vec<_>>()
             .await?;
 
-        match &self.backend {
-            DistributedShuffleBackend::Flight(backend) => {
-                let read_spec = self.flight_read_spec_from_outputs(backend, outputs)?;
-                self.emit_flight_read_tasks(read_spec, result_tx).await?;
-            }
-        }
+        let DistributedShuffleBackend::Flight(backend) = &self.backend else {
+            unreachable!("Flight execution loop invoked with non-flight backend");
+        };
+        let read_spec = self.flight_read_spec_from_outputs(backend, outputs)?;
+        self.emit_flight_read_tasks(read_spec, result_tx).await?;
 
         Ok(())
+    }
+
+    async fn execution_loop_ray(
+        self: Arc<Self>,
+        local_repartition_node: TaskBuilderStream,
+        task_id_counter: TaskIDCounter,
+        result_tx: Sender<SwordfishTaskBuilder>,
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
+    ) -> DaftResult<()> {
+        let materialized_stream = local_repartition_node.materialize(
+            scheduler_handle,
+            self.context.query_idx,
+            task_id_counter,
+        );
+        let transposed_outputs =
+            transpose_materialized_outputs_from_stream(materialized_stream, self.num_partitions)
+                .await?;
+
+        self.emit_ray_read_tasks(transposed_outputs, result_tx)
+            .await
     }
 }
 
@@ -255,37 +362,50 @@ impl PipelineNodeImpl for ShuffleNode {
         plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
-        let self_arc = self.clone();
-        let local_shuffle_write_node = match &self.backend {
+        let (result_tx, result_rx) = create_channel(1);
+        match &self.backend {
+            DistributedShuffleBackend::Ray => {
+                let local_repartition_node = self.clone().build_ray_repartition_stage(input_node);
+                let self_arc = self.clone();
+                let task_id_counter = plan_context.task_id_counter();
+                let scheduler_handle = plan_context.scheduler_handle();
+                plan_context.spawn(async move {
+                    self_arc
+                        .execution_loop_ray(
+                            local_repartition_node,
+                            task_id_counter,
+                            result_tx,
+                            scheduler_handle,
+                        )
+                        .await
+                });
+            }
             DistributedShuffleBackend::Flight(backend) => {
                 self.register_flight_cleanup(plan_context, backend);
-                self.clone().build_flight_write_stage(input_node, backend)
+                let local_shuffle_write_node =
+                    self.clone().build_flight_write_stage(input_node, backend);
+                let self_arc = self.clone();
+                let task_id_counter = plan_context.task_id_counter();
+                let scheduler_handle = plan_context.scheduler_handle();
+                plan_context.spawn(async move {
+                    self_arc
+                        .execution_loop_flight(
+                            local_shuffle_write_node,
+                            task_id_counter,
+                            result_tx,
+                            scheduler_handle,
+                        )
+                        .await
+                });
             }
-        };
-
-        let (result_tx, result_rx) = create_channel(1);
-
-        let task_id_counter = plan_context.task_id_counter();
-        let scheduler_handle = plan_context.scheduler_handle();
-
-        let flight_shuffle_execution = async move {
-            self_arc
-                .execution_loop(
-                    local_shuffle_write_node,
-                    task_id_counter,
-                    result_tx,
-                    scheduler_handle,
-                )
-                .await
-        };
-
-        plan_context.spawn(flight_shuffle_execution);
+        }
         TaskBuilderStream::from(result_rx)
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         let mut res = vec![format!(
-            "FlightShuffle: {}",
+            "Repartition ({}): {}",
+            self.backend.display_name(),
             self.repartition_spec.var_name()
         )];
         res.extend(self.repartition_spec.multiline_display());
