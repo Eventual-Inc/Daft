@@ -16,7 +16,9 @@ Daft currently supports:
 
 6. **Cache tuning**: Configure `index_cache_size` and `metadata_cache_size_bytes` to optimize index page caching and metadata retrieval for large datasets
 
-7. **REST API support**: Connect to Lance tables managed by REST-compliant services like LanceDB Cloud, Apache Gravitino, and other catalog systems using the Lance REST Namespace specification
+7. **Scalar indexing**: Build scalar indexes (e.g. INVERTED/FTS/BTREE) with [`daft.io.lance.create_scalar_index`][daft.io.lance.create_scalar_index] to speed up filters and text search
+
+8. **REST API support**: Connect to Lance tables managed by REST-compliant services like LanceDB Cloud, Apache Gravitino, and other catalog systems using the Lance REST Namespace specification
 
 ## Installing Daft with Lance Support
 
@@ -351,6 +353,90 @@ pipeline in Daft.
     # The resulting DataFrame contains the K nearest rows according to Lance,
     # and you can continue working with it using normal Daft APIs.
     df.select("vector").show()
+    ```
+
+### Scalar Indexing (INVERTED / FTS / BTREE)
+
+Lance supports scalar indexes that speed up operations like full-text search and predicate filtering. Daft exposes a distributed index builder via [`daft.io.lance.create_scalar_index`][daft.io.lance.create_scalar_index], which parallelizes index building across the current Daft runner.
+
+Daft's distributed implementation currently supports `INVERTED`, `FTS`, and `BTREE`. Other scalar index types supported by Lance (for example `BITMAP`, `NGRAM`, `ZONEMAP`, `LABEL_LIST`, `BLOOMFILTER`) will fall back to Lance's built-in `create_scalar_index` implementation.
+
+!!! note "Version requirement"
+
+    Distributed indexing requires `pylance >= 0.37.0`.
+
+#### Parameters
+
+`daft.io.lance.create_scalar_index` mirrors Lance's scalar index API and adds a few knobs for distributed execution:
+
+- `uri`: Path/URI to the Lance dataset (local filesystem path or object-store URI such as `s3://...`).
+- `column`: Column name to index.
+- `index_type`: Index type to build. Distributed execution supports `INVERTED`, `FTS`, and `BTREE`. Other scalar index types supported by Lance will fall back to Lance's built-in implementation.
+- `name`: Optional index name. If omitted, Daft will generate one.
+- `replace`: Whether to replace an existing index with the same name. Defaults to `True`.
+- `io_config`: Daft IO configuration used to derive object-store credentials/endpoints when accessing remote datasets.
+- `storage_options`: Low-level storage options passed to Lance when opening the dataset. If provided, this takes precedence over `io_config`.
+- `version` / `asof`: Build the index on a specific dataset version (time travel).
+- `fragment_group_size`: How many fragments to group into a single task. If unset, Daft defaults to `10`.
+- `num_partitions`: Repartition the fragment-batch DataFrame before execution. Values `> 1` can increase parallelism on distributed runners.
+- `max_concurrency`: Maximum number of concurrent tasks used when processing fragment batches.
+- `**kwargs`: Additional arguments forwarded to `lance.LanceDataset.create_scalar_index` (for example `remove_stop_words=False`).
+
+#### Build an inverted index for text search
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+
+    # Optional: run index building on a Ray cluster
+    daft.set_runner_ray()
+
+    uri = "s3://my-bucket/dataset.lance"
+
+    daft.io.lance.create_scalar_index(
+        uri=uri,
+        column="text",
+        index_type="INVERTED",
+        # Optional tuning knobs
+        fragment_group_size=8,
+        num_partitions=16,
+        max_concurrency=8,
+    )
+
+    # Trigger Lance full-text search via scanner options
+    df = daft.read_lance(
+        uri,
+        default_scan_options={
+            "full_text_query": "python",
+            "columns": ["id", "text"],
+        },
+    )
+    df.show()
+    ```
+
+#### Build a BTREE index for faster point-lookup filters
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+
+    uri = "/data/prices.lance"
+
+    daft.io.lance.create_scalar_index(
+        uri=uri,
+        column="price",
+        index_type="BTREE",
+        name="price_btree",
+    )
+
+    # BTREE index accelerates equality / IS IN / IS NULL point lookups.
+    # Range filters (>, <, BETWEEN) fall back to per-fragment scanning in Daft's
+    # current scanner layer and do not use the index.
+    df = daft.read_lance(uri)
+    df.where(df["price"] == 30).show()
+    ```
     ```
 
 ### Data Evolution
