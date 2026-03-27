@@ -611,7 +611,7 @@ CUSTOM_SCHEME = "myscheme"
 
 
 @pytest.fixture
-def aliased_catalog(tmp_path):
+def catalog(tmp_path):
     """SqlCatalog backed by local storage with a separate directory for the aliased write root."""
     warehouse = tmp_path / "warehouse"
     warehouse.mkdir()
@@ -649,7 +649,7 @@ def _table_location_with_custom_scheme(table) -> str:
         ),
     ],
 )
-def test_protocol_alias_scheme_preserved_in_manifest_paths(aliased_catalog, partition_spec):
+def test_protocol_alias_scheme_preserved_in_manifest_paths(catalog, partition_spec):
     """DataFile.file_path entries in Iceberg manifest avro files must use the original custom URI scheme.
 
     Regression test for the bug where tables with a custom S3-compatible scheme
@@ -657,7 +657,7 @@ def test_protocol_alias_scheme_preserved_in_manifest_paths(aliased_catalog, part
     the underlying scheme (s3://) instead.
     """
     schema = Schema(NestedField(field_id=1, name="x", type=LongType()))
-    table = aliased_catalog.create_table("default.test", schema, partition_spec=partition_spec)
+    table = catalog.create_table("default.test", schema, partition_spec=partition_spec)
 
     # Override write.data.path to use the custom scheme while keeping the
     # physical location the same (the alias maps it back to file://).
@@ -684,6 +684,12 @@ def test_protocol_alias_scheme_preserved_in_manifest_paths(aliased_catalog, part
     # Round-trip: Daft must be able to read the data back using the same alias.
     read_back = daft.read_iceberg(table, io_config=io_config)
     assert df.to_arrow() == read_back.to_arrow().sort_by("x")
+
+    # Verify all file_path metadata with pyiceberg
+    for file_path in table.inspect.files()["file_path"]:
+        assert file_path.as_py().startswith(f"{CUSTOM_SCHEME}://"), (
+            f"Expected manifest entry to use '{CUSTOM_SCHEME}://' scheme but got: {file_path!r}"
+        )
 
 
 def test_protocol_alias_resolves_to_local_filesystem(tmp_path):
