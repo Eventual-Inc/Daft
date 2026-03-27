@@ -23,12 +23,20 @@ if TYPE_CHECKING:
 
 
 class _TextEmbedderExpression:
-    """Function expression implementation for a TextEmbedder protocol."""
+    """Function expression implementation for a TextEmbedder protocol.
+
+    Receives a serializable descriptor and resolves the provider + implementation
+    at execution time. This enables serde — the descriptor travels through the plan,
+    and the provider is looked up by name to instantiate the embedder.
+    """
 
     text_embedder: TextEmbedder
 
-    def __init__(self, text_embedder: TextEmbedderDescriptor):
-        self.text_embedder = text_embedder.instantiate()
+    def __init__(self, descriptor: TextEmbedderDescriptor):
+        from daft.ai.provider import load_provider
+
+        provider = load_provider(descriptor["provider"])
+        self.text_embedder = provider.get_text_embedder(descriptor)
 
     def _call_sync(self, text_series: Series) -> list[Embedding]:
         text = text_series.to_pylist()
