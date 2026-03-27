@@ -2,9 +2,9 @@
 
 *Last updated: March 2026*
 
-What is in store for Daft in 2026? This roadmap outlines the big picture of what the Daft team plans to work on in the coming year, as well as some of the features to expect from these.
+This roadmap outlines the big picture of what the Daft team plans to work on in the coming year, as well as some of the features to expect from these.
 
-Please note that items on this roadmap are subject to change at any time. If there are features you would like to implement, we welcome and encourage open-source contributions! Our team is happy to provide guidance, help scope the work, and review PRs.
+Please note that items on this roadmap are subject to change at any time. If there are features you would like to implement, we welcome and encourage open-source contributions. Our team is happy to provide guidance, help scope the work, and review PRs.
 
 Feel free to open an issue or PR on [GitHub ↗](https://github.com/Eventual-Inc/Daft) or join our [Daft Slack Community ↗](https://daft.ai/slack).
 
