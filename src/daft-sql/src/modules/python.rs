@@ -93,7 +93,11 @@ impl SQLFunction for WrappedUDFClass {
             });
             let e = e?;
 
-            Ok(e.expr)
+            // Alias the result expression with the UDF function name so that
+            // `SELECT *, my_func(x) FROM t` produces columns ["x", "my_func"]
+            // instead of two columns both named "x".
+            let func_name: String = self.name().map_err(DaftError::from)?;
+            Ok(e.expr.alias(func_name))
         }
 
         #[cfg(not(feature = "python"))]
