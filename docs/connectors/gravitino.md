@@ -15,76 +15,65 @@ pip install daft[gravitino]
 ## Features
 
 - **Catalog Navigation**: List catalogs, schemas, and tables
+- **Multi-Format Tables**: Read Iceberg and Hive/Parquet tables via `catalog.get_table("...").read()`
 - **Table Management**: Load existing tables or create new external tables
 - **Fileset Support**: Access Gravitino filesets for file storage
 - **GVFS Protocol**: Read and write files using `gvfs://` URLs for seamless fileset access
 - **Authentication**: Supports simple and OAuth2 authentication methods
-- **Daft Catalog Integration**: Integration with Daft's catalog system via `Catalog.from_gravitino()` and `Table.from_gravitino()`
+- **Daft Catalog Integration**: Integration with Daft's catalog system via `Catalog.from_gravitino()`
 
 ## Connecting to Gravitino
-
-### Using Daft Catalog Integration (Recommended)
-
-The easiest way to use Gravitino with Daft is through the integrated catalog system:
 
 === "🐍 Python"
 
     ```python
     import daft
     from daft.catalog import Catalog
-    from daft.catalog.__gravitino import GravitinoClient
 
-    # Create Gravitino client
-    client = GravitinoClient(
+    catalog = Catalog.from_gravitino(
         endpoint="http://localhost:8090",
         metalake_name="my_metalake",
-        auth_type="simple",
-        username="admin"
-    )
-
-    # Create Daft catalog from Gravitino client
-    catalog = Catalog.from_gravitino(client)
-
-    # Use standard Daft catalog operations
-    tables = catalog.list_tables()
-    ```
-
-### Using Direct Client
-
-For more advanced use cases, you can use the GravitinoClient directly:
-
-=== "🐍 Python"
-
-    ```python
-    import daft
-    from daft.catalog.__gravitino import GravitinoClient
-
-    # Initialize client with simple authentication
-    client = GravitinoClient(
-        endpoint="http://localhost:8090",
-        metalake_name="my_metalake",
-        auth_type="simple",
         username="admin",
     )
 
-    # See all available catalogs
-    print(client.list_catalogs())
+    # List all available tables
+    tables = catalog.list_tables("my_catalog.my_schema")
 
-    # See available schemas in a given catalog
-    print(client.list_namespaces("my_catalog"))
-
-    # See available tables in a given schema
-    print(client.list_tables("my_catalog.my_schema"))
+    # Read a table (format detected automatically)
+    df = catalog.get_table("my_catalog.my_schema.my_table").read()
+    df.show()
     ```
 
 ## Configuration
 
 ### Authentication
 
-The client supports two authentication methods:
+`Catalog.from_gravitino` supports two authentication methods:
 
 1. **Simple Authentication**: Uses username/password or just username
 2. **OAuth2**: Uses bearer token authentication
+
+=== "🐍 Python"
+
+    ```python
+    from daft.catalog import Catalog
+
+    # Simple auth with username only
+    catalog = Catalog.from_gravitino(
+        endpoint="http://localhost:8090",
+        metalake_name="my_metalake",
+        auth_type="simple",
+        username="admin",
+    )
+
+    # OAuth2 auth
+    catalog = Catalog.from_gravitino(
+        endpoint="http://localhost:8090",
+        metalake_name="my_metalake",
+        auth_type="oauth2",
+        token="my-bearer-token",
+    )
+    ```
 
 ### Storage Credentials
 
@@ -115,15 +104,16 @@ Where:
 
     ```python
     import daft
-    from daft.catalog.__gravitino import GravitinoClient
+    from daft.io import IOConfig, GravitinoConfig
 
-    # Create client and configure IOConfig
-    client = GravitinoClient(
-        endpoint="http://localhost:8090",
-        metalake_name="my_metalake",
-        username="admin"
+    # Build an IOConfig for GVFS fileset access
+    io_config = IOConfig(
+        gravitino=GravitinoConfig(
+            endpoint="http://localhost:8090",
+            metalake_name="my_metalake",
+            username="admin",
+        )
     )
-    io_config = client.to_io_config()
 
     # Read parquet files from a fileset
     df = daft.read_parquet(
@@ -156,15 +146,15 @@ Where:
 
     ```python
     import daft
-    from daft.catalog.__gravitino import GravitinoClient
+    from daft.io import IOConfig, GravitinoConfig
 
-    # Create client and configure IOConfig
-    client = GravitinoClient(
-        endpoint="http://localhost:8090",
-        metalake_name="my_metalake",
-        username="admin"
+    io_config = IOConfig(
+        gravitino=GravitinoConfig(
+            endpoint="http://localhost:8090",
+            metalake_name="my_metalake",
+            username="admin",
+        )
     )
-    io_config = client.to_io_config()
 
     # Create sample data
     df = daft.from_pydict({
@@ -202,20 +192,21 @@ Where:
 
 ## API Reference
 
-### Daft Catalog Integration
+### Catalog.from_gravitino(...)
 
-#### Catalog.from_gravitino(client)
-
-Creates a Daft Catalog from a GravitinoClient.
+Creates a Daft Catalog from a Gravitino metalake.
 
 === "🐍 Python"
 
     ```python
     from daft.catalog import Catalog
-    from daft.catalog.__gravitino import GravitinoClient
 
-    client = GravitinoClient("http://localhost:8090", "my_metalake", username="admin")
-    catalog = Catalog.from_gravitino(client)
+    catalog = Catalog.from_gravitino(
+        endpoint="http://localhost:8090",
+        metalake_name="my_metalake",
+        username="admin",
+    )
+    catalog.list_tables("my_catalog.my_schema")
     ```
 
 #### Table.from_gravitino(table)
@@ -225,68 +216,15 @@ Creates a Daft Table from a GravitinoTable.
 === "🐍 Python"
 
     ```python
-    from daft.catalog import Table
+    from daft.catalog import Catalog, Table
 
-    gravitino_table = client.load_table("my_catalog.my_schema.my_table")
-    table = Table.from_gravitino(gravitino_table)
-    ```
-
-### GravitinoClient
-
-Main client class for interacting with Gravitino.
-
-**Methods:**
-
-- `list_catalogs()` - List all catalogs in the metalake
-- `load_catalog(catalog_name)` - Load catalog details
-- `list_namespaces(catalog_name)` - List namespaces in a catalog (namespaces correspond to schemas in Gravitino)
-- `list_tables(namespace_name)` - List tables in a namespace
-- `load_table(table_name)` - Load an existing table
-- `load_fileset(fileset_name)` - Load a fileset
-- `to_io_config()` - Get IOConfig for the client
-
-### GravitinoTable
-
-Represents a table in Gravitino with metadata and storage configuration.
-
-**Attributes:**
-
-- `table_info` - Table metadata (name, type, format, etc.)
-- `table_uri` - Storage location URI
-- `io_config` - Daft IOConfig for accessing the table
-
-### GravitinoCatalog
-
-Represents a catalog in Gravitino.
-
-**Attributes:**
-
-- `name` - Catalog name
-- `type` - Catalog type (e.g., "relational", "fileset")
-- `provider` - Catalog provider (e.g., "hive", "iceberg", "hadoop")
-- `properties` - Catalog configuration properties
-
-### GravitinoFileset
-
-Represents a fileset in Gravitino for file storage.
-
-**Attributes:**
-
-- `fileset_info` - Fileset metadata
-- `io_config` - Daft IOConfig for accessing the fileset
-
-**GVFS Access:**
-
-Filesets can be accessed directly using the GVFS protocol without needing to load the fileset object:
-
-=== "🐍 Python"
-
-    ```python
-    # Direct GVFS access (recommended)
-    df = daft.read_parquet(
-        "gvfs://fileset/catalog/schema/fileset/data.parquet",
-        io_config=client.to_io_config()
+    catalog = Catalog.from_gravitino(
+        endpoint="http://localhost:8090",
+        metalake_name="my_metalake",
+        username="admin",
     )
+    table = catalog.get_table("my_catalog.my_schema.my_table")
+    df = table.read()
     ```
 
 ## Requirements
@@ -313,9 +251,10 @@ The client automatically detects and handles both formats for seamless compatibi
 
 ## Roadmap
 
-1. Support for read/write Iceberg tables from Gravitino
-2. Support for additional table formats (Hive, Hudi)
-3. Support for more storages (gcs, azure adls, oss, etc)
-4. Support for credential vending
+1. Support for read/write Iceberg tables from Gravitino ✓
+2. Support for Hive/Parquet tables ✓
+3. Support for additional table formats (Hudi)
+4. Support for more storages (gcs, azure adls, oss, etc)
+5. Support for credential vending
 
 Please open issues on the [Daft repository](https://github.com/Eventual-Inc/Daft) or [Gravitino repository](https://github.com/apache/gravitino) if you have any use-cases that Daft Gravitino connector does not currently cover!

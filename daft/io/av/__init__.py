@@ -49,7 +49,7 @@ def read_video_frames(
     Note:
         This function will stream the frames from all videos as a DataFrame of images.
         If you wish to load an entire video into a single row, this can be done with
-        read_glob_path and url.download.
+        DataFrame.from_glob_path and url_download.
 
     Args:
         path (str|list[str]): Path(s) to the video file(s) which allows wildcards.
