@@ -1385,8 +1385,7 @@ fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            // Get cache_id (task_id) from context
-            let cache_id = ctx
+            let task_id = ctx
                 .context
                 .get("task_id")
                 .cloned()
@@ -1405,7 +1404,7 @@ fn physical_plan_to_pipeline(
                 *shuffle_id,
                 shuffle_dirs.clone(),
                 compression.clone(),
-                cache_id,
+                task_id,
                 shuffle_server,
             )
             .with_context(|_| PipelineCreationSnafu {
@@ -1432,6 +1431,9 @@ fn physical_plan_to_pipeline(
                 shuffle_id,
                 server_cache_mapping,
             } = backend;
+            let shuffle_server = ctx
+                .shuffle_server()
+                .expect("Flight shuffle server must be initialized for FlightShuffleWrite plans when using flight_shuffle algorithm");
             let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
             input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
             let source = FlightShuffleReadSource::new(
@@ -1440,6 +1442,7 @@ fn physical_plan_to_pipeline(
                 server_cache_mapping.clone(),
                 schema.clone(),
                 cfg,
+                shuffle_server,
             );
             SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
         }

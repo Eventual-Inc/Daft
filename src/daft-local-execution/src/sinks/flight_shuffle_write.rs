@@ -22,7 +22,7 @@ use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 pub struct FlightShuffleWriteSink {
     num_partitions: usize,
     shuffle_id: u64,
-    cache_id: String,
+    task_id: String,
     partition_by: Option<Vec<ExprRef>>,
     // Shared shuffle cache
     shuffle_cache: Arc<InProgressShuffleCache>,
@@ -37,7 +37,7 @@ impl FlightShuffleWriteSink {
         shuffle_id: u64,
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
-        cache_id: String,
+        task_id: String,
         shuffle_server: Arc<ShuffleFlightServer>,
     ) -> DaftResult<Self> {
         const TARGET_TOTAL_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 2000; // 2000MB = ~2GB
@@ -45,7 +45,7 @@ impl FlightShuffleWriteSink {
         let shuffle_cache = InProgressShuffleCache::try_new(
             num_partitions,
             &shuffle_dirs,
-            cache_id.clone(),
+            task_id.clone(),
             shuffle_id,
             (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES / num_partitions)
                 .clamp(1024 * 1024 * 8, 1024 * 1024 * 128), // Min 8MB, Max 128MB
@@ -55,7 +55,7 @@ impl FlightShuffleWriteSink {
         Ok(Self {
             num_partitions,
             shuffle_id,
-            cache_id,
+            task_id,
             partition_by,
             shuffle_cache: Arc::new(shuffle_cache),
             shuffle_server,
@@ -165,7 +165,7 @@ impl BlockingSink for FlightShuffleWriteSink {
         vec![
             format!("FlightShuffleWrite: {} partitions", self.num_partitions),
             format!("Shuffle ID: {}", self.shuffle_id),
-            format!("Cache ID: {}", self.cache_id),
+            format!("Task ID: {}", self.task_id),
         ]
     }
 
