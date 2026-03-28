@@ -8,6 +8,7 @@ mod input_sender;
 mod intermediate_ops;
 mod join;
 mod pipeline;
+mod pipeline_execution;
 mod resource_manager;
 mod run;
 mod runtime_stats;
@@ -104,6 +105,15 @@ impl ExecutionRuntimeContext {
         let node_name = node_name.to_string();
         self.worker_set
             .spawn(task.with_context(|_| PipelineExecutionSnafu { node_name }));
+    }
+
+    pub async fn join_next(&mut self) -> Option<DaftResult<()>> {
+        match self.worker_set.join_next().await {
+            Some(Ok(Ok(()))) => Some(Ok(())),
+            Some(Ok(Err(e))) => Some(Err(e.into())),
+            Some(Err(e)) => Some(Err(e)),
+            None => None,
+        }
     }
 
     pub async fn shutdown(&mut self) -> DaftResult<()> {

@@ -14,9 +14,7 @@ use daft_writers::{AsyncFileWriter, WriteResult, WriterFactory};
 use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 pub(crate) struct WriteStats {
@@ -165,7 +163,7 @@ impl BlockingSink for WriteSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let file_schema = self.file_schema.clone();
         spawner
             .spawn(
@@ -175,7 +173,7 @@ impl BlockingSink for WriteSink {
                         results.extend(state.writer.close().await?);
                     }
                     let mp = MicroPartition::new_loaded(file_schema, results.into(), None);
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![mp]))
+                    Ok(vec![mp])
                 },
                 Span::current(),
             )
