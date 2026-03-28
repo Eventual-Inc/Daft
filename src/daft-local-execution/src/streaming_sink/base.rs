@@ -32,11 +32,6 @@ use crate::{
 
 pub enum StreamingSinkOutput {
     NeedMoreInput(Option<MicroPartition>),
-    #[allow(dead_code)]
-    HasMoreOutput {
-        input: MicroPartition,
-        output: Option<MicroPartition>,
-    },
     Finished(Option<MicroPartition>),
 }
 
@@ -232,28 +227,6 @@ async fn handle_task_completion_impl<Op: StreamingSink + 'static>(
             }
             ctx.state_pool.insert(result.state_id, result.state);
         }
-        StreamingSinkOutput::HasMoreOutput { input, output } => {
-            ctx.batch_manager.record_execution_stats(
-                ctx.runtime_stats.as_ref(),
-                output.as_ref().map(|mp| mp.len()).unwrap_or(0),
-                result.elapsed,
-            );
-            if let Some(mp) = output {
-                ctx.runtime_stats.add_rows_out(mp.len() as u64);
-                if ctx
-                    .output_sender
-                    .send(PipelineMessage::Morsel {
-                        input_id: ctx.input_id,
-                        partition: mp,
-                    })
-                    .await
-                    .is_err()
-                {
-                    return Ok(ControlFlow::Break(()));
-                }
-            }
-            spawn_execution_task_impl(ctx, input, result.state, result.state_id);
-        }
         StreamingSinkOutput::Finished(mp) => {
             ctx.batch_manager.record_execution_stats(
                 ctx.runtime_stats.as_ref(),
@@ -324,8 +297,8 @@ async fn process_input_impl<Op: StreamingSink + 'static>(
     }
 
     // Drain remaining buffer
-    if !finished && let Some(mut partition) = buffer.pop_all()? {
-        let mut state = ctx
+    if !finished && let Some(partition) = buffer.pop_all()? {
+        let state = ctx
             .state_pool
             .drain()
             .next()
@@ -369,10 +342,6 @@ async fn process_input_impl<Op: StreamingSink + 'static>(
                 StreamingSinkOutput::NeedMoreInput(_) => {
                     ctx.state_pool.insert(0, new_state);
                     break;
-                }
-                StreamingSinkOutput::HasMoreOutput { input, .. } => {
-                    partition = input;
-                    state = new_state;
                 }
                 StreamingSinkOutput::Finished(_) => {
                     finished = true;
@@ -443,7 +412,6 @@ impl StreamingSinkOutput {
     pub(crate) fn output(&self) -> Option<&MicroPartition> {
         match self {
             Self::NeedMoreInput(mp) => mp.as_ref(),
-            Self::HasMoreOutput { output, .. } => output.as_ref(),
             Self::Finished(mp) => mp.as_ref(),
         }
     }
