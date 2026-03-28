@@ -395,7 +395,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                             };
 
                             if let Entry::Vacant(e) = per_input_senders.entry(input_id) {
-                                let (tx, rx) = create_channel(1);
+                                let (tx, rx) = create_channel(16);
                                 e.insert(tx);
 
                                 let runtime_stats = Arc::new(Op::Stats::new(&meter, &node_info));
