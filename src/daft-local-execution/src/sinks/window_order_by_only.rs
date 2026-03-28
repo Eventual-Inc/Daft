@@ -11,9 +11,7 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 struct WindowOrderByOnlyParams {
@@ -95,7 +93,7 @@ impl BlockingSink for WindowOrderByOnlySink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.params.clone();
 
         spawner
@@ -120,7 +118,7 @@ impl BlockingSink for WindowOrderByOnlySink {
                     if sorted.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![empty_result]));
+                        return Ok(vec![empty_result]);
                     }
 
                     // Convert to RecordBatch for window operations
@@ -176,7 +174,7 @@ impl BlockingSink for WindowOrderByOnlySink {
                         )
                     };
 
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![output]))
+                    Ok(vec![output])
                 },
                 Span::current(),
             )

@@ -168,7 +168,7 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
                     };
 
                     if let Entry::Vacant(e) = per_input_senders.entry(input_id) {
-                        let (tx, rx) = create_channel(16);
+                        let (tx, rx) = create_channel(1);
                         e.insert(tx);
 
                         let op = self.op.clone();

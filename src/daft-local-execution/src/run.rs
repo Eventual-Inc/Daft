@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex, OnceLock},
+    time::Instant,
 };
 
 use common_daft_config::DaftExecutionConfig;
@@ -73,12 +74,15 @@ pub(crate) struct EnqueueInputMessage {
 /// Routes pipeline messages to per-input_id channels.
 struct MessageRouter {
     output_senders: HashMap<InputId, UnboundedSender<MicroPartition>>,
+    /// Wall-clock start instant when each `input_id` was enqueued to the pipeline.
+    input_start_times: HashMap<InputId, Instant>,
 }
 
 impl MessageRouter {
     fn new() -> Self {
         Self {
             output_senders: HashMap::new(),
+            input_start_times: HashMap::new(),
         }
     }
 
@@ -86,6 +90,12 @@ impl MessageRouter {
     fn route_message(&mut self, msg: PipelineMessage) {
         match msg {
             PipelineMessage::Flush(input_id) => {
+                if let Some(started) = self.input_start_times.remove(&input_id) {
+                    println!(
+                        "NativeExecutor: input_id={input_id} pipeline finished in {:?}",
+                        started.elapsed()
+                    );
+                }
                 self.output_senders.remove(&input_id);
             }
             PipelineMessage::Morsel {
@@ -100,7 +110,20 @@ impl MessageRouter {
     }
 
     fn insert_output_sender(&mut self, input_id: InputId, sender: UnboundedSender<MicroPartition>) {
+        println!("NativeExecutor: input_id={input_id} pipeline started (enqueued)");
+        self.input_start_times.insert(input_id, Instant::now());
         self.output_senders.insert(input_id, sender);
+    }
+}
+
+impl Drop for MessageRouter {
+    fn drop(&mut self) {
+        for (input_id, started) in self.input_start_times.drain() {
+            log::debug!(
+                "NativeExecutor: input_id={input_id} ended without Flush after {:?} (cancel/shutdown?)",
+                started.elapsed()
+            );
+        }
     }
 }
 
@@ -110,45 +133,6 @@ struct PlanState {
     enqueue_input_sender: Sender<EnqueueInputMessage>,
     stats_handle: RuntimeStatsManagerHandle,
     active_input_ids: HashSet<InputId>,
-}
-
-struct ActivePlansRegistry {
-    plans: HashMap<u64, PlanState>,
-}
-
-impl ActivePlansRegistry {
-    fn new() -> Self {
-        Self {
-            plans: HashMap::new(),
-        }
-    }
-
-    fn get_or_create_plan<F>(&mut self, fingerprint: u64, plan_factory: F) -> DaftResult<()>
-    where
-        F: FnOnce() -> DaftResult<(
-            RuntimeTask<DaftResult<ExecutionStats>>,
-            Sender<EnqueueInputMessage>,
-            RuntimeStatsManagerHandle,
-        )>,
-    {
-        if self.plans.contains_key(&fingerprint) {
-            return Ok(());
-        }
-        let (task_handle, enqueue_sender, stats_handle) = plan_factory()?;
-        let state = PlanState {
-            task_handle,
-            enqueue_input_sender: enqueue_sender,
-            stats_handle,
-            active_input_ids: HashSet::new(),
-        };
-        self.plans.insert(fingerprint, state);
-        Ok(())
-    }
-
-    fn cancel_plan(&mut self, fingerprint: u64) {
-        // RuntimeTask drop cancels the spawned task
-        self.plans.remove(&fingerprint);
-    }
 }
 
 #[cfg_attr(
@@ -188,11 +172,6 @@ impl PyNativeExecutor {
     ) -> PyResult<Bound<'py, pyo3::PyAny>> {
         let daft_ctx: &DaftContext = daft_ctx.into();
         let plan = local_physical_plan.plan.clone();
-        let _query_id = context
-            .as_ref()
-            .and_then(|c| c.get("query_id"))
-            .map(|s| s.as_str())
-            .unwrap_or("");
         let exec_cfg = daft_ctx.execution_config();
         let subscribers = daft_ctx.subscribers();
         let (fingerprint, enqueue_future) = {
@@ -219,12 +198,7 @@ impl PyNativeExecutor {
     }
 
     pub fn active_plan_count(&self, py: Python<'_>) -> usize {
-        self.executor
-            .lock_py_attached(py)
-            .unwrap()
-            .active_plans
-            .plans
-            .len()
+        self.executor.lock_py_attached(py).unwrap().plans.len()
     }
 
     pub fn cancel_plan(&self, py: Python<'_>, fingerprint: u64) -> PyResult<()> {
@@ -262,16 +236,109 @@ impl PyNativeExecutor {
     }
 }
 
+fn parse_context(ctx: Option<&HashMap<String, String>>) -> (QueryID, u64) {
+    let query_id = ctx
+        .as_ref()
+        .and_then(|c| c.get("query_id"))
+        .map(|s| QueryID::from(s.as_str()))
+        .unwrap_or_else(|| QueryID::from(""));
+    let fingerprint = ctx
+        .as_ref()
+        .and_then(|c| c.get("plan_fingerprint"))
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+    (query_id, fingerprint)
+}
+
+/// The core execution loop that drives a pipeline to completion.
+/// Receives inputs via `enqueue_input_rx`, routes pipeline outputs to
+/// per-input_id channels, and runs until the pipeline finishes, errors,
+/// or is cancelled.
+async fn run_execution_loop(
+    cancel: CancellationToken,
+    stats_manager: RuntimeStatsManager,
+    mut enqueue_input_rx: crate::channel::Receiver<EnqueueInputMessage>,
+    input_senders: Arc<HashMap<SourceId, crate::input_sender::InputSender>>,
+    pipeline: Box<dyn crate::pipeline::PipelineNode>,
+) -> DaftResult<ExecutionStats> {
+    let stats_manager_handle = stats_manager.handle();
+    let memory_manager = get_or_init_memory_manager();
+    let mut runtime_handle =
+        ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
+    let mut output_receiver = pipeline.start(true, &mut runtime_handle)?;
+
+    let mut message_router = MessageRouter::new();
+    let mut input_senders = Some(input_senders);
+    let mut input_exhausted = false;
+
+    let (result, finish_status) = loop {
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => {
+                println!("Execution engine cancelled");
+                break (Ok(()), QueryEndState::Canceled);
+            }
+            _ = tokio::signal::ctrl_c() => {
+                println!("Received Ctrl-C, shutting down execution engine");
+                break (Ok(()), QueryEndState::Canceled);
+            }
+            Some(join_result) = runtime_handle.join_next() => {
+                if let Err(e) = join_result {
+                    if matches!(&e, common_error::DaftError::JoinError(source) if source.is_cancelled()) {
+                        break (Ok(()), QueryEndState::Canceled);
+                    }
+                    break (Err(e), QueryEndState::Failed);
+                }
+            }
+            enqueue_msg = enqueue_input_rx.recv(), if !input_exhausted => {
+                if let Some(EnqueueInputMessage { input_id, inputs, result_sender }) = enqueue_msg {
+                    message_router.insert_output_sender(input_id, result_sender);
+                    let senders = input_senders.as_ref().unwrap();
+                    for (key, plan_input) in inputs {
+                        if let Some(sender) = senders.get(&key) {
+                            let _ = sender.send(input_id, plan_input);
+                        }
+                    }
+                } else {
+                    // All senders dropped — drop input channels so
+                    // pipeline sources see EOF.
+                    input_senders.take();
+                    input_exhausted = true;
+                }
+            }
+            msg = output_receiver.recv() => {
+                match msg {
+                    Some(msg) => {
+                        message_router.route_message(msg);
+                    }
+                    None => {
+                        // Pipeline finished. Close result channels so waiters
+                        // unblock, then drain runtime tasks.
+                        drop(message_router);
+                        let res = runtime_handle.shutdown().await;
+                        let status = if res.is_ok() { QueryEndState::Finished } else { QueryEndState::Failed };
+                        break (res, status);
+                    }
+                }
+            }
+        }
+    };
+
+    let final_stats = stats_manager.finish(finish_status).await;
+    flush_opentelemetry_providers();
+    result.map(|()| final_stats)
+}
+
 pub(crate) struct NativeExecutor {
     cancel: CancellationToken,
-    active_plans: ActivePlansRegistry,
+    plans: HashMap<u64, PlanState>,
 }
 
 impl NativeExecutor {
     pub fn new() -> Self {
         Self {
             cancel: CancellationToken::new(),
-            active_plans: ActivePlansRegistry::new(),
+            plans: HashMap::new(),
         }
     }
 
@@ -284,33 +351,11 @@ impl NativeExecutor {
         inputs: HashMap<SourceId, Input>,
         input_id: InputId,
     ) -> DaftResult<(u64, BoxFuture<'static, DaftResult<ExecutionEngineResult>>)> {
-        let query_id = additional_context
-            .as_ref()
-            .and_then(|c| c.get("query_id"))
-            .map(|s| QueryID::from(s.as_str()))
-            .unwrap_or_else(|| QueryID::from(""));
-        let fingerprint = additional_context
-            .as_ref()
-            .and_then(|c| c.get("plan_fingerprint"))
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(0);
-        // Get or create plan handle from registry
-        if self.active_plans.plans.contains_key(&fingerprint) {
-            println!(
-                "Plan {} with fingerprint {} already exists",
-                local_physical_plan.single_line_display(),
-                fingerprint
-            );
-        } else {
-            println!(
-                "Creating plan {} with fingerprint {}",
-                local_physical_plan.single_line_display(),
-                fingerprint
-            );
-        }
-        self.active_plans.get_or_create_plan(fingerprint, || {
+        let (query_id, fingerprint) = parse_context(additional_context.as_ref());
+
+        if !self.plans.contains_key(&fingerprint) {
             let cancel = self.cancel.clone();
-            let additional_context = additional_context.clone().unwrap_or_default();
+            let additional_context = additional_context.unwrap_or_default();
             let ctx = BuilderContext::new_with_context(query_id.clone(), additional_context);
             let (pipeline, input_senders) =
                 translate_physical_plan_to_pipeline(local_physical_plan, &exec_cfg, &ctx)?;
@@ -320,118 +365,30 @@ impl NativeExecutor {
                 RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
             let stats_handle = stats_manager.snapshot_handle();
 
-            let (enqueue_input_tx, mut enqueue_input_rx) =
-                create_channel::<EnqueueInputMessage>(1);
+            let (enqueue_input_tx, enqueue_input_rx) = create_channel::<EnqueueInputMessage>(1);
 
             let input_senders = Arc::new(input_senders);
+            let task = run_execution_loop(
+                cancel,
+                stats_manager,
+                enqueue_input_rx,
+                input_senders,
+                pipeline,
+            );
 
-            let task = async move {
-                let stats_manager_handle = stats_manager.handle();
-                let memory_manager = get_or_init_memory_manager();
-                let mut runtime_handle =
-                    ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
-                let mut output_receiver = pipeline.start(true, &mut runtime_handle)?;
-
-                let mut message_router = MessageRouter::new();
-                let mut input_exhausted = false;
-                let mut pipeline_finished = false;
-                let mut shutdown_result: Option<(DaftResult<()>, QueryEndState)> = None;
-                let mut input_senders = Some(input_senders);
-
-                let (result, finish_status) = loop {
-                    tokio::select! {
-                        biased;
-                        () = cancel.cancelled() => {
-                            log::info!("Execution engine cancelled");
-                            break (Ok(()), QueryEndState::Canceled);
-                        }
-                        _ = tokio::signal::ctrl_c() => {
-                            log::info!("Received Ctrl-C, shutting down execution engine");
-                            break (Ok(()), QueryEndState::Canceled);
-                        }
-                        Some(join_result) = runtime_handle.join_next(), if !pipeline_finished => {
-                            match join_result {
-                                Ok(()) => {
-                                    // Task completed successfully, continue
-                                }
-                                Err(e) => {
-                                    if matches!(&e, common_error::DaftError::JoinError(source) if source.is_cancelled()) {
-                                        break (Ok(()), QueryEndState::Canceled);
-                                    }
-                                    break (Err(e), QueryEndState::Failed);
-                                }
-                            }
-                        }
-                        enqueue_msg = enqueue_input_rx.recv(), if !input_exhausted => {
-                            match enqueue_msg {
-                                Some(EnqueueInputMessage { input_id, inputs, result_sender }) => {
-                                    if pipeline_finished {
-                                        drop(result_sender);
-                                    } else {
-                                        message_router.insert_output_sender(input_id, result_sender);
-                                        // Send inputs to pipeline sources. Unbounded channels
-                                        // ensure sends never block the select loop.
-                                        let senders = input_senders.as_ref().unwrap();
-                                        for (key, plan_input) in inputs {
-                                            if let Some(sender) = senders.get(&key) {
-                                                let _ = sender.send(input_id, plan_input);
-                                            }
-                                        }
-                                    }
-                                }
-                                None => {
-                                    // All senders dropped — no more inputs coming.
-                                    // Drop our Arc ref; input channels close once
-                                    // in-flight dispatch tasks finish.
-                                    input_senders.take();
-                                    input_exhausted = true;
-                                    if pipeline_finished {
-                                        break shutdown_result.take().unwrap();
-                                    }
-                                }
-                            }
-                        }
-                        msg = output_receiver.recv(), if !pipeline_finished => {
-                            match msg {
-                                Some(msg) => {
-                                    message_router.route_message(msg);
-                                }
-                                None => {
-                                    // Close all in-flight result channels immediately
-                                    // so waiters get None from next() and can call
-                                    // try_finish(). Must happen before shutdown() so
-                                    // callers don't block waiting for results while
-                                    // we wait for tasks to drain.
-                                    message_router = MessageRouter::new();
-                                    let res = runtime_handle.shutdown().await;
-                                    pipeline_finished = true;
-                                    let status = if res.is_ok() { QueryEndState::Finished } else { QueryEndState::Failed };
-                                    shutdown_result = Some((res, status));
-                                    if input_exhausted {
-                                        break shutdown_result.take().unwrap();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                };
-
-                drop(message_router);
-
-                // Finish the stats manager
-                let final_stats = stats_manager.finish(finish_status).await;
-
-                flush_opentelemetry_providers();
-                result.map(|()| final_stats)
-            };
-
-            let handle = get_global_runtime();
             let task_handle = RuntimeTask::new(handle, task);
-            Ok((task_handle, enqueue_input_tx, stats_handle))
-        })?;
+            self.plans.insert(
+                fingerprint,
+                PlanState {
+                    task_handle,
+                    enqueue_input_sender: enqueue_input_tx,
+                    stats_handle,
+                    active_input_ids: HashSet::new(),
+                },
+            );
+        }
 
-        // Get the enqueue sender from the plan state
-        let plan_state = self.active_plans.plans.get_mut(&fingerprint).unwrap();
+        let plan_state = self.plans.get_mut(&fingerprint).unwrap();
         let enqueue_input_sender = plan_state.enqueue_input_sender.clone();
         plan_state.active_input_ids.insert(input_id);
 
@@ -439,13 +396,11 @@ impl NativeExecutor {
             fingerprint,
             async move {
                 let (result_tx, result_rx) = create_unbounded_channel();
-
                 let enqueue_msg = EnqueueInputMessage {
                     input_id,
                     inputs,
                     result_sender: result_tx,
                 };
-
                 if enqueue_input_sender.send(enqueue_msg).await.is_err() {
                     return Err(common_error::DaftError::InternalError(
                         "Plan execution task has died; cannot enqueue new input".to_string(),
@@ -460,50 +415,38 @@ impl NativeExecutor {
     }
 
     /// Finish tracking an input_id. If no active input_ids remain (or the
-    /// enqueue channel is closed), removes the plan from the registry and
-    /// awaits the exec task for its final result.
+    /// enqueue channel is closed), removes the plan and awaits the exec task.
     pub fn try_finish(
         &mut self,
         fingerprint: u64,
         input_id: InputId,
     ) -> DaftResult<BoxFuture<'static, DaftResult<ExecutionStats>>> {
-        let should_remove = if let Some(plan_state) = self.active_plans.plans.get_mut(&fingerprint)
-        {
-            plan_state.active_input_ids.remove(&input_id);
-            let is_empty = plan_state.active_input_ids.is_empty();
-            let is_closed = plan_state.enqueue_input_sender.is_closed();
-            is_empty || is_closed
-        } else {
-            return Err(common_error::DaftError::InternalError(format!(
+        let plan_state = self.plans.get_mut(&fingerprint).ok_or_else(|| {
+            common_error::DaftError::InternalError(format!(
                 "try_finish called for unknown plan fingerprint {fingerprint}"
-            )));
-        };
+            ))
+        })?;
+
+        plan_state.active_input_ids.remove(&input_id);
+        let should_remove =
+            plan_state.active_input_ids.is_empty() || plan_state.enqueue_input_sender.is_closed();
 
         if should_remove {
-            let plan_state = self.active_plans.plans.remove(&fingerprint).unwrap();
-            let enqueue_input_sender = plan_state.enqueue_input_sender;
-            let task_handle = plan_state.task_handle;
+            let plan_state = self.plans.remove(&fingerprint).unwrap();
             Ok(async move {
-                // Drop the sender so the exec task sees input exhaustion
-                drop(enqueue_input_sender);
-                // Await the exec task for its final result (includes stats)
-                task_handle.await?
+                drop(plan_state.enqueue_input_sender);
+                plan_state.task_handle.await?
             }
             .boxed())
         } else {
-            let stats_handle = self
-                .active_plans
-                .plans
-                .get(&fingerprint)
-                .unwrap()
-                .stats_handle
-                .clone();
+            let stats_handle = plan_state.stats_handle.clone();
             Ok(async move { stats_handle.take_input_snapshot(input_id).await }.boxed())
         }
     }
 
     pub fn cancel_plan(&mut self, fingerprint: u64) {
-        self.active_plans.cancel_plan(fingerprint);
+        // RuntimeTask drop cancels the spawned task
+        self.plans.remove(&fingerprint);
     }
 
     fn repr_ascii(

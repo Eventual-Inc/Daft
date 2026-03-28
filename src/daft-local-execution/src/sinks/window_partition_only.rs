@@ -10,10 +10,7 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::{
-    blocking_sink::{
-        BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult,
-        BlockingSinkSinkResult,
-    },
+    blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult},
     window_base::{WindowBaseState, WindowSinkParams},
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
@@ -94,7 +91,7 @@ impl BlockingSink for WindowPartitionOnlySink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.window_partition_only_params.clone();
         let num_partitions = self.num_partitions();
 
@@ -148,7 +145,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                     if results.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![empty_result]));
+                        return Ok(vec![empty_result]);
                     }
 
                     let final_result = MicroPartition::new_loaded(
@@ -157,7 +154,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                         None,
                     );
 
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![final_result]))
+                    Ok(vec![final_result])
                 },
                 Span::current(),
             )

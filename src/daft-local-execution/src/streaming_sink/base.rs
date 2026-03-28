@@ -305,50 +305,46 @@ async fn process_input_impl<Op: StreamingSink + 'static>(
             .map(|(_, s)| s)
             .expect("state_pool non-empty");
         let runtime_stats = ctx.runtime_stats.clone();
-        loop {
-            let now = Instant::now();
-            let (new_state, result) = ctx
-                .op
-                .execute(partition, state, runtime_stats.clone(), &ctx.task_spawner)
-                .await??;
-            let elapsed = now.elapsed();
-            ctx.runtime_stats
-                .add_duration_us(elapsed.as_micros() as u64);
+        let now = Instant::now();
+        let (new_state, result) = ctx
+            .op
+            .execute(partition, state, runtime_stats.clone(), &ctx.task_spawner)
+            .await??;
+        let elapsed = now.elapsed();
+        ctx.runtime_stats
+            .add_duration_us(elapsed.as_micros() as u64);
 
-            if let Some(mp) = result.output() {
-                ctx.runtime_stats.add_rows_out(mp.len() as u64);
-                ctx.batch_manager.record_execution_stats(
-                    ctx.runtime_stats.as_ref(),
-                    mp.len(),
-                    elapsed,
-                );
-                if ctx
-                    .output_sender
-                    .send(PipelineMessage::Morsel {
-                        input_id: ctx.input_id,
-                        partition: mp.clone(),
-                    })
-                    .await
-                    .is_err()
-                {
-                    return Ok(ControlFlow::Break(()));
-                }
-            }
-
-            let new_requirements = ctx.batch_manager.calculate_batch_size();
-            buffer.update_bounds(new_requirements);
-
-            match result {
-                StreamingSinkOutput::NeedMoreInput(_) => {
-                    ctx.state_pool.insert(0, new_state);
-                    break;
-                }
-                StreamingSinkOutput::Finished(_) => {
-                    finished = true;
-                    break;
-                }
+        let (mp, sink_finished) = match result {
+            StreamingSinkOutput::NeedMoreInput(mp) => (mp, false),
+            StreamingSinkOutput::Finished(mp) => (mp, true),
+        };
+        ctx.batch_manager.record_execution_stats(
+            ctx.runtime_stats.as_ref(),
+            mp.as_ref().map(|p| p.len()).unwrap_or(0),
+            elapsed,
+        );
+        if let Some(mp) = mp {
+            ctx.runtime_stats.add_rows_out(mp.len() as u64);
+            if ctx
+                .output_sender
+                .send(PipelineMessage::Morsel {
+                    input_id: ctx.input_id,
+                    partition: mp,
+                })
+                .await
+                .is_err()
+            {
+                return Ok(ControlFlow::Break(()));
             }
         }
+        if sink_finished {
+            finished = true;
+        } else {
+            ctx.state_pool.insert(0, new_state);
+        }
+
+        let new_requirements = ctx.batch_manager.calculate_batch_size();
+        buffer.update_bounds(new_requirements);
     }
 
     // Finalize if not already finished
@@ -406,15 +402,6 @@ async fn process_input_impl<Op: StreamingSink + 'static>(
         return Ok(ControlFlow::Break(()));
     }
     Ok(ControlFlow::Continue(()))
-}
-
-impl StreamingSinkOutput {
-    pub(crate) fn output(&self) -> Option<&MicroPartition> {
-        match self {
-            Self::NeedMoreInput(mp) => mp.as_ref(),
-            Self::Finished(mp) => mp.as_ref(),
-        }
-    }
 }
 
 impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
