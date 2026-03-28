@@ -295,6 +295,19 @@ impl NativeExecutor {
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(0);
         // Get or create plan handle from registry
+        if self.active_plans.plans.contains_key(&fingerprint) {
+            println!(
+                "Plan {} with fingerprint {} already exists",
+                local_physical_plan.single_line_display(),
+                fingerprint
+            );
+        } else {
+            println!(
+                "Creating plan {} with fingerprint {}",
+                local_physical_plan.single_line_display(),
+                fingerprint
+            );
+        }
         self.active_plans.get_or_create_plan(fingerprint, || {
             let cancel = self.cancel.clone();
             let additional_context = additional_context.clone().unwrap_or_default();
