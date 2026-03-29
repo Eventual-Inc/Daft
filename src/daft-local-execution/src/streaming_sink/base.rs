@@ -307,6 +307,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         let mut child_closed = false;
         let mut node_initialized = false;
 
+        let op_name = op.name();
         while let Some(event) = next_event(
             &mut tasks,
             max_concurrency,
@@ -315,6 +316,22 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         )
         .await?
         {
+            let per_input_info: Vec<_> = inputs
+                .iter()
+                .map(|(id, s)| {
+                    format!(
+                        "{}:{}active/{}pending",
+                        id,
+                        s.max_concurrency - s.states.len(),
+                        s.buffer.is_empty()
+                    )
+                })
+                .collect();
+            println!(
+                "[StreamingSink::{op_name}] total_tasks={} inputs={} [{per_input_info:?}]",
+                tasks.len(),
+                inputs.len(),
+            );
             match event {
                 PipelineEvent::TaskCompleted((input_id, state, output, elapsed)) => {
                     let per_input = inputs.get_mut(&input_id).unwrap();

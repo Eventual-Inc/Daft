@@ -210,6 +210,7 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
             OrderingAwareJoinSet::new(self.maintain_order);
         let mut child_closed = false;
 
+        let op_name = self.op.name();
         while let Some(event) = next_event(
             &mut tasks,
             max_concurrency,
@@ -218,6 +219,22 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
         )
         .await?
         {
+            let per_input_info: Vec<_> = inputs
+                .iter()
+                .map(|(id, s)| {
+                    format!(
+                        "{}:{}active/buf_empty={}",
+                        id,
+                        s.max_concurrency - s.states.len(),
+                        s.buffer.is_empty()
+                    )
+                })
+                .collect();
+            println!(
+                "[JoinProbe::{op_name}] total_tasks={} inputs={} [{per_input_info:?}]",
+                tasks.len(),
+                inputs.len(),
+            );
             match event {
                 PipelineEvent::TaskCompleted(TaskOutput::BuildStateReady {
                     input_id,
