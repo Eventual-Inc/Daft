@@ -149,7 +149,7 @@ class RaySwordfishActor:
                 task_id,
                 resolved_inputs,
                 context,
-                False,
+                exec_cfg.maintain_order,
             )
             metas = []
             async for partition in result_handle:
