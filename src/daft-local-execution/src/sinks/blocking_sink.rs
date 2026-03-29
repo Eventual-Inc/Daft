@@ -10,9 +10,7 @@ use common_metrics::{
     Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
-use common_runtime::{
-    JoinSet, OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime,
-};
+use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
@@ -62,7 +60,10 @@ pub(crate) trait BlockingSink: Send + Sync {
     }
 }
 
-type SinkTaskResult<Op> = DaftResult<(InputId, <Op as BlockingSink>::State, Duration)>;
+enum TaskResult<Op: BlockingSink> {
+    Sink(InputId, Op::State, Duration),
+    Finalized,
+}
 
 struct PerInputState<Op: BlockingSink> {
     states: Vec<Op::State>,
@@ -93,7 +94,7 @@ impl<Op: BlockingSink + 'static> PerInputState<Op> {
 
     fn spawn_sink(
         &mut self,
-        tasks: &mut OrderingAwareJoinSet<SinkTaskResult<Op>>,
+        tasks: &mut OrderingAwareJoinSet<DaftResult<TaskResult<Op>>>,
         op: &Arc<Op>,
         spawner: &ExecutionTaskSpawner,
         input_id: InputId,
@@ -108,13 +109,13 @@ impl<Op: BlockingSink + 'static> PerInputState<Op> {
         tasks.spawn(async move {
             let now = Instant::now();
             let state = op.sink(partition, state, runtime_stats, &spawner).await??;
-            Ok((input_id, state, now.elapsed()))
+            Ok(TaskResult::Sink(input_id, state, now.elapsed()))
         });
     }
 
     fn flush_pending(
         &mut self,
-        tasks: &mut OrderingAwareJoinSet<SinkTaskResult<Op>>,
+        tasks: &mut OrderingAwareJoinSet<DaftResult<TaskResult<Op>>>,
         op: &Arc<Op>,
         spawner: &ExecutionTaskSpawner,
         input_id: InputId,
@@ -174,9 +175,9 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         input_id: InputId,
         finalize_spawner: ExecutionTaskSpawner,
         output_tx: Sender<PipelineMessage>,
-        finalize_tasks: &mut JoinSet<DaftResult<()>>,
+        tasks: &mut OrderingAwareJoinSet<DaftResult<TaskResult<Op>>>,
     ) {
-        finalize_tasks.spawn(async move {
+        tasks.spawn(async move {
             let output = op.finalize(per_input.states, &finalize_spawner).await??;
             for partition in output {
                 per_input.runtime_stats.add_rows_out(partition.len() as u64);
@@ -188,7 +189,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     .await;
             }
             let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
-            Ok(())
+            Ok(TaskResult::Finalized)
         });
     }
 
@@ -216,8 +217,8 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
             info_span!("BlockingSink::Finalize"),
         );
         let mut inputs: HashMap<InputId, PerInputState<Op>> = HashMap::new();
-        let mut tasks: OrderingAwareJoinSet<SinkTaskResult<Op>> = OrderingAwareJoinSet::new(false);
-        let mut finalize_tasks: JoinSet<DaftResult<()>> = JoinSet::new();
+        let mut tasks: OrderingAwareJoinSet<DaftResult<TaskResult<Op>>> =
+            OrderingAwareJoinSet::new(false);
         let mut child_closed = false;
         let mut node_initialized = false;
 
@@ -230,11 +231,6 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         )
         .await?
         {
-            // Poll finalize tasks to propagate errors
-            while let Some(result) = finalize_tasks.try_join_next() {
-                result??;
-            }
-
             let per_input_tasks: Vec<_> = inputs
                 .iter()
                 .map(|(id, s)| {
@@ -252,7 +248,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                 inputs.len(),
             );
             match event {
-                PipelineEvent::TaskCompleted((input_id, state, elapsed)) => {
+                PipelineEvent::TaskCompleted(TaskResult::Sink(input_id, state, elapsed)) => {
                     let per_input = inputs.get_mut(&input_id).unwrap();
                     per_input
                         .runtime_stats
@@ -267,10 +263,11 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                             input_id,
                             finalize_spawner.clone(),
                             output_tx.clone(),
-                            &mut finalize_tasks,
+                            &mut tasks,
                         );
                     }
                 }
+                PipelineEvent::TaskCompleted(TaskResult::Finalized) => {}
                 PipelineEvent::Morsel {
                     input_id,
                     partition,
@@ -312,7 +309,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                             input_id,
                             finalize_spawner.clone(),
                             output_tx.clone(),
-                            &mut finalize_tasks,
+                            &mut tasks,
                         );
                     }
                 }
@@ -332,16 +329,11 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                             input_id,
                             finalize_spawner.clone(),
                             output_tx.clone(),
-                            &mut finalize_tasks,
+                            &mut tasks,
                         );
                     }
                 }
             }
-        }
-
-        // Drain remaining finalize tasks
-        while let Some(result) = finalize_tasks.join_next().await {
-            result??;
         }
 
         stats_manager.finalize_node(node_id);
