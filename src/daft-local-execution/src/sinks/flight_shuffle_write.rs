@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
@@ -21,8 +21,7 @@ use crate::{
 };
 
 pub(crate) struct FlightShuffleWriteState {
-    cache: Option<Arc<InProgressShuffleCache>>,
-    cache_id: String,
+    cache: Arc<InProgressShuffleCache>,
 }
 
 pub struct FlightShuffleWriteSink {
@@ -32,6 +31,8 @@ pub struct FlightShuffleWriteSink {
     shuffle_dirs: Vec<String>,
     compression: Option<String>,
     target_in_memory_size_per_partition: usize,
+    // Only accessed from the single-threaded event loop; Mutex is just for Sync.
+    caches: std::sync::Mutex<HashMap<InputId, Arc<InProgressShuffleCache>>>,
 }
 
 impl FlightShuffleWriteSink {
@@ -53,6 +54,7 @@ impl FlightShuffleWriteSink {
             target_in_memory_size_per_partition: (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES
                 / num_partitions)
                 .clamp(1024 * 1024 * 8, 1024 * 1024 * 128),
+            caches: std::sync::Mutex::new(HashMap::new()),
         })
     }
 }
@@ -60,43 +62,20 @@ impl FlightShuffleWriteSink {
 impl BlockingSink for FlightShuffleWriteSink {
     type State = FlightShuffleWriteState;
 
-    fn max_concurrency(&self) -> usize {
-        1
-    }
-
     #[instrument(skip_all, name = "FlightShuffleWriteSink::sink")]
     fn sink(
         &self,
         input: MicroPartition,
-        mut state: Self::State,
+        state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let num_partitions = self.num_partitions;
-        let shuffle_id = self.shuffle_id;
         let partition_by = self.partition_by.clone();
-        let shuffle_dirs = self.shuffle_dirs.clone();
-        let compression = self.compression.clone();
-        let target_size = self.target_in_memory_size_per_partition;
 
         spawner
             .spawn(
                 async move {
-                    let cache = match &state.cache {
-                        Some(c) => c.clone(),
-                        None => {
-                            let c = Arc::new(InProgressShuffleCache::try_new(
-                                num_partitions,
-                                &shuffle_dirs,
-                                state.cache_id.clone(),
-                                shuffle_id,
-                                target_size,
-                                compression.as_deref(),
-                            )?);
-                            state.cache = Some(c.clone());
-                            c
-                        }
-                    };
                     let partitioned = match &partition_by {
                         Some(partition_by) => {
                             let partition_by = BoundExpr::bind_all(partition_by, &input.schema())?;
@@ -104,7 +83,8 @@ impl BlockingSink for FlightShuffleWriteSink {
                         }
                         None => input.partition_by_random(num_partitions, 0)?,
                     };
-                    cache
+                    state
+                        .cache
                         .push_partitioned_data(partitioned.into_iter().collect())
                         .await?;
                     Ok(state)
@@ -125,25 +105,20 @@ impl BlockingSink for FlightShuffleWriteSink {
         spawner
             .spawn(
                 async move {
-                    let mut all_rows: Vec<usize> = vec![0; num_partitions];
-                    let mut all_bytes: Vec<usize> = vec![0; num_partitions];
-                    for state in states {
-                        let Some(cache) = state.cache else { continue };
-                        let finalized = cache.close().await?;
-                        for i in 0..num_partitions {
-                            all_rows[i] += finalized.rows_per_partition()[i];
-                            all_bytes[i] += finalized.bytes_per_partition()[i];
-                        }
-                        register_shuffle_cache(shuffle_id, finalized.into()).await?;
-                    }
+                    // All states share the same cache — just take the first one.
+                    let cache = states.into_iter().next().unwrap().cache;
+                    let finalized = cache.close().await?;
+                    let all_rows = finalized.rows_per_partition();
+                    let all_bytes = finalized.bytes_per_partition();
+                    register_shuffle_cache(shuffle_id, finalized.into()).await?;
                     let rows_series = Int32Array::from_values(
                         "rows_per_partition",
-                        all_rows.into_iter().map(|i| i as i32),
+                        all_rows.iter().map(|&i| i as i32),
                     )
                     .into_series();
                     let bytes_series = Int32Array::from_values(
                         "bytes_per_partition",
-                        all_bytes.into_iter().map(|i| i as i32),
+                        all_bytes.iter().map(|&i| i as i32),
                     )
                     .into_series();
                     let schema = Schema::new(vec![
@@ -180,9 +155,22 @@ impl BlockingSink for FlightShuffleWriteSink {
     }
 
     fn make_state(&self, input_id: InputId) -> DaftResult<Self::State> {
-        Ok(FlightShuffleWriteState {
-            cache: None,
-            cache_id: input_id.to_string(),
-        })
+        let mut caches = self.caches.lock().unwrap();
+        let cache = match caches.entry(input_id) {
+            std::collections::hash_map::Entry::Occupied(e) => e.get().clone(),
+            std::collections::hash_map::Entry::Vacant(e) => {
+                let c = Arc::new(InProgressShuffleCache::try_new(
+                    self.num_partitions,
+                    &self.shuffle_dirs,
+                    input_id.to_string(),
+                    self.shuffle_id,
+                    self.target_in_memory_size_per_partition,
+                    self.compression.as_deref(),
+                )?);
+                e.insert(c.clone());
+                c
+            }
+        };
+        Ok(FlightShuffleWriteState { cache })
     }
 }
