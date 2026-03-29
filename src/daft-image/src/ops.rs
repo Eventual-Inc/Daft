@@ -955,9 +955,7 @@ fn dct1d(x: &[f64]) -> Vec<f64> {
 fn dct1d_fft(x: &[f64]) -> Vec<f64> {
     let n = x.len();
     // Makhoul reordering: even-indexed elements first, reversed odd-indexed last.
-    let mut buf: Vec<Complex<f64>> = (0..n / 2)
-        .map(|i| Complex::new(x[2 * i], 0.0))
-        .collect();
+    let mut buf: Vec<Complex<f64>> = (0..n / 2).map(|i| Complex::new(x[2 * i], 0.0)).collect();
     for i in 0..n / 2 {
         buf.push(Complex::new(x[2 * i + 1], 0.0));
     }
