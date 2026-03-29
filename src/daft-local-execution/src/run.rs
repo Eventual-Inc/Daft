@@ -123,7 +123,7 @@ impl Drop for MessageRouter {
 
 /// Per-plan execution state
 struct PlanState {
-    task_handle: RuntimeTask<DaftResult<ExecutionStats>>,
+    task_handle: RuntimeTask<DaftResult<()>>,
     enqueue_input_sender: Sender<EnqueueInputMessage>,
     stats_handle: RuntimeStatsManagerHandle,
     active_input_ids: HashSet<InputId>,
@@ -258,7 +258,7 @@ async fn run_execution_loop(
     input_senders: Arc<HashMap<SourceId, crate::input_sender::InputSender>>,
     pipeline: Box<dyn crate::pipeline::PipelineNode>,
     maintain_order: bool,
-) -> DaftResult<ExecutionStats> {
+) -> DaftResult<()> {
     let stats_manager_handle = stats_manager.handle();
     let memory_manager = get_or_init_memory_manager();
     let mut runtime_handle =
@@ -322,9 +322,9 @@ async fn run_execution_loop(
         }
     };
 
-    let final_stats = stats_manager.finish(finish_status).await;
+    stats_manager.finish(finish_status).await;
     flush_opentelemetry_providers();
-    result.map(|()| final_stats)
+    result
 }
 
 pub(crate) struct NativeExecutor {
@@ -363,7 +363,7 @@ impl NativeExecutor {
             let handle = get_global_runtime();
             let stats_manager =
                 RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
-            let stats_handle = stats_manager.snapshot_handle();
+            let stats_handle = stats_manager.handle();
 
             let (enqueue_input_tx, enqueue_input_rx) = create_channel::<EnqueueInputMessage>(1);
 
@@ -436,8 +436,12 @@ impl NativeExecutor {
         if should_remove {
             let plan_state = self.plans.remove(&fingerprint).unwrap();
             Ok(async move {
+                // Get stats for this specific input_id before tearing down the plan.
+                let stats = plan_state.stats_handle.take_input_snapshot(input_id).await;
                 drop(plan_state.enqueue_input_sender);
-                plan_state.task_handle.await?
+                // Await the task handle to ensure clean shutdown.
+                plan_state.task_handle.await??;
+                stats
             }
             .boxed())
         } else {

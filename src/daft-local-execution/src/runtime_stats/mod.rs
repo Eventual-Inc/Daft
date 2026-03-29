@@ -141,7 +141,7 @@ impl RuntimeStatsManagerHandle {
 pub struct RuntimeStatsManager {
     node_tx: Arc<mpsc::UnboundedSender<StatsManagerMessage>>,
     finish_tx: oneshot::Sender<QueryEndState>,
-    stats_manager_task: RuntimeTask<ExecutionStats>,
+    stats_manager_task: RuntimeTask<()>,
 }
 
 impl std::fmt::Debug for RuntimeStatsManager {
@@ -448,16 +448,6 @@ impl RuntimeStatsManager {
                     log::error!("Failed to flush subscriber: {}", e);
                 }
             }
-
-            // Return the final stat snapshot for all remaining stats
-            let mut final_snapshot = Vec::new();
-            for (&node_id, node_info) in &node_info_map {
-                if let Some(snapshot) = aggregate_node_stats(&input_stats, node_id) {
-                    final_snapshot.push((node_info.clone(), snapshot));
-                }
-            }
-
-            ExecutionStats::new(query_id, final_snapshot).with_query_plan(query_plan)
         };
 
         let task_handle = RuntimeTask::new(handle, event_loop);
@@ -472,17 +462,13 @@ impl RuntimeStatsManager {
         RuntimeStatsManagerHandle(self.node_tx.clone())
     }
 
-    pub fn snapshot_handle(&self) -> RuntimeStatsManagerHandle {
-        self.handle()
-    }
-
-    pub async fn finish(self, status: QueryEndState) -> ExecutionStats {
+    pub async fn finish(self, status: QueryEndState) {
         self.finish_tx
             .send(status)
             .expect("The finish_tx channel was closed");
         self.stats_manager_task
             .await
-            .expect("The finish_tx channel was closed")
+            .expect("The stats_manager_task panicked");
     }
 }
 
