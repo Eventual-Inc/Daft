@@ -5,7 +5,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::{Meter, ops::NodeInfo};
-use common_runtime::OrderingAwareJoinSet;
+use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads};
 use daft_micropartition::MicroPartition;
 use tokio::sync::oneshot;
 
@@ -180,8 +180,13 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
         let mut node_initialized = false;
         let mut child_closed = false;
 
-        while let Some(event) =
-            next_event(&mut tasks, usize::MAX, &mut receiver, &mut child_closed).await?
+        while let Some(event) = next_event(
+            &mut tasks,
+            get_compute_pool_num_threads(),
+            &mut receiver,
+            &mut child_closed,
+        )
+        .await?
         {
             match event {
                 PipelineEvent::TaskCompleted((input_id, state)) => {

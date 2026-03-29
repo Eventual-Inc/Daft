@@ -90,12 +90,7 @@ impl MessageRouter {
     fn route_message(&mut self, msg: PipelineMessage) {
         match msg {
             PipelineMessage::Flush(input_id) => {
-                if let Some(started) = self.input_start_times.remove(&input_id) {
-                    println!(
-                        "NativeExecutor: input_id={input_id} pipeline finished in {:?}",
-                        started.elapsed()
-                    );
-                }
+                self.input_start_times.remove(&input_id);
                 self.output_senders.remove(&input_id);
             }
             PipelineMessage::Morsel {
@@ -110,7 +105,6 @@ impl MessageRouter {
     }
 
     fn insert_output_sender(&mut self, input_id: InputId, sender: UnboundedSender<MicroPartition>) {
-        println!("NativeExecutor: input_id={input_id} pipeline started (enqueued)");
         self.input_start_times.insert(input_id, Instant::now());
         self.output_senders.insert(input_id, sender);
     }

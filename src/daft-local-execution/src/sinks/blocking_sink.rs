@@ -217,8 +217,13 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         let mut child_closed = false;
         let mut node_initialized = false;
 
-        while let Some(event) =
-            next_event(&mut tasks, usize::MAX, &mut child_rx, &mut child_closed).await?
+        while let Some(event) = next_event(
+            &mut tasks,
+            max_concurrency,
+            &mut child_rx,
+            &mut child_closed,
+        )
+        .await?
         {
             match event {
                 PipelineEvent::TaskCompleted((input_id, state, elapsed)) => {

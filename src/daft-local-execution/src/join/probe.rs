@@ -210,8 +210,13 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
             OrderingAwareJoinSet::new(self.maintain_order);
         let mut child_closed = false;
 
-        while let Some(event) =
-            next_event(&mut tasks, usize::MAX, &mut receiver, &mut child_closed).await?
+        while let Some(event) = next_event(
+            &mut tasks,
+            max_concurrency,
+            &mut receiver,
+            &mut child_closed,
+        )
+        .await?
         {
             match event {
                 PipelineEvent::TaskCompleted(TaskOutput::BuildStateReady {
