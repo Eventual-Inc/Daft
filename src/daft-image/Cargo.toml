@@ -15,6 +15,7 @@ log = {workspace = true}
 serde = {workspace = true}
 typetag = {workspace = true}
 rayon.workspace = true
+rustfft.workspace = true
 
 [dev-dependencies]
 criterion = {workspace = true}
