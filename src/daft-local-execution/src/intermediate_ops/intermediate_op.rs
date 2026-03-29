@@ -24,9 +24,9 @@ use crate::{
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{
-        BuilderContext, InputId, MorselSizeRequirement, NodeName, PipelineMessage, PipelineNode,
+        BuilderContext, InputId, MorselSizeRequirement, NodeName, PipelineEvent, PipelineMessage,
+        PipelineNode, next_event,
     },
-    pipeline_execution::{PipelineEvent, next_event},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 
@@ -244,14 +244,14 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
     async fn process_input(&mut self, receiver: &mut Receiver<PipelineMessage>) -> DaftResult<()> {
         let mut input_closed = false;
 
-        while !input_closed || !self.task_set.is_empty() || !self.input_states.is_empty() {
-            let event = next_event(
-                &mut self.task_set,
-                self.op.max_concurrency(),
-                receiver,
-                &mut input_closed,
-            )
-            .await?;
+        while let Some(event) = next_event(
+            &mut self.task_set,
+            self.op.max_concurrency(),
+            receiver,
+            &mut input_closed,
+        )
+        .await?
+        {
             let cf = match event {
                 PipelineEvent::TaskCompleted(task_result) => {
                     self.handle_worker_result(task_result).await?

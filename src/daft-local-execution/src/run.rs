@@ -160,7 +160,8 @@ impl PyNativeExecutor {
         }
     }
 
-    #[pyo3(signature = (local_physical_plan, daft_ctx, input_id, inputs, context=None))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (local_physical_plan, daft_ctx, input_id, inputs, context=None, maintain_order=true))]
     pub fn run<'py>(
         &self,
         py: Python<'py>,
@@ -169,6 +170,7 @@ impl PyNativeExecutor {
         input_id: InputId,
         inputs: HashMap<SourceId, Input>,
         context: Option<HashMap<String, String>>,
+        maintain_order: bool,
     ) -> PyResult<Bound<'py, pyo3::PyAny>> {
         let daft_ctx: &DaftContext = daft_ctx.into();
         let plan = local_physical_plan.plan.clone();
@@ -182,6 +184,7 @@ impl PyNativeExecutor {
                 context,
                 inputs,
                 input_id,
+                maintain_order,
             )?
         };
 
@@ -260,12 +263,13 @@ async fn run_execution_loop(
     mut enqueue_input_rx: crate::channel::Receiver<EnqueueInputMessage>,
     input_senders: Arc<HashMap<SourceId, crate::input_sender::InputSender>>,
     pipeline: Box<dyn crate::pipeline::PipelineNode>,
+    maintain_order: bool,
 ) -> DaftResult<ExecutionStats> {
     let stats_manager_handle = stats_manager.handle();
     let memory_manager = get_or_init_memory_manager();
     let mut runtime_handle =
         ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
-    let mut output_receiver = pipeline.start(true, &mut runtime_handle)?;
+    let mut output_receiver = pipeline.start(maintain_order, &mut runtime_handle)?;
 
     let mut message_router = MessageRouter::new();
     let mut input_senders = Some(input_senders);
@@ -342,6 +346,7 @@ impl NativeExecutor {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn run(
         &mut self,
         local_physical_plan: &LocalPhysicalPlanRef,
@@ -350,6 +355,7 @@ impl NativeExecutor {
         additional_context: Option<HashMap<String, String>>,
         inputs: HashMap<SourceId, Input>,
         input_id: InputId,
+        maintain_order: bool,
     ) -> DaftResult<(u64, BoxFuture<'static, DaftResult<ExecutionEngineResult>>)> {
         let (query_id, fingerprint) = parse_context(additional_context.as_ref());
 
@@ -374,6 +380,7 @@ impl NativeExecutor {
                 enqueue_input_rx,
                 input_senders,
                 pipeline,
+                maintain_order,
             );
 
             let task_handle = RuntimeTask::new(handle, task);
@@ -421,15 +428,16 @@ impl NativeExecutor {
         fingerprint: u64,
         input_id: InputId,
     ) -> DaftResult<BoxFuture<'static, DaftResult<ExecutionStats>>> {
-        let plan_state = self.plans.get_mut(&fingerprint).ok_or_else(|| {
-            common_error::DaftError::InternalError(format!(
-                "try_finish called for unknown plan fingerprint {fingerprint}"
-            ))
-        })?;
+        let Some(plan_state) = self.plans.get_mut(&fingerprint) else {
+            // Plan already removed (pipeline died and another input_id cleaned it up).
+            // Return empty stats; the actual error was already surfaced by the first caller.
+            let query_id = QueryID::from("");
+            return Ok(async move { Ok(ExecutionStats::new(query_id, vec![])) }.boxed());
+        };
 
         plan_state.active_input_ids.remove(&input_id);
-        let should_remove =
-            plan_state.active_input_ids.is_empty() || plan_state.enqueue_input_sender.is_closed();
+        let pipeline_dead = plan_state.enqueue_input_sender.is_closed();
+        let should_remove = plan_state.active_input_ids.is_empty() || pipeline_dead;
 
         if should_remove {
             let plan_state = self.plans.remove(&fingerprint).unwrap();

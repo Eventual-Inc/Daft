@@ -16,7 +16,10 @@ use super::{
     blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult},
     window_base::{WindowBaseState, WindowSinkParams},
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
+};
 
 struct WindowPartitionAndDynamicFrameParams {
     aggregations: Vec<BoundAggExpr>,
@@ -282,7 +285,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
         display
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         WindowBaseState::make_base_state(self.num_partitions())
     }
 }

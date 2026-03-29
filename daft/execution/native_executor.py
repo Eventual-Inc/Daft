@@ -44,6 +44,7 @@ class NativeExecutor:
                 0,
                 dict(inputs),
                 context,
+                ctx.daft_execution_config.maintain_order,
             )
             nonlocal stats
             try:

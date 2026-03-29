@@ -9,7 +9,10 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
+};
 
 pub(crate) enum AggregateState {
     Accumulating(Vec<MicroPartition>),
@@ -140,7 +143,7 @@ impl BlockingSink for AggregateSink {
         )]
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         Ok(AggregateState::Accumulating(vec![]))
     }
 }

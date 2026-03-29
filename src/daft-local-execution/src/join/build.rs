@@ -1,35 +1,32 @@
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::{HashMap, VecDeque, hash_map::Entry},
     sync::{Arc, Mutex},
 };
 
 use common_error::DaftResult;
 use common_metrics::{Meter, ops::NodeInfo};
-use common_runtime::JoinSet;
+use common_runtime::OrderingAwareJoinSet;
+use daft_micropartition::MicroPartition;
 use tokio::sync::oneshot;
 
 use crate::{
     ExecutionTaskSpawner,
-    channel::{Receiver, Sender, create_channel},
+    channel::Receiver,
     join::{join_operator::JoinOperator, stats::JoinStats},
-    pipeline::{InputId, PipelineMessage},
+    pipeline::{InputId, PipelineEvent, PipelineMessage, next_event},
     runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle},
 };
 
-/// Slot for one input_id: either probe will receive (sender stored) or build already sent (value stored).
 enum BuildStateSlot<T> {
     Sender(oneshot::Sender<T>),
     Ready(T),
 }
 
-/// Result of subscribing for finalized build state: either await the receiver or use the ready value.
 pub(crate) enum FinalizedBuildStateReceiver<Op: JoinOperator> {
     Receiver(oneshot::Receiver<Op::FinalizedBuildState>),
     Ready(Op::FinalizedBuildState),
 }
 
-/// Bridge for communicating finalized build state between build and probe sides.
-/// Uses oneshot: one send per input_id; probe receives once.
 pub(crate) struct BuildStateBridge<Op: JoinOperator> {
     channels: Mutex<HashMap<InputId, BuildStateSlot<Op::FinalizedBuildState>>>,
 }
@@ -78,32 +75,59 @@ impl<Op: JoinOperator> BuildStateBridge<Op> {
     }
 }
 
-/// Process all morsels for a single input_id on the build side, then finalize.
-async fn process_single_input<Op: JoinOperator + 'static>(
-    input_id: InputId,
-    mut receiver: Receiver<PipelineMessage>,
-    op: Arc<Op>,
-    task_spawner: ExecutionTaskSpawner,
-    build_state_bridge: Arc<BuildStateBridge<Op>>,
-    runtime_stats: Arc<JoinStats>,
-) -> DaftResult<()> {
-    let mut state = op.make_build_state()?;
+type BuildTaskResult<Op> = DaftResult<(InputId, <Op as JoinOperator>::BuildState)>;
 
-    while let Some(msg) = receiver.recv().await {
-        match msg {
-            PipelineMessage::Morsel { partition, .. } => {
-                runtime_stats.add_build_rows_inserted(partition.len() as u64);
-                state = op.build(partition, state, &task_spawner).await??;
-            }
-            PipelineMessage::Flush(_) => {
-                break;
-            }
+struct PerBuildInput<Op: JoinOperator> {
+    state: Option<Op::BuildState>,
+    pending: VecDeque<MicroPartition>,
+    flushed: bool,
+    runtime_stats: Arc<JoinStats>,
+}
+
+impl<Op: JoinOperator + 'static> PerBuildInput<Op> {
+    fn new(state: Op::BuildState, runtime_stats: Arc<JoinStats>) -> Self {
+        Self {
+            state: Some(state),
+            pending: VecDeque::new(),
+            flushed: false,
+            runtime_stats,
         }
     }
 
-    let finalized = op.finalize_build(state)?;
-    build_state_bridge.send_finalized_build_state(input_id, finalized);
-    Ok(())
+    /// If the state is idle and there is pending work, concat all pending
+    /// partitions and spawn a single build task.
+    fn flush_pending(
+        &mut self,
+        tasks: &mut OrderingAwareJoinSet<BuildTaskResult<Op>>,
+        op: &Arc<Op>,
+        spawner: &ExecutionTaskSpawner,
+        input_id: InputId,
+    ) -> DaftResult<()> {
+        if self.pending.is_empty() || self.state.is_none() {
+            return Ok(());
+        }
+        let state = self.state.take().unwrap();
+        let partition = if self.pending.len() == 1 {
+            self.pending.pop_front().unwrap()
+        } else {
+            MicroPartition::concat(self.pending.drain(..).collect::<Vec<_>>())?
+        };
+        let op = op.clone();
+        let spawner = spawner.clone();
+        tasks.spawn(async move {
+            let state = op.build(partition, state, &spawner).await??;
+            Ok((input_id, state))
+        });
+        Ok(())
+    }
+
+    fn is_idle(&self) -> bool {
+        self.state.is_some()
+    }
+
+    fn ready_to_finalize(&self) -> bool {
+        self.flushed && self.is_idle()
+    }
 }
 
 pub(crate) struct BuildExecutionContext<Op: JoinOperator> {
@@ -138,63 +162,87 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
         }
     }
 
+    fn try_finalize(&self, per_input: PerBuildInput<Op>, input_id: InputId) {
+        let state = per_input.state.expect("must be idle when finalizing");
+        if let Ok(finalized) = self.op.finalize_build(state) {
+            self.build_state_bridge
+                .send_finalized_build_state(input_id, finalized);
+        }
+    }
+
     pub(crate) async fn process_build_input(
         &self,
         receiver: Receiver<PipelineMessage>,
     ) -> DaftResult<()> {
         let mut receiver = receiver;
-        let mut per_input_senders: HashMap<InputId, Sender<PipelineMessage>> = HashMap::new();
-        let mut processor_set: JoinSet<DaftResult<()>> = JoinSet::new();
+        let mut inputs: HashMap<InputId, PerBuildInput<Op>> = HashMap::new();
+        let mut tasks: OrderingAwareJoinSet<BuildTaskResult<Op>> = OrderingAwareJoinSet::new(false);
         let mut node_initialized = false;
-        let mut input_closed = false;
+        let mut child_closed = false;
 
-        while !input_closed || !processor_set.is_empty() {
-            tokio::select! {
-                msg = receiver.recv(), if !input_closed => {
-                    let Some(msg) = msg else {
-                        input_closed = true;
-                        per_input_senders.clear();
-                        continue;
-                    };
+        while let Some(event) =
+            next_event(&mut tasks, usize::MAX, &mut receiver, &mut child_closed).await?
+        {
+            match event {
+                PipelineEvent::TaskCompleted((input_id, state)) => {
+                    let per_input = inputs.get_mut(&input_id).unwrap();
+                    per_input.state = Some(state);
+                    per_input.flush_pending(&mut tasks, &self.op, &self.task_spawner, input_id)?;
 
+                    if inputs.get(&input_id).is_some_and(|p| p.ready_to_finalize()) {
+                        self.try_finalize(inputs.remove(&input_id).unwrap(), input_id);
+                    }
+                }
+                PipelineEvent::Morsel {
+                    input_id,
+                    partition,
+                } => {
                     if !node_initialized {
                         self.stats_manager.activate_node(self.node_id);
                         node_initialized = true;
                     }
 
-                    let input_id = match &msg {
-                        PipelineMessage::Morsel { input_id, .. } => *input_id,
-                        PipelineMessage::Flush(input_id) => *input_id,
+                    let per_input = match inputs.entry(input_id) {
+                        Entry::Occupied(e) => e.into_mut(),
+                        Entry::Vacant(e) => {
+                            let runtime_stats =
+                                Arc::new(JoinStats::new(&self.meter, &self.node_info));
+                            self.stats_manager.register_runtime_stats(
+                                self.node_id,
+                                input_id,
+                                runtime_stats.clone(),
+                            );
+                            let state = self.op.make_build_state()?;
+                            e.insert(PerBuildInput::new(state, runtime_stats))
+                        }
                     };
-
-                    if let Entry::Vacant(e) = per_input_senders.entry(input_id) {
-                        let (tx, rx) = create_channel(1);
-                        e.insert(tx);
-
-                        let op = self.op.clone();
-                        let task_spawner = self.task_spawner.clone();
-                        let build_state_bridge = self.build_state_bridge.clone();
-                        let runtime_stats = Arc::new(JoinStats::new(&self.meter, &self.node_info));
-                        self.stats_manager.register_runtime_stats(self.node_id, input_id, runtime_stats.clone());
-                        processor_set.spawn(async move {
-                            process_single_input(
-                                input_id, rx, op, task_spawner,
-                                build_state_bridge, runtime_stats,
-                            )
-                            .await
-                        });
+                    per_input
+                        .runtime_stats
+                        .add_build_rows_inserted(partition.len() as u64);
+                    per_input.pending.push_back(partition);
+                    per_input.flush_pending(&mut tasks, &self.op, &self.task_spawner, input_id)?;
+                }
+                PipelineEvent::Flush(input_id) => {
+                    if let Some(p) = inputs.get_mut(&input_id) {
+                        p.flushed = true;
                     }
-
-                    let is_flush = matches!(&msg, PipelineMessage::Flush(_));
-                    if per_input_senders[&input_id].send(msg).await.is_err() {
-                        // Processor died — error will surface from join below
-                    }
-                    if is_flush {
-                        per_input_senders.remove(&input_id);
+                    if inputs.get(&input_id).is_some_and(|p| p.ready_to_finalize()) {
+                        self.try_finalize(inputs.remove(&input_id).unwrap(), input_id);
                     }
                 }
-                Some(result) = processor_set.join_next(), if !processor_set.is_empty() => {
-                    result??;
+                PipelineEvent::InputClosed => {
+                    for p in inputs.values_mut() {
+                        p.flushed = true;
+                    }
+                    let ready_ids: Vec<_> = inputs
+                        .iter()
+                        .filter(|(_, p)| p.ready_to_finalize())
+                        .map(|(id, _)| *id)
+                        .collect();
+                    for input_id in ready_ids {
+                        let per_input = inputs.remove(&input_id).unwrap();
+                        self.try_finalize(per_input, input_id);
+                    }
                 }
             }
         }

@@ -16,7 +16,10 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
+};
 
 #[derive(Clone, Debug)]
 pub(crate) enum AggStrategy {
@@ -437,7 +440,7 @@ impl BlockingSink for GroupedAggregateSink {
         display
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         Ok(GroupedAggregateState::new(
             self.num_partitions(),
             self.partial_agg_threshold,

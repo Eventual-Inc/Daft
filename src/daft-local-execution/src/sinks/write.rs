@@ -15,7 +15,11 @@ use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
+    runtime_stats::RuntimeStats,
+};
 
 pub(crate) struct WriteStats {
     duration_us: Counter,
@@ -201,7 +205,7 @@ impl BlockingSink for WriteSink {
         NodeType::Write
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         let writer = self.writer_factory.create_writer(0, None)?;
         Ok(WriteState::new(writer))
     }

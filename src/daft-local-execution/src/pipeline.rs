@@ -84,6 +84,53 @@ pub enum PipelineMessage {
     Flush(InputId),
 }
 
+/// Events yielded by [`next_event`].
+pub(crate) enum PipelineEvent<TaskResult> {
+    TaskCompleted(TaskResult),
+    Morsel {
+        input_id: InputId,
+        partition: MicroPartition,
+    },
+    Flush(InputId),
+    InputClosed,
+}
+
+/// Yield the next event from either the task set or the input receiver.
+/// Returns `Ok(None)` when both the input is closed and no tasks remain.
+pub(crate) async fn next_event<TaskResult: Send + 'static>(
+    task_set: &mut common_runtime::OrderingAwareJoinSet<DaftResult<TaskResult>>,
+    max_concurrency: usize,
+    receiver: &mut crate::channel::Receiver<PipelineMessage>,
+    input_closed: &mut bool,
+) -> DaftResult<Option<PipelineEvent<TaskResult>>> {
+    if *input_closed && task_set.is_empty() {
+        return Ok(None);
+    }
+    tokio::select! {
+        msg = receiver.recv(), if task_set.len() < max_concurrency && !*input_closed => {
+            match msg {
+                Some(PipelineMessage::Morsel { input_id, partition }) => {
+                    Ok(Some(PipelineEvent::Morsel { input_id, partition }))
+                }
+                Some(PipelineMessage::Flush(input_id)) => {
+                    Ok(Some(PipelineEvent::Flush(input_id)))
+                }
+                None => {
+                    *input_closed = true;
+                    Ok(Some(PipelineEvent::InputClosed))
+                }
+            }
+        }
+        Some(task_result) = task_set.join_next(), if !task_set.is_empty() => {
+            match task_result {
+                Ok(Ok(result)) => Ok(Some(PipelineEvent::TaskCompleted(result))),
+                Ok(Err(e)) => Err(e),
+                Err(e) => Err(e.into()),
+            }
+        }
+    }
+}
+
 pub type NodeName = Cow<'static, str>;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

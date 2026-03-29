@@ -1,206 +1,97 @@
 use std::{
     collections::{HashMap, hash_map::Entry},
-    ops::ControlFlow,
     sync::Arc,
     time::{Duration, Instant},
 };
 
 use common_error::DaftResult;
 use common_metrics::{Meter, ops::NodeInfo};
-use common_runtime::JoinSet;
+use common_runtime::OrderingAwareJoinSet;
 
 use crate::{
     ExecutionTaskSpawner,
     buffer::RowBasedBuffer,
-    channel::{Receiver, Sender, create_channel},
+    channel::{Receiver, Sender},
     join::{
         build::{BuildStateBridge, FinalizedBuildStateReceiver},
         join_operator::{JoinOperator, ProbeOutput},
         stats::JoinStats,
     },
-    pipeline::{InputId, PipelineMessage},
+    pipeline::{InputId, PipelineEvent, PipelineMessage, next_event},
     runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle},
 };
 
-/// Process all morsels for a single input_id on the probe side, finalize, and send output.
-#[allow(clippy::too_many_arguments)]
-async fn process_single_input<Op: JoinOperator + 'static>(
-    input_id: InputId,
-    mut receiver: Receiver<PipelineMessage>,
-    op: Arc<Op>,
-    task_spawner: ExecutionTaskSpawner,
-    finalize_spawner: ExecutionTaskSpawner,
+enum TaskOutput<Op: JoinOperator> {
+    BuildStateReady {
+        input_id: InputId,
+        finalized: Op::FinalizedBuildState,
+    },
+    ProbeComplete {
+        input_id: InputId,
+        state: Op::ProbeState,
+        output: ProbeOutput,
+        elapsed: Duration,
+    },
+}
+
+type TaskResult<Op> = DaftResult<TaskOutput<Op>>;
+
+struct PerProbeInput<Op: JoinOperator> {
+    states: Vec<Op::ProbeState>,
+    buffer: RowBasedBuffer,
+    flushed: bool,
     runtime_stats: Arc<JoinStats>,
-    output_sender: Sender<PipelineMessage>,
-    build_state_bridge: Arc<BuildStateBridge<Op>>,
-    _maintain_order: bool,
-) -> DaftResult<ControlFlow<()>> {
-    let finalized = match build_state_bridge.subscribe(input_id) {
-        FinalizedBuildStateReceiver::Receiver(rx) => rx.await.map_err(|e| {
-            common_error::DaftError::ValueError(format!(
-                "Failed to receive finalized build state: {}",
-                e
-            ))
-        })?,
-        FinalizedBuildStateReceiver::Ready(v) => v,
-    };
+    max_concurrency: usize,
+}
 
-    let max_concurrency = op.max_probe_concurrency();
-    let mut states: Vec<Op::ProbeState> = (0..max_concurrency)
-        .map(|_| op.make_probe_state(finalized.clone()))
-        .collect();
+impl<Op: JoinOperator + 'static> PerProbeInput<Op> {
+    fn new(op: &Op, runtime_stats: Arc<JoinStats>, max_concurrency: usize) -> Self {
+        let (lower, upper) = op.morsel_size_requirement().unwrap_or_default().values();
+        Self {
+            states: Vec::new(),
+            buffer: RowBasedBuffer::new(lower, upper),
+            flushed: false,
+            runtime_stats,
+            max_concurrency,
+        }
+    }
 
-    let (lower, upper) = op.morsel_size_requirement().unwrap_or_default().values();
-    let mut buffer = RowBasedBuffer::new(lower, upper);
-
-    let mut task_set: JoinSet<DaftResult<(Op::ProbeState, ProbeOutput, Duration)>> = JoinSet::new();
-    let mut input_closed = false;
-
-    while !input_closed || !task_set.is_empty() {
-        // Try to spawn from buffer while states are available
-        while !states.is_empty() {
-            let batch = buffer.next_batch_if_ready()?;
-            if let Some(partition) = batch {
-                let state = states.pop().unwrap();
+    fn spawn_ready_batches(
+        &mut self,
+        tasks: &mut OrderingAwareJoinSet<TaskResult<Op>>,
+        op: &Arc<Op>,
+        spawner: &ExecutionTaskSpawner,
+        input_id: InputId,
+    ) -> DaftResult<()> {
+        while let Some(state) = self.states.pop() {
+            if let Some(batch) = self.buffer.next_batch_if_ready()? {
                 let op = op.clone();
-                let task_spawner = task_spawner.clone();
-                task_set.spawn(async move {
+                let spawner = spawner.clone();
+                tasks.spawn(async move {
                     let now = Instant::now();
-                    let (new_state, result) = op.probe(partition, state, &task_spawner).await??;
-                    Ok((new_state, result, now.elapsed()))
+                    let (state, output) = op.probe(batch, state, &spawner).await??;
+                    Ok(TaskOutput::ProbeComplete {
+                        input_id,
+                        state,
+                        output,
+                        elapsed: now.elapsed(),
+                    })
                 });
             } else {
+                self.states.push(state);
                 break;
             }
         }
-
-        if input_closed && task_set.is_empty() {
-            break;
-        }
-
-        tokio::select! {
-            biased;
-
-            Some(result) = task_set.join_next(), if !task_set.is_empty() => {
-                let (state, result, elapsed) = result??;
-                runtime_stats.add_duration_us(elapsed.as_micros() as u64);
-
-                // Send output if present
-                let output_mp = match &result {
-                    ProbeOutput::NeedMoreInput(mp) => mp.as_ref(),
-                    ProbeOutput::HasMoreOutput { output, .. } => Some(output),
-                };
-                if let Some(mp) = output_mp {
-                    runtime_stats.add_probe_rows_out(mp.len() as u64);
-                    if output_sender
-                        .send(PipelineMessage::Morsel {
-                            input_id,
-                            partition: mp.clone(),
-                        })
-                        .await
-                        .is_err()
-                    {
-                        return Ok(ControlFlow::Break(()));
-                    }
-                }
-
-                match result {
-                    ProbeOutput::NeedMoreInput(_) => {
-                        states.push(state);
-                    }
-                    ProbeOutput::HasMoreOutput { input, .. } => {
-                        let op = op.clone();
-                        let task_spawner = task_spawner.clone();
-                        task_set.spawn(async move {
-                            let now = Instant::now();
-                            let (new_state, result) =
-                                op.probe(input, state, &task_spawner).await??;
-                            Ok((new_state, result, now.elapsed()))
-                        });
-                    }
-                }
-            }
-
-            msg = receiver.recv(), if !states.is_empty() && !input_closed => {
-                match msg {
-                    Some(PipelineMessage::Morsel { partition, .. }) => {
-                        runtime_stats.add_probe_rows_in(partition.len() as u64);
-                        buffer.push(partition);
-                    }
-                    Some(PipelineMessage::Flush(_)) | None => {
-                        input_closed = true;
-                    }
-                }
-            }
-        }
+        Ok(())
     }
 
-    // Drain remaining buffer
-    if let Some(mut partition) = buffer.pop_all()? {
-        let mut state = states.pop().unwrap();
-        loop {
-            let now = Instant::now();
-            let (new_state, result) = op.probe(partition, state, &task_spawner).await??;
-            let elapsed = now.elapsed();
-            runtime_stats.add_duration_us(elapsed.as_micros() as u64);
-
-            let output_mp = match &result {
-                ProbeOutput::NeedMoreInput(mp) => mp.as_ref(),
-                ProbeOutput::HasMoreOutput { output, .. } => Some(output),
-            };
-            if let Some(mp) = output_mp {
-                runtime_stats.add_probe_rows_out(mp.len() as u64);
-                if output_sender
-                    .send(PipelineMessage::Morsel {
-                        input_id,
-                        partition: mp.clone(),
-                    })
-                    .await
-                    .is_err()
-                {
-                    return Ok(ControlFlow::Break(()));
-                }
-            }
-
-            match result {
-                ProbeOutput::NeedMoreInput(_) => {
-                    states.push(new_state);
-                    break;
-                }
-                ProbeOutput::HasMoreOutput { input, .. } => {
-                    partition = input;
-                    state = new_state;
-                }
-            }
-        }
+    fn all_states_idle(&self) -> bool {
+        self.states.len() == self.max_concurrency
     }
 
-    // Finalize
-    if op.needs_probe_finalization()
-        && let Some(mp) = op.finalize_probe(states, &finalize_spawner).await??
-    {
-        runtime_stats.add_probe_rows_out(mp.len() as u64);
-        if output_sender
-            .send(PipelineMessage::Morsel {
-                input_id,
-                partition: mp,
-            })
-            .await
-            .is_err()
-        {
-            return Ok(ControlFlow::Break(()));
-        }
+    fn ready_to_complete(&self) -> bool {
+        self.flushed && self.all_states_idle()
     }
-
-    // Send flush
-    if output_sender
-        .send(PipelineMessage::Flush(input_id))
-        .await
-        .is_err()
-    {
-        return Ok(ControlFlow::Break(()));
-    }
-    Ok(ControlFlow::Continue(()))
 }
 
 pub(crate) struct ProbeExecutionContext<Op: JoinOperator> {
@@ -244,62 +135,258 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
         }
     }
 
+    /// Drain remaining buffer, finalize, and send output downstream.
+    async fn complete_input(
+        op: &Op,
+        per_input: PerProbeInput<Op>,
+        input_id: InputId,
+        task_spawner: &ExecutionTaskSpawner,
+        finalize_spawner: &ExecutionTaskSpawner,
+        output_tx: &Sender<PipelineMessage>,
+    ) -> DaftResult<()> {
+        let mut states = per_input.states;
+        let mut buffer = per_input.buffer;
+        let runtime_stats = per_input.runtime_stats;
+
+        if let Some(mut partition) = buffer.pop_all()? {
+            let mut state = states.pop().unwrap();
+            loop {
+                let now = Instant::now();
+                let (new_state, result) = op.probe(partition, state, task_spawner).await??;
+                let elapsed = now.elapsed();
+                runtime_stats.add_duration_us(elapsed.as_micros() as u64);
+
+                let output_mp = match &result {
+                    ProbeOutput::NeedMoreInput(mp) => mp.as_ref(),
+                    ProbeOutput::HasMoreOutput { output, .. } => Some(output),
+                };
+                if let Some(mp) = output_mp {
+                    runtime_stats.add_probe_rows_out(mp.len() as u64);
+                    let _ = output_tx
+                        .send(PipelineMessage::Morsel {
+                            input_id,
+                            partition: mp.clone(),
+                        })
+                        .await;
+                }
+
+                match result {
+                    ProbeOutput::NeedMoreInput(_) => {
+                        states.push(new_state);
+                        break;
+                    }
+                    ProbeOutput::HasMoreOutput { input, .. } => {
+                        partition = input;
+                        state = new_state;
+                    }
+                }
+            }
+        }
+
+        if op.needs_probe_finalization()
+            && let Some(mp) = op.finalize_probe(states, finalize_spawner).await??
+        {
+            runtime_stats.add_probe_rows_out(mp.len() as u64);
+            let _ = output_tx
+                .send(PipelineMessage::Morsel {
+                    input_id,
+                    partition: mp,
+                })
+                .await;
+        }
+
+        let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
+        Ok(())
+    }
+
     pub(crate) async fn process_probe_input(
         &self,
         receiver: Receiver<PipelineMessage>,
     ) -> DaftResult<()> {
         let mut receiver = receiver;
-        let mut per_input_senders: HashMap<InputId, Sender<PipelineMessage>> = HashMap::new();
-        let mut processor_set: JoinSet<DaftResult<ControlFlow<()>>> = JoinSet::new();
-        let mut input_closed = false;
+        let max_concurrency = self.op.max_probe_concurrency();
+        let mut inputs: HashMap<InputId, PerProbeInput<Op>> = HashMap::new();
+        let mut tasks: OrderingAwareJoinSet<TaskResult<Op>> =
+            OrderingAwareJoinSet::new(self.maintain_order);
+        let mut child_closed = false;
 
-        while !input_closed || !processor_set.is_empty() {
-            tokio::select! {
-                msg = receiver.recv(), if !input_closed => {
-                    let Some(msg) = msg else {
-                        input_closed = true;
-                        per_input_senders.clear();
-                        continue;
-                    };
+        while let Some(event) =
+            next_event(&mut tasks, usize::MAX, &mut receiver, &mut child_closed).await?
+        {
+            match event {
+                PipelineEvent::TaskCompleted(TaskOutput::BuildStateReady {
+                    input_id,
+                    finalized,
+                }) => {
+                    let per_input = inputs.get_mut(&input_id).unwrap();
+                    per_input.states = (0..max_concurrency)
+                        .map(|_| self.op.make_probe_state(finalized.clone()))
+                        .collect();
+                    per_input.spawn_ready_batches(
+                        &mut tasks,
+                        &self.op,
+                        &self.task_spawner,
+                        input_id,
+                    )?;
 
-                    let input_id = match &msg {
-                        PipelineMessage::Morsel { input_id, .. } => *input_id,
-                        PipelineMessage::Flush(input_id) => *input_id,
-                    };
-
-                    if let Entry::Vacant(e) = per_input_senders.entry(input_id) {
-                        let (tx, rx) = create_channel(1);
-                        e.insert(tx);
-
-                        let op = self.op.clone();
-                        let task_spawner = self.task_spawner.clone();
-                        let finalize_spawner = self.finalize_spawner.clone();
-                        let runtime_stats = Arc::new(JoinStats::new(&self.meter, &self.node_info));
-                        self.stats_manager.register_runtime_stats(self.node_id, input_id, runtime_stats.clone());
-                        let output_sender = self.output_sender.clone();
-                        let build_state_bridge = self.build_state_bridge.clone();
-                        let maintain_order = self.maintain_order;
-                        processor_set.spawn(async move {
-                            process_single_input(
-                                input_id, rx, op, task_spawner,
-                                finalize_spawner, runtime_stats, output_sender,
-                                build_state_bridge, maintain_order,
-                            )
-                            .await
-                        });
-                    }
-
-                    let is_flush = matches!(&msg, PipelineMessage::Flush(_));
-                    if per_input_senders[&input_id].send(msg).await.is_err() {
-                        // Processor died — error will surface from join below
-                    }
-                    if is_flush {
-                        per_input_senders.remove(&input_id);
+                    if inputs.get(&input_id).is_some_and(|p| p.ready_to_complete()) {
+                        Self::complete_input(
+                            &self.op,
+                            inputs.remove(&input_id).unwrap(),
+                            input_id,
+                            &self.task_spawner,
+                            &self.finalize_spawner,
+                            &self.output_sender,
+                        )
+                        .await?;
                     }
                 }
-                Some(result) = processor_set.join_next(), if !processor_set.is_empty() => {
-                    if result??.is_break() {
-                        break;
+                PipelineEvent::TaskCompleted(TaskOutput::ProbeComplete {
+                    input_id,
+                    state,
+                    output,
+                    elapsed,
+                }) => {
+                    let per_input = inputs.get_mut(&input_id).unwrap();
+                    per_input
+                        .runtime_stats
+                        .add_duration_us(elapsed.as_micros() as u64);
+
+                    let output_mp = match &output {
+                        ProbeOutput::NeedMoreInput(mp) => mp.as_ref(),
+                        ProbeOutput::HasMoreOutput { output, .. } => Some(output),
+                    };
+                    if let Some(mp) = output_mp {
+                        per_input.runtime_stats.add_probe_rows_out(mp.len() as u64);
+                        let _ = self
+                            .output_sender
+                            .send(PipelineMessage::Morsel {
+                                input_id,
+                                partition: mp.clone(),
+                            })
+                            .await;
+                    }
+
+                    match output {
+                        ProbeOutput::NeedMoreInput(_) => {
+                            per_input.states.push(state);
+                            per_input.spawn_ready_batches(
+                                &mut tasks,
+                                &self.op,
+                                &self.task_spawner,
+                                input_id,
+                            )?;
+
+                            if inputs.get(&input_id).is_some_and(|p| p.ready_to_complete()) {
+                                Self::complete_input(
+                                    &self.op,
+                                    inputs.remove(&input_id).unwrap(),
+                                    input_id,
+                                    &self.task_spawner,
+                                    &self.finalize_spawner,
+                                    &self.output_sender,
+                                )
+                                .await?;
+                            }
+                        }
+                        ProbeOutput::HasMoreOutput { input, .. } => {
+                            let op = self.op.clone();
+                            let spawner = self.task_spawner.clone();
+                            tasks.spawn(async move {
+                                let now = Instant::now();
+                                let (state, output) = op.probe(input, state, &spawner).await??;
+                                Ok(TaskOutput::ProbeComplete {
+                                    input_id,
+                                    state,
+                                    output,
+                                    elapsed: now.elapsed(),
+                                })
+                            });
+                        }
+                    }
+                }
+                PipelineEvent::Morsel {
+                    input_id,
+                    partition,
+                } => {
+                    let per_input = match inputs.entry(input_id) {
+                        Entry::Occupied(e) => e.into_mut(),
+                        Entry::Vacant(e) => {
+                            let runtime_stats =
+                                Arc::new(JoinStats::new(&self.meter, &self.node_info));
+                            self.stats_manager.register_runtime_stats(
+                                self.node_id,
+                                input_id,
+                                runtime_stats.clone(),
+                            );
+
+                            let bridge = self.build_state_bridge.clone();
+                            tasks.spawn(async move {
+                                let finalized = match bridge.subscribe(input_id) {
+                                    FinalizedBuildStateReceiver::Receiver(rx) => {
+                                        rx.await.map_err(|e| {
+                                            common_error::DaftError::ValueError(format!(
+                                                "Failed to receive finalized build state: {e}"
+                                            ))
+                                        })?
+                                    }
+                                    FinalizedBuildStateReceiver::Ready(v) => v,
+                                };
+                                Ok(TaskOutput::BuildStateReady {
+                                    input_id,
+                                    finalized,
+                                })
+                            });
+
+                            e.insert(PerProbeInput::new(&self.op, runtime_stats, max_concurrency))
+                        }
+                    };
+                    per_input
+                        .runtime_stats
+                        .add_probe_rows_in(partition.len() as u64);
+                    per_input.buffer.push(partition);
+                    per_input.spawn_ready_batches(
+                        &mut tasks,
+                        &self.op,
+                        &self.task_spawner,
+                        input_id,
+                    )?;
+                }
+                PipelineEvent::Flush(input_id) => {
+                    if let Some(p) = inputs.get_mut(&input_id) {
+                        p.flushed = true;
+                    }
+                    if inputs.get(&input_id).is_some_and(|p| p.ready_to_complete()) {
+                        Self::complete_input(
+                            &self.op,
+                            inputs.remove(&input_id).unwrap(),
+                            input_id,
+                            &self.task_spawner,
+                            &self.finalize_spawner,
+                            &self.output_sender,
+                        )
+                        .await?;
+                    }
+                }
+                PipelineEvent::InputClosed => {
+                    for p in inputs.values_mut() {
+                        p.flushed = true;
+                    }
+                    let ready_ids: Vec<_> = inputs
+                        .iter()
+                        .filter(|(_, p)| p.ready_to_complete())
+                        .map(|(id, _)| *id)
+                        .collect();
+                    for input_id in ready_ids {
+                        Self::complete_input(
+                            &self.op,
+                            inputs.remove(&input_id).unwrap(),
+                            input_id,
+                            &self.task_spawner,
+                            &self.finalize_spawner,
+                            &self.output_sender,
+                        )
+                        .await?;
                     }
                 }
             }
