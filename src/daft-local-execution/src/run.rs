@@ -436,12 +436,13 @@ impl NativeExecutor {
         if should_remove {
             let plan_state = self.plans.remove(&fingerprint).unwrap();
             Ok(async move {
-                // Get stats for this specific input_id before tearing down the plan.
+                // Try to get stats for this input_id. If the pipeline already died,
+                // the stats manager may be finished so this can fail — that's OK.
                 let stats = plan_state.stats_handle.take_input_snapshot(input_id).await;
                 drop(plan_state.enqueue_input_sender);
-                // Await the task handle to ensure clean shutdown.
                 plan_state.task_handle.await??;
-                stats
+                // If the snapshot failed (e.g. pipeline died), return empty stats.
+                Ok(stats.unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![])))
             }
             .boxed())
         } else {

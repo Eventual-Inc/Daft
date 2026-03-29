@@ -355,17 +355,11 @@ impl RuntimeStatsManager {
                             }
                             StatsManagerMessage::TakeInputSnapshot(input_id, respond_tx) => {
                                 let mut result = Vec::new();
-                                let keys_to_remove: Vec<(NodeID, InputId)> = input_stats
-                                    .keys()
-                                    .filter(|(_, iid)| *iid == input_id)
-                                    .copied()
-                                    .collect();
-                                for key in keys_to_remove {
-                                    if let Some(stats) = input_stats.remove(&key) {
-                                        let node_id = key.0;
-                                        if let Some(node_info) = node_info_map.get(&node_id) {
-                                            result.push((node_info.clone(), stats.flush()));
-                                        }
+                                for (&(node_id, iid), stats) in &input_stats {
+                                    if iid == input_id
+                                        && let Some(node_info) = node_info_map.get(&node_id)
+                                    {
+                                        result.push((node_info.clone(), stats.flush()));
                                     }
                                 }
                                 let _ = respond_tx.send(ExecutionStats::new(query_id.clone(), result).with_query_plan(query_plan.clone()));
