@@ -32,6 +32,7 @@ enum TaskOutput<Op: JoinOperator> {
         output: ProbeOutput,
         elapsed: Duration,
     },
+    Completed,
 }
 
 type TaskResult<Op> = DaftResult<TaskOutput<Op>>;
@@ -136,67 +137,70 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
     }
 
     /// Drain remaining buffer, finalize, and send output downstream.
-    async fn complete_input(
-        op: &Op,
+    fn spawn_complete_input(
+        op: Arc<Op>,
         per_input: PerProbeInput<Op>,
         input_id: InputId,
-        task_spawner: &ExecutionTaskSpawner,
-        finalize_spawner: &ExecutionTaskSpawner,
-        output_tx: &Sender<PipelineMessage>,
-    ) -> DaftResult<()> {
-        let mut states = per_input.states;
-        let mut buffer = per_input.buffer;
-        let runtime_stats = per_input.runtime_stats;
+        task_spawner: ExecutionTaskSpawner,
+        finalize_spawner: ExecutionTaskSpawner,
+        output_tx: Sender<PipelineMessage>,
+        tasks: &mut OrderingAwareJoinSet<TaskResult<Op>>,
+    ) {
+        tasks.spawn(async move {
+            let mut states = per_input.states;
+            let mut buffer = per_input.buffer;
+            let runtime_stats = per_input.runtime_stats;
 
-        if let Some(mut partition) = buffer.pop_all()? {
-            let mut state = states.pop().unwrap();
-            loop {
-                let now = Instant::now();
-                let (new_state, result) = op.probe(partition, state, task_spawner).await??;
-                let elapsed = now.elapsed();
-                runtime_stats.add_duration_us(elapsed.as_micros() as u64);
+            if let Some(mut partition) = buffer.pop_all()? {
+                let mut state = states.pop().unwrap();
+                loop {
+                    let now = Instant::now();
+                    let (new_state, result) = op.probe(partition, state, &task_spawner).await??;
+                    let elapsed = now.elapsed();
+                    runtime_stats.add_duration_us(elapsed.as_micros() as u64);
 
-                let output_mp = match &result {
-                    ProbeOutput::NeedMoreInput(mp) => mp.as_ref(),
-                    ProbeOutput::HasMoreOutput { output, .. } => Some(output),
-                };
-                if let Some(mp) = output_mp {
-                    runtime_stats.add_probe_rows_out(mp.len() as u64);
-                    let _ = output_tx
-                        .send(PipelineMessage::Morsel {
-                            input_id,
-                            partition: mp.clone(),
-                        })
-                        .await;
-                }
-
-                match result {
-                    ProbeOutput::NeedMoreInput(_) => {
-                        states.push(new_state);
-                        break;
+                    let output_mp = match &result {
+                        ProbeOutput::NeedMoreInput(mp) => mp.as_ref(),
+                        ProbeOutput::HasMoreOutput { output, .. } => Some(output),
+                    };
+                    if let Some(mp) = output_mp {
+                        runtime_stats.add_probe_rows_out(mp.len() as u64);
+                        let _ = output_tx
+                            .send(PipelineMessage::Morsel {
+                                input_id,
+                                partition: mp.clone(),
+                            })
+                            .await;
                     }
-                    ProbeOutput::HasMoreOutput { input, .. } => {
-                        partition = input;
-                        state = new_state;
+
+                    match result {
+                        ProbeOutput::NeedMoreInput(_) => {
+                            states.push(new_state);
+                            break;
+                        }
+                        ProbeOutput::HasMoreOutput { input, .. } => {
+                            partition = input;
+                            state = new_state;
+                        }
                     }
                 }
             }
-        }
 
-        if op.needs_probe_finalization()
-            && let Some(mp) = op.finalize_probe(states, finalize_spawner).await??
-        {
-            runtime_stats.add_probe_rows_out(mp.len() as u64);
-            let _ = output_tx
-                .send(PipelineMessage::Morsel {
-                    input_id,
-                    partition: mp,
-                })
-                .await;
-        }
+            if op.needs_probe_finalization()
+                && let Some(mp) = op.finalize_probe(states, &finalize_spawner).await??
+            {
+                runtime_stats.add_probe_rows_out(mp.len() as u64);
+                let _ = output_tx
+                    .send(PipelineMessage::Morsel {
+                        input_id,
+                        partition: mp,
+                    })
+                    .await;
+            }
 
-        let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
-        Ok(())
+            let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
+            Ok(TaskOutput::Completed)
+        });
     }
 
     pub(crate) async fn process_probe_input(
@@ -236,6 +240,7 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
                 inputs.len(),
             );
             match event {
+                PipelineEvent::TaskCompleted(TaskOutput::Completed) => {}
                 PipelineEvent::TaskCompleted(TaskOutput::BuildStateReady {
                     input_id,
                     finalized,
@@ -252,15 +257,15 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
                     )?;
 
                     if inputs.get(&input_id).is_some_and(|p| p.ready_to_complete()) {
-                        Self::complete_input(
-                            &self.op,
+                        Self::spawn_complete_input(
+                            self.op.clone(),
                             inputs.remove(&input_id).unwrap(),
                             input_id,
-                            &self.task_spawner,
-                            &self.finalize_spawner,
-                            &self.output_sender,
-                        )
-                        .await?;
+                            self.task_spawner.clone(),
+                            self.finalize_spawner.clone(),
+                            self.output_sender.clone(),
+                            &mut tasks,
+                        );
                     }
                 }
                 PipelineEvent::TaskCompleted(TaskOutput::ProbeComplete {
@@ -300,15 +305,15 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
                             )?;
 
                             if inputs.get(&input_id).is_some_and(|p| p.ready_to_complete()) {
-                                Self::complete_input(
-                                    &self.op,
+                                Self::spawn_complete_input(
+                                    self.op.clone(),
                                     inputs.remove(&input_id).unwrap(),
                                     input_id,
-                                    &self.task_spawner,
-                                    &self.finalize_spawner,
-                                    &self.output_sender,
-                                )
-                                .await?;
+                                    self.task_spawner.clone(),
+                                    self.finalize_spawner.clone(),
+                                    self.output_sender.clone(),
+                                    &mut tasks,
+                                );
                             }
                         }
                         ProbeOutput::HasMoreOutput { input, .. } => {
@@ -379,15 +384,15 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
                         p.flushed = true;
                     }
                     if inputs.get(&input_id).is_some_and(|p| p.ready_to_complete()) {
-                        Self::complete_input(
-                            &self.op,
+                        Self::spawn_complete_input(
+                            self.op.clone(),
                             inputs.remove(&input_id).unwrap(),
                             input_id,
-                            &self.task_spawner,
-                            &self.finalize_spawner,
-                            &self.output_sender,
-                        )
-                        .await?;
+                            self.task_spawner.clone(),
+                            self.finalize_spawner.clone(),
+                            self.output_sender.clone(),
+                            &mut tasks,
+                        );
                     }
                 }
                 PipelineEvent::InputClosed => {
@@ -400,15 +405,15 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
                         .map(|(id, _)| *id)
                         .collect();
                     for input_id in ready_ids {
-                        Self::complete_input(
-                            &self.op,
+                        Self::spawn_complete_input(
+                            self.op.clone(),
                             inputs.remove(&input_id).unwrap(),
                             input_id,
-                            &self.task_spawner,
-                            &self.finalize_spawner,
-                            &self.output_sender,
-                        )
-                        .await?;
+                            self.task_spawner.clone(),
+                            self.finalize_spawner.clone(),
+                            self.output_sender.clone(),
+                            &mut tasks,
+                        );
                     }
                 }
             }

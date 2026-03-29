@@ -81,12 +81,10 @@ pub(crate) trait StreamingSink: Send + Sync {
     fn batching_strategy(&self) -> Self::BatchingStrategy;
 }
 
-type SinkTaskResult<Op> = DaftResult<(
-    InputId,
-    <Op as StreamingSink>::State,
-    StreamingSinkOutput,
-    Duration,
-)>;
+enum TaskResult<Op: StreamingSink> {
+    Execute(InputId, Op::State, StreamingSinkOutput, Duration),
+    Completed,
+}
 
 struct PerInputState<Op: StreamingSink> {
     states: Vec<Op::State>,
@@ -120,7 +118,7 @@ impl<Op: StreamingSink + 'static> PerInputState<Op> {
 
     fn spawn_ready_batches(
         &mut self,
-        tasks: &mut OrderingAwareJoinSet<SinkTaskResult<Op>>,
+        tasks: &mut OrderingAwareJoinSet<DaftResult<TaskResult<Op>>>,
         op: &Arc<Op>,
         spawner: &ExecutionTaskSpawner,
         input_id: InputId,
@@ -134,7 +132,7 @@ impl<Op: StreamingSink + 'static> PerInputState<Op> {
                     let now = Instant::now();
                     let (state, output) =
                         op.execute(batch, state, runtime_stats, &spawner).await??;
-                    Ok((input_id, state, output, now.elapsed()))
+                    Ok(TaskResult::Execute(input_id, state, output, now.elapsed()))
                 });
             } else {
                 self.states.push(state);
@@ -189,91 +187,94 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
     }
 
     /// Drain remaining buffer, finalize, and send output downstream.
-    async fn complete_input(
-        op: &Op,
+    fn spawn_complete_input(
+        op: Arc<Op>,
         per_input: PerInputState<Op>,
         input_id: InputId,
-        task_spawner: &ExecutionTaskSpawner,
-        finalize_spawner: &ExecutionTaskSpawner,
-        output_tx: &Sender<PipelineMessage>,
-    ) -> DaftResult<()> {
-        let PerInputState {
-            mut states,
-            mut buffer,
-            runtime_stats,
-            batch_manager,
-            ..
-        } = per_input;
+        task_spawner: ExecutionTaskSpawner,
+        finalize_spawner: ExecutionTaskSpawner,
+        output_tx: Sender<PipelineMessage>,
+        tasks: &mut OrderingAwareJoinSet<DaftResult<TaskResult<Op>>>,
+    ) {
+        tasks.spawn(async move {
+            let PerInputState {
+                mut states,
+                mut buffer,
+                runtime_stats,
+                batch_manager,
+                ..
+            } = per_input;
 
-        if let Some(partition) = buffer.pop_all()? {
-            let state = states.pop().expect("must have at least one idle state");
-            let now = Instant::now();
-            let (new_state, result) = op
-                .execute(partition, state, runtime_stats.clone(), task_spawner)
-                .await??;
-            let elapsed = now.elapsed();
-            runtime_stats.add_duration_us(elapsed.as_micros() as u64);
+            if let Some(partition) = buffer.pop_all()? {
+                let state = states.pop().expect("must have at least one idle state");
+                let now = Instant::now();
+                let (new_state, result) = op
+                    .execute(partition, state, runtime_stats.clone(), &task_spawner)
+                    .await??;
+                let elapsed = now.elapsed();
+                runtime_stats.add_duration_us(elapsed.as_micros() as u64);
 
-            let (mp, finished) = match result {
-                StreamingSinkOutput::NeedMoreInput(mp) => (mp, false),
-                StreamingSinkOutput::Finished(mp) => (mp, true),
-            };
-            batch_manager.record_execution_stats(
-                runtime_stats.as_ref(),
-                mp.as_ref().map(|p| p.len()).unwrap_or(0),
-                elapsed,
-            );
-            if let Some(mp) = mp {
-                runtime_stats.add_rows_out(mp.len() as u64);
-                let _ = output_tx
-                    .send(PipelineMessage::Morsel {
-                        input_id,
-                        partition: mp,
-                    })
-                    .await;
-            }
-            if finished {
-                let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
-                return Ok(());
-            }
-            states.push(new_state);
-        }
-
-        let mut finalize_states = states;
-        loop {
-            match op.finalize(finalize_states, finalize_spawner).await?? {
-                StreamingSinkFinalizeOutput::HasMoreOutput {
-                    states: new_states,
-                    output,
-                } => {
-                    if let Some(mp) = output {
-                        runtime_stats.add_rows_out(mp.len() as u64);
-                        let _ = output_tx
-                            .send(PipelineMessage::Morsel {
-                                input_id,
-                                partition: mp,
-                            })
-                            .await;
-                    }
-                    finalize_states = new_states;
+                let (mp, finished) = match result {
+                    StreamingSinkOutput::NeedMoreInput(mp) => (mp, false),
+                    StreamingSinkOutput::Finished(mp) => (mp, true),
+                };
+                batch_manager.record_execution_stats(
+                    runtime_stats.as_ref(),
+                    mp.as_ref().map(|p| p.len()).unwrap_or(0),
+                    elapsed,
+                );
+                if let Some(mp) = mp {
+                    runtime_stats.add_rows_out(mp.len() as u64);
+                    let _ = output_tx
+                        .send(PipelineMessage::Morsel {
+                            input_id,
+                            partition: mp,
+                        })
+                        .await;
                 }
-                StreamingSinkFinalizeOutput::Finished(output) => {
-                    if let Some(mp) = output {
-                        runtime_stats.add_rows_out(mp.len() as u64);
-                        let _ = output_tx
-                            .send(PipelineMessage::Morsel {
-                                input_id,
-                                partition: mp,
-                            })
-                            .await;
+                if finished {
+                    let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
+                    return Ok(TaskResult::Completed);
+                }
+                states.push(new_state);
+            }
+
+            let mut finalize_states = states;
+            loop {
+                match op.finalize(finalize_states, &finalize_spawner).await?? {
+                    StreamingSinkFinalizeOutput::HasMoreOutput {
+                        states: new_states,
+                        output,
+                    } => {
+                        if let Some(mp) = output {
+                            runtime_stats.add_rows_out(mp.len() as u64);
+                            let _ = output_tx
+                                .send(PipelineMessage::Morsel {
+                                    input_id,
+                                    partition: mp,
+                                })
+                                .await;
+                        }
+                        finalize_states = new_states;
                     }
-                    break;
+                    StreamingSinkFinalizeOutput::Finished(output) => {
+                        if let Some(mp) = output {
+                            runtime_stats.add_rows_out(mp.len() as u64);
+                            let _ = output_tx
+                                .send(PipelineMessage::Morsel {
+                                    input_id,
+                                    partition: mp,
+                                })
+                                .await;
+                        }
+                        break;
+                    }
                 }
             }
-        }
 
-        let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
-        Ok(())
+            let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
+            Ok(TaskResult::Completed)
+        });
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -302,7 +303,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
             info_span!("StreamingSink::Finalize"),
         );
         let mut inputs: HashMap<InputId, PerInputState<Op>> = HashMap::new();
-        let mut tasks: OrderingAwareJoinSet<SinkTaskResult<Op>> =
+        let mut tasks: OrderingAwareJoinSet<DaftResult<TaskResult<Op>>> =
             OrderingAwareJoinSet::new(maintain_order);
         let mut child_closed = false;
         let mut node_initialized = false;
@@ -333,7 +334,13 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 inputs.len(),
             );
             match event {
-                PipelineEvent::TaskCompleted((input_id, state, output, elapsed)) => {
+                PipelineEvent::TaskCompleted(TaskResult::Completed) => {}
+                PipelineEvent::TaskCompleted(TaskResult::Execute(
+                    input_id,
+                    state,
+                    output,
+                    elapsed,
+                )) => {
                     let per_input = inputs.get_mut(&input_id).unwrap();
                     per_input
                         .runtime_stats
@@ -370,16 +377,15 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                     per_input.spawn_ready_batches(&mut tasks, &op, &task_spawner, input_id)?;
 
                     if inputs.get(&input_id).is_some_and(|p| p.ready_to_complete()) {
-                        let per_input = inputs.remove(&input_id).unwrap();
-                        Self::complete_input(
-                            &op,
-                            per_input,
+                        Self::spawn_complete_input(
+                            op.clone(),
+                            inputs.remove(&input_id).unwrap(),
                             input_id,
-                            &task_spawner,
-                            &finalize_spawner,
-                            &output_tx,
-                        )
-                        .await?;
+                            task_spawner.clone(),
+                            finalize_spawner.clone(),
+                            output_tx.clone(),
+                            &mut tasks,
+                        );
                     }
                 }
                 PipelineEvent::Morsel {
@@ -422,16 +428,15 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                         p.flushed = true;
                     }
                     if inputs.get(&input_id).is_some_and(|p| p.ready_to_complete()) {
-                        let per_input = inputs.remove(&input_id).unwrap();
-                        Self::complete_input(
-                            &op,
-                            per_input,
+                        Self::spawn_complete_input(
+                            op.clone(),
+                            inputs.remove(&input_id).unwrap(),
                             input_id,
-                            &task_spawner,
-                            &finalize_spawner,
-                            &output_tx,
-                        )
-                        .await?;
+                            task_spawner.clone(),
+                            finalize_spawner.clone(),
+                            output_tx.clone(),
+                            &mut tasks,
+                        );
                     }
                 }
                 PipelineEvent::InputClosed => {
@@ -444,16 +449,15 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                         .map(|(id, _)| *id)
                         .collect();
                     for input_id in ready_ids {
-                        let per_input = inputs.remove(&input_id).unwrap();
-                        Self::complete_input(
-                            &op,
-                            per_input,
+                        Self::spawn_complete_input(
+                            op.clone(),
+                            inputs.remove(&input_id).unwrap(),
                             input_id,
-                            &task_spawner,
-                            &finalize_spawner,
-                            &output_tx,
-                        )
-                        .await?;
+                            task_spawner.clone(),
+                            finalize_spawner.clone(),
+                            output_tx.clone(),
+                            &mut tasks,
+                        );
                     }
                 }
             }
