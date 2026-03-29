@@ -180,7 +180,6 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
         let mut node_initialized = false;
         let mut child_closed = false;
 
-        let op_name = self.op.name();
         while let Some(event) = next_event(
             &mut tasks,
             get_compute_pool_num_threads(),
@@ -189,22 +188,6 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
         )
         .await?
         {
-            let per_input_info: Vec<_> = inputs
-                .iter()
-                .map(|(id, s)| {
-                    format!(
-                        "{}:{}pending/idle={}",
-                        id,
-                        s.pending.len(),
-                        s.state.is_some()
-                    )
-                })
-                .collect();
-            println!(
-                "[JoinBuild::{op_name}] total_tasks={} inputs={} [{per_input_info:?}]",
-                tasks.len(),
-                inputs.len(),
-            );
             match event {
                 PipelineEvent::TaskCompleted((input_id, state)) => {
                     let per_input = inputs.get_mut(&input_id).unwrap();

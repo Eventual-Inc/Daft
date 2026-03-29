@@ -244,7 +244,6 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
     async fn process_input(&mut self, receiver: &mut Receiver<PipelineMessage>) -> DaftResult<()> {
         let mut input_closed = false;
 
-        let op_name = self.op.name();
         while let Some(event) = next_event(
             &mut self.task_set,
             self.op.max_concurrency(),
@@ -253,17 +252,6 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
         )
         .await?
         {
-            let per_input_info: Vec<_> = self
-                .input_states
-                .iter()
-                .map(|(id, s)| format!("{}:{}workers", id, s.active_workers))
-                .collect();
-            println!(
-                "[IntermediateOp::{op_name}] total_tasks={} states_avail={} inputs={} [{per_input_info:?}]",
-                self.task_set.len(),
-                self.operator_states.len(),
-                self.input_states.len(),
-            );
             let cf = match event {
                 PipelineEvent::TaskCompleted(task_result) => {
                     self.handle_worker_result(task_result).await?

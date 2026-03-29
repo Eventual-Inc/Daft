@@ -222,7 +222,6 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         let mut child_closed = false;
         let mut node_initialized = false;
 
-        let op_name = op.name();
         while let Some(event) = next_event(
             &mut tasks,
             max_concurrency,
@@ -231,22 +230,6 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         )
         .await?
         {
-            let per_input_tasks: Vec<_> = inputs
-                .iter()
-                .map(|(id, s)| {
-                    format!(
-                        "{}:{}active/{}pending",
-                        id,
-                        s.max_concurrency - s.states.len(),
-                        s.pending.len()
-                    )
-                })
-                .collect();
-            println!(
-                "[BlockingSink::{op_name}] total_tasks={} inputs={} [{per_input_tasks:?}]",
-                tasks.len(),
-                inputs.len(),
-            );
             match event {
                 PipelineEvent::TaskCompleted(TaskResult::Sink(input_id, state, elapsed)) => {
                     let per_input = inputs.get_mut(&input_id).unwrap();
