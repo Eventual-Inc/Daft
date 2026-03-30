@@ -96,8 +96,6 @@ where
     }
 }
 
-// `.reduce(op)` would move `op`, but the reduction needs to call the captured function by borrow.
-#[allow(clippy::redundant_closure)]
 fn grouped_cmp_utf8<'a, F>(
     data_array: &'a Utf8Array,
     op: F,
@@ -126,7 +124,7 @@ where
             groups.iter().map(|g| {
                 g.iter()
                     .map(|i| data_array.get(*i as usize).unwrap())
-                    .reduce(|l, r| op(l, r))
+                    .reduce(&op)
                     .unwrap()
             }),
         ))
@@ -157,8 +155,6 @@ impl DaftCompareAggable for DataArray<Utf8Type> {
     }
 }
 
-// `.reduce(op)` would move `op`, but the reduction needs to call the captured function by borrow.
-#[allow(clippy::redundant_closure)]
 fn grouped_cmp_binary<'a, F>(
     data_array: &'a BinaryArray,
     op: F,
@@ -187,7 +183,7 @@ where
             groups.iter().map(|g| {
                 g.iter()
                     .map(|i| data_array.get(*i as usize).unwrap())
-                    .reduce(|l, r| op(l, r))
+                    .reduce(&op)
                     .unwrap()
             }),
         ))
@@ -218,8 +214,6 @@ impl DaftCompareAggable for DataArray<BinaryType> {
     }
 }
 
-// `.reduce(op)` would move `op`, but the reduction needs to call the captured function by borrow.
-#[allow(clippy::redundant_closure)]
 fn grouped_cmp_fixed_size_binary<'a, F>(
     data_array: &'a FixedSizeBinaryArray,
     op: F,
@@ -255,7 +249,7 @@ where
             arrow::array::FixedSizeBinaryArray::try_from_iter(groups.iter().map(|g| {
                 g.iter()
                     .map(|i| data_array.get(*i as usize).unwrap())
-                    .reduce(|l, r| op(l, r))
+                    .reduce(&op)
                     .unwrap()
             }))?;
         FixedSizeBinaryArray::from_arrow(data_array.field.clone(), Arc::new(arrow_result))
