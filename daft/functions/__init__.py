@@ -109,6 +109,7 @@ from .list import (
 )
 from .llm import llm_generate
 from .misc import (
+    concat_ws,
     monotonically_increasing_id,
     uuid,
     eq_null_safe,
@@ -274,6 +275,7 @@ __all__ = [
     "columns_sum",
     "compress",
     "concat",
+    "concat_ws",
     "contains",
     "convert_image",
     "cos",

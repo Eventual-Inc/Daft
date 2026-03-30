@@ -12,6 +12,15 @@ from daft.expressions.expressions import WhenExpr
 from daft.series import item_to_series
 
 
+def concat_ws(sep: str, *exprs: Expression) -> Expression:
+    """Concatenates the values in the Expression with the provided separator. Skips null values.
+
+    # concat_ws: nulls are skipped
+    >>> concat_ws(",", "a", None, "b")  # -> "a,b"
+    """
+    return Expression._call_builtin_scalar_fn("concat_ws", sep, *exprs)
+
+
 def monotonically_increasing_id() -> Expression:
     """Generates a column of monotonically increasing unique ids.
 
