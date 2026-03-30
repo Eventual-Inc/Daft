@@ -1,3 +1,5 @@
+mod wrappers;
+
 use std::{
     hash::{Hash, Hasher},
     sync::Arc,
@@ -6,13 +8,139 @@ use std::{
 use common_py_serde::{
     deserialize_py_object, impl_bincode_py_state_serialization, serialize_py_object,
 };
+use daft_schema::python::schema::PySchema;
 use pyo3::{prelude::*, types::PyTuple};
 use serde::{Deserialize, Serialize};
+pub use wrappers::{PyDataSourceTaskWrapper, PyDataSourceWrapper};
 
 use crate::{
-    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, TextSourceConfig,
-    WarcSourceConfig, storage_config::StorageConfig,
+    CsvSourceConfig, DataSourceRef, DataSourceTaskRef, FileFormatConfig, JsonSourceConfig,
+    ParquetSourceConfig, TextSourceConfig, WarcSourceConfig, storage_config::StorageConfig,
 };
+
+/// A Rust [`DataSource`] exposed as a Python object.
+#[pyclass(module = "daft.daft", name = "PyDataSource", from_py_object)]
+#[derive(Clone)]
+pub struct PyDataSource(DataSourceRef);
+
+/// Convert a `DataSourceRef` to a `PyDataSource`.
+impl From<DataSourceRef> for PyDataSource {
+    fn from(source: DataSourceRef) -> Self {
+        Self(source)
+    }
+}
+
+/// Convert a `PyDataSource` to a `DataSourceRef`.
+impl From<PyDataSource> for DataSourceRef {
+    fn from(source: PyDataSource) -> Self {
+        source.0
+    }
+}
+
+#[pymethods]
+impl PyDataSource {
+    fn name(&self) -> String {
+        self.0.name()
+    }
+
+    fn schema(&self) -> PySchema {
+        PySchema {
+            schema: self.0.schema(),
+        }
+    }
+}
+
+/// A Rust [`DataSourceTask`] exposed as a Python object.
+#[pyclass(module = "daft.daft", name = "PyDataSourceTask", from_py_object)]
+#[derive(Clone)]
+pub struct PyDataSourceTask(pub DataSourceTaskRef);
+
+#[pymethods]
+impl PyDataSourceTask {
+    fn schema(&self) -> PySchema {
+        PySchema {
+            schema: self.0.schema(),
+        }
+    }
+
+    /// Create a task that reads a Parquet file using the native reader.
+    ///
+    /// This wraps a native `ScanTask` in a `ShimSourceTask` (which implements
+    /// `DataSourceTask`), so it can be yielded from `DataSource.get_tasks()` and
+    /// the `ShimSource` bridge will unwrap it back to a `ScanTask` for execution.
+    #[allow(clippy::too_many_arguments)]
+    #[staticmethod]
+    #[pyo3(signature = (
+        path,
+        schema,
+        *,
+        pushdowns = None,
+        num_rows = None,
+        size_bytes = None,
+        partition_values = None,
+        stats = None,
+        storage_config = None,
+    ))]
+    fn parquet(
+        path: String,
+        schema: PySchema,
+        pushdowns: Option<pylib_scan_info::PyPushdowns>,
+        num_rows: Option<i64>,
+        size_bytes: Option<u64>,
+        partition_values: Option<daft_recordbatch::python::PyRecordBatch>,
+        stats: Option<daft_recordbatch::python::PyRecordBatch>,
+        storage_config: Option<StorageConfig>,
+    ) -> PyResult<Self> {
+        use daft_recordbatch::RecordBatch;
+        use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+
+        use crate::{ScanSourceKind, ScanTask, SourceConfig, shim::ShimSourceTask};
+
+        let storage_config = storage_config.unwrap_or_default().into();
+
+        // Strip partition_filters — in the DataSource model, partition pruning
+        // is the DataSource's job (it decides which files to yield).
+        let pushdowns = pushdowns
+            .map(|p| {
+                let mut pd = p.0.as_ref().clone();
+                pd.partition_filters = None;
+                pd
+            })
+            .unwrap_or_default();
+
+        let pspec = PartitionSpec {
+            keys: partition_values.map_or_else(|| RecordBatch::empty(None), |p| p.record_batch),
+        };
+        let statistics = stats
+            .map(|s| TableStatistics::from_stats_table(&s.record_batch))
+            .transpose()?;
+
+        let source = crate::ScanSource {
+            size_bytes,
+            metadata: num_rows.map(|n| TableMetadata { length: n as usize }),
+            statistics,
+            partition_spec: Some(pspec),
+            kind: ScanSourceKind::File {
+                path,
+                chunk_spec: None,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+            },
+        };
+
+        let file_format_config = FileFormatConfig::Parquet(ParquetSourceConfig::default());
+        let scan_task = Arc::new(ScanTask::new(
+            vec![source],
+            Arc::new(SourceConfig::File(file_format_config)),
+            schema.schema,
+            storage_config,
+            pushdowns,
+            None,
+        ));
+
+        Ok(Self(Arc::new(ShimSourceTask::new(scan_task))))
+    }
+}
 
 /// Configuration for parsing a particular file format.
 #[derive(Clone, Serialize, Deserialize)]
@@ -281,6 +409,24 @@ pub mod pylib {
                 py_scan, py,
             )?));
             Ok(Self { scan_op })
+        }
+
+        /// Create a ScanOperatorHandle from a Python DataSource.
+        ///
+        /// Wraps the DataSource in a [`ShimSource`] which implements
+        /// [`ScanOperator`] by draining the async task stream.
+        #[staticmethod]
+        pub fn from_data_source(source: Bound<'_, pyo3::PyAny>) -> Self {
+            use crate::shim::ShimSource;
+
+            let ds_ref = if let Ok(ds) = source.extract::<super::PyDataSource>() {
+                ds.0
+            } else {
+                Arc::new(super::PyDataSourceWrapper::from(source))
+            };
+            Self {
+                scan_op: ScanOperatorRef(Arc::new(ShimSource::new(ds_ref))),
+            }
         }
     }
 
@@ -1089,6 +1235,8 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<pylib_scan_info::PyPartitionField>()?;
     parent.add_class::<pylib_scan_info::PyPartitionTransform>()?;
     parent.add_class::<pylib_scan_info::PyPushdowns>()?;
+    parent.add_class::<PyDataSource>()?;
+    parent.add_class::<PyDataSourceTask>()?;
 
     Ok(())
 }

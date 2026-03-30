@@ -1115,6 +1115,29 @@ class ScanTask:
         """Create a Python factory function Scan Task."""
         ...
 
+class PyDataSource:
+    """A Rust DataSource exposed as a Python object."""
+
+    def name(self) -> str: ...
+    def schema(self) -> PySchema: ...
+
+class PyDataSourceTask:
+    """A Rust DataSourceTask exposed as a Python object."""
+
+    def schema(self) -> PySchema: ...
+    @staticmethod
+    def parquet(
+        path: str,
+        schema: PySchema,
+        *,
+        pushdowns: PyPushdowns | None = None,
+        num_rows: int | None = None,
+        size_bytes: int | None = None,
+        partition_values: PyRecordBatch | None = None,
+        stats: PyRecordBatch | None = None,
+        storage_config: StorageConfig | None = None,
+    ) -> PyDataSourceTask: ...
+
 class ScanOperatorHandle:
     """A handle to a scan operator."""
 
@@ -1138,6 +1161,8 @@ class ScanOperatorHandle:
     ) -> ScanOperatorHandle: ...
     @staticmethod
     def from_python_scan_operator(operator: ScanOperator) -> ScanOperatorHandle: ...
+    @staticmethod
+    def from_data_source(source: Any) -> ScanOperatorHandle: ...
 
 def logical_plan_table_scan(scan_operator: ScanOperatorHandle) -> LogicalPlanBuilder: ...
 

@@ -7,19 +7,32 @@ use daft_schema::schema::SchemaRef;
 use daft_stats::{PartitionSpec, TableStatistics};
 use futures::stream::BoxStream;
 
-use crate::{partitioning::PartitionField, pushdowns::Pushdowns};
+use crate::{ScanTaskRef, partitioning::PartitionField, pushdowns::Pushdowns};
+
+/// Reference to a [`DataSource`].
+pub type DataSourceRef = Arc<dyn DataSource>;
+
+/// Reference to a [`DataSourceTask`].
+pub type DataSourceTaskRef = Arc<dyn DataSourceTask>;
+
+/// Stream of [`DataSourceTask`]s.
+pub type DataSourceTaskStream = BoxStream<'static, DaftResult<DataSourceTaskRef>>;
+
+/// Stream of [`RecordBatch`]s.
+pub type RecordBatchStream = BoxStream<'static, DaftResult<RecordBatch>>;
 
 /// Base trait for reading tabular data; new sources implement this trait.
+#[async_trait]
 pub trait DataSource: Send + Sync + Debug {
     /// The name of the data source, typically a `'static` string, useful for debugging.
-    fn name(&self) -> &str;
+    fn name(&self) -> String;
 
     /// The schema of the data source.
     fn schema(&self) -> SchemaRef;
 
     /// The partitioning fields of the data source, used in pushdown splitting.
-    fn partition_fields(&self) -> &[PartitionField] {
-        &[]
+    fn partition_fields(&self) -> Vec<PartitionField> {
+        vec![]
     }
 
     /// Pre-computed statistics for query optimization.
@@ -32,8 +45,11 @@ pub trait DataSource: Send + Sync + Debug {
         None
     }
 
-    /// Split this source into independently-executable tasks given the pushdowns.
-    fn get_tasks(&self, pushdowns: &Pushdowns) -> DaftResult<Vec<Arc<dyn DataSourceTask>>>;
+    /// Stream tasks during execution.
+    ///
+    /// The outer `DaftResult` captures setup errors (e.g. metadata lookup failures)
+    /// before any tasks are produced. Per-task errors appear as items in the stream.
+    async fn get_tasks(&self, pushdowns: &Pushdowns) -> DaftResult<DataSourceTaskStream>;
 }
 
 /// Pre-computed statistics exposed by a [`DataSource`] for query optimization.
@@ -101,6 +117,25 @@ pub trait DataSourceTask: Send + Sync + Debug {
         None
     }
 
+    /// TEMPORARY DURING MIGRATION
+    ///
+    /// Returns the underlying [`ScanTask`] if this task wraps one.
+    ///
+    /// Used by the [`ScanOperator`] bridge to extract native scan tasks
+    /// without going through the `read()` path.
+    fn as_scan_task(&self) -> Option<&ScanTaskRef> {
+        None
+    }
+
+    /// Returns the Python object backing this task, if any.
+    ///
+    /// Used by the [`ScanOperator`] bridge to create a
+    /// `python_factory_func_scan_task` for pure-Python tasks.
+    #[cfg(feature = "python")]
+    fn to_py(&self, _py: pyo3::Python<'_>) -> Option<pyo3::Py<pyo3::PyAny>> {
+        None
+    }
+
     /// Read this task, producing a stream of [`RecordBatch`]es.
     ///
     /// The framework calls this from within an async I/O context — do not
@@ -119,9 +154,7 @@ pub trait DataSourceTask: Send + Sync + Debug {
     /// Bridge blocking work to the stream with a channel rather than buffering:
     ///
     /// ```ignore
-    /// async fn read(&self, opts: ReadOptions)
-    ///     -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>>
-    /// {
+    /// async fn read(&self, opts: ReadOptions) -> DaftResult<RecordBatchStream> {
     ///     let (tx, rx) = unbounded_channel();
     ///     tokio::task::spawn_blocking(move || {
     ///         for batch in blocking_iter {
@@ -131,8 +164,5 @@ pub trait DataSourceTask: Send + Sync + Debug {
     ///     Ok(Box::pin(UnboundedReceiverStream::new(rx)))
     /// }
     /// ```
-    async fn read(
-        &self,
-        options: ReadOptions,
-    ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>>;
+    async fn read(&self, options: ReadOptions) -> DaftResult<RecordBatchStream>;
 }
