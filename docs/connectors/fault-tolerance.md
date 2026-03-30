@@ -18,9 +18,6 @@ import pyiceberg
 table = pyiceberg.table.StaticTable.from_metadata("s3://bucket/iceberg/metadata.json")
 df = daft.read_iceberg(table, ignore_corrupt_files=True)
 
-# Lance
-df = daft.read_lance("s3://my-bucket/data.lance", ignore_corrupt_files=True)
-
 df.collect()
 ```
 
@@ -105,15 +102,11 @@ This pattern — **errors visible, impact contained, tooling to fix** — lets a
 
 ## Supported formats
 
-| Format | File-level skip | Within-file error skip | `skipped_files` reported |
-|---|---|---|---|
-| Parquet (`read_parquet`) | ✅ (bad footer, wrong magic bytes, file too small) | ✅ (corrupt row group data) | ✅ |
-| CSV (`read_csv`) | ✅ (unreadable file, truncated) | ✅ (bad encoding, wrong field count in chunk) | ✅ |
-| Iceberg (`read_iceberg`) | ✅ (same as Parquet — data files go through the Rust Parquet reader) | ✅ | ✅ |
-| Lance (`read_lance`) | ✅ (corrupt fragment skipped, scan continues with remaining fragments) | ✅ | ❌ (warning logged instead; Lance reads run in Python) |
+| Format | File-level skip | Within-file error skip |
+|---|---|---|
+| Parquet (`read_parquet`) | ✅ (bad footer, wrong magic bytes, file too small) | ✅ (corrupt row group data) |
+| CSV (`read_csv`) | ✅ (unreadable file, truncated) | ✅ (bad encoding, wrong field count in chunk) |
+| Iceberg (`read_iceberg`) | ✅ (data files go through the Rust Parquet reader) | ✅ |
 
 !!! note "Iceberg delete files"
     Corruption in Iceberg *delete files* is not covered. If a delete file is unreadable, Daft will raise an error regardless of `ignore_corrupt_files`. Delete files are small metadata structures and corruption there generally indicates a more serious catalog inconsistency.
-
-!!! note "Paimon LSM-merge fallback"
-    For Apache Paimon primary-key tables whose splits require LSM-tree merging, Daft delegates to pypaimon's native reader. `ignore_corrupt_files` applies only to the native Parquet path (append-only tables and single-file PK splits).
