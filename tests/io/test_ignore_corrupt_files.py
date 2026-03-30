@@ -167,6 +167,31 @@ def test_parquet_ignore_corrupt_rowgroup_data(tmp_path):
     )
 
 
+def test_parquet_ignore_corrupt_all_corrupt_raises(tmp_path):
+    """When every file is corrupt, an error is raised even with ignore_corrupt_files=True."""
+    d = str(tmp_path)
+    _write_corrupt_parquet(d, "bad1.parquet")
+    _write_corrupt_parquet(d, "bad2.parquet")
+
+    with pytest.raises(Exception):
+        daft.read_parquet(d, ignore_corrupt_files=True).collect()
+
+
+def test_parquet_ignore_corrupt_multiple_corrupt_files(tmp_path):
+    """Multiple corrupt files are all recorded in skipped_files."""
+    d = str(tmp_path)
+    _write_parquet(d, "good.parquet", {"a": [1, 2, 3]})
+    _write_corrupt_parquet(d, "bad1.parquet")
+    _write_corrupt_parquet(d, "bad2.parquet")
+
+    df = daft.read_parquet(d, ignore_corrupt_files=True)
+    df.collect()
+
+    assert sorted(df.to_pydict()["a"]) == [1, 2, 3]
+    skipped_names = {_basename(p) for p, _ in df.skipped_files}
+    assert skipped_names == {"bad1.parquet", "bad2.parquet"}
+
+
 # ── CSV ───────────────────────────────────────────────────────────────────────
 
 
@@ -225,6 +250,38 @@ def test_csv_ignore_corrupt_field_count_mismatch(tmp_path):
     assert sorted(result["a"]) == [1, 3]
     assert sorted(result["b"]) == [2, 4]
     assert any(_basename(p) == "zzz_bad.csv" for p, _ in df.skipped_files)
+
+
+def test_csv_ignore_corrupt_all_corrupt_raises(tmp_path):
+    """When every CSV file is corrupt, an error is raised even with ignore_corrupt_files=True."""
+    d = str(tmp_path)
+    _write_corrupt_csv(d, "bad1.csv")
+    _write_corrupt_csv(d, "bad2.csv")
+
+    with pytest.raises(Exception):
+        daft.read_csv(d, ignore_corrupt_files=True).collect()
+
+
+def test_csv_ignore_corrupt_multiple_corrupt_files(tmp_path):
+    """Multiple corrupt CSV files are all recorded in skipped_files."""
+    d = str(tmp_path)
+    _write_csv(d, "good.csv", "a\n1\n2\n3\n")
+    # Binary garbage fails during reading. Provide an explicit schema to bypass
+    # schema inference so these files are only encountered at read time.
+    _write_corrupt_csv(d, "zzz_bad1.csv")
+    _write_corrupt_csv(d, "zzz_bad2.csv")
+
+    df = daft.read_csv(
+        d,
+        schema={"a": daft.DataType.int64()},
+        infer_schema=False,
+        ignore_corrupt_files=True,
+    )
+    df.collect()
+
+    assert sorted(df.to_pydict()["a"]) == [1, 2, 3]
+    skipped_names = {_basename(p) for p, _ in df.skipped_files}
+    assert skipped_names == {"zzz_bad1.csv", "zzz_bad2.csv"}
 
 
 # ── Iceberg ───────────────────────────────────────────────────────────────────

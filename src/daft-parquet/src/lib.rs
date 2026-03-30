@@ -174,7 +174,7 @@ impl From<Error> for DaftError {
             Error::DaftIOError { source } => source.into(),
             Error::FileReadTimeout { .. } => Self::ReadTimeout(err.into()),
             Error::UnableToBindExpression { source, .. } => source.into(),
-            // File-integrity / format-corruption variants → ParquetError so that
+            // File-integrity / format-corruption variants → CorruptFile so that
             // `is_parquet_corrupt` can match by type without string inspection.
             Error::InvalidParquetFile { .. }
             | Error::FileTooSmall { .. }
@@ -183,7 +183,7 @@ impl From<Error> for DaftError {
             | Error::UnableToReadParquetRowGroup { .. }
             | Error::ParquetNumRowMismatch { .. }
             | Error::ParquetColumnsDontHaveEqualRows { .. }
-            | Error::ParquetNumColumnMismatch { .. } => Self::ParquetError(err.to_string()),
+            | Error::ParquetNumColumnMismatch { .. } => Self::CorruptFile(err.to_string()),
             _ => Self::External(err.into()),
         }
     }

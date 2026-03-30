@@ -139,30 +139,24 @@ pub fn read_csv_bulk(
 /// Returns true if a `DaftError` represents a genuine CSV format or file-integrity
 /// problem that should be skipped when `ignore_corrupt_files` is enabled.
 ///
-/// Only two categories are considered corrupt:
-/// - `DaftError::CsvError` — CSV format violations (bad encoding, wrong field counts,
+/// Three categories are considered corrupt/skippable:
+/// - `DaftError::CorruptFile` — CSV format violations (bad encoding, wrong field counts,
 ///   etc.) routed here by `From<daft_csv::Error> for DaftError` via `csv_async::Error::is_io_error()`.
 /// - `DaftError::IoError(UnexpectedEof)` — a local file that ends before the reader
 ///   expected (truncated file).  Remote stream truncations surface as network-specific
 ///   variants and do NOT match this arm.
+/// - `DaftError::FileNotFound` — file was deleted between listing and reading; treated
+///   the same as a corrupt file so transient listing races are silently skipped.
 ///
 /// Network errors, permission errors, and all other variants continue to propagate.
 fn is_csv_corrupt(err: &common_error::DaftError) -> bool {
     use common_error::DaftError;
     match err {
-        DaftError::CsvError(_) => true,
+        DaftError::CorruptFile(_) => true,
         DaftError::IoError(io_err) => {
             matches!(io_err.kind(), std::io::ErrorKind::UnexpectedEof)
         }
-        // Missing file: treat as skippable so that files deleted between listing and
-        // reading are handled the same way as corrupt files.
         DaftError::FileNotFound { .. } => true,
-        // csv_async errors that don't satisfy is_io_error() are wrapped as External
-        // rather than CsvError (e.g. invalid UTF-8, wrong field count).
-        DaftError::External(ext_err) => {
-            let msg = ext_err.to_string();
-            msg.contains("CSV") || msg.contains("invalid utf-8")
-        }
         _ => false,
     }
 }

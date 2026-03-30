@@ -44,7 +44,7 @@ pub enum Error {
 impl From<Error> for DaftError {
     fn from(err: Error) -> Self {
         // Inspect CSV-specific errors before falling through to External so that:
-        // - Format errors (bad encoding, wrong field count) get DaftError::CsvError
+        // - Format errors (bad encoding, wrong field count) get DaftError::CorruptFile
         // - IO errors embedded inside csv_async/csv readers get DaftError::IoError
         //   rather than being lost inside External.
         let is_csv_format_err = match &err {
@@ -53,7 +53,7 @@ impl From<Error> for DaftError {
             _ => false,
         };
         if is_csv_format_err {
-            return Self::CsvError(err.to_string());
+            return Self::CorruptFile(err.to_string());
         }
 
         match err {

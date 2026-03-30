@@ -218,7 +218,8 @@ where
             reader
                 .headers()
                 .await
-                .map_err(|e| common_error::DaftError::External(e.into()))?
+                .map_err(|e| crate::Error::CSVError { source: e })
+                .map_err(common_error::DaftError::from)?
                 .iter()
                 .map(std::string::ToString::to_string)
                 .collect(),
@@ -229,7 +230,8 @@ where
         if !reader
             .read_byte_record(&mut record)
             .await
-            .map_err(|e| common_error::DaftError::External(e.into()))?
+            .map_err(|e| crate::Error::CSVError { source: e })
+            .map_err(common_error::DaftError::from)?
         {
             return Ok((vec![], Default::default()));
         }
@@ -267,7 +269,8 @@ where
         if !reader
             .read_byte_record(&mut record)
             .await
-            .map_err(|e| common_error::DaftError::External(e.into()))?
+            .map_err(|e| crate::Error::CSVError { source: e })
+            .map_err(common_error::DaftError::from)?
         {
             break;
         }
