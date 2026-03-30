@@ -457,7 +457,10 @@ impl SQLPlanner<'_> {
                 ident_parts.push(func_name.to_string());
                 let ident = daft_catalog::Identifier::new(ident_parts);
                 Ok(session_func_to_sql(
-                    session.get_catalog_function(&ident, &catalog)?,
+                    match session.get_catalog_function(&ident, &catalog) {
+                        Ok(f) => f,
+                        Err(_) => None,
+                    },
                 ))
             }
             #[cfg(not(feature = "python"))]
