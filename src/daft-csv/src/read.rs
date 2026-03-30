@@ -141,10 +141,10 @@ pub fn read_csv_bulk(
 ///
 /// Only two categories are considered corrupt:
 /// - `DaftError::CsvError` — CSV format violations (bad encoding, wrong field counts,
-///   etc.) that were routed here by `From<daft_csv::Error> for DaftError`.
+///   etc.) routed here by `From<daft_csv::Error> for DaftError` via `csv_async::Error::is_io_error()`.
 /// - `DaftError::IoError(UnexpectedEof)` — a local file that ends before the reader
-///   expected (truncated or empty file).  On a remote stream this error is caught
-///   earlier as a network-specific variant and will NOT match this arm.
+///   expected (truncated file).  Remote stream truncations surface as network-specific
+///   variants and do NOT match this arm.
 ///
 /// Network errors, permission errors, and all other variants continue to propagate.
 fn is_csv_corrupt(err: &common_error::DaftError) -> bool {
@@ -154,16 +154,9 @@ fn is_csv_corrupt(err: &common_error::DaftError) -> bool {
         DaftError::IoError(io_err) => {
             matches!(io_err.kind(), std::io::ErrorKind::UnexpectedEof)
         }
-        // External errors may wrap CSV parser messages (e.g. from the local reader path).
-        // "CSV error:" comes from field-count mismatches; "CSV parse error:" comes from
-        // encoding errors (e.g. invalid UTF-8) surfaced by csv_async on the local path.
-        DaftError::External(e) => {
-            let msg = e.to_string();
-            msg.contains("CSV error:")
-                || msg.contains("CSV parse error:")
-                || msg.contains("EOF")
-                || msg.contains("empty file")
-        }
+        // Missing file: treat as skippable so that files deleted between listing and
+        // reading are handled the same way as corrupt files.
+        DaftError::FileNotFound { .. } => true,
         _ => false,
     }
 }

@@ -565,7 +565,10 @@ pub fn is_parquet_corrupt_pub(err: &common_error::DaftError) -> bool {
 fn is_parquet_corrupt(err: &common_error::DaftError) -> bool {
     use common_error::DaftError;
     match err {
-        // Direct parquet-rs format violations → definite corruption.
+        // File-integrity / format-corruption variants routed here by
+        // `From<daft_parquet::Error> for DaftError` (InvalidParquetFile, FileTooSmall,
+        // InvalidParquetFooterSize, UnableToParseMetadataArrowRs, UnableToReadParquetRowGroup,
+        // ParquetNumRowMismatch, ParquetColumnsDontHaveEqualRows, ParquetNumColumnMismatch).
         DaftError::ParquetError(_) => true,
         // Arrow wraps parquet-rs errors as strings; detect known corruption markers.
         // parquet-rs General("Parquet error: ...") = format violations
@@ -583,19 +586,17 @@ fn is_parquet_corrupt(err: &common_error::DaftError) -> bool {
                 | std::io::ErrorKind::PermissionDenied
                 | std::io::ErrorKind::NotFound
         ),
+        // Missing file: treat as skippable under ignore_corrupt_files so that files
+        // deleted between listing and reading (e.g. concurrent compaction) are handled
+        // the same way as corrupt files — no need to expose a separate flag.
+        DaftError::FileNotFound { .. } => true,
         // Explicit network / transient errors → always propagate, never treat as corruption.
         DaftError::ConnectTimeout(_)
         | DaftError::ReadTimeout(_)
         | DaftError::ByteStreamError(_)
         | DaftError::SocketError(_)
         | DaftError::ThrottledIo(_)
-        | DaftError::MiscTransient(_)
-        | DaftError::FileNotFound { .. } => false,
-        // External errors may wrap parquet-rs messages (e.g. from schema inference helpers).
-        DaftError::External(e) => {
-            let msg = e.to_string();
-            msg.contains("Parquet error:") || msg.contains("EOF:") || msg.contains("bad magic")
-        }
+        | DaftError::MiscTransient(_) => false,
         // All other variants → conservative: not corrupt.
         _ => false,
     }
@@ -808,15 +809,35 @@ pub async fn read_parquet_metadata_bulk(
 }
 
 /// Optimized for count pushdowns: we can get the count from metadata without reading all data.
+///
+/// When `ignore_corrupt_files` is true and the footer is unreadable, the file is silently
+/// skipped and contributes 0 to the aggregate (matching the behaviour of the data-read path).
+/// If the footer is readable but row-group data later turns out to be corrupt, the footer's
+/// row count is included as-is; that slight over-count is an accepted trade-off for users who
+/// have already opted into `ignore_corrupt_files`.
 pub async fn stream_parquet_count_pushdown(
     url: &str,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     aggregation: &ExprRef,
+    ignore_corrupt_files: bool,
+    skipped_files: SkippedFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let parquet_metadata =
-        read_parquet_metadata(url, io_client, io_stats, field_id_mapping.clone()).await?;
+        match read_parquet_metadata(url, io_client, io_stats, field_id_mapping.clone()).await {
+            Ok(meta) => meta,
+            Err(e) if ignore_corrupt_files && is_parquet_corrupt(&e) => {
+                log::warn!("Skipping corrupt Parquet file during count pushdown {url}: {e}");
+                if let Some(ref collector) = skipped_files
+                    && let Ok(mut v) = collector.lock()
+                {
+                    v.push((url.to_string(), e.to_string()));
+                }
+                return Ok(Box::pin(futures::stream::empty()));
+            }
+            Err(e) => return Err(e),
+        };
 
     // Currently only CountMode::All is supported for count pushdown.
     let count = parquet_metadata.num_rows();

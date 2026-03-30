@@ -6,11 +6,14 @@
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
 import io
+import logging
 import multiprocessing
 import os
 import pathlib
 import typing
 import warnings
+
+logger = logging.getLogger(__name__)
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -4505,6 +4508,15 @@ class DataFrame:
             assert result is not None
             result.wait()
             self._metadata.write_mermaid()
+            skipped = self._metadata.skipped_files if self._metadata else []
+            if skipped:
+                paths = "\n".join(f"  - {path}" for path, _ in skipped)
+                logger.warning(
+                    "%d file(s) were skipped due to corruption or being missing "
+                    "(ignore_corrupt_files=True). Use df.skipped_files for details.\n%s",
+                    len(skipped),
+                    paths,
+                )
 
     @DataframePublicAPI
     def collect(self, num_preview_rows: int | None = 8) -> "DataFrame":

@@ -175,7 +175,8 @@ impl GlobScanOperator {
         ));
 
         let (schema, first_metadata, first_filepath) = if infer_schema {
-            // First, get a candidate file via limited glob
+            // Limit to 1 so the background listing task blocks after the first result,
+            // avoiding unnecessary S3 list-objects calls during schema inference.
             let mut paths = run_glob(
                 first_glob_path.clone(),
                 Some(1),
@@ -233,7 +234,10 @@ impl GlobScanOperator {
                             log::warn!(
                                 "Skipping corrupt Parquet file during schema inference {first_filepath}: {e}"
                             );
-                            // Reuse the glob stream to find the next readable file.
+                            // Open a new full glob stream for the fallback scan.  The initial
+                            // stream was limited to 1 to keep background listing cost low in
+                            // the common (non-corrupt) path; here we pay one extra listing
+                            // call, which is acceptable on this already-exceptional path.
                             let mut glob_stream = run_glob(
                                 first_glob_path.clone(),
                                 None,
@@ -526,15 +530,14 @@ impl ScanOperator for GlobScanOperator {
     }
 
     fn supports_count_pushdown(&self) -> bool {
-        // Count pushdown reads row counts from Parquet footer statistics. When
-        // ignore_corrupt_files is set, corrupt files are silently skipped, so
-        // their footer stats must never contribute to the aggregate. Disable the
-        // pushdown so the count comes from actually reading the surviving rows.
-        if let FileFormatConfig::Parquet(cfg) = self.file_format_config.as_ref() {
-            !cfg.ignore_corrupt_files
-        } else {
-            false
-        }
+        // Count pushdown reads row counts from Parquet footer statistics.
+        // Corrupt-file handling is done inside stream_parquet_count_pushdown itself:
+        // unreadable footers are skipped (contributing 0), and readable footers with
+        // corrupt row-group data use the footer's row count as-is (accepted trade-off).
+        matches!(
+            self.file_format_config.as_ref(),
+            FileFormatConfig::Parquet(_)
+        )
     }
 
     fn multiline_display(&self) -> Vec<String> {
