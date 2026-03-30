@@ -30,6 +30,10 @@
 
     Open Source image generation model on your own GPUs using Daft UDFs.
 
+- [Daft's Four UDF Pattern Tutorial](udf-patterns.md)
+
+    One notebook, four UDF patterns, one dataset. Row-wise, generator, async, and stateful -- learn when to use each.
+
 - [Window Functions: The Great Chocolate Race](window-functions.md)
 
     Explore how window functions can reduce complex joins and groupby's to just a few simple operations.
