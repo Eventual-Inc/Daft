@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from daft import DataType
 from daft.expressions import Expression
 
 if TYPE_CHECKING:
@@ -12,6 +13,9 @@ if TYPE_CHECKING:
 
 def encode(expr: Expression, charset: ENCODING_CHARSET) -> Expression:
     """Encode binary or string values using the specified character set.
+
+    If an invalid encoding is encountered, an error will be raised.
+    To handle invalid encodings, use `try_encode` instead.
 
     Args:
         expr (Binary or String Expression): The expression to encode.
@@ -30,6 +34,12 @@ def encode(expr: Expression, charset: ENCODING_CHARSET) -> Expression:
 
 def decode(bytes: Expression, charset: ENCODING_CHARSET) -> Expression:
     """Decodes binary values using the specified character set.
+
+    Note that if the charset is "utf-8" or "utf8", then this is equivalent
+    to cast(bytes, daft.DataType.string())
+
+    If an invalid encoding is encountered, an error will be raised.
+    To handle invalid encodings, use `try_decode` instead.
 
     Args:
         bytes (Binary Expression): The expression to decode.
@@ -53,6 +63,9 @@ def decode(bytes: Expression, charset: ENCODING_CHARSET) -> Expression:
         <BLANKLINE>
         (Showing first 1 of 1 rows)
     """
+    if charset in ("utf-8", "utf8"):
+        return bytes.cast(DataType.string())
+
     return Expression._call_builtin_scalar_fn("decode", bytes, codec=charset)
 
 
@@ -71,6 +84,8 @@ def try_decode(bytes: Expression, charset: ENCODING_CHARSET) -> Expression:
     Tip: See Also
         [`daft.functions.decode`](https://docs.daft.ai/en/stable/api/functions/decode/)
     """
+    # TODO: Replace with a try_cast to string if the charset is "utf-8" or "utf8"
+    # We currently don't have a try_cast
     return Expression._call_builtin_scalar_fn("try_decode", bytes, codec=charset)
 
 
