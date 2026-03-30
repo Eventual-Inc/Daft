@@ -447,7 +447,13 @@ impl NativeExecutor {
             .boxed())
         } else {
             let stats_handle = plan_state.stats_handle.clone();
-            Ok(async move { stats_handle.take_input_snapshot(input_id).await }.boxed())
+            Ok(async move {
+                Ok(stats_handle
+                    .take_input_snapshot(input_id)
+                    .await
+                    .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![])))
+            }
+            .boxed())
         }
     }
 
