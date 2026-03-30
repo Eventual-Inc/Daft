@@ -269,6 +269,8 @@ def test_write_audio_from_tensor(tmp_path):
 
 def test_write_audio_format_override(sample_audio_path, tmp_path):
     """Test that explicit format parameter overrides extension inference."""
+    import soundfile as sf
+
     output_path = str(tmp_path / "output.dat")
 
     df = daft.from_pydict({"path": [sample_audio_path], "output": [output_path]})
@@ -277,6 +279,10 @@ def test_write_audio_format_override(sample_audio_path, tmp_path):
     result = df.to_pydict()
 
     assert result["result"][0]["format"] == "WAV"
+
+    # Verify the file on disk is actually a valid WAV file
+    info = sf.info(output_path)
+    assert info.format == "WAV"
 
 
 def test_write_audio_returns_metadata(sample_audio_path, tmp_path):

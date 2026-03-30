@@ -7,11 +7,12 @@ import pathlib
 from typing import TYPE_CHECKING, Any
 
 import daft
+from daft.daft import io_put
+from daft.file.typing import AudioMetadata
 from daft.udf.udf_v2 import Func
 
 if TYPE_CHECKING:
     from daft import Expression
-    from daft.file.typing import AudioMetadata
 
 _CLOUD_SCHEMES = ("s3://", "gs://", "gcs://", "az://", "abfs://", "hf://", "http://", "https://")
 
@@ -189,7 +190,6 @@ def write_audio_impl(
     subtype: str | None,
 ) -> AudioMetadata:
     from daft.dependencies import np, sf
-    from daft.file.typing import AudioMetadata
 
     # Extract audio data and sample rate from input
     if isinstance(audio, daft.AudioFile):
@@ -206,7 +206,8 @@ def write_audio_impl(
             )
 
     # Normalize channel layout: channel-first → channel-last for soundfile
-    if data.ndim == 2 and data.shape[0] <= 8 and data.shape[0] < data.shape[1]:
+    # Heuristic: treat the smaller dimension as channels
+    if data.ndim == 2 and data.shape[0] < data.shape[1]:
         data = data.T
 
     # Clip to [-1.0, 1.0] and convert to float32
@@ -227,8 +228,6 @@ def write_audio_impl(
             )
         buf = io.BytesIO()
         sf.write(buf, data, samplerate=sample_rate, format=write_format, subtype=subtype)
-        from daft.daft import io_put
-
         io_put(destination, buf.getvalue())
     else:
         pathlib.Path(destination).parent.mkdir(parents=True, exist_ok=True)
