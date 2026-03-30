@@ -30,6 +30,8 @@ use tokio_util::io::StreamReader;
 
 use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions, metadata::read_csv_schema_single};
 
+type SkippedFilesCollector = Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>;
+
 trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<csv_async::ByteRecord>>> {}
 impl<S> ByteRecordChunkStream for S where S: Stream<Item = super::Result<Vec<csv_async::ByteRecord>>>
 {}
@@ -134,6 +136,31 @@ pub fn read_csv_bulk(
     tables.into_iter().collect::<DaftResult<Vec<_>>>()
 }
 
+/// Returns true if a `DaftError` represents a genuine CSV format or file-integrity
+/// problem that should be skipped when `ignore_corrupt_files` is enabled.
+///
+/// Three categories are considered corrupt/skippable:
+/// - `DaftError::CorruptFile` — CSV format violations (bad encoding, wrong field counts,
+///   etc.) routed here by `From<daft_csv::Error> for DaftError` via `csv_async::Error::is_io_error()`.
+/// - `DaftError::IoError(UnexpectedEof)` — a local file that ends before the reader
+///   expected (truncated file).  Remote stream truncations surface as network-specific
+///   variants and do NOT match this arm.
+/// - `DaftError::FileNotFound` — file was deleted between listing and reading; treated
+///   the same as a corrupt file so transient listing races are silently skipped.
+///
+/// Network errors, permission errors, and all other variants continue to propagate.
+pub fn is_csv_corrupt(err: &common_error::DaftError) -> bool {
+    use common_error::DaftError;
+    match err {
+        DaftError::CorruptFile(_) => true,
+        DaftError::IoError(io_err) => {
+            matches!(io_err.kind(), std::io::ErrorKind::UnexpectedEof)
+        }
+        DaftError::FileNotFound { .. } => true,
+        _ => false,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn stream_csv(
     uri: String,
@@ -143,12 +170,14 @@ pub async fn stream_csv(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
+    ignore_corrupt_files: bool,
+    skipped_files: SkippedFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let (source_type, _) = parse_url(&uri)?;
     let is_compressed = CompressionCodec::from_uri(&uri).is_some();
-    if matches!(source_type, SourceType::File) && !is_compressed {
-        let stream = stream_csv_local(
-            uri,
+    let stream_result = if matches!(source_type, SourceType::File) && !is_compressed {
+        stream_csv_local(
+            uri.clone(),
             convert_options,
             parse_options.unwrap_or_default(),
             read_options,
@@ -156,11 +185,11 @@ pub async fn stream_csv(
             io_stats,
             max_chunks_in_flight,
         )
-        .await?;
-        Ok(Box::pin(stream))
+        .await
+        .map(|s| Box::pin(s) as BoxStream<'static, DaftResult<RecordBatch>>)
     } else {
-        let stream = stream_csv_single(
-            uri,
+        stream_csv_single(
+            uri.clone(),
             convert_options,
             parse_options,
             read_options,
@@ -168,8 +197,50 @@ pub async fn stream_csv(
             io_stats,
             max_chunks_in_flight,
         )
-        .await?;
-        Ok(Box::pin(stream))
+        .await
+        .map(|s| Box::pin(s) as BoxStream<'static, DaftResult<RecordBatch>>)
+    };
+
+    match stream_result {
+        Ok(stream) => {
+            if ignore_corrupt_files {
+                // Level 2: filter per-chunk errors that indicate format corruption
+                // (e.g. bad encoding or wrong field count discovered mid-stream).
+                let uri_for_warn = uri.clone();
+                let skipped_files_inner = skipped_files.clone();
+                let filtered = stream.filter_map(move |result| {
+                    let uri_w = uri_for_warn.clone();
+                    let skipped = skipped_files_inner.clone();
+                    futures::future::ready(match result {
+                        Ok(batch) => Some(Ok(batch)),
+                        Err(ref e) if is_csv_corrupt(e) => {
+                            log::warn!("Skipping corrupt CSV chunk in {uri_w}: {e}");
+                            if let Some(ref collector) = skipped
+                                && let Ok(mut v) = collector.lock()
+                            {
+                                v.push((uri_w, e.to_string()));
+                            }
+                            None
+                        }
+                        Err(e) => Some(Err(e)),
+                    })
+                });
+                Ok(Box::pin(filtered))
+            } else {
+                Ok(Box::pin(stream))
+            }
+        }
+        // Level 1: file-open / schema-inference errors (format error or truncated file).
+        Err(ref e) if ignore_corrupt_files && is_csv_corrupt(e) => {
+            log::warn!("Skipping unreadable/corrupt CSV file {uri}: {e}");
+            if let Some(ref collector) = skipped_files
+                && let Ok(mut v) = collector.lock()
+            {
+                v.push((uri, e.to_string()));
+            }
+            Ok(Box::pin(futures::stream::empty()))
+        }
+        Err(e) => Err(e),
     }
 }
 
@@ -1755,7 +1826,7 @@ mod tests {
         let err = read_csv(file.as_ref(), None, None, None, io_client, None, true, None);
         assert!(err.is_err());
         let err = err.unwrap_err();
-        assert!(matches!(err, DaftError::External(_)), "{}", err);
+        assert!(matches!(err, DaftError::CorruptFile(_)), "{}", err);
         assert!(
             err.to_string()
                 .contains("found record with 4 fields, but the previous record has 5 fields"),
@@ -1839,7 +1910,7 @@ mod tests {
         );
         assert!(err.is_err());
         let err = err.unwrap_err();
-        assert!(matches!(err, DaftError::External(_)), "{}", err);
+        assert!(matches!(err, DaftError::CorruptFile(_)), "{}", err);
         assert!(
             err.to_string()
                 .contains("found record with 5 fields, but the previous record has 4 fields"),

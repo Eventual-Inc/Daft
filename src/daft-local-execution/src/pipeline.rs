@@ -194,6 +194,7 @@ pub struct BuilderContext {
     index_counter: std::cell::RefCell<usize>,
     pub meter: Meter,
     context: HashMap<String, String>,
+    pub skipped_files: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>,
 }
 
 impl BuilderContext {
@@ -208,6 +209,7 @@ impl BuilderContext {
             index_counter: std::cell::RefCell::new(0),
             meter,
             context,
+            skipped_files: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 
@@ -320,6 +322,7 @@ fn physical_plan_to_pipeline(
                 pushdowns.clone(),
                 schema.clone(),
                 cfg,
+                Some(ctx.skipped_files.clone()),
             );
             SourceNode::new(
                 Box::new(scan_task_source),

@@ -87,6 +87,11 @@ pub struct ParquetSourceConfig {
     pub field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     pub row_groups: Option<Vec<Option<Vec<i64>>>>,
     pub chunk_size: Option<usize>,
+    /// If true, corrupt or unreadable Parquet files are silently skipped instead of raising an
+    /// error. Skipped files are recorded in `df.skipped_files` after collection. Only genuine
+    /// format errors (bad magic bytes, truncated footer, corrupt row-group data) are ignored;
+    /// network errors and permission errors are still raised.
+    pub ignore_corrupt_files: bool,
 }
 
 impl ParquetSourceConfig {
@@ -137,6 +142,7 @@ impl Default for ParquetSourceConfig {
             field_id_mapping: None,
             row_groups: None,
             chunk_size: None,
+            ignore_corrupt_files: false,
         }
     }
 }
@@ -146,12 +152,13 @@ impl Default for ParquetSourceConfig {
 impl ParquetSourceConfig {
     /// Create a config for a Parquet data source.
     #[new]
-    #[pyo3(signature = (coerce_int96_timestamp_unit=None, field_id_mapping=None, row_groups=None, chunk_size=None))]
+    #[pyo3(signature = (coerce_int96_timestamp_unit=None, field_id_mapping=None, row_groups=None, chunk_size=None, ignore_corrupt_files=false))]
     fn new(
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
         field_id_mapping: Option<BTreeMap<i32, PyField>>,
         row_groups: Option<Vec<Option<Vec<i64>>>>,
         chunk_size: Option<usize>,
+        ignore_corrupt_files: bool,
     ) -> Self {
         Self {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
@@ -161,6 +168,7 @@ impl ParquetSourceConfig {
                 .map(|map| Arc::new(map.into_iter().map(|(k, v)| (k, v.field)).collect())),
             row_groups,
             chunk_size,
+            ignore_corrupt_files,
         }
     }
 
@@ -189,6 +197,11 @@ pub struct CsvSourceConfig {
     pub allow_variable_columns: bool,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
+    /// If true, corrupt or unreadable CSV files are silently skipped instead of raising an
+    /// error. Skipped files are recorded in `df.skipped_files` after collection. Only genuine
+    /// format errors (bad encoding, wrong field counts, truncated file) are ignored;
+    /// network errors and permission errors are still raised.
+    pub ignore_corrupt_files: bool,
 }
 
 impl CsvSourceConfig {
@@ -245,7 +258,8 @@ impl CsvSourceConfig {
         escape_char=None,
         comment=None,
         buffer_size=None,
-        chunk_size=None
+        chunk_size=None,
+        ignore_corrupt_files=false
     ))]
     fn new(
         has_headers: bool,
@@ -257,6 +271,7 @@ impl CsvSourceConfig {
         comment: Option<char>,
         buffer_size: Option<usize>,
         chunk_size: Option<usize>,
+        ignore_corrupt_files: bool,
     ) -> PyResult<Self> {
         Ok(Self {
             delimiter,
@@ -268,6 +283,7 @@ impl CsvSourceConfig {
             allow_variable_columns,
             buffer_size,
             chunk_size,
+            ignore_corrupt_files,
         })
     }
 }

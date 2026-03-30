@@ -23,6 +23,8 @@ use snafu::ResultExt;
 
 use crate::{DaftParquetMetadata, JoinSnafu, infer_schema_from_daft_metadata};
 
+type SkippedFilesCollector = Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>;
+
 /// How to decode Parquet BYTE_ARRAY columns annotated as strings.
 ///
 /// - `Utf8` (default): arrow-rs decodes as Utf8/LargeUtf8 with UTF-8 validation.
@@ -551,6 +553,37 @@ pub async fn read_parquet_bulk_async(
     Ok(tables)
 }
 
+/// Returns true if the error represents genuine Parquet file corruption.
+///
+/// Bad magic bytes, truncated footer, and corrupt row-group data return true.
+/// Network errors, permission errors, and other transient failures return false.
+pub fn is_parquet_corrupt(err: &common_error::DaftError) -> bool {
+    use common_error::DaftError;
+    // parquet-rs surfaces corruption as "Parquet error: ...", "EOF: ...", or "bad magic".
+    // Both ArrowRsError and External can carry these strings from different call paths.
+    let is_parquet_marker = |msg: &str| {
+        msg.contains("Parquet error:") || msg.contains("EOF:") || msg.contains("bad magic")
+    };
+    match err {
+        // Routed here by `From<daft_parquet::Error> for DaftError` for all format-integrity variants.
+        DaftError::CorruptFile(_) => true,
+        DaftError::ArrowRsError(e) => is_parquet_marker(&e.to_string()),
+        DaftError::External(e) => is_parquet_marker(&e.to_string()),
+        // UnexpectedEof and similar IO failures = truncated/unreadable file → skippable.
+        // Network-level IO kinds must propagate.
+        DaftError::IoError(io_err) => !matches!(
+            io_err.kind(),
+            std::io::ErrorKind::TimedOut
+                | std::io::ErrorKind::ConnectionReset
+                | std::io::ErrorKind::ConnectionAborted
+                | std::io::ErrorKind::PermissionDenied
+        ),
+        // File deleted between listing and reading → treat as skippable, same as corrupt.
+        DaftError::FileNotFound { .. } => true,
+        _ => false,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn stream_parquet(
     uri: &str,
@@ -566,9 +599,12 @@ pub async fn stream_parquet(
     maintain_order: bool,
     delete_rows: Option<Vec<i64>>,
     chunk_size: Option<usize>,
+    ignore_corrupt_files: bool,
+    skipped_files: SkippedFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let stream = stream_parquet_single(
-        uri.to_string(),
+    let uri_owned = uri.to_string();
+    match stream_parquet_single(
+        uri_owned.clone(),
         columns,
         num_rows,
         row_groups,
@@ -582,8 +618,49 @@ pub async fn stream_parquet(
         maintain_order,
         chunk_size,
     )
-    .await?;
-    Ok(Box::pin(stream))
+    .await
+    {
+        Ok(stream) => {
+            if ignore_corrupt_files {
+                // Filter out per-batch errors that indicate corrupt row-group data.
+                let uri_for_warn = uri_owned.clone();
+                let skipped_files_inner = skipped_files.clone();
+                let filtered = stream.filter_map(move |result| {
+                    let uri_w = uri_for_warn.clone();
+                    let skipped = skipped_files_inner.clone();
+                    futures::future::ready(match result {
+                        Ok(batch) => Some(Ok(batch)),
+                        Err(ref e) if is_parquet_corrupt(e) => {
+                            log::warn!(
+                                "Skipping corrupt row-group data in Parquet file {uri_w}: {e}"
+                            );
+                            if let Some(ref collector) = skipped
+                                && let Ok(mut v) = collector.lock()
+                            {
+                                v.push((uri_w, e.to_string()));
+                            }
+                            None
+                        }
+                        Err(e) => Some(Err(e)),
+                    })
+                });
+                Ok(Box::pin(filtered))
+            } else {
+                Ok(Box::pin(stream))
+            }
+        }
+        Err(ref e) if ignore_corrupt_files && is_parquet_corrupt(e) => {
+            // Footer-level corruption: the file cannot be opened at all. Return empty stream.
+            log::warn!("Skipping corrupt Parquet file {uri}: {e}");
+            if let Some(ref collector) = skipped_files
+                && let Ok(mut v) = collector.lock()
+            {
+                v.push((uri_owned, e.to_string()));
+            }
+            Ok(Box::pin(futures::stream::empty()))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -714,15 +791,35 @@ pub async fn read_parquet_metadata_bulk(
 }
 
 /// Optimized for count pushdowns: we can get the count from metadata without reading all data.
+///
+/// When `ignore_corrupt_files` is true and the footer is unreadable, the file is silently
+/// skipped and contributes 0 to the aggregate (matching the behaviour of the data-read path).
+/// If the footer is readable but row-group data later turns out to be corrupt, the footer's
+/// row count is included as-is; that slight over-count is an accepted trade-off for users who
+/// have already opted into `ignore_corrupt_files`.
 pub async fn stream_parquet_count_pushdown(
     url: &str,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     aggregation: &ExprRef,
+    ignore_corrupt_files: bool,
+    skipped_files: SkippedFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let parquet_metadata =
-        read_parquet_metadata(url, io_client, io_stats, field_id_mapping.clone()).await?;
+        match read_parquet_metadata(url, io_client, io_stats, field_id_mapping.clone()).await {
+            Ok(meta) => meta,
+            Err(e) if ignore_corrupt_files && is_parquet_corrupt(&e) => {
+                log::warn!("Skipping corrupt Parquet file during count pushdown {url}: {e}");
+                if let Some(ref collector) = skipped_files
+                    && let Ok(mut v) = collector.lock()
+                {
+                    v.push((url.to_string(), e.to_string()));
+                }
+                return Ok(Box::pin(futures::stream::empty()));
+            }
+            Err(e) => return Err(e),
+        };
 
     // Currently only CountMode::All is supported for count pushdown.
     let count = parquet_metadata.num_rows();
@@ -891,6 +988,8 @@ mod tests {
                 None,
                 false,
                 None,
+                None,
+                false,
                 None,
             )
             .await?

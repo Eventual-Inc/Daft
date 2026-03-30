@@ -1,0 +1,379 @@
+"""Tests for ignore_corrupt_files in read_parquet, read_csv, read_iceberg, and read_lance."""
+
+from __future__ import annotations
+
+import os
+import urllib.parse
+
+import pyarrow as pa
+import pyarrow.parquet as papq
+import pytest
+
+import daft
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def _write_parquet(directory: str, name: str, data: dict) -> str:
+    path = os.path.join(directory, name)
+    papq.write_table(pa.table(data), path)
+    return path
+
+
+def _write_corrupt_parquet(directory: str, name: str) -> str:
+    """Write a file with valid Parquet magic bytes but a garbage footer."""
+    path = os.path.join(directory, name)
+    with open(path, "wb") as f:
+        f.write(b"PAR1" + b"\x00" * 20 + b"PAR1")
+    return path
+
+
+def _write_parquet_valid_footer_corrupt_data(directory: str, name: str) -> str:
+    """Write a Parquet file with a valid footer but corrupt row-group data.
+
+    This exercises the DaftError::ArrowRsError branch in is_parquet_corrupt,
+    where arrow-rs/parquet-rs fails to decode column chunks and emits a message
+    like "Parquet error: ..." that is caught by string matching.
+    """
+    import io
+    import struct
+
+    buf = io.BytesIO()
+    papq.write_table(pa.table({"a": [1, 2, 3]}), buf)
+    data = bytearray(buf.getvalue())
+
+    # Footer length is the 4-byte little-endian int just before the trailing magic.
+    footer_len = struct.unpack_from("<i", data, len(data) - 8)[0]
+    footer_start = len(data) - 8 - footer_len
+
+    # Overwrite everything between the leading magic and the footer with 0xFF,
+    # leaving the footer and both PAR1 sentinels intact.
+    for i in range(4, footer_start):
+        data[i] = 0xFF
+
+    path = os.path.join(directory, name)
+    with open(path, "wb") as f:
+        f.write(bytes(data))
+    return path
+
+
+def _write_csv(directory: str, name: str, content: str) -> str:
+    path = os.path.join(directory, name)
+    with open(path, "w") as f:
+        f.write(content)
+    return path
+
+
+def _write_corrupt_csv(directory: str, name: str) -> str:
+    """Write a file with binary garbage (not valid UTF-8)."""
+    path = os.path.join(directory, name)
+    with open(path, "wb") as f:
+        f.write(b"\x00\x01\x02\x03\xff\xfe\xfd")
+    return path
+
+
+def _basename(path: str) -> str:
+    """Extract the filename from a local path or a file:// URL."""
+    return os.path.basename(urllib.parse.urlparse(path).path)
+
+
+# ── Parquet ───────────────────────────────────────────────────────────────────
+
+
+def test_parquet_ignore_corrupt_skips_and_reports(tmp_path):
+    """Corrupt Parquet file is skipped, valid rows returned, and skipped_files is populated."""
+    d = str(tmp_path)
+    _write_parquet(d, "good1.parquet", {"a": [1, 2, 3]})
+    _write_corrupt_parquet(d, "bad.parquet")
+    _write_parquet(d, "good2.parquet", {"a": [4, 5, 6]})
+
+    df = daft.read_parquet(d, ignore_corrupt_files=True)
+    df.collect()
+
+    assert sorted(df.to_pydict()["a"]) == [1, 2, 3, 4, 5, 6]
+
+    skipped = df.skipped_files
+    assert len(skipped) == 1
+    path, reason = skipped[0]
+    assert _basename(path) == "bad.parquet"
+    assert reason
+
+
+def test_parquet_ignore_corrupt_false_raises(tmp_path):
+    """Without ignore_corrupt_files, a corrupt file raises an error."""
+    d = str(tmp_path)
+    _write_parquet(d, "good.parquet", {"a": [1, 2, 3]})
+    _write_corrupt_parquet(d, "bad.parquet")
+
+    with pytest.raises(Exception):
+        daft.read_parquet(d, ignore_corrupt_files=False).collect()
+
+
+def test_parquet_ignore_corrupt_all_good_no_skips(tmp_path):
+    """All valid files: all rows returned, skipped_files is empty."""
+    d = str(tmp_path)
+    _write_parquet(d, "a.parquet", {"x": [10, 20]})
+    _write_parquet(d, "b.parquet", {"x": [30, 40]})
+
+    df = daft.read_parquet(d, ignore_corrupt_files=True)
+    df.collect()
+
+    assert sorted(df.to_pydict()["x"]) == [10, 20, 30, 40]
+    assert df.skipped_files == []
+
+
+def test_parquet_ignore_corrupt_schema_inference_fallback(tmp_path):
+    """Schema is inferred from the first readable file when the first file (lexicographically) is corrupt."""
+    d = str(tmp_path)
+    _write_corrupt_parquet(d, "aaa_bad.parquet")
+    _write_parquet(d, "zzz_good.parquet", {"col_a": [7, 8, 9]})
+
+    df = daft.read_parquet(d, ignore_corrupt_files=True)
+    df.collect()
+
+    assert "col_a" in df.schema().column_names()
+    assert sorted(df.to_pydict()["col_a"]) == [7, 8, 9]
+    assert any(_basename(p) == "aaa_bad.parquet" for p, _ in df.skipped_files)
+
+
+def test_parquet_ignore_corrupt_count_correct(tmp_path):
+    """COUNT(*) returns only rows from non-corrupt files."""
+    d = str(tmp_path)
+    _write_parquet(d, "good.parquet", {"v": list(range(100))})
+    _write_corrupt_parquet(d, "bad.parquet")
+
+    assert daft.read_parquet(d, ignore_corrupt_files=True).count_rows() == 100
+
+
+def test_parquet_ignore_corrupt_rowgroup_data(tmp_path):
+    """File with valid footer but corrupt row-group data is skipped via ArrowRsError string matching."""
+    d = str(tmp_path)
+    _write_parquet(d, "good.parquet", {"a": [10, 20, 30]})
+    _write_parquet_valid_footer_corrupt_data(d, "zzz_bad_rowgroup.parquet")
+
+    df = daft.read_parquet(d, ignore_corrupt_files=True)
+    df.collect()
+
+    assert sorted(df.to_pydict()["a"]) == [10, 20, 30]
+    skipped = df.skipped_files
+    assert len(skipped) == 1
+    path, reason = skipped[0]
+    assert _basename(path) == "zzz_bad_rowgroup.parquet"
+    # The footer is intact, so the file fails during row-group decoding.
+    # parquet-rs surfaces this as "Parquet error: ..." inside an ArrowRsError,
+    # which is caught by the string-matching branch in is_parquet_corrupt.
+    assert "Parquet error" in reason or "EOF" in reason or "bad magic" in reason, (
+        f"Expected a parquet-rs decode error in reason, got: {reason!r}"
+    )
+
+
+def test_parquet_ignore_corrupt_all_corrupt_raises(tmp_path):
+    """When every file is corrupt, an error is raised even with ignore_corrupt_files=True."""
+    d = str(tmp_path)
+    _write_corrupt_parquet(d, "bad1.parquet")
+    _write_corrupt_parquet(d, "bad2.parquet")
+
+    with pytest.raises(Exception):
+        daft.read_parquet(d, ignore_corrupt_files=True).collect()
+
+
+def test_parquet_ignore_corrupt_multiple_corrupt_files(tmp_path):
+    """Multiple corrupt files are all recorded in skipped_files."""
+    d = str(tmp_path)
+    _write_parquet(d, "good.parquet", {"a": [1, 2, 3]})
+    _write_corrupt_parquet(d, "bad1.parquet")
+    _write_corrupt_parquet(d, "bad2.parquet")
+
+    df = daft.read_parquet(d, ignore_corrupt_files=True)
+    df.collect()
+
+    assert sorted(df.to_pydict()["a"]) == [1, 2, 3]
+    skipped_names = {_basename(p) for p, _ in df.skipped_files}
+    assert skipped_names == {"bad1.parquet", "bad2.parquet"}
+
+
+# ── CSV ───────────────────────────────────────────────────────────────────────
+
+
+def test_csv_ignore_corrupt_skips_and_reports(tmp_path):
+    """Corrupt CSV file is skipped, valid rows returned, and skipped_files is populated."""
+    d = str(tmp_path)
+    _write_csv(d, "good1.csv", "a\n1\n2\n3\n")
+    _write_csv(d, "good2.csv", "a\n4\n5\n6\n")
+    _write_corrupt_csv(d, "zzz_bad.csv")
+
+    df = daft.read_csv(d, ignore_corrupt_files=True)
+    df.collect()
+
+    assert sorted(df.to_pydict()["a"]) == [1, 2, 3, 4, 5, 6]
+
+    skipped = df.skipped_files
+    assert len(skipped) == 1
+    path, reason = skipped[0]
+    assert _basename(path) == "zzz_bad.csv"
+    assert reason
+
+
+def test_csv_ignore_corrupt_false_raises(tmp_path):
+    """Without ignore_corrupt_files, an unreadable CSV raises an error."""
+    d = str(tmp_path)
+    _write_csv(d, "good.csv", "a\n1\n2\n")
+    _write_corrupt_csv(d, "bad.csv")
+
+    with pytest.raises(Exception):
+        daft.read_csv(d, ignore_corrupt_files=False).collect()
+
+
+def test_csv_ignore_corrupt_all_good_no_skips(tmp_path):
+    """All valid CSV files: all rows returned, skipped_files is empty."""
+    d = str(tmp_path)
+    _write_csv(d, "a.csv", "n\n10\n20\n")
+    _write_csv(d, "b.csv", "n\n30\n40\n")
+
+    df = daft.read_csv(d, ignore_corrupt_files=True)
+    df.collect()
+
+    assert sorted(df.to_pydict()["n"]) == [10, 20, 30, 40]
+    assert df.skipped_files == []
+
+
+def test_csv_ignore_corrupt_field_count_mismatch(tmp_path):
+    """CSV rows with wrong field count are treated as corrupt and skipped."""
+    d = str(tmp_path)
+    _write_csv(d, "good.csv", "a,b\n1,2\n3,4\n")
+    _write_csv(d, "zzz_bad.csv", "a,b\n1,2,EXTRA\n5,6,EXTRA\n")
+
+    df = daft.read_csv(d, ignore_corrupt_files=True)
+    df.collect()
+
+    result = df.to_pydict()
+    assert sorted(result["a"]) == [1, 3]
+    assert sorted(result["b"]) == [2, 4]
+    assert any(_basename(p) == "zzz_bad.csv" for p, _ in df.skipped_files)
+
+
+def test_csv_ignore_corrupt_all_corrupt_raises(tmp_path):
+    """When every CSV file is corrupt, an error is raised even with ignore_corrupt_files=True."""
+    d = str(tmp_path)
+    _write_corrupt_csv(d, "bad1.csv")
+    _write_corrupt_csv(d, "bad2.csv")
+
+    with pytest.raises(Exception):
+        daft.read_csv(d, ignore_corrupt_files=True).collect()
+
+
+def test_csv_ignore_corrupt_multiple_corrupt_files(tmp_path):
+    """Multiple corrupt CSV files are all recorded in skipped_files."""
+    d = str(tmp_path)
+    _write_csv(d, "good.csv", "a\n1\n2\n3\n")
+    # Binary garbage fails during reading. Provide an explicit schema to bypass
+    # schema inference so these files are only encountered at read time.
+    _write_corrupt_csv(d, "zzz_bad1.csv")
+    _write_corrupt_csv(d, "zzz_bad2.csv")
+
+    df = daft.read_csv(
+        d,
+        schema={"a": daft.DataType.int64()},
+        infer_schema=False,
+        ignore_corrupt_files=True,
+    )
+    df.collect()
+
+    assert sorted(df.to_pydict()["a"]) == [1, 2, 3]
+    skipped_names = {_basename(p) for p, _ in df.skipped_files}
+    assert skipped_names == {"zzz_bad1.csv", "zzz_bad2.csv"}
+
+
+# ── Iceberg ───────────────────────────────────────────────────────────────────
+#
+# These tests require pyiceberg. They are automatically skipped when the
+# package is not installed (pytest.importorskip inside the fixture).
+#
+# Iceberg data files go through the Rust Parquet reader, so corrupt files are
+# reflected in df.skipped_files just like plain read_parquet.
+
+
+@pytest.fixture
+def local_iceberg_catalog(tmp_path):
+    SqlCatalog = pytest.importorskip("pyiceberg.catalog.sql").SqlCatalog
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path}/pyiceberg_catalog.db",
+        warehouse=f"file://{tmp_path}",
+    )
+    catalog.create_namespace("default")
+    yield catalog
+    catalog.engine.dispose()
+
+
+def _iceberg_data_file_local_paths(table) -> list[str]:
+    """Return sorted local filesystem paths of all Parquet data files in the table."""
+    paths = []
+    for task in table.scan().plan_files():
+        url = task.file.file_path  # e.g. "file:///path/to/file.parquet"
+        paths.append(urllib.parse.urlparse(url).path)
+    return sorted(paths)
+
+
+def test_iceberg_ignore_corrupt_skips_and_reports(local_iceberg_catalog):
+    """Corrupt Iceberg data file is skipped, valid rows returned, and skipped_files is populated."""
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import LongType, NestedField
+
+    schema = Schema(NestedField(1, "id", LongType(), required=False))
+    table = local_iceberg_catalog.create_table("default.test_corrupt", schema=schema)
+
+    table.append(pa.table({"id": pa.array([1, 2, 3], type=pa.int64())}))
+    table.append(pa.table({"id": pa.array([4, 5, 6], type=pa.int64())}))
+
+    data_files = _iceberg_data_file_local_paths(table)
+    assert len(data_files) == 2, f"Expected 2 data files, got {len(data_files)}"
+
+    with open(data_files[0], "wb") as f:
+        f.write(b"PAR1" + b"\x00" * 20 + b"PAR1")
+
+    df = daft.read_iceberg(table, ignore_corrupt_files=True)
+    df.collect()
+
+    result = sorted(df.to_pydict()["id"])
+    assert len(result) == 3
+    assert set(result).issubset({1, 2, 3, 4, 5, 6})
+
+    skipped = df.skipped_files
+    assert len(skipped) == 1
+    _, reason = skipped[0]
+    assert reason
+
+
+def test_iceberg_ignore_corrupt_false_raises(local_iceberg_catalog):
+    """Without ignore_corrupt_files, a corrupt Iceberg data file raises an error."""
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import LongType, NestedField
+
+    schema = Schema(NestedField(1, "id", LongType(), required=False))
+    table = local_iceberg_catalog.create_table("default.test_raises", schema=schema)
+    table.append(pa.table({"id": pa.array([1, 2, 3], type=pa.int64())}))
+
+    data_files = _iceberg_data_file_local_paths(table)
+    with open(data_files[0], "wb") as f:
+        f.write(b"PAR1" + b"\x00" * 20 + b"PAR1")
+
+    with pytest.raises(Exception):
+        daft.read_iceberg(table, ignore_corrupt_files=False).collect()
+
+
+def test_iceberg_ignore_corrupt_all_good_no_skips(local_iceberg_catalog):
+    """All valid Iceberg files: all rows returned, skipped_files is empty."""
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import LongType, NestedField
+
+    schema = Schema(NestedField(1, "id", LongType(), required=False))
+    table = local_iceberg_catalog.create_table("default.test_all_good", schema=schema)
+    table.append(pa.table({"id": pa.array([1, 2, 3], type=pa.int64())}))
+    table.append(pa.table({"id": pa.array([4, 5, 6], type=pa.int64())}))
+
+    df = daft.read_iceberg(table, ignore_corrupt_files=True)
+    df.collect()
+
+    assert sorted(df.to_pydict()["id"]) == [1, 2, 3, 4, 5, 6]
+    assert df.skipped_files == []

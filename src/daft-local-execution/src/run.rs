@@ -179,6 +179,7 @@ impl NativeExecutor {
             .into();
 
         let ctx = BuilderContext::new_with_context(query_id.clone(), additional_context);
+        let skipped_files_collector = ctx.skipped_files.clone();
         let (pipeline, input_senders) =
             translate_physical_plan_to_pipeline(local_physical_plan.as_ref(), &exec_cfg, &ctx)?;
         let plan_json = pipeline.repr_json();
@@ -242,7 +243,13 @@ impl NativeExecutor {
             let final_stats = stats_manager.finish(finish_status).await;
 
             flush_opentelemetry_providers();
-            result.map(|()| final_stats)
+            result.map(|()| {
+                let skipped = skipped_files_collector
+                    .lock()
+                    .map(|v| v.clone())
+                    .unwrap_or_default();
+                final_stats.with_skipped_files(skipped)
+            })
         };
 
         let handle = RuntimeTask::new(handle, task);
