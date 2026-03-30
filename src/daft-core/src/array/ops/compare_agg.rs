@@ -11,9 +11,10 @@ use crate::{
     datatypes::*,
 };
 
+#[inline(never)]
 fn grouped_cmp_native<T, F>(
     array: &DataArray<T>,
-    mut op: F,
+    op: F,
     groups: &GroupIndices,
 ) -> DaftResult<DataArray<T>>
 where
@@ -41,7 +42,7 @@ where
             groups.iter().map(|g| {
                 g.iter()
                     .map(|i| array.get(*i as usize).unwrap())
-                    .reduce(&mut op)
+                    .reduce(&op)
                     .unwrap()
             }),
         )
@@ -95,6 +96,8 @@ where
     }
 }
 
+// `.reduce(op)` would move `op`, but the reduction needs to call the captured function by borrow.
+#[allow(clippy::redundant_closure)]
 fn grouped_cmp_utf8<'a, F>(
     data_array: &'a Utf8Array,
     op: F,
@@ -154,6 +157,8 @@ impl DaftCompareAggable for DataArray<Utf8Type> {
     }
 }
 
+// `.reduce(op)` would move `op`, but the reduction needs to call the captured function by borrow.
+#[allow(clippy::redundant_closure)]
 fn grouped_cmp_binary<'a, F>(
     data_array: &'a BinaryArray,
     op: F,
@@ -213,6 +218,8 @@ impl DaftCompareAggable for DataArray<BinaryType> {
     }
 }
 
+// `.reduce(op)` would move `op`, but the reduction needs to call the captured function by borrow.
+#[allow(clippy::redundant_closure)]
 fn grouped_cmp_fixed_size_binary<'a, F>(
     data_array: &'a FixedSizeBinaryArray,
     op: F,
