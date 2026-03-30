@@ -63,7 +63,7 @@ def decode(bytes: Expression, charset: ENCODING_CHARSET) -> Expression:
         <BLANKLINE>
         (Showing first 1 of 1 rows)
     """
-    if charset in ("utf-8", "utf8"):
+    if charset.lower() in ("utf-8", "utf8"):
         return bytes.cast(DataType.string())
 
     return Expression._call_builtin_scalar_fn("decode", bytes, codec=charset)
