@@ -577,6 +577,12 @@ fn is_parquet_corrupt(err: &common_error::DaftError) -> bool {
             let msg = arrow_err.to_string();
             msg.contains("Parquet error:") || msg.contains("EOF:") || msg.contains("bad magic")
         }
+        // arrowrs_reader wraps parquet-rs errors via parquet_err() as DaftError::External.
+        // Apply the same string-matching to catch corruption markers from that path.
+        DaftError::External(ext_err) => {
+            let msg = ext_err.to_string();
+            msg.contains("Parquet error:") || msg.contains("EOF:") || msg.contains("bad magic")
+        }
         // IO errors: filesystem-level failures may be corruption; network failures must propagate.
         DaftError::IoError(io_err) => !matches!(
             io_err.kind(),

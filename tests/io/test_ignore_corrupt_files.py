@@ -28,6 +28,35 @@ def _write_corrupt_parquet(directory: str, name: str) -> str:
     return path
 
 
+def _write_parquet_valid_footer_corrupt_data(directory: str, name: str) -> str:
+    """Write a Parquet file with a valid footer but corrupt row-group data.
+
+    This exercises the DaftError::ArrowRsError branch in is_parquet_corrupt,
+    where arrow-rs/parquet-rs fails to decode column chunks and emits a message
+    like "Parquet error: ..." that is caught by string matching.
+    """
+    import io
+    import struct
+
+    buf = io.BytesIO()
+    papq.write_table(pa.table({"a": [1, 2, 3]}), buf)
+    data = bytearray(buf.getvalue())
+
+    # Footer length is the 4-byte little-endian int just before the trailing magic.
+    footer_len = struct.unpack_from("<i", data, len(data) - 8)[0]
+    footer_start = len(data) - 8 - footer_len
+
+    # Overwrite everything between the leading magic and the footer with 0xFF,
+    # leaving the footer and both PAR1 sentinels intact.
+    for i in range(4, footer_start):
+        data[i] = 0xFF
+
+    path = os.path.join(directory, name)
+    with open(path, "wb") as f:
+        f.write(bytes(data))
+    return path
+
+
 def _write_csv(directory: str, name: str, content: str) -> str:
     path = os.path.join(directory, name)
     with open(path, "w") as f:
@@ -114,6 +143,28 @@ def test_parquet_ignore_corrupt_count_correct(tmp_path):
     _write_corrupt_parquet(d, "bad.parquet")
 
     assert daft.read_parquet(d, ignore_corrupt_files=True).count_rows() == 100
+
+
+def test_parquet_ignore_corrupt_rowgroup_data(tmp_path):
+    """File with valid footer but corrupt row-group data is skipped via ArrowRsError string matching."""
+    d = str(tmp_path)
+    _write_parquet(d, "good.parquet", {"a": [10, 20, 30]})
+    _write_parquet_valid_footer_corrupt_data(d, "zzz_bad_rowgroup.parquet")
+
+    df = daft.read_parquet(d, ignore_corrupt_files=True)
+    df.collect()
+
+    assert sorted(df.to_pydict()["a"]) == [10, 20, 30]
+    skipped = df.skipped_files
+    assert len(skipped) == 1
+    path, reason = skipped[0]
+    assert _basename(path) == "zzz_bad_rowgroup.parquet"
+    # The footer is intact, so the file fails during row-group decoding.
+    # parquet-rs surfaces this as "Parquet error: ..." inside an ArrowRsError,
+    # which is caught by the string-matching branch in is_parquet_corrupt.
+    assert "Parquet error" in reason or "EOF" in reason or "bad magic" in reason, (
+        f"Expected a parquet-rs decode error in reason, got: {reason!r}"
+    )
 
 
 # ── CSV ───────────────────────────────────────────────────────────────────────
