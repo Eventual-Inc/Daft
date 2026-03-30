@@ -427,8 +427,9 @@ impl SQLPlanner<'_> {
             {
                 let parts: Vec<&str> = name.split('.').collect();
                 let (parsed_catalog, parsed_namespace, func_name) = match parts.len() {
-                    0 => return Ok(None),
                     1 => (None, None, parts[0]),
+                    2 => (None, Some(vec![parts[0].to_string()]), parts[1]),
+                    _ => {
                     2 => (None, Some(vec![parts[0].to_string()]), parts[1]),
                     _ => {
                         // 3+ parts: first is catalog, last is func_name, middle parts are namespace levels
