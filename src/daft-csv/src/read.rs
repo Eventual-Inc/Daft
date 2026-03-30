@@ -157,6 +157,12 @@ fn is_csv_corrupt(err: &common_error::DaftError) -> bool {
         // Missing file: treat as skippable so that files deleted between listing and
         // reading are handled the same way as corrupt files.
         DaftError::FileNotFound { .. } => true,
+        // csv_async errors that don't satisfy is_io_error() are wrapped as External
+        // rather than CsvError (e.g. invalid UTF-8, wrong field count).
+        DaftError::External(ext_err) => {
+            let msg = ext_err.to_string();
+            msg.contains("CSV") || msg.contains("invalid utf-8")
+        }
         _ => false,
     }
 }
