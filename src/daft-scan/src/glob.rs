@@ -304,25 +304,81 @@ impl GlobScanOperator {
                     escape_char,
                     comment,
                     allow_variable_columns,
+                    ignore_corrupt_files,
                     ..
                 }) => {
-                    let (schema, _) = daft_csv::metadata::read_csv_schema(
+                    let parse_options = CsvParseOptions::new_with_defaults(
+                        *has_headers,
+                        *delimiter,
+                        *double_quote,
+                        *quote,
+                        *allow_variable_columns,
+                        *escape_char,
+                        *comment,
+                    )?;
+                    let try_infer = daft_csv::metadata::read_csv_schema(
                         first_filepath.as_str(),
-                        Some(CsvParseOptions::new_with_defaults(
-                            *has_headers,
-                            *delimiter,
-                            *double_quote,
-                            *quote,
-                            *allow_variable_columns,
-                            *escape_char,
-                            *comment,
-                        )?),
+                        Some(parse_options.clone()),
                         None,
                         io_client.clone(),
                         Some(io_stats.clone()),
                     )
-                    .await?;
-                    (schema, None, first_filepath)
+                    .await;
+
+                    let (schema, filepath) = match try_infer {
+                        Ok((schema, _)) => (schema, first_filepath),
+                        Err(e) if *ignore_corrupt_files && daft_csv::is_csv_corrupt(&e) => {
+                            log::warn!(
+                                "Skipping corrupt CSV file during schema inference {first_filepath}: {e}"
+                            );
+                            let mut glob_stream = run_glob(
+                                first_glob_path.clone(),
+                                None,
+                                io_client.clone(),
+                                Some(io_stats.clone()),
+                                file_format,
+                            )
+                            .await?;
+                            let mut found = None;
+                            while let Some(fm) = glob_stream.next().await {
+                                let FileMetadata { filepath, .. } = fm?;
+                                if filepath == first_filepath {
+                                    continue;
+                                }
+                                match daft_csv::metadata::read_csv_schema(
+                                    filepath.as_str(),
+                                    Some(parse_options.clone()),
+                                    None,
+                                    io_client.clone(),
+                                    Some(io_stats.clone()),
+                                )
+                                .await
+                                {
+                                    Ok((schema, _)) => {
+                                        found = Some((schema, filepath));
+                                        break;
+                                    }
+                                    Err(e2) if daft_csv::is_csv_corrupt(&e2) => {
+                                        log::warn!(
+                                            "Skipping corrupt CSV file during schema inference {filepath}: {e2}"
+                                        );
+                                    }
+                                    Err(e2) => return Err(e2),
+                                }
+                            }
+                            match found {
+                                Some(pair) => pair,
+                                None => {
+                                    return Err(common_error::DaftError::ComputeError(format!(
+                                        "All CSV files matched by '{}' are corrupt and were skipped (ignore_corrupt_files=true)",
+                                        first_glob_path
+                                    )));
+                                }
+                            }
+                        }
+                        Err(e) => return Err(e),
+                    };
+                    (schema, None, filepath)
                 }
                 FileFormatConfig::Json(json_config) => {
                     let parse_options =
