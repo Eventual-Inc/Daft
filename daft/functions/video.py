@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     import PIL
 
     from daft import Expression
-    from daft.file.typing import VideoMetadata
+    from daft.file.typing import VideoFrameData, VideoMetadata
 
 
 def get_metadata_impl(
@@ -91,3 +91,73 @@ def video_keyframes(
     Expression (List Expression): List of keyframes.
     """
     return video_keyframes_fn(file_expr, start_time=start_time, end_time=end_time)  # type: ignore
+
+
+def frames_impl(
+    file: daft.VideoFile,
+    *,
+    start_time: float = 0,
+    end_time: float | None = None,
+    width: int | None = None,
+    height: int | None = None,
+) -> list[VideoFrameData]:
+    return list(file.frames(start_time, end_time, width, height))
+
+
+video_frames_fn = Func._from_func(
+    frames_impl,
+    return_dtype=daft.DataType.list(
+        daft.DataType.struct(
+            {
+                "frame_index": daft.DataType.int64(),
+                "frame_time": daft.DataType.float64(),
+                "frame_time_base": daft.DataType.string(),
+                "frame_pts": daft.DataType.int64(),
+                "frame_dts": daft.DataType.int64(),
+                "frame_duration": daft.DataType.int64(),
+                "is_key_frame": daft.DataType.bool(),
+                "data": daft.DataType.image(),
+            }
+        )
+    ),
+    unnest=False,
+    use_process=None,
+    is_batch=False,
+    batch_size=None,
+    max_retries=None,
+    on_error=None,
+    name_override="video_frames",
+)
+
+
+def video_frames(
+    file_expr: Expression,
+    *,
+    start_time: float = 0,
+    end_time: float | None = None,
+    width: int | None = None,
+    height: int | None = None,
+) -> Expression:
+    """Decode all video frames within a time range, with per-frame metadata.
+
+    Mirrors the per-frame schema of ``daft.read_video_frames()``.
+
+    Args:
+        file_expr (VideoFile Expression): The video file to decode frames from.
+        start_time (float, optional): Start of the time range in seconds. Defaults to 0.
+        end_time (float | None, optional): End of the time range in seconds. Defaults to None (all frames).
+        width (int | None, optional): Target width for resizing frames. Defaults to None (original size).
+        height (int | None, optional): Target height for resizing frames. Defaults to None (original size).
+
+    Returns:
+        Expression (List[Struct] Expression): List of structs, each containing:
+            - frame_index (int): 0-based index of the frame in the video stream
+            - frame_time (float): Presentation time in seconds
+            - frame_time_base (str): Time base as a fraction string
+            - frame_pts (int): Presentation timestamp in stream time_base units
+            - frame_dts (int): Decode timestamp in stream time_base units
+            - frame_duration (int): Duration in stream time_base units
+            - is_key_frame (bool): Whether this frame is a keyframe
+            - data (Image): The decoded frame as an image
+    """
+    return video_frames_fn(file_expr, start_time=start_time, end_time=end_time, width=width, height=height)  # type: ignore

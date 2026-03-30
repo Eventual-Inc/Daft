@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from daft.datatype import MediaType
 from daft.dependencies import av, pil_image
 from daft.file import File
-from daft.file.typing import VideoMetadata
+from daft.file.typing import VideoFrameData, VideoMetadata
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -127,3 +127,72 @@ class VideoFile(File):
                             break
 
                     yield frame.to_image()
+
+    def frames(
+        self,
+        start_time: float = 0,
+        end_time: float | None = None,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> Iterator[VideoFrameData]:
+        """Lazy iterator of all decoded frames with metadata within time range.
+
+        Mirrors the per-frame schema of ``daft.read_video_frames()``.
+
+        Args:
+            start_time: Start of the time range in seconds. Defaults to 0.
+            end_time: End of the time range in seconds. Defaults to None (end of video).
+            width: Optional target width for resizing frames.
+            height: Optional target height for resizing frames.
+
+        Yields:
+            VideoFrameData dicts with keys: frame_index, frame_time, frame_time_base,
+            frame_pts, frame_dts, frame_duration, is_key_frame, data (PIL Image).
+        """
+        if not pil_image.module_available():
+            raise ImportError(
+                "The 'pillow' module is required for frame decoding. Install it with `pip install daft[video]`."
+            )
+        with self.open() as f:
+            with av.open(f) as container:
+                video = next(
+                    (stream for stream in container.streams if stream.type == "video"),
+                    None,
+                )
+                if video is None:
+                    raise ValueError("No video stream found")
+
+                # Seek to start time
+                if start_time > 0 and video.time_base:
+                    seek_timestamp = int(start_time / float(video.time_base))
+                    container.seek(seek_timestamp, stream=video)
+
+                frame_index: int = 0
+                for frame in container.decode(video):
+                    # Skip frames before start_time (seek may land earlier)
+                    if frame.time is not None and frame.time < start_time:
+                        frame_index += 1
+                        continue
+
+                    # Stop at end_time
+                    if end_time is not None:
+                        if frame.time is not None and frame.time > end_time:
+                            break
+
+                    # Resize if requested
+                    output_frame = frame
+                    if width is not None and height is not None:
+                        output_frame = frame.reformat(width=width, height=height)
+
+                    yield VideoFrameData(
+                        frame_index=frame_index,
+                        frame_time=frame.time,
+                        frame_time_base=str(frame.time_base) if frame.time_base else None,
+                        frame_pts=frame.pts,
+                        frame_dts=frame.dts,
+                        frame_duration=frame.duration,
+                        is_key_frame=frame.key_frame,
+                        data=output_frame.to_image(),
+                    )
+
+                    frame_index += 1
