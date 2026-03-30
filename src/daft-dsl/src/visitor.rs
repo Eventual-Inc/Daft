@@ -54,6 +54,7 @@ pub fn accept<'py>(expr: &PyExpr, visitor: Bound<'py, PyAny>) -> PyVisitorResult
         Expr::InSubquery(expr, subquery) => visitor.visit_in_subquery(expr, subquery),
         Expr::Exists(subquery) => visitor.visit_exists(subquery),
         Expr::VLLM(..) => todo!(),
+        Expr::Coalesce(inputs) => visitor.visit_coalesce(inputs),
     }
 }
 
@@ -316,6 +317,16 @@ impl<'py> PyVisitor<'py> {
         Err(PyValueError::new_err(
             "Visitor does not support subquery expressions",
         ))
+    }
+
+    fn visit_coalesce(&self, inputs: &[ExprRef]) -> PyVisitorResult<'py> {
+        let name = "coalesce";
+        let items = PyList::empty(self.py);
+        for item in inputs {
+            items.append(self.to_expr(item)?)?;
+        }
+        let args = vec![items.into_any()];
+        self.visit_function(name, args)
     }
 
     // Developer Note

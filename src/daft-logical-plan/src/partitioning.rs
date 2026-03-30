@@ -387,6 +387,13 @@ fn translate_clustering_spec_expr(
                 clustering_spec_expr.with_new_children(vec![new_input]),
             ))
         }
+        Expr::Coalesce(inputs) => {
+            let new_inputs = inputs
+                .iter()
+                .map(|input| translate_clustering_spec_expr(input, old_colname_to_new_colname))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Expr::Coalesce(new_inputs).into())
+        }
         // Cannot have agg exprs or references to other tables in clustering specs.
         Expr::Agg(_) | Expr::Column(..) | Expr::Over(..) | Expr::WindowFunction(_) => Err(()),
     }

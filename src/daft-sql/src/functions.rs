@@ -79,6 +79,29 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.register::<SQLModuleWindow>();
     functions.add_fn("concat", SQLConcat);
     functions.add_fn("element", SQLElement);
+
+    struct SQLCoalesce;
+    impl SQLFunction for SQLCoalesce {
+        fn to_expr(
+            &self,
+            inputs: &[FunctionArg],
+            planner: &SQLPlanner,
+        ) -> SQLPlannerResult<ExprRef> {
+            let inputs = inputs
+                .iter()
+                .map(|input| planner.plan_function_arg(input))
+                .collect::<SQLPlannerResult<Vec<_>>>()?;
+            let inputs = daft_dsl::functions::FunctionArgs::try_new(inputs)?;
+            let inputs = inputs.into_inner();
+            Ok(daft_dsl::Expr::Coalesce(inputs).arced())
+        }
+
+        fn docstrings(&self, _: &str) -> String {
+            "Returns the first non-null value in a list of expressions".to_string()
+        }
+    }
+    functions.add_fn("coalesce", SQLCoalesce);
+
     for (name, function_factory) in FUNCTION_REGISTRY.read().unwrap().entries() {
         // Auto-register all functions from the registry as generic SQL
         // passthroughs, but skip names that already have a custom SQLFunction
