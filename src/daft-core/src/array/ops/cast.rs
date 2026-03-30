@@ -111,6 +111,10 @@ where
                     let utf8_series = self.cast(&DataType::Utf8)?;
                     return utf8_series.cast(dtype);
                 }
+                if matches!(src, DataType::Utf8) && matches!(dtype, DataType::FixedSizeBinary(_)) {
+                    let binary_series = self.cast(&DataType::Binary)?;
+                    return binary_series.cast(dtype);
+                }
 
                 // Binary -> FixedSizeBinary: validate all non-null values match the target width
                 if let DataType::FixedSizeBinary(target_size) = dtype
