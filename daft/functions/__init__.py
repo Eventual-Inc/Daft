@@ -111,6 +111,7 @@ from .llm import llm_generate
 from .misc import (
     monotonically_increasing_id,
     uuid,
+    random_int,
     eq_null_safe,
     cast,
     is_null,
@@ -397,6 +398,7 @@ __all__ = [
     "prompt",
     "quarter",
     "radians",
+    "random_int",
     "rank",
     "regexp",
     "regexp_count",
