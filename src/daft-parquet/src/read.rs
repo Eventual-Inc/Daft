@@ -559,46 +559,27 @@ pub async fn read_parquet_bulk_async(
 /// Network errors, permission errors, and other transient failures return false.
 pub fn is_parquet_corrupt(err: &common_error::DaftError) -> bool {
     use common_error::DaftError;
+    // parquet-rs surfaces corruption as "Parquet error: ...", "EOF: ...", or "bad magic".
+    // Both ArrowRsError and External can carry these strings from different call paths.
+    let is_parquet_marker = |msg: &str| {
+        msg.contains("Parquet error:") || msg.contains("EOF:") || msg.contains("bad magic")
+    };
     match err {
-        // File-integrity / format-corruption variants routed here by
-        // `From<daft_parquet::Error> for DaftError` (InvalidParquetFile, FileTooSmall,
-        // InvalidParquetFooterSize, UnableToParseMetadataArrowRs, UnableToReadParquetRowGroup,
-        // ParquetNumRowMismatch, ParquetColumnsDontHaveEqualRows, ParquetNumColumnMismatch).
-        DaftError::ParquetError(_) => true,
-        // Arrow wraps parquet-rs errors as strings; detect known corruption markers.
-        // parquet-rs General("Parquet error: ...") = format violations
-        // parquet-rs EOF("EOF: ...") = truncated file
-        DaftError::ArrowRsError(arrow_err) => {
-            let msg = arrow_err.to_string();
-            msg.contains("Parquet error:") || msg.contains("EOF:") || msg.contains("bad magic")
-        }
-        // arrowrs_reader wraps parquet-rs errors via parquet_err() as DaftError::External.
-        // Apply the same string-matching to catch corruption markers from that path.
-        DaftError::External(ext_err) => {
-            let msg = ext_err.to_string();
-            msg.contains("Parquet error:") || msg.contains("EOF:") || msg.contains("bad magic")
-        }
-        // IO errors: filesystem-level failures may be corruption; network failures must propagate.
+        // Routed here by `From<daft_parquet::Error> for DaftError` for all format-integrity variants.
+        DaftError::CorruptFile(_) => true,
+        DaftError::ArrowRsError(e) => is_parquet_marker(&e.to_string()),
+        DaftError::External(e) => is_parquet_marker(&e.to_string()),
+        // UnexpectedEof and similar IO failures = truncated/unreadable file → skippable.
+        // Network-level IO kinds must propagate.
         DaftError::IoError(io_err) => !matches!(
             io_err.kind(),
             std::io::ErrorKind::TimedOut
                 | std::io::ErrorKind::ConnectionReset
                 | std::io::ErrorKind::ConnectionAborted
                 | std::io::ErrorKind::PermissionDenied
-                | std::io::ErrorKind::NotFound
         ),
-        // Missing file: treat as skippable under ignore_corrupt_files so that files
-        // deleted between listing and reading (e.g. concurrent compaction) are handled
-        // the same way as corrupt files — no need to expose a separate flag.
+        // File deleted between listing and reading → treat as skippable, same as corrupt.
         DaftError::FileNotFound { .. } => true,
-        // Explicit network / transient errors → always propagate, never treat as corruption.
-        DaftError::ConnectTimeout(_)
-        | DaftError::ReadTimeout(_)
-        | DaftError::ByteStreamError(_)
-        | DaftError::SocketError(_)
-        | DaftError::ThrottledIo(_)
-        | DaftError::MiscTransient(_) => false,
-        // All other variants → conservative: not corrupt.
         _ => false,
     }
 }

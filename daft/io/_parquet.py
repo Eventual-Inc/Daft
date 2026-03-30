@@ -41,9 +41,10 @@ def read_parquet(
         hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
         coerce_int96_timestamp_unit: TimeUnit to coerce Int96 TimeStamps to. e.g.: [ns, us, ms], Defaults to None.
         ignore_corrupt_files: If True, corrupt or unreadable Parquet files are silently skipped
-            instead of raising an error. A Python warning is emitted for each skipped file.
-            Only genuine format errors (bad magic bytes, truncated footer, corrupt row-group data)
-            are ignored; network errors and permission errors are still raised. Defaults to False.
+            instead of raising an error. Skipped files are recorded in ``df.skipped_files`` after
+            collection. Only genuine format errors (bad magic bytes, truncated footer, corrupt
+            row-group data) are ignored; network errors and permission errors are still raised.
+            Defaults to False.
         _multithreaded_io: Whether to use multithreading for IO threads. Setting this to False can be helpful in reducing
             the amount of system resources (number of connections and thread contention) when running in the Ray runner.
             Defaults to None, which will let Daft decide based on the runner it is currently using.

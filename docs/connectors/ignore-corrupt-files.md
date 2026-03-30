@@ -1,4 +1,4 @@
-# Fault Tolerance for File Reads
+# Ignoring Corrupt Files
 
 When reading large collections of files, some files may be unreadable — corrupt, truncated, or deleted between the time Daft lists them and the time it reads them. By default, Daft raises an error and halts the query. The `ignore_corrupt_files` option changes that behavior: qualifying files are silently skipped and the query continues with the remaining data.
 
