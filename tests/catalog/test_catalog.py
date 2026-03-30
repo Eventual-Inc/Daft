@@ -282,8 +282,9 @@ class MockCatalogWithFunctions(Catalog):
     def _has_table(self, ident):
         raise NotImplementedError
 
-    def _get_function(self, name: str) -> object | None:
-        return self._functions.get(name)
+    def _get_function(self, ident: Identifier) -> object | None:
+        func_name = ident[-1]
+        return self._functions.get(func_name)
 
 
 def test_catalog_get_function_default_returns_none():
