@@ -281,6 +281,23 @@ def test_cast_fixed_size_binary_to_binary():
     assert casted.to_pylist() == [b"abc", b"def", None, b"bcd", None]
 
 
+def test_cast_utf8_to_fixed_size_binary():
+    data = ["a", "b", None, "c"]
+
+    input = Series.from_pylist(data)
+    casted = input.cast(DataType.fixed_size_binary(1))
+    assert casted.datatype() == DataType.fixed_size_binary(1)
+    assert casted.to_pylist() == [b"a", b"b", None, b"c"]
+
+
+def test_cast_utf8_to_fixed_size_binary_fails_with_variable_length():
+    data = ["a", "bc", None]
+
+    input = Series.from_pylist(data)
+    with pytest.raises(DaftCoreException):
+        input.cast(DataType.fixed_size_binary(1))
+
+
 ### Python ###
 
 

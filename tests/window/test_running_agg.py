@@ -1430,7 +1430,9 @@ def test_range_window_with_timestamp(make_df):
         col("value").mean().over(window_spec).alias("window_avg"),
     ).collect()
 
-    assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "date"], check_dtype=False)
+    assert_df_equals(
+        result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "date", "value"], check_dtype=False
+    )
 
 
 def test_timestamp_mixed_resolution(make_df):

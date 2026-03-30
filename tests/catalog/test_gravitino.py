@@ -9,8 +9,9 @@ import requests
 
 from daft.catalog import Identifier, NotFoundError, Schema
 from daft.catalog.__gravitino._catalog import GravitinoCatalog as CatalogWrapper
+from daft.catalog.__gravitino._catalog import GravitinoIcebergTable, GravitinoParquetTable
 from daft.catalog.__gravitino._catalog import GravitinoTable as TableWrapper
-from daft.catalog.__gravitino._client import GravitinoCatalogInfo, GravitinoClient, GravitinoTable
+from daft.catalog.__gravitino._client import GravitinoCatalogInfo, GravitinoClient
 from daft.catalog.__gravitino._client import GravitinoTable as InnerTable
 
 
@@ -178,11 +179,10 @@ def test_load_existing_table(mock_request):
     client = GravitinoClient("http://localhost:8090", "test_metalake", username="admin")
     table = client.load_table("catalog1.schema1.test_table")
 
-    assert isinstance(table, GravitinoTable)
+    assert isinstance(table, InnerTable)
     assert table.table_info.name == "test_table"
     assert table.table_info.format == "ICEBERG"
     assert table.table_uri == "s3://bucket/path/"
-    # assert table.io_config is not None
 
 
 @patch("requests.Session.request")
@@ -260,6 +260,10 @@ class TestGravitinoCatalog:
     def test_get_table_success(self, gravitino_catalog, mock_inner_catalog):
         """Test _get_table successfully loads a table."""
         mock_table = Mock(spec=InnerTable)
+        mock_table.table_info = Mock()
+        mock_table.table_info.format = "PARQUET"
+        mock_table.table_info.table_type = "hive"
+        mock_table.io_config = None
         mock_inner_catalog.load_table.return_value = mock_table
 
         result = gravitino_catalog._get_table(Identifier.from_str("catalog.schema.table"))
@@ -394,29 +398,52 @@ class TestGravitinoTable:
         mock_table.table_info = Mock()
         mock_table.table_info.name = "test_table"
         mock_table.table_info.format = "ICEBERG"
-        mock_table.table_uri = "s3://bucket/path/metadata.json"
-        mock_table.io_config = Mock()
+        mock_table.table_info.table_type = ""
+        mock_table.table_info.storage_location = "s3://bucket/path/to/test_table"
+        mock_table.table_uri = "s3://bucket/path/to/test_table"
+        mock_table.io_config = None
         return mock_table
 
     @pytest.fixture
-    def gravitino_table(self, mock_inner_table):
+    def mock_pyiceberg_table(self):
+        """Create a mock PyIceberg table."""
+        return Mock()
+
+    @pytest.fixture
+    def gravitino_table(self, mock_inner_table, mock_pyiceberg_table):
         """Create a GravitinoTable instance for testing."""
-        table = TableWrapper._from_obj(mock_inner_table)
-        return table
+        with patch("daft.catalog.__gravitino._catalog._open_iceberg_table", return_value=mock_pyiceberg_table):
+            return TableWrapper._from_obj(mock_inner_table)
 
     def test_init_raises_error(self):
-        """Test that direct __init__ raises RuntimeError."""
-        with pytest.raises(RuntimeError, match="GravitinoTable.__init__ is not supported"):
+        """Test that direct __init__ raises an error (abstract class cannot be instantiated)."""
+        with pytest.raises((RuntimeError, TypeError)):
             TableWrapper()
 
-    def test_from_obj_with_valid_object(self, mock_inner_table):
-        """Test _from_obj with valid InnerTable object."""
-        table = TableWrapper._from_obj(mock_inner_table)
-        assert isinstance(table, TableWrapper)
+    def test_from_obj_returns_iceberg_table(self, mock_inner_table, mock_pyiceberg_table):
+        """Test _from_obj with an Iceberg InnerTable returns GravitinoIcebergTable."""
+        with patch("daft.catalog.__gravitino._catalog._open_iceberg_table", return_value=mock_pyiceberg_table):
+            table = TableWrapper._from_obj(mock_inner_table)
+        assert isinstance(table, GravitinoIcebergTable)
         assert table._inner is mock_inner_table
+        assert table._pyiceberg_table is mock_pyiceberg_table
+
+    def test_from_obj_returns_parquet_table(self, mock_inner_table):
+        """Test _from_obj with a PARQUET/Hive InnerTable returns GravitinoParquetTable."""
+        mock_inner_table.table_info.format = "PARQUET"
+        mock_inner_table.table_info.table_type = "hive"
+        table = TableWrapper._from_obj(mock_inner_table)
+        assert isinstance(table, GravitinoParquetTable)
+
+    def test_from_obj_unsupported_format(self, mock_inner_table):
+        """Test _from_obj raises ValueError for unsupported formats."""
+        mock_inner_table.table_info.format = "DELTA"
+        mock_inner_table.table_info.table_type = ""
+        with pytest.raises(ValueError, match="Unsupported Gravitino table format"):
+            TableWrapper._from_obj(mock_inner_table)
 
     def test_from_obj_with_invalid_object(self):
-        """Test _from_obj with invalid object raises ValueError."""
+        """Test _from_obj with a non-InnerTable raises ValueError."""
         with pytest.raises(ValueError, match="Unsupported gravitino table type"):
             TableWrapper._from_obj("invalid_object")
 
@@ -425,15 +452,15 @@ class TestGravitinoTable:
         assert gravitino_table.name == "test_table"
 
     def test_read_options_attribute(self):
-        """Test _read_options class attribute."""
-        assert "snapshot_id" in TableWrapper._read_options
+        """Test _read_options on the Iceberg subclass includes snapshot_id."""
+        assert "snapshot_id" in GravitinoIcebergTable._read_options
 
     def test_write_options_attribute(self):
-        """Test _write_options class attribute."""
-        assert isinstance(TableWrapper._write_options, set)
+        """Test _write_options on the Iceberg subclass is a set."""
+        assert isinstance(GravitinoIcebergTable._write_options, set)
 
     @patch("daft.catalog.__gravitino._catalog.read_iceberg")
-    def test_read_iceberg_table(self, mock_read_iceberg, gravitino_table):
+    def test_read_iceberg_table(self, mock_read_iceberg, gravitino_table, mock_pyiceberg_table):
         """Test reading an Iceberg table."""
         mock_df = Mock()
         mock_read_iceberg.return_value = mock_df
@@ -442,13 +469,13 @@ class TestGravitinoTable:
 
         assert result is mock_df
         mock_read_iceberg.assert_called_once_with(
-            table=gravitino_table._inner.table_uri,
+            table=mock_pyiceberg_table,
             snapshot_id=None,
             io_config=gravitino_table._inner.io_config,
         )
 
     @patch("daft.catalog.__gravitino._catalog.read_iceberg")
-    def test_read_iceberg_table_with_snapshot_id(self, mock_read_iceberg, gravitino_table):
+    def test_read_iceberg_table_with_snapshot_id(self, mock_read_iceberg, gravitino_table, mock_pyiceberg_table):
         """Test reading an Iceberg table with snapshot_id option."""
         mock_df = Mock()
         mock_read_iceberg.return_value = mock_df
@@ -457,26 +484,32 @@ class TestGravitinoTable:
 
         assert result is mock_df
         mock_read_iceberg.assert_called_once_with(
-            table=gravitino_table._inner.table_uri,
+            table=mock_pyiceberg_table,
             snapshot_id=12345,
             io_config=gravitino_table._inner.io_config,
         )
 
-    @patch("daft.catalog.__gravitino._catalog.read_iceberg")
-    def test_read_iceberg_table_pyiceberg_not_installed(self, mock_read_iceberg, gravitino_table):
-        """Test reading Iceberg table when pyiceberg is not installed."""
-        mock_read_iceberg.side_effect = ImportError("No module named 'pyiceberg'")
+    def test_read_iceberg_table_pyiceberg_not_installed(self, mock_inner_table):
+        """Test that _from_obj raises ImportError when pyiceberg is not installed."""
+        with patch(
+            "daft.catalog.__gravitino._catalog._open_iceberg_table",
+            side_effect=ImportError("No module named 'pyiceberg'"),
+        ):
+            with pytest.raises(ImportError, match="No module named 'pyiceberg'"):
+                TableWrapper._from_obj(mock_inner_table)
 
-        with pytest.raises(ImportError, match="PyIceberg is required"):
-            gravitino_table.read()
-
-    def test_read_non_iceberg_table(self, mock_inner_table):
-        """Test reading a non-Iceberg table raises NotImplementedError."""
+    def test_read_parquet_hive_table(self, mock_inner_table):
+        """Test reading a Hive/Parquet table calls read_parquet with hive_partitioning."""
         mock_inner_table.table_info.format = "PARQUET"
+        mock_inner_table.table_info.table_type = "hive"
+        mock_inner_table.table_info.storage_location = "s3://bucket/path"
         table = TableWrapper._from_obj(mock_inner_table)
 
-        with pytest.raises(NotImplementedError, match="Reading PARQUET format tables is not yet supported"):
-            table.read()
+        with patch("daft.catalog.__gravitino._catalog.GravitinoParquetTable.read") as mock_read:
+            mock_df = Mock()
+            mock_read.return_value = mock_df
+            result = table.read()
+            assert result is mock_df
 
     def test_read_with_invalid_option(self, gravitino_table):
         """Test read with invalid option raises error."""
@@ -502,9 +535,10 @@ class TestGravitinoTable:
         with pytest.raises(NotImplementedError, match="Writing to Iceberg tables through Gravitino"):
             gravitino_table.append(mock_df)
 
-    def test_append_non_iceberg_not_implemented(self, mock_inner_table):
-        """Test append on non-Iceberg table raises NotImplementedError."""
+    def test_append_parquet_not_implemented(self, mock_inner_table):
+        """Test append on a Parquet/Hive table raises NotImplementedError."""
         mock_inner_table.table_info.format = "PARQUET"
+        mock_inner_table.table_info.table_type = "hive"
         table = TableWrapper._from_obj(mock_inner_table)
         mock_df = Mock()
 
@@ -518,19 +552,21 @@ class TestGravitinoTable:
         with pytest.raises(NotImplementedError, match="Writing to Iceberg tables through Gravitino"):
             gravitino_table.overwrite(mock_df)
 
-    def test_overwrite_non_iceberg_not_implemented(self, mock_inner_table):
-        """Test overwrite on non-Iceberg table raises NotImplementedError."""
-        mock_inner_table.table_info.format = "DELTA"
+    def test_overwrite_parquet_not_implemented(self, mock_inner_table):
+        """Test overwrite on a Parquet/Hive table raises NotImplementedError."""
+        mock_inner_table.table_info.format = "PARQUET"
+        mock_inner_table.table_info.table_type = "hive"
         table = TableWrapper._from_obj(mock_inner_table)
         mock_df = Mock()
 
-        with pytest.raises(NotImplementedError, match="Writing DELTA format tables is not yet supported"):
+        with pytest.raises(NotImplementedError, match="Writing PARQUET format tables is not yet supported"):
             table.overwrite(mock_df)
 
     def test_read_iceberg_variant_format(self, mock_inner_table):
         """Test reading Iceberg variant formats (e.g., ICEBERG/PARQUET)."""
         mock_inner_table.table_info.format = "ICEBERG/PARQUET"
-        table = TableWrapper._from_obj(mock_inner_table)
+        with patch("daft.catalog.__gravitino._catalog._open_iceberg_table", return_value=Mock()):
+            table = TableWrapper._from_obj(mock_inner_table)
 
         with patch("daft.catalog.__gravitino._catalog.read_iceberg") as mock_read:
             mock_read.return_value = Mock()
@@ -552,17 +588,3 @@ class TestGravitinoTable:
         # First it should validate options before hitting NotImplementedError
         with pytest.raises((ValueError, NotImplementedError)):
             gravitino_table.overwrite(mock_df, invalid_option="value")
-
-
-if __name__ == "__main__":
-    # Run basic tests
-    test_gravitino_client_init()
-    print("Client initialization test passed")
-
-    test_invalid_table_name()
-    print("Invalid table name test passed")
-
-    test_invalid_namespace_name()
-    print("Invalid schema name test passed")
-
-    print("All basic tests passed!")
