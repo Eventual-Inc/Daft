@@ -6,7 +6,7 @@ from functools import singledispatchmethod
 from typing import TYPE_CHECKING, Any
 
 from daft.daft import StatType
-from daft.subscribers.events import OperatorFinished, OperatorStarted, Stats
+from daft.subscribers.events import Event, OperatorFinished, OperatorStarted, Stats
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -22,7 +22,7 @@ class Subscriber(ABC):
     """
 
     @singledispatchmethod
-    def on_event(self, event: object) -> None:
+    def on_event(self, event: Event) -> None:
         """Unified dispatch for execution events."""
         warnings.warn(f"Unhandled event type: {type(event).__name__}", stacklevel=2)
 

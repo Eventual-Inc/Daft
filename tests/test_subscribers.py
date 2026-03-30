@@ -12,7 +12,7 @@ import daft
 from daft.daft import PyMicroPartition, PyQueryMetadata, PyQueryResult, QueryEndState
 from daft.recordbatch import MicroPartition
 from daft.subscribers import Subscriber
-from daft.subscribers.events import OperatorFinished, OperatorStarted, Stats
+from daft.subscribers.events import Event, OperatorFinished, OperatorStarted, Stats
 from tests.conftest import get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
@@ -211,6 +211,12 @@ def test_subscriber_template():
     df.collect()
     # Should only have the previous query
     assert len(subscriber.query_metadata) == 1
+
+
+def test_execution_events_inherit_from_event_base():
+    assert isinstance(OperatorStarted(query_id="q", node_id=1, name="scan"), Event)
+    assert isinstance(Stats(query_id="q", stats={}), Event)
+    assert isinstance(OperatorFinished(query_id="q", node_id=1, name="scan"), Event)
 
 
 def test_csv_scan_reports_bytes_read(tmp_path):
