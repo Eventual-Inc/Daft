@@ -2997,7 +2997,6 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
- "daft-functions-binary",
  "daft-functions-list",
  "daft-functions-uri",
  "daft-functions-utf8",
