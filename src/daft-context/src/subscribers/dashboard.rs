@@ -354,6 +354,10 @@ impl Subscriber for DashboardSubscriber {
         execution_id: &str,
         physical_plan: QueryPlan,
     ) -> DaftResult<()> {
+        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+            return Ok(());
+        }
+
         self.execution_ids
             .insert(query_id.clone(), execution_id.to_string());
 
@@ -373,6 +377,10 @@ impl Subscriber for DashboardSubscriber {
     }
 
     async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
+        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+            return Ok(());
+        }
+
         self.enqueue_no_body(
             format!("engine/query/{}/exec/{}/start", query_id, node_id),
             "exec_operator_start",
@@ -431,6 +439,10 @@ impl Subscriber for DashboardSubscriber {
     }
 
     async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
+        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+            return Ok(());
+        }
+
         self.enqueue_no_body(
             format!("engine/query/{}/exec/{}/end", query_id, node_id),
             "exec_operator_end",
@@ -439,6 +451,10 @@ impl Subscriber for DashboardSubscriber {
     }
 
     async fn on_exec_end_with_id(&self, query_id: QueryID, _execution_id: &str) -> DaftResult<()> {
+        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+            return Ok(());
+        }
+
         self.execution_ids.remove(&query_id);
 
         self.enqueue_json(
