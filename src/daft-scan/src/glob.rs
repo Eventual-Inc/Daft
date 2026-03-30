@@ -229,7 +229,7 @@ impl GlobScanOperator {
                         Ok((schema, meta)) => (schema, meta, first_filepath),
                         Err(e)
                             if ignore_corrupt_files
-                                && daft_parquet::read::is_parquet_corrupt_pub(&e) =>
+                                && daft_parquet::read::is_parquet_corrupt(&e) =>
                         {
                             log::warn!(
                                 "Skipping corrupt Parquet file during schema inference {first_filepath}: {e}"
@@ -267,7 +267,7 @@ impl GlobScanOperator {
                                         found = Some((schema, meta, filepath));
                                         break;
                                     }
-                                    Err(e2) if daft_parquet::read::is_parquet_corrupt_pub(&e2) => {
+                                    Err(e2) if daft_parquet::read::is_parquet_corrupt(&e2) => {
                                         log::warn!(
                                             "Skipping corrupt Parquet file during schema inference {filepath}: {e2}"
                                         );
@@ -278,10 +278,10 @@ impl GlobScanOperator {
                             match found {
                                 Some(triple) => triple,
                                 None => {
-                                    return Err(Error::GlobNoMatch {
-                                        glob_path: first_glob_path.clone(),
-                                    }
-                                    .into());
+                                    return Err(common_error::DaftError::ComputeError(format!(
+                                        "All Parquet files matched by '{}' are corrupt and were skipped (ignore_corrupt_files=true)",
+                                        first_glob_path
+                                    )));
                                 }
                             }
                         }

@@ -45,13 +45,17 @@ impl ExecutionStats {
 
     /// Encode the ExecutionStats into a binary format for transmission to scheduler
     pub fn encode(&self) -> Vec<u8> {
-        bincode::encode_to_vec(&self.nodes, bincode::config::legacy())
-            .expect("Failed to encode ExecutionStats")
+        bincode::encode_to_vec(
+            (&self.nodes, &self.skipped_files),
+            bincode::config::legacy(),
+        )
+        .expect("Failed to encode ExecutionStats")
     }
 
     /// Decode the ExecutionStats from a binary format received from scheduler
     pub fn decode(bytes: &[u8]) -> Self {
-        let (nodes, _): (Vec<(Arc<NodeInfo>, StatSnapshot)>, usize) =
+        type Decoded = (Vec<(Arc<NodeInfo>, StatSnapshot)>, Vec<(String, String)>);
+        let ((nodes, skipped_files), _): (Decoded, usize) =
             bincode::decode_from_slice(bytes, bincode::config::legacy())
                 .map_err(|e| {
                     DaftError::InternalError(format!("Failed to decode ExecutionStats: {e}"))
@@ -61,7 +65,7 @@ impl ExecutionStats {
             query_id: "".into(),
             query_plan: None,
             nodes,
-            skipped_files: vec![],
+            skipped_files,
         }
     }
 

@@ -557,12 +557,7 @@ pub async fn read_parquet_bulk_async(
 ///
 /// Bad magic bytes, truncated footer, and corrupt row-group data return true.
 /// Network errors, permission errors, and other transient failures return false.
-/// Also exported for use in sibling crates (e.g. daft-scan glob).
-pub fn is_parquet_corrupt_pub(err: &common_error::DaftError) -> bool {
-    is_parquet_corrupt(err)
-}
-
-fn is_parquet_corrupt(err: &common_error::DaftError) -> bool {
+pub fn is_parquet_corrupt(err: &common_error::DaftError) -> bool {
     use common_error::DaftError;
     match err {
         // File-integrity / format-corruption variants routed here by
