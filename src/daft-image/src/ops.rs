@@ -451,7 +451,6 @@ fn bits_to_bytes(bits: impl Iterator<Item = bool>, n_bits: usize) -> Vec<u8> {
 }
 
 /// Average hash (aHash): resize to hash_size x hash_size, compare each pixel to mean.
-/// Matches the imagehash library: strict `>` (not `>=`) so a uniform image hashes to all-zero.
 fn ahash(img: &DynamicImage, hash_size: u32) -> DaftResult<Vec<u8>> {
     let pixels = luma_pixels(img, hash_size, hash_size);
     let mean = pixels.iter().sum::<f64>() / pixels.len() as f64;
@@ -476,7 +475,6 @@ fn dhash(img: &DynamicImage, hash_size: u32) -> DaftResult<Vec<u8>> {
 
 /// Vertical difference hash (dHash vertical): resize to hash_size x (hash_size+1),
 /// compare adjacent row pixels (next row > previous row).
-/// Matches `imagehash.dhash_vertical`.
 fn dhash_vertical(img: &DynamicImage, hash_size: u32) -> DaftResult<Vec<u8>> {
     let pixels = luma_pixels(img, hash_size, hash_size + 1);
     let w = hash_size as usize;
@@ -493,7 +491,6 @@ fn dhash_vertical(img: &DynamicImage, hash_size: u32) -> DaftResult<Vec<u8>> {
 
 /// Perceptual hash (pHash): resize to (hash_size*4) x (hash_size*4), compute 2D DCT,
 /// take the top-left hash_size x hash_size block, compare to median.
-/// Matches the imagehash library exactly (scipy.fftpack.dct, cols 0..hash_size, > median).
 fn phash(img: &DynamicImage, hash_size: u32) -> DaftResult<Vec<u8>> {
     let dct_size = hash_size * 4;
     let pixels = luma_pixels(img, dct_size, dct_size);
@@ -515,7 +512,6 @@ fn phash(img: &DynamicImage, hash_size: u32) -> DaftResult<Vec<u8>> {
 /// Simplified perceptual hash (pHash simple): resize to (hash_size*4) x (hash_size*4),
 /// apply row-wise DCT only, take top `hash_size` rows and cols `1..=hash_size` (skip DC),
 /// compare each coefficient to the block mean.
-/// Matches `imagehash.phash_simple`.
 fn phash_simple(img: &DynamicImage, hash_size: u32) -> DaftResult<Vec<u8>> {
     let dct_size = hash_size * 4;
     let pixels = luma_pixels(img, dct_size, dct_size);
@@ -830,7 +826,7 @@ fn hue_bin(h: u8) -> usize {
     }
 }
 
-/// Color hash (colorhash) — matches `imagehash.colorhash(image, binbits)`.
+/// Color hash (colorhash).
 ///
 /// Encodes the distribution of colors in HSV space into 14 bins:
 /// - 1 bin: fraction of black pixels (intensity < 32)
@@ -1066,7 +1062,6 @@ pub(crate) fn perceptual_hash(
 /// Crop-resistant hash: divide the image into a `segments × segments` grid,
 /// compute a pHash for each segment, and concatenate the results.
 ///
-/// Matches `imagehash.crop_resistant_hash` with an NxN uniform grid approach.
 /// The output size is `segments² × hash_size²` bits.
 fn crop_resistant(img: &DynamicImage, hash_size: u32, segments: u32) -> DaftResult<Vec<u8>> {
     let (w, h) = (img.width(), img.height());
