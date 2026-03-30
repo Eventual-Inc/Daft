@@ -156,9 +156,9 @@ impl PipelineNodeImpl for RandomShuffleNode {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
         let num_partitions = self.child.config().clustering_spec.num_partitions();
-        let seed = self.seed.unwrap();
         let node_id = self.node_id();
         let schema = self.config.schema.clone();
+        let seed = self.seed;
 
         let partitioned_input = input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::repartition(

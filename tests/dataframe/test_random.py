@@ -65,7 +65,8 @@ def test_shuffle_reproducible_with_seed(make_df) -> None:
 
 
 def test_shuffle_changes_row_order(make_df) -> None:
-    df = make_df({"a": list(range(30))})
+    df = make_df({"a": list(range(40))})
     original = df.to_pydict()["a"]
-    shuffled = df.shuffle(seed=7).to_pydict()["a"]
+    shuffled = df.shuffle().to_pydict()["a"]
+    # Note: Theoretically could be equal, but insanely unlikely (1/40! = 1/8.159e47)
     assert shuffled != original

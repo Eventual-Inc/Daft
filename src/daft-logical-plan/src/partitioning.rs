@@ -103,10 +103,10 @@ impl RandomShuffleConfig {
         }
     }
 
-    pub fn new_with_seed(num_partitions: Option<usize>, seed: u64) -> Self {
+    pub fn new_with_seed(num_partitions: Option<usize>, seed: Option<u64>) -> Self {
         Self {
             num_partitions,
-            seed: Some(seed),
+            seed,
         }
     }
 
