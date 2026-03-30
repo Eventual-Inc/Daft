@@ -599,7 +599,10 @@ pub mod pylib {
                 .map(|s| TableStatistics::from_stats_table(&s.record_batch))
                 .transpose()?;
 
-            let metadata = num_rows.map(|n| TableMetadata { length: n as usize });
+            let metadata = num_rows.map(|n| TableMetadata {
+                length: n as usize,
+                size_bytes: None,
+            });
 
             let data_source = ScanSource {
                 size_bytes,
@@ -653,7 +656,10 @@ pub mod pylib {
                 .transpose()?;
             let data_source = ScanSource {
                 size_bytes,
-                metadata: num_rows.map(|n| TableMetadata { length: n as usize }),
+                metadata: num_rows.map(|n| TableMetadata {
+                    length: n as usize,
+                    size_bytes: None,
+                }),
                 statistics,
                 partition_spec: None,
                 kind: ScanSourceKind::Database { path: url },
@@ -701,6 +707,7 @@ pub mod pylib {
                 size_bytes,
                 metadata: num_rows.map(|num_rows| TableMetadata {
                     length: num_rows as usize,
+                    size_bytes: None,
                 }),
                 statistics,
                 partition_spec: None,
@@ -792,6 +799,7 @@ pub mod pylib {
             metadata: if has_metadata.unwrap_or(false) {
                 Some(TableMetadata {
                     length: metadata.num_rows(),
+                    size_bytes: None,
                 })
             } else {
                 None

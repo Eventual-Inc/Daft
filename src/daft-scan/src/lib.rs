@@ -404,19 +404,22 @@ impl ScanTask {
                 .all(|s| s.partition_spec == sources.first().unwrap().partition_spec),
             "ScanTask sources must all have the same PartitionSpec at construction",
         );
-        let (length, size_bytes_on_disk, statistics) = sources
+        let (length, meta_size_bytes, size_bytes_on_disk, statistics) = sources
             .iter()
             .map(|s| {
                 (
                     s.metadata.as_ref().map(|m| m.length),
+                    s.metadata.as_ref().and_then(|m| m.size_bytes),
                     s.size_bytes,
                     s.statistics.clone(),
                 )
             })
             .reduce(
-                |(acc_len, acc_size, acc_stats), (curr_len, curr_size, curr_stats)| {
+                |(acc_len, acc_meta_size, acc_size, acc_stats),
+                 (curr_len, curr_meta_size, curr_size, curr_stats)| {
                     (
                         acc_len.and_then(|acc_len| curr_len.map(|curr_len| acc_len + curr_len)),
+                        acc_meta_size.and_then(|acc| curr_meta_size.map(|curr| acc + curr)),
                         acc_size
                             .and_then(|acc_size| curr_size.map(|curr_size| acc_size + curr_size)),
                         acc_stats.and_then(|acc_stats| {
@@ -437,7 +440,10 @@ impl ScanTask {
                 },
             )
             .unwrap();
-        let metadata = length.map(|l| TableMetadata { length: l });
+        let metadata = length.map(|l| TableMetadata {
+            length: l,
+            size_bytes: meta_size_bytes,
+        });
         Self {
             sources,
             schema,
@@ -749,7 +755,13 @@ impl ScanTask {
                     })
                 })
                 .or_else(|| {
-                    // use approximate number of rows multiplied by an approximate bytes-per-row
+                    // Use uncompressed size from file metadata (e.g. Parquet row group totals) when available.
+                    // This is more accurate than the schema-based estimate for data with dictionary encoding
+                    // or low-cardinality columns.
+                    self.metadata.as_ref().and_then(|m| m.size_bytes)
+                })
+                .or_else(|| {
+                    // Fall back to approximate number of rows multiplied by an approximate bytes-per-row
                     self.approx_num_rows(config).map(|approx_num_rows| {
                         let row_size = mat_schema.estimate_row_size_bytes();
 
@@ -1036,6 +1048,7 @@ mod test {
             size_bytes: Some(1_000_000),
             metadata: Some(TableMetadata {
                 length: usize::MAX, // Extremely large row count
+                size_bytes: None,
             }),
             statistics: None,
             partition_spec: None,
@@ -1123,6 +1136,7 @@ mod test {
             size_bytes: Some(10_000_000), // 10MB
             metadata: Some(TableMetadata {
                 length: 1000, // 1000 rows
+                size_bytes: None,
             }),
             statistics: None,
             partition_spec: None,
@@ -1166,6 +1180,7 @@ mod test {
             size_bytes: Some(1_000_000),
             metadata: Some(TableMetadata {
                 length: usize::MAX, // Extremely large row count
+                size_bytes: None,
             }),
             statistics: None,
             partition_spec: None,
@@ -1309,7 +1324,10 @@ mod test {
     fn test_schema_row_size_estimation_valid_case() {
         let sources = vec![ScanSource {
             size_bytes: Some(1_000_000),
-            metadata: Some(TableMetadata { length: 10_000 }),
+            metadata: Some(TableMetadata {
+                length: 10_000,
+                size_bytes: None,
+            }),
             statistics: None,
             partition_spec: None,
             kind: ScanSourceKind::File {
