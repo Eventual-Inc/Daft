@@ -4,7 +4,6 @@ import signal
 import threading
 import time
 from collections import defaultdict
-from collections.abc import Mapping
 from typing import Any
 
 import pytest
@@ -12,7 +11,8 @@ import pytest
 import daft
 from daft.daft import PyMicroPartition, PyQueryMetadata, PyQueryResult, QueryEndState
 from daft.recordbatch import MicroPartition
-from daft.subscribers import StatType, Subscriber
+from daft.subscribers import Subscriber
+from daft.subscribers.events import OperatorFinished, OperatorStarted, Stats
 from tests.conftest import get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
@@ -60,25 +60,16 @@ class MockSubscriber(Subscriber):
     def on_exec_start(self, query_id: str, physical_plan: str) -> None:
         self.query_physical_plan[query_id] = physical_plan
 
-    def on_operator_start(self, query_id: str, node_id: int) -> None:
+    def on_operator_start(self, event: OperatorStarted) -> None:
         pass
 
-    def on_stats(self, query_id: str, all_stats: Mapping[int, Mapping[str, tuple[StatType, Any]]]) -> None:
-        for node_id, stats in all_stats.items():
+    def on_stats(self, event: Stats) -> None:
+        for node_id, stats in event.stats.items():
             for stat_name, (_, stat_value) in stats.items():
-                self.query_node_stats[query_id][node_id][stat_name] = stat_value
+                self.query_node_stats[event.query_id][node_id][stat_name] = stat_value
 
-    def on_operator_end(self, query_id: str, node_id: int) -> None:
+    def on_operator_end(self, event: OperatorFinished) -> None:
         pass
-
-    def on_exec_operator_start(self, query_id: str, node_id: int) -> None:
-        self.on_operator_start(query_id, node_id)
-
-    def on_exec_emit_stats(self, query_id: str, all_stats: Mapping[int, Mapping[str, tuple[StatType, Any]]]) -> None:
-        self.on_stats(query_id, all_stats)
-
-    def on_exec_operator_end(self, query_id: str, node_id: int) -> None:
-        self.on_operator_end(query_id, node_id)
 
     def on_exec_end(self, query_id: str) -> None:
         pass
