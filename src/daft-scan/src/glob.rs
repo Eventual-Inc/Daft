@@ -203,29 +203,94 @@ impl GlobScanOperator {
                 &FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
                     ref field_id_mapping,
+                    ignore_corrupt_files,
                     ..
                 }) => {
-                    let io_stats = IOStatsContext::new(format!(
-                        "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
-                    ));
-                    let (schema, metadata) = daft_parquet::read::read_parquet_schema_and_metadata(
+                    let inference_options = ParquetSchemaInferenceOptions {
+                        coerce_int96_timestamp_unit,
+                        ..Default::default()
+                    };
+                    // Try the first candidate. If it is corrupt and ignore_corrupt_files is set,
+                    // iterate through the glob stream (already opened above) to find the first
+                    // readable file — avoiding a redundant re-glob.
+                    let try_infer = daft_parquet::read::read_parquet_schema_and_metadata(
                         first_filepath.as_str(),
                         io_client.clone(),
-                        Some(io_stats),
-                        ParquetSchemaInferenceOptions {
-                            coerce_int96_timestamp_unit,
-                            ..Default::default()
-                        },
+                        Some(IOStatsContext::new(format!(
+                            "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
+                        ))),
+                        inference_options,
                         field_id_mapping.clone(),
                     )
-                    .await?;
+                    .await;
+
+                    let (schema, metadata, filepath) = match try_infer {
+                        Ok((schema, meta)) => (schema, meta, first_filepath),
+                        Err(e)
+                            if ignore_corrupt_files
+                                && daft_parquet::read::is_parquet_corrupt_pub(&e) =>
+                        {
+                            log::warn!(
+                                "Skipping corrupt Parquet file during schema inference {first_filepath}: {e}"
+                            );
+                            // Reuse the glob stream to find the next readable file.
+                            let mut glob_stream = run_glob(
+                                first_glob_path.clone(),
+                                None,
+                                io_client.clone(),
+                                Some(io_stats.clone()),
+                                file_format,
+                            )
+                            .await?;
+                            let mut found = None;
+                            while let Some(fm) = glob_stream.next().await {
+                                let FileMetadata { filepath, .. } = fm?;
+                                if filepath == first_filepath {
+                                    continue; // already tried this one
+                                }
+                                match daft_parquet::read::read_parquet_schema_and_metadata(
+                                    filepath.as_str(),
+                                    io_client.clone(),
+                                    Some(IOStatsContext::new(format!(
+                                        "GlobScanOperator schema fallback: for uri {filepath}"
+                                    ))),
+                                    inference_options,
+                                    field_id_mapping.clone(),
+                                )
+                                .await
+                                {
+                                    Ok((schema, meta)) => {
+                                        found = Some((schema, meta, filepath));
+                                        break;
+                                    }
+                                    Err(e2) if daft_parquet::read::is_parquet_corrupt_pub(&e2) => {
+                                        log::warn!(
+                                            "Skipping corrupt Parquet file during schema inference {filepath}: {e2}"
+                                        );
+                                    }
+                                    Err(e2) => return Err(e2),
+                                }
+                            }
+                            match found {
+                                Some(triple) => triple,
+                                None => {
+                                    return Err(Error::GlobNoMatch {
+                                        glob_path: first_glob_path.clone(),
+                                    }
+                                    .into());
+                                }
+                            }
+                        }
+                        Err(e) => return Err(e),
+                    };
+
                     let first_metadata = Some((
-                        first_filepath.clone(),
+                        filepath.clone(),
                         TableMetadata {
                             length: metadata.num_rows(),
                         },
                     ));
-                    (schema, first_metadata, first_filepath)
+                    (schema, first_metadata, filepath)
                 }
                 FileFormatConfig::Csv(CsvSourceConfig {
                     delimiter,

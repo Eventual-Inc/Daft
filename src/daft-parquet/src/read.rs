@@ -551,6 +551,49 @@ pub async fn read_parquet_bulk_async(
     Ok(tables)
 }
 
+/// Returns true if the error represents genuine Parquet file corruption.
+///
+/// Bad magic bytes, truncated footer, and corrupt row-group data return true.
+/// Network errors, permission errors, and other transient failures return false.
+/// Also exported for use in sibling crates (e.g. daft-scan glob).
+pub fn is_parquet_corrupt_pub(err: &common_error::DaftError) -> bool {
+    is_parquet_corrupt(err)
+}
+
+fn is_parquet_corrupt(err: &common_error::DaftError) -> bool {
+    use common_error::DaftError;
+    match err {
+        // Direct parquet-rs format violations → definite corruption.
+        DaftError::ParquetError(_) => true,
+        // Arrow wraps parquet-rs errors as strings; detect known corruption markers.
+        // parquet-rs General("Parquet error: ...") = format violations
+        // parquet-rs EOF("EOF: ...") = truncated file
+        DaftError::ArrowRsError(arrow_err) => {
+            let msg = arrow_err.to_string();
+            msg.contains("Parquet error:") || msg.contains("EOF:") || msg.contains("bad magic")
+        }
+        // IO errors: filesystem-level failures may be corruption; network failures must propagate.
+        DaftError::IoError(io_err) => !matches!(
+            io_err.kind(),
+            std::io::ErrorKind::TimedOut
+                | std::io::ErrorKind::ConnectionReset
+                | std::io::ErrorKind::ConnectionAborted
+                | std::io::ErrorKind::PermissionDenied
+                | std::io::ErrorKind::NotFound
+        ),
+        // Explicit network / transient errors → always propagate, never treat as corruption.
+        DaftError::ConnectTimeout(_)
+        | DaftError::ReadTimeout(_)
+        | DaftError::ByteStreamError(_)
+        | DaftError::SocketError(_)
+        | DaftError::ThrottledIo(_)
+        | DaftError::MiscTransient(_)
+        | DaftError::FileNotFound { .. } => false,
+        // All other variants → conservative: not corrupt.
+        _ => false,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn stream_parquet(
     uri: &str,
@@ -566,9 +609,11 @@ pub async fn stream_parquet(
     maintain_order: bool,
     delete_rows: Option<Vec<i64>>,
     chunk_size: Option<usize>,
+    ignore_corrupt_files: bool,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let stream = stream_parquet_single(
-        uri.to_string(),
+    let uri_owned = uri.to_string();
+    match stream_parquet_single(
+        uri_owned.clone(),
         columns,
         num_rows,
         row_groups,
@@ -582,8 +627,37 @@ pub async fn stream_parquet(
         maintain_order,
         chunk_size,
     )
-    .await?;
-    Ok(Box::pin(stream))
+    .await
+    {
+        Ok(stream) => {
+            if ignore_corrupt_files {
+                // Filter out per-batch errors that indicate corrupt row-group data.
+                let uri_for_warn = uri_owned.clone();
+                let filtered = stream.filter_map(move |result| {
+                    let uri_w = uri_for_warn.clone();
+                    futures::future::ready(match result {
+                        Ok(batch) => Some(Ok(batch)),
+                        Err(ref e) if is_parquet_corrupt(e) => {
+                            log::warn!(
+                                "Skipping corrupt row-group data in Parquet file {uri_w}: {e}"
+                            );
+                            None
+                        }
+                        Err(e) => Some(Err(e)),
+                    })
+                });
+                Ok(Box::pin(filtered))
+            } else {
+                Ok(Box::pin(stream))
+            }
+        }
+        Err(ref e) if ignore_corrupt_files && is_parquet_corrupt(e) => {
+            // Footer-level corruption: the file cannot be opened at all. Return empty stream.
+            log::warn!("Skipping corrupt Parquet file {uri}: {e}");
+            Ok(Box::pin(futures::stream::empty()))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -892,6 +966,7 @@ mod tests {
                 false,
                 None,
                 None,
+                false,
             )
             .await?
             .collect::<Vec<_>>()
