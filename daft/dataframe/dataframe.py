@@ -180,6 +180,24 @@ class DataFrame:
         else:
             return self._metadata.to_recordbatch() if self._metadata else None
 
+    @property
+    def skipped_files(self) -> list[tuple[str, str]]:
+        """Files skipped during the last execution due to ignore_corrupt_files=True.
+
+        Returns a list of ``(path, reason)`` tuples for every file that was skipped.
+        Only available after the DataFrame has been collected (e.g. via ``.collect()``).
+
+        Example::
+
+            df = daft.read_parquet("s3://bucket/data/", ignore_corrupt_files=True)
+            df.collect()
+            for path, reason in df.skipped_files:
+                print(f"Skipped {path}: {reason}")
+        """
+        if self._result_cache is None:
+            raise ValueError("skipped_files is not available until the DataFrame has been collected")
+        return self._metadata.skipped_files if self._metadata else []
+
     def pipe(
         self,
         function: Callable[Concatenate["DataFrame", P], T],

@@ -526,7 +526,15 @@ impl ScanOperator for GlobScanOperator {
     }
 
     fn supports_count_pushdown(&self) -> bool {
-        self.file_format_config.file_format() == FileFormat::Parquet
+        // Count pushdown reads row counts from Parquet footer statistics. When
+        // ignore_corrupt_files is set, corrupt files are silently skipped, so
+        // their footer stats must never contribute to the aggregate. Disable the
+        // pushdown so the count comes from actually reading the surviving rows.
+        if let FileFormatConfig::Parquet(cfg) = self.file_format_config.as_ref() {
+            !cfg.ignore_corrupt_files
+        } else {
+            false
+        }
     }
 
     fn multiline_display(&self) -> Vec<String> {

@@ -23,6 +23,8 @@ use snafu::ResultExt;
 
 use crate::{DaftParquetMetadata, JoinSnafu, infer_schema_from_daft_metadata};
 
+type SkippedFilesCollector = Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>;
+
 /// How to decode Parquet BYTE_ARRAY columns annotated as strings.
 ///
 /// - `Utf8` (default): arrow-rs decodes as Utf8/LargeUtf8 with UTF-8 validation.
@@ -589,6 +591,11 @@ fn is_parquet_corrupt(err: &common_error::DaftError) -> bool {
         | DaftError::ThrottledIo(_)
         | DaftError::MiscTransient(_)
         | DaftError::FileNotFound { .. } => false,
+        // External errors may wrap parquet-rs messages (e.g. from schema inference helpers).
+        DaftError::External(e) => {
+            let msg = e.to_string();
+            msg.contains("Parquet error:") || msg.contains("EOF:") || msg.contains("bad magic")
+        }
         // All other variants → conservative: not corrupt.
         _ => false,
     }
@@ -610,6 +617,7 @@ pub async fn stream_parquet(
     delete_rows: Option<Vec<i64>>,
     chunk_size: Option<usize>,
     ignore_corrupt_files: bool,
+    skipped_files: SkippedFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let uri_owned = uri.to_string();
     match stream_parquet_single(
@@ -633,14 +641,21 @@ pub async fn stream_parquet(
             if ignore_corrupt_files {
                 // Filter out per-batch errors that indicate corrupt row-group data.
                 let uri_for_warn = uri_owned.clone();
+                let skipped_files_inner = skipped_files.clone();
                 let filtered = stream.filter_map(move |result| {
                     let uri_w = uri_for_warn.clone();
+                    let skipped = skipped_files_inner.clone();
                     futures::future::ready(match result {
                         Ok(batch) => Some(Ok(batch)),
                         Err(ref e) if is_parquet_corrupt(e) => {
                             log::warn!(
                                 "Skipping corrupt row-group data in Parquet file {uri_w}: {e}"
                             );
+                            if let Some(ref collector) = skipped
+                                && let Ok(mut v) = collector.lock()
+                            {
+                                v.push((uri_w, e.to_string()));
+                            }
                             None
                         }
                         Err(e) => Some(Err(e)),
@@ -654,6 +669,11 @@ pub async fn stream_parquet(
         Err(ref e) if ignore_corrupt_files && is_parquet_corrupt(e) => {
             // Footer-level corruption: the file cannot be opened at all. Return empty stream.
             log::warn!("Skipping corrupt Parquet file {uri}: {e}");
+            if let Some(ref collector) = skipped_files
+                && let Ok(mut v) = collector.lock()
+            {
+                v.push((uri_owned, e.to_string()));
+            }
             Ok(Box::pin(futures::stream::empty()))
         }
         Err(e) => Err(e),
@@ -967,6 +987,7 @@ mod tests {
                 None,
                 None,
                 false,
+                None,
             )
             .await?
             .collect::<Vec<_>>()

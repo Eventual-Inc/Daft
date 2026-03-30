@@ -18,6 +18,8 @@ pub struct ExecutionStats {
     pub query_id: QueryID,
     pub query_plan: Option<serde_json::Value>,
     pub nodes: Vec<(Arc<NodeInfo>, StatSnapshot)>,
+    /// Files skipped due to `ignore_corrupt_files=True`: (path, reason).
+    pub skipped_files: Vec<(String, String)>,
 }
 
 impl ExecutionStats {
@@ -27,7 +29,13 @@ impl ExecutionStats {
             query_id,
             query_plan: None,
             nodes,
+            skipped_files: vec![],
         }
+    }
+
+    pub fn with_skipped_files(mut self, skipped_files: Vec<(String, String)>) -> Self {
+        self.skipped_files = skipped_files;
+        self
     }
 
     pub fn with_query_plan(mut self, query_plan: serde_json::Value) -> Self {
@@ -53,6 +61,7 @@ impl ExecutionStats {
             query_id: "".into(),
             query_plan: None,
             nodes,
+            skipped_files: vec![],
         }
     }
 

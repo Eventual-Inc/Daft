@@ -30,6 +30,8 @@ use tokio_util::io::StreamReader;
 
 use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions, metadata::read_csv_schema_single};
 
+type SkippedFilesCollector = Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>;
+
 trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<csv_async::ByteRecord>>> {}
 impl<S> ByteRecordChunkStream for S where S: Stream<Item = super::Result<Vec<csv_async::ByteRecord>>>
 {}
@@ -134,28 +136,34 @@ pub fn read_csv_bulk(
     tables.into_iter().collect::<DaftResult<Vec<_>>>()
 }
 
-#[allow(clippy::too_many_arguments)]
-/// Returns true if a DaftError represents a genuine CSV file-level read failure that should be
-/// skipped when `ignore_corrupt_files` is enabled. Network errors and permission errors return
-/// false so they continue to propagate.
-fn is_csv_unreadable(err: &common_error::DaftError) -> bool {
+/// Returns true if a `DaftError` represents a genuine CSV format or file-integrity
+/// problem that should be skipped when `ignore_corrupt_files` is enabled.
+///
+/// Only two categories are considered corrupt:
+/// - `DaftError::CsvError` — CSV format violations (bad encoding, wrong field counts,
+///   etc.) that were routed here by `From<daft_csv::Error> for DaftError`.
+/// - `DaftError::IoError(UnexpectedEof)` — a local file that ends before the reader
+///   expected (truncated or empty file).  On a remote stream this error is caught
+///   earlier as a network-specific variant and will NOT match this arm.
+///
+/// Network errors, permission errors, and all other variants continue to propagate.
+fn is_csv_corrupt(err: &common_error::DaftError) -> bool {
     use common_error::DaftError;
     match err {
-        DaftError::IoError(io_err) => !matches!(
-            io_err.kind(),
-            std::io::ErrorKind::TimedOut
-                | std::io::ErrorKind::ConnectionReset
-                | std::io::ErrorKind::ConnectionAborted
-                | std::io::ErrorKind::PermissionDenied
-                | std::io::ErrorKind::NotFound
-        ),
-        DaftError::ConnectTimeout(_)
-        | DaftError::ReadTimeout(_)
-        | DaftError::ByteStreamError(_)
-        | DaftError::SocketError(_)
-        | DaftError::ThrottledIo(_)
-        | DaftError::MiscTransient(_)
-        | DaftError::FileNotFound { .. } => false,
+        DaftError::CsvError(_) => true,
+        DaftError::IoError(io_err) => {
+            matches!(io_err.kind(), std::io::ErrorKind::UnexpectedEof)
+        }
+        // External errors may wrap CSV parser messages (e.g. from the local reader path).
+        // "CSV error:" comes from field-count mismatches; "CSV parse error:" comes from
+        // encoding errors (e.g. invalid UTF-8) surfaced by csv_async on the local path.
+        DaftError::External(e) => {
+            let msg = e.to_string();
+            msg.contains("CSV error:")
+                || msg.contains("CSV parse error:")
+                || msg.contains("EOF")
+                || msg.contains("empty file")
+        }
         _ => false,
     }
 }
@@ -170,6 +178,7 @@ pub async fn stream_csv(
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
     ignore_corrupt_files: bool,
+    skipped_files: SkippedFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let (source_type, _) = parse_url(&uri)?;
     let is_compressed = CompressionCodec::from_uri(&uri).is_some();
@@ -200,9 +209,42 @@ pub async fn stream_csv(
     };
 
     match stream_result {
-        Ok(stream) => Ok(stream),
-        Err(ref e) if ignore_corrupt_files && is_csv_unreadable(e) => {
-            log::warn!("Skipping unreadable CSV file {uri}: {e}");
+        Ok(stream) => {
+            if ignore_corrupt_files {
+                // Level 2: filter per-chunk errors that indicate format corruption
+                // (e.g. bad encoding or wrong field count discovered mid-stream).
+                let uri_for_warn = uri.clone();
+                let skipped_files_inner = skipped_files.clone();
+                let filtered = stream.filter_map(move |result| {
+                    let uri_w = uri_for_warn.clone();
+                    let skipped = skipped_files_inner.clone();
+                    futures::future::ready(match result {
+                        Ok(batch) => Some(Ok(batch)),
+                        Err(ref e) if is_csv_corrupt(e) => {
+                            log::warn!("Skipping corrupt CSV chunk in {uri_w}: {e}");
+                            if let Some(ref collector) = skipped
+                                && let Ok(mut v) = collector.lock()
+                            {
+                                v.push((uri_w, e.to_string()));
+                            }
+                            None
+                        }
+                        Err(e) => Some(Err(e)),
+                    })
+                });
+                Ok(Box::pin(filtered))
+            } else {
+                Ok(Box::pin(stream))
+            }
+        }
+        // Level 1: file-open / schema-inference errors (format error or truncated file).
+        Err(ref e) if ignore_corrupt_files && is_csv_corrupt(e) => {
+            log::warn!("Skipping unreadable/corrupt CSV file {uri}: {e}");
+            if let Some(ref collector) = skipped_files
+                && let Ok(mut v) = collector.lock()
+            {
+                v.push((uri, e.to_string()));
+            }
             Ok(Box::pin(futures::stream::empty()))
         }
         Err(e) => Err(e),
