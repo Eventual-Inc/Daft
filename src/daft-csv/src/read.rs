@@ -149,7 +149,7 @@ pub fn read_csv_bulk(
 ///   the same as a corrupt file so transient listing races are silently skipped.
 ///
 /// Network errors, permission errors, and all other variants continue to propagate.
-fn is_csv_corrupt(err: &common_error::DaftError) -> bool {
+pub fn is_csv_corrupt(err: &common_error::DaftError) -> bool {
     use common_error::DaftError;
     match err {
         DaftError::CorruptFile(_) => true,
