@@ -233,3 +233,82 @@ def test_session_create_table_with_properties():
     assert t2
     assert t2.name == "t2"
     assert t2.properties == properties
+
+
+###
+# _get_function tests
+###
+
+
+class MockCatalogWithFunctions(Catalog):
+    """A mock catalog that supports function lookup via _get_function."""
+
+    _functions: dict[str, object]
+
+    def __init__(self):
+        self._functions = {}
+
+    def register_function(self, name: str, func: object):
+        self._functions[name] = func
+
+    @property
+    def name(self) -> str:
+        return "test_with_functions"
+
+    def _create_namespace(self, ident: Identifier):
+        raise NotImplementedError
+
+    def _create_table(self, ident, schema, properties=None, partition_fields=None) -> Table:
+        raise NotImplementedError
+
+    def _drop_namespace(self, ident):
+        raise NotImplementedError
+
+    def _drop_table(self, ident):
+        raise NotImplementedError
+
+    def _get_table(self, ident) -> Table:
+        raise NotImplementedError
+
+    def _list_namespaces(self, pattern=None):
+        raise NotImplementedError
+
+    def _list_tables(self, pattern=None):
+        raise NotImplementedError
+
+    def _has_namespace(self, ident):
+        raise NotImplementedError
+
+    def _has_table(self, ident):
+        raise NotImplementedError
+
+    def _get_function(self, name: str) -> object | None:
+        return self._functions.get(name)
+
+
+def test_catalog_get_function_default_returns_none():
+    """Test that the default _get_function returns None."""
+    catalog = MockCatalog()
+    assert catalog.get_function("any_function") is None
+
+
+def test_catalog_get_function_with_override():
+    """Test that a catalog with _get_function override returns the function."""
+    catalog = MockCatalogWithFunctions()
+
+    def my_func(x):
+        return x + 1
+
+    catalog.register_function("my_func", my_func)
+
+    # found
+    assert catalog.get_function("my_func") is my_func
+
+    # not found
+    assert catalog.get_function("nonexistent") is None
+
+
+def test_catalog_get_function_from_pydict_returns_none():
+    """Test that the built-in from_pydict catalog returns None for get_function (default behavior)."""
+    catalog = Catalog.from_pydict({"t": {"x": [1, 2, 3]}})
+    assert catalog.get_function("anything") is None

@@ -401,16 +401,67 @@ impl SQLPlanner<'_> {
             SQL_FUNCTIONS.get(name).cloned()
         }
 
+        fn session_func_to_sql(func: Option<SessionFunction>) -> Option<Arc<dyn SQLFunction>> {
+            match func? {
+                SessionFunction::Python(udf) => Some(Arc::new(udf)),
+                SessionFunction::Native(factory) => Some(Arc::new(factory)),
+            }
+        }
+
         fn get_func_from_session(
             session: &Session,
             name: impl AsRef<str>,
         ) -> SQLPlannerResult<Option<Arc<dyn SQLFunction>>> {
             let name = name.as_ref();
-            match session.get_function(name)? {
-                Some(SessionFunction::Python(udf)) => Ok(Some(Arc::new(udf))),
-                Some(SessionFunction::Native(factory)) => Ok(Some(Arc::new(factory))),
-                None => Ok(None),
+            if let Some(func) = session_func_to_sql(session.get_function(name)?) {
+                return Ok(Some(func));
             }
+            // Try the catalog function.
+            // Parse name to extract optional catalog, namespace, and function name.
+            // Supported formats:
+            //   "func_name"
+            //   "ns1.func_name"
+            //   "catalog.ns1.func_name"
+            //   "catalog.ns1.ns2...func_name"  (multi-level namespace)
+            #[cfg(feature = "python")]
+            {
+                let parts: Vec<&str> = name.split('.').collect();
+                let (parsed_catalog, parsed_namespace, func_name) = match parts.len() {
+                    0 => return Ok(None),
+                    1 => (None, None, parts[0]),
+                    2 => (None, Some(vec![parts[0].to_string()]), parts[1]),
+                    _ => {
+                        // 3+ parts: first is catalog, last is func_name, middle parts are namespace levels
+                        let catalog = parts[0].to_string();
+                        let ns: Vec<String> = parts[1..parts.len() - 1]
+                            .iter()
+                            .map(|s| (*s).to_owned())
+                            .collect();
+                        let func = parts[parts.len() - 1];
+                        (Some(catalog), Some(ns), func)
+                    }
+                };
+                // catalog: use parsed value or fall back to session's current catalog.
+                let catalog = if let Some(cat) = parsed_catalog {
+                    cat
+                } else if let Some(current) = session.current_catalog()? {
+                    current.name()
+                } else {
+                    return Ok(None);
+                };
+                // Resolve namespace: use parsed value or fall back to session's current namespace.
+                let resolved_namespace = parsed_namespace
+                    .or(session.current_namespace()?)
+                    .unwrap_or_default();
+                let mut ident_parts = resolved_namespace;
+                ident_parts.push(func_name.to_string());
+                let ident = daft_catalog::Identifier::new(ident_parts);
+                Ok(session_func_to_sql(
+                    session.get_catalog_function(&ident, &catalog)?,
+                ))
+            }
+            #[cfg(not(feature = "python"))]
+            Ok(None)
         }
 
         // lookup function variant(s) by name

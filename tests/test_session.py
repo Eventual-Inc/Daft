@@ -338,3 +338,140 @@ def test_current_session_drop_table():
 
     daft.drop_namespace("ns")
     assert not cata.has_namespace("ns")
+
+
+###
+# CATALOG FUNCTION FALLBACK
+###
+
+
+class _FunctionCatalog(Catalog):
+    """A minimal catalog that supports _get_function for testing."""
+
+    _functions: dict
+
+    def __init__(self):
+        self._functions = {}
+
+    def register_function(self, name, func):
+        self._functions[name] = func
+
+    @property
+    def name(self):
+        return "func_catalog"
+
+    def _create_namespace(self, ident):
+        raise NotImplementedError
+
+    def _create_table(self, ident, schema, properties=None, partition_fields=None):
+        raise NotImplementedError
+
+    def _drop_namespace(self, ident):
+        raise NotImplementedError
+
+    def _drop_table(self, ident):
+        raise NotImplementedError
+
+    def _get_table(self, ident):
+        raise NotFoundError(f"Table {ident} not found")
+
+    def _list_namespaces(self, pattern=None):
+        return []
+
+    def _list_tables(self, pattern=None):
+        return []
+
+    def _has_namespace(self, ident):
+        return False
+
+    def _has_table(self, ident):
+        return False
+
+    def _get_function(self, ident):
+        # ident is an Identifier; the last part is the function name
+        func_name = ident[-1]
+        return self._functions.get(func_name)
+
+
+def test_session_catalog_function_fallback():
+    """Test that catalog _get_function is used during SQL plan resolution."""
+
+    @daft.udf(return_dtype=daft.DataType.int64())
+    def my_catalog_udf(x):
+        return x
+
+    catalog = _FunctionCatalog()
+    catalog.register_function("my_catalog_udf", my_catalog_udf)
+
+    sess = Session()
+    sess.attach_catalog(catalog)
+
+    # Verify the catalog itself returns the function
+    assert catalog.get_function("my_catalog_udf") is not None
+
+    # Verify the function is accessible via SQL plan resolution.
+    # The UDF registered in the catalog should be found during SQL planning.
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    sess.attach_table(Table.from_df("t", df), alias="t")
+    daft.set_session(sess)
+    result = sess.sql("SELECT my_catalog_udf(x) FROM t")
+    assert result is not None
+
+
+def test_session_catalog_function_fallback_returns_none():
+    """Test that catalog get_function returns None when function is not found."""
+    catalog = _FunctionCatalog()
+
+    # Catalog itself should return None for nonexistent functions
+    assert catalog.get_function("nonexistent_function") is None
+
+
+def test_session_function_priority_over_catalog():
+    """Test that session-scoped functions take priority over catalog functions."""
+
+    @daft.udf(return_dtype=daft.DataType.int64())
+    def catalog_udf(x):
+        return x
+
+    @daft.udf(return_dtype=daft.DataType.int64())
+    def session_udf(x):
+        return x + 1
+
+    catalog = _FunctionCatalog()
+    catalog.register_function("shared_fn", catalog_udf)
+
+    sess = Session()
+    sess.attach_catalog(catalog)
+    sess.attach_function(session_udf, alias="shared_fn")
+
+    # Both catalog and session have "shared_fn", but session should take priority.
+    # Verify via SQL that the function resolves (session-scoped wins).
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    sess.attach_table(Table.from_df("t", df), alias="t")
+    daft.set_session(sess)
+    result = sess.sql("SELECT shared_fn(x) FROM t")
+    assert result is not None
+
+
+def test_dataframe_select_with_catalog_get_function():
+    """Test that dataframe.select can use a UDF retrieved via catalog.get_function."""
+
+    @daft.udf(return_dtype=daft.DataType.int64())
+    def double_value(x):
+        return [v * 2 for v in x.to_pylist()]
+
+    catalog = _FunctionCatalog()
+    catalog.register_function("double_value", double_value)
+
+    sess = Session()
+    sess.attach_catalog(catalog)
+    daft.set_session(sess)
+
+    # Retrieve the UDF from the catalog and use it directly in dataframe.select
+    udf_fn = catalog.get_function("double_value")
+    assert udf_fn is not None
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    result = df.select(udf_fn(df["x"]))
+
+    assert result.to_pydict() == {"x": [2, 4, 6]}

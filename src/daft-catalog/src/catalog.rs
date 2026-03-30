@@ -4,6 +4,10 @@ use daft_core::prelude::SchemaRef;
 
 use crate::{Identifier, TableRef, error::CatalogResult};
 
+/// A catalog function reference — an opaque Python object wrapped for Rust.
+#[cfg(feature = "python")]
+pub type CatalogFunctionRef = pyo3::Py<pyo3::PyAny>;
+
 /// Catalog implementation reference.
 pub type CatalogRef = Arc<dyn Catalog>;
 
@@ -31,6 +35,14 @@ pub trait Catalog: Sync + Send + std::fmt::Debug {
     fn list_namespaces(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>>;
     /// List all tables in the catalog. When a prefix is specified, list only nested namespaces with the prefix.
     fn list_tables(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>>;
+
+    /// Get a function from the catalog by identifier.
+    /// The identifier's last part is the function name, and preceding parts form the namespace.
+    /// Returns None if the catalog does not support function lookup or the function does not exist.
+    #[cfg(feature = "python")]
+    fn get_function(&self, _ident: &Identifier) -> CatalogResult<Option<CatalogFunctionRef>> {
+        Ok(None)
+    }
 
     /// Create/extract a Python object that subclasses the Catalog ABC
     #[cfg(feature = "python")]
@@ -60,6 +72,14 @@ pub trait Catalog: Sync + Send {
     fn list_namespaces(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>>;
     /// List all tables in the catalog. When a prefix is specified, list only nested namespaces with the prefix.
     fn list_tables(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>>;
+
+    /// Get a function from the catalog by identifier.
+    /// The identifier's last part is the function name, and preceding parts form the namespace.
+    /// Returns None if the catalog does not support function lookup or the function does not exist.
+    #[cfg(feature = "python")]
+    fn get_function(&self, _ident: &Identifier) -> CatalogResult<Option<CatalogFunctionRef>> {
+        Ok(None)
+    }
 
     /// Create/extract a Python object that subclasses the Catalog ABC
     #[cfg(feature = "python")]

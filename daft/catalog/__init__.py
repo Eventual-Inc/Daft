@@ -122,6 +122,21 @@ class Catalog(ABC):
     def _get_table(self, ident: Identifier) -> Table:
         """Get a table from the catalog."""
 
+    def _get_function(self, ident: Identifier) -> object | None:
+        """Get a function from the catalog by identifier.
+
+        Returns the function object if found, or None if the catalog does not support
+        function lookup or the function does not exist. Subclasses can override this
+        to provide catalog-scoped function resolution.
+
+        Args:
+            ident: the function identifier to look up.
+
+        Returns:
+            A function object (e.g. a UDF class or callable) if found, otherwise None.
+        """
+        return None
+
     @abstractmethod
     def _has_namespace(self, ident: Identifier) -> bool:
         """Check if a namespace exists in the catalog."""
@@ -563,6 +578,21 @@ class Catalog(ABC):
             identifier = Identifier.from_str(identifier)
 
         return self._get_table(identifier)
+
+    def get_function(self, identifier: Identifier | str) -> object | None:
+        """Get a function from the catalog by identifier.
+
+        Args:
+            identifier (Identifier | str): function identifier, where the last part is the
+                function name and preceding parts form the namespace.
+
+        Returns:
+            The function object if found, otherwise None.
+        """
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        return self._get_function(identifier)
 
     ###
     # list_*

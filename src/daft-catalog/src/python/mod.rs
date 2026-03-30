@@ -57,6 +57,10 @@ impl PyCatalog {
         Ok(self.0.has_table(&ident.0)?)
     }
 
+    fn get_function(&self, ident: PyIdentifier) -> PyResult<Option<Py<PyAny>>> {
+        Ok(self.0.get_function(&ident.0)?)
+    }
+
     #[pyo3(signature = (pattern=None))]
     fn list_namespaces(&self, pattern: Option<&str>) -> PyResult<Vec<PyIdentifier>> {
         Ok(self

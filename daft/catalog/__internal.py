@@ -47,6 +47,9 @@ class _RustCatalog(Catalog):
     def _get_table(self, ident: Identifier) -> Table:
         return self.inner.get_table(ident._ident)
 
+    def _get_function(self, ident: Identifier) -> object | None:
+        return self.inner.get_function(ident._ident)
+
     def _has_namespace(self, ident: Identifier) -> bool:
         return self.inner.has_namespace(ident._ident)
 

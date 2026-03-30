@@ -250,6 +250,23 @@ impl Session {
         self.state().get_function(name)
     }
 
+    /// Returns a function from the specified catalog, or None if not found.
+    #[cfg(feature = "python")]
+    pub fn get_catalog_function(
+        &self,
+        ident: &daft_catalog::Identifier,
+        catalog: &str,
+    ) -> CatalogResult<Option<ScalarFunction>> {
+        let resolved_catalog = self.get_catalog(catalog)?;
+        if let Some(py_func) = resolved_catalog.get_function(ident)? {
+            let wrapped = daft_dsl::functions::python::WrappedUDFClass {
+                inner: std::sync::Arc::new(py_func),
+            };
+            return Ok(Some(ScalarFunction::Python(wrapped)));
+        }
+        Ok(None)
+    }
+
     /// Returns the provider or an object not found error.
     pub fn get_provider(&self, name: &str) -> CatalogResult<ProviderRef> {
         if let Some(provider) = self.state().get_attached_provider(name)? {

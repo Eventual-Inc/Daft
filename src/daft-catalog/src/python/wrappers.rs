@@ -137,6 +137,22 @@ impl Catalog for PyCatalogWrapper {
             Ok(Arc::new(PyTableWrapper(table.unbind())) as Arc<dyn Table>)
         })
     }
+
+    fn get_function(
+        &self,
+        ident: &crate::Identifier,
+    ) -> CatalogResult<Option<crate::CatalogFunctionRef>> {
+        Python::attach(|py| {
+            let catalog = self.0.bind(py);
+            let ident_py = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            let result = catalog.call_method1(intern!(py, "_get_function"), (ident_py,))?;
+            if result.is_none() {
+                Ok(None)
+            } else {
+                Ok(Some(result.unbind()))
+            }
+        })
+    }
 }
 
 /// Newtype to implement the Table trait for a Python table
