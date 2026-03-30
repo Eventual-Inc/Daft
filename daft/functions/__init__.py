@@ -226,7 +226,7 @@ from .str import (
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
-from .audio import audio_metadata, resample
+from .audio import audio_metadata, resample, write_audio
 from .video import video_metadata, video_keyframes
 from .window import (
     row_number,
@@ -475,5 +475,6 @@ __all__ = [
     "video_metadata",
     "week_of_year",
     "when",
+    "write_audio",
     "year",
 ]

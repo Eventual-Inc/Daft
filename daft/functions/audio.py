@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import pathlib
 from typing import TYPE_CHECKING, Any
 
 import daft
@@ -10,6 +12,8 @@ from daft.udf.udf_v2 import Func
 if TYPE_CHECKING:
     from daft import Expression
     from daft.file.typing import AudioMetadata
+
+_CLOUD_SCHEMES = ("s3://", "gs://", "gcs://", "az://", "abfs://", "hf://", "http://", "https://")
 
 
 def get_metadata_impl(
@@ -175,3 +179,148 @@ def resample(
         )
 
     return resample_fn(file_expr, sample_rate)
+
+
+def write_audio_impl(
+    audio: Any,
+    destination: str,
+    sample_rate: int | None,
+    format: str | None,
+    subtype: str | None,
+) -> AudioMetadata:
+    from daft.dependencies import np, sf
+    from daft.file.typing import AudioMetadata
+
+    # Extract audio data and sample rate from input
+    if isinstance(audio, daft.AudioFile):
+        meta = audio.metadata()
+        data = audio.to_numpy()
+        if sample_rate is None:
+            sample_rate = meta["sample_rate"]
+    else:
+        data = np.asarray(audio)
+        if sample_rate is None:
+            raise ValueError(
+                "sample_rate is required when writing tensor/array data. "
+                "Pass sample_rate to write_audio() or use an AudioFile input."
+            )
+
+    # Normalize channel layout: channel-first → channel-last for soundfile
+    if data.ndim == 2 and data.shape[0] <= 8 and data.shape[0] < data.shape[1]:
+        data = data.T
+
+    # Clip to [-1.0, 1.0] and convert to float32
+    data = np.clip(data.astype(np.float32), -1.0, 1.0)
+
+    # Determine format: explicit override > infer from extension
+    ext = pathlib.PurePosixPath(destination).suffix.lstrip(".")
+    inferred_format = ext.upper() if ext else None
+    write_format = format or inferred_format
+
+    # Write the audio
+    is_cloud = any(destination.startswith(scheme) for scheme in _CLOUD_SCHEMES)
+
+    if is_cloud:
+        if write_format is None:
+            raise ValueError(
+                "Cannot infer audio format from destination path. Please specify the 'format' parameter."
+            )
+        buf = io.BytesIO()
+        sf.write(buf, data, samplerate=sample_rate, format=write_format, subtype=subtype)
+        from daft.daft import io_put
+
+        io_put(destination, buf.getvalue())
+    else:
+        pathlib.Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        sf.write(destination, data, samplerate=sample_rate, format=write_format, subtype=subtype)
+
+    # Return metadata about the written audio
+    channels = data.shape[1] if data.ndim == 2 else 1
+    frames = float(data.shape[0])
+
+    return AudioMetadata(
+        sample_rate=sample_rate,
+        channels=channels,
+        frames=frames,
+        format=write_format or "",
+        subtype=subtype,
+    )
+
+
+write_audio_fn = Func._from_func(
+    write_audio_impl,
+    return_dtype=daft.DataType.struct(
+        {
+            "sample_rate": daft.DataType.int64(),
+            "channels": daft.DataType.int64(),
+            "frames": daft.DataType.float64(),
+            "format": daft.DataType.string(),
+            "subtype": daft.DataType.string(),
+        }
+    ),
+    unnest=False,
+    use_process=None,
+    is_batch=False,
+    batch_size=None,
+    max_retries=None,
+    on_error=None,
+)
+
+
+def write_audio(
+    audio_expr: Expression,
+    destination: Expression | str,
+    sample_rate: int | None = None,
+    format: str | None = None,
+    subtype: str | None = None,
+) -> Expression:
+    """Write audio data to a file.
+
+    Mirrors the soundfile write API. Accepts either an AudioFile expression
+    (sample rate inferred from metadata) or a Tensor/array expression
+    (sample rate required). Audio data is clipped to [-1.0, 1.0] and
+    channel layout is normalized automatically.
+
+    Supports local and cloud (S3, GCS, Azure) destinations.
+
+    Args:
+        audio_expr: An AudioFile or Tensor[Float64] expression containing audio data.
+        destination: A String expression with destination file paths, or a literal string.
+        sample_rate: The sample rate in Hz. Required for tensor/array input.
+            Inferred from AudioFile metadata if not specified.
+        format: Audio format (e.g., "WAV", "MP3", "FLAC", "OGG").
+            Inferred from destination file extension if not specified.
+        subtype: Audio subtype (e.g., "PCM_16", "MPEG_LAYER_III").
+            If not specified, soundfile chooses a default for the format.
+
+    Returns:
+        Expression: A struct expression containing AudioMetadata:
+            - sample_rate: int
+            - channels: int
+            - frames: float
+            - format: str
+            - subtype: str | None
+
+    Example:
+        >>> import daft
+        >>> from daft.functions import audio_file, write_audio
+
+        >>> df = daft.from_glob_path("audio/*.mp3")
+        >>> df = (
+        ...     df.with_column("file", audio_file(daft.col("path")))
+        ...     .with_column("out_path", daft.col("path").str.replace(".mp3", ".wav"))
+        ...     .with_column("result", write_audio(daft.col("file"), daft.col("out_path")))
+        ... )
+    """
+    from daft.dependencies import sf
+
+    if not sf.module_available():
+        raise ImportError(
+            "The 'soundfile' module is required to write audio files. "
+            "Please install it with: pip install 'daft[audio]'"
+        )
+
+    if isinstance(destination, str):
+        destination = daft.lit(destination)
+
+    return write_audio_fn(audio_expr, destination, sample_rate, format, subtype)
