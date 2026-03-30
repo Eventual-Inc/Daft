@@ -96,6 +96,10 @@ impl PyDistributedPhysicalPlan {
         self.plan.idx().to_string()
     }
 
+    fn query_id(&self) -> String {
+        self.plan.query_id().to_string()
+    }
+
     fn num_partitions(&self) -> PyResult<usize> {
         // Create pipeline nodes from the logical plan
         let plan_config = PlanConfig::new(
