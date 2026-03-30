@@ -61,6 +61,16 @@ impl SourceStats {
         self.estimated_total_rows
             .set_max(estimated_total_rows, self.node_kv.as_slice());
     }
+
+    #[cfg(test)]
+    pub(crate) fn new_for_test(meter: &Meter, node_info: &NodeInfo) -> Self {
+        Self::new(meter, node_info)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn add_rows_out_for_test(&self, rows: u64) {
+        self.add_rows_out(rows);
+    }
 }
 
 impl RuntimeStats for SourceStats {

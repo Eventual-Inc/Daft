@@ -578,3 +578,130 @@ async fn stream_scan_task(
         Ok(mp)
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, atomic::Ordering};
+
+    use common_metrics::{Meter, ops::NodeInfo, snapshot::StatSnapshotImpl as _};
+
+    use super::RowEstimator;
+    use crate::{
+        runtime_stats::RuntimeStats,
+        sources::source::SourceStats,
+    };
+
+    fn make_source_stats() -> Arc<SourceStats> {
+        let meter = Meter::test_scope("row_estimator_test");
+        let node_info = NodeInfo {
+            id: 0,
+            ..Default::default()
+        };
+        Arc::new(SourceStats::new_for_test(&meter, &node_info))
+    }
+
+    #[test]
+    fn row_estimator_basic_uniform_files() {
+        // 10 files, each with 100 rows → should estimate 1000 total
+        let stats = make_source_stats();
+        let mut est = RowEstimator::new(stats.clone());
+
+        est.add_scan_tasks(10);
+
+        // Process 3 files, each 100 rows
+        est.inc_finished_file(100);
+        est.inc_finished_file(100);
+        est.inc_finished_file(100);
+
+        // 300 rows from 3 files → average 100 rows/file → 10 * 100 = 1000
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap.total(), 1000);
+    }
+
+    #[test]
+    fn row_estimator_learns_from_first_file() {
+        let stats = make_source_stats();
+        let mut est = RowEstimator::new(stats.clone());
+
+        est.add_scan_tasks(5);
+        est.inc_finished_file(200);
+
+        // 200 rows from 1 file → estimate 5 * 200 = 1000
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap.total(), 1000);
+    }
+
+    #[test]
+    fn row_estimator_adjusts_as_files_vary_in_size() {
+        let stats = make_source_stats();
+        let mut est = RowEstimator::new(stats.clone());
+
+        est.add_scan_tasks(4);
+
+        // File 1: 100 rows → avg=100 → estimate = 4 * 100 = 400
+        est.inc_finished_file(100);
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap.total(), 400);
+
+        // File 2: 300 rows → avg=200 → estimate = 4 * 200 = 800
+        est.inc_finished_file(300);
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap.total(), 800);
+    }
+
+    #[test]
+    fn row_estimator_scan_tasks_can_be_added_incrementally() {
+        let stats = make_source_stats();
+        let mut est = RowEstimator::new(stats.clone());
+
+        // First batch of scan tasks
+        est.add_scan_tasks(3);
+        est.inc_finished_file(100);
+
+        // 100 rows from 1 file, 3 total → estimate 300
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap.total(), 300);
+
+        // More scan tasks discovered
+        est.add_scan_tasks(2);
+
+        // Now 5 total scan tasks, still 100 rows from 1 file → estimate 500
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap.total(), 500);
+    }
+
+    #[test]
+    fn source_stats_set_estimated_total_is_monotonically_increasing() {
+        let stats = make_source_stats();
+
+        stats.set_estimated_total_rows(500);
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap.total(), 500);
+
+        // set_max means a lower value shouldn't decrease the estimate
+        stats.set_estimated_total_rows(300);
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap.total(), 500); // stays at 500
+
+        // A higher value should update
+        stats.set_estimated_total_rows(800);
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap.total(), 800);
+    }
+
+    #[test]
+    fn source_stats_add_rows_out_also_updates_estimated_total() {
+        let stats = make_source_stats();
+
+        // add_rows_out sets estimated_total to max(current, rows_out)
+        stats.add_rows_out_for_test(100);
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap.current_progress(), 100);
+        assert!(snap.total() >= 100, "estimated total should be at least rows_out");
+
+        stats.add_rows_out_for_test(200);
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap.current_progress(), 300);
+        assert!(snap.total() >= 300);
+    }
+}
