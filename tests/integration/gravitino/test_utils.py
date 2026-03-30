@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from daft.dependencies import requests
+
 _API_HEADERS = {
     "Accept": "application/vnd.gravitino.v1+json",
     "Content-Type": "application/json",
@@ -39,8 +41,14 @@ def ensure_metalake(client, metalake: str):
             "comment": "Daft integration metalake",
             "properties": {},
         }
-        api_request(client, "POST", "/metalakes", json=payload)
-        print(f"[DEBUG] Metalake created: {metalake}")
+        try:
+            api_request(client, "POST", "/metalakes", json=payload)
+            print(f"[DEBUG] Metalake created: {metalake}")
+        except requests.exceptions.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 409:
+                print(f"[DEBUG] Metalake concurrently created: {metalake}")
+                return
+            raise
     else:
         response.raise_for_status()
         print(f"[DEBUG] Metalake already exists: {metalake}")
