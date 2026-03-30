@@ -15,13 +15,14 @@ use common_metrics::{
 };
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
+pub use daft_local_plan::InputId;
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
-    HashAggregate, HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext,
-    LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
-    Sample, ShuffleReadBackend, ShuffleWriteBackend, Sort, SortMergeJoin, SourceId, TopN,
-    UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
-    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
+    HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
+    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Sample,
+    ShuffleReadBackend, ShuffleWriteBackend, Sort, SortMergeJoin, SourceId, TopN, UDFProject,
+    UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
+    WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -42,7 +43,6 @@ use crate::{
         unpivot::UnpivotOperator,
     },
     join::{CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator},
-    runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
@@ -71,6 +71,65 @@ use crate::{
         vllm::VLLMSink,
     },
 };
+
+/// Message that can flow through the pipeline - either data (Morsel) or a flush signal
+#[derive(Debug, Clone)]
+pub enum PipelineMessage {
+    /// Data morsel with input_id and partition
+    Morsel {
+        input_id: InputId,
+        partition: MicroPartition,
+    },
+    /// Flush signal for a specific input_id - indicates that input is finished
+    Flush(InputId),
+}
+
+/// Events yielded by [`next_event`].
+pub(crate) enum PipelineEvent<TaskResult> {
+    TaskCompleted(TaskResult),
+    Morsel {
+        input_id: InputId,
+        partition: MicroPartition,
+    },
+    Flush(InputId),
+    InputClosed,
+}
+
+/// Yield the next event from either the task set or the input receiver.
+/// Returns `Ok(None)` when both the input is closed and no tasks remain.
+pub(crate) async fn next_event<TaskResult: Send + 'static>(
+    task_set: &mut common_runtime::OrderingAwareJoinSet<DaftResult<TaskResult>>,
+    max_concurrency: usize,
+    receiver: &mut crate::channel::Receiver<PipelineMessage>,
+    input_closed: &mut bool,
+) -> DaftResult<Option<PipelineEvent<TaskResult>>> {
+    if *input_closed && task_set.is_empty() {
+        return Ok(None);
+    }
+    tokio::select! {
+        msg = receiver.recv(), if task_set.len() < max_concurrency && !*input_closed => {
+            match msg {
+                Some(PipelineMessage::Morsel { input_id, partition }) => {
+                    Ok(Some(PipelineEvent::Morsel { input_id, partition }))
+                }
+                Some(PipelineMessage::Flush(input_id)) => {
+                    Ok(Some(PipelineEvent::Flush(input_id)))
+                }
+                None => {
+                    *input_closed = true;
+                    Ok(Some(PipelineEvent::InputClosed))
+                }
+            }
+        }
+        Some(task_result) = task_set.join_next(), if !task_set.is_empty() => {
+            match task_result {
+                Ok(Ok(result)) => Ok(Some(PipelineEvent::TaskCompleted(result))),
+                Ok(Err(e)) => Err(e),
+                Err(e) => Err(e.into()),
+            }
+        }
+    }
+}
 
 pub type NodeName = Cow<'static, str>;
 
@@ -162,7 +221,7 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<crate::channel::Receiver<MicroPartition>>;
+    ) -> crate::Result<crate::channel::Receiver<PipelineMessage>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 
@@ -170,8 +229,6 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn node_id(&self) -> usize;
     // General Node Info
     fn node_info(&self) -> Arc<NodeInfo>;
-    // Runtime Stats
-    fn runtime_stats(&self) -> Arc<dyn RuntimeStats>;
 }
 
 impl ConcreteTreeNode for Box<dyn PipelineNode> {

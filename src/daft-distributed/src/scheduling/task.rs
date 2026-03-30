@@ -464,9 +464,10 @@ impl SwordfishTaskBuilder {
             plan_fingerprint,
         };
 
-        // Build context HashMap with task_id
+        // Build context HashMap with task_id and plan_fingerprint
         let mut context = self.context;
         context.insert("task_id".to_string(), task_context.task_id.to_string());
+        context.insert("plan_fingerprint".to_string(), plan_fingerprint.to_string());
 
         // Extract resource_request from plan
         let resource_request = TaskResourceRequest::new(self.plan.resource_request());
