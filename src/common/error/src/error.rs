@@ -21,6 +21,11 @@ pub enum DaftError {
     // because this results in infinite nesting of types in `fixed_size_binary_op` in arithmetic.rs.
     #[error("DaftError::ParquetError {0}")]
     ParquetError(String),
+    /// Raised when CSV parsing fails due to malformed file content (bad encoding,
+    /// wrong field counts, truncated file, etc.). Network and permission errors are
+    /// NOT routed here — they surface as IoError or the network-specific variants.
+    #[error("DaftError::CsvError {0}")]
+    CsvError(String),
     #[error("DaftError::ValueError {0}")]
     ValueError(String),
     #[cfg(feature = "python")]

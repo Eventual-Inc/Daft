@@ -43,8 +43,37 @@ pub enum Error {
 
 impl From<Error> for DaftError {
     fn from(err: Error) -> Self {
+        // Inspect CSV-specific errors before falling through to External so that:
+        // - Format errors (bad encoding, wrong field count) get DaftError::CsvError
+        // - IO errors embedded inside csv_async/csv readers get DaftError::IoError
+        //   rather than being lost inside External.
+        let is_csv_format_err = match &err {
+            Error::CSVError { source } => !source.is_io_error(),
+            Error::SyncCSVError { source } => !matches!(source.kind(), csv::ErrorKind::Io(_)),
+            _ => false,
+        };
+        if is_csv_format_err {
+            return Self::CsvError(err.to_string());
+        }
+
         match err {
             Error::IOError { source } => source.into(),
+            Error::CSVError { source } => {
+                // is_io_error() was true — extract the inner io::Error.
+                if let csv_async::ErrorKind::Io(io_err) = source.into_kind() {
+                    Self::IoError(io_err)
+                } else {
+                    unreachable!("is_io_error() returned true but kind is not Io")
+                }
+            }
+            Error::SyncCSVError { source } => {
+                // io kind check was true — extract the inner io::Error.
+                if let csv::ErrorKind::Io(io_err) = source.into_kind() {
+                    Self::IoError(io_err)
+                } else {
+                    unreachable!("csv io kind check was true but kind is not Io")
+                }
+            }
             _ => Self::External(err.into()),
         }
     }
