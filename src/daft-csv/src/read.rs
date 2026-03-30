@@ -135,6 +135,32 @@ pub fn read_csv_bulk(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Returns true if a DaftError represents a genuine CSV file-level read failure that should be
+/// skipped when `ignore_corrupt_files` is enabled. Network errors and permission errors return
+/// false so they continue to propagate.
+fn is_csv_unreadable(err: &common_error::DaftError) -> bool {
+    use common_error::DaftError;
+    match err {
+        DaftError::IoError(io_err) => !matches!(
+            io_err.kind(),
+            std::io::ErrorKind::TimedOut
+                | std::io::ErrorKind::ConnectionReset
+                | std::io::ErrorKind::ConnectionAborted
+                | std::io::ErrorKind::PermissionDenied
+                | std::io::ErrorKind::NotFound
+        ),
+        DaftError::ConnectTimeout(_)
+        | DaftError::ReadTimeout(_)
+        | DaftError::ByteStreamError(_)
+        | DaftError::SocketError(_)
+        | DaftError::ThrottledIo(_)
+        | DaftError::MiscTransient(_)
+        | DaftError::FileNotFound { .. } => false,
+        _ => false,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub async fn stream_csv(
     uri: String,
     convert_options: Option<CsvConvertOptions>,
@@ -143,12 +169,13 @@ pub async fn stream_csv(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
+    ignore_corrupt_files: bool,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let (source_type, _) = parse_url(&uri)?;
     let is_compressed = CompressionCodec::from_uri(&uri).is_some();
-    if matches!(source_type, SourceType::File) && !is_compressed {
-        let stream = stream_csv_local(
-            uri,
+    let stream_result = if matches!(source_type, SourceType::File) && !is_compressed {
+        stream_csv_local(
+            uri.clone(),
             convert_options,
             parse_options.unwrap_or_default(),
             read_options,
@@ -156,11 +183,11 @@ pub async fn stream_csv(
             io_stats,
             max_chunks_in_flight,
         )
-        .await?;
-        Ok(Box::pin(stream))
+        .await
+        .map(|s| Box::pin(s) as BoxStream<'static, DaftResult<RecordBatch>>)
     } else {
-        let stream = stream_csv_single(
-            uri,
+        stream_csv_single(
+            uri.clone(),
             convert_options,
             parse_options,
             read_options,
@@ -168,8 +195,17 @@ pub async fn stream_csv(
             io_stats,
             max_chunks_in_flight,
         )
-        .await?;
-        Ok(Box::pin(stream))
+        .await
+        .map(|s| Box::pin(s) as BoxStream<'static, DaftResult<RecordBatch>>)
+    };
+
+    match stream_result {
+        Ok(stream) => Ok(stream),
+        Err(ref e) if ignore_corrupt_files && is_csv_unreadable(e) => {
+            log::warn!("Skipping unreadable CSV file {uri}: {e}");
+            Ok(Box::pin(futures::stream::empty()))
+        }
+        Err(e) => Err(e),
     }
 }
 

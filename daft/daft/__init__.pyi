@@ -264,6 +264,7 @@ class ParquetSourceConfig:
         field_id_mapping: dict[int, PyField] | None = None,
         row_groups: list[list[int]] | None = None,
         chunk_size: int | None = None,
+        ignore_corrupt_files: bool = False,
     ): ...
 
 class CsvSourceConfig:
@@ -290,6 +291,7 @@ class CsvSourceConfig:
         comment: str | None,
         buffer_size: int | None = None,
         chunk_size: int | None = None,
+        ignore_corrupt_files: bool = False,
     ): ...
 
 class JsonSourceConfig:

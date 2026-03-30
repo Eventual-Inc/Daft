@@ -96,8 +96,13 @@ async fn read_parquet(
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let source = scan_task.sources.first().unwrap();
 
+    // Aggregate pushdown reads COUNT directly from footer statistics. When ignore_corrupt_files
+    // is set, corrupt files are skipped entirely, so their row counts never contribute to the
+    // aggregate — making the result silently incorrect. Disable the pushdown in this case so
+    // the aggregate runs over the actual rows that are read.
     if let Some(aggregation) = &scan_task.pushdowns.aggregation
         && let Expr::Agg(AggExpr::Count(_, _)) = aggregation.as_ref()
+        && !cfg.ignore_corrupt_files
     {
         daft_parquet::read::stream_parquet_count_pushdown(
             url,
@@ -136,6 +141,7 @@ async fn read_parquet(
             maintain_order,
             delete_rows,
             parquet_chunk_size,
+            cfg.ignore_corrupt_files,
         )
         .await
     }
@@ -186,6 +192,7 @@ async fn read_csv(
         io_client,
         Some(io_stats),
         None,
+        cfg.ignore_corrupt_files,
     )
     .await
 }
