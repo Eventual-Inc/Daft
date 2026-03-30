@@ -430,8 +430,6 @@ impl SQLPlanner<'_> {
                     1 => (None, None, parts[0]),
                     2 => (None, Some(vec![parts[0].to_string()]), parts[1]),
                     _ => {
-                    2 => (None, Some(vec![parts[0].to_string()]), parts[1]),
-                    _ => {
                         // 3+ parts: first is catalog, last is func_name, middle parts are namespace levels
                         let catalog = parts[0].to_string();
                         let ns: Vec<String> = parts[1..parts.len() - 1]
@@ -458,10 +456,9 @@ impl SQLPlanner<'_> {
                 ident_parts.push(func_name.to_string());
                 let ident = daft_catalog::Identifier::new(ident_parts);
                 Ok(session_func_to_sql(
-                    match session.get_catalog_function(&ident, &catalog) {
-                        Ok(f) => f,
-                        Err(_) => None,
-                    },
+                    session
+                        .get_catalog_function(&ident, &catalog)
+                        .unwrap_or_default(),
                 ))
             }
             #[cfg(not(feature = "python"))]
