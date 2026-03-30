@@ -34,7 +34,6 @@ def _lancedb_table_factory_function(
     limit: int | None = None,
     include_fragment_id: bool | None = False,
     nearest: dict[str, Any] | None = None,
-    ignore_corrupt_files: bool = False,
 ) -> Iterator[PyRecordBatch]:
     if fragment_ids is not None and nearest is not None:
         raise ValueError(
@@ -51,13 +50,7 @@ def _lancedb_table_factory_function(
         ) from e
 
     # Attempt to import lance and reconstruct with best-effort kwargs
-    try:
-        ds = lance.dataset(ds_uri, **(open_kwargs or {}))
-    except Exception as e:
-        if ignore_corrupt_files:
-            logger.warning("Skipping corrupt Lance dataset at %s: %s", ds_uri, e)
-            return iter([])
-        raise
+    ds = lance.dataset(ds_uri, **(open_kwargs or {}))
 
     def _iter_batches() -> Iterator[PyRecordBatch]:
         # Iterate fragments individually; append a fragment_id column only when requested
@@ -76,48 +69,31 @@ def _lancedb_table_factory_function(
             if limit is not None:
                 fragment_limit = limit - rows_yielded
 
-            try:
-                scanner = ds.scanner(fragments=[fragment], columns=cols or None, filter=filter, limit=fragment_limit)
-                for rb in scanner.to_batches():
-                    # If we have a limit, we may need to truncate this batch
-                    if limit is not None:
-                        remaining_rows = limit - rows_yielded
-                        if remaining_rows <= 0:
-                            break
-                        if len(rb) > remaining_rows:
-                            # Truncate the batch to respect the limit
-                            rb = rb.slice(0, remaining_rows)
+            scanner = ds.scanner(fragments=[fragment], columns=cols or None, filter=filter, limit=fragment_limit)
+            for rb in scanner.to_batches():
+                # If we have a limit, we may need to truncate this batch
+                if limit is not None:
+                    remaining_rows = limit - rows_yielded
+                    if remaining_rows <= 0:
+                        break
+                    if len(rb) > remaining_rows:
+                        # Truncate the batch to respect the limit
+                        rb = rb.slice(0, remaining_rows)
 
-                    if include_fragment_id:
-                        frag_id_array = pa.array([fragment.fragment_id] * len(rb), type=pa.int64())
-                        new_rb = pa.RecordBatch.from_arrays(
-                            rb.columns + [frag_id_array], names=rb.schema.names + ["fragment_id"]
-                        )
-                        yield RecordBatch.from_arrow_record_batches([new_rb], new_rb.schema)._recordbatch
-                    else:
-                        yield RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
-                    rows_yielded += len(rb)
-            except Exception as e:
-                if ignore_corrupt_files:
-                    logger.warning("Skipping corrupt Lance fragment %d at %s: %s", fragment.fragment_id, ds_uri, e)
-                    continue
-                raise
+                if include_fragment_id:
+                    frag_id_array = pa.array([fragment.fragment_id] * len(rb), type=pa.int64())
+                    new_rb = pa.RecordBatch.from_arrays(
+                        rb.columns + [frag_id_array], names=rb.schema.names + ["fragment_id"]
+                    )
+                    yield RecordBatch.from_arrow_record_batches([new_rb], new_rb.schema)._recordbatch
+                else:
+                    yield RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
+                rows_yielded += len(rb)
 
     # If fragment_ids is None, let Lance choose fragments via index; omit the fragments parameter.
     if fragment_ids is None:
-
-        def _index_scan() -> Iterator[PyRecordBatch]:
-            try:
-                scanner = ds.scanner(columns=required_columns, filter=filter, limit=limit, nearest=nearest)
-                for rb in scanner.to_batches():
-                    yield RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
-            except Exception as e:
-                if ignore_corrupt_files:
-                    logger.warning("Skipping corrupt Lance scan at %s: %s", ds_uri, e)
-                    return
-                raise
-
-        return _index_scan()
+        scanner = ds.scanner(columns=required_columns, filter=filter, limit=limit, nearest=nearest)
+        return (RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch for rb in scanner.to_batches())
     else:
         fragments = [ds.get_fragment(id) for id in (fragment_ids or [])]
         if not fragments:
@@ -157,14 +133,12 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         ds: "lance.LanceDataset",
         fragment_group_size: int | None = None,
         include_fragment_id: bool | None = False,
-        ignore_corrupt_files: bool = False,
     ):
         self._ds = ds
         self._pushed_filters: list[PyExpr] | None = None
         self._remaining_filters: list[PyExpr] | None = None
         self._fragment_group_size = fragment_group_size
         self._include_fragment_id = include_fragment_id
-        self._ignore_corrupt_files = ignore_corrupt_files
         self._enable_strict_filter_pushdown = get_context().daft_planning_config.enable_strict_filter_pushdown
         # Ensure Daft extension type is registered so PyArrow can deserialize it from Lance
         _ensure_registered_super_ext_type()
@@ -338,8 +312,6 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                         None,
                         rows_to_scan,
                         self._include_fragment_id,
-                        None,
-                        self._ignore_corrupt_files,
                     ),
                     schema=task_schema._schema,
                     num_rows=rows_to_scan,
@@ -375,7 +347,6 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     self._compute_limit_pushdown_with_filter(pushdowns),
                     self._include_fragment_id,
                     nearest_option,
-                    self._ignore_corrupt_files,
                 ),
                 schema=self.schema()._schema,
                 num_rows=num_rows,
