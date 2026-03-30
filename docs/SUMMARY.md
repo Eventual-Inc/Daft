@@ -32,6 +32,7 @@
         * [Common Crawl](datasets/common-crawl.md)
     * Data Connectors
         * [Connectors](connectors/index.md)
+        * [Fault Tolerance](connectors/fault-tolerance.md)
         * [Custom Connectors](connectors/custom.md)
         * [Custom Catalogs](connectors/custom-catalogs.md)
         * [AWS Glue](connectors/glue.md)
