@@ -63,12 +63,26 @@ def _track_on_scarf(
             # Prepare the query string
             query_string = urllib.parse.urlencode(params)
 
-            # Make the GET request
+            # Make the GET request to Scarf
             url = f"https://daft.gateway.scarf.sh/{endpoint}?{query_string}"
             with urllib.request.urlopen(url) as response:
                 response_status = f"Response status: {response.status}"
         except Exception as e:
             response_status = f"Analytics error: {e}"
+
+        # Also send to osstelemetry.io for side-by-side comparison
+        try:
+            ot_params = {
+                "activity_type": endpoint,
+                "package": "daft",
+            }
+            ot_params.update(params)
+            ot_query_string = urllib.parse.urlencode(ot_params)
+            ot_url = f"https://osstelemetry.io/data?{ot_query_string}"
+            with urllib.request.urlopen(ot_url):
+                pass
+        except Exception:
+            pass
 
         result_container["response_status"] = response_status
         result_container["extra_value"] = extra_value
