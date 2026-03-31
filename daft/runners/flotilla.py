@@ -45,9 +45,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-RayExchangePlanResult = tuple[str, list[tuple[object, int, int]], bytes]
-FlightExchangePlanResult = tuple[str, list[tuple[int, int]], bytes]
-ExchangePlanResult = RayExchangePlanResult | FlightExchangePlanResult
+ExchangeMetadata = list[tuple[object | None, int, int]]
+ExchangePlanResult = tuple[str, ExchangeMetadata, bytes]
 
 
 class SwordfishTaskMetadata(NamedTuple):
@@ -191,7 +190,7 @@ class RaySwordfishActor:
             backend_info = plan.exchange_write_info()
             if backend_info is None:
                 raise ValueError("run_exchange_plan() requires an exchange write or repartition plan")
-            backend, shuffle_id, _ = backend_info
+            backend, _, _ = backend_info
 
             result_handle = await self.native_executor.run(
                 plan,
@@ -205,31 +204,14 @@ class RaySwordfishActor:
             if exchange_metadata is None:
                 raise ValueError("Exchange plan did not return exchange metadata")
 
-            if backend == "ray":
-                ray_refs: list[tuple[object, int, int]] = []
-                for object_ref, num_rows, size_bytes in exchange_metadata:
-                    if object_ref is None:
-                        raise ValueError("Expected Ray exchange metadata to include object refs")
-                    ray_refs.append((object_ref, int(num_rows), int(size_bytes)))
-                return (
-                    "ray",
-                    ray_refs,
-                    stats.encode(),
-                )
-
-            if backend == "flight":
-                flight_refs: list[tuple[int, int]] = []
-                for object_ref, num_rows, size_bytes in exchange_metadata:
-                    if object_ref is not None:
-                        raise ValueError("Expected Flight exchange metadata to not include object refs")
-                    flight_refs.append((int(num_rows), int(size_bytes)))
-                return (
-                    "flight",
-                    flight_refs,
-                    stats.encode(),
-                )
-
-            raise NotImplementedError(f"Unsupported exchange write backend: {backend}")
+            return (
+                backend,
+                [
+                    (object_ref, int(num_rows), int(size_bytes))
+                    for object_ref, num_rows, size_bytes in exchange_metadata
+                ],
+                stats.encode(),
+            )
 
 
 @ray.remote  # type: ignore[untyped-decorator]
@@ -282,16 +264,24 @@ class RaySwordfishTaskHandle:
             if self.exchange_write_info is not None:
                 backend, refs, stats = await self.result_handle
                 if backend == "ray":
+                    ray_refs: list[RayPartitionRef] = []
+                    for object_ref, num_rows, size_bytes in refs:
+                        if object_ref is None:
+                            raise ValueError("Expected Ray exchange metadata to include object refs")
+                        ray_refs.append(RayPartitionRef(object_ref, num_rows, size_bytes))
                     return RayTaskResult.ray_exchange_success(
-                        [RayPartitionRef(ref, num_rows, size_bytes) for ref, num_rows, size_bytes in refs],
+                        ray_refs,
                         stats,
                     )
                 if backend == "flight":
                     shuffle_id = self.exchange_write_info[1]
                     actor_address = await self.actor_handle.get_address.remote()
                     cache_id = self.cache_id if self.cache_id is not None else 0
-                    return RayTaskResult.flight_exchange_success(
-                        [
+                    flight_refs: list[FlightShufflePartitionRef] = []
+                    for partition_idx, (object_ref, num_rows, size_bytes) in enumerate(refs):
+                        if object_ref is not None:
+                            raise ValueError("Expected Flight exchange metadata to not include object refs")
+                        flight_refs.append(
                             FlightShufflePartitionRef(
                                 shuffle_id,
                                 partition_idx,
@@ -300,8 +290,9 @@ class RaySwordfishTaskHandle:
                                 num_rows,
                                 size_bytes,
                             )
-                            for partition_idx, (num_rows, size_bytes) in enumerate(refs)
-                        ],
+                        )
+                    return RayTaskResult.flight_exchange_success(
+                        flight_refs,
                         stats,
                     )
                 raise NotImplementedError(f"Unsupported exchange write backend: {backend}")
