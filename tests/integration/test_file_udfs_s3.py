@@ -8,7 +8,7 @@ from daft.functions import file
 
 @pytest.mark.integration()
 def test_file_read_from_s3():
-    file = daft.File("s3://daft-public-data/tutorials/pdfs/0000000.pdf")
+    file = daft.File("s3://daft-oss-public-data/tutorials/pdfs/0000000.pdf")
     data = file.read(1)
     assert data == b"%"
     pdf_magic = file.read(3)
@@ -34,7 +34,7 @@ def test_file_read_from_s3():
 
 @pytest.mark.integration()
 def test_file_read_from_s3_udf():
-    df = daft.from_glob_path("s3://daft-public-data/tutorials/pdfs/**/*.pdf").limit(5)
+    df = daft.from_glob_path("s3://daft-oss-public-data/tutorials/pdfs/**/*.pdf").limit(5)
 
     @daft.func
     def n_bytes(file: daft.File) -> int:

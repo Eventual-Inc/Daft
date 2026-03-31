@@ -12,9 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::worker::WorkerId;
 use crate::{
-    pipeline_node::{
-        MaterializedOutput, NodeID, PipelineNodeContext, PipelineNodeImpl, PlanFingerprint,
-    },
+    pipeline_node::{NodeID, PipelineNodeContext, PipelineNodeImpl, PlanFingerprint, TaskOutput},
     plan::{QueryIdx, TaskIDCounter},
     scheduling::scheduler::SubmittableTask,
     utils::channel::{OneshotReceiver, OneshotSender, create_oneshot_channel},
@@ -466,9 +464,10 @@ impl SwordfishTaskBuilder {
             plan_fingerprint,
         };
 
-        // Build context HashMap with task_id
+        // Build context HashMap with task_id and plan_fingerprint
         let mut context = self.context;
         context.insert("task_id".to_string(), task_context.task_id.to_string());
+        context.insert("plan_fingerprint".to_string(), plan_fingerprint.to_string());
 
         // Extract resource_request from plan
         let resource_request = TaskResourceRequest::new(self.plan.resource_request());
@@ -492,7 +491,7 @@ impl SwordfishTaskBuilder {
 #[derive(Debug)]
 pub(crate) enum TaskStatus {
     Success {
-        result: MaterializedOutput,
+        result: TaskOutput,
         stats: ExecutionStats,
     },
     Failed {
@@ -593,7 +592,7 @@ pub(super) mod tests {
         priority: MockTaskPriority,
         scheduling_strategy: SchedulingStrategy,
         resource_request: TaskResourceRequest,
-        task_result: MaterializedOutput,
+        task_result: TaskOutput,
         cancel_notifier: Arc<Mutex<Option<OneshotSender<()>>>>,
         sleep_duration: Option<std::time::Duration>,
         failure: Option<MockTaskFailure>,
@@ -613,7 +612,7 @@ pub(super) mod tests {
         task_name: TaskName,
         priority: MockTaskPriority,
         scheduling_strategy: SchedulingStrategy,
-        task_result: MaterializedOutput,
+        task_result: TaskOutput,
         resource_request: TaskResourceRequest,
         cancel_notifier: Arc<Mutex<Option<OneshotSender<()>>>>,
         sleep_duration: Option<Duration>,
@@ -637,11 +636,13 @@ pub(super) mod tests {
                 priority: MockTaskPriority { priority: 0 },
                 scheduling_strategy: SchedulingStrategy::Spread,
                 resource_request: TaskResourceRequest::new(ResourceRequest::default()),
-                task_result: MaterializedOutput::new(
-                    vec![partition_ref],
-                    "".into(),
-                    String::new(),
-                    task_id,
+                task_result: TaskOutput::Materialized(
+                    crate::pipeline_node::MaterializedOutput::new(
+                        vec![partition_ref],
+                        "".into(),
+                        String::new(),
+                        task_id,
+                    ),
                 ),
                 cancel_notifier: Arc::new(Mutex::new(None)),
                 sleep_duration: None,

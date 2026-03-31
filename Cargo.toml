@@ -17,6 +17,7 @@ common-version = {path = "src/common/version", default-features = false}
 daft-ai = {path = "src/daft-ai", default-features = false}
 daft-algebra = {path = "src/daft-algebra", default-features = false}
 daft-catalog = {path = "src/daft-catalog", default-features = false}
+daft-checkpoint = {path = "src/daft-checkpoint", default-features = false}
 daft-cli = {path = "src/daft-cli", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-context = {path = "src/daft-context", default-features = false}
@@ -184,6 +185,7 @@ members = [
   "src/daft-ai",
   "src/daft-algebra",
   "src/daft-catalog",
+  "src/daft-checkpoint",
   "src/daft-context",
   "src/daft-core",
   "src/daft-csv",

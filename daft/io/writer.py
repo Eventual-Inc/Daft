@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 from daft.dependencies import pa, pacsv, pafs, pq
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
-    canonicalize_protocol,
     get_protocol_from_path,
 )
 from daft.io.delta_lake.delta_lake_write import (
@@ -49,8 +48,9 @@ class FileWriterBase(ABC):
     ):
         self.resolved_path, self.fs = self.resolve_path_and_fs(root_dir, io_config=io_config)
         self.protocol = get_protocol_from_path(root_dir)
-        canonicalized_protocol = canonicalize_protocol(self.protocol)
-        is_local_fs = canonicalized_protocol == "file"
+        # Determine locality from the resolved filesystem type so that custom
+        # schemes aliased to file:// still trigger local directory creation.
+        is_local_fs = isinstance(self.fs, pafs.LocalFileSystem)
 
         self.file_name = (
             f"{uuid.uuid4()}-{file_idx}.{file_format}"

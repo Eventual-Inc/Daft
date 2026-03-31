@@ -11,10 +11,11 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 struct WindowOrderByOnlyParams {
     window_exprs: Vec<BoundWindowExpr>,
@@ -52,7 +53,7 @@ impl WindowOrderByOnlySink {
 }
 
 pub(crate) struct WindowOrderByOnlyState {
-    partitions: Vec<Arc<MicroPartition>>,
+    partitions: Vec<MicroPartition>,
 }
 
 impl WindowOrderByOnlyState {
@@ -62,7 +63,7 @@ impl WindowOrderByOnlyState {
         }
     }
 
-    fn push(&mut self, input: Arc<MicroPartition>, _sink_name: &str) -> DaftResult<()> {
+    fn push(&mut self, input: MicroPartition, _sink_name: &str) -> DaftResult<()> {
         self.partitions.push(input);
         Ok(())
     }
@@ -73,8 +74,9 @@ impl BlockingSink for WindowOrderByOnlySink {
     #[instrument(skip_all, name = "WindowOrderByOnlySink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let sink_name = self.name().to_string();
@@ -94,7 +96,7 @@ impl BlockingSink for WindowOrderByOnlySink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.params.clone();
 
         spawner
@@ -119,9 +121,7 @@ impl BlockingSink for WindowOrderByOnlySink {
                     if sorted.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                            empty_result,
-                        )]));
+                        return Ok(vec![empty_result]);
                     }
 
                     // Convert to RecordBatch for window operations
@@ -177,7 +177,7 @@ impl BlockingSink for WindowOrderByOnlySink {
                         )
                     };
 
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(output)]))
+                    Ok(vec![output])
                 },
                 Span::current(),
             )
@@ -220,7 +220,7 @@ impl BlockingSink for WindowOrderByOnlySink {
         display
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         Ok(WindowOrderByOnlyState::new())
     }
 }

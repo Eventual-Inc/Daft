@@ -42,7 +42,7 @@ import daft
 IO_CONFIG = daft.io.IOConfig(s3=daft.io.S3Config(anonymous=True))  # Use anonymous S3 access
 
 df = daft.from_glob_path(
-    "s3://daft-public-data/open-images/validation-images/*",
+    "s3://daft-oss-public-data/open-images/validation-images/*",
     io_config=IO_CONFIG,
 )
 

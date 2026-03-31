@@ -8,18 +8,19 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) enum AggregateState {
-    Accumulating(Vec<Arc<MicroPartition>>),
+    Accumulating(Vec<MicroPartition>),
     Done,
 }
 
 impl AggregateState {
-    fn push(&mut self, part: Arc<MicroPartition>) {
+    fn push(&mut self, part: MicroPartition) {
         if let Self::Accumulating(parts) = self {
             parts.push(part);
         } else {
@@ -27,7 +28,7 @@ impl AggregateState {
         }
     }
 
-    fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
+    fn finalize(&mut self) -> Vec<MicroPartition> {
         let res = if let Self::Accumulating(parts) = self {
             std::mem::take(parts)
         } else {
@@ -81,15 +82,16 @@ impl BlockingSink for AggregateSink {
     #[instrument(skip_all, name = "AggregateSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.agg_sink_params.clone();
         spawner
             .spawn(
                 async move {
-                    let agged = Arc::new(input.agg(&params.sink_agg_exprs, &[])?);
+                    let agged = input.agg(&params.sink_agg_exprs, &[])?;
                     state.push(agged);
                     Ok(state)
                 },
@@ -103,18 +105,19 @@ impl BlockingSink for AggregateSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.agg_sink_params.clone();
         spawner
             .spawn(
                 async move {
-                    let all_parts = states.into_iter().flat_map(|mut state| state.finalize());
+                    let all_parts: Vec<MicroPartition> = states
+                        .into_iter()
+                        .flat_map(|mut state| state.finalize())
+                        .collect();
                     let concated = MicroPartition::concat(all_parts)?;
                     let agged = concated.agg(&params.finalize_agg_exprs, &[])?;
                     let projected = agged.eval_expression_list(&params.final_projections)?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        projected,
-                    )]))
+                    Ok(vec![projected])
                 },
                 Span::current(),
             )
@@ -140,7 +143,7 @@ impl BlockingSink for AggregateSink {
         )]
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         Ok(AggregateState::Accumulating(vec![]))
     }
 }

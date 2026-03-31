@@ -12,7 +12,7 @@ use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext,
+        PipelineNodeContext, TaskOutput,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -113,7 +113,8 @@ impl IntoPartitionsNode {
                     .await?
                     .into_iter()
                     .flatten()
-                    .collect::<Vec<_>>();
+                    .map(TaskOutput::into_materialized)
+                    .collect::<DaftResult<Vec<_>>>()?;
                 DaftResult::Ok(materialized_output)
             });
         }
@@ -195,6 +196,7 @@ impl IntoPartitionsNode {
         while let Some(result) = output_futures.join_next().await {
             let materialized_outputs = result??;
             if let Some(output) = materialized_outputs {
+                let output = output.into_materialized()?;
                 for output in output.split_into_materialized_outputs() {
                     let materialized_outputs = vec![output];
                     let (in_memory_scan, psets) =

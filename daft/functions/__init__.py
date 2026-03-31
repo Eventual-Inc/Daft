@@ -62,6 +62,9 @@ from .datetime import (
     to_datetime,
     date_trunc,
     to_unix_epoch,
+    current_date,
+    current_timestamp,
+    current_timezone,
 )
 from .distance import cosine_distance, dot_product, euclidean_distance
 from .similarity import (
@@ -108,6 +111,7 @@ from .llm import llm_generate
 from .misc import (
     monotonically_increasing_id,
     uuid,
+    random_int,
     eq_null_safe,
     cast,
     is_null,
@@ -181,6 +185,7 @@ from .str import (
     serialize,
     jq,
     format,
+    concat_ws,
     contains,
     split,
     lower,
@@ -271,6 +276,7 @@ __all__ = [
     "columns_sum",
     "compress",
     "concat",
+    "concat_ws",
     "contains",
     "convert_image",
     "cos",
@@ -283,6 +289,9 @@ __all__ = [
     "count_matches",
     "crop",
     "csc",
+    "current_date",
+    "current_timestamp",
+    "current_timezone",
     "date",
     "date_trunc",
     "day",
@@ -391,6 +400,7 @@ __all__ = [
     "prompt",
     "quarter",
     "radians",
+    "random_int",
     "rank",
     "regexp",
     "regexp_count",

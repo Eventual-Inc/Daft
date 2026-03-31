@@ -17,7 +17,7 @@ use crate::{
 pub struct DummyWriterFactory;
 
 impl WriterFactory for DummyWriterFactory {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     fn create_writer(
@@ -46,7 +46,7 @@ pub struct DummyWriter {
 
 #[async_trait]
 impl AsyncFileWriter for DummyWriter {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     async fn write(&mut self, input: Self::Input) -> DaftResult<WriteResult> {
@@ -114,7 +114,7 @@ impl FailingWriterFactory {
 }
 
 impl WriterFactory for FailingWriterFactory {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     fn create_writer(
@@ -147,7 +147,7 @@ pub struct FailingWriter {
 
 #[async_trait]
 impl AsyncFileWriter for FailingWriter {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     async fn write(&mut self, input: Self::Input) -> DaftResult<WriteResult> {
@@ -207,8 +207,8 @@ impl AsyncFileWriter for FailingWriter {
 pub fn make_dummy_target_file_size_writer_factory(
     target_size_bytes: usize,
     initial_inflation_factor: f64,
-    factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>,
-) -> Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>> {
+    factory: Arc<dyn WriterFactory<Input = MicroPartition, Result = Option<RecordBatch>>>,
+) -> Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>> {
     let target_file_size_calculator =
         TargetInMemorySizeBytesCalculator::new(target_size_bytes, initial_inflation_factor);
     Arc::new(TargetFileSizeWriterFactory::new(
@@ -217,15 +217,11 @@ pub fn make_dummy_target_file_size_writer_factory(
     ))
 }
 
-pub fn make_dummy_mp(size_bytes: usize) -> Arc<MicroPartition> {
+pub fn make_dummy_mp(size_bytes: usize) -> MicroPartition {
     let range = (0..size_bytes).map(|i| i as u8);
     let series =
         UInt8Array::from_field_and_values(Field::new("ints", DataType::UInt8), range).into_series();
     let schema = Arc::new(Schema::new(vec![series.field().clone()]));
     let table = RecordBatch::new_unchecked(schema.clone(), vec![series.into()], size_bytes);
-    Arc::new(MicroPartition::new_loaded(
-        schema.into(),
-        vec![table].into(),
-        None,
-    ))
+    MicroPartition::new_loaded(schema.into(), vec![table].into(), None)
 }

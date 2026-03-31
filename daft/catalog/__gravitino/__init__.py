@@ -1,4 +1,4 @@
-from daft.catalog.__gravitino._catalog import GravitinoCatalog, GravitinoTable
+from daft.catalog.__gravitino._catalog import GravitinoCatalog, GravitinoTable, load_gravitino
 from daft.catalog.__gravitino._client import (
     GravitinoCatalogInfo,
     GravitinoClient,
@@ -17,4 +17,5 @@ __all__ = [
     "GravitinoTable",
     "GravitinoTableData",
     "GravitinoTableInfo",
+    "load_gravitino",
 ]

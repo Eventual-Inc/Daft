@@ -10,7 +10,7 @@ from daft.expressions.expressions import _resolved_col
 from daft.recordbatch import MicroPartition
 
 PRED_PUSHDOWN_FILES = [
-    "s3://daft-public-data/test_fixtures/csv-dev/sampled-tpch.csv",
+    "s3://daft-oss-public-data/test_fixtures/csv-dev/sampled-tpch.csv",
     "tests/assets/sampled-tpch.csv",
 ]
 

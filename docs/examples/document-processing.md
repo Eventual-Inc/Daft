@@ -57,7 +57,7 @@ First, we get the S3 URLs for all of the PDFs that we'll use here.
 IO_CONFIG = daft.io.IOConfig(s3=daft.io.S3Config(anonymous=True))
 
 df_sample = daft.from_glob_path(
-    "s3://daft-public-data/tutorials/document-processing/industry_documents_library/pdfs/*",
+    "s3://daft-oss-public-data/tutorials/document-processing/industry_documents_library/pdfs/*",
     io_config=IO_CONFIG,
 ).limit(10)
 ```
@@ -712,7 +712,7 @@ Read the S3 bucket & key prefix and get full keys.
 
 ```python
 df = daft.from_glob_path(
-    "s3://daft-public-data/tutorials/document-processing/industry_documents_library/pdfs/*",
+    "s3://daft-oss-public-data/tutorials/document-processing/industry_documents_library/pdfs/*",
     io_config=IO_CONFIG,
 )
 

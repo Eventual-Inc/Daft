@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -32,7 +30,7 @@ impl WindowBaseState {
 
     pub fn push(
         &mut self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         partition_by: &[BoundExpr],
         sink_name: &str,
     ) -> DaftResult<()> {
