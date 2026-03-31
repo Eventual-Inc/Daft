@@ -47,6 +47,46 @@ pub(crate) enum DistributedShuffleBackend {
     Flight(FlightDistributedShuffleConfig),
 }
 
+pub(crate) fn ray_partition_groups_from_outputs(
+    outputs: Vec<TaskOutput>,
+    num_partitions: usize,
+) -> DaftResult<Vec<Vec<PartitionRef>>> {
+    let mut partition_groups = (0..num_partitions).map(|_| Vec::new()).collect::<Vec<_>>();
+
+    for output in outputs {
+        let TaskOutput::ShuffleWrite(output) = output else {
+            return Err(DaftError::InternalError(
+                "Expected Ray shuffle write task output".to_string(),
+            ));
+        };
+
+        if output.partitions.len() != num_partitions {
+            return Err(DaftError::InternalError(format!(
+                "Expected {} Ray shuffle partitions, got {}",
+                num_partitions,
+                output.partitions.len()
+            )));
+        }
+
+        for (partition_idx, partition) in output.partitions.into_iter().enumerate() {
+            match partition {
+                ShufflePartitionRef::Ray(partition) => {
+                    if partition.num_rows() > 0 {
+                        partition_groups[partition_idx].push(partition);
+                    }
+                }
+                ShufflePartitionRef::Flight(_) => {
+                    return Err(DaftError::InternalError(
+                        "Expected Ray shuffle partition ref but received Flight".to_string(),
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(partition_groups)
+}
+
 pub(crate) struct ShuffleNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
@@ -237,48 +277,6 @@ impl ShuffleNode {
         Ok(())
     }
 
-    fn ray_partition_groups_from_outputs(
-        &self,
-        outputs: Vec<TaskOutput>,
-    ) -> DaftResult<Vec<Vec<PartitionRef>>> {
-        let mut partition_groups = (0..self.num_partitions)
-            .map(|_| Vec::new())
-            .collect::<Vec<_>>();
-
-        for output in outputs {
-            let TaskOutput::ShuffleWrite(output) = output else {
-                return Err(DaftError::InternalError(
-                    "Expected shuffle write task output for Ray shuffle write stage".to_string(),
-                ));
-            };
-
-            if output.partitions.len() != self.num_partitions {
-                return Err(DaftError::InternalError(format!(
-                    "Expected {} Ray shuffle partitions, got {}",
-                    self.num_partitions,
-                    output.partitions.len()
-                )));
-            }
-
-            for (partition_idx, partition) in output.partitions.into_iter().enumerate() {
-                match partition {
-                    ShufflePartitionRef::Ray(partition) => {
-                        if partition.num_rows() > 0 {
-                            partition_groups[partition_idx].push(partition);
-                        }
-                    }
-                    ShufflePartitionRef::Flight(_) => {
-                        return Err(DaftError::InternalError(
-                            "Expected Ray shuffle partition ref but received Flight".to_string(),
-                        ));
-                    }
-                }
-            }
-        }
-
-        Ok(partition_groups)
-    }
-
     async fn emit_ray_read_tasks(
         &self,
         partition_groups: Vec<Vec<PartitionRef>>,
@@ -325,7 +323,8 @@ impl ShuffleNode {
 
         match &self.backend {
             DistributedShuffleBackend::Ray => {
-                let partition_groups = self.ray_partition_groups_from_outputs(outputs)?;
+                let partition_groups =
+                    ray_partition_groups_from_outputs(outputs, self.num_partitions)?;
                 self.emit_ray_read_tasks(partition_groups, result_tx)
                     .await?;
             }

@@ -135,12 +135,40 @@ impl BlockingSink for RepartitionSink {
                         });
                         outputs.push(fut);
                     }
-                    let outputs = futures::future::try_join_all(outputs)
+                    let partitions = futures::future::try_join_all(outputs)
                         .await
                         .unwrap()
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
-                    Ok(BlockingSinkOutput::Partitions(outputs))
+                    #[cfg(feature = "python")]
+                    {
+                        use pyo3::{Python, types::PyAnyMethods};
+
+                        let mut metadata = Vec::with_capacity(partitions.len());
+                        Python::attach(|py| -> DaftResult<()> {
+                            let ray = py.import("ray")?;
+                            for partition in partitions {
+                                let py_partition =
+                                    daft_micropartition::python::PyMicroPartition::from(
+                                        partition.clone(),
+                                    );
+                                let object_ref = ray.call_method1("put", (py_partition,))?.unbind();
+                                metadata.push(ShufflePartitionMetadata::with_object_ref(
+                                    object_ref,
+                                    partition.len(),
+                                    partition.size_bytes(),
+                                ));
+                            }
+                            Ok(())
+                        })?;
+                        Ok(BlockingSinkOutput::ShuffleMetadata(ShuffleMetadata {
+                            partitions: metadata,
+                        }))
+                    }
+                    #[cfg(not(feature = "python"))]
+                    {
+                        unreachable!("RepartitionShuffleWriteSink requires python feature")
+                    }
                 },
                 Span::current(),
             )
@@ -187,121 +215,5 @@ impl BlockingSink for RepartitionSink {
         Ok(RepartitionState {
             states: (0..self.num_partitions).map(|_| vec![]).collect(),
         })
-    }
-}
-
-pub struct RepartitionShuffleWriteSink {
-    inner: RepartitionSink,
-}
-
-impl RepartitionShuffleWriteSink {
-    pub fn new(
-        repartition_spec: RepartitionSpec,
-        num_partitions: usize,
-        schema: SchemaRef,
-    ) -> Self {
-        Self {
-            inner: RepartitionSink::new(repartition_spec, num_partitions, schema),
-        }
-    }
-}
-
-impl BlockingSink for RepartitionShuffleWriteSink {
-    type State = RepartitionState;
-
-    fn sink(
-        &self,
-        input: MicroPartition,
-        state: Self::State,
-        runtime_stats: Arc<Self::Stats>,
-        spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkSinkResult<Self> {
-        self.inner.sink(input, state, runtime_stats, spawner)
-    }
-
-    fn finalize(
-        &self,
-        mut states: Vec<Self::State>,
-        spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
-        let num_partitions = self.inner.num_partitions;
-        let schema = self.inner.schema.clone();
-        spawner
-            .spawn(
-                async move {
-                    let mut repart_states = states.iter_mut().collect::<Vec<_>>();
-
-                    let mut output_futures = Vec::new();
-                    for _ in 0..num_partitions {
-                        let data = repart_states
-                            .iter_mut()
-                            .flat_map(|state| state.emit().unwrap())
-                            .collect::<Vec<_>>();
-                        let schema = schema.clone();
-                        output_futures.push(tokio::spawn(async move {
-                            let together = MicroPartition::concat(data)?;
-                            let concated = together.concat_or_get()?;
-                            Ok(MicroPartition::new_loaded(
-                                schema,
-                                Arc::new(concated.map_or_else(Vec::new, |table| vec![table])),
-                                None,
-                            ))
-                        }));
-                    }
-                    let partitions = futures::future::try_join_all(output_futures)
-                        .await
-                        .unwrap()
-                        .into_iter()
-                        .collect::<DaftResult<Vec<_>>>()?;
-
-                    #[cfg(feature = "python")]
-                    {
-                        use pyo3::{Python, types::PyAnyMethods};
-
-                        let mut metadata = Vec::with_capacity(partitions.len());
-                        Python::attach(|py| -> DaftResult<()> {
-                            let ray = py.import("ray")?;
-                            for partition in partitions {
-                                let py_partition =
-                                    daft_micropartition::python::PyMicroPartition::from(
-                                        partition.clone(),
-                                    );
-                                let object_ref = ray.call_method1("put", (py_partition,))?.unbind();
-                                metadata.push(ShufflePartitionMetadata::with_object_ref(
-                                    object_ref,
-                                    partition.len(),
-                                    partition.size_bytes(),
-                                ));
-                            }
-                            Ok(())
-                        })?;
-                        Ok(BlockingSinkOutput::ShuffleMetadata(ShuffleMetadata {
-                            partitions: metadata,
-                        }))
-                    }
-                    #[cfg(not(feature = "python"))]
-                    {
-                        unreachable!("RepartitionShuffleWriteSink requires python feature")
-                    }
-                },
-                Span::current(),
-            )
-            .into()
-    }
-
-    fn name(&self) -> NodeName {
-        self.inner.name()
-    }
-
-    fn op_type(&self) -> NodeType {
-        self.inner.op_type()
-    }
-
-    fn multiline_display(&self) -> Vec<String> {
-        self.inner.multiline_display()
-    }
-
-    fn make_state(&self, input_id: InputId) -> DaftResult<Self::State> {
-        self.inner.make_state(input_id)
     }
 }

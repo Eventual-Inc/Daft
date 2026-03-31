@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use common_error::DaftResult;
 use futures::{Stream, StreamExt, TryStreamExt};
 use itertools::Itertools;

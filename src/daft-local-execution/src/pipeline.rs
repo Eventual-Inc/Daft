@@ -54,7 +54,7 @@ use crate::{
         grouped_aggregate::GroupedAggregateSink,
         into_partitions::IntoPartitionsSink,
         pivot::PivotSink,
-        repartition::{RepartitionShuffleWriteSink, RepartitionSink},
+        repartition::RepartitionSink,
         sort::SortSink,
         top_n::TopNSink,
         window_order_by_only::WindowOrderByOnlySink,
@@ -1409,25 +1409,13 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
-        LocalPhysicalPlan::Repartition(daft_local_plan::Repartition {
-            input,
-            repartition_spec,
-            num_partitions,
-            stats_state,
-            schema,
-            context,
-        }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let repartition_op =
-                RepartitionSink::new(repartition_spec.clone(), *num_partitions, schema.clone());
-            BlockingSinkNode::new(
-                Arc::new(repartition_op),
-                child_node,
-                stats_state.clone(),
-                ctx,
-                context,
-            )
-            .boxed()
+        LocalPhysicalPlan::Repartition(daft_local_plan::Repartition { .. }) => {
+            return Err(crate::Error::PipelineCreationError {
+                source: DaftError::InternalError(
+                    "LocalPhysicalPlan::Repartition is no longer executable; use ShuffleWriteBackend::Ray instead".to_string(),
+                ),
+                plan_name: "Repartition".to_string(),
+            });
         }
         LocalPhysicalPlan::IntoPartitions(daft_local_plan::IntoPartitions {
             input,
@@ -1458,34 +1446,49 @@ fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let shuffle_server = ctx
-                .shuffle_server()
-                .expect("Flight shuffle server must be initialized for FlightShuffleWrite plans when using flight_shuffle algorithm");
-            let ShuffleWriteBackend::Flight {
-                shuffle_id,
-                shuffle_dirs,
-                compression,
-            } = backend;
-            let flight_shuffle_write_sink = FlightShuffleWriteSink::try_new(
-                *num_partitions,
-                partition_by.clone(),
-                *shuffle_id,
-                shuffle_dirs.clone(),
-                compression.clone(),
-                shuffle_server,
-            )
-            .with_context(|_| PipelineCreationSnafu {
-                plan_name: physical_plan.name(),
-            })?;
+            match backend {
+                ShuffleWriteBackend::Ray { repartition_spec } => BlockingSinkNode::new(
+                    Arc::new(RepartitionSink::new(
+                        repartition_spec.clone(),
+                        *num_partitions,
+                        schema.clone(),
+                    )),
+                    child_node,
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed(),
+                ShuffleWriteBackend::Flight {
+                    shuffle_id,
+                    shuffle_dirs,
+                    compression,
+                } => {
+                    let shuffle_server = ctx
+                        .shuffle_server()
+                        .expect("Flight shuffle server must be initialized for FlightShuffleWrite plans when using flight_shuffle algorithm");
+                    let flight_shuffle_write_sink = FlightShuffleWriteSink::try_new(
+                        *num_partitions,
+                        partition_by.clone(),
+                        *shuffle_id,
+                        shuffle_dirs.clone(),
+                        compression.clone(),
+                        shuffle_server,
+                    )
+                    .with_context(|_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    })?;
 
-            BlockingSinkNode::new(
-                Arc::new(flight_shuffle_write_sink),
-                child_node,
-                stats_state.clone(),
-                ctx,
-                context,
-            )
-            .boxed()
+                    BlockingSinkNode::new(
+                        Arc::new(flight_shuffle_write_sink),
+                        child_node,
+                        stats_state.clone(),
+                        ctx,
+                        context,
+                    )
+                    .boxed()
+                }
+            }
         }
         LocalPhysicalPlan::ShuffleRead(daft_local_plan::ShuffleRead {
             source_id,

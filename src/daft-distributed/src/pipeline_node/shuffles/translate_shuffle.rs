@@ -21,6 +21,25 @@ impl LogicalPlanToPipelineNodeTranslator {
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> DaftResult<DistributedPipelineNode> {
+        let backend = if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
+            DistributedShuffleBackend::Flight(FlightDistributedShuffleConfig {
+                shuffle_id: 0,
+                shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),
+                compression: None,
+            })
+        } else {
+            DistributedShuffleBackend::Ray
+        };
+        self.gen_shuffle_node_with_backend(repartition_spec, schema, child, backend)
+    }
+
+    pub fn gen_shuffle_node_with_backend(
+        &mut self,
+        repartition_spec: RepartitionSpec,
+        schema: SchemaRef,
+        child: DistributedPipelineNode,
+        backend: DistributedShuffleBackend,
+    ) -> DaftResult<DistributedPipelineNode> {
         let num_partitions = match &repartition_spec {
             RepartitionSpec::Hash(config) => config
                 .num_partitions
@@ -49,16 +68,6 @@ impl LogicalPlanToPipelineNodeTranslator {
             )
         } else {
             child
-        };
-
-        let backend = if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
-            DistributedShuffleBackend::Flight(FlightDistributedShuffleConfig {
-                shuffle_id: 0,
-                shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),
-                compression: None,
-            })
-        } else {
-            DistributedShuffleBackend::Ray
         };
 
         Ok(DistributedPipelineNode::new(
