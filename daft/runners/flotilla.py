@@ -45,6 +45,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+RayShufflePlanResult = tuple[str, list[tuple[object, int, int]], bytes]
+FlightShufflePlanResult = tuple[str, list[tuple[int, int]], bytes]
+ShufflePlanResult = RayShufflePlanResult | FlightShufflePlanResult
+
 
 class SwordfishTaskMetadata(NamedTuple):
     partition_metadatas: list[PartitionMetadata]
@@ -175,7 +179,7 @@ class RaySwordfishActor:
         exec_cfg: PyDaftExecutionConfig,
         context: dict[str, str] | None,
         **inputs: Input | list[ray.ObjectRef],
-    ) -> tuple[str, list[tuple[object, ...]], bytes]:
+    ) -> ShufflePlanResult:
         from daft.daft import PyDaftContext
 
         with profile():
@@ -197,44 +201,31 @@ class RaySwordfishActor:
                 context,
                 False,
             )
-            outputs = []
-            async for partition in result_handle:
-                if partition is None:
-                    break
-                outputs.append(MicroPartition._from_pymicropartition(partition))
-            stats = await result_handle.try_finish()
+            stats, shuffle_metadata = await result_handle.try_finish_with_shuffle_metadata()
+            if shuffle_metadata is None:
+                raise ValueError("Shuffle plan did not return shuffle metadata")
 
             if backend == "ray":
+                ray_refs: list[tuple[object, int, int]] = []
+                for object_ref, num_rows, size_bytes in shuffle_metadata:
+                    if object_ref is None:
+                        raise ValueError("Expected Ray shuffle metadata to include object refs")
+                    ray_refs.append((object_ref, int(num_rows), int(size_bytes)))
                 return (
                     "ray",
-                    [
-                        (ray.put(mp._micropartition), metadata.num_rows, metadata.size_bytes or 0)
-                        for mp in outputs
-                        for metadata in [PartitionMetadata.from_table(mp)]
-                    ],
+                    ray_refs,
                     stats.encode(),
                 )
 
             if backend == "flight":
-                if len(outputs) != 1:
-                    raise ValueError(f"Expected one flight shuffle metadata partition, got {len(outputs)}")
-                metadata_table = outputs[0]
-                actor_address = self.get_address()
-                rows = metadata_table.get_column_by_name("rows_per_partition").to_pylist()
-                bytes_per_partition = metadata_table.get_column_by_name("bytes_per_partition").to_pylist()
+                flight_refs: list[tuple[int, int]] = []
+                for object_ref, num_rows, size_bytes in shuffle_metadata:
+                    if object_ref is not None:
+                        raise ValueError("Expected Flight shuffle metadata to not include object refs")
+                    flight_refs.append((int(num_rows), int(size_bytes)))
                 return (
                     "flight",
-                    [
-                        (
-                            shuffle_id,
-                            partition_idx,
-                            actor_address,
-                            task_id,
-                            int(num_rows),
-                            int(size_bytes),
-                        )
-                        for partition_idx, (num_rows, size_bytes) in enumerate(zip(rows, bytes_per_partition))
-                    ],
+                    flight_refs,
                     stats.encode(),
                 )
 
@@ -296,6 +287,9 @@ class RaySwordfishTaskHandle:
                         stats,
                     )
                 if backend == "flight":
+                    shuffle_id = self.shuffle_write_info[1]
+                    actor_address = await self.actor_handle.get_address.remote()
+                    cache_id = self.cache_id if self.cache_id is not None else 0
                     return RayTaskResult.flight_shuffle_success(
                         [
                             FlightShufflePartitionRef(
@@ -306,7 +300,7 @@ class RaySwordfishTaskHandle:
                                 num_rows,
                                 size_bytes,
                             )
-                            for shuffle_id, partition_idx, actor_address, cache_id, num_rows, size_bytes in refs
+                            for partition_idx, (num_rows, size_bytes) in enumerate(refs)
                         ],
                         stats,
                     )

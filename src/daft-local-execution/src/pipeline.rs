@@ -44,6 +44,7 @@ use crate::{
         unpivot::UnpivotOperator,
     },
     join::{CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator},
+    shuffle_metadata::ShuffleMetadata,
     sinks::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
@@ -53,7 +54,7 @@ use crate::{
         grouped_aggregate::GroupedAggregateSink,
         into_partitions::IntoPartitionsSink,
         pivot::PivotSink,
-        repartition::RepartitionSink,
+        repartition::{RepartitionShuffleWriteSink, RepartitionSink},
         sort::SortSink,
         top_n::TopNSink,
         window_order_by_only::WindowOrderByOnlySink,
@@ -74,23 +75,34 @@ use crate::{
 };
 
 /// Message that can flow through the pipeline - either data (Morsel) or a flush signal
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum PipelineMessage {
     /// Data morsel with input_id and partition
     Morsel {
         input_id: InputId,
         partition: MicroPartition,
     },
+    ShuffleMetadata {
+        #[allow(dead_code)]
+        input_id: InputId,
+        #[allow(dead_code)]
+        metadata: ShuffleMetadata,
+    },
     /// Flush signal for a specific input_id - indicates that input is finished
     Flush(InputId),
 }
 
 /// Events yielded by [`next_event`].
+#[allow(dead_code)]
 pub(crate) enum PipelineEvent<TaskResult> {
     TaskCompleted(TaskResult),
     Morsel {
         input_id: InputId,
         partition: MicroPartition,
+    },
+    ShuffleMetadata {
+        input_id: InputId,
+        metadata: ShuffleMetadata,
     },
     Flush(InputId),
     InputClosed,
@@ -112,6 +124,9 @@ pub(crate) async fn next_event<TaskResult: Send + 'static>(
             match msg {
                 Some(PipelineMessage::Morsel { input_id, partition }) => {
                     Ok(Some(PipelineEvent::Morsel { input_id, partition }))
+                }
+                Some(PipelineMessage::ShuffleMetadata { input_id, metadata }) => {
+                    Ok(Some(PipelineEvent::ShuffleMetadata { input_id, metadata }))
                 }
                 Some(PipelineMessage::Flush(input_id)) => {
                     Ok(Some(PipelineEvent::Flush(input_id)))

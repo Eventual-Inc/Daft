@@ -378,6 +378,9 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
                         );
                     }
                 }
+                PipelineEvent::ShuffleMetadata { .. } => {
+                    unreachable!("Probe join should not receive shuffle metadata")
+                }
                 PipelineEvent::InputClosed => {
                     for p in inputs.values_mut() {
                         p.flushed = true;

@@ -5,22 +5,20 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use daft_core::{
-    prelude::{Int32Array, Schema},
-    series::IntoSeries,
-};
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::RecordBatch;
 use daft_shuffles::{
     server::flight_server::ShuffleFlightServer, shuffle_cache::InProgressShuffleCache,
 };
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
+    shuffle_metadata::{ShuffleMetadata, ShufflePartitionMetadata},
 };
 
 pub(crate) struct FlightShuffleWriteState {
@@ -106,7 +104,6 @@ impl BlockingSink for FlightShuffleWriteSink {
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
-        let num_partitions = self.num_partitions;
         let shuffle_id = self.shuffle_id;
         let local_server = self.local_server.clone();
 
