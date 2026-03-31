@@ -171,3 +171,86 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyExecutionStats>()?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use daft_core::prelude::{DataType, Field, Schema};
+    use daft_dsl::resolved_col;
+    use daft_logical_plan::{
+        partitioning::{HashRepartitionConfig, RepartitionSpec},
+        stats::StatsState,
+    };
+
+    use super::PyLocalPhysicalPlan;
+    use crate::{LocalNodeContext, LocalPhysicalPlan, ShuffleWriteBackend};
+
+    fn test_schema() -> Arc<Schema> {
+        Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)]))
+    }
+
+    #[test]
+    fn exchange_write_info_reports_shuffle_write_backends() {
+        let schema = test_schema();
+        let input = LocalPhysicalPlan::in_memory_scan(
+            0,
+            schema.clone(),
+            0,
+            StatsState::NotMaterialized,
+            LocalNodeContext::new(None),
+        );
+        let repartition_spec =
+            RepartitionSpec::Hash(HashRepartitionConfig::new(Some(2), vec![resolved_col("a")]));
+
+        let ray_plan = PyLocalPhysicalPlan {
+            plan: LocalPhysicalPlan::shuffle_write(
+                input.clone(),
+                2,
+                schema.clone(),
+                ShuffleWriteBackend::Ray {
+                    repartition_spec: repartition_spec.clone(),
+                },
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(None),
+            ),
+        };
+        let ray_info = ray_plan.exchange_write_info().expect("ray exchange info");
+        assert_eq!(ray_info.backend, "ray");
+        assert_eq!(ray_info.exchange_id, 0);
+        assert_eq!(ray_info.num_partitions, 2);
+
+        let flight_plan = PyLocalPhysicalPlan {
+            plan: LocalPhysicalPlan::shuffle_write(
+                input,
+                3,
+                schema.clone(),
+                ShuffleWriteBackend::Flight {
+                    shuffle_id: 42,
+                    shuffle_dirs: vec!["/tmp".to_string()],
+                    compression: None,
+                    repartition_spec,
+                },
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(None),
+            ),
+        };
+        let flight_info = flight_plan
+            .exchange_write_info()
+            .expect("flight exchange info");
+        assert_eq!(flight_info.backend, "flight");
+        assert_eq!(flight_info.exchange_id, 42);
+        assert_eq!(flight_info.num_partitions, 3);
+
+        let non_exchange_plan = PyLocalPhysicalPlan {
+            plan: LocalPhysicalPlan::in_memory_scan(
+                0,
+                schema,
+                0,
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(None),
+            ),
+        };
+        assert!(non_exchange_plan.exchange_write_info().is_none());
+    }
+}
