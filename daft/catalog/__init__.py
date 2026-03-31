@@ -118,10 +118,6 @@ class Catalog(ABC):
     def _drop_table(self, ident: Identifier) -> None:
         """Remove a table from the catalog, erroring if the table did not exist."""
 
-    @abstractmethod
-    def _get_table(self, ident: Identifier) -> Table:
-        """Get a table from the catalog."""
-
     def _get_function(self, ident: Identifier) -> object | None:
         """Get a function from the catalog by identifier.
 
@@ -136,6 +132,10 @@ class Catalog(ABC):
             A function object (e.g. a UDF class or callable) if found, otherwise None.
         """
         return None
+
+    @abstractmethod
+    def _get_table(self, ident: Identifier) -> Table:
+        """Get a table from the catalog."""
 
     @abstractmethod
     def _has_namespace(self, ident: Identifier) -> bool:
@@ -565,20 +565,6 @@ class Catalog(ABC):
     # get_*
     ###
 
-    def get_table(self, identifier: Identifier | str) -> Table:
-        """Get a table by its identifier or raises if the table does not exist.
-
-        Args:
-            identifier (Identifier|str): table identifier
-
-        Returns:
-            Table: matched table or raises if the table does not exist.
-        """
-        if isinstance(identifier, str):
-            identifier = Identifier.from_str(identifier)
-
-        return self._get_table(identifier)
-
     def get_function(self, identifier: Identifier | str) -> object | None:
         """Get a function from the catalog by identifier.
 
@@ -593,6 +579,20 @@ class Catalog(ABC):
             identifier = Identifier.from_str(identifier)
 
         return self._get_function(identifier)
+
+    def get_table(self, identifier: Identifier | str) -> Table:
+        """Get a table by its identifier or raises if the table does not exist.
+
+        Args:
+            identifier (Identifier|str): table identifier
+
+        Returns:
+            Table: matched table or raises if the table does not exist.
+        """
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        return self._get_table(identifier)
 
     ###
     # list_*
