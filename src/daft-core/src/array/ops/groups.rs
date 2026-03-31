@@ -35,6 +35,7 @@ use crate::{
 /// ```
 ///
 /// Calling `make_groups` on the above list would return `(vec![0, 1, 3], vec![vec![0, 2, 4], vec![1], vec![3]])` since `a` appeared 3 times at indices `0`, `2`, and `4`, etc.
+#[inline(never)]
 fn make_groups<T>(iter: impl Iterator<Item = T>) -> DaftResult<super::GroupIndicesPair>
 where
     T: Hash,
@@ -84,6 +85,7 @@ where
 ///
 /// Calling `make_unique_idxs` on the above list would return `vec![0, 1, 3]`
 /// since those are the first indices where each unique value (`a`, `b`, `c`) appears.
+#[inline(never)]
 fn make_unique_idxs<T>(iter: impl Iterator<Item = T>) -> DaftResult<super::VecIndices>
 where
     T: Hash,

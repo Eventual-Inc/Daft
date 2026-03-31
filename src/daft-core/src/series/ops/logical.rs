@@ -5,113 +5,112 @@ use daft_schema::dtype::DataType;
 use crate::series::utils::python_fn::run_python_binary_bool_operator;
 use crate::{
     array::ops::DaftLogical,
-    datatypes::InferDataType,
+    datatypes::{DaftArrayType, InferDataType},
     prelude::BooleanArray,
-    series::{IntoSeries, Series, utils::cast::cast_downcast_op},
+    series::{IntoSeries, Series},
     with_match_integer_daft_types,
 };
-macro_rules! logical_op_not_implemented {
-    ($self:expr, $rhs:expr, $op:ident) => {{
-        let left_dtype = $self.data_type();
-        let right_dtype = $rhs.data_type();
-        let op_name = stringify!($op);
-        return Err(common_error::DaftError::ComputeError(format!(
-            "Logical Op: {op_name} not implemented for {left_dtype}, {right_dtype}"
-        )));
-    }};
+
+#[derive(Debug, Clone, Copy)]
+enum LogicalOp {
+    And,
+    Or,
+    Xor,
+}
+
+impl LogicalOp {
+    #[cfg(feature = "python")]
+    fn py_operator(self) -> &'static str {
+        match self {
+            Self::And => "and_",
+            Self::Or => "or_",
+            Self::Xor => "xor",
+        }
+    }
+
+    fn op_name(self) -> &'static str {
+        match self {
+            Self::And => "and",
+            Self::Or => "or",
+            Self::Xor => "xor",
+        }
+    }
+
+    fn apply<A>(self, lhs: &A, rhs: &A) -> DaftResult<A>
+    where
+        A: for<'a> DaftLogical<&'a A, Output = DaftResult<A>>,
+    {
+        match self {
+            Self::And => lhs.and(rhs),
+            Self::Or => lhs.or(rhs),
+            Self::Xor => lhs.xor(rhs),
+        }
+    }
+}
+
+fn logical_op_not_implemented(lhs: &Series, rhs: &Series, op: LogicalOp) -> DaftResult<Series> {
+    let left_dtype = lhs.data_type();
+    let right_dtype = rhs.data_type();
+    let op_name = op.op_name();
+    Err(common_error::DaftError::ComputeError(format!(
+        "Logical Op: {op_name} not implemented for {left_dtype}, {right_dtype}"
+    )))
+}
+
+fn cast_downcast_logical_op<A>(
+    lhs: &Series,
+    rhs: &Series,
+    dtype: &DataType,
+    op: LogicalOp,
+) -> DaftResult<Series>
+where
+    A: DaftArrayType + IntoSeries + for<'a> DaftLogical<&'a A, Output = DaftResult<A>>,
+{
+    let lhs = lhs.cast(dtype)?;
+    let rhs = rhs.cast(dtype)?;
+    let lhs = lhs.downcast::<A>()?;
+    let rhs = rhs.downcast::<A>()?;
+    Ok(op.apply(lhs, rhs)?.into_series())
+}
+
+fn logical_dispatch(lhs: &Series, rhs: &Series, op: LogicalOp) -> DaftResult<Series> {
+    let output_type =
+        InferDataType::from(lhs.data_type()).logical_op(&InferDataType::from(rhs.data_type()))?;
+
+    match &output_type {
+        DataType::Boolean => match (lhs.data_type(), rhs.data_type()) {
+            #[cfg(feature = "python")]
+            (DataType::Python, _) | (_, DataType::Python) => {
+                run_python_binary_bool_operator(lhs, rhs, op.py_operator())
+            }
+            _ => cast_downcast_logical_op::<BooleanArray>(lhs, rhs, &DataType::Boolean, op),
+        },
+        output_type if output_type.is_integer() => {
+            with_match_integer_daft_types!(output_type, |$T| {
+                cast_downcast_logical_op::<<$T as DaftDataType>::ArrayType>(
+                    lhs,
+                    rhs,
+                    output_type,
+                    op,
+                )
+            })
+        }
+        _ => logical_op_not_implemented(lhs, rhs, op),
+    }
 }
 
 impl DaftLogical<&Self> for Series {
     type Output = DaftResult<Self>;
 
     fn and(&self, rhs: &Self) -> Self::Output {
-        let lhs = self;
-        let output_type = InferDataType::from(lhs.data_type())
-            .logical_op(&InferDataType::from(rhs.data_type()))?;
-        match &output_type {
-            DataType::Boolean => match (lhs.data_type(), rhs.data_type()) {
-                #[cfg(feature = "python")]
-                (DataType::Python, _) | (_, DataType::Python) => {
-                    run_python_binary_bool_operator(lhs, rhs, "and_")
-                }
-                _ => Ok(
-                    cast_downcast_op!(lhs, rhs, &DataType::Boolean, BooleanArray, and)?
-                        .into_series(),
-                ),
-            },
-            output_type if output_type.is_integer() => {
-                with_match_integer_daft_types!(output_type, |$T| {
-                    Ok(cast_downcast_op!(
-                        self,
-                        rhs,
-                        output_type,
-                        <$T as DaftDataType>::ArrayType,
-                        and
-                    )?.into_series())
-                })
-            }
-
-            _ => logical_op_not_implemented!(self, rhs, and),
-        }
+        logical_dispatch(self, rhs, LogicalOp::And)
     }
 
     fn or(&self, rhs: &Self) -> Self::Output {
-        let lhs = self;
-        let output_type = InferDataType::from(self.data_type())
-            .logical_op(&InferDataType::from(rhs.data_type()))?;
-        match &output_type {
-            DataType::Boolean => match (lhs.data_type(), rhs.data_type()) {
-                #[cfg(feature = "python")]
-                (DataType::Python, _) | (_, DataType::Python) => {
-                    run_python_binary_bool_operator(lhs, rhs, "or_")
-                }
-                _ => Ok(
-                    cast_downcast_op!(lhs, rhs, &DataType::Boolean, BooleanArray, or)?
-                        .into_series(),
-                ),
-            },
-            output_type if output_type.is_integer() => {
-                with_match_integer_daft_types!(output_type, |$T| {
-                    Ok(cast_downcast_op!(
-                        self,
-                        rhs,
-                        output_type,
-                        <$T as DaftDataType>::ArrayType,
-                        or
-                    )?.into_series())
-                })
-            }
-            _ => logical_op_not_implemented!(self, rhs, or),
-        }
+        logical_dispatch(self, rhs, LogicalOp::Or)
     }
 
     fn xor(&self, rhs: &Self) -> Self::Output {
-        let lhs = self;
-        let output_type = InferDataType::from(self.data_type())
-            .logical_op(&InferDataType::from(rhs.data_type()))?;
-        match &output_type {
-            DataType::Boolean => match (lhs.data_type(), rhs.data_type()) {
-                #[cfg(feature = "python")]
-                (DataType::Python, _) | (_, DataType::Python) => {
-                    run_python_binary_bool_operator(lhs, rhs, "xor")
-                }
-                _ => Ok(
-                    cast_downcast_op!(lhs, rhs, &DataType::Boolean, BooleanArray, xor)?
-                        .into_series(),
-                ),
-            },
-            output_type if output_type.is_integer() => {
-                with_match_integer_daft_types!(output_type, |$T| {
-                    Ok(cast_downcast_op!(
-                        self,
-                        rhs,
-                        output_type,
-                        <$T as DaftDataType>::ArrayType,
-                        xor
-                    )?.into_series())
-                })
-            }
-            _ => logical_op_not_implemented!(self, rhs, xor),
-        }
+        logical_dispatch(self, rhs, LogicalOp::Xor)
     }
 }
