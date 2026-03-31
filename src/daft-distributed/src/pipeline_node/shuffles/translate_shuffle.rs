@@ -8,7 +8,7 @@ use crate::pipeline_node::{
     DistributedPipelineNode,
     exchanges::{DistributedExchangeBackend, FlightDistributedExchangeConfig},
     shuffles::{
-        gather::GatherNode, pre_shuffle_merge::PreShuffleMergeNode, shuffle::RepartitionNode,
+        gather::GatherNode, pre_shuffle_merge::PreShuffleMergeNode, repartition::RepartitionNode,
     },
     translate::LogicalPlanToPipelineNodeTranslator,
 };
