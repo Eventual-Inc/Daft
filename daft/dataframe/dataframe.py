@@ -3066,6 +3066,26 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def shuffle(self, seed: int | None = None) -> "DataFrame":
+        """Randomly reorders rows of the DataFrame.
+
+        This is analogous to ``shuffle`` operation in the Hugging Face ``datasets`` library.
+
+        Note:
+            This performs a global sort and is expensive. For randomly redistributing rows across
+            partitions see :meth:`DataFrame.repartition` with no ``partition_by`` (random partition shuffle).
+
+        Args:
+            seed: Optional RNG seed passed to ``random_int`` for best-effort reproducibility
+                on a fixed partition layout; not guaranteed across runners or plan changes.
+
+        Returns:
+            DataFrame: A new DataFrame with rows in random order.
+        """
+        builder = self._builder.shuffle(seed)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def into_partitions(self, num: int) -> "DataFrame":
         """Splits or coalesces DataFrame to ``num`` partitions. Order is preserved.
 

@@ -15,7 +15,10 @@ use opentelemetry_sdk::{
     metrics::PeriodicReader,
     trace::{Sampler, SdkTracerProvider},
 };
-use tracing_subscriber::{layer::SubscriberExt, prelude::*};
+use tracing_subscriber::{
+    EnvFilter, Registry, filter::LevelFilter, fmt::format::FmtSpan, layer::SubscriberExt,
+    prelude::*,
+};
 
 static GLOBAL_TRACER_PROVIDER: LazyLock<Mutex<Option<SdkTracerProvider>>> =
     LazyLock::new(|| Mutex::new(None));
@@ -27,27 +30,113 @@ static GLOBAL_METER_PROVIDER: LazyLock<
 pub static GLOBAL_LOGGER_PROVIDER: LazyLock<Mutex<Option<SdkLoggerProvider>>> =
     LazyLock::new(|| Mutex::new(None));
 
-pub fn init_opentelemetry_providers() {
+#[derive(Debug, Clone, Copy)]
+enum TraceFormat {
+    Compact,
+    Pretty,
+    Json,
+}
+
+impl TraceFormat {
+    fn from_env() -> Self {
+        match std::env::var("DAFT_TRACE_FORMAT")
+            .unwrap_or_else(|_| "compact".to_string())
+            .to_lowercase()
+            .as_str()
+        {
+            "pretty" => Self::Pretty,
+            "json" => Self::Json,
+            _ => Self::Compact,
+        }
+    }
+}
+
+pub fn init_tracing() {
     let config = Config::from_env();
-    if !config.enabled() {
-        return;
+    let resource = Resource::builder().with_service_name("daft").build();
+    let tracer_provider = if config.enabled() {
+        let runtime = get_io_runtime(true);
+        runtime.block_on_current_thread(async {
+            let tracer_provider = config
+                .traces_endpoint()
+                .map(|endpoint| init_otlp_tracer_provider(&config, endpoint, resource.clone()));
+
+            if let Some(endpoint) = config.metrics_endpoint() {
+                init_otlp_metrics_provider(&config, endpoint, resource.clone());
+            }
+            if let Some(endpoint) = config.logs_endpoint() {
+                init_otlp_logger_provider(&config, endpoint, resource.clone());
+            }
+
+            tracer_provider
+        })
+    } else {
+        None
+    };
+
+    let mut layers: Vec<Box<dyn tracing_subscriber::Layer<Registry> + Send + Sync>> = Vec::new();
+
+    if let Ok(daft_trace) = std::env::var("DAFT_TRACE") {
+        // A bare level enables Daft-owned targets only. Users can opt into additional
+        // crates by passing an explicit EnvFilter directive, e.g.
+        // `DAFT_TRACE=daft_=info,Daft=info,hyper=debug`.
+        let filter_directive = if daft_trace.parse::<LevelFilter>().is_ok() {
+            format!("daft_={daft_trace},Daft={daft_trace}")
+        } else {
+            daft_trace.clone()
+        };
+        match EnvFilter::try_new(&filter_directive) {
+            Ok(filter) => {
+                let layer = match TraceFormat::from_env() {
+                    TraceFormat::Compact => tracing_subscriber::fmt::layer()
+                        .compact()
+                        .with_target(true)
+                        .with_writer(std::io::stderr)
+                        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+                        .boxed(),
+                    TraceFormat::Pretty => tracing_subscriber::fmt::layer()
+                        .pretty()
+                        .with_target(true)
+                        .with_writer(std::io::stderr)
+                        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+                        .boxed(),
+                    TraceFormat::Json => tracing_subscriber::fmt::layer()
+                        .json()
+                        .with_target(true)
+                        .with_current_span(true)
+                        .with_span_list(true)
+                        .with_writer(std::io::stderr)
+                        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+                        .boxed(),
+                };
+                layers.push(Box::new(layer.with_filter(filter)));
+            }
+            Err(err) => {
+                eprintln!(
+                    "DAFT_TRACE: invalid filter {daft_trace:?}, console tracing disabled: {err}. \
+                     Use a bare level like `info` for Daft logs only, or an explicit directive \
+                     like `daft_=info,Daft=info,hyper=debug` to include other crates."
+                );
+            }
+        }
     }
 
-    let runtime = get_io_runtime(true);
-    runtime.block_on_current_thread(async {
-        // Backed by inner Arc, cheap to clone
-        let resource = Resource::builder().with_service_name("daft").build();
+    if let Some(tracer_provider) = tracer_provider {
+        layers.push(Box::new(
+            tracing_opentelemetry::layer()
+                .with_tracer(tracer_provider.tracer("daft-otel-tracer"))
+                .with_filter(LevelFilter::INFO),
+        ));
+    }
 
-        if let Some(endpoint) = config.metrics_endpoint() {
-            init_otlp_metrics_provider(&config, endpoint, resource.clone()).await;
+    if !layers.is_empty() {
+        let subscriber = tracing_subscriber::registry().with(layers);
+        if let Err(err) = tracing::subscriber::set_global_default(subscriber) {
+            eprintln!(
+                "Daft could not install its tracing subscriber; OTLP trace export and Daft tracing output are disabled: {err}"
+            );
         }
-        if let Some(endpoint) = config.traces_endpoint() {
-            init_otlp_tracer_provider(&config, endpoint, resource.clone()).await;
-        }
-        if let Some(endpoint) = config.logs_endpoint() {
-            init_otlp_logger_provider(&config, endpoint, resource).await;
-        }
-    });
+    }
 }
 
 pub fn flush_opentelemetry_providers() {
@@ -56,7 +145,7 @@ pub fn flush_opentelemetry_providers() {
     flush_oltp_logger_provider();
 }
 
-async fn init_otlp_logger_provider(config: &Config, otlp_endpoint: &str, resource: Resource) {
+fn init_otlp_logger_provider(config: &Config, otlp_endpoint: &str, resource: Resource) {
     let mut lg = GLOBAL_LOGGER_PROVIDER.lock().unwrap();
     assert!(lg.is_none(), "Expected logger provider to be None on init");
 
@@ -90,7 +179,7 @@ pub fn flush_oltp_logger_provider() {
     }
 }
 
-async fn init_otlp_metrics_provider(config: &Config, endpoint: &str, resource: Resource) {
+fn init_otlp_metrics_provider(config: &Config, endpoint: &str, resource: Resource) {
     let mut mg = GLOBAL_METER_PROVIDER.lock().unwrap();
     assert!(mg.is_none(), "Expected meter provider to be None on init");
 
@@ -139,10 +228,11 @@ pub fn flush_oltp_metrics_provider() {
     }
 }
 
-async fn init_otlp_tracer_provider(config: &Config, otlp_endpoint: &str, resource: Resource) {
-    let mut mg = GLOBAL_TRACER_PROVIDER.lock().unwrap();
-    assert!(mg.is_none(), "Expected tracer provider to be None on init");
-
+fn init_otlp_tracer_provider(
+    config: &Config,
+    otlp_endpoint: &str,
+    resource: Resource,
+) -> SdkTracerProvider {
     if config.otlp_protocol != Protocol::Grpc {
         log::warn!(
             "`http/json` or `http/protobuf` protocol is currently not supported for the OTEL traces exporter. gRPC will be used instead."
@@ -162,15 +252,13 @@ async fn init_otlp_tracer_provider(config: &Config, otlp_endpoint: &str, resourc
         .with_sampler(Sampler::AlwaysOn)
         .build();
 
-    let tracer = tracer_provider.tracer("daft-otel-tracer");
-    let telemetry_layer = tracing_opentelemetry::layer()
-        .with_tracer(tracer)
-        .with_filter(tracing::level_filters::LevelFilter::INFO);
+    {
+        let mut mg = GLOBAL_TRACER_PROVIDER.lock().unwrap();
+        assert!(mg.is_none(), "Expected tracer provider to be None on init");
+        *mg = Some(tracer_provider.clone());
+    }
 
-    tracing::subscriber::set_global_default(tracing_subscriber::registry().with(telemetry_layer))
-        .unwrap();
-
-    *mg = Some(tracer_provider);
+    tracer_provider
 }
 
 fn flush_oltp_tracer_provider() {

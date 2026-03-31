@@ -552,6 +552,12 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    /// Randomly reorders rows across the whole dataframe.
+    pub fn shuffle(&self, seed: Option<u64>) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = ops::Shuffle::new(self.plan.clone(), seed).into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     pub fn into_partitions(&self, num_partitions: usize) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             ops::IntoPartitions::new(self.plan.clone(), num_partitions).into();
@@ -1310,6 +1316,11 @@ impl PyLogicalPlanBuilder {
     #[pyo3(signature = (num_partitions=None))]
     pub fn random_shuffle(&self, num_partitions: Option<usize>) -> PyResult<Self> {
         Ok(self.builder.random_shuffle(num_partitions)?.into())
+    }
+
+    #[pyo3(signature = (seed=None))]
+    pub fn shuffle(&self, seed: Option<u64>) -> PyResult<Self> {
+        Ok(self.builder.shuffle(seed)?.into())
     }
 
     pub fn into_partitions(&self, num_partitions: usize) -> PyResult<Self> {
