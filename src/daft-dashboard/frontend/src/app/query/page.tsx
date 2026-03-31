@@ -206,7 +206,7 @@ function QueryPageInner() {
               Optimized Plan
             </TabsTrigger>
             <TabsTrigger value="unoptimized-plan">Unoptimized Plan</TabsTrigger>
-            {/* Results preview only supported for Swordfish for now (DF-1811) */}
+            {/* Results preview only supported for Swordfish for now (#6559) */}
             {getEngineName(query.runner) === "Swordfish" && (
               <TabsTrigger
                 value="results"

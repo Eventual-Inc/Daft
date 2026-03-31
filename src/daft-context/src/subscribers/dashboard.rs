@@ -291,7 +291,7 @@ impl Subscriber for DashboardSubscriber {
             let result = MicroPartition::concat(results)?;
             debug_assert!(result.len() <= TOTAL_ROWS);
             if result.is_empty() {
-                // Flotilla queries never call on_result_out, so preview is empty (DF-1811)
+                // Flotilla queries never call on_result_out, so preview is empty (#6559)
                 None
             } else {
                 let results_ipc = result.write_to_ipc_stream()?;
