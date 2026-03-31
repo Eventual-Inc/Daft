@@ -179,8 +179,10 @@ impl PySession {
             FunctionArg, FunctionArgs,
             scalar::{BuiltinScalarFn, ScalarFn},
         };
+        let parts: Vec<String> = name.split('.').map(str::to_string).collect();
+        let ident = daft_catalog::Identifier::new(parts);
 
-        let func = self.0.get_function(name)?.ok_or_else(|| {
+        let func = self.0.get_function(&ident)?.ok_or_else(|| {
             pyo3::exceptions::PyValueError::new_err(format!(
                 "function '{name}' not found in session"
             ))

@@ -246,23 +246,67 @@ impl Session {
     }
 
     /// Returns the function or none if it does not exist.
-    pub fn get_function(&self, name: &str) -> CatalogResult<Option<ScalarFunction>> {
-        self.state().get_function(name)
+    ///
+    /// Resolution rules
+    ///   Rule 0: check session-scoped functions by the unqualified name.
+    ///   Rule 1: try to resolve using the current catalog and current namespace.
+    ///   Rule 2: try to resolve as namespace-qualified using the current catalog.
+    ///   Rule 3: try to resolve as catalog-qualified (first part of the identifier).
+    #[cfg(feature = "python")]
+    pub fn get_function(&self, ident: &Identifier) -> CatalogResult<Option<ScalarFunction>> {
+        use daft_dsl::functions::python::WrappedUDFClass;
+
+        // Rule 0: check session-scoped functions by the unqualified name.
+        if !ident.has_qualifier()
+            && let Some(func) = self.state().get_function(ident.name())?
+        {
+            return Ok(Some(func));
+        }
+
+        // Use session state, but return None if there's no catalog.
+        let curr_catalog = match self.current_catalog()? {
+            Some(catalog) => catalog,
+            None => return Ok(None),
+        };
+        let curr_namespace = self.current_namespace()?;
+
+        let wrap = |py_func: daft_catalog::CatalogFunctionRef| {
+            ScalarFunction::Python(WrappedUDFClass {
+                inner: std::sync::Arc::new(py_func),
+            })
+        };
+
+        // Rule 1: try to resolve using the current catalog and current namespace.
+        if let Some(qualifier) = curr_namespace {
+            let ident = ident.qualify(qualifier);
+            if let Some(py_func) = curr_catalog.get_function(&ident)? {
+                return Ok(Some(wrap(py_func)));
+            }
+        }
+
+        // Rule 2: try to resolve as namespace-qualified using the current catalog.
+        if let Some(py_func) = curr_catalog.get_function(ident)? {
+            return Ok(Some(wrap(py_func)));
+        }
+
+        // Rule 3: try to resolve as catalog-qualified.
+        if ident.has_qualifier()
+            && let Ok(catalog) = self.get_catalog(ident.get(0))
+        {
+            let ident = ident.drop(1);
+            if let Some(py_func) = catalog.get_function(&ident)? {
+                return Ok(Some(wrap(py_func)));
+            }
+        }
+
+        Ok(None)
     }
 
-    /// Returns a function from the specified catalog, or None if not found.
-    #[cfg(feature = "python")]
-    pub fn get_catalog_function(
-        &self,
-        ident: &daft_catalog::Identifier,
-        catalog: &str,
-    ) -> CatalogResult<Option<ScalarFunction>> {
-        let resolved_catalog = self.get_catalog(catalog)?;
-        if let Some(py_func) = resolved_catalog.get_function(ident)? {
-            let wrapped = daft_dsl::functions::python::WrappedUDFClass {
-                inner: std::sync::Arc::new(py_func),
-            };
-            return Ok(Some(ScalarFunction::Python(wrapped)));
+    /// Returns the function or none if it does not exist.
+    #[cfg(not(feature = "python"))]
+    pub fn get_function(&self, name: &Identifier) -> CatalogResult<Option<ScalarFunction>> {
+        if !name.has_qualifier() {
+            return self.state().get_function(name.name());
         }
         Ok(None)
     }
@@ -584,11 +628,12 @@ mod tests {
         session_a.attach_function("my_ext_fn", mock_factory("my_ext_fn"));
 
         // Session A can see it; session B cannot.
+        let ident = daft_catalog::Identifier::simple("my_ext_fn");
         assert!(matches!(
-            session_a.get_function("my_ext_fn").unwrap(),
+            session_a.get_function(&ident).unwrap(),
             Some(ScalarFunction::Native(_))
         ));
-        assert!(session_b.get_function("my_ext_fn").unwrap().is_none());
+        assert!(session_b.get_function(&ident).unwrap().is_none());
     }
 
     #[test]
@@ -596,8 +641,9 @@ mod tests {
         let sess = Session::empty();
         sess.attach_function("temp_fn", mock_factory("temp_fn"));
 
-        assert!(sess.get_function("temp_fn").unwrap().is_some());
+        let ident = daft_catalog::Identifier::simple("temp_fn");
+        assert!(sess.get_function(&ident).unwrap().is_some());
         sess.detach_function("temp_fn").unwrap();
-        assert!(sess.get_function("temp_fn").unwrap().is_none());
+        assert!(sess.get_function(&ident).unwrap().is_none());
     }
 }
