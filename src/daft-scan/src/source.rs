@@ -173,8 +173,13 @@ pub trait DataSourceTask: Send + Sync + Debug {
 /// The [`ScanOperator`] bridge extracts the inner [`ScanTask`] via
 /// [`as_scan_task()`](DataSourceTask::as_scan_task) so it flows through
 /// the existing execution path without calling [`read()`](DataSourceTask::read).
-#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ShimSourceTask(ScanTaskRef);
+
+impl Debug for ShimSourceTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ShimSourceTask").finish_non_exhaustive()
+    }
+}
 
 impl ShimSourceTask {
     pub fn new(scan_task: ScanTaskRef) -> Self {

@@ -304,7 +304,7 @@ impl From<Bound<'_, PyAny>> for PyDataSourceTaskWrapper {
 }
 
 /// Wraps a Python `DataSourceTask` as a Rust [`DataSourceTask`].
-#[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Debug)]
 pub struct PyDataSourceTaskWrapper(Py<PyAny>);
 
 #[async_trait]
