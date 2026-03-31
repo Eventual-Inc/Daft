@@ -166,3 +166,50 @@ pub trait DataSourceTask: Send + Sync + Debug {
     /// ```
     async fn read(&self, options: ReadOptions) -> DaftResult<RecordBatchStream>;
 }
+
+/// A [`DataSourceTask`] backed by a native [`ScanTask`].
+///
+/// Created by [`DataSourceTask::parquet()`] (and future factory methods).
+/// The [`ScanOperator`] bridge extracts the inner [`ScanTask`] via
+/// [`as_scan_task()`](DataSourceTask::as_scan_task) so it flows through
+/// the existing execution path without calling [`read()`](DataSourceTask::read).
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct ShimSourceTask(ScanTaskRef);
+
+impl ShimSourceTask {
+    pub fn new(scan_task: ScanTaskRef) -> Self {
+        Self(scan_task)
+    }
+}
+
+#[async_trait]
+impl DataSourceTask for ShimSourceTask {
+    fn schema(&self) -> SchemaRef {
+        self.0.schema.clone()
+    }
+
+    fn statistics(&self) -> Option<DataSourceTaskStatistics> {
+        Some(DataSourceTaskStatistics {
+            size_bytes: match self.0.size_bytes_on_disk {
+                Some(n) => Precision::Exact(n),
+                None => Precision::Absent,
+            },
+            column_stats: self.0.statistics.clone(),
+        })
+    }
+
+    fn partition_values(&self) -> Option<&PartitionSpec> {
+        self.0
+            .sources
+            .first()
+            .and_then(|s| s.partition_spec.as_ref())
+    }
+
+    fn as_scan_task(&self) -> Option<&ScanTaskRef> {
+        Some(&self.0)
+    }
+
+    async fn read(&self, _options: ReadOptions) -> DaftResult<RecordBatchStream> {
+        unreachable!("ShimSourceTask is executed via the native ScanTask path, not read()")
+    }
+}

@@ -5,7 +5,6 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 from daft.daft import PyDataSourceTask, StorageConfig
-from daft.io.__internal import _RustDataSourceTask
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -172,3 +171,27 @@ class DataSourceTask(ABC):
         )
 
         return _RustDataSourceTask(inner)
+
+
+class _RustDataSourceTask(DataSourceTask):
+    """Wraps a Rust-backed ``PyDataSourceTask`` as a Python ``DataSourceTask``.
+
+    This follows the same pattern as ``_RustTable(Table)`` in ``daft.catalog``:
+    the Python ABC subclass delegates to the Rust object so that
+    ``isinstance(task, DataSourceTask)`` holds.
+    """
+
+    __slots__ = ("_inner",)
+
+    def __init__(self, inner: PyDataSourceTask) -> None:
+        self._inner = inner
+
+    @property
+    def schema(self) -> Schema:
+        from daft.schema import Schema
+
+        return Schema._from_pyschema(self._inner.schema())
+
+    async def read(self) -> AsyncIterator[RecordBatch]:
+        raise NotImplementedError("Native scan tasks are executed by the Rust engine, not via read().")
+        yield  # pragma: no cover
