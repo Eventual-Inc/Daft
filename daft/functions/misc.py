@@ -536,7 +536,7 @@ def coalesce(*args: Expression) -> Expression:
         (Showing first 3 of 3 rows)
 
     """
-    import daft.daft as native
+    return Expression._from_pyexpr(native.coalesce([arg._expr for arg in args]))
 
     if len(args) == 0:
         raise ValueError("coalesce requires at least one argument")

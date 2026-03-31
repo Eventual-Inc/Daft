@@ -2117,7 +2117,7 @@ impl Expr {
                 }
             },
             Self::VLLM(VLLMExpr { input, .. }) => input.name(),
-            Self::Coalesce(inputs) => inputs.first().unwrap().name(),
+            Self::Coalesce(inputs) => inputs.first().map(|e| e.name()).unwrap_or("coalesce"),
         }
     }
 
