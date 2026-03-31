@@ -174,9 +174,6 @@ def test_series_filter_broadcast(dtype) -> None:
     assert result.to_pylist() == s.to_pylist()
 
 
-# --- Union array filter tests ---
-
-
 def test_series_filter_sparse_union() -> None:
     type_ids = pa.array([0, 1, 2, 0, 1, 2], type=pa.int8())
     int_child = pa.array([10, 0, 0, 40, 0, 0], type=pa.int32())

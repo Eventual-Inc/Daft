@@ -238,9 +238,6 @@ def test_series_concat_dtype_mismatch() -> None:
         Series.concat(mix_types_series)
 
 
-# --- Union array concat tests ---
-
-
 def _make_sparse_union() -> pa.Array:
     type_ids = pa.array([0, 1, 2, 0, 1, 2], type=pa.int8())
     int_child = pa.array([10, 0, 0, 40, 0, 0], type=pa.int32())
@@ -297,3 +294,51 @@ def test_series_concat_dense_union_with_slice() -> None:
 
     assert result.datatype() == s.datatype()
     assert result.to_pylist() == [2.2, 30, 40, 2.2, 30, 40]
+
+
+def test_series_concat_sparse_union_different_arrays() -> None:
+    """Concatenating two different sparse union Series yields all elements in order."""
+    type_ids_a = pa.array([0, 1, 0], type=pa.int8())
+    int_child_a = pa.array([10, 0, 30], type=pa.int32())
+    float_child_a = pa.array([0.0, 2.2, 0.0], type=pa.float64())
+    a = Series.from_arrow(pa.UnionArray.from_sparse(type_ids_a, [int_child_a, float_child_a], field_names=["i", "f"]))
+
+    type_ids_b = pa.array([1, 0, 1], type=pa.int8())
+    int_child_b = pa.array([0, 99, 0], type=pa.int32())
+    float_child_b = pa.array([9.9, 0.0, 5.5], type=pa.float64())
+    b = Series.from_arrow(pa.UnionArray.from_sparse(type_ids_b, [int_child_b, float_child_b], field_names=["i", "f"]))
+
+    result = Series.concat([a, b])
+
+    assert result.datatype() == a.datatype()
+    assert result.to_pylist() == [10, 2.2, 30, 9.9, 99, 5.5]
+
+
+def test_series_concat_dense_union_different_arrays() -> None:
+    """Concatenating two different dense union Series yields all elements in order."""
+    type_ids_a = pa.array([0, 1, 0], type=pa.int8())
+    offsets_a = pa.array([0, 0, 1], type=pa.int32())
+    a = Series.from_arrow(
+        pa.UnionArray.from_dense(
+            type_ids_a,
+            offsets_a,
+            [pa.array([10, 30], type=pa.int32()), pa.array([2.2], type=pa.float64())],
+            field_names=["i", "f"],
+        )
+    )
+
+    type_ids_b = pa.array([1, 0, 1], type=pa.int8())
+    offsets_b = pa.array([0, 0, 1], type=pa.int32())
+    b = Series.from_arrow(
+        pa.UnionArray.from_dense(
+            type_ids_b,
+            offsets_b,
+            [pa.array([99], type=pa.int32()), pa.array([9.9, 5.5], type=pa.float64())],
+            field_names=["i", "f"],
+        )
+    )
+
+    result = Series.concat([a, b])
+
+    assert result.datatype() == a.datatype()
+    assert result.to_pylist() == [10, 2.2, 30, 9.9, 99, 5.5]

@@ -60,14 +60,15 @@ impl UnionArray {
             self.len()
         );
 
-        let type_id = self.ids[idx] as usize;
+        let type_id = self.ids[idx];
         let value_offset = if let Some(offsets) = self.offsets() {
             offsets[idx] as usize
         } else {
             idx
         };
 
-        let child = &self.children[type_id];
+        let child_idx = self.type_idx(type_id);
+        let child = &self.children[child_idx];
         child.get_lit(value_offset)
     }
 }

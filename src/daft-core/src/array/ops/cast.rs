@@ -1770,6 +1770,9 @@ impl StructArray {
 
 impl UnionArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        if dtype == self.data_type() {
+            return Ok(self.clone().into_series());
+        }
         unimplemented!("Union casting not implemented for dtype: {}", dtype)
     }
 }

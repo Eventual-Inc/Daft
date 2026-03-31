@@ -174,7 +174,7 @@ impl FullNull for StructArray {
 impl FullNull for UnionArray {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
         match dtype {
-            DataType::Union(fields, _, mode) => {
+            DataType::Union(fields, type_ids, mode) => {
                 let field = Field::new(name, dtype.clone());
                 let empty_children = fields
                     .iter()
@@ -182,13 +182,14 @@ impl FullNull for UnionArray {
                     .collect::<Vec<_>>();
 
                 let offsets = if mode.is_dense() {
-                    let offsets: arrow::buffer::ScalarBuffer<i32> = vec![0; length + 1].into();
+                    let offsets: arrow::buffer::ScalarBuffer<i32> = vec![0; length].into();
                     Some(offsets)
                 } else {
                     None
                 };
 
-                let types: arrow::buffer::ScalarBuffer<i8> = vec![0; length].into();
+                let null_id = type_ids[0];
+                let types: arrow::buffer::ScalarBuffer<i8> = vec![null_id; length].into();
 
                 Self::new(field, types, empty_children, offsets)
             }

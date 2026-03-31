@@ -1309,7 +1309,7 @@ class UnionMode(Enum):
     Dense = 2
 
     @staticmethod
-    def from_str(mode: str) -> UnionMode: ...
+    def from_mode_string(mode: str) -> UnionMode: ...
 
 class PyDataType:
     @staticmethod

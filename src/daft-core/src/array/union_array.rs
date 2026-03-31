@@ -18,6 +18,7 @@ pub struct UnionArray {
     pub ids: ScalarBuffer<i8>,
     pub children: Vec<Series>,
     pub offsets: Option<ScalarBuffer<i32>>,
+    pub id_map: [usize; 128],
 }
 
 impl DaftArrayType for UnionArray {
@@ -35,7 +36,7 @@ impl UnionArray {
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
-            DataType::Union(fields, _, mode) => {
+            DataType::Union(fields, type_ids, mode) => {
                 assert!(
                     fields.len() == children.len(),
                     "StructArray::new received {} children arrays but expected {} for specified dtype: {}",
@@ -77,11 +78,18 @@ impl UnionArray {
                     }
                 }
 
+                let mut id_map = [0; 128];
+                for (i, type_id) in type_ids.iter().enumerate() {
+                    assert!(*type_id >= 0, "Union Type Ids must be >= 0");
+                    id_map[*type_id as usize] = i;
+                }
+
                 Self {
                     field,
                     ids,
                     children,
                     offsets,
+                    id_map,
                 }
             }
             _ => {
@@ -121,6 +129,11 @@ impl UnionArray {
         &self.offsets
     }
 
+    pub fn type_idx(&self, idx: i8) -> usize {
+        assert!(idx >= 0, "Union Type Ids must be >= 0");
+        self.id_map[idx as usize]
+    }
+
     pub fn name(&self) -> &str {
         &self.field.name
     }
@@ -135,6 +148,7 @@ impl UnionArray {
             ids: self.ids.clone(),
             children: self.children.clone(),
             offsets: self.offsets.clone(),
+            id_map: self.id_map,
         }
     }
 

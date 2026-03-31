@@ -227,9 +227,6 @@ def test_series_extension_type_size_bytes(uuid_ext_type, size, with_nulls) -> No
     assert size_bytes == get_total_buffer_size(post_daft_cast_data)
 
 
-# --- Union array size_bytes tests ---
-
-
 def test_series_sparse_union_size_bytes() -> None:
     type_ids = pa.array([0, 1, 2, 0, 1, 2], type=pa.int8())
     int_child = pa.array([10, 0, 0, 40, 0, 0], type=pa.int32())

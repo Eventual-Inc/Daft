@@ -950,7 +950,7 @@ class DataType:
             ... )
         """
         if isinstance(mode, str):
-            mode = UnionMode.from_str(mode)
+            mode = UnionMode.from_mode_string(mode)
         return cls._from_pydatatype(PyDataType.union({name: dt._dtype for name, dt in fields.items()}, type_ids, mode))
 
     def is_null(self) -> builtins.bool:

@@ -136,9 +136,26 @@ impl StructArray {
 }
 impl UnionArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let result =
-            arrow::compute::take(self.to_arrow()?.as_ref(), idx.to_arrow().as_ref(), None)?;
-        Self::from_arrow(self.field.clone(), result)
+        let mut growable = Self::make_growable(
+            self.name(),
+            self.data_type(),
+            vec![self],
+            idx.null_count() > 0,
+            idx.len(),
+        );
+
+        for i in idx {
+            match i {
+                None => {
+                    growable.add_nulls(1);
+                }
+                Some(i) => {
+                    growable.extend(0, i.to_usize().unwrap(), 1);
+                }
+            }
+        }
+
+        Ok(growable.build()?.downcast::<Self>()?.clone())
     }
 }
 impl<T> FileArray<T>

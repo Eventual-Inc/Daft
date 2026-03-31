@@ -1,7 +1,10 @@
+use std::str::FromStr;
+
+use common_error::{DaftError, DaftResult};
 use common_py_serde::impl_bincode_py_state_serialization;
 use derive_more::Display;
 #[cfg(feature = "python")]
-use pyo3::prelude::*;
+use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -18,15 +21,8 @@ pub enum UnionMode {
 #[pymethods]
 impl UnionMode {
     #[staticmethod]
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(mode: &str) -> pyo3::PyResult<Self> {
-        match mode {
-            "sparse" => Ok(Self::Sparse),
-            "dense" => Ok(Self::Dense),
-            _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
-                "Invalid union mode: {mode}"
-            ))),
-        }
+    pub fn from_mode_string(mode: &str) -> pyo3::PyResult<Self> {
+        Self::from_str(mode).map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     pub fn __str__(&self) -> PyResult<String> {
@@ -46,5 +42,20 @@ impl UnionMode {
 
     pub fn is_dense(&self) -> bool {
         matches!(self, Self::Dense)
+    }
+}
+
+impl FromStr for UnionMode {
+    type Err = DaftError;
+
+    fn from_str(mode: &str) -> DaftResult<Self> {
+        match mode {
+            "sparse" => Ok(Self::Sparse),
+            "dense" => Ok(Self::Dense),
+            _ => Err(DaftError::TypeError(format!(
+                "Union mode {} is not supported; only sparse and dense mode are supported",
+                mode,
+            ))),
+        }
     }
 }

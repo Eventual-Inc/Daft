@@ -157,11 +157,7 @@ impl_if_else!(ListArray);
 impl_if_else!(FixedSizeListArray);
 impl_if_else!(StructArray);
 
-impl UnionArray {
-    pub fn if_else(&self, _other: &Self, _predicate: &BooleanArray) -> DaftResult<Self> {
-        unimplemented!("UnionArray if_else not implemented")
-    }
-}
+impl_if_else!(UnionArray);
 
 #[cfg(feature = "python")]
 impl_if_else!(PythonArray);
