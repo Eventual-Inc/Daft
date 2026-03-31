@@ -58,7 +58,7 @@ def video_metadata(
 def keyframes_impl(
     file: daft.VideoFile, *, start_time: float = 0, end_time: float | None = None
 ) -> list[PIL.Image.Image]:
-    return list(file.keyframes(start_time, end_time))
+    return [frame["data"] for frame in file.frames(start_time=start_time, end_time=end_time, is_key_frame=True)]
 
 
 video_keyframes_fn = Func._from_func(
@@ -100,8 +100,17 @@ def frames_impl(
     end_time: float | None = None,
     width: int | None = None,
     height: int | None = None,
+    is_key_frame: bool | None = None,
 ) -> list[VideoFrameData]:
-    return list(file.frames(start_time, end_time, width, height))
+    return list(
+        file.frames(
+            start_time=start_time,
+            end_time=end_time,
+            width=width,
+            height=height,
+            is_key_frame=is_key_frame,
+        )
+    )
 
 
 video_frames_fn = Func._from_func(
@@ -137,6 +146,7 @@ def video_frames(
     end_time: float | None = None,
     width: int | None = None,
     height: int | None = None,
+    is_key_frame: bool | None = None,
 ) -> Expression:
     """Decode all video frames within a time range, with per-frame metadata.
 
@@ -146,8 +156,10 @@ def video_frames(
         file_expr (VideoFile Expression): The video file to decode frames from.
         start_time (float, optional): Start of the time range in seconds. Defaults to 0.
         end_time (float | None, optional): End of the time range in seconds. Defaults to None (all frames).
-        width (int | None, optional): Target width for resizing frames. Defaults to None (original size).
-        height (int | None, optional): Target height for resizing frames. Defaults to None (original size).
+        width (int | None, optional): Target width for resizing frames. Must be provided with ``height``.
+        height (int | None, optional): Target height for resizing frames. Must be provided with ``width``.
+        is_key_frame (bool | None, optional): If True, decode only keyframes. If False,
+            decode only non-keyframes. If None, decode all frames.
 
     Returns:
         Expression (List[Struct] Expression): List of structs, each containing:
@@ -160,4 +172,11 @@ def video_frames(
             - is_key_frame (bool): Whether this frame is a keyframe
             - data (Image): The decoded frame as an image
     """
-    return video_frames_fn(file_expr, start_time=start_time, end_time=end_time, width=width, height=height)  # type: ignore
+    return video_frames_fn(
+        file_expr,
+        start_time=start_time,
+        end_time=end_time,
+        width=width,
+        height=height,
+        is_key_frame=is_key_frame,
+    )  # type: ignore
