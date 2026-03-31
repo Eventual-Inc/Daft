@@ -52,3 +52,28 @@ def test_file_path_building():
     df = daft.from_pydict({"bucket": ["my-bucket"], "prefix": ["data"], "filename": ["file.csv"]})
     result = df.select(concat_ws("/", col("bucket"), col("prefix"), col("filename"))).to_pydict()
     assert result["bucket"] == ["my-bucket/data/file.csv"]
+
+
+def test_no_exprs_raises():
+    raised = False
+    try:
+        daft.from_pydict({"a": ["x"]}).select(concat_ws(","))
+    except Exception:
+        raised = True
+    assert raised
+
+
+def test_non_string_column_raises():
+    df = daft.from_pydict({"a": [1, 2, 3]})
+    raised = False
+    try:
+        df.select(concat_ws(",", col("a"))).collect()
+    except Exception:
+        raised = True
+    assert raised
+
+
+def test_empty_separator():
+    df = daft.from_pydict({"a": ["foo"], "b": ["bar"]})
+    result = df.select(concat_ws("", col("a"), col("b"))).to_pydict()
+    assert result["a"] == ["foobar"]
