@@ -7,8 +7,9 @@ use daft_schema::schema::SchemaRef;
 use crate::pipeline_node::{
     DistributedPipelineNode,
     shuffles::{
-        gather::GatherNode, pre_shuffle_merge::PreShuffleMergeNode, repartition::RepartitionNode,
-        shuffle::ShuffleNode,
+        gather::GatherNode,
+        pre_shuffle_merge::PreShuffleMergeNode,
+        shuffle::{DistributedShuffleBackend, FlightDistributedShuffleConfig, ShuffleNode},
     },
     translate::LogicalPlanToPipelineNodeTranslator,
 };
@@ -32,26 +33,6 @@ impl LogicalPlanToPipelineNodeTranslator {
                 .unwrap_or_else(|| child.config().clustering_spec.num_partitions()),
         };
 
-        // Check if we should use flight shuffle
-        if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
-            let shuffle_dirs = self.plan_config.config.flight_shuffle_dirs.clone();
-            let compression = None;
-            let node_id = self.get_next_pipeline_node_id();
-            return Ok(DistributedPipelineNode::new(
-                Arc::new(ShuffleNode::new(
-                    node_id,
-                    &self.plan_config,
-                    repartition_spec,
-                    schema,
-                    num_partitions,
-                    shuffle_dirs,
-                    compression,
-                    child,
-                )),
-                &self.meter,
-            ));
-        }
-
         let use_pre_shuffle_merge = self.should_use_pre_shuffle_merge(&child, num_partitions)?;
 
         let child_node = if use_pre_shuffle_merge {
@@ -70,13 +51,24 @@ impl LogicalPlanToPipelineNodeTranslator {
             child
         };
 
+        let backend = if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
+            DistributedShuffleBackend::Flight(FlightDistributedShuffleConfig {
+                shuffle_id: 0,
+                shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),
+                compression: None,
+            })
+        } else {
+            DistributedShuffleBackend::Ray
+        };
+
         Ok(DistributedPipelineNode::new(
-            Arc::new(RepartitionNode::new(
+            Arc::new(ShuffleNode::new(
                 self.get_next_pipeline_node_id(),
                 &self.plan_config,
                 repartition_spec,
-                num_partitions,
                 schema,
+                num_partitions,
+                backend,
                 child_node,
             )),
             &self.meter,

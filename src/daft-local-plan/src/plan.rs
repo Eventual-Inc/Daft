@@ -2185,6 +2185,9 @@ pub struct VLLMProject {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ShuffleWriteBackend {
+    Ray {
+        repartition_spec: RepartitionSpec,
+    },
     Flight {
         shuffle_id: u64,
         shuffle_dirs: Vec<String>,

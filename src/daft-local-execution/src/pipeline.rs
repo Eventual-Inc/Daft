@@ -1436,6 +1436,7 @@ fn physical_plan_to_pipeline(
             input,
             num_partitions,
             partition_by,
+            schema,
             backend,
             stats_state,
             context,

@@ -22,6 +22,7 @@ use crate::{
     },
 };
 
+#[allow(dead_code)]
 pub(crate) struct RepartitionNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
@@ -30,6 +31,7 @@ pub(crate) struct RepartitionNode {
     child: DistributedPipelineNode,
 }
 
+#[allow(dead_code)]
 impl RepartitionNode {
     const NODE_NAME: &'static str = "Repartition";
 

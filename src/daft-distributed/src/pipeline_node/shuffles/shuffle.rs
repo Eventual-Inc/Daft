@@ -3,8 +3,9 @@ use std::{
     sync::Arc,
 };
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::ops::{NodeCategory, NodeType};
+use common_partitioning::PartitionRef;
 use daft_local_plan::{
     FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend,
     ShuffleWriteBackend,
@@ -30,10 +31,10 @@ fn make_shuffle_id(context: &PipelineNodeContext) -> u64 {
     ((context.query_idx as u64) << 32) | (context.node_id as u64)
 }
 
-struct FlightDistributedShuffleConfig {
-    shuffle_id: u64,
-    shuffle_dirs: Vec<String>,
-    compression: Option<String>,
+pub(crate) struct FlightDistributedShuffleConfig {
+    pub(crate) shuffle_id: u64,
+    pub(crate) shuffle_dirs: Vec<String>,
+    pub(crate) compression: Option<String>,
 }
 
 struct FlightReadSpec {
@@ -41,7 +42,8 @@ struct FlightReadSpec {
     server_cache_mapping: HashMap<String, Vec<u32>>,
 }
 
-enum DistributedShuffleBackend {
+pub(crate) enum DistributedShuffleBackend {
+    Ray,
     Flight(FlightDistributedShuffleConfig),
 }
 
@@ -55,7 +57,7 @@ pub(crate) struct ShuffleNode {
 }
 
 impl ShuffleNode {
-    const NODE_NAME: &'static str = "FlightShuffle";
+    const NODE_NAME: &'static str = "Shuffle";
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -64,8 +66,7 @@ impl ShuffleNode {
         repartition_spec: RepartitionSpec,
         schema: SchemaRef,
         num_partitions: usize,
-        shuffle_dirs: Vec<String>,
-        compression: Option<String>,
+        backend: DistributedShuffleBackend,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -90,11 +91,16 @@ impl ShuffleNode {
             context,
             repartition_spec,
             num_partitions,
-            backend: DistributedShuffleBackend::Flight(FlightDistributedShuffleConfig {
-                shuffle_id,
-                shuffle_dirs,
-                compression,
-            }),
+            backend: match backend {
+                DistributedShuffleBackend::Ray => DistributedShuffleBackend::Ray,
+                DistributedShuffleBackend::Flight(backend) => {
+                    DistributedShuffleBackend::Flight(FlightDistributedShuffleConfig {
+                        shuffle_id,
+                        shuffle_dirs: backend.shuffle_dirs,
+                        compression: backend.compression,
+                    })
+                }
+            },
             child,
         }
     }
@@ -145,6 +151,23 @@ impl ShuffleNode {
         })
     }
 
+    fn build_ray_write_stage(self: Arc<Self>, input_node: TaskBuilderStream) -> TaskBuilderStream {
+        let repartition_spec = self.repartition_spec.clone();
+        input_node.pipeline_instruction(self.clone(), move |input| {
+            LocalPhysicalPlan::shuffle_write(
+                input,
+                None,
+                self.num_partitions,
+                self.config.schema.clone(),
+                ShuffleWriteBackend::Ray {
+                    repartition_spec: repartition_spec.clone(),
+                },
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(self.context.node_id as usize)),
+            )
+        })
+    }
+
     fn flight_read_spec_from_outputs(
         &self,
         backend: &FlightDistributedShuffleConfig,
@@ -161,6 +184,11 @@ impl ShuffleNode {
 
             for partition in output.partitions {
                 match partition {
+                    ShufflePartitionRef::Ray(_) => {
+                        return Err(DaftError::InternalError(
+                            "Expected Flight shuffle partition ref but received Ray".to_string(),
+                        ));
+                    }
                     ShufflePartitionRef::Flight(partition) => {
                         server_cache_mapping
                             .entry(partition.server_address)
@@ -209,6 +237,75 @@ impl ShuffleNode {
         Ok(())
     }
 
+    fn ray_partition_groups_from_outputs(
+        &self,
+        outputs: Vec<TaskOutput>,
+    ) -> DaftResult<Vec<Vec<PartitionRef>>> {
+        let mut partition_groups = (0..self.num_partitions)
+            .map(|_| Vec::new())
+            .collect::<Vec<_>>();
+
+        for output in outputs {
+            let TaskOutput::ShuffleWrite(output) = output else {
+                return Err(DaftError::InternalError(
+                    "Expected shuffle write task output for Ray shuffle write stage".to_string(),
+                ));
+            };
+
+            if output.partitions.len() != self.num_partitions {
+                return Err(DaftError::InternalError(format!(
+                    "Expected {} Ray shuffle partitions, got {}",
+                    self.num_partitions,
+                    output.partitions.len()
+                )));
+            }
+
+            for (partition_idx, partition) in output.partitions.into_iter().enumerate() {
+                match partition {
+                    ShufflePartitionRef::Ray(partition) => {
+                        if partition.num_rows() > 0 {
+                            partition_groups[partition_idx].push(partition);
+                        }
+                    }
+                    ShufflePartitionRef::Flight(_) => {
+                        return Err(DaftError::InternalError(
+                            "Expected Ray shuffle partition ref but received Flight".to_string(),
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(partition_groups)
+    }
+
+    async fn emit_ray_read_tasks(
+        &self,
+        partition_groups: Vec<Vec<PartitionRef>>,
+        result_tx: Sender<SwordfishTaskBuilder>,
+    ) -> DaftResult<()> {
+        for partition_group in partition_groups {
+            let total_size_bytes = partition_group
+                .iter()
+                .map(|p| p.size_bytes())
+                .sum::<usize>();
+            let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
+                self.node_id(),
+                self.config.schema.clone(),
+                total_size_bytes,
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(self.node_id() as usize)),
+            );
+
+            let builder = SwordfishTaskBuilder::new(in_memory_scan, self, self.node_id())
+                .with_psets(self.node_id(), partition_group);
+
+            let _ = result_tx.send(builder).await;
+        }
+
+        Ok(())
+    }
+
     // Async execution to handle flight shuffle write and read operations
     async fn execution_loop(
         self: Arc<Self>,
@@ -227,6 +324,11 @@ impl ShuffleNode {
             .await?;
 
         match &self.backend {
+            DistributedShuffleBackend::Ray => {
+                let partition_groups = self.ray_partition_groups_from_outputs(outputs)?;
+                self.emit_ray_read_tasks(partition_groups, result_tx)
+                    .await?;
+            }
             DistributedShuffleBackend::Flight(backend) => {
                 let read_spec = self.flight_read_spec_from_outputs(backend, outputs)?;
                 self.emit_flight_read_tasks(read_spec, result_tx).await?;
@@ -257,6 +359,7 @@ impl PipelineNodeImpl for ShuffleNode {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let self_arc = self.clone();
         let local_shuffle_write_node = match &self.backend {
+            DistributedShuffleBackend::Ray => self.clone().build_ray_write_stage(input_node),
             DistributedShuffleBackend::Flight(backend) => {
                 self.register_flight_cleanup(plan_context, backend);
                 self.clone().build_flight_write_stage(input_node, backend)
@@ -284,8 +387,12 @@ impl PipelineNodeImpl for ShuffleNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
+        let backend_name = match &self.backend {
+            DistributedShuffleBackend::Ray => "RayShuffle",
+            DistributedShuffleBackend::Flight(_) => "FlightShuffle",
+        };
         let mut res = vec![format!(
-            "FlightShuffle: {}",
+            "{backend_name}: {}",
             self.repartition_spec.var_name()
         )];
         res.extend(self.repartition_spec.multiline_display());
