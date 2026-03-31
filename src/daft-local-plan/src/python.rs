@@ -11,6 +11,22 @@ use serde::{Deserialize, Serialize};
 use crate::{ExecutionStats, LocalPhysicalPlanRef, translate};
 use crate::{Input, LocalPhysicalPlan, ShuffleWriteBackend};
 
+#[pyclass(
+    module = "daft.daft",
+    name = "ExchangeWriteInfo",
+    frozen,
+    from_py_object
+)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PyExchangeWriteInfo {
+    #[pyo3(get)]
+    pub backend: String,
+    #[pyo3(get)]
+    pub exchange_id: u64,
+    #[pyo3(get)]
+    pub num_partitions: usize,
+}
+
 #[pyclass(module = "daft.daft", name = "LocalPhysicalPlan")]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PyLocalPhysicalPlan {
@@ -57,17 +73,19 @@ impl PyLocalPhysicalPlan {
         ))
     }
 
-    fn exchange_write_info(&self) -> Option<(String, u64, usize)> {
+    fn exchange_write_info(&self) -> Option<PyExchangeWriteInfo> {
         match self.plan.as_ref() {
             LocalPhysicalPlan::ShuffleWrite(shuffle_write) => match &shuffle_write.backend {
-                ShuffleWriteBackend::Ray { .. } => {
-                    Some(("ray".to_string(), 0, shuffle_write.num_partitions))
-                }
-                ShuffleWriteBackend::Flight { shuffle_id, .. } => Some((
-                    "flight".to_string(),
-                    *shuffle_id,
-                    shuffle_write.num_partitions,
-                )),
+                ShuffleWriteBackend::Ray { .. } => Some(PyExchangeWriteInfo {
+                    backend: "ray".to_string(),
+                    exchange_id: 0,
+                    num_partitions: shuffle_write.num_partitions,
+                }),
+                ShuffleWriteBackend::Flight { shuffle_id, .. } => Some(PyExchangeWriteInfo {
+                    backend: "flight".to_string(),
+                    exchange_id: *shuffle_id,
+                    num_partitions: shuffle_write.num_partitions,
+                }),
             },
             _ => None,
         }

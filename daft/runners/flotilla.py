@@ -6,7 +6,7 @@ import os
 import shutil
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple, TypeAlias
 
 from daft.daft import (
     DistributedPhysicalPlan,
@@ -36,6 +36,7 @@ from daft.runners.profiler import profile
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Generator
 
+    from daft.daft import ExchangeWriteInfo
     from daft.runners.ray_runner import RayMaterializedResult
 
 try:
@@ -47,11 +48,24 @@ logger = logging.getLogger(__name__)
 
 ExchangeMetadata = list[tuple[object | None, int, int]]
 ExchangePlanResult = tuple[str, ExchangeMetadata, bytes]
+ExchangeWriteInfoLike: TypeAlias = "ExchangeWriteInfo | tuple[str, int, int]"
 
 
 class SwordfishTaskMetadata(NamedTuple):
     partition_metadatas: list[PartitionMetadata]
     stats: bytes
+
+
+def _exchange_write_backend(info: ExchangeWriteInfoLike) -> str:
+    if isinstance(info, tuple):
+        return info[0]
+    return info.backend
+
+
+def _exchange_write_id(info: ExchangeWriteInfoLike) -> int:
+    if isinstance(info, tuple):
+        return info[1]
+    return info.exchange_id
 
 
 @ray.remote  # type: ignore[untyped-decorator]
@@ -190,7 +204,7 @@ class RaySwordfishActor:
             backend_info = plan.exchange_write_info()
             if backend_info is None:
                 raise ValueError("run_exchange_plan() requires an exchange write or repartition plan")
-            backend, _, _ = backend_info
+            backend = _exchange_write_backend(backend_info)
 
             result_handle = await self.native_executor.run(
                 plan,
@@ -255,7 +269,7 @@ class RaySwordfishTaskHandle:
 
     result_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
-    exchange_write_info: tuple[str, int, int] | None = None
+    exchange_write_info: ExchangeWriteInfoLike | None = None
     cache_id: int | None = None
     task: asyncio.Task[RayTaskResult] | None = None
 
@@ -274,7 +288,7 @@ class RaySwordfishTaskHandle:
                         stats,
                     )
                 if backend == "flight":
-                    shuffle_id = self.exchange_write_info[1]
+                    shuffle_id = _exchange_write_id(self.exchange_write_info)
                     actor_address = await self.actor_handle.get_address.remote()
                     cache_id = self.cache_id if self.cache_id is not None else 0
                     flight_refs: list[FlightShufflePartitionRef] = []
