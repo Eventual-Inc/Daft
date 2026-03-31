@@ -53,7 +53,6 @@ def aws_server(aws_server_ip: str, aws_server_port: int, aws_log_file: io.IOBase
     # moto_server process.
     aws_server_url = f"http://{aws_server_ip}:{aws_server_port}"
     old_env = os.environ.copy()
-    process = None
     # Set required AWS environment variables before starting server.
     # Required to opt out of concurrent writing, since we don't provide a LockClient.
     os.environ["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
@@ -63,8 +62,7 @@ def aws_server(aws_server_ip: str, aws_server_port: int, aws_log_file: io.IOBase
         yield aws_server_url
     finally:
         # Shutdown moto server.
-        if process is not None:
-            stop_process(process)
+        stop_process(process)
         # Restore old set of environment variables.
         os.environ = old_env
 

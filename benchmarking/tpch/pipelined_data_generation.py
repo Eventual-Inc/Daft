@@ -23,7 +23,7 @@ import shutil
 import subprocess
 from multiprocessing import Pool
 
-from benchmarking.tpch.data_generation import build_tpch_dbgen, gen_parquet
+from benchmarking.tpch.data_generation import gen_parquet
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def pipelined_data_generation(
     if not cachedir.exists():
         logger.info("Cloning tpch dbgen repo")
         subprocess.check_output(shlex.split(f"git clone https://github.com/electrum/tpch-dbgen {cachedir!s}"))
-        build_tpch_dbgen(str(cachedir))
+        subprocess.check_output("make", cwd=str(cachedir))
 
     for i, part_indices in enumerate(batch(range(1, num_parts + 1), n=parallelism)):
         logger.info("Partition %s: Generating CSV files", part_indices)
