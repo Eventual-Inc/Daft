@@ -25,7 +25,7 @@ def test_flotilla_runner_actor_name_is_namespaced(monkeypatch):
     multiple Daft clients connected to the same Ray cluster do not share a
     single RemoteFlotillaRunner instance.
     """
-    flotilla._FLOTILLA_RUNNER_NAME_SUFFIX = None
+    monkeypatch.setattr(flotilla, "_FLOTILLA_RUNNER_NAME_SUFFIX", None)
 
     class _DummyRuntimeContext:
         def __init__(self, job_id: str) -> None:
@@ -46,7 +46,7 @@ def test_flotilla_runner_actor_name_is_namespaced(monkeypatch):
 
 def test_flotilla_runner_actor_name_is_isolated_inside_runner_actor(monkeypatch):
     """Nested queries launched from a runner actor should target a child actor, not themselves."""
-    flotilla._FLOTILLA_RUNNER_NAME_SUFFIX = None
+    monkeypatch.setattr(flotilla, "_FLOTILLA_RUNNER_NAME_SUFFIX", None)
 
     class _DummyRuntimeContext:
         def __init__(self, job_id: str, actor_id: str) -> None:
@@ -65,6 +65,29 @@ def test_flotilla_runner_actor_name_is_isolated_inside_runner_actor(monkeypatch)
     name = flotilla.get_flotilla_runner_actor_name()
 
     assert name == f"{flotilla.FLOTILLA_RUNNER_NAME}-test-job-id-nested-test-actor-id"
+
+
+def test_flotilla_runner_actor_name_uses_uuid_fallback_inside_runner_actor(monkeypatch):
+    """Nested runner naming should not fall back to the parent actor name when actor id lookup fails."""
+    monkeypatch.setattr(flotilla, "_FLOTILLA_RUNNER_NAME_SUFFIX", None)
+
+    class _DummyRuntimeContext:
+        def __init__(self, job_id: str) -> None:
+            self.job_id = job_id
+
+        def get_actor_id(self) -> str:
+            raise RuntimeError("actor id unavailable")
+
+    def _fake_get_runtime_context() -> _DummyRuntimeContext:
+        return _DummyRuntimeContext("test-job-id")
+
+    monkeypatch.setenv(flotilla._INSIDE_FLOTILLA_RUNNER_ENV, "1")
+    monkeypatch.setattr(flotilla.ray, "get_runtime_context", _fake_get_runtime_context)
+    monkeypatch.setattr(flotilla.uuid, "uuid4", lambda: type("_UUID", (), {"hex": "fallback-actor-id"})())
+
+    name = flotilla.get_flotilla_runner_actor_name()
+
+    assert name == f"{flotilla.FLOTILLA_RUNNER_NAME}-test-job-id-nested-fallback-actor-id"
 
 
 def test_stream_plan_uses_query_id_for_runtime_key(monkeypatch):

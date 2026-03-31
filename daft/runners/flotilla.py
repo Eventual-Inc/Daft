@@ -467,11 +467,13 @@ def get_flotilla_runner_actor_name() -> str:
 
     if os.environ.get(_INSIDE_FLOTILLA_RUNNER_ENV) == "1":
         actor_id = _get_ray_actor_id_for_actor_naming()
-        if actor_id is not None:
-            nested_job_id = _get_ray_job_id_for_actor_naming()
-            if nested_job_id is None:
-                return f"{FLOTILLA_RUNNER_NAME}-nested-{actor_id}"
-            return f"{FLOTILLA_RUNNER_NAME}-{nested_job_id}-nested-{actor_id}"
+        if actor_id is None:
+            actor_id = uuid.uuid4().hex
+
+        nested_job_id = _get_ray_job_id_for_actor_naming()
+        if nested_job_id is None:
+            return f"{FLOTILLA_RUNNER_NAME}-nested-{actor_id}"
+        return f"{FLOTILLA_RUNNER_NAME}-{nested_job_id}-nested-{actor_id}"
 
     if _FLOTILLA_RUNNER_NAME_SUFFIX is None:
         job_id: str | None
