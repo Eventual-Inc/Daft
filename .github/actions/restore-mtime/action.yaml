@@ -1,55 +1,76 @@
-name: Restore file mtimes from git history
+name: Set file mtimes for cargo caching
 description: >
-  Restore each file's mtime to its last-commit timestamp so that cargo
-  fingerprints remain valid when the target/ directory is cached across
-  CI runs. Requires fetch-depth: 0 on the checkout step.
+  Ensure cargo correctly detects changed files when the target/ directory
+  is cached across CI runs.
+
+  Problem: actions/checkout sets all file mtimes to "now", which is newer
+  than the cached invoked.timestamp, causing cargo to rebuild everything.
+  We need unchanged files to be older than invoked.timestamp (skip) and
+  changed files to be newer (rebuild).
+
+  Approach: hash all source files and compare against saved hashes from
+  the previous cache-save build. Unchanged files get a fixed past
+  timestamp (2020-01-01). Changed files keep the checkout mtime ("now").
+  Since "now" (2026+) > any cached invoked.timestamp > 2020, cargo
+  correctly skips unchanged files and rebuilds changed ones.
+
+  Note: the previous git-commit-timestamp approach was broken because
+  commit timestamps are always in the past relative to the cached
+  invoked.timestamp, so cargo never rebuilt anything from cache.
 runs:
   using: composite
   steps:
-  - name: Restore file mtimes for cargo fingerprinting
+  - name: Set file mtimes for cargo caching
     shell: bash
     run: |
-      # actions/checkout sets all file mtimes to the checkout time, which
-      # invalidates cargo fingerprints and forces a full rebuild even when
-      # the cached target/ dir is restored.
-      #
-      # This pipeline walks the full git history to restore each file's
-      # mtime to its last-commit timestamp so cargo fingerprints match.
-      #
-      # git log outputs commits oldest-first (--reverse), each as:
-      #   <unix timestamp>       (--pretty=%ct: committer date in epoch seconds)
-      #   :<mode info> M\tfile   (--raw: one line per file touched in that commit)
-      #
-      # --no-merges: skips merge commits, whose combined diff omits cleanly
-      #   merged files — regular commits on each branch reliably list all
-      #   files they touched.
-      # --no-renames: prevents git from collapsing renames into a single
-      #   "R old\tnew" line that would break the awk tab parsing.
-      #
-      # awk processes line by line:
-      #   /^[0-9]+$/  — timestamp line: save in variable t
-      #   /^:[0-9]/   — raw diff line: extract filename (everything after
-      #                  the first tab) and map it to t in associative array c.
-      #                  Later commits overwrite earlier ones, so each file
-      #                  ends up with its most recent commit timestamp.
-      #   END         — print all "timestamp\tfilename" pairs.
-      #
-      # while loop reads each pair and touches the file with that timestamp.
-      #   IFS=$'\t'   — split on tab into ts and file
-      #   -r          — don't interpret backslashes in filenames as escapes
-      #   if [ -f ]   — skip files that no longer exist on disk (deletions)
-      #
-      # touch -d "@epoch" is GNU-specific (Linux). macOS/BSD touch doesn't
-      # support -d, so we fall back to touch -t with a formatted timestamp.
-      # Detection uses a temp file because /dev/null is root-owned and
-      # utimensat() requires ownership to change timestamps.
+      # Detect platform
       _tf=$(mktemp)
       if touch -d @0 "$_tf" 2>/dev/null; then
-        touch_epoch() { touch -d "@$1" "$2"; }
+        touch_past() { touch -d @1577836800 "$1"; }  # 2020-01-01
       else
-        touch_epoch() { touch -t "$(date -r "$1" +%Y%m%d%H%M.%S)" "$2"; }
+        touch_past() { touch -t 202001010000.00 "$1"; }
       fi
       rm -f "$_tf"
-      git log --raw --no-renames --no-merges --pretty=%ct --reverse \
-        | awk '/^[0-9]+$/{t=$0;next} /^:[0-9]/{f=substr($0,index($0,"\t")+1); c[f]=t} END{for(f in c) printf "%s\t%s\n",c[f],f}' \
-        | while IFS=$'\t' read -r ts file; do if [ -f "$file" ]; then touch_epoch "$ts" "$file"; fi; done
+
+      if command -v sha256sum >/dev/null 2>&1; then
+        hash_cmd="sha256sum"
+      else
+        hash_cmd="shasum -a 256"
+      fi
+
+      # Hash all build-relevant source files
+      current=$(mktemp)
+      find . -type f \
+        \( -name '*.rs' -o -name '*.toml' -o -name '*.lock' -o -name '*.py' -o -name '*.pyi' \) \
+        -not -path './target/*' \
+        -not -path './.git/*' \
+        -not -path './.venv/*' \
+        -not -path './node_modules/*' \
+        -not -path './.mypy_cache/*' \
+        -print0 \
+      | xargs -0 $hash_cmd | sort > "$current"
+
+      mkdir -p target
+      saved="target/.source-hashes"
+
+      if [ -f "$saved" ]; then
+        # Unchanged files: same hash+path in both builds.
+        # Set them to a fixed past time so cargo skips them.
+        # Changed files keep checkout mtime ("now") -> cargo rebuilds.
+        unchanged=$(mktemp)
+        comm -12 "$saved" "$current" | awk '{print $2}' > "$unchanged"
+
+        total=$(wc -l < "$current" | tr -d ' ')
+        unch=$(wc -l < "$unchanged" | tr -d ' ')
+        while IFS= read -r f; do
+          [ -f "$f" ] && touch_past "$f"
+        done < "$unchanged"
+        rm -f "$unchanged"
+        echo "Cache: $unch unchanged, $((total - unch)) changed files"
+      else
+        echo "No saved hashes (first build or cache miss), full rebuild"
+      fi
+
+      # Save for next cache cycle
+      cp "$current" "$saved"
+      rm -f "$current"
