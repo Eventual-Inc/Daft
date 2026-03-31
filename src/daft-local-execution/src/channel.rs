@@ -6,6 +6,10 @@ impl<T> Sender<T> {
     pub(crate) async fn send(&self, val: T) -> Result<(), tokio::sync::mpsc::error::SendError<T>> {
         self.0.send(val).await
     }
+
+    pub(crate) fn is_closed(&self) -> bool {
+        self.0.is_closed()
+    }
 }
 
 pub(crate) struct Receiver<T>(tokio::sync::mpsc::Receiver<T>);

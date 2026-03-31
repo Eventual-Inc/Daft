@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 mod capitalize;
 mod case;
 mod contains;
@@ -26,6 +25,7 @@ mod rpad;
 mod rstrip;
 mod split;
 mod startswith;
+mod strip;
 mod substr;
 mod to_date;
 mod to_datetime;
@@ -58,6 +58,7 @@ pub use rpad::*;
 pub use rstrip::*;
 pub use split::*;
 pub use startswith::*;
+pub use strip::*;
 pub use substr::*;
 pub use to_date::*;
 pub use to_datetime::*;
@@ -94,6 +95,7 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
         parent.add_fn(Right);
         parent.add_fn(RPad);
         parent.add_fn(RStrip);
+        parent.add_fn(Strip);
         parent.add_fn(SnakeCase);
         parent.add_fn(Split);
         parent.add_fn(StartsWith);

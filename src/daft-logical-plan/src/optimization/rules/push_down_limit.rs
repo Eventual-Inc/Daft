@@ -59,7 +59,9 @@ impl PushDownLimit {
                     // Naive commuting with unary ops.
                     //
                     // Limit-UnaryOp -> UnaryOp-Limit
-                    LogicalPlan::Repartition(_) | LogicalPlan::IntoBatches(_) => {
+                    LogicalPlan::Repartition(_)
+                    | LogicalPlan::IntoBatches(_)
+                    | LogicalPlan::IntoPartitions(_) => {
                         let new_limit = plan
                             .with_new_children(&[input.arc_children()[0].clone()])
                             .into();
@@ -205,6 +207,7 @@ impl PushDownLimit {
                     | LogicalPlan::Offset(_)
                     | LogicalPlan::TopN(..)
                     | LogicalPlan::Sample(..)
+                    | LogicalPlan::Shuffle(..)
                     | LogicalPlan::Explode(..)
                     | LogicalPlan::Shard(..)
                     | LogicalPlan::UDFProject(..)
@@ -231,9 +234,9 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use common_scan_info::Pushdowns;
     use daft_core::prelude::*;
     use daft_dsl::unresolved_col;
+    use daft_scan::Pushdowns;
     #[cfg(feature = "python")]
     use pyo3::Python;
     use rstest::rstest;

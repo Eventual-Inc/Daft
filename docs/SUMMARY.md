@@ -32,11 +32,13 @@
     * Data Connectors
         * [Connectors](connectors/index.md)
         * [Custom Connectors](connectors/custom.md)
+        * [Custom Catalogs](connectors/custom-catalogs.md)
         * [AWS Glue](connectors/glue.md)
         * [AWS S3 Tables](connectors/s3tables.md)
         * [Apache Gravitino](connectors/gravitino.md)
         * [Apache Hudi](connectors/hudi.md)
         * [Apache Iceberg](connectors/iceberg.md)
+        * [Apache Kafka](connectors/kafka.md)
         * [Azure Blob Store](connectors/azure.md)
         * [Delta Lake](connectors/delta_lake.md)
         * [Lance](connectors/lance.md)
@@ -57,6 +59,7 @@
     * Optimization
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
+        * [Join Strategies](optimization/join-strategies.md)
     * Observability
         * [Progress Indicators](observability/progress-indicators.md)
         * [Logging](observability/logging.md)
@@ -114,7 +117,7 @@
     * [Overview](contributing/overview.md)
     * [Development Guide](contributing/development.md)
     * [Contributing AI Functions](contributing/contributing-ai-functions.md)
-* [Daft Cloud](https://www.daft.ai/cloud)
+* [Daft Skills](skills.md)
 
 <!--
 TODO

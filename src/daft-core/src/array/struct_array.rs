@@ -49,7 +49,7 @@ impl StructArray {
                         dtype_field
                     );
                     assert!(
-                        dtype_field.name == series.name(),
+                        *dtype_field.name == *series.name(),
                         "StructArray::new received a series with name: {} but expected name: {}",
                         series.name(),
                         &dtype_field.name
@@ -59,7 +59,7 @@ impl StructArray {
                 let len = if !children.is_empty() {
                     children[0].len()
                 } else {
-                    0
+                    nulls.as_ref().map_or(0, |n| n.len())
                 };
 
                 for s in &children {
@@ -91,6 +91,33 @@ impl StructArray {
                 "StructArray::new expected Struct datatype, but received field: {}",
                 field
             ),
+        }
+    }
+
+    pub fn new_empty<F: Into<Arc<Field>>>(
+        field: F,
+        len: usize,
+        nulls: Option<arrow::buffer::NullBuffer>,
+    ) -> Self {
+        let field: Arc<Field> = field.into();
+        assert!(
+            matches!(&field.dtype, DataType::Struct(fields) if fields.is_empty()),
+            "StructArray::new_empty expected empty Struct datatype, but received field: {}",
+            field
+        );
+        if let Some(ref n) = nulls {
+            assert!(
+                n.len() == len,
+                "StructArray::new_empty expects validity to have length {} but received: {}",
+                len,
+                n.len()
+            );
+        }
+        Self {
+            field,
+            children: vec![],
+            nulls,
+            len,
         }
     }
 
@@ -195,11 +222,15 @@ impl StructArray {
 
         let nulls = self.nulls.clone();
 
-        Ok(Arc::new(arrow::array::StructArray::new(
-            fields.clone(),
-            children,
-            nulls,
-        )) as _)
+        if fields.is_empty() {
+            Ok(Arc::new(arrow::array::StructArray::new_empty_fields(self.len, nulls)) as _)
+        } else {
+            Ok(Arc::new(arrow::array::StructArray::new(
+                fields.clone(),
+                children,
+                nulls,
+            )) as _)
+        }
     }
 
     pub fn with_nulls(&self, nulls: Option<arrow::buffer::NullBuffer>) -> DaftResult<Self> {

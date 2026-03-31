@@ -7,12 +7,12 @@ common-io-config = {path = "../common/io-config", default-features = false}
 common-partitioning = {path = "../common/partitioning", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-resource-request = {path = "../common/resource-request", default-features = false}
-common-scan-info = {path = "../common/scan-info", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-algebra = {path = "../daft-algebra", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-functions = {path = "../daft-functions", default-features = false}
+daft-scan = {path = "../daft-scan", default-features = false}
 daft-functions-list = {path = "../daft-functions-list", default-features = false}
 daft-functions-uri = {path = "../daft-functions-uri", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
@@ -26,17 +26,15 @@ pyo3 = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
 snafu = {workspace = true}
 tokio = {workspace = true}
-typed-builder = {workspace = true}
 serde_json.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
 daft-dsl = {path = "../daft-dsl", features = ["test-utils"]}
-daft-functions-binary = {path = "../daft-functions-binary", default-features = false}
 daft-functions-utf8 = {path = "../daft-functions-utf8", default-features = false}
 indoc = "2"
 pretty_assertions = {workspace = true}
-rand = "0.8"
+rand = {workspace = true}
 rstest = {workspace = true}
 test-log = {workspace = true}
 
@@ -45,16 +43,15 @@ python = [
   "dep:pyo3",
   "common-display/python",
   "common-error/python",
-  "common-file-formats/python",
   "common-io-config/python",
   "common-daft-config/python",
   "common-resource-request/python",
   "common-partitioning/python",
-  "common-scan-info/python",
   "daft-core/python",
   "daft-dsl/python",
   "daft-functions/python",
   "daft-functions-list/python",
+  "daft-scan/python",
   "daft-schema/python"
 ]
 

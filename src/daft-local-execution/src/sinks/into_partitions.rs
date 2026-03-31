@@ -6,18 +6,19 @@ use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) enum IntoPartitionsState {
-    Building(Vec<Arc<MicroPartition>>),
+    Building(Vec<MicroPartition>),
     Done,
 }
 
 impl IntoPartitionsState {
-    fn push(&mut self, part: Arc<MicroPartition>) {
+    fn push(&mut self, part: MicroPartition) {
         if let Self::Building(parts) = self {
             parts.push(part);
         } else {
@@ -25,7 +26,7 @@ impl IntoPartitionsState {
         }
     }
 
-    fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
+    fn finalize(&mut self) -> Vec<MicroPartition> {
         let res = if let Self::Building(parts) = self {
             std::mem::take(parts)
         } else {
@@ -56,8 +57,9 @@ impl BlockingSink for IntoPartitionsSink {
     #[instrument(skip_all, name = "IntoPartitionsSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         state.push(input);
@@ -69,7 +71,7 @@ impl BlockingSink for IntoPartitionsSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let num_partitions = self.num_partitions;
         let schema = self.schema.clone();
 
@@ -77,7 +79,7 @@ impl BlockingSink for IntoPartitionsSink {
             .spawn(
                 async move {
                     // Collect all data from all states
-                    let all_parts: Vec<Arc<MicroPartition>> = states
+                    let all_parts: Vec<_> = states
                         .into_iter()
                         .flat_map(|mut state| state.finalize())
                         .collect();
@@ -95,15 +97,14 @@ impl BlockingSink for IntoPartitionsSink {
 
                         if start_idx < total_rows {
                             let sliced_table = concatenated.slice(start_idx, end_idx)?;
-                            outputs.push(Arc::new(sliced_table));
+                            outputs.push(sliced_table);
                         } else {
                             // Empty partition
-                            let mp =
-                                MicroPartition::new_loaded(schema.clone(), Arc::new(vec![]), None);
-                            outputs.push(Arc::new(mp));
+                            let mp = MicroPartition::empty(Some(schema.clone()));
+                            outputs.push(mp);
                         }
                     }
-                    Ok(BlockingSinkFinalizeOutput::Finished(outputs))
+                    Ok(outputs)
                 },
                 Span::current(),
             )
@@ -125,7 +126,7 @@ impl BlockingSink for IntoPartitionsSink {
         )]
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         Ok(IntoPartitionsState::Building(Vec::new()))
     }
 

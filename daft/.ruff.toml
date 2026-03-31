@@ -11,4 +11,4 @@ extend-select = [
 # Ban certain modules from being imported at module level, instead requiring
 # that they're imported lazily (e.g., within a function definition,
 # with daft.lazy_import.LazyImport, or with TYPE_CHECKING).
-banned-module-level-imports = ["daft.unity_catalog", "fsspec", "numpy", "pandas", "PIL", "pyarrow", "ray", "xml"]
+banned-module-level-imports = ["daft.catalog.__unity._client", "fsspec", "numpy", "pandas", "PIL", "pyarrow", "ray", "xml"]

@@ -235,13 +235,15 @@ mod tests {
             Field::new("value", DataType::Int64),
         ]);
 
-        let input_plan = dummy_scan_node(scan_op.clone());
+        let input_plan = dummy_scan_node(scan_op);
 
         let category_col = resolved_col("category");
         let value_col = resolved_col("value");
 
-        let mut window_spec = WindowSpec::default();
-        window_spec.partition_by = vec![category_col.clone()];
+        let window_spec = WindowSpec {
+            partition_by: vec![category_col.clone()],
+            ..Default::default()
+        };
         let window_spec = Arc::new(window_spec);
 
         let min_expr: WindowExpr = value_col.clone().min().try_into().unwrap();
@@ -249,16 +251,16 @@ mod tests {
         let window_func =
             Arc::new(Expr::Over(min_expr.clone(), window_spec.clone())).alias("min_value");
 
-        let projection = vec![category_col.clone(), value_col.clone(), window_func.clone()];
+        let projection = vec![category_col.clone(), value_col.clone(), window_func];
 
-        let plan = input_plan.clone().select(projection)?.build();
+        let plan = input_plan.select(projection)?.build();
 
         let window_expr = Arc::new(Expr::Over(min_expr.clone(), window_spec.clone()));
         let auto_generated_name = window_expr.semantic_id(&input_plan.schema()).id.to_string();
 
         let window_op = Window::try_new(
-            input_plan.clone().build(),
-            vec![min_expr.clone()],
+            input_plan.build(),
+            vec![min_expr],
             vec![auto_generated_name.clone()],
             window_spec,
         )?;
@@ -286,14 +288,16 @@ mod tests {
             Field::new("value", DataType::Int64),
         ]);
 
-        let input_plan = dummy_scan_node(scan_op.clone());
+        let input_plan = dummy_scan_node(scan_op);
 
         let category_col = resolved_col("category");
         let group_col = resolved_col("group");
         let value_col = resolved_col("value");
 
-        let mut window_spec = WindowSpec::default();
-        window_spec.partition_by = vec![category_col.clone(), group_col.clone()];
+        let window_spec = WindowSpec {
+            partition_by: vec![category_col.clone(), group_col.clone()],
+            ..Default::default()
+        };
         let window_spec = Arc::new(window_spec);
 
         let sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
@@ -305,17 +309,17 @@ mod tests {
             category_col.clone(),
             group_col.clone(),
             value_col.clone(),
-            window_func.clone(),
+            window_func,
         ];
 
-        let plan = input_plan.clone().select(projection)?.build();
+        let plan = input_plan.select(projection)?.build();
 
         let window_expr = Arc::new(Expr::Over(sum_expr.clone(), window_spec.clone()));
         let auto_generated_name = window_expr.semantic_id(&input_plan.schema()).id.to_string();
 
         let window_op = Window::try_new(
-            input_plan.clone().build(),
-            vec![sum_expr.clone()],
+            input_plan.build(),
+            vec![sum_expr],
             vec![auto_generated_name.clone()],
             window_spec,
         )?;
@@ -344,18 +348,22 @@ mod tests {
             Field::new("value", DataType::Int64),
         ]);
 
-        let input_plan = dummy_scan_node(scan_op.clone());
+        let input_plan = dummy_scan_node(scan_op);
 
         let category_col = resolved_col("category");
         let group_col = resolved_col("group");
         let value_col = resolved_col("value");
 
-        let mut window_spec1 = WindowSpec::default();
-        window_spec1.partition_by = vec![category_col.clone()];
+        let window_spec1 = WindowSpec {
+            partition_by: vec![category_col.clone()],
+            ..Default::default()
+        };
         let window_spec1 = Arc::new(window_spec1);
 
-        let mut window_spec2 = WindowSpec::default();
-        window_spec2.partition_by = vec![group_col.clone()];
+        let window_spec2 = WindowSpec {
+            partition_by: vec![group_col.clone()],
+            ..Default::default()
+        };
         let window_spec2 = Arc::new(window_spec2);
 
         let min_expr: WindowExpr = value_col.clone().min().try_into().unwrap();
@@ -370,11 +378,11 @@ mod tests {
             category_col.clone(),
             group_col.clone(),
             value_col.clone(),
-            window_func1.clone(),
-            window_func2.clone(),
+            window_func1,
+            window_func2,
         ];
 
-        let plan = input_plan.clone().select(projection)?.build();
+        let plan = input_plan.select(projection)?.build();
 
         let window_expr1 = Arc::new(Expr::Over(min_expr.clone(), window_spec1.clone()));
         let window_expr2 = Arc::new(Expr::Over(sum_expr.clone(), window_spec2.clone()));
@@ -389,8 +397,8 @@ mod tests {
             .to_string();
 
         let window_op1 = Window::try_new(
-            input_plan.clone().build(),
-            vec![min_expr.clone()],
+            input_plan.build(),
+            vec![min_expr],
             vec![auto_generated_name1.clone()],
             window_spec1,
         )?;
@@ -399,7 +407,7 @@ mod tests {
 
         let window_op2 = Window::try_new(
             intermediate_plan,
-            vec![sum_expr.clone()],
+            vec![sum_expr],
             vec![auto_generated_name2.clone()],
             window_spec2,
         )?;
@@ -430,18 +438,22 @@ mod tests {
             Field::new("value", DataType::Int64),
         ]);
 
-        let input_plan = dummy_scan_node(scan_op.clone());
+        let input_plan = dummy_scan_node(scan_op);
 
         let category_col = resolved_col("category");
         let group_col = resolved_col("group");
         let value_col = resolved_col("value");
 
-        let mut multi_partition_spec = WindowSpec::default();
-        multi_partition_spec.partition_by = vec![category_col.clone(), group_col.clone()];
+        let multi_partition_spec = WindowSpec {
+            partition_by: vec![category_col.clone(), group_col.clone()],
+            ..Default::default()
+        };
         let multi_partition_spec = Arc::new(multi_partition_spec);
 
-        let mut single_partition_spec = WindowSpec::default();
-        single_partition_spec.partition_by = vec![category_col.clone()];
+        let single_partition_spec = WindowSpec {
+            partition_by: vec![category_col.clone()],
+            ..Default::default()
+        };
         let single_partition_spec = Arc::new(single_partition_spec);
 
         let sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
@@ -463,13 +475,13 @@ mod tests {
             category_col.clone(),
             group_col.clone(),
             value_col.clone(),
-            window_func1.clone(),
-            window_func2.clone(),
-            window_func3.clone(),
-            window_func4.clone(),
+            window_func1,
+            window_func2,
+            window_func3,
+            window_func4,
         ];
 
-        let plan = input_plan.clone().select(projection)?.build();
+        let plan = input_plan.select(projection)?.build();
 
         let window_expr1 = Arc::new(Expr::Over(sum_expr.clone(), multi_partition_spec.clone()));
         let window_expr2 = Arc::new(Expr::Over(avg_expr.clone(), multi_partition_spec.clone()));
@@ -494,8 +506,8 @@ mod tests {
             .to_string();
 
         let multi_window_op = Window::try_new(
-            input_plan.clone().build(),
-            vec![sum_expr.clone(), avg_expr.clone()],
+            input_plan.build(),
+            vec![sum_expr, avg_expr],
             vec![auto_generated_name1.clone(), auto_generated_name2.clone()],
             multi_partition_spec,
         )?;
@@ -504,7 +516,7 @@ mod tests {
 
         let single_window_op = Window::try_new(
             intermediate_plan,
-            vec![min_expr.clone(), max_expr.clone()],
+            vec![min_expr, max_expr],
             vec![auto_generated_name3.clone(), auto_generated_name4.clone()],
             single_partition_spec,
         )?;
@@ -537,22 +549,28 @@ mod tests {
             Field::new("value", DataType::Int64),
         ]);
 
-        let input_plan = dummy_scan_node(scan_op.clone());
+        let input_plan = dummy_scan_node(scan_op);
 
         let letter_col = resolved_col("letter");
         let num_col = resolved_col("num");
         let value_col = resolved_col("value");
 
-        let mut letter_window_spec = WindowSpec::default();
-        letter_window_spec.partition_by = vec![letter_col.clone()];
+        let letter_window_spec = WindowSpec {
+            partition_by: vec![letter_col.clone()],
+            ..Default::default()
+        };
         let letter_window_spec = Arc::new(letter_window_spec);
 
-        let mut num_window_spec = WindowSpec::default();
-        num_window_spec.partition_by = vec![num_col.clone()];
+        let num_window_spec = WindowSpec {
+            partition_by: vec![num_col.clone()],
+            ..Default::default()
+        };
         let num_window_spec = Arc::new(num_window_spec);
 
-        let mut combined_window_spec = WindowSpec::default();
-        combined_window_spec.partition_by = vec![letter_col.clone(), num_col.clone()];
+        let combined_window_spec = WindowSpec {
+            partition_by: vec![letter_col.clone(), num_col.clone()],
+            ..Default::default()
+        };
         let combined_window_spec = Arc::new(combined_window_spec);
 
         let letter_sum_expr: WindowExpr = value_col.clone().sum().try_into().unwrap();
@@ -578,12 +596,12 @@ mod tests {
             letter_col.clone(),
             num_col.clone(),
             value_col.clone(),
-            letter_sum.clone(),
-            num_sum.clone(),
-            combined_sum.clone(),
+            letter_sum,
+            num_sum,
+            combined_sum,
         ];
 
-        let plan = input_plan.clone().select(projection)?.build();
+        let plan = input_plan.select(projection)?.build();
 
         let window_expr1 = Arc::new(Expr::Over(
             letter_sum_expr.clone(),
@@ -609,7 +627,7 @@ mod tests {
             .to_string();
 
         let letter_window_op = Window::try_new(
-            input_plan.clone().build(),
+            input_plan.build(),
             vec![letter_sum_expr],
             vec![letter_sum_id.clone()],
             letter_window_spec,
@@ -659,13 +677,15 @@ mod tests {
             Field::new("value", DataType::Int64),
         ]);
 
-        let input_plan = dummy_scan_node(scan_op.clone());
+        let input_plan = dummy_scan_node(scan_op);
 
         let category_col = resolved_col("category");
         let value_col = resolved_col("value");
 
-        let mut window_spec = WindowSpec::default();
-        window_spec.partition_by = vec![category_col.clone()];
+        let window_spec = WindowSpec {
+            partition_by: vec![category_col.clone()],
+            ..Default::default()
+        };
         let window_spec = Arc::new(window_spec);
 
         let min_expr: WindowExpr = value_col.clone().min().try_into().unwrap();
@@ -678,18 +698,18 @@ mod tests {
         let projection = vec![
             category_col.clone(),
             value_col.clone(),
-            window_func1.clone(),
-            window_func2.clone(),
+            window_func1,
+            window_func2,
         ];
 
-        let plan = input_plan.clone().select(projection)?.build();
+        let plan = input_plan.select(projection)?.build();
 
         let window_expr = Arc::new(Expr::Over(min_expr.clone(), window_spec.clone()));
         let auto_generated_name = window_expr.semantic_id(&input_plan.schema()).id.to_string();
 
         let window_op = Window::try_new(
-            input_plan.clone().build(),
-            vec![min_expr.clone()],
+            input_plan.build(),
+            vec![min_expr],
             vec![auto_generated_name.clone()],
             window_spec,
         )?;

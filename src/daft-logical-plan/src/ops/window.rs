@@ -68,7 +68,7 @@ impl Window {
                     .zip(window_functions.iter())
                     .map(|(name, expr)| {
                         let dtype = expr.to_field(&input_schema)?.dtype;
-                        Ok(Field::new(name, dtype))
+                        Ok(Field::new(name.as_str(), dtype))
                     }),
             )
             .collect::<DaftResult<Vec<_>>>()?;

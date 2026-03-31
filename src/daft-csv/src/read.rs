@@ -667,7 +667,7 @@ fn parse_into_column_array_chunk_stream(
         .map(|i| {
             let f = fields.get(*i).unwrap();
             daft_core::datatypes::Field::new(
-                f.name(),
+                f.name().as_str(),
                 daft_schema::dtype::DataType::try_from(f.data_type()).unwrap(),
             )
         })
@@ -828,16 +828,14 @@ mod tests {
         let mut fields = merge_schema(&headers, &mut column_types);
 
         // Apply column name overrides (for no-header case).
-        if !has_header {
-            if let Some(ref names) = column_names {
-                fields = fields
-                    .into_iter()
-                    .zip(names.iter())
-                    .map(|(field, name)| {
-                        arrow_schema::Field::new(*name, field.data_type().clone(), true)
-                    })
-                    .collect();
-            }
+        if !has_header && let Some(ref names) = column_names {
+            fields = fields
+                .into_iter()
+                .zip(names.iter())
+                .map(|(field, name)| {
+                    arrow_schema::Field::new(*name, field.data_type().clone(), true)
+                })
+                .collect();
         }
 
         // Determine projection indices.
@@ -858,21 +856,17 @@ mod tests {
                         .unwrap();
                 let field = &fields[col_idx];
                 let daft_dtype = daft_schema::dtype::DataType::try_from(field.data_type()).unwrap();
-                let daft_field = daft_core::datatypes::Field::new(field.name(), daft_dtype);
+                let daft_field =
+                    daft_core::datatypes::Field::new(field.name().as_str(), daft_dtype);
                 Series::from_arrow(daft_field, arr).unwrap()
             })
             .collect();
 
         // Compare schema.
-        let reference_schema = Schema::new(
-            projected_fields
-                .iter()
-                .map(|f| {
-                    let daft_dtype = daft_schema::dtype::DataType::try_from(f.data_type()).unwrap();
-                    daft_core::datatypes::Field::new(f.name(), daft_dtype)
-                })
-                .collect::<Vec<_>>(),
-        );
+        let reference_schema = Schema::new(projected_fields.iter().map(|f| {
+            let daft_dtype = daft_schema::dtype::DataType::try_from(f.data_type()).unwrap();
+            daft_core::datatypes::Field::new(f.name().as_str(), daft_dtype)
+        }));
         assert_eq!(
             out.schema.as_ref(),
             &reference_schema,
@@ -887,7 +881,7 @@ mod tests {
             .zip(reference_series.iter())
             .enumerate()
         {
-            let out_arrow = out_col.to_arrow().unwrap();
+            let out_arrow = out_col.as_materialized_series().to_arrow().unwrap();
             let ref_arrow = ref_col.to_arrow().unwrap();
             assert_eq!(
                 out_arrow.as_ref(),

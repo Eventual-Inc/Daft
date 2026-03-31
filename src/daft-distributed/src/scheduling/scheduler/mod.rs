@@ -5,7 +5,7 @@ use super::{
     worker::{Worker, WorkerId},
 };
 use crate::{
-    pipeline_node::MaterializedOutput,
+    pipeline_node::TaskOutput,
     scheduling::task::{TaskContext, TaskResourceRequest},
     utils::channel::OneshotSender,
 };
@@ -30,14 +30,14 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
 
 pub(crate) struct PendingTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
+    result_tx: OneshotSender<DaftResult<Option<TaskOutput>>>,
     cancel_token: CancellationToken,
 }
 
 impl<T: Task> PendingTask<T> {
     pub fn new(
         task: T,
-        result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
+        result_tx: OneshotSender<DaftResult<Option<TaskOutput>>>,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
@@ -59,7 +59,7 @@ impl<T: Task> PendingTask<T> {
         self,
     ) -> (
         T,
-        OneshotSender<DaftResult<Option<MaterializedOutput>>>,
+        OneshotSender<DaftResult<Option<TaskOutput>>>,
         CancellationToken,
     ) {
         (self.task, self.result_tx, self.cancel_token)
@@ -99,7 +99,7 @@ impl<T: Task> Ord for PendingTask<T> {
 
 pub(super) struct ScheduledTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
+    result_tx: OneshotSender<DaftResult<Option<TaskOutput>>>,
     cancel_token: CancellationToken,
     worker_id: WorkerId,
 }
@@ -132,7 +132,7 @@ impl<T: Task> ScheduledTask<T> {
     ) -> (
         WorkerId,
         T,
-        OneshotSender<DaftResult<Option<MaterializedOutput>>>,
+        OneshotSender<DaftResult<Option<TaskOutput>>>,
         CancellationToken,
     ) {
         (self.worker_id, self.task, self.result_tx, self.cancel_token)
@@ -272,7 +272,7 @@ pub(super) mod test_utils {
         scheduler.update_worker_state(
             workers
                 .values()
-                .map(|w| WorkerSnapshot::from(w))
+                .map(WorkerSnapshot::from)
                 .collect::<Vec<_>>()
                 .as_slice(),
         );

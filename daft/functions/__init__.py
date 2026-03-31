@@ -62,6 +62,9 @@ from .datetime import (
     to_datetime,
     date_trunc,
     to_unix_epoch,
+    current_date,
+    current_timestamp,
+    current_timezone,
 )
 from .distance import cosine_distance, dot_product, euclidean_distance
 from .similarity import (
@@ -108,6 +111,7 @@ from .llm import llm_generate
 from .misc import (
     monotonically_increasing_id,
     uuid,
+    random_int,
     eq_null_safe,
     cast,
     is_null,
@@ -187,6 +191,7 @@ from .str import (
     upper,
     lstrip,
     rstrip,
+    strip,
     reverse,
     capitalize,
     to_camel_case,
@@ -282,6 +287,9 @@ __all__ = [
     "count_matches",
     "crop",
     "csc",
+    "current_date",
+    "current_timestamp",
+    "current_timezone",
     "date",
     "date_trunc",
     "day",
@@ -390,6 +398,7 @@ __all__ = [
     "prompt",
     "quarter",
     "radians",
+    "random_int",
     "rank",
     "regexp",
     "regexp_count",
@@ -424,6 +433,7 @@ __all__ = [
     "stddev",
     "strftime",
     "string_agg",
+    "strip",
     "substr",
     "sum",
     "tan",

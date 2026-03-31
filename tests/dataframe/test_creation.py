@@ -18,10 +18,7 @@ import daft
 from daft.api_annotations import APITypeError
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
-from daft.utils import pyarrow_supports_fixed_shape_tensor
 from tests.conftest import UuidType
-
-ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
 
 
 class MyObj:
@@ -116,6 +113,17 @@ def test_create_dataframe_list_ragged_keys() -> None:
     }
 
 
+def test_create_dataframe_list_preserves_field_order() -> None:
+    df = daft.from_pylist(
+        [
+            {"z": 1, "a": 2},
+            {"m": 3, "z": 4},
+            {"a": 5, "b": 6},
+        ]
+    )
+    assert df.column_names == ["z", "a", "m", "b"]
+
+
 def test_create_dataframe_list_empty_dicts() -> None:
     df = daft.from_pylist([{}, {}, {}])
     assert df.column_names == []
@@ -188,10 +196,6 @@ def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) ->
     assert df.to_arrow() == expected
 
 
-@pytest.mark.skipif(
-    not pyarrow_supports_fixed_shape_tensor(),
-    reason=f"Arrow version {ARROW_VERSION} doesn't support the canonical tensor extension type.",
-)
 def test_create_dataframe_arrow_tensor_canonical(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     shape = (2, 2)
@@ -637,7 +641,7 @@ def test_create_dataframe_csv_schema_hints_override_types(valid_data: list[dict[
         assert pd_df["sepal_length"][0] == str(valid_data[0]["sepal_length"])
 
 
-def test_create_dataframe_csv_schema_hints_ignore_random_hint(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_csv_schema_hints_add_missing_column(valid_data: list[dict[str, float]]) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             header = list(valid_data[0].keys())
@@ -651,14 +655,15 @@ def test_create_dataframe_csv_schema_hints_ignore_random_hint(valid_data: list[d
             delimiter="\t",
             infer_schema=True,
             schema={
-                "foo": DataType.string(),  # Random column name that is not in the table
+                "foo": DataType.string(),  # Column not in data; should be added with nulls
             },
         )
-        assert df.column_names == COL_NAMES
+        assert df.column_names == COL_NAMES + ["foo"]
 
         pd_df = df.to_pandas()
-        assert list(pd_df.columns) == COL_NAMES
+        assert list(pd_df.columns) == COL_NAMES + ["foo"]
         assert len(pd_df) == len(valid_data)
+        assert pd_df["foo"].isnull().all()
 
 
 def test_create_dataframe_csv_without_schema_or_inference(valid_data: list[dict[str, float]]) -> None:
@@ -886,7 +891,7 @@ def test_create_dataframe_json_schema_override_types(valid_data: list[dict[str, 
         assert pd_df["sepal_length"][0] == str(valid_data[0]["sepal_length"])
 
 
-def test_create_dataframe_json_schema_hints_ignore_random_hint(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_json_schema_hints_add_missing_column(valid_data: list[dict[str, float]]) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             for data in valid_data:
@@ -898,14 +903,15 @@ def test_create_dataframe_json_schema_hints_ignore_random_hint(valid_data: list[
             fname,
             infer_schema=True,
             schema={
-                "foo": DataType.string(),  # Random column name that is not in the table
+                "foo": DataType.string(),  # Column not in data; should be added with nulls
             },
         )
-        assert df.column_names == COL_NAMES
+        assert df.column_names == COL_NAMES + ["foo"]
 
         pd_df = df.to_pandas()
-        assert list(pd_df.columns) == COL_NAMES
+        assert list(pd_df.columns) == COL_NAMES + ["foo"]
         assert len(pd_df) == len(valid_data)
+        assert pd_df["foo"].isnull().all()
 
 
 def test_create_dataframe_json_schema_hints_two_files() -> None:
@@ -1183,7 +1189,7 @@ def test_create_dataframe_parquet_schema_override_types(valid_data: list[dict[st
         assert pd_df["sepal_length"][0] == str(valid_data[0]["sepal_length"])
 
 
-def test_create_dataframe_parquet_schema_hints_ignore_random_hint(valid_data: list[dict[str, float]]) -> None:
+def test_create_dataframe_parquet_schema_hints_add_missing_column(valid_data: list[dict[str, float]]) -> None:
     with create_temp_filename() as fname:
         with open(fname, "w") as f:
             table = pa.Table.from_pydict({col: [d[col] for d in valid_data] for col in COL_NAMES})
@@ -1194,14 +1200,15 @@ def test_create_dataframe_parquet_schema_hints_ignore_random_hint(valid_data: li
             fname,
             infer_schema=True,
             schema={
-                "foo": DataType.string(),  # Random column name that is not in the table
+                "foo": DataType.string(),  # Column not in data; should be added with nulls
             },
         )
-        assert df.column_names == COL_NAMES
+        assert df.column_names == COL_NAMES + ["foo"]
 
         pd_df = df.to_pandas()
-        assert list(pd_df.columns) == COL_NAMES
+        assert list(pd_df.columns) == COL_NAMES + ["foo"]
         assert len(pd_df) == len(valid_data)
+        assert pd_df["foo"].isnull().all()
 
 
 def test_create_dataframe_parquet_mismatched_schemas_no_pushdown():

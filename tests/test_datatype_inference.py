@@ -274,10 +274,10 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
         (datetime.timedelta(microseconds=1), dt.duration(TimeUnit.us())),
         ([], dt.list(dt.null())),
         (["a", "b", "c"], dt.list(dt.string())),
-        ({}, dt.struct({"": dt.null()})),
+        ({}, dt.struct({})),
         ({"foo": "1", "bar": 2}, dt.struct({"foo": dt.string(), "bar": dt.int64()})),
         ({1: 2, 3: 4}, dt.map(dt.int64(), dt.int64())),
-        ((), dt.struct({"": dt.null()})),
+        ((), dt.struct({})),
         (("0", 1), dt.struct({"_0": dt.string(), "_1": dt.int64()})),
         (decimal.Decimal("1.5"), dt.decimal128(38, 1)),
         (decimal.Decimal("4.56e-2"), dt.decimal128(38, 4)),  # 0.0456
@@ -373,7 +373,7 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
         ),
         # Empty nested structures
         ([[], []], dt.list(dt.list(dt.null()))),
-        ([{}, {}], dt.list(dt.struct({"": dt.null()}))),
+        ([{}, {}], dt.list(dt.struct({}))),
         # Pydantic model instances
         (
             SimplePydanticModel(name="Alice", age=30),
@@ -422,7 +422,7 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
                 }
             ),
         ),
-        (EmptyPydanticModel(), dt.struct({"": dt.null()})),
+        (EmptyPydanticModel(), dt.struct({})),
         # TODO: uncomment once we support named tuples
         # (SimpleNamedTuple(foo="1", bar=2), dt.struct({"foo": dt.string(), "bar": dt.int64()})),
         # (PydanticWithNamedTuple(values=SimpleNamedTuple(foo="1", bar=2)), dt.struct({"values": dt.struct({"foo": dt.string(), "bar": dt.int64()})})),

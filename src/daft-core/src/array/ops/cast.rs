@@ -111,6 +111,10 @@ where
                     let utf8_series = self.cast(&DataType::Utf8)?;
                     return utf8_series.cast(dtype);
                 }
+                if matches!(src, DataType::Utf8) && matches!(dtype, DataType::FixedSizeBinary(_)) {
+                    let binary_series = self.cast(&DataType::Binary)?;
+                    return binary_series.cast(dtype);
+                }
 
                 // Binary -> FixedSizeBinary: validate all non-null values match the target width
                 if let DataType::FixedSizeBinary(target_size) = dtype
@@ -1651,27 +1655,27 @@ impl StructArray {
                     self_fields
                         .iter()
                         .enumerate()
-                        .map(|(i, f)| (f.name.as_str(), i)),
+                        .map(|(i, f)| (f.name.as_ref(), i)),
                 );
                 let casted_series = other_fields
                     .iter()
                     .map(
-                        |field| match self_field_names_to_idx.get(field.name.as_str()) {
+                        |field| match self_field_names_to_idx.get(field.name.as_ref()) {
                             None => Ok(Series::full_null(
-                                field.name.as_str(),
+                                field.name.as_ref(),
                                 &field.dtype,
                                 self.len(),
                             )),
                             Some(field_idx) => self.children[*field_idx].cast(&field.dtype),
                         },
                     )
-                    .collect::<DaftResult<Vec<Series>>>();
-                Ok(Self::new(
-                    Field::new(self.name(), dtype.clone()),
-                    casted_series?,
-                    self.nulls().cloned(),
-                )
-                .into_series())
+                    .collect::<DaftResult<Vec<Series>>>()?;
+                let field = Field::new(self.name(), dtype.clone());
+                if other_fields.is_empty() {
+                    Ok(Self::new_empty(field, self.len(), self.nulls().cloned()).into_series())
+                } else {
+                    Ok(Self::new(field, casted_series, self.nulls().cloned()).into_series())
+                }
             }
             (DataType::Struct(..), DataType::Tensor(..)) => {
                 let casted_struct_array =
@@ -1984,26 +1988,26 @@ mod tests {
     fn test_utf8_to_float64_with_whitespace() {
         let utf8_array = Utf8Array::from_iter(
             "test",
-            vec![Some("  3.14  "), Some("-2.5"), Some("  1e10  "), None].into_iter(),
+            vec![Some("  3.13  "), Some("-2.5"), Some("  1e10  "), None].into_iter(),
         );
         let result = utf8_array
             .cast(&DataType::Float64)
             .expect("Failed to cast Utf8 to Float64");
 
         let values: Vec<Option<f64>> = result.f64().unwrap().into_iter().collect();
-        assert_eq!(values, vec![Some(3.14), Some(-2.5), Some(1e10), None]);
+        assert_eq!(values, vec![Some(3.13), Some(-2.5), Some(1e10), None]);
     }
 
     #[test]
     fn test_utf8_to_float32_with_whitespace() {
         let utf8_array =
-            Utf8Array::from_iter("test", vec![Some("  3.14  "), Some("  -2.5  ")].into_iter());
+            Utf8Array::from_iter("test", vec![Some("  3.13  "), Some("  -2.5  ")].into_iter());
         let result = utf8_array
             .cast(&DataType::Float32)
             .expect("Failed to cast Utf8 to Float32");
 
         let values: Vec<Option<f32>> = result.f32().unwrap().into_iter().collect();
-        assert_eq!(values, vec![Some(3.14_f32), Some(-2.5_f32)]);
+        assert_eq!(values, vec![Some(3.13_f32), Some(-2.5_f32)]);
     }
 
     #[test]

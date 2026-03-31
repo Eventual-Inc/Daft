@@ -115,7 +115,6 @@ pub mod pylib {
         common_system_info::register_modules(m)?;
         common_resource_request::register_modules(m)?;
         common_file_formats::python::register_modules(m)?;
-        common_scan_info::register_modules(m)?;
         common_metrics::register_modules(m)?;
         daft_ai::register_modules(m)?;
         daft_catalog::register_modules(m)?;
@@ -172,6 +171,7 @@ pub mod pylib {
         functions_registry.register::<daft_functions::distance::DistanceFunctions>();
         functions_registry.register::<daft_functions::similarity::SimilarityFunctions>();
         functions_registry.register::<daft_functions_tokenize::TokenizeFunctions>();
+        functions_registry.register::<daft_functions::random::RandomFunctions>();
 
         functions_registry.add_fn(daft_functions::coalesce::Coalesce);
         functions_registry.add_fn(daft_file::File);
@@ -181,7 +181,6 @@ pub mod pylib {
         functions_registry.add_fn(daft_file::GuessMimeType);
         functions_registry
             .add_fn(daft_functions::monotonically_increasing_id::MonotonicallyIncreasingId);
-        functions_registry.register::<daft_functions::distance::DistanceFunctions>();
 
         Ok(())
     }

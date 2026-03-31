@@ -9,7 +9,7 @@ use daft_schema::field::Field;
 use super::OptimizerRule;
 use crate::{
     LogicalPlan, LogicalPlanRef,
-    ops::{Distinct, Filter, Join, Project, Sort, join::JoinPredicate},
+    ops::{Distinct, Filter, Join, Project, Shuffle, Sort, join::JoinPredicate},
 };
 
 /// Optimizer rule to push anti and semi joins down a plan tree.
@@ -155,7 +155,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                                     JoinSide::Left,
                                 ))) = e.as_ref()
                                 {
-                                    match trivial_projections_map.get(&field.name) {
+                                    match trivial_projections_map.get(&*field.name) {
                                         Some(Some(original_name)) => {
                                             renaming_map.insert(field.name.clone(), original_name);
                                         }
@@ -284,6 +284,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                     // Anti/semi join can be trivially pushed down these ops
                     LogicalPlan::Filter(Filter { input, .. })
                     | LogicalPlan::Sort(Sort { input, .. })
+                    | LogicalPlan::Shuffle(Shuffle { input, .. })
                     | LogicalPlan::Distinct(Distinct { input, .. }) => {
                         let new_child = Join::try_new(
                             input.clone(),
@@ -316,6 +317,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                     | LogicalPlan::Window(..)
                     | LogicalPlan::Source(_)
                     | LogicalPlan::Repartition(_)
+                    | LogicalPlan::IntoPartitions(_)
                     | LogicalPlan::IntoBatches(_)
                     | LogicalPlan::Concat(_)
                     | LogicalPlan::VLLMProject(..) => {}
@@ -475,7 +477,7 @@ mod tests {
                     .alias("x_plus_y"),
             ])?
             .join(
-                right_scan_node.clone(),
+                right_scan_node,
                 Some(unresolved_col("x_plus_y").eq(unresolved_col("a"))),
                 vec![],
                 join_type,
@@ -528,7 +530,7 @@ mod tests {
 
         let expected = left_scan_node
             .join(
-                filtering_scan_node.clone(),
+                filtering_scan_node,
                 Some(unresolved_col("y").eq(unresolved_col("a"))),
                 vec![],
                 join_type,
@@ -536,7 +538,7 @@ mod tests {
                 Default::default(),
             )?
             .join(
-                right_scan_node.clone(),
+                right_scan_node,
                 None,
                 vec!["x".to_string()],
                 JoinType::Inner,
@@ -589,7 +591,7 @@ mod tests {
             .join(
                 right_scan_node
                     .join(
-                        filtering_scan_node.clone(),
+                        filtering_scan_node,
                         Some(unresolved_col("z").eq(unresolved_col("a"))),
                         vec![],
                         join_type,
@@ -628,7 +630,7 @@ mod tests {
 
         let plan = left_scan_node
             .join(
-                right_scan_node.clone(),
+                right_scan_node,
                 None,
                 vec!["x".to_string()],
                 JoinType::Inner,
@@ -636,7 +638,7 @@ mod tests {
                 Default::default(),
             )?
             .join(
-                filtering_scan_node.clone(),
+                filtering_scan_node,
                 Some(unresolved_col("x").eq(unresolved_col("a"))),
                 vec![],
                 join_type,
@@ -681,7 +683,7 @@ mod tests {
 
         let expected = left_scan_node
             .join(
-                right_scan_node.clone(),
+                right_scan_node,
                 Some(unresolved_col("x").eq(unresolved_col("a"))),
                 vec![],
                 join_type,

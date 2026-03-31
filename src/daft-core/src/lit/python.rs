@@ -9,7 +9,7 @@ use daft_schema::{
     prelude::{ImageMode, TimeUnit},
     python::{PyDataType, PyTimeUnit},
 };
-use indexmap::{IndexMap, indexmap};
+use indexmap::IndexMap;
 use pyo3::{
     IntoPyObjectExt, PyTypeCheck,
     exceptions::PyValueError,
@@ -177,11 +177,7 @@ impl<'py> IntoPyObject<'py> for Literal {
                 .to_pylist_impl(py, PyMapConversionMode::AssociationList)?
                 .into_any()),
             Self::Python(val) => val.0.as_ref().into_bound_py_any(py),
-            Self::Struct(entries) => entries
-                .into_iter()
-                .filter(|(k, v)| !(k.is_empty() && *v == Self::Null))
-                .collect::<IndexMap<_, _>>()
-                .into_bound_py_any(py),
+            Self::Struct(entries) => entries.into_bound_py_any(py),
             Self::File(f) => {
                 let file_class = match f.media_type {
                     daft_schema::media_type::MediaType::Unknown => intern!(py, "File"),
@@ -277,10 +273,7 @@ impl Literal {
                 .into_any()),
             Self::Struct(entries) => {
                 let dict = PyDict::new(py);
-                for (key, value) in entries
-                    .into_iter()
-                    .filter(|(k, v)| !(k.is_empty() && *v == Self::Null))
-                {
+                for (key, value) in entries {
                     dict.set_item(
                         key,
                         value.into_pyobject_with_map_conversion(py, maps_as_pydicts)?,
@@ -586,23 +579,19 @@ fn pylist_to_list_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResult<L
 
 fn pydict_to_struct_lit(dict: &Bound<PyDict>, dtype: Option<&DataType>) -> PyResult<Literal> {
     let field_dtypes = if let Some(DataType::Struct(fields)) = dtype {
-        fields.iter().map(|f| (&f.name, &f.dtype)).collect()
+        fields.iter().map(|f| (f.name.as_ref(), &f.dtype)).collect()
     } else {
         HashMap::new()
     };
     let field_mapping = dict.iter().map(|(k, v)| {
         let field_name = k.extract::<String>().map_err(|_| DaftError::TypeError(format!("Expected all dict keys when converting into Daft struct to be string, found: {k}")))?;
-        let field_dtype = field_dtypes.get(&field_name).copied();
+        let field_dtype = field_dtypes.get(field_name.as_str()).copied();
         let field_value = Literal::from_pyobj(&v, field_dtype)?;
 
         Ok((field_name, field_value))
     }).collect::<PyResult<IndexMap<_, _>>>()?;
 
-    if field_mapping.is_empty() {
-        Ok(Literal::Struct(indexmap! {String::new() => Literal::Null}))
-    } else {
-        Ok(Literal::Struct(field_mapping))
-    }
+    Ok(Literal::Struct(field_mapping))
 }
 
 fn pydict_to_map_lit(dict: &Bound<PyDict>, dtype: Option<&DataType>) -> PyResult<Literal> {
@@ -633,7 +622,7 @@ fn pytuple_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResul
             .map(|(v, f)| {
                 let field_value = Literal::from_pyobj(&v, Some(&f.dtype))?;
 
-                Ok((f.name.clone(), field_value))
+                Ok((f.name.to_string(), field_value))
             })
             .collect::<PyResult<_>>()
     } else {
@@ -649,11 +638,7 @@ fn pytuple_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResul
             .collect::<PyResult<_>>()
     }?;
 
-    if field_mapping.is_empty() {
-        Ok(Literal::Struct(indexmap! {String::new() => Literal::Null}))
-    } else {
-        Ok(Literal::Struct(field_mapping))
-    }
+    Ok(Literal::Struct(field_mapping))
 }
 
 fn pydantic_model_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResult<Literal> {

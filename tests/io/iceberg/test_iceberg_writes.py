@@ -5,14 +5,15 @@ import decimal
 from unittest.mock import patch
 
 import pyarrow as pa
+import pyarrow.fs as pafs
 import pytest
 
+from daft.daft import ScanTask
+from daft.filesystem import _resolve_paths_and_filesystem
+from daft.io import IOConfig
 from tests.conftest import get_tests_daft_runner_name
 
 pyiceberg = pytest.importorskip("pyiceberg")
-
-PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
-pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="iceberg not supported on old versions of pyarrow")
 
 
 from pyiceberg.catalog.sql import SqlCatalog
@@ -51,8 +52,6 @@ def patch_scan_task_file_path_scheme(request):
     use_mock = request.param
 
     if use_mock:
-        from daft.daft import ScanTask
-
         original_catalog_scan_task = ScanTask.catalog_scan_task
 
         def patched_catalog_scan_task(file: str, **kwargs):
@@ -69,13 +68,12 @@ def patch_scan_task_file_path_scheme(request):
 def local_catalog(tmpdir):
     catalog = SqlCatalog(
         "default",
-        **{
-            "uri": f"sqlite:///{tmpdir}/pyiceberg_catalog.db",
-            "warehouse": f"file://{tmpdir}",
-        },
+        uri=f"sqlite:///{tmpdir}/pyiceberg_catalog.db",
+        warehouse=f"file://{tmpdir}",
     )
     catalog.create_namespace("default")
-    return catalog
+    yield catalog
+    catalog.engine.dispose()
 
 
 @pytest.fixture(
@@ -207,7 +205,8 @@ def _get_snapshot_property(table, key: str) -> str | None:
     current_snapshot = table.current_snapshot()
     assert current_snapshot is not None
 
-    return current_snapshot.summary.get(key)
+    val = current_snapshot.summary.get(key)
+    return str(val) if val is not None else None
 
 
 def test_write_append_with_snapshot_properties(simple_local_table):
@@ -591,3 +590,123 @@ def test_complex_table_write_read(
     assert sum(as_dict["rows"]) == 3, as_dict["rows"]
     read_back = daft.read_iceberg(table)
     assert df.to_arrow() == read_back.to_arrow().sort_by("int")
+
+
+# ---------------------------------------------------------------------------
+# Protocol-alias tests
+#
+# These tests verify that when io_config.protocol_aliases maps a custom URI
+# scheme to a known one (e.g. "myscheme" -> "file"), Daft:
+#   1. Can write Iceberg data files through that alias.
+#   2. Records the ORIGINAL custom scheme (not the alias target) in the
+#      DataFile.file_path entries that end up in manifest avro files.
+#   3. Can read the written data back through the same alias.
+#
+# This is the fix for the "foo://" class of bugs where a downstream
+# system uses a custom S3-compatible URI scheme but manifest avro entries
+# were recording the underlying scheme (s3://) instead.
+# ---------------------------------------------------------------------------
+
+CUSTOM_SCHEME = "myscheme"
+
+
+@pytest.fixture
+def catalog(tmp_path):
+    """SqlCatalog backed by local storage with a separate directory for the aliased write root."""
+    warehouse = tmp_path / "warehouse"
+    warehouse.mkdir()
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path}/pyiceberg_catalog.db",
+        warehouse=f"file://{warehouse}",
+    )
+    catalog.create_namespace("default")
+    yield catalog
+    catalog.engine.dispose()
+
+
+def _make_alias_io_config() -> IOConfig:
+    """Return an IOConfig that maps CUSTOM_SCHEME -> file."""
+    return IOConfig(protocol_aliases={CUSTOM_SCHEME: "file"})
+
+
+def _table_location_with_custom_scheme(table) -> str:
+    """Return the table's real file:// location rewritten with CUSTOM_SCHEME."""
+    return str(table.location()).replace("file://", f"{CUSTOM_SCHEME}://", 1)
+
+
+@pytest.mark.parametrize(
+    "partition_spec",
+    [
+        pytest.param(UNPARTITIONED_PARTITION_SPEC, id="unpartitioned"),
+        pytest.param(
+            PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="x_identity")),
+            id="identity_partitioned",
+        ),
+        pytest.param(
+            PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=BucketTransform(2), name="x_bucket")),
+            id="bucket_partitioned",
+        ),
+    ],
+)
+def test_protocol_alias_scheme_preserved_in_manifest_paths(catalog, partition_spec):
+    """DataFile.file_path entries in Iceberg manifest avro files must use the original custom URI scheme.
+
+    Regression test for the bug where tables with a custom S3-compatible scheme
+    (e.g. foo://) would have manifest avro file_path entries recorded with
+    the underlying scheme (s3://) instead.
+    """
+    schema = Schema(NestedField(field_id=1, name="x", type=LongType()))
+    table = catalog.create_table("default.test", schema, partition_spec=partition_spec)
+
+    # Override write.data.path to use the custom scheme while keeping the
+    # physical location the same (the alias maps it back to file://).
+    custom_data_path = _table_location_with_custom_scheme(table) + "/data"
+    with table.transaction() as tx:
+        tx.set_properties(**{"write.data.path": custom_data_path})
+    table.refresh()
+
+    io_config = _make_alias_io_config()
+    df = daft.from_pydict({"x": [1, 2, 3, 4, 5]})
+    result = df.write_iceberg(table, io_config=io_config)
+    result_dict = result.to_pydict()
+
+    assert result_dict["operation"] == ["ADD"] * len(result_dict["operation"])
+    assert sum(result_dict["rows"]) == 5
+
+    # The written file paths (== DataFile.file_path, written into the manifest
+    # avro) must use the CUSTOM scheme, not "file".
+    for file_name in result_dict["file_name"]:
+        assert file_name.startswith(f"{CUSTOM_SCHEME}://"), (
+            f"Expected manifest entry to use '{CUSTOM_SCHEME}://' scheme but got: {file_name!r}"
+        )
+
+    # Round-trip: Daft must be able to read the data back using the same alias.
+    read_back = daft.read_iceberg(table, io_config=io_config)
+    assert df.to_arrow() == read_back.to_arrow().sort_by("x")
+
+    # Verify all file_path metadata with pyiceberg
+    for file_path in table.inspect.files()["file_path"]:
+        assert file_path.as_py().startswith(f"{CUSTOM_SCHEME}://"), (
+            f"Expected manifest entry to use '{CUSTOM_SCHEME}://' scheme but got: {file_path!r}"
+        )
+
+
+def test_protocol_alias_resolves_to_local_filesystem(tmp_path):
+    """A custom scheme aliased to file:// resolves to LocalFileSystem with bare local paths."""
+    target_dir = tmp_path / "data"
+    custom_path = f"{CUSTOM_SCHEME}://{str(target_dir).lstrip('/')}"
+    io_config = _make_alias_io_config()
+
+    resolved_paths, fs = _resolve_paths_and_filesystem(custom_path, io_config=io_config)
+
+    assert isinstance(fs, pafs.LocalFileSystem), f"Expected LocalFileSystem, got {type(fs)}"
+    # The resolved path is a bare local path -- no scheme prefix.
+    assert not any(p.startswith(f"{CUSTOM_SCHEME}://") for p in resolved_paths)
+    assert not any(p.startswith("file://") for p in resolved_paths)
+
+
+def test_protocol_alias_unknown_scheme_raises_without_alias():
+    """Without a matching protocol alias, Daft raises NotImplementedError for an unknown URI scheme."""
+    with pytest.raises(NotImplementedError, match="Cannot infer PyArrow filesystem"):
+        _resolve_paths_and_filesystem("unknownscheme://bucket/path")

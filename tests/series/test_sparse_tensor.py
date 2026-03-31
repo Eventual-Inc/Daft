@@ -9,8 +9,6 @@ from daft.series import Series
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES
 from tests.utils import ANSI_ESCAPE
 
-ARROW_VERSION = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric())
-
 
 @pytest.mark.parametrize("dtype", ARROW_INT_TYPES + ARROW_FLOAT_TYPES)
 @pytest.mark.parametrize("use_offset_indices", [None, False, True])

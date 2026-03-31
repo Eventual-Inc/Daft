@@ -16,7 +16,7 @@ use pyo3::{
 
 use crate::file::{DaftFile, FileCursor};
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 struct PyFileReference {
     inner: Arc<FileReference>,

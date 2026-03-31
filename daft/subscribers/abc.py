@@ -22,6 +22,13 @@ class Subscriber(ABC):
     - During execution, emitting current stats of all running operators at regular intervals
     """
 
+    def close(self) -> None:
+        """Called when the subscriber is detached or the process is shutting down.
+
+        Override to release resources (file handles, connections, etc.).
+        """
+        pass
+
     @abstractmethod
     def on_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
         """Called when starting the run for a new query."""
@@ -52,24 +59,40 @@ class Subscriber(ABC):
         """Called when starting to execute a query. Receives the physical plan as JSON string."""
         pass
 
-    @abstractmethod
-    def on_exec_operator_start(self, query_id: str, node_id: int) -> None:
+    def on_operator_start(self, query_id: str, node_id: int) -> None:
         """Called when an operator has started executing."""
         pass
 
-    @abstractmethod
-    def on_exec_emit_stats(self, query_id: str, stats: Mapping[int, Mapping[str, tuple[StatType, Any]]]) -> None:
+    def on_operator_end(self, query_id: str, node_id: int) -> None:
+        """Called when an operator has completed."""
+        pass
+
+    def on_stats(self, query_id: str, stats: Mapping[int, Mapping[str, tuple[StatType, Any]]]) -> None:
         """Called when emitting stats for all running operators in a query."""
         pass
 
-    @abstractmethod
+    def on_exec_operator_start(self, query_id: str, node_id: int) -> None:
+        """Deprecated: use on_operator_start instead."""
+        self.on_operator_start(query_id, node_id)
+
+    def on_exec_emit_stats(self, query_id: str, stats: Mapping[int, Mapping[str, tuple[StatType, Any]]]) -> None:
+        """Deprecated: use on_stats instead."""
+        self.on_stats(query_id, stats)
+
     def on_exec_operator_end(self, query_id: str, node_id: int) -> None:
-        """Called when an operator has completed."""
-        pass
+        """Deprecated: use on_operator_end instead."""
+        self.on_operator_end(query_id, node_id)
 
     @abstractmethod
     def on_exec_end(self, query_id: str) -> None:
         """Called when a query has finished executing."""
+        pass
+
+    def on_process_stats(self, query_id: str, stats: Mapping[str, tuple[StatType, Any]]) -> None:
+        """Called with process-level stats (memory, CPU) on each tick.
+
+        Override to capture process-level metrics. Not abstract - defaults to no-op.
+        """
         pass
 
 

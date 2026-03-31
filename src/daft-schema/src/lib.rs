@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 pub mod dtype;
 pub mod field;
 pub mod image_format;

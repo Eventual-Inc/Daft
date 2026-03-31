@@ -60,6 +60,8 @@ if TYPE_CHECKING:
 __all__ = [
     "Catalog",
     "Identifier",
+    "NotFoundError",
+    "Properties",
     "Schema",
     "Table",
 ]
@@ -240,25 +242,47 @@ class Catalog(ABC):
             raise ImportError("Unity support not installed: pip install -U 'daft[unity]'")
 
     @staticmethod
-    def from_gravitino(catalog: object) -> Catalog:
-        """Create a Daft Catalog from a Gravitino client.
+    def from_gravitino(
+        endpoint: str,
+        metalake_name: str,
+        auth_type: Literal["simple", "oauth2"] = "simple",
+        username: str | None = None,
+        password: str | None = None,
+        token: str | None = None,
+    ) -> Catalog:
+        """Create a Daft Catalog from a Gravitino metalake.
 
         Args:
-            catalog (object): a Gravitino client instance
+            endpoint (str): Gravitino server endpoint URL.
+            metalake_name (str): Name of the metalake to connect to.
+            auth_type (str): Authentication type, either ``"simple"`` or ``"oauth2"``. Defaults to ``"simple"``.
+            username (str, optional): Username for simple authentication.
+            password (str, optional): Password for simple authentication.
+            token (str, optional): Bearer token for OAuth2 authentication.
 
         Returns:
-            Catalog: a new Catalog instance backed by the Gravitino catalog.
+            Catalog: a new Catalog instance backed by the Gravitino metalake.
 
         Examples:
-            >>> from daft.gravitino import GravitinoClient
-            >>> gravitino_client = GravitinoClient(...)
-            >>> catalog = Catalog.from_gravitino(gravitino_client)
+            >>> catalog = Catalog.from_gravitino(
+            ...     endpoint="http://localhost:8090",
+            ...     metalake_name="my_metalake",
+            ...     username="admin",
+            ... )
+            >>> catalog.list_tables("my_catalog.my_schema")
 
         """
         try:
-            from daft.catalog.__gravitino import GravitinoCatalog
+            from daft.catalog.__gravitino import load_gravitino
 
-            return GravitinoCatalog._from_obj(catalog)
+            return load_gravitino(
+                endpoint=endpoint,
+                metalake_name=metalake_name,
+                auth_type=auth_type,
+                username=username,
+                password=password,
+                token=token,
+            )
         except ImportError:
             raise ImportError("Gravitino support not installed: pip install -U 'daft[gravitino]'")
 
@@ -336,6 +360,30 @@ class Catalog(ABC):
             raise ImportError("AWS Glue support not installed: pip install -U 'daft[aws]'")
 
     @staticmethod
+    def from_paimon(catalog: object, name: str = "paimon") -> Catalog:
+        """Create a Daft Catalog from a pypaimon catalog object.
+
+        Args:
+            catalog (object): a pypaimon catalog instance (e.g. from ``pypaimon.CatalogFactory.create(...)``)
+            name (str): name to assign to this catalog. Defaults to ``"paimon"``.
+
+        Returns:
+            Catalog: a new Catalog instance backed by the pypaimon catalog.
+
+        Examples:
+            >>> import pypaimon
+            >>> inner = pypaimon.CatalogFactory.create({"warehouse": "/path/to/warehouse"})
+            >>> catalog = Catalog.from_paimon(inner, name="my_paimon")
+            >>> catalog.list_tables()
+        """
+        try:
+            from daft.catalog.__paimon import PaimonCatalog
+
+            return PaimonCatalog._from_obj(catalog, name=name)
+        except ImportError:
+            raise ImportError("pypaimon is required: pip install pypaimon")
+
+    @staticmethod
     def from_postgres(connection_string: str, extensions: list[str] | None = ["vector"]) -> Catalog:
         """Create a Daft Catalog from a PostgreSQL connection string.
 
@@ -367,7 +415,7 @@ class Catalog(ABC):
     @staticmethod
     def _from_obj(obj: object) -> Catalog:
         """Returns a Daft Catalog from a supported object type or raises a ValueError."""
-        for factory in (Catalog.from_iceberg, Catalog.from_unity, Catalog.from_gravitino):
+        for factory in (Catalog.from_iceberg, Catalog.from_unity):
             try:
                 return factory(obj)
             except ValueError:
@@ -793,6 +841,29 @@ class Table(ABC):
             return UnityTable._from_obj(table)
         except ImportError:
             raise ImportError("Unity support not installed: pip install -U 'daft[unity]'")
+
+    @staticmethod
+    def from_paimon(table: object) -> Table:
+        """Create a Daft Table from a pypaimon table object.
+
+        Args:
+            table (object): a pypaimon table instance (e.g. from ``catalog.get_table(...)``)
+
+        Returns:
+            Table: a new Table instance backed by the pypaimon table.
+
+        Examples:
+            >>> import pypaimon
+            >>> inner_catalog = pypaimon.CatalogFactory.create({"warehouse": "/path/to/warehouse"})
+            >>> inner_table = inner_catalog.get_table("mydb.mytable")
+            >>> table = Table.from_paimon(inner_table)
+        """
+        try:
+            from daft.catalog.__paimon import PaimonTable
+
+            return PaimonTable._from_obj(table)
+        except ImportError:
+            raise ImportError("pypaimon is required: pip install pypaimon")
 
     @staticmethod
     def from_gravitino(table: object) -> Table:

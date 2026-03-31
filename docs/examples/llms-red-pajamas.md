@@ -32,7 +32,7 @@ If running on a single node, you can use the provided subsample of the data, whi
 ```python
 import daft
 
-SAMPLE_DATA_PATH = "s3://daft-public-data/redpajama-1t-sample/stackexchange_sample.jsonl"
+SAMPLE_DATA_PATH = "s3://daft-oss-public-data/redpajama-1t-sample/stackexchange_sample.jsonl"
 IO_CONFIG = daft.io.IOConfig(
     s3=daft.io.S3Config(anonymous=True, region_name="us-west-2")
 )  # Use anonymous-mode for accessing AWS S3

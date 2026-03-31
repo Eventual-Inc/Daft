@@ -55,6 +55,9 @@ pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
         LogicalPlan::Repartition(repartition) => json!({
             "repartition_spec": repartition.repartition_spec,
         }),
+        LogicalPlan::IntoPartitions(into_partitions) => json!({
+            "num_partitions": into_partitions.num_partitions,
+        }),
         LogicalPlan::Distinct(_) => json!({}),
         LogicalPlan::Aggregate(aggregate) => json!({
             "aggregations": aggregate.aggregations.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
@@ -86,6 +89,9 @@ pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
             "size": sample.size,
             "with_replacement": sample.with_replacement,
             "seed": sample.seed,
+        }),
+        LogicalPlan::Shuffle(shuffle) => json!({
+            "seed": shuffle.seed,
         }),
         LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => json!({
             "column_name": vec![resolved_col(monotonically_increasing_id.column_name.clone()).to_string()]
@@ -375,7 +381,7 @@ mod tests {
             }
          "#;
 
-        let expected: serde_json::Value = serde_json::from_str(&expected).unwrap();
+        let expected: serde_json::Value = serde_json::from_str(expected).unwrap();
         let actual: serde_json::Value = serde_json::from_str(&output).unwrap();
 
         assert_eq!(actual, expected);

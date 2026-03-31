@@ -164,7 +164,6 @@ mod tests {
         let right_scan_node = dummy_scan_node(dummy_scan_operator(vec![b_field.clone()]));
 
         let plan = left_scan_node
-            .clone()
             .join(
                 right_scan_node.clone(),
                 Some(left_col(a_field).and(right_col(b_field))),

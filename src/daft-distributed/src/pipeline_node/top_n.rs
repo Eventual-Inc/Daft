@@ -61,10 +61,6 @@ impl TopNNode {
             child,
         }
     }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
 }
 
 impl PipelineNodeImpl for TopNNode {

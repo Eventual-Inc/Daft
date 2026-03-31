@@ -41,6 +41,7 @@ pub enum LogicalPlan {
     Unpivot(Unpivot),
     Sort(Sort),
     Repartition(Repartition),
+    IntoPartitions(IntoPartitions),
     Distinct(Distinct),
     Aggregate(Aggregate),
     Pivot(Pivot),
@@ -50,6 +51,7 @@ pub enum LogicalPlan {
     Join(Join),
     Sink(Sink),
     Sample(Sample),
+    Shuffle(Shuffle),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
     SubqueryAlias(SubqueryAlias),
     Window(Window),
@@ -162,6 +164,7 @@ impl LogicalPlan {
             Self::Unpivot(Unpivot { output_schema, .. }) => output_schema.clone(),
             Self::Sort(Sort { input, .. }) => input.schema(),
             Self::Repartition(Repartition { input, .. }) => input.schema(),
+            Self::IntoPartitions(IntoPartitions { input, .. }) => input.schema(),
             Self::Distinct(Distinct { input, .. }) => input.schema(),
             Self::Aggregate(Aggregate { output_schema, .. }) => output_schema.clone(),
             Self::Pivot(Pivot { output_schema, .. }) => output_schema.clone(),
@@ -171,6 +174,7 @@ impl LogicalPlan {
             Self::Join(Join { output_schema, .. }) => output_schema.clone(),
             Self::Sink(Sink { schema, .. }) => schema.clone(),
             Self::Sample(Sample { input, .. }) => input.schema(),
+            Self::Shuffle(Shuffle { input, .. }) => input.schema(),
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. }) => {
                 schema.clone()
             }
@@ -187,6 +191,7 @@ impl LogicalPlan {
             Self::Shard(..)
             | Self::Limit(..)
             | Self::IntoBatches(..)
+            | Self::IntoPartitions(..)
             | Self::Offset(..)
             | Self::Sample(..)
             | Self::MonotonicallyIncreasingId(..) => RequiredCols::new(IndexSet::new(), None),
@@ -294,13 +299,13 @@ impl LogicalPlan {
                                 Field { name, .. },
                                 JoinSide::Left,
                             ))) => {
-                                left.insert(name.clone());
+                                left.insert(name.to_string());
                             }
                             Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
                                 Field { name, .. },
                                 JoinSide::Right,
                             ))) => {
-                                right.insert(name.clone());
+                                right.insert(name.to_string());
                             }
                             _ => {}
                         }
@@ -313,6 +318,7 @@ impl LogicalPlan {
             }
             Self::Intersect(_) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
             Self::Union(_) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
+            Self::Shuffle(_) => RequiredCols::new(IndexSet::new(), None),
             Self::Source(_) => todo!(),
             Self::Sink(_) => todo!(),
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.required_columns(),
@@ -355,6 +361,7 @@ impl LogicalPlan {
             Self::Unpivot(..) => "Unpivot",
             Self::Sort(..) => "Sort",
             Self::Repartition(..) => "Repartition",
+            Self::IntoPartitions(..) => "IntoPartitions",
             Self::Distinct(..) => "Distinct",
             Self::Aggregate(..) => "Aggregate",
             Self::Pivot(..) => "Pivot",
@@ -364,6 +371,7 @@ impl LogicalPlan {
             Self::Union(..) => "Union",
             Self::Sink(..) => "Sink",
             Self::Sample(..) => "Sample",
+            Self::Shuffle(..) => "Shuffle",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
             Self::SubqueryAlias(..) => "Alias",
             Self::Window(..) => "Window",
@@ -386,6 +394,7 @@ impl LogicalPlan {
             | Self::Unpivot(Unpivot { stats_state, .. })
             | Self::Sort(Sort { stats_state, .. })
             | Self::Repartition(Repartition { stats_state, .. })
+            | Self::IntoPartitions(IntoPartitions { stats_state, .. })
             | Self::Distinct(Distinct { stats_state, .. })
             | Self::Aggregate(Aggregate { stats_state, .. })
             | Self::Pivot(Pivot { stats_state, .. })
@@ -393,6 +402,7 @@ impl LogicalPlan {
             | Self::Join(Join { stats_state, .. })
             | Self::Sink(Sink { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
+            | Self::Shuffle(Shuffle { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
             | Self::Window(Window { stats_state, .. })
             | Self::TopN(TopN { stats_state, .. })
@@ -426,6 +436,7 @@ impl LogicalPlan {
             Self::Unpivot(plan) => Self::Unpivot(plan.with_materialized_stats()),
             Self::Sort(plan) => Self::Sort(plan.with_materialized_stats()),
             Self::Repartition(plan) => Self::Repartition(plan.with_materialized_stats()),
+            Self::IntoPartitions(plan) => Self::IntoPartitions(plan.with_materialized_stats()),
             Self::Distinct(plan) => Self::Distinct(plan.with_materialized_stats()),
             Self::Aggregate(plan) => Self::Aggregate(plan.with_materialized_stats()),
             Self::Pivot(plan) => Self::Pivot(plan.with_materialized_stats()),
@@ -433,6 +444,7 @@ impl LogicalPlan {
             Self::Join(plan) => Self::Join(plan.with_materialized_stats()),
             Self::Sink(plan) => Self::Sink(plan.with_materialized_stats()),
             Self::Sample(plan) => Self::Sample(plan.with_materialized_stats()),
+            Self::Shuffle(plan) => Self::Shuffle(plan.with_materialized_stats()),
             Self::MonotonicallyIncreasingId(plan) => {
                 Self::MonotonicallyIncreasingId(plan.with_materialized_stats())
             }
@@ -462,6 +474,7 @@ impl LogicalPlan {
             Self::Unpivot(unpivot) => unpivot.multiline_display(),
             Self::Sort(sort) => sort.multiline_display(),
             Self::Repartition(repartition) => repartition.multiline_display(),
+            Self::IntoPartitions(into_partitions) => into_partitions.multiline_display(),
             Self::Distinct(distinct) => distinct.multiline_display(),
             Self::Aggregate(aggregate) => aggregate.multiline_display(),
             Self::Pivot(pivot) => pivot.multiline_display(),
@@ -471,6 +484,7 @@ impl LogicalPlan {
             Self::Join(join) => join.multiline_display(),
             Self::Sink(sink) => sink.multiline_display(),
             Self::Sample(sample) => sample.multiline_display(),
+            Self::Shuffle(shuffle) => shuffle.multiline_display(),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 monotonically_increasing_id.multiline_display()
             }
@@ -495,6 +509,7 @@ impl LogicalPlan {
             Self::Unpivot(Unpivot { input, .. }) => vec![input],
             Self::Sort(Sort { input, .. }) => vec![input],
             Self::Repartition(Repartition { input, .. }) => vec![input],
+            Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input],
             Self::Distinct(Distinct { input, .. }) => vec![input],
             Self::Aggregate(Aggregate { input, .. }) => vec![input],
             Self::Pivot(Pivot { input, .. }) => vec![input],
@@ -504,6 +519,7 @@ impl LogicalPlan {
             Self::Intersect(Intersect { lhs, rhs, .. }) => vec![lhs, rhs],
             Self::Union(Union { lhs, rhs, .. }) => vec![lhs, rhs],
             Self::Sample(Sample { input, .. }) => vec![input],
+            Self::Shuffle(Shuffle { input, .. }) => vec![input],
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
                 vec![input]
             }
@@ -584,6 +600,9 @@ impl LogicalPlan {
                 Self::Distinct(distinct) => {
                     Self::Distinct(Distinct::new(input.clone(), distinct.columns.clone()))
                 }
+                Self::IntoPartitions(IntoPartitions { num_partitions, .. }) => {
+                    Self::IntoPartitions(IntoPartitions::new(input.clone(), *num_partitions))
+                }
                 Self::Aggregate(Aggregate {
                     aggregations,
                     groupby,
@@ -654,6 +673,9 @@ impl LogicalPlan {
                     *with_replacement,
                     *seed,
                 )),
+                Self::Shuffle(Shuffle { seed, .. }) => {
+                    Self::Shuffle(Shuffle::new(input.clone(), *seed))
+                }
                 Self::SubqueryAlias(SubqueryAlias { name: id, .. }) => {
                     Self::SubqueryAlias(SubqueryAlias::new(input.clone(), id.clone()))
                 }
@@ -795,82 +817,105 @@ impl LogicalPlan {
     pub fn get_schema_for_alias(self: &Arc<Self>, alias: &str) -> DaftResult<Option<SchemaRef>> {
         use common_treenode::TreeNode;
 
-        let mut schema = None;
-        let mut found_match = false;
-
-        self.apply(|node| {
-            if let Self::SubqueryAlias(subquery_alias) = node.as_ref() {
-
-                let SubqueryAlias { name, input, .. } = subquery_alias;
-                if name.as_ref() == alias {
-                    if schema.is_some() {
-                        return Err(DaftError::ValueError(format!(
-                            "Plan must not have duplicate aliases in the same scope, found: {alias}"
-                        )));
-                    }
-
-                    schema = Some(node.schema());
-                    found_match = true;
-                    return Ok(TreeNodeRecursion::Jump);
+        match self.as_ref() {
+            Self::Union(union) => {
+                if let Some(s) = union.lhs.get_schema_for_alias(alias)? {
+                    return Ok(Some(s));
                 }
+                if let Some(s) = union.rhs.get_schema_for_alias(alias)? {
+                    return Ok(Some(s));
+                }
+                Ok(None)
+            }
+            _ => {
+                let mut schema = None;
+                let mut found_match = false;
 
-                let input_schema = input.schema();
-                let fields = input_schema.get_fields_with_name(alias);
-                for (_, field) in fields {
-                    if let DataType::Struct(struct_fields) = &field.dtype {
-                        if schema.is_some() {
-                            return Err(DaftError::ValueError(format!(
-                                "Plan must not have duplicate aliases in the same scope, found: {alias}"
-                            )));
+                self.apply(|node| {
+                    if let Self::SubqueryAlias(subquery_alias) = node.as_ref() {
+                        let SubqueryAlias { name, input, .. } = subquery_alias;
+                        if name.as_ref() == alias {
+                            if schema.is_some() {
+                                return Err(DaftError::ValueError(format!(
+                                    "Plan must not have duplicate aliases in the same scope, found: {alias}"
+                                )));
+                            }
+
+                            schema = Some(node.schema());
+                            found_match = true;
+                            return Ok(TreeNodeRecursion::Jump);
                         }
 
-                        let new_fields: Vec<Field> = struct_fields
-                            .iter()
-                            .map(|f| Field::new(f.name.clone(), f.dtype.clone()))
-                            .collect();
+                        let input_schema = input.schema();
+                        let fields = input_schema.get_fields_with_name(alias);
+                        for (_, field) in fields {
+                            if let DataType::Struct(struct_fields) = &field.dtype {
+                                if schema.is_some() {
+                                    return Err(DaftError::ValueError(format!(
+                                        "Plan must not have duplicate aliases in the same scope, found: {alias}"
+                                    )));
+                                }
 
-                        let new_schema = Schema::new(new_fields);
-                        schema = Some(Arc::new(new_schema));
-                        found_match = true;
+                                let new_fields: Vec<Field> = struct_fields
+                                    .iter()
+                                    .map(|f| Field::new(f.name.clone(), f.dtype.clone()))
+                                    .collect();
+
+                                let new_schema = Schema::new(new_fields);
+                                schema = Some(Arc::new(new_schema));
+                                found_match = true;
+                                return Ok(TreeNodeRecursion::Jump);
+                            }
+                        }
                         return Ok(TreeNodeRecursion::Jump);
                     }
-                }
-                if !found_match {
-                    return Ok(TreeNodeRecursion::Jump);
-                }
-            }
-            Ok(TreeNodeRecursion::Continue)
-        })?;
+                    Ok(TreeNodeRecursion::Continue)
+                })?;
 
-        Ok(schema)
+                Ok(schema)
+            }
+        }
     }
 
     pub fn get_schema_for_id(self: &Arc<Self>, id: usize) -> DaftResult<Option<SchemaRef>> {
         use common_treenode::TreeNode;
 
-        let mut schema = None;
-
-        self.apply(|node| {
-            if let Some(plan_id) = node.plan_id() {
-                if plan_id == &id {
-                    if schema.is_some() {
-                        return Err(DaftError::ValueError(format!(
-                            "Plan must not have duplicate plan ids in the same scope, found: {id}"
-                        )));
-                    }
-
-                    schema = Some(node.schema());
-
-                    Ok(TreeNodeRecursion::Jump)
-                } else {
-                    Ok(TreeNodeRecursion::Continue)
+        match self.as_ref() {
+            Self::Union(union) => {
+                if let Some(s) = union.lhs.get_schema_for_id(id)? {
+                    return Ok(Some(s));
                 }
-            } else {
-                Ok(TreeNodeRecursion::Continue)
+                if let Some(s) = union.rhs.get_schema_for_id(id)? {
+                    return Ok(Some(s));
+                }
+                Ok(None)
             }
-        })?;
+            _ => {
+                let mut schema = None;
 
-        Ok(schema)
+                self.apply(|node| {
+                    if let Some(plan_id) = node.plan_id() {
+                        if plan_id == &id {
+                            if schema.is_some() {
+                                return Err(DaftError::ValueError(format!(
+                                    "Plan must not have duplicate plan ids in the same scope, found: {id}"
+                                )));
+                            }
+
+                            schema = Some(node.schema());
+
+                            Ok(TreeNodeRecursion::Jump)
+                        } else {
+                            Ok(TreeNodeRecursion::Continue)
+                        }
+                    } else {
+                        Ok(TreeNodeRecursion::Continue)
+                    }
+                })?;
+
+                Ok(schema)
+            }
+        }
     }
 
     pub fn plan_id(&self) -> &Option<usize> {
@@ -887,6 +932,7 @@ impl LogicalPlan {
             | Self::Unpivot(Unpivot { plan_id, .. })
             | Self::Sort(Sort { plan_id, .. })
             | Self::Repartition(Repartition { plan_id, .. })
+            | Self::IntoPartitions(IntoPartitions { plan_id, .. })
             | Self::Distinct(Distinct { plan_id, .. })
             | Self::Aggregate(Aggregate { plan_id, .. })
             | Self::Pivot(Pivot { plan_id, .. })
@@ -896,6 +942,7 @@ impl LogicalPlan {
             | Self::Join(Join { plan_id, .. })
             | Self::Sink(Sink { plan_id, .. })
             | Self::Sample(Sample { plan_id, .. })
+            | Self::Shuffle(Shuffle { plan_id, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { plan_id, .. })
             | Self::SubqueryAlias(SubqueryAlias { plan_id, .. })
             | Self::Window(Window { plan_id, .. })
@@ -918,6 +965,7 @@ impl LogicalPlan {
             | Self::Unpivot(Unpivot { node_id, .. })
             | Self::Sort(Sort { node_id, .. })
             | Self::Repartition(Repartition { node_id, .. })
+            | Self::IntoPartitions(IntoPartitions { node_id, .. })
             | Self::Distinct(Distinct { node_id, .. })
             | Self::Aggregate(Aggregate { node_id, .. })
             | Self::Pivot(Pivot { node_id, .. })
@@ -927,6 +975,7 @@ impl LogicalPlan {
             | Self::Join(Join { node_id, .. })
             | Self::Sink(Sink { node_id, .. })
             | Self::Sample(Sample { node_id, .. })
+            | Self::Shuffle(Shuffle { node_id, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { node_id, .. })
             | Self::SubqueryAlias(SubqueryAlias { node_id, .. })
             | Self::Window(Window { node_id, .. })
@@ -952,6 +1001,9 @@ impl LogicalPlan {
             Self::Unpivot(unpivot) => Self::Unpivot(unpivot.with_plan_id(plan_id)),
             Self::Sort(sort) => Self::Sort(sort.with_plan_id(plan_id)),
             Self::Repartition(repartition) => Self::Repartition(repartition.with_plan_id(plan_id)),
+            Self::IntoPartitions(into_partitions) => {
+                Self::IntoPartitions(into_partitions.with_plan_id(plan_id))
+            }
             Self::Distinct(distinct) => Self::Distinct(distinct.with_plan_id(plan_id)),
             Self::Aggregate(aggregate) => Self::Aggregate(aggregate.with_plan_id(plan_id)),
             Self::Pivot(pivot) => Self::Pivot(pivot.with_plan_id(plan_id)),
@@ -961,6 +1013,7 @@ impl LogicalPlan {
             Self::Join(join) => Self::Join(join.with_plan_id(plan_id)),
             Self::Sink(sink) => Self::Sink(sink.with_plan_id(plan_id)),
             Self::Sample(sample) => Self::Sample(sample.with_plan_id(plan_id)),
+            Self::Shuffle(shuffle) => Self::Shuffle(shuffle.with_plan_id(plan_id)),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 Self::MonotonicallyIncreasingId(monotonically_increasing_id.with_plan_id(plan_id))
             }
@@ -990,6 +1043,9 @@ impl LogicalPlan {
             Self::Unpivot(unpivot) => Self::Unpivot(unpivot.with_node_id(node_id)),
             Self::Sort(sort) => Self::Sort(sort.with_node_id(node_id)),
             Self::Repartition(repartition) => Self::Repartition(repartition.with_node_id(node_id)),
+            Self::IntoPartitions(into_partitions) => {
+                Self::IntoPartitions(into_partitions.with_node_id(node_id))
+            }
             Self::Distinct(distinct) => Self::Distinct(distinct.with_node_id(node_id)),
             Self::Aggregate(aggregate) => Self::Aggregate(aggregate.with_node_id(node_id)),
             Self::Pivot(pivot) => Self::Pivot(pivot.with_node_id(node_id)),
@@ -999,6 +1055,7 @@ impl LogicalPlan {
             Self::Join(join) => Self::Join(join.with_node_id(node_id)),
             Self::Sink(sink) => Self::Sink(sink.with_node_id(node_id)),
             Self::Sample(sample) => Self::Sample(sample.with_node_id(node_id)),
+            Self::Shuffle(shuffle) => Self::Shuffle(shuffle.with_node_id(node_id)),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 Self::MonotonicallyIncreasingId(monotonically_increasing_id.with_node_id(node_id))
             }
@@ -1104,6 +1161,7 @@ impl_from_data_struct_for_logical_plan!(Explode);
 impl_from_data_struct_for_logical_plan!(Unpivot);
 impl_from_data_struct_for_logical_plan!(Sort);
 impl_from_data_struct_for_logical_plan!(Repartition);
+impl_from_data_struct_for_logical_plan!(IntoPartitions);
 impl_from_data_struct_for_logical_plan!(Distinct);
 impl_from_data_struct_for_logical_plan!(Aggregate);
 impl_from_data_struct_for_logical_plan!(Pivot);
@@ -1113,6 +1171,7 @@ impl_from_data_struct_for_logical_plan!(Union);
 impl_from_data_struct_for_logical_plan!(Join);
 impl_from_data_struct_for_logical_plan!(Sink);
 impl_from_data_struct_for_logical_plan!(Sample);
+impl_from_data_struct_for_logical_plan!(Shuffle);
 impl_from_data_struct_for_logical_plan!(MonotonicallyIncreasingId);
 impl_from_data_struct_for_logical_plan!(Window);
 impl_from_data_struct_for_logical_plan!(TopN);

@@ -7,9 +7,9 @@ use daft_recordbatch::python::PyRecordBatch;
 use pyo3::{prelude::*, types::PyDict};
 use serde::{Deserialize, Serialize};
 
-use crate::Input;
 #[cfg(feature = "python")]
 use crate::{ExecutionStats, LocalPhysicalPlanRef, translate};
+use crate::{Input, LocalPhysicalPlan, ShuffleWriteBackend};
 
 #[pyclass(module = "daft.daft", name = "LocalPhysicalPlan")]
 #[derive(Debug, Serialize, Deserialize)]
@@ -56,11 +56,24 @@ impl PyLocalPhysicalPlan {
             dict.into(),
         ))
     }
+
+    fn shuffle_write_info(&self) -> Option<(String, u64, usize)> {
+        match self.plan.as_ref() {
+            LocalPhysicalPlan::ShuffleWrite(shuffle_write) => match &shuffle_write.backend {
+                ShuffleWriteBackend::Flight { shuffle_id, .. } => Some((
+                    "flight".to_string(),
+                    *shuffle_id,
+                    shuffle_write.num_partitions,
+                )),
+            },
+            _ => None,
+        }
+    }
 }
 
 impl_bincode_py_state_serialization!(PyLocalPhysicalPlan);
 
-#[pyclass(module = "daft.daft", name = "Input", frozen)]
+#[pyclass(module = "daft.daft", name = "Input", frozen, from_py_object)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyInput {
     pub inner: Input,
@@ -86,7 +99,12 @@ impl<'py> FromPyObject<'_, 'py> for Input {
     }
 }
 
-#[pyclass(module = "daft.daft", name = "PyExecutionStats", frozen)]
+#[pyclass(
+    module = "daft.daft",
+    name = "PyExecutionStats",
+    frozen,
+    from_py_object
+)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyExecutionStats {
     inner: Arc<ExecutionStats>,

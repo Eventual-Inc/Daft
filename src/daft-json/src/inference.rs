@@ -73,16 +73,7 @@ fn infer_object(inner: &Object) -> Result<DataType, ArrowError> {
             Ok(Field::new(key.as_ref(), dt, true))
         })
         .collect::<Result<Vec<_>, ArrowError>>()?;
-    if fields.is_empty() {
-        // Converts empty Structs to structs with a single field named "" and with a NullType
-        Ok(DataType::Struct(Fields::from(vec![Field::new(
-            "",
-            DataType::Null,
-            true,
-        )])))
-    } else {
-        Ok(DataType::Struct(Fields::from(fields)))
-    }
+    Ok(DataType::Struct(Fields::from(fields)))
 }
 
 fn infer_array(values: &[BorrowedValue]) -> Result<DataType, ArrowError> {
@@ -171,7 +162,6 @@ pub fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
         let fields: Vec<Field> = fields
             .into_iter()
             .map(|(name, dts)| Field::new(name, coerce_data_type(dts), true))
-            .filter(|f| !f.name().is_empty() && *f.data_type() != DataType::Null)
             .collect();
         return DataType::Struct(Fields::from(fields));
     }

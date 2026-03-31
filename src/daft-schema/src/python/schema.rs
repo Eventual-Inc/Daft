@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::{datatype::PyDataType, field::PyField};
 use crate::{field::Field, schema};
 
-#[pyclass(module = "daft.daft", eq)]
+#[pyclass(module = "daft.daft", eq, from_py_object)]
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PySchema {
@@ -32,7 +32,7 @@ impl PySchema {
                 let py_dtype: PyDataType = f.dtype.clone().into();
                 let py_arrow_dtype = py_dtype.to_arrow(py)?;
 
-                let args = (f.name.as_str(), py_arrow_dtype);
+                let args = (&*f.name, py_arrow_dtype);
                 if !f.metadata.is_empty() {
                     let kwargs = pyo3::types::PyDict::new(py);
                     let metadata_pydict = pyo3::types::PyDict::new(py);
@@ -69,7 +69,7 @@ impl PySchema {
     pub fn from_field_name_and_types(names_and_types: Vec<(String, PyDataType)>) -> Self {
         let fields = names_and_types
             .iter()
-            .map(|(name, pydtype)| Field::new(name, pydtype.clone().into()));
+            .map(|(name, pydtype)| Field::new(name.as_str(), pydtype.clone().into()));
         let schema = schema::Schema::new(fields);
         Self {
             schema: schema.into(),

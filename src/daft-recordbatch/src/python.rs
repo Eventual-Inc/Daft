@@ -21,7 +21,7 @@ use crate::{
     preview::{Preview, PreviewFormat, PreviewOptions},
 };
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PyRecordBatch {
     pub record_batch: RecordBatch,
@@ -226,16 +226,20 @@ impl PyRecordBatch {
     }
 
     /// Helper to create a rust Preview and use its Display impl.
-    #[pyo3(signature = (format, options))]
-    pub fn preview(&self, format: &str, options: Option<&str>) -> PyResult<String> {
-        let format = PreviewFormat::try_from(format)?;
-        let options = match options {
-            Some(json) => serde_json::from_str::<PreviewOptions>(json)
-                .expect("PreviewOptions produced invalid json."),
-            None => PreviewOptions::default(),
+    #[pyo3(signature = (format=None, options=None))]
+    pub fn preview(&self, format: Option<&str>, options: Option<&str>) -> PyResult<String> {
+        let format = if let Some(fmt) = format {
+            PreviewFormat::try_from(fmt)?
+        } else {
+            PreviewFormat::default()
         };
-        let preview = self.record_batch.clone();
-        let preview = Preview::new(preview, format, options);
+        let options = if let Some(json) = options {
+            serde_json::from_str::<PreviewOptions>(json)
+                .expect("PreviewOptions produced invalid json.")
+        } else {
+            PreviewOptions::default()
+        };
+        let preview = Preview::new(self.record_batch.clone(), format, options);
         Ok(preview.to_string())
     }
 
@@ -432,8 +436,7 @@ impl PyRecordBatch {
         self.record_batch
             .columns()
             .iter()
-            .cloned()
-            .map(Into::into)
+            .map(|c| c.as_materialized_series().clone().into())
             .collect()
     }
 

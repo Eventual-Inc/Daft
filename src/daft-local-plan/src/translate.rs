@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use common_error::{DaftError, DaftResult};
-use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::{
     expr::{
@@ -11,8 +10,10 @@ use daft_dsl::{
     join::normalize_join_keys,
     resolved_col, window_to_agg_exprs,
 };
+use daft_functions::random::random_int_expr;
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState};
 use daft_micropartition::MicroPartitionRef;
+use daft_scan::{ScanState, ScanTaskRef};
 
 use super::plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 use crate::{Input, SourceId, SourceIdCounter};
@@ -49,22 +50,22 @@ fn translate_helper(
                     )
                 }
                 SourceInfo::Physical(info) => {
-                    let scan_tasks = match &info.scan_state {
+                    let scan_tasks: Vec<ScanTaskRef> = match &info.scan_state {
                         ScanState::Operator(scan_op) => {
                             scan_op.0.to_scan_tasks(info.pushdowns.clone())?
                         }
                         ScanState::Tasks(scan_tasks) => (**scan_tasks).clone(),
                     };
 
-                    let format_config = scan_tasks
+                    let source_config = scan_tasks
                         .first()
-                        .map(|scan_task| scan_task.file_format_config());
+                        .map(|scan_task| scan_task.source_config.clone());
                     let source_id = source_counter.next();
                     inputs.insert(source_id, Input::ScanTasks(scan_tasks));
 
                     LocalPhysicalPlan::physical_scan(
                         source_id,
-                        format_config,
+                        source_config,
                         info.pushdowns.clone(),
                         source.output_schema.clone(),
                         source.stats_state.clone(),
@@ -379,6 +380,24 @@ fn translate_helper(
                 inputs,
             ))
         }
+        LogicalPlan::Shuffle(shuffle) => {
+            let (input_plan, inputs) = translate_helper(&shuffle.input, source_counter, psets)?;
+            let sort_by = BoundExpr::bind_all(
+                &[random_int_expr(i64::MIN, i64::MAX, shuffle.seed)],
+                input_plan.schema(),
+            )?;
+            Ok((
+                LocalPhysicalPlan::sort(
+                    input_plan,
+                    sort_by,
+                    vec![false],
+                    vec![false],
+                    shuffle.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
+        }
         LogicalPlan::TopN(top_n) => {
             let (input_plan, inputs) = translate_helper(&top_n.input, source_counter, psets)?;
 
@@ -502,9 +521,15 @@ fn translate_helper(
         }
         LogicalPlan::Repartition(repartition) => {
             log::warn!(
-                "Repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner instead if you need to repartition"
+                "Repartition not supported on the NativeRunner. This will be a no-op. Please use the Ray Runner instead if you need to repartition"
             );
             translate_helper(&repartition.input, source_counter, psets)
+        }
+        LogicalPlan::IntoPartitions(into_partitions) => {
+            log::warn!(
+                "IntoPartitions not supported on the NativeRunner. This will be a no-op. Please use the Ray Runner instead if you need to repartition"
+            );
+            translate_helper(&into_partitions.input, source_counter, psets)
         }
         LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
             let (input_plan, inputs) =

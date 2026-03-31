@@ -522,7 +522,7 @@ mod tests {
 
         let daft_schema = arrow_schema_to_daft_schema(&schema).unwrap();
         assert_eq!(daft_schema.len(), 2);
-        assert_eq!(daft_schema.fields()[0].name, "a");
-        assert_eq!(daft_schema.fields()[1].name, "b");
+        assert_eq!(&*daft_schema.fields()[0].name, "a");
+        assert_eq!(&*daft_schema.fields()[1].name, "b");
     }
 }

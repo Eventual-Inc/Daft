@@ -29,7 +29,7 @@ use crate::{
     utils::supertype::try_get_collection_supertype,
 };
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PySeries {
     pub series: series::Series,
@@ -500,7 +500,7 @@ impl From<PySeries> for series::Series {
     }
 }
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 /// Iterator over elements in a Python Series
 ///
@@ -563,9 +563,15 @@ impl ToPyArrow for Series {
             (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
         )?;
 
-        let array = pyo3::types::PyModule::import(py, pyo3::intern!(py, "daft.arrow_utils"))?
-            .getattr(pyo3::intern!(py, "remove_empty_struct_placeholders"))?
-            .call1((array,))?;
+        // For FixedShapeTensor, re-wrap the storage array as a PyArrow canonical
+        // FixedShapeTensorArray instead of returning a DaftExtension array.
+        if self.data_type().is_fixed_shape_tensor() {
+            let py_dtype = PyDataType::from(self.data_type().clone()).to_arrow(py)?;
+            let storage = array.getattr(pyo3::intern!(py, "storage"))?;
+            return pyarrow
+                .getattr(pyo3::intern!(py, "ExtensionArray"))?
+                .call_method1(pyo3::intern!(py, "from_storage"), (py_dtype, storage));
+        }
 
         Ok(array)
     }

@@ -10,7 +10,7 @@ use daft_dsl::{
 use itertools::Itertools;
 
 use super::OptimizerRule;
-use crate::{LogicalPlan, ops::Project};
+use crate::{LogicalPlan, ops::Project, stats::StatsState};
 
 /// This rule will split projections into multiple projections such that expressions that
 /// need their own granular morsel sizing will be isolated. Right now it will be any async function that has a preferred batch size,
@@ -186,9 +186,11 @@ impl SplitGranularProjection {
                 }
             }
 
-            last_child = Arc::new(LogicalPlan::Project(
-                Project::try_new(last_child, out_exprs).unwrap(),
-            ));
+            let mut project = Project::try_new(last_child, out_exprs).unwrap();
+            if matches!(project.input.stats_state(), StatsState::Materialized(_)) {
+                project = project.with_materialized_stats();
+            }
+            last_child = Arc::new(LogicalPlan::Project(project));
         }
 
         // Only expose the columns that are in the original projection, not the inputs
@@ -201,9 +203,11 @@ impl SplitGranularProjection {
             .map(|c| resolved_col(Arc::from(c.0)).alias(Arc::from(c.1)))
             .collect_vec();
 
-        last_child = Arc::new(LogicalPlan::Project(
-            Project::try_new(last_child, last_fields).unwrap(),
-        ));
+        let mut project = Project::try_new(last_child, last_fields).unwrap();
+        if matches!(project.input.stats_state(), StatsState::Materialized(_)) {
+            project = project.with_materialized_stats();
+        }
+        last_child = Arc::new(LogicalPlan::Project(project));
 
         Ok(Transformed::yes(last_child))
     }
@@ -213,12 +217,11 @@ impl SplitGranularProjection {
 mod tests {
     use std::any::TypeId;
 
-    use common_scan_info::Pushdowns;
     use daft_core::prelude::Operator;
-    use daft_dsl::{Column, ExprRef, ResolvedColumn, lit};
-    use daft_functions_binary::{BinaryDecode, Codec};
+    use daft_dsl::{Column, ResolvedColumn};
     use daft_functions_uri::download::UrlDownload;
     use daft_functions_utf8::{Capitalize, capitalize, lower};
+    use daft_scan::Pushdowns;
     use daft_schema::{dtype::DataType, field::Field};
 
     use super::*;
@@ -277,12 +280,9 @@ mod tests {
             Pushdowns::default(),
         )
         .select(vec![
-            ExprRef::from(BuiltinScalarFn::new(
-                BinaryDecode,
-                vec![
-                    BuiltinScalarFn::new_async(UrlDownload, vec![resolved_col("url")]).into(),
-                    lit(Codec::Utf8),
-                ],
+            Arc::new(Expr::Cast(
+                BuiltinScalarFn::new_async(UrlDownload, vec![resolved_col("url")]).into(),
+                DataType::Utf8,
             ))
             .alias("url_data"),
             lower(Expr::Column(Column::Resolved(ResolvedColumn::Basic("name".into()))).arced())
@@ -318,10 +318,7 @@ mod tests {
         let Expr::Alias(func, ..) = top_project.projection[0].as_ref() else {
             panic!("Expected alias");
         };
-        assert!(matches!(
-            func.as_ref(),
-            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func, .. })) if func.type_id() == TypeId::of::<BinaryDecode>()
-        ));
+        assert!(matches!(func.as_ref(), Expr::Cast(_, DataType::Utf8)));
 
         // Check that the top level project has a single child, which is a project
         assert!(matches!(

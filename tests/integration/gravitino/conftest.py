@@ -5,8 +5,8 @@ import time
 
 import pytest
 
+from daft.catalog.__gravitino._client import GravitinoClient
 from daft.dependencies import requests
-from daft.gravitino import GravitinoClient
 from daft.io import IOConfig
 
 _GRAVITINO_HEADERS = {
@@ -63,6 +63,28 @@ def local_gravitino_client(
     return GravitinoClient(
         endpoint=gravitino_endpoint,
         metalake_name=gravitino_metalake,
+        auth_type=gravitino_auth_type,
+        username=username,
+        password=password,
+        token=token,
+    )
+
+
+@pytest.fixture(scope="session")
+def gravitino_catalog(
+    local_gravitino_client: GravitinoClient,
+    gravitino_endpoint: str,
+    gravitino_metalake: str,
+    gravitino_auth_type: str,
+):
+    from daft.catalog import Catalog
+
+    username = os.environ.get("GRAVITINO_USERNAME", "admin" if gravitino_auth_type == "simple" else None)
+    password = os.environ.get("GRAVITINO_PASSWORD")
+    token = os.environ.get("GRAVITINO_TOKEN")
+    return Catalog.from_gravitino(
+        gravitino_endpoint,
+        gravitino_metalake,
         auth_type=gravitino_auth_type,
         username=username,
         password=password,

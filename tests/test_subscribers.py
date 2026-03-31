@@ -60,16 +60,25 @@ class MockSubscriber(Subscriber):
     def on_exec_start(self, query_id: str, physical_plan: str) -> None:
         self.query_physical_plan[query_id] = physical_plan
 
-    def on_exec_operator_start(self, query_id: str, node_id: int) -> None:
+    def on_operator_start(self, query_id: str, node_id: int) -> None:
         pass
 
-    def on_exec_emit_stats(self, query_id: str, all_stats: Mapping[int, Mapping[str, tuple[StatType, Any]]]) -> None:
+    def on_stats(self, query_id: str, all_stats: Mapping[int, Mapping[str, tuple[StatType, Any]]]) -> None:
         for node_id, stats in all_stats.items():
             for stat_name, (_, stat_value) in stats.items():
                 self.query_node_stats[query_id][node_id][stat_name] = stat_value
 
-    def on_exec_operator_end(self, query_id: str, node_id: int) -> None:
+    def on_operator_end(self, query_id: str, node_id: int) -> None:
         pass
+
+    def on_exec_operator_start(self, query_id: str, node_id: int) -> None:
+        self.on_operator_start(query_id, node_id)
+
+    def on_exec_emit_stats(self, query_id: str, all_stats: Mapping[int, Mapping[str, tuple[StatType, Any]]]) -> None:
+        self.on_stats(query_id, all_stats)
+
+    def on_exec_operator_end(self, query_id: str, node_id: int) -> None:
+        self.on_operator_end(query_id, node_id)
 
     def on_exec_end(self, query_id: str) -> None:
         pass
@@ -211,3 +220,25 @@ def test_subscriber_template():
     df.collect()
     # Should only have the previous query
     assert len(subscriber.query_metadata) == 1
+
+
+def test_csv_scan_reports_bytes_read(tmp_path):
+    subscriber = MockSubscriber()
+    ctx = daft.context.get_context()
+    ctx.attach_subscriber("mock", subscriber)
+
+    try:
+        csv_path = tmp_path / "input.csv"
+        csv_path.write_text("a,b\n1,2\n3,4\n5,6\n")
+
+        daft.read_csv(str(csv_path)).collect()
+
+        query_id = subscriber.query_ids[-1]
+        all_node_stats = subscriber.query_node_stats[query_id]
+        bytes_read_values = [
+            value for stats in all_node_stats.values() for name, value in stats.items() if name == "bytes.read"
+        ]
+        assert bytes_read_values, "Expected at least one source node to report bytes.read"
+        assert any(value > 0 for value in bytes_read_values)
+    finally:
+        ctx.detach_subscriber("mock")

@@ -10,8 +10,7 @@ import pytz
 
 import daft
 from daft import DataType, col
-
-PYARROW_GE_7_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (7, 0, 0)
+from daft.functions import current_date, current_timestamp, current_timezone
 
 
 def test_temporal_arithmetic_with_same_type() -> None:
@@ -64,7 +63,7 @@ def test_temporal_file_roundtrip(format) -> None:
     }
 
     # CSV writing of these files only supported by pyarrow CSV writer in PyArrow >= 7.0.0
-    if format == "csv" and PYARROW_GE_7_0_0:
+    if format == "csv":
         data = {
             **data,
             "timestamp_s": pa.array([1], pa.timestamp("s")),
@@ -110,10 +109,6 @@ def test_arrow_timestamp(timeunit, timezone) -> None:
     assert df.to_arrow() == pa_table
 
 
-@pytest.mark.skipif(
-    not PYARROW_GE_7_0_0,
-    reason="PyArrow conversion of timezoned datetime is broken in 6.0.1",
-)
 @pytest.mark.parametrize("timezone", [None, timezone.utc, timezone(timedelta(hours=-7))])
 def test_python_timestamp(timezone) -> None:
     # Test roundtrip of Python timestamps.
@@ -762,3 +757,57 @@ def test_datetime_to_string_errors(value):
 
     with pytest.raises(daft.exceptions.DaftCoreException):
         df.select(daft.col("invalid").strftime("%Y-%m-%d")).to_pydict()
+
+
+# --- Tests for current_date, current_timestamp, current_timezone and aliases ---
+
+
+def test_current_date_returns_date_type() -> None:
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    df = df.select(current_date().alias("today"))
+    assert df.schema()["today"].dtype == DataType.date()
+    result = df.to_pydict()
+    today = date.today()
+    for val in result["today"]:
+        assert isinstance(val, date)
+        # Allow for UTC date being +/- 1 day from local date
+        assert abs((val - today).days) <= 1
+
+
+def test_current_timestamp_returns_timestamp_type() -> None:
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    df = df.select(current_timestamp().alias("now"))
+    assert df.schema()["now"].dtype == DataType.timestamp("us")
+    result = df.to_pydict()
+    now_utc = datetime.now(timezone.utc)
+    for val in result["now"]:
+        assert isinstance(val, datetime)
+        # Value should be within 60 seconds of now
+        diff = abs((now_utc.replace(tzinfo=None) - val).total_seconds())
+        assert diff < 60
+
+
+def test_current_timezone_returns_utc() -> None:
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    df = df.select(current_timezone().alias("tz"))
+    result = df.to_pydict()
+
+    expected = {"tz": ["UTC", "UTC", "UTC"]}
+
+    assert result == expected
+
+
+def test_current_temporal_sql() -> None:
+    df = daft.from_pydict({"x": [1, 2, 3]})  # noqa: F841
+    sql = "SELECT current_date() as d, current_timestamp() as ts, current_timezone() as tz FROM df"
+    result = daft.sql(sql).to_pydict()
+    today = date.today()
+    now_utc = datetime.now(timezone.utc)
+    assert result["tz"] == ["UTC", "UTC", "UTC"]
+    for val in result["d"]:
+        assert isinstance(val, date)
+        assert abs((val - today).days) <= 1
+    for val in result["ts"]:
+        assert isinstance(val, datetime)
+        diff = abs((now_utc.replace(tzinfo=None) - val).total_seconds())
+        assert diff < 60

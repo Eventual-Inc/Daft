@@ -1,51 +1,45 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque, hash_map::Entry},
     sync::Arc,
     time::{Duration, Instant},
 };
 
-use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
+    Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
-    snapshot::StatSnapshotImpl,
 };
 use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
-use opentelemetry::metrics::Meter;
-use snafu::ResultExt;
 use tracing::info_span;
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
     channel::{Receiver, Sender, create_channel},
-    pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
+    pipeline::{
+        BuilderContext, InputId, MorselSizeRequirement, NodeName, PipelineEvent, PipelineMessage,
+        PipelineNode, next_event,
+    },
+    resource_manager::MemoryManager,
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 
-pub enum BlockingSinkFinalizeOutput<Op: BlockingSink> {
-    #[allow(dead_code)]
-    HasMoreOutput {
-        states: Vec<Op::State>,
-        output: Vec<Arc<MicroPartition>>,
-    },
-    Finished(Vec<Arc<MicroPartition>>),
-}
-
 pub(crate) type BlockingSinkSinkResult<Op> =
     OperatorOutput<DaftResult<<Op as BlockingSink>::State>>;
-pub(crate) type BlockingSinkFinalizeResult<Op> =
-    OperatorOutput<DaftResult<BlockingSinkFinalizeOutput<Op>>>;
+pub(crate) type BlockingSinkFinalizeResult = OperatorOutput<DaftResult<Vec<MicroPartition>>>;
+
 pub(crate) trait BlockingSink: Send + Sync {
     type State: Send + Sync + Unpin;
+    type Stats: RuntimeStats = DefaultRuntimeStats;
 
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self>
     where
@@ -54,43 +48,100 @@ pub(crate) trait BlockingSink: Send + Sync {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self>
+    ) -> BlockingSinkFinalizeResult
     where
         Self: Sized;
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
-    fn make_state(&self) -> DaftResult<Self::State>;
-    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::new(meter, node_info))
-    }
+    fn make_state(&self, input_id: InputId) -> DaftResult<Self::State>;
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
     }
 }
 
-type StateId = usize;
-
-struct ExecutionTaskResult<S> {
-    state_id: StateId,
-    state: S,
-    elapsed: Duration,
+enum TaskResult<Op: BlockingSink> {
+    Sink(InputId, Op::State, Duration),
+    Finalized,
 }
 
-struct ExecutionContext<Op: BlockingSink> {
-    op: Arc<Op>,
-    task_spawner: ExecutionTaskSpawner,
-    task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
-    state_pool: HashMap<StateId, Op::State>,
-    output_sender: Sender<Arc<MicroPartition>>,
-    runtime_stats: Arc<dyn RuntimeStats>,
-    stats_manager: RuntimeStatsManagerHandle,
+struct PerInputState<Op: BlockingSink> {
+    states: Vec<Op::State>,
+    pending: VecDeque<MicroPartition>,
+    max_concurrency: usize,
+    flushed: bool,
+    runtime_stats: Arc<Op::Stats>,
+}
+
+impl<Op: BlockingSink + 'static> PerInputState<Op> {
+    fn new(
+        op: &Arc<Op>,
+        max_concurrency: usize,
+        runtime_stats: Arc<Op::Stats>,
+        input_id: InputId,
+    ) -> DaftResult<Self> {
+        let states = (0..max_concurrency)
+            .map(|_| op.make_state(input_id))
+            .collect::<Result<_, _>>()?;
+        Ok(Self {
+            states,
+            pending: VecDeque::new(),
+            max_concurrency,
+            flushed: false,
+            runtime_stats,
+        })
+    }
+
+    fn spawn_sink(
+        &mut self,
+        tasks: &mut OrderingAwareJoinSet<DaftResult<TaskResult<Op>>>,
+        op: &Arc<Op>,
+        spawner: &ExecutionTaskSpawner,
+        input_id: InputId,
+        partition: MicroPartition,
+    ) {
+        let Some(state) = self.states.pop() else {
+            return;
+        };
+        let op = op.clone();
+        let spawner = spawner.clone();
+        let runtime_stats = self.runtime_stats.clone();
+        tasks.spawn(async move {
+            let now = Instant::now();
+            let state = op.sink(partition, state, runtime_stats, &spawner).await??;
+            Ok(TaskResult::Sink(input_id, state, now.elapsed()))
+        });
+    }
+
+    fn flush_pending(
+        &mut self,
+        tasks: &mut OrderingAwareJoinSet<DaftResult<TaskResult<Op>>>,
+        op: &Arc<Op>,
+        spawner: &ExecutionTaskSpawner,
+        input_id: InputId,
+    ) -> DaftResult<()> {
+        if self.pending.is_empty() || self.states.is_empty() {
+            return Ok(());
+        }
+        let parts: Vec<_> = self.pending.drain(..).collect();
+        let partition = MicroPartition::concat(parts)?;
+        self.spawn_sink(tasks, op, spawner, input_id, partition);
+        Ok(())
+    }
+
+    fn all_states_idle(&self) -> bool {
+        self.states.len() == self.max_concurrency
+    }
+
+    fn ready_to_finalize(&self) -> bool {
+        self.flushed && self.all_states_idle()
+    }
 }
 
 pub struct BlockingSinkNode<Op: BlockingSink> {
     op: Arc<Op>,
     child: Box<dyn PipelineNode>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    meter: Meter,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
 }
@@ -105,99 +156,170 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
     ) -> Self {
         let name: Arc<str> = op.name().into();
         let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::BlockingSink, context);
-        let runtime_stats = op.make_runtime_stats(&ctx.meter, &node_info);
-
         Self {
             op,
             child,
-            runtime_stats,
+            meter: ctx.meter.clone(),
             plan_stats,
             node_info: Arc::new(node_info),
         }
     }
+
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
         Box::new(self)
     }
 
-    // ========== Helper Functions ==========
-
-    fn spawn_execution_task(
-        ctx: &mut ExecutionContext<Op>,
-        input: Arc<MicroPartition>,
-        state: Op::State,
-        state_id: StateId,
+    fn spawn_finalize(
+        op: Arc<Op>,
+        per_input: PerInputState<Op>,
+        input_id: InputId,
+        finalize_spawner: ExecutionTaskSpawner,
+        output_tx: Sender<PipelineMessage>,
+        tasks: &mut OrderingAwareJoinSet<DaftResult<TaskResult<Op>>>,
     ) {
-        let op = ctx.op.clone();
-        let task_spawner = ctx.task_spawner.clone();
-        ctx.task_set.spawn(async move {
-            let now = Instant::now();
-            let new_state = op.sink(input, state, &task_spawner).await??;
-            let elapsed = now.elapsed();
-
-            Ok(ExecutionTaskResult {
-                state_id,
-                state: new_state,
-                elapsed,
-            })
+        tasks.spawn(async move {
+            let output = op.finalize(per_input.states, &finalize_spawner).await??;
+            for partition in output {
+                per_input.runtime_stats.add_rows_out(partition.len() as u64);
+                let _ = output_tx
+                    .send(PipelineMessage::Morsel {
+                        input_id,
+                        partition,
+                    })
+                    .await;
+            }
+            let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
+            Ok(TaskResult::Finalized)
         });
     }
 
-    async fn process_input(
-        node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
-        ctx: &mut ExecutionContext<Op>,
+    #[allow(clippy::too_many_arguments)]
+    async fn run(
+        op: Arc<Op>,
+        mut child_rx: Receiver<PipelineMessage>,
+        output_tx: Sender<PipelineMessage>,
+        memory_manager: Arc<MemoryManager>,
+        stats_manager: RuntimeStatsManagerHandle,
+        meter: Meter,
+        node_info: Arc<NodeInfo>,
     ) -> DaftResult<()> {
-        let mut input_closed = false;
+        let node_id = node_info.id;
+        let max_concurrency = op.max_concurrency();
+        let compute_runtime = get_compute_runtime();
+        let task_spawner = ExecutionTaskSpawner::new(
+            compute_runtime.clone(),
+            memory_manager.clone(),
+            info_span!("BlockingSink::Sink"),
+        );
+        let finalize_spawner = ExecutionTaskSpawner::new(
+            compute_runtime,
+            memory_manager,
+            info_span!("BlockingSink::Finalize"),
+        );
+        let mut inputs: HashMap<InputId, PerInputState<Op>> = HashMap::new();
+        let mut tasks: OrderingAwareJoinSet<DaftResult<TaskResult<Op>>> =
+            OrderingAwareJoinSet::new(false);
+        let mut child_closed = false;
         let mut node_initialized = false;
 
-        // Main processing loop
-        while !input_closed || !ctx.task_set.is_empty() {
-            tokio::select! {
-                biased;
+        while let Some(event) = next_event(
+            &mut tasks,
+            max_concurrency,
+            &mut child_rx,
+            &mut child_closed,
+        )
+        .await?
+        {
+            match event {
+                PipelineEvent::TaskCompleted(TaskResult::Sink(input_id, state, elapsed)) => {
+                    let per_input = inputs.get_mut(&input_id).unwrap();
+                    per_input
+                        .runtime_stats
+                        .add_duration_us(elapsed.as_micros() as u64);
+                    per_input.states.push(state);
+                    per_input.flush_pending(&mut tasks, &op, &task_spawner, input_id)?;
 
-                // Branch 1: Join completed task (only if tasks exist)
-                Some(result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
-                    // Record execution stats
-                    let ExecutionTaskResult { state_id, state, elapsed } = result??;
-                    ctx.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
-
-                    // Return state to pool
-                    ctx.state_pool.insert(state_id, state);
+                    if per_input.ready_to_finalize() {
+                        Self::spawn_finalize(
+                            op.clone(),
+                            inputs.remove(&input_id).unwrap(),
+                            input_id,
+                            finalize_spawner.clone(),
+                            output_tx.clone(),
+                            &mut tasks,
+                        );
+                    }
                 }
+                PipelineEvent::TaskCompleted(TaskResult::Finalized) => {}
+                PipelineEvent::Morsel {
+                    input_id,
+                    partition,
+                } => {
+                    if !node_initialized {
+                        stats_manager.activate_node(node_id);
+                        node_initialized = true;
+                    }
 
-                // Branch 2: Receive input (only if states available and receiver open)
-                morsel = receiver.recv(), if !ctx.state_pool.is_empty() && !input_closed => {
-                    match morsel {
-                        Some(morsel) => {
-                            if !node_initialized {
-                                ctx.stats_manager.activate_node(node_id);
-                                node_initialized = true;
-                            }
-                            ctx.runtime_stats.add_rows_in(morsel.len() as u64);
-                            let state_id = *ctx
-                                .state_pool
-                                .keys()
-                                .next()
-                                .expect("State pool should have states when it is not empty");
-                            let state = ctx
-                                .state_pool
-                                .remove(&state_id)
-                                .expect("State pool should have states when it is not empty");
-
-                            Self::spawn_execution_task(ctx, morsel, state, state_id);
+                    let per_input = match inputs.entry(input_id) {
+                        Entry::Occupied(e) => e.into_mut(),
+                        Entry::Vacant(e) => {
+                            let runtime_stats = Arc::new(Op::Stats::new(&meter, &node_info));
+                            stats_manager.register_runtime_stats(
+                                node_id,
+                                input_id,
+                                runtime_stats.clone(),
+                            );
+                            e.insert(PerInputState::new(
+                                &op,
+                                max_concurrency,
+                                runtime_stats,
+                                input_id,
+                            )?)
                         }
-                        None => {
-                            input_closed = true;
-                        }
+                    };
+                    per_input.runtime_stats.add_rows_in(partition.len() as u64);
+                    per_input.pending.push_back(partition);
+                    per_input.flush_pending(&mut tasks, &op, &task_spawner, input_id)?;
+                }
+                PipelineEvent::Flush(input_id) => {
+                    if let Some(p) = inputs.get_mut(&input_id) {
+                        p.flushed = true;
+                    }
+                    if inputs.get(&input_id).is_some_and(|p| p.ready_to_finalize()) {
+                        Self::spawn_finalize(
+                            op.clone(),
+                            inputs.remove(&input_id).unwrap(),
+                            input_id,
+                            finalize_spawner.clone(),
+                            output_tx.clone(),
+                            &mut tasks,
+                        );
+                    }
+                }
+                PipelineEvent::InputClosed => {
+                    for per_input in inputs.values_mut() {
+                        per_input.flushed = true;
+                    }
+                    let ready: Vec<_> = inputs
+                        .keys()
+                        .filter(|id| inputs[id].ready_to_finalize())
+                        .copied()
+                        .collect();
+                    for input_id in ready {
+                        Self::spawn_finalize(
+                            op.clone(),
+                            inputs.remove(&input_id).unwrap(),
+                            input_id,
+                            finalize_spawner.clone(),
+                            output_tx.clone(),
+                            &mut tasks,
+                        );
                     }
                 }
             }
         }
 
-        // After loop exits, verify invariants
-        debug_assert_eq!(ctx.task_set.len(), 0, "TaskSet should be empty after loop");
-        debug_assert!(input_closed, "Receiver should be closed after loop");
-
+        stats_manager.finalize_node(node_id);
         Ok(())
     }
 }
@@ -216,17 +338,11 @@ impl<Op: BlockingSink + 'static> TreeDisplay for BlockingSinkNode<Op> {
             DisplayLevel::Compact => {
                 writeln!(display, "{}", self.op.name()).unwrap();
             }
-            level => {
+            _ => {
                 let multiline_display = self.op.multiline_display().join("\n");
                 writeln!(display, "{}", multiline_display).unwrap();
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
-                }
-                if matches!(level, DisplayLevel::Verbose) {
-                    let rt_result = self.runtime_stats.snapshot();
-                    for (name, value) in rt_result.to_stats() {
-                        writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
-                    }
                 }
             }
         }
@@ -284,102 +400,41 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
 
     fn start(
         self: Box<Self>,
-        maintain_order: bool,
+        _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let node_id = self.node_id();
-        let name = self.name();
-
-        let child_results_receiver = self.child.start(false, runtime_handle)?;
-
-        let (destination_sender, destination_receiver) = create_channel(1);
-
-        let op = self.op.clone();
-        let max_concurrency = op.max_concurrency();
-
-        // Create task spawners
-        let task_spawner = ExecutionTaskSpawner::new(
-            get_compute_runtime(),
-            runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
-            info_span!("BlockingSink::Sink"),
-        );
-        let finalize_spawner = ExecutionTaskSpawner::new(
-            get_compute_runtime(),
-            runtime_handle.memory_manager(),
-            self.runtime_stats.clone(),
-            info_span!("BlockingSink::Finalize"),
-        );
-
-        // Spawn process_input task
-        let stats_manager = runtime_handle.stats_manager();
-        let runtime_stats = self.runtime_stats.clone();
-
-        // Create task set
-        let task_set = OrderingAwareJoinSet::new(maintain_order);
-
-        // Create context (state_pool will be initialized inside async move)
-        let mut ctx = ExecutionContext {
+    ) -> crate::Result<Receiver<PipelineMessage>> {
+        let Self {
             op,
-            task_spawner,
-            task_set,
-            state_pool: HashMap::new(),
-            output_sender: destination_sender,
-            runtime_stats: runtime_stats.clone(),
-            stats_manager: stats_manager.clone(),
-        };
+            child,
+            meter,
+            node_info,
+            ..
+        } = *self;
+        let name: Arc<str> = node_info.name.clone();
+        let child_rx = child.start(false, runtime_handle)?;
+        let (output_tx, output_rx) = create_channel(1);
+        let memory_manager = runtime_handle.memory_manager();
+        let stats_manager = runtime_handle.stats_manager();
 
         runtime_handle.spawn(
             async move {
-                // Initialize state pool with max_concurrency states
-                for i in 0..max_concurrency {
-                    ctx.state_pool.insert(
-                        i,
-                        ctx.op.make_state().context(PipelineExecutionSnafu {
-                            node_name: ctx.op.name().to_string(),
-                        })?,
-                    );
-                }
-                Self::process_input(node_id, child_results_receiver, &mut ctx).await?;
-
-                // Collect finished states
-                let mut finished_states: Vec<_> =
-                    ctx.state_pool.drain().map(|(_, state)| state).collect();
-
-                // Finalize
-                loop {
-                    let finalized_result = ctx
-                        .op
-                        .finalize(finished_states, &finalize_spawner)
-                        .await??;
-                    match finalized_result {
-                        BlockingSinkFinalizeOutput::HasMoreOutput { states, output } => {
-                            for output in output {
-                                ctx.runtime_stats.add_rows_out(output.len() as u64);
-                                if ctx.output_sender.send(output).await.is_err() {
-                                    break;
-                                }
-                            }
-                            finished_states = states;
-                        }
-                        BlockingSinkFinalizeOutput::Finished(output) => {
-                            for output in output {
-                                ctx.runtime_stats.add_rows_out(output.len() as u64);
-                                let _ = ctx.output_sender.send(output).await;
-                            }
-                            break;
-                        }
-                    }
-                }
-
-                stats_manager.finalize_node(node_id);
-                Ok(())
+                Self::run(
+                    op,
+                    child_rx,
+                    output_tx,
+                    memory_manager,
+                    stats_manager,
+                    meter,
+                    node_info,
+                )
+                .await
             },
             &name,
         );
 
-        Ok(destination_receiver)
+        Ok(output_rx)
     }
+
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
     }
@@ -388,8 +443,5 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
     }
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()
-    }
-    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        self.runtime_stats.clone()
     }
 }

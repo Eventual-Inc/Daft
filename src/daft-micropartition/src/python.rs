@@ -17,7 +17,7 @@ use daft_io::{IOStatsContext, python::IOConfig};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
-use daft_scan::{DataSource, ScanTaskRef, storage_config::StorageConfig};
+use daft_scan::{ScanSourceKind, ScanTaskRef, storage_config::StorageConfig};
 use daft_stats::{TableMetadata, TableStatistics};
 use pyo3::{PyTypeInfo, exceptions::PyValueError, prelude::*, types::PyBytes};
 use snafu::ResultExt;
@@ -27,7 +27,7 @@ use crate::{
     partitioning::MicroPartitionSet,
 };
 
-#[pyclass(module = "daft.daft", frozen)]
+#[pyclass(module = "daft.daft", frozen, from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyMicroPartition {
     pub inner: Arc<MicroPartition>,
@@ -82,7 +82,11 @@ impl PyMicroPartition {
                     .collect::<Vec<_>>();
                 Ok(series)
             }
-            Some(t) => Ok(t.columns().iter().map(|s| s.clone().into()).collect()),
+            Some(t) => Ok(t
+                .columns()
+                .iter()
+                .map(|s| s.as_materialized_series().clone().into())
+                .collect()),
         }
     }
 
@@ -174,14 +178,22 @@ impl PyMicroPartition {
 
     #[staticmethod]
     pub fn concat(py: Python, to_concat: Vec<Self>) -> PyResult<Self> {
-        let mps_iter = to_concat.iter().map(|t| t.inner.as_ref());
-        py.detach(|| Ok(MicroPartition::concat(mps_iter)?.into()))
+        let mps: Vec<_> = to_concat
+            .iter()
+            .map(|t| t.inner.as_ref())
+            .cloned()
+            .collect();
+        py.detach(|| Ok(MicroPartition::concat(mps)?.into()))
     }
 
     #[staticmethod]
     pub fn concat_or_empty(py: Python, to_concat: Vec<Self>, schema: PySchema) -> PyResult<Self> {
-        let mps_iter = to_concat.iter().map(|t| t.inner.as_ref());
-        py.detach(|| Ok(MicroPartition::concat_or_empty(mps_iter, schema.schema)?.into()))
+        let mps: Vec<_> = to_concat
+            .iter()
+            .map(|t| t.inner.as_ref())
+            .cloned()
+            .collect();
+        py.detach(|| Ok(MicroPartition::concat_or_empty(mps, schema.schema)?.into()))
     }
 
     pub fn slice(&self, py: Python, start: i64, end: i64) -> PyResult<Self> {
@@ -1084,12 +1096,11 @@ pub fn read_pyfunc_into_table_iter(
 ) -> crate::Result<impl Iterator<Item = crate::Result<RecordBatch>>> {
     let table_iterators = scan_task.sources.iter().map(|source| {
         // Call Python function to create an Iterator (Grabs the GIL and then releases it)
-        match source {
-            DataSource::PythonFactoryFunction {
+        match &source.kind {
+            ScanSourceKind::PythonFactoryFunction {
                 module,
                 func_name,
                 func_args,
-                ..
             } => {
                 Python::attach(|py| {
                     let func = py.import(module.as_str())
@@ -1101,7 +1112,7 @@ pub fn read_pyfunc_into_table_iter(
                         .map(Into::<pyo3::Py<pyo3::PyAny>>::into)
                 })
             },
-            _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction data file sources"),
+            _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction scan sources"),
         }
     }).collect::<crate::Result<Vec<_>>>()?;
 
@@ -1205,7 +1216,7 @@ impl From<PyMicroPartition> for Arc<MicroPartition> {
     }
 }
 
-#[pyclass(frozen, module = "daft.daft")]
+#[pyclass(frozen, module = "daft.daft", from_py_object)]
 #[derive(Clone, Debug)]
 pub struct PyMicroPartitionSet(Arc<MicroPartitionSet>);
 

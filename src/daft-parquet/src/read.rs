@@ -335,14 +335,14 @@ async fn read_parquet_single_into_arrow(
     let mut all_arrays: Vec<ArrowChunk> = Vec::with_capacity(rb.schema.fields().len());
 
     for (col, daft_field) in rb.columns().iter().zip(rb.schema.fields()) {
-        let arrow_array = col.to_arrow()?;
+        let arrow_array = col.as_materialized_series().to_arrow()?;
 
         let nullable = arrow_schema
             .as_ref()
             .and_then(|s| s.field_with_name(&daft_field.name).ok())
             .is_none_or(|f| f.is_nullable());
         ffi_fields.push(arrow::datatypes::Field::new(
-            &daft_field.name,
+            daft_field.name.to_string(),
             arrow_array.data_type().clone(),
             nullable,
         ));
@@ -991,7 +991,7 @@ mod tests {
         match schema.fields().deref() {
             [field] => assert_eq!(field.data_type(), &DataType::LargeBinary),
             _ => panic!("There should only be one field in the schema"),
-        };
+        }
     }
 
     /// Regression test: streaming with a limit equal to the batch size should
