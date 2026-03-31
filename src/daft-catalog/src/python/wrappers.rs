@@ -138,10 +138,7 @@ impl Catalog for PyCatalogWrapper {
         })
     }
 
-    fn get_function(
-        &self,
-        ident: &crate::Identifier,
-    ) -> CatalogResult<Option<crate::CatalogFunctionRef>> {
+    fn get_function(&self, ident: &Identifier) -> CatalogResult<Option<Py<PyAny>>> {
         Python::attach(|py| {
             let catalog = self.0.bind(py);
             let ident_py = PyIdentifier(ident.clone()).to_pyobj(py)?;
