@@ -1488,10 +1488,12 @@ impl Expr {
                 "VLLM({model}, {input}, {concurrency}, {gpus_per_actor}, {do_prefix_routing}, {max_buffer_size}, {min_bucket_size}, {prefix_match_threshold:?}, {load_balance_threshold}, {batch_size:?}, {engine_args:?}, {generate_args:?})"
             )),
             Self::Coalesce(inputs) => {
-                let inputs_id = inputs.iter().fold(String::new(), |acc, input| {
-                    format!("{},{}", acc, input.semantic_id(schema))
-                });
-                FieldID::new(format!("coalesce({})", inputs_id).trim_start_matches(".."))
+                let inputs_id = inputs
+                    .iter()
+                    .map(|input| input.semantic_id(schema).id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                FieldID::new(format!("coalesce({})", inputs_id))
             }
         }
     }

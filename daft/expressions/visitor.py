@@ -83,6 +83,10 @@ class ExpressionVisitor(ABC, Generic[R]):
         """Visit a function call expression."""
         ...
 
+    def visit_coalesce(self, args: list[Expression]) -> R:
+        """Visit a coalesce expression."""
+        return self.visit_function("coalesce", args)
+
 
 class PredicateVisitor(ExpressionVisitor[R]):
     """PredicateVisitor is an ExpressionVisitor with helper methods for predicates."""
