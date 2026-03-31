@@ -16,7 +16,7 @@ use daft_dsl::{
     functions::{FunctionArgs, FunctionModule, FunctionRegistry, ScalarUDF, UnaryArg},
 };
 use serde::{Deserialize, Serialize};
-use time::Time;
+use time::{ConvertTimeZone, ReplaceTimeZone, Time};
 use truncate::Truncate;
 use unix_timestamp::UnixTimestamp;
 
@@ -99,6 +99,8 @@ impl FunctionModule for TemporalFunctions {
         parent.add_fn(Second);
         parent.add_fn(Time);
         parent.add_fn(to_string::ToString);
+        parent.add_fn(ConvertTimeZone);
+        parent.add_fn(ReplaceTimeZone);
         parent.add_fn(Truncate);
         parent.add_fn(TotalDays);
         parent.add_fn(TotalHours);
