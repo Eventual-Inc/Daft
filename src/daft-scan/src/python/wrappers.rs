@@ -10,7 +10,10 @@ use pyo3::{Python, intern, prelude::*};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use super::{PyDataSourceTask, PythonTablesFactoryArgs, pylib_scan_info::PyPushdowns};
+use super::{
+    PyDataSourceTask, PythonTablesFactoryArgs,
+    pylib_scan_info::{PyPartitionField, PyPushdowns},
+};
 use crate::{
     DataSourceTaskRef, PartitionField, Pushdowns, ScanOperator, ScanSource, ScanSourceKind,
     ScanTask, ScanTaskRef, SourceConfig,
@@ -52,11 +55,25 @@ impl PyDataSourceWrapper {
             .expect("DataSource.schema should never fail")
             .schema;
 
+        let partition_fields: Vec<PartitionField> = source
+            .call_method0(intern!(source.py(), "get_partition_fields"))
+            .and_then(|list| {
+                list.try_iter()?
+                    .map(|item| {
+                        let pf = item?
+                            .getattr(intern!(source.py(), "_partition_field"))?
+                            .extract::<PyPartitionField>()?;
+                        Ok(pf.0.as_ref().clone())
+                    })
+                    .collect::<PyResult<Vec<_>>>()
+            })
+            .unwrap_or_default();
+
         Self {
             source: source.unbind(),
             name,
             schema,
-            partition_fields: vec![],
+            partition_fields,
         }
     }
 
