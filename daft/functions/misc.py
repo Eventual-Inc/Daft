@@ -13,10 +13,80 @@ from daft.series import item_to_series
 
 
 def concat_ws(sep: str, *exprs: Expression) -> Expression:
-    """Concatenates the values in the Expression with the provided separator. Skips null values.
+    """Concatenates strings with a separator, skipping null values.
 
-    # concat_ws: nulls are skipped
-    >>> concat_ws(",", "a", None, "b")  # -> "a,b"
+    Null values in any expression are skipped rather than propagating nulls.
+    The separator is only inserted between non-null values. Returns null only
+    if all inputs are null for that row.
+
+    Args:
+        sep (str): The separator string to place between values.
+        *exprs (Expression): Two or more string expressions to concatenate.
+
+    Returns:
+        Expression (String Expression): An expression with the joined strings,
+            or null if all inputs are null for that row.
+
+    Examples:
+        >>> import daft
+        >>> from daft import col, lit
+        >>> from daft.functions import concat_ws
+        >>>
+        >>> # Basic usage with a separator
+        >>> df = daft.from_pydict({"a": ["foo"], "b": ["bar"]})
+        >>> df.select(concat_ws(",", col("a"), col("b"))).collect()
+        ╭─────────╮
+        │ a       │
+        │ ---     │
+        │ String  │
+        ╞═════════╡
+        │ foo,bar │
+        ╰─────────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
+        >>>
+        >>> # Nulls are skipped, not propagated
+        >>> df = daft.from_pydict({"first": ["Alice", "Bob", None], "last": ["Smith", None, "Jones"]})
+        >>> df.select(concat_ws(" ", col("first"), col("last"))).collect()
+        ╭─────────────╮
+        │ first       │
+        │ ---         │
+        │ String      │
+        ╞═════════════╡
+        │ Alice Smith │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ Bob         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ Jones       │
+        ╰─────────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+        >>>
+        >>> # All nulls returns null
+        >>> df = daft.from_pydict({"a": [None], "b": [None]})
+        >>> df.select(concat_ws(",", col("a"), col("b"))).collect()
+        ╭────────╮
+        │ a      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ None   │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
+        >>>
+        >>> # Works with literals and columns
+        >>> df = daft.from_pydict({"bucket": ["my-bucket"], "prefix": ["data"], "filename": ["file.csv"]})
+        >>> df.select(concat_ws("/", col("bucket"), col("prefix"), col("filename"))).collect()
+        ╭─────────────────────────╮
+        │ bucket                  │
+        │ ---                     │
+        │ String                  │
+        ╞═════════════════════════╡
+        │ my-bucket/data/file.csv │
+        ╰─────────────────────────╯
+        <BLANKLINE>
+        (Showing first 1 of 1 rows)
     """
     return Expression._call_builtin_scalar_fn("concat_ws", sep, *exprs)
 
