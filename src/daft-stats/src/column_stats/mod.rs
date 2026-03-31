@@ -109,13 +109,17 @@ impl ColumnRangeStatistics {
         match self {
             Self::Missing => TruthValue::Maybe,
             Self::Loaded(lower, upper) => {
-                let lower = lower.bool().unwrap().get(0).unwrap();
-                let upper = upper.bool().unwrap().get(0).unwrap();
+                // If the series can't be cast to bool (e.g. Null-typed from null substitution)
+                // or contains a null value, treat as Maybe (conservative).
+                let lower = lower.bool().ok().and_then(|b| b.get(0));
+                let upper = upper.bool().ok().and_then(|b| b.get(0));
                 match (lower, upper) {
-                    (false, false) => TruthValue::False,
-                    (false, true) => TruthValue::Maybe,
-                    (true, true) => TruthValue::True,
-                    (true, false) => panic!("Upper is false and lower is true; Invalid states!"),
+                    (Some(false), Some(false)) => TruthValue::False,
+                    (Some(true), Some(true)) => TruthValue::True,
+                    (Some(true), Some(false)) => {
+                        panic!("Upper is false and lower is true; Invalid states!")
+                    }
+                    _ => TruthValue::Maybe,
                 }
             }
         }

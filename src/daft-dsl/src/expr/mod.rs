@@ -1839,6 +1839,8 @@ impl Expr {
                 let child_field = expr.to_field(schema)?;
                 match child_field.dtype {
                     DataType::Boolean => Ok(Field::new(expr.name(), DataType::Boolean)),
+                    // NULL propagation: NOT null_lit() → Null (used for missing column substitution)
+                    DataType::Null => Ok(Field::new(expr.name(), DataType::Null)),
                     _ => Err(DaftError::TypeError(format!(
                         "Expected argument to be a Boolean expression, but received {child_field}",
                     ))),

@@ -10,6 +10,9 @@ use crate::{
 impl Not for &Series {
     type Output = DaftResult<Series>;
     fn not(self) -> Self::Output {
+        if *self.data_type() == crate::datatypes::DataType::Null {
+            return Ok(Series::full_null(self.name(), &crate::datatypes::DataType::Null, self.len()));
+        }
         let array = self.downcast::<BooleanArray>()?;
         Ok((!array)?.into_series())
     }
