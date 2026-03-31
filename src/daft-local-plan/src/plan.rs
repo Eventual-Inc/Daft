@@ -2188,7 +2188,7 @@ pub enum ShuffleWriteBackend {
         shuffle_id: u64,
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
-        partition_by: Option<Vec<ExprRef>>,
+        repartition_spec: RepartitionSpec,
     },
 }
 

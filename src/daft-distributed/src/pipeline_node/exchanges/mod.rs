@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_logical_plan::partitioning::RepartitionSpec;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleWriteBackend};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
 use crate::{
@@ -31,7 +32,7 @@ pub(crate) enum DistributedExchangeBackend {
 pub(crate) struct ExchangeWriteConfig {
     pub(crate) input_node: TaskBuilderStream,
     pub(crate) producer: Arc<dyn PipelineNodeImpl>,
-    pub(crate) repartition_spec: RepartitionSpec,
+    pub(crate) backend: ShuffleWriteBackend,
 }
 
 pub(crate) struct ExchangeBackend {
@@ -79,21 +80,21 @@ impl ExchangeBackend {
     }
 
     pub(crate) fn build_write_stage(&self, config: ExchangeWriteConfig) -> TaskBuilderStream {
-        match &self.backend {
-            DistributedExchangeBackend::Ray => ray::build_write_stage(
-                self.node_id,
-                self.num_partitions,
-                self.schema.clone(),
-                config,
-            ),
-            DistributedExchangeBackend::Flight(backend) => flight::build_write_stage(
-                self.node_id,
-                self.num_partitions,
-                self.schema.clone(),
-                backend,
-                config,
-            ),
-        }
+        let num_partitions = self.num_partitions;
+        let schema = self.schema.clone();
+        let node_id = self.node_id;
+        config
+            .input_node
+            .pipeline_instruction(config.producer, move |input| {
+                LocalPhysicalPlan::shuffle_write(
+                    input,
+                    num_partitions,
+                    schema.clone(),
+                    config.backend.clone(),
+                    StatsState::NotMaterialized,
+                    LocalNodeContext::new(Some(node_id as usize)),
+                )
+            })
     }
 
     pub(crate) async fn emit_read_tasks(

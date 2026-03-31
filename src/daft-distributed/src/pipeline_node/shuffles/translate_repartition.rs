@@ -14,7 +14,7 @@ use crate::pipeline_node::{
 };
 
 impl LogicalPlanToPipelineNodeTranslator {
-    pub fn gen_shuffle_node(
+    pub fn gen_repartition_node(
         &mut self,
         repartition_spec: RepartitionSpec,
         schema: SchemaRef,
@@ -29,10 +29,10 @@ impl LogicalPlanToPipelineNodeTranslator {
         } else {
             DistributedExchangeBackend::Ray
         };
-        self.gen_shuffle_node_with_backend(repartition_spec, schema, child, backend)
+        self.gen_repartition_node_with_backend(repartition_spec, schema, child, backend)
     }
 
-    pub fn gen_shuffle_node_with_backend(
+    pub fn gen_repartition_node_with_backend(
         &mut self,
         repartition_spec: RepartitionSpec,
         schema: SchemaRef,

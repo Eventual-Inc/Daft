@@ -1,37 +1,14 @@
 use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleWriteBackend};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::ExchangeWriteConfig;
 use crate::{
     pipeline_node::{NodeID, PipelineNodeImpl, ShufflePartitionRef, TaskOutput},
     scheduling::task::SwordfishTaskBuilder,
     utils::channel::Sender,
 };
-
-pub(crate) fn build_write_stage(
-    node_id: NodeID,
-    num_partitions: usize,
-    schema: SchemaRef,
-    config: ExchangeWriteConfig,
-) -> crate::pipeline_node::TaskBuilderStream {
-    config
-        .input_node
-        .pipeline_instruction(config.producer, move |input| {
-            LocalPhysicalPlan::shuffle_write(
-                input,
-                num_partitions,
-                schema.clone(),
-                ShuffleWriteBackend::Ray {
-                    repartition_spec: config.repartition_spec.clone(),
-                },
-                StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(node_id as usize)),
-            )
-        })
-}
 
 pub(crate) fn ray_partition_groups_from_outputs(
     outputs: Vec<TaskOutput>,

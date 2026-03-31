@@ -1462,14 +1462,23 @@ fn physical_plan_to_pipeline(
                     shuffle_id,
                     shuffle_dirs,
                     compression,
-                    partition_by,
+                    repartition_spec,
                 } => {
+                    let partition_by = match repartition_spec {
+                        daft_logical_plan::partitioning::RepartitionSpec::Hash(hash_spec) => {
+                            Some(hash_spec.by.clone())
+                        }
+                        daft_logical_plan::partitioning::RepartitionSpec::Random(_) => None,
+                        daft_logical_plan::partitioning::RepartitionSpec::Range(_) => {
+                            unreachable!("Range repartition is not supported for flight shuffle")
+                        }
+                    };
                     let shuffle_server = ctx
                         .shuffle_server()
                         .expect("Flight shuffle server must be initialized for FlightShuffleWrite plans when using flight_shuffle algorithm");
                     let flight_shuffle_write_sink = FlightShuffleWriteSink::try_new(
                         *num_partitions,
-                        partition_by.clone(),
+                        partition_by,
                         *shuffle_id,
                         shuffle_dirs.clone(),
                         compression.clone(),

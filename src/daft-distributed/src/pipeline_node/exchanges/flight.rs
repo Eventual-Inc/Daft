@@ -3,14 +3,12 @@ use std::collections::{HashMap, HashSet};
 use common_error::{DaftError, DaftResult};
 use daft_local_plan::{
     FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend,
-    ShuffleWriteBackend,
 };
-use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::ExchangeWriteConfig;
 use crate::{
-    pipeline_node::{NodeID, PipelineNodeImpl, ShufflePartitionRef, TaskBuilderStream, TaskOutput},
+    pipeline_node::{NodeID, PipelineNodeImpl, ShufflePartitionRef, TaskOutput},
     plan::PlanExecutionContext,
     scheduling::task::SwordfishTaskBuilder,
     utils::channel::Sender,
@@ -38,43 +36,6 @@ pub(crate) fn register_cleanup(
         .map(|base_dir| format!("{}/daft_shuffle/{}", base_dir, backend.exchange_id))
         .collect();
     plan_context.register_shuffle_dirs(shuffle_dirs_to_register);
-}
-
-pub(crate) fn build_write_stage(
-    node_id: NodeID,
-    num_partitions: usize,
-    schema: SchemaRef,
-    backend: &FlightDistributedExchangeConfig,
-    config: ExchangeWriteConfig,
-) -> TaskBuilderStream {
-    let partition_by = match &config.repartition_spec {
-        RepartitionSpec::Hash(hash_spec) => Some(hash_spec.by.clone()),
-        RepartitionSpec::Random(_) => None,
-        RepartitionSpec::Range(_) => {
-            unreachable!("Range repartition is not supported for flight shuffle")
-        }
-    };
-    let shuffle_id = backend.exchange_id;
-    let shuffle_dirs = backend.shuffle_dirs.clone();
-    let compression = backend.compression.clone();
-
-    config
-        .input_node
-        .pipeline_instruction(config.producer, move |input| {
-            LocalPhysicalPlan::shuffle_write(
-                input,
-                num_partitions,
-                schema.clone(),
-                ShuffleWriteBackend::Flight {
-                    shuffle_id,
-                    shuffle_dirs: shuffle_dirs.clone(),
-                    compression: compression.clone(),
-                    partition_by: partition_by.clone(),
-                },
-                StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(node_id as usize)),
-            )
-        })
 }
 
 pub(crate) fn read_spec_from_outputs(

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
+use daft_local_plan::ShuffleWriteBackend;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
@@ -113,7 +114,19 @@ impl PipelineNodeImpl for RepartitionNode {
                 .build_write_stage(ExchangeWriteConfig {
                     input_node,
                     producer: self.clone(),
-                    repartition_spec: self.repartition_spec.clone(),
+                    backend: match self.exchange_backend.backend() {
+                        DistributedExchangeBackend::Ray => ShuffleWriteBackend::Ray {
+                            repartition_spec: self.repartition_spec.clone(),
+                        },
+                        DistributedExchangeBackend::Flight(backend) => {
+                            ShuffleWriteBackend::Flight {
+                                shuffle_id: backend.exchange_id,
+                                shuffle_dirs: backend.shuffle_dirs.clone(),
+                                compression: backend.compression.clone(),
+                                repartition_spec: self.repartition_spec.clone(),
+                            }
+                        }
+                    },
                 });
 
         let (result_tx, result_rx) = create_channel(1);
