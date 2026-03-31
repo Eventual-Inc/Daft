@@ -288,7 +288,7 @@ class RaySwordfishTaskHandle:
                         stats,
                     )
                 if backend == "flight":
-                    shuffle_id = _exchange_write_id(self.exchange_write_info)
+                    exchange_id = _exchange_write_id(self.exchange_write_info)
                     actor_address = await self.actor_handle.get_address.remote()
                     cache_id = self.cache_id if self.cache_id is not None else 0
                     flight_refs: list[FlightShufflePartitionRef] = []
@@ -297,7 +297,7 @@ class RaySwordfishTaskHandle:
                             raise ValueError("Expected Flight exchange metadata to not include object refs")
                         flight_refs.append(
                             FlightShufflePartitionRef(
-                                shuffle_id,
+                                exchange_id,
                                 partition_idx,
                                 actor_address,
                                 cache_id,
