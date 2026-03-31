@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
 import daft
 from daft import col, lit
+from daft.exceptions import DaftCoreException
 from daft.functions import concat_ws
 
 
@@ -55,22 +58,14 @@ def test_file_path_building():
 
 
 def test_no_exprs_raises():
-    raised = False
-    try:
+    with pytest.raises(DaftCoreException, match="concat_ws requires at least one expression argument"):
         daft.from_pydict({"a": ["x"]}).select(concat_ws(","))
-    except Exception:
-        raised = True
-    assert raised
 
 
 def test_non_string_column_raises():
     df = daft.from_pydict({"a": [1, 2, 3]})
-    raised = False
-    try:
+    with pytest.raises(DaftCoreException, match="expects string inputs"):
         df.select(concat_ws(",", col("a"))).collect()
-    except Exception:
-        raised = True
-    assert raised
 
 
 def test_empty_separator():
