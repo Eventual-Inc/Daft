@@ -57,7 +57,7 @@ impl PyLocalPhysicalPlan {
         ))
     }
 
-    fn shuffle_write_info(&self) -> Option<(String, u64, usize)> {
+    fn exchange_write_info(&self) -> Option<(String, u64, usize)> {
         match self.plan.as_ref() {
             LocalPhysicalPlan::ShuffleWrite(shuffle_write) => match &shuffle_write.backend {
                 ShuffleWriteBackend::Ray { .. } => {

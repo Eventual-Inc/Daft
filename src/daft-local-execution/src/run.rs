@@ -653,7 +653,7 @@ impl PyResultReceiver {
         })
     }
 
-    fn try_finish_with_shuffle_metadata<'py>(
+    fn try_finish_with_exchange_metadata<'py>(
         &self,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -665,7 +665,7 @@ impl PyResultReceiver {
             let mut result_guard = result.lock().await;
             let execution_result = result_guard
                 .take()
-                .expect("PyResultReceiver.try_finish_with_shuffle_metadata() should not be called more than once.");
+                .expect("PyResultReceiver.try_finish_with_exchange_metadata() should not be called more than once.");
             drop(result_guard);
 
             let shuffle_metadata = execution_result.into_shuffle_metadata().await;
