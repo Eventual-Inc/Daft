@@ -345,7 +345,23 @@ impl LogicalPlanBuilder {
             .allow_explode(true)
             .build();
 
-        let columns = expr_resolver.resolve(columns, self.plan.clone())?;
+        // Resolve each expression individually and reject multi-column expansion.
+        // Struct wildcard expansion (unnest) produces multiple columns from one expression,
+        // which has ambiguous semantics in with_columns. Use select() instead.
+        let mut resolved = Vec::with_capacity(columns.len());
+        for col_expr in &columns {
+            let exprs = expr_resolver.resolve(vec![col_expr.clone()], self.plan.clone())?;
+            if exprs.len() > 1 {
+                return Err(DaftError::ValueError(format!(
+                    "Expression {} expands into {} columns in with_columns(), which is not supported. \
+                    Use .select() instead to expand struct fields via unnest.",
+                    col_expr,
+                    exprs.len()
+                )));
+            }
+            resolved.extend(exprs);
+        }
+        let columns = resolved;
 
         let schema = self.schema();
         let current_col_names = schema.field_names().collect::<HashSet<_>>();

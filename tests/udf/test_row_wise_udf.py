@@ -231,35 +231,17 @@ def test_row_wise_udf_unnest():
     assert result == expected
 
 
-@pytest.mark.parametrize("use_cls", [False, True])
-def test_row_wise_udf_unnest_with_column(use_cls):
+def test_row_wise_udf_unnest_with_column_rejected():
+    """with_column + unnest (multi-column expansion) should be rejected; use select() instead."""
     struct_dtype = daft.DataType.struct({"bar": daft.DataType.string(), "some_int": daft.DataType.int64()})
-    if use_cls:
 
-        @daft.cls()
-        class Foo:
-            @daft.method(return_dtype=struct_dtype, unnest=True)
-            def create_record(self, value: str):
-                return {"bar": value + "_suffix", "some_int": len(value)}
-
-        udf_expr = Foo().create_record(col("value"))
-    else:
-
-        @daft.func(return_dtype=struct_dtype, unnest=True)
-        def create_record(value: str):
-            return {"bar": value + "_suffix", "some_int": len(value)}
-
-        udf_expr = create_record(col("value"))
+    @daft.func(return_dtype=struct_dtype, unnest=True)
+    def create_record(value: str):
+        return {"bar": value + "_suffix", "some_int": len(value)}
 
     df = daft.from_pydict({"value": ["a", "bb", "ccc"]})
-    result = df.with_column("result", udf_expr).to_pydict()
-
-    expected = {
-        "value": ["a", "bb", "ccc"],
-        "bar": ["a_suffix", "bb_suffix", "ccc_suffix"],
-        "some_int": [1, 2, 3],
-    }
-    assert result == expected
+    with pytest.raises(ValueError, match="expands into .* columns in with_columns"):
+        df.with_column("result", create_record(col("value")))
 
 
 def test_row_wise_udf_unnest_error_non_struct():
