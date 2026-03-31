@@ -167,7 +167,32 @@ fn build_row_filter(
 /// is active, because arrow-rs's `with_offset` is applied *after* RowFilter, but
 /// Daft's `start_offset` should be applied *before* the filter (it's a file-level
 /// row skip). RowSelection is applied before RowFilter, so converting offset to a
-/// RowSelection gives the correct semantics.
+/// Rewrite a predicate for a specific Parquet file's schema by replacing any column reference
+/// that is absent from `schema` with `null_lit()`.
+///
+/// This implements Iceberg schema evolution: columns added after a file was written don't exist
+/// in that file. Substituting null makes the predicate evaluate to null (unknown) for those
+/// columns, which propagates conservatively — row groups are never falsely pruned, and rows
+/// are never falsely excluded.
+fn substitute_missing_cols(predicate: &ExprRef, schema: &Schema) -> DaftResult<ExprRef> {
+    Ok(predicate
+        .clone()
+        .transform(|e| {
+            if let Expr::Column(col) = e.as_ref() {
+                let name = match col {
+                    Column::Unresolved(UnresolvedColumn { name, .. })
+                    | Column::Resolved(ResolvedColumn::Basic(name)) => name,
+                    _ => return Ok(Transformed::no(e)),
+                };
+                if schema.get_field(name).is_err() {
+                    return Ok(Transformed::yes(null_lit()));
+                }
+            }
+            Ok(Transformed::no(e))
+        })?
+        .data)
+}
+
 fn build_offset_row_selection(offset: usize, total_rows: usize) -> RowSelection {
     if offset >= total_rows {
         RowSelection::from(vec![RowSelector::skip(total_rows)])
@@ -287,27 +312,10 @@ fn finalize_batch(
     if let Some(pred) = predicate
         && !predicate_pushed
     {
-        // Substitute null_lit() for any columns absent from the read schema (schema evolution).
-        // null comparisons evaluate to null, which is treated as false by filter — rows are
-        // correctly excluded when a column didn't exist in this file.
-        let pred_for_filter = pred.clone().transform(|e| {
-            if let Expr::Column(col) = e.as_ref() {
-                let name = match col {
-                    Column::Unresolved(UnresolvedColumn { name, .. })
-                    | Column::Resolved(ResolvedColumn::Basic(name)) => name,
-                    _ => return Ok(Transformed::no(e)),
-                };
-                if table.schema.get_field(name).is_err() {
-                    return Ok(Transformed::yes(null_lit()));
-                }
-            }
-            Ok(Transformed::no(e))
-        })?
-        .data;
-        let bound = BoundExpr::try_new(pred_for_filter, &table.schema)?;
+        let pred = substitute_missing_cols(pred, &table.schema)?;
+        let bound = BoundExpr::try_new(pred, &table.schema)?;
         let mask = table.eval_expression(&bound)?;
-        // mask_filter treats null Boolean values as false (SQL WHERE semantics),
-        // so null_lit() substitutions for missing columns are correctly handled.
+        // mask_filter treats null Boolean values as false (SQL WHERE semantics).
         table = table.mask_filter(&mask)?;
     }
 
@@ -1323,28 +1331,10 @@ fn prune_row_groups(
         None => return Ok(candidates),
     };
 
-    // Substitute null_lit() for any column references absent from the schema.
-    // This handles schema evolution: columns added after a Parquet file was written
-    // won't be in that file's schema. Replacing them with null is conservative —
-    // null propagates as Unknown through comparisons, so the TruthValue::False check
-    // below never prunes a row group on the basis of a column it can't evaluate.
-    // Columns that *are* present still contribute to pruning normally.
-    let predicate_for_pruning = (*predicate).clone().transform(|e| {
-        if let Expr::Column(col) = e.as_ref() {
-            let name = match col {
-                Column::Unresolved(UnresolvedColumn { name, .. })
-                | Column::Resolved(ResolvedColumn::Basic(name)) => name,
-                _ => return Ok(Transformed::no(e)),
-            };
-            if schema.get_field(name).is_err() {
-                return Ok(Transformed::yes(null_lit()));
-            }
-        }
-        Ok(Transformed::no(e))
-    })?.data;
+    let predicate = substitute_missing_cols(predicate, schema)?;
 
-    // Bind the (possibly null-substituted) predicate to the schema.
-    let bound_pred = BoundExpr::try_new(predicate_for_pruning, schema).map_err(|e| {
+    // Bind the predicate to the schema.
+    let bound_pred = BoundExpr::try_new(predicate, schema).map_err(|e| {
         common_error::DaftError::ValueError(format!(
             "Failed to bind predicate for row group pruning on '{}': {}",
             uri, e
