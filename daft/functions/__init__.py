@@ -109,7 +109,6 @@ from .list import (
 )
 from .llm import llm_generate
 from .misc import (
-    concat_ws,
     monotonically_increasing_id,
     uuid,
     eq_null_safe,
@@ -185,6 +184,7 @@ from .str import (
     serialize,
     jq,
     format,
+    concat_ws,
     contains,
     split,
     lower,
