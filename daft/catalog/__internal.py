@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from daft.catalog import Catalog, Identifier, Properties, Table
+from daft.catalog import Catalog, Function, Identifier, Properties, Table
 from daft.daft import PyCatalog as _PyCatalog
 from daft.daft import PyTable as _PyTable
 from daft.dataframe import DataFrame
@@ -47,7 +47,7 @@ class _RustCatalog(Catalog):
     def _get_table(self, ident: Identifier) -> Table:
         return self.inner.get_table(ident._ident)
 
-    def _get_function(self, ident: Identifier) -> object | None:
+    def _get_function(self, ident: Identifier) -> Function | None:
         return self.inner.get_function(ident._ident)
 
     def _has_namespace(self, ident: Identifier) -> bool:

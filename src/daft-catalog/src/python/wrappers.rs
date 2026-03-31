@@ -6,7 +6,10 @@ use indexmap::IndexMap;
 use pyo3::{intern, prelude::*, types::PyList};
 
 use super::PyIdentifier;
-use crate::{Catalog, Identifier, Table, TableRef, error::CatalogResult};
+use crate::{
+    Catalog, Function, FunctionRef, Identifier, Table, TableRef, error::CatalogResult,
+    function::PyFunctionWrapper,
+};
 
 /// Newtype to implement the Catalog trait for a Python catalog
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -138,7 +141,7 @@ impl Catalog for PyCatalogWrapper {
         })
     }
 
-    fn get_function(&self, ident: &Identifier) -> CatalogResult<Option<Py<PyAny>>> {
+    fn get_function(&self, ident: &Identifier) -> CatalogResult<Option<FunctionRef>> {
         Python::attach(|py| {
             let catalog = self.0.bind(py);
             let ident_py = PyIdentifier(ident.clone()).to_pyobj(py)?;
@@ -146,7 +149,9 @@ impl Catalog for PyCatalogWrapper {
             if result.is_none() {
                 Ok(None)
             } else {
-                Ok(Some(result.unbind()))
+                Ok(Some(
+                    Arc::new(PyFunctionWrapper::new(result.unbind())) as Arc<dyn Function>
+                ))
             }
         })
     }

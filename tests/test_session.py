@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import daft
-from daft.catalog import Catalog, Identifier, NotFoundError, Table
+from daft.catalog import Catalog, Function, Identifier, NotFoundError, Table
 from daft.session import Session
 
 ###
@@ -353,8 +353,13 @@ class _FunctionCatalog(Catalog):
     def __init__(self):
         self._functions = {}
 
-    def register_function(self, name, func):
-        self._functions[name] = func
+    def register_function(
+        self,
+        name,
+        module_name: str,
+        binding_name: str,
+    ):
+        self._functions[name] = Function(module_name, binding_name)
 
     @property
     def name(self):
@@ -395,19 +400,14 @@ class _FunctionCatalog(Catalog):
 
 def test_session_catalog_function_fallback():
     """Test that catalog _get_function is used during SQL plan resolution."""
-
-    @daft.udf(return_dtype=daft.DataType.int64())
-    def my_catalog_udf(x):
-        return x
-
     catalog = _FunctionCatalog()
-    catalog.register_function("my_catalog_udf", my_catalog_udf)
+    catalog.register_function("my_catalog_udf", "tests.udf.my_funcs", "catalog_udf")
 
     sess = Session()
     sess.attach_catalog(catalog)
 
     # Verify the catalog itself returns the function
-    assert catalog.get_function("my_catalog_udf") is not None
+    assert catalog.get_function("my_catalog_udf").to_py_func() is not None
 
     # Verify the function is accessible via SQL plan resolution.
     # The UDF registered in the catalog should be found during SQL planning.
@@ -428,17 +428,12 @@ def test_session_catalog_function_fallback_returns_none():
 
 def test_session_function_priority_over_catalog():
     """Test that session-scoped functions take priority over catalog functions."""
-
-    @daft.udf(return_dtype=daft.DataType.int64())
-    def catalog_udf(x):
-        return x
+    catalog = _FunctionCatalog()
+    catalog.register_function("shared_fn", "tests.udf.my_funcs", "my_catalog_udf")
 
     @daft.udf(return_dtype=daft.DataType.int64())
     def session_udf(x):
         return x + 1
-
-    catalog = _FunctionCatalog()
-    catalog.register_function("shared_fn", catalog_udf)
 
     sess = Session()
     sess.attach_catalog(catalog)
@@ -455,23 +450,44 @@ def test_session_function_priority_over_catalog():
 
 def test_dataframe_select_with_catalog_get_function():
     """Test that dataframe.select can use a UDF retrieved via catalog.get_function."""
-
-    @daft.udf(return_dtype=daft.DataType.int64())
-    def double_value(x):
-        return [v * 2 for v in x.to_pylist()]
-
     catalog = _FunctionCatalog()
-    catalog.register_function("double_value", double_value)
+    catalog.register_function("double_value", "tests.udf.my_funcs", "double_value")
 
     sess = Session()
     sess.attach_catalog(catalog)
     daft.set_session(sess)
 
     # Retrieve the UDF from the catalog and use it directly in dataframe.select
-    udf_fn = catalog.get_function("double_value")
+    udf_fn = catalog.get_function("double_value").to_py_func()
     assert udf_fn is not None
 
     df = daft.from_pydict({"x": [1, 2, 3]})
     result = df.select(udf_fn(df["x"]))
 
     assert result.to_pydict() == {"x": [2, 4, 6]}
+
+
+def test_catalog_register_cls_udf_from_external_module():
+    """Test that a @daft.cls UDF can be loaded from an external module via register_function."""
+    catalog = _FunctionCatalog()
+    catalog.register_function(
+        "mock_predictor",
+        module_name="tests.udf.my_funcs",
+        binding_name="MockModelPredictor",
+    )
+
+    predictor_cls = catalog.get_function("mock_predictor").to_py_func()
+    assert predictor_cls is not None
+
+    predictor = predictor_cls("bert-base")
+    df = daft.from_pydict({"text": ["hello", "world", "daft"]})
+    result = df.select(predictor(df["text"])).to_pydict()
+
+    expected = {
+        "text": [
+            "model bert-base predict hello",
+            "model bert-base predict world",
+            "model bert-base predict daft",
+        ]
+    }
+    assert result == expected

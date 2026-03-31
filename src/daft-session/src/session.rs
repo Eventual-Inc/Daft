@@ -270,10 +270,14 @@ impl Session {
         };
         let curr_namespace = self.current_namespace()?;
 
-        let wrap = |py_func: daft_catalog::CatalogFunctionRef| {
-            ScalarFunction::Python(WrappedUDFClass {
-                inner: std::sync::Arc::new(py_func),
+        let wrap = |py_func: daft_catalog::FunctionRef| {
+            pyo3::Python::attach(|py| {
+                let callable = py_func.to_py_func(py)?;
+                pyo3::PyResult::Ok(ScalarFunction::Python(WrappedUDFClass {
+                    inner: std::sync::Arc::new(callable),
+                }))
             })
+            .expect("Function.to_py_func() failed")
         };
 
         // Rule 1: try to resolve using the current catalog and current namespace.

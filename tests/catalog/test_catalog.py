@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from daft.catalog import Catalog, Identifier, Properties, Table
+from daft.catalog import Catalog, Function, Identifier, Properties, Table
 from daft.dataframe import DataFrame
 from daft.logical.schema import DataType as dt
 from daft.logical.schema import Schema
@@ -248,8 +248,13 @@ class MockCatalogWithFunctions(Catalog):
     def __init__(self):
         self._functions = {}
 
-    def register_function(self, name: str, func: object):
-        self._functions[name] = func
+    def register_function(
+        self,
+        name,
+        module_name: str,
+        binding_name: str,
+    ):
+        self._functions[name] = Function(module_name, binding_name)
 
     @property
     def name(self) -> str:
@@ -282,7 +287,7 @@ class MockCatalogWithFunctions(Catalog):
     def _has_table(self, ident):
         raise NotImplementedError
 
-    def _get_function(self, ident: Identifier) -> object | None:
+    def _get_function(self, ident: Identifier) -> Function | None:
         func_name = ident[-1]
         return self._functions.get(func_name)
 
@@ -297,13 +302,10 @@ def test_catalog_get_function_with_override():
     """Test that a catalog with _get_function override returns the function."""
     catalog = MockCatalogWithFunctions()
 
-    def my_func(x):
-        return x + 1
-
-    catalog.register_function("my_func", my_func)
+    catalog.register_function("my_func", "tests.udf.my_funcs", "catalog_udf")
 
     # found
-    assert catalog.get_function("my_func") is my_func
+    assert catalog.get_function("my_func").to_py_func() is not None
 
     # not found
     assert catalog.get_function("nonexistent") is None
@@ -313,3 +315,35 @@ def test_catalog_get_function_from_pydict_returns_none():
     """Test that the built-in from_pydict catalog returns None for get_function (default behavior)."""
     catalog = Catalog.from_pydict({"t": {"x": [1, 2, 3]}})
     assert catalog.get_function("anything") is None
+
+
+def test_catalog_get_function_module_not_found():
+    """Test that to_py_func raises ImportError when the module does not exist."""
+    catalog = MockCatalogWithFunctions()
+    catalog.register_function(
+        "bad_module_fn",
+        module_name="tests.udf.nonexistent_module",
+        binding_name="some_func",
+    )
+
+    func = catalog.get_function("bad_module_fn")
+    assert func is not None
+
+    import pytest
+
+    with pytest.raises((ImportError, ModuleNotFoundError)):
+        func.to_py_func()
+
+
+def test_catalog_get_function_binding_not_found():
+    """Test that to_py_func returns None when the binding name does not exist in the module."""
+    catalog = MockCatalogWithFunctions()
+    catalog.register_function(
+        "bad_binding_fn",
+        module_name="tests.udf.my_funcs",
+        binding_name="nonexistent_function_name",
+    )
+
+    func = catalog.get_function("bad_binding_fn")
+    assert func is not None
+    assert func.to_py_func() is None

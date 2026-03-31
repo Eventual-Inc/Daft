@@ -45,8 +45,11 @@ impl PyCatalog {
         Ok(self.0.drop_table(&ident.0)?)
     }
 
-    fn get_function(&self, ident: PyIdentifier) -> PyResult<Option<Py<PyAny>>> {
-        Ok(self.0.get_function(&ident.0)?)
+    fn get_function(&self, ident: PyIdentifier, py: Python) -> PyResult<Option<Py<PyAny>>> {
+        match self.0.get_function(&ident.0)? {
+            Some(func) => Ok(Some(func.to_py(py)?)),
+            None => Ok(None),
+        }
     }
 
     fn get_table(&self, ident: PyIdentifier, py: Python) -> PyResult<Py<PyAny>> {

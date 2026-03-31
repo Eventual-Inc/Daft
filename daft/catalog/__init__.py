@@ -59,6 +59,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "Catalog",
+    "Function",
     "Identifier",
     "NotFoundError",
     "Properties",
@@ -118,7 +119,7 @@ class Catalog(ABC):
     def _drop_table(self, ident: Identifier) -> None:
         """Remove a table from the catalog, erroring if the table did not exist."""
 
-    def _get_function(self, ident: Identifier) -> object | None:
+    def _get_function(self, ident: Identifier) -> Function | None:
         """Get a function from the catalog by identifier.
 
         Returns the function object if found, or None if the catalog does not support
@@ -129,7 +130,7 @@ class Catalog(ABC):
             ident: the function identifier to look up.
 
         Returns:
-            A function object (e.g. a UDF class or callable) if found, otherwise None.
+            A Function instance if found, otherwise None.
         """
         return None
 
@@ -565,7 +566,7 @@ class Catalog(ABC):
     # get_*
     ###
 
-    def get_function(self, identifier: Identifier | str) -> object | None:
+    def get_function(self, identifier: Identifier | str) -> Function | None:
         """Get a function from the catalog by identifier.
 
         Args:
@@ -573,7 +574,7 @@ class Catalog(ABC):
                 function name and preceding parts form the namespace.
 
         Returns:
-            The function object if found, otherwise None.
+            A Function instance if found, otherwise None.
         """
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
@@ -772,6 +773,71 @@ class Identifier(Sequence[str]):
 
     def __str__(self) -> str:
         return ".".join(self)
+
+
+class Function:
+    """Represents a registered function in a catalog, identified by its module and binding name.
+
+    A Function holds a reference to a callable defined in a Python module,
+    described by two string attributes: ``module_name`` and ``binding_name``.
+
+    Attributes:
+        module_name (str): The fully-qualified Python module that contains the function.
+        binding_name (str): The name under which the function is bound within the module.
+
+    Examples:
+        >>> from daft.catalog import Function
+        >>> fn = Function(module_name="my_package.udf", binding_name="my_udf")
+        >>> fn.module_name
+        'my_package.udf'
+        >>> fn.binding_name
+        'my_udf'
+        >>> fn
+        Function(module_name='my_package.udf', binding_name='my_udf')
+    """
+
+    def __init__(self, module_name: str, binding_name: str) -> None:
+        """Creates a new Function.
+
+        Args:
+            module_name (str): The fully-qualified Python module that contains the function.
+            binding_name (str): The name under which the function is bound within the module.
+        """
+        if not isinstance(module_name, str):
+            raise TypeError(f"module_name must be a str, got {type(module_name).__name__!r}")
+        if not isinstance(binding_name, str):
+            raise TypeError(f"binding_name must be a str, got {type(binding_name).__name__!r}")
+        self._module_name = module_name
+        self._binding_name = binding_name
+
+    @property
+    def module_name(self) -> str:
+        """The fully-qualified Python module that contains the function."""
+        return self._module_name
+
+    @property
+    def binding_name(self) -> str:
+        """The name under which the function is bound within the module."""
+        return self._binding_name
+
+    def to_py_func(self) -> Any:
+        """Returns the underlying Python function."""
+        module = __import__(self.module_name, fromlist=[self._binding_name])
+        return getattr(module, self.binding_name, None)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Function):
+            return False
+        return self._module_name == other._module_name and self._binding_name == other._binding_name
+
+    def __hash__(self) -> int:
+        return hash((self._module_name, self._binding_name))
+
+    def __repr__(self) -> str:
+        return f"Function(module_name={self._module_name!r}, binding_name={self._binding_name!r})"
+
+    def __str__(self) -> str:
+        return f"{self._module_name}.{self._binding_name}"
 
 
 class Table(ABC):
