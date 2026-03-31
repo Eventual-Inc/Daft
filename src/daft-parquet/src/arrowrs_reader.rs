@@ -144,14 +144,6 @@ fn build_row_filter(
             .eval_expression(&bound)
             .map_err(|e| arrow::error::ArrowError::ExternalError(e.into()))?;
 
-        // If the predicate evaluates to Null-typed (e.g., column is Null type in this file
-        // because all values are null), treat as all-false — standard SQL WHERE semantics.
-        let result = if *result.data_type() == DataType::Null {
-            BooleanArray::from_slice(result.name(), &vec![false; result.len()]).into_series()
-        } else {
-            result
-        };
-
         // Extract the arrow-rs BooleanArray.
         let bool_arr = result
             .bool()
@@ -314,13 +306,8 @@ fn finalize_batch(
         .data;
         let bound = BoundExpr::try_new(pred_for_filter, &table.schema)?;
         let mask = table.eval_expression(&bound)?;
-        // If the predicate evaluates to Null-typed (e.g., null = false after null
-        // substitution for missing columns), treat as all-false — SQL WHERE semantics.
-        let mask = if *mask.data_type() == DataType::Null {
-            BooleanArray::from_slice(mask.name(), &vec![false; mask.len()]).into_series()
-        } else {
-            mask
-        };
+        // mask_filter treats null Boolean values as false (SQL WHERE semantics),
+        // so null_lit() substitutions for missing columns are correctly handled.
         table = table.mask_filter(&mask)?;
     }
 
