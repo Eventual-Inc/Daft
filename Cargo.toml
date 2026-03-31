@@ -358,7 +358,7 @@ tokio-util = "0.7.17"
 tonic = "0.14.2"
 tonic-build = "0.14.2"
 tracing = {version = "0.1", features = ["log"]}
-tracing-subscriber = {version = "0.3.22", default-features = false, features = ["std", "fmt", "ansi", "env-filter"]}
+tracing-subscriber = {version = "0.3.22", default-features = false, features = ["std", "fmt", "ansi", "env-filter", "json"]}
 typetag = "0.2.21"
 url = "2.4.0"
 uuid = {version = "1.19.0", features = ["v4"]}

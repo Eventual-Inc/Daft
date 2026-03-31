@@ -7,10 +7,11 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 /// Parameters for the TopN that both the state and sinker need
 struct TopNParams {
@@ -118,7 +119,7 @@ impl BlockingSink for TopNSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.params.clone();
         spawner
             .spawn(
@@ -135,7 +136,7 @@ impl BlockingSink for TopNSink {
                         params.limit,
                         params.offset,
                     )?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![final_output]))
+                    Ok(vec![final_output])
                 },
                 Span::current(),
             )
@@ -183,7 +184,7 @@ impl BlockingSink for TopNSink {
         lines
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         Ok(TopNState::Building(vec![]))
     }
 }

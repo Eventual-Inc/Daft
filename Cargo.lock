@@ -1543,12 +1543,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "capitalize"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b5271031022835ee8c7582fe67403bd6cb3d962095787af7921027234bab5bf"
-
-[[package]]
 name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2531,6 +2525,7 @@ dependencies = [
  "common-treenode",
  "daft-context",
  "daft-dsl",
+ "daft-functions",
  "daft-io",
  "daft-local-plan",
  "daft-logical-plan",
@@ -2650,6 +2645,7 @@ dependencies = [
  "daft-hash",
  "num-traits",
  "pyo3",
+ "rand 0.9.2",
  "serde",
  "snafu",
  "typetag",
@@ -2903,7 +2899,6 @@ dependencies = [
  "arc-swap",
  "arrow-buffer 57.3.0",
  "async-trait",
- "capitalize",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -3004,7 +2999,6 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
- "daft-functions-binary",
  "daft-functions-list",
  "daft-functions-uri",
  "daft-functions-utf8",
@@ -8088,6 +8082,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-serde"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "704b1aeb7be0d0a84fc9828cae51dab5970fee5088f83d1dd7ee6f6246fc6ff1"
+dependencies = [
+ "serde",
+ "tracing-core",
+]
+
+[[package]]
 name = "tracing-subscriber"
 version = "0.3.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8097,12 +8101,15 @@ dependencies = [
  "nu-ansi-term",
  "once_cell",
  "regex-automata",
+ "serde",
+ "serde_json",
  "sharded-slab",
  "smallvec",
  "thread_local",
  "tracing",
  "tracing-core",
  "tracing-log",
+ "tracing-serde",
 ]
 
 [[package]]

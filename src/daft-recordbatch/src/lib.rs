@@ -1622,13 +1622,7 @@ impl RecordBatch {
             tables.push(record_batch);
         }
 
-        if tables.len() != 1 {
-            return Err(DaftError::ValueError(format!(
-                "Expected exactly 1 record batch in IPC stream, but got {}",
-                tables.len()
-            )));
-        }
-        Ok(tables.pop().unwrap())
+        Self::concat_or_empty(&tables, Some(schema))
     }
 }
 
@@ -1790,6 +1784,33 @@ mod test {
         let ipc_stream = table.to_ipc_stream()?;
         let roundtrip_table = RecordBatch::from_ipc_stream(&ipc_stream)?;
         assert_eq!(table, roundtrip_table);
+        Ok(())
+    }
+
+    #[test]
+    fn test_from_ipc_stream_concatenates_multiple_batches() -> DaftResult<()> {
+        let first = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_vec("a", vec![1, 2]).into_series(),
+            Utf8Array::from_slice("b", &["x", "y"]).into_series(),
+        ])?;
+        let second = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_vec("a", vec![3]).into_series(),
+            Utf8Array::from_slice("b", &["z"]).into_series(),
+        ])?;
+
+        let expected = RecordBatch::concat(&[&first, &second])?;
+
+        let schema = first.schema.to_arrow()?;
+        let mut buffer = Vec::new();
+        {
+            let mut writer = arrow_ipc::writer::StreamWriter::try_new(&mut buffer, &schema)?;
+            writer.write(&arrow_array::RecordBatch::try_from(first)?)?;
+            writer.write(&arrow_array::RecordBatch::try_from(second)?)?;
+            writer.finish()?;
+        }
+
+        let roundtrip = RecordBatch::from_ipc_stream(&buffer)?;
+        assert_eq!(expected, roundtrip);
         Ok(())
     }
 

@@ -51,6 +51,7 @@ pub enum LogicalPlan {
     Join(Join),
     Sink(Sink),
     Sample(Sample),
+    Shuffle(Shuffle),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
     SubqueryAlias(SubqueryAlias),
     Window(Window),
@@ -173,6 +174,7 @@ impl LogicalPlan {
             Self::Join(Join { output_schema, .. }) => output_schema.clone(),
             Self::Sink(Sink { schema, .. }) => schema.clone(),
             Self::Sample(Sample { input, .. }) => input.schema(),
+            Self::Shuffle(Shuffle { input, .. }) => input.schema(),
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. }) => {
                 schema.clone()
             }
@@ -316,6 +318,7 @@ impl LogicalPlan {
             }
             Self::Intersect(_) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
             Self::Union(_) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
+            Self::Shuffle(_) => RequiredCols::new(IndexSet::new(), None),
             Self::Source(_) => todo!(),
             Self::Sink(_) => todo!(),
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.required_columns(),
@@ -368,6 +371,7 @@ impl LogicalPlan {
             Self::Union(..) => "Union",
             Self::Sink(..) => "Sink",
             Self::Sample(..) => "Sample",
+            Self::Shuffle(..) => "Shuffle",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
             Self::SubqueryAlias(..) => "Alias",
             Self::Window(..) => "Window",
@@ -398,6 +402,7 @@ impl LogicalPlan {
             | Self::Join(Join { stats_state, .. })
             | Self::Sink(Sink { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
+            | Self::Shuffle(Shuffle { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
             | Self::Window(Window { stats_state, .. })
             | Self::TopN(TopN { stats_state, .. })
@@ -439,6 +444,7 @@ impl LogicalPlan {
             Self::Join(plan) => Self::Join(plan.with_materialized_stats()),
             Self::Sink(plan) => Self::Sink(plan.with_materialized_stats()),
             Self::Sample(plan) => Self::Sample(plan.with_materialized_stats()),
+            Self::Shuffle(plan) => Self::Shuffle(plan.with_materialized_stats()),
             Self::MonotonicallyIncreasingId(plan) => {
                 Self::MonotonicallyIncreasingId(plan.with_materialized_stats())
             }
@@ -478,6 +484,7 @@ impl LogicalPlan {
             Self::Join(join) => join.multiline_display(),
             Self::Sink(sink) => sink.multiline_display(),
             Self::Sample(sample) => sample.multiline_display(),
+            Self::Shuffle(shuffle) => shuffle.multiline_display(),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 monotonically_increasing_id.multiline_display()
             }
@@ -512,6 +519,7 @@ impl LogicalPlan {
             Self::Intersect(Intersect { lhs, rhs, .. }) => vec![lhs, rhs],
             Self::Union(Union { lhs, rhs, .. }) => vec![lhs, rhs],
             Self::Sample(Sample { input, .. }) => vec![input],
+            Self::Shuffle(Shuffle { input, .. }) => vec![input],
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
                 vec![input]
             }
@@ -665,6 +673,9 @@ impl LogicalPlan {
                     *with_replacement,
                     *seed,
                 )),
+                Self::Shuffle(Shuffle { seed, .. }) => {
+                    Self::Shuffle(Shuffle::new(input.clone(), *seed))
+                }
                 Self::SubqueryAlias(SubqueryAlias { name: id, .. }) => {
                     Self::SubqueryAlias(SubqueryAlias::new(input.clone(), id.clone()))
                 }
@@ -931,6 +942,7 @@ impl LogicalPlan {
             | Self::Join(Join { plan_id, .. })
             | Self::Sink(Sink { plan_id, .. })
             | Self::Sample(Sample { plan_id, .. })
+            | Self::Shuffle(Shuffle { plan_id, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { plan_id, .. })
             | Self::SubqueryAlias(SubqueryAlias { plan_id, .. })
             | Self::Window(Window { plan_id, .. })
@@ -963,6 +975,7 @@ impl LogicalPlan {
             | Self::Join(Join { node_id, .. })
             | Self::Sink(Sink { node_id, .. })
             | Self::Sample(Sample { node_id, .. })
+            | Self::Shuffle(Shuffle { node_id, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { node_id, .. })
             | Self::SubqueryAlias(SubqueryAlias { node_id, .. })
             | Self::Window(Window { node_id, .. })
@@ -1000,6 +1013,7 @@ impl LogicalPlan {
             Self::Join(join) => Self::Join(join.with_plan_id(plan_id)),
             Self::Sink(sink) => Self::Sink(sink.with_plan_id(plan_id)),
             Self::Sample(sample) => Self::Sample(sample.with_plan_id(plan_id)),
+            Self::Shuffle(shuffle) => Self::Shuffle(shuffle.with_plan_id(plan_id)),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 Self::MonotonicallyIncreasingId(monotonically_increasing_id.with_plan_id(plan_id))
             }
@@ -1041,6 +1055,7 @@ impl LogicalPlan {
             Self::Join(join) => Self::Join(join.with_node_id(node_id)),
             Self::Sink(sink) => Self::Sink(sink.with_node_id(node_id)),
             Self::Sample(sample) => Self::Sample(sample.with_node_id(node_id)),
+            Self::Shuffle(shuffle) => Self::Shuffle(shuffle.with_node_id(node_id)),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 Self::MonotonicallyIncreasingId(monotonically_increasing_id.with_node_id(node_id))
             }
@@ -1156,6 +1171,7 @@ impl_from_data_struct_for_logical_plan!(Union);
 impl_from_data_struct_for_logical_plan!(Join);
 impl_from_data_struct_for_logical_plan!(Sink);
 impl_from_data_struct_for_logical_plan!(Sample);
+impl_from_data_struct_for_logical_plan!(Shuffle);
 impl_from_data_struct_for_logical_plan!(MonotonicallyIncreasingId);
 impl_from_data_struct_for_logical_plan!(Window);
 impl_from_data_struct_for_logical_plan!(TopN);
