@@ -17,7 +17,7 @@ use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,
-        shuffles::shuffle::ray_partition_groups_from_outputs,
+        exchanges::ray_partition_groups_from_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -167,7 +167,6 @@ impl PipelineNodeImpl for RandomShuffleNode {
         let partitioned_input = input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::shuffle_write(
                 input,
-                None,
                 num_partitions,
                 schema.clone(),
                 ShuffleWriteBackend::Ray {

@@ -1438,7 +1438,6 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::ShuffleWrite(daft_local_plan::ShuffleWrite {
             input,
             num_partitions,
-            partition_by,
             schema,
             backend,
             stats_state,
@@ -1463,6 +1462,7 @@ fn physical_plan_to_pipeline(
                     shuffle_id,
                     shuffle_dirs,
                     compression,
+                    partition_by,
                 } => {
                     let shuffle_server = ctx
                         .shuffle_server()

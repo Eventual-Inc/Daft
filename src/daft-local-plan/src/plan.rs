@@ -979,7 +979,6 @@ impl LocalPhysicalPlan {
     #[allow(clippy::too_many_arguments)]
     pub fn shuffle_write(
         input: LocalPhysicalPlanRef,
-        partition_by: Option<Vec<ExprRef>>,
         num_partitions: usize,
         schema: SchemaRef,
         backend: ShuffleWriteBackend,
@@ -989,7 +988,6 @@ impl LocalPhysicalPlan {
         Self::ShuffleWrite(ShuffleWrite {
             input,
             num_partitions,
-            partition_by,
             schema,
             backend,
             stats_state,
@@ -1613,14 +1611,12 @@ impl LocalPhysicalPlan {
                 ),
                 Self::ShuffleWrite(ShuffleWrite {
                     num_partitions,
-                    partition_by,
                     schema,
                     backend,
                     context,
                     ..
                 }) => Self::shuffle_write(
                     new_child.clone(),
-                    partition_by.clone(),
                     *num_partitions,
                     schema.clone(),
                     backend.clone(),
@@ -2192,6 +2188,7 @@ pub enum ShuffleWriteBackend {
         shuffle_id: u64,
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
+        partition_by: Option<Vec<ExprRef>>,
     },
 }
 
@@ -2207,7 +2204,6 @@ pub enum ShuffleReadBackend {
 pub struct ShuffleWrite {
     pub input: LocalPhysicalPlanRef,
     pub num_partitions: usize,
-    pub partition_by: Option<Vec<ExprRef>>,
     pub schema: SchemaRef,
     pub backend: ShuffleWriteBackend,
     pub stats_state: StatsState,

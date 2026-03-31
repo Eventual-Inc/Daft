@@ -42,6 +42,7 @@ mod actor_udf;
 mod aggregate;
 mod concat;
 mod distinct;
+mod exchanges;
 mod explode;
 mod filter;
 mod glob_scan_source;

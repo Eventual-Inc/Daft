@@ -16,7 +16,7 @@ use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, TaskOutput, shuffles::shuffle::ray_partition_groups_from_outputs,
+        PipelineNodeContext, TaskOutput, exchanges::ray_partition_groups_from_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -187,7 +187,6 @@ pub(crate) fn create_range_repartition_tasks(
             );
             let plan = LocalPhysicalPlan::shuffle_write(
                 in_memory_source_plan,
-                None,
                 num_partitions,
                 input_schema.clone(),
                 ShuffleWriteBackend::Ray {

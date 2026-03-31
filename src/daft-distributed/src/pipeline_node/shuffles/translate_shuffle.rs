@@ -6,10 +6,9 @@ use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
     DistributedPipelineNode,
+    exchanges::{DistributedExchangeBackend, FlightDistributedExchangeConfig},
     shuffles::{
-        gather::GatherNode,
-        pre_shuffle_merge::PreShuffleMergeNode,
-        shuffle::{DistributedShuffleBackend, FlightDistributedShuffleConfig, ShuffleNode},
+        gather::GatherNode, pre_shuffle_merge::PreShuffleMergeNode, shuffle::RepartitionNode,
     },
     translate::LogicalPlanToPipelineNodeTranslator,
 };
@@ -22,13 +21,13 @@ impl LogicalPlanToPipelineNodeTranslator {
         child: DistributedPipelineNode,
     ) -> DaftResult<DistributedPipelineNode> {
         let backend = if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
-            DistributedShuffleBackend::Flight(FlightDistributedShuffleConfig {
-                shuffle_id: 0,
+            DistributedExchangeBackend::Flight(FlightDistributedExchangeConfig {
+                exchange_id: 0,
                 shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),
                 compression: None,
             })
         } else {
-            DistributedShuffleBackend::Ray
+            DistributedExchangeBackend::Ray
         };
         self.gen_shuffle_node_with_backend(repartition_spec, schema, child, backend)
     }
@@ -38,7 +37,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         repartition_spec: RepartitionSpec,
         schema: SchemaRef,
         child: DistributedPipelineNode,
-        backend: DistributedShuffleBackend,
+        backend: DistributedExchangeBackend,
     ) -> DaftResult<DistributedPipelineNode> {
         let num_partitions = match &repartition_spec {
             RepartitionSpec::Hash(config) => config
@@ -71,7 +70,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         };
 
         Ok(DistributedPipelineNode::new(
-            Arc::new(ShuffleNode::new(
+            Arc::new(RepartitionNode::new(
                 self.get_next_pipeline_node_id(),
                 &self.plan_config,
                 repartition_spec,
