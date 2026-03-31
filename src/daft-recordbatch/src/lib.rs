@@ -1622,8 +1622,13 @@ impl RecordBatch {
             tables.push(record_batch);
         }
 
-        assert_eq!(tables.len(), 1);
-        Ok(tables.pop().expect("Expected exactly one table"))
+        if tables.len() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "Expected exactly 1 record batch in IPC stream, but got {}",
+                tables.len()
+            )));
+        }
+        Ok(tables.pop().unwrap())
     }
 }
 
