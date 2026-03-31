@@ -40,30 +40,23 @@ impl ScalarUDF for ConcatWs {
         let len = exprs.iter().map(|s| s.len()).max().unwrap_or(0);
         let name = exprs[0].name().to_string();
 
-        let string_cols: Vec<Vec<Option<String>>> = exprs
+        let utf8_cols: Vec<&Utf8Array> = exprs
             .iter()
-            .map(|s| {
-                if s.data_type() == &DataType::Null {
-                    Ok(vec![None; s.len()])
-                } else {
-                    let arr = s.utf8()?;
-                    Ok(arr.into_iter().map(|v| v.map(|s| s.to_string())).collect())
-                }
-            })
+            .filter(|s| s.data_type() != &DataType::Null)
+            .map(|s| s.utf8())
             .collect::<DaftResult<_>>()?;
 
         let result = Utf8Array::from_iter(
             &name,
             (0..len).map(|i| {
-                let parts: Vec<&str> = string_cols
+                let parts: Vec<&str> = utf8_cols
                     .iter()
                     .filter_map(|col| {
                         let idx = if col.len() == 1 { 0 } else { i };
-                        col[idx].as_deref()
+                        col.get(idx)
                     })
                     .collect();
 
-                // If every input at this row was null, the result is null.
                 if parts.is_empty() {
                     None
                 } else {
