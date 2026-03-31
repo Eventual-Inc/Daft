@@ -161,12 +161,6 @@ fn build_row_filter(
     ))
 }
 
-/// Build a `RowSelection` that skips the first `offset` rows.
-///
-/// This is used to implement file-level offset when a RowFilter (predicate pushdown)
-/// is active, because arrow-rs's `with_offset` is applied *after* RowFilter, but
-/// Daft's `start_offset` should be applied *before* the filter (it's a file-level
-/// row skip). RowSelection is applied before RowFilter, so converting offset to a
 /// Rewrite a predicate for a specific Parquet file's schema by replacing any column reference
 /// that is absent from `schema` with `null_lit()`.
 ///
@@ -193,6 +187,13 @@ fn substitute_missing_cols(predicate: &ExprRef, schema: &Schema) -> DaftResult<E
         .data)
 }
 
+/// Build a `RowSelection` that skips the first `offset` rows.
+///
+/// This is used to implement file-level offset when a RowFilter (predicate pushdown)
+/// is active, because arrow-rs's `with_offset` is applied *after* RowFilter, but
+/// Daft's `start_offset` should be applied *before* the filter (it's a file-level
+/// row skip). RowSelection is applied before RowFilter, so converting offset to a
+/// RowSelection gives the correct semantics.
 fn build_offset_row_selection(offset: usize, total_rows: usize) -> RowSelection {
     if offset >= total_rows {
         RowSelection::from(vec![RowSelector::skip(total_rows)])
