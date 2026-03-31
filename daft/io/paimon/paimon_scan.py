@@ -118,7 +118,11 @@ class PaimonScanOperator(ScanOperator):
         ]
 
     def can_absorb_filter(self) -> bool:
-        return False
+        """Paimon supports filter pushdown via predicate conversion.
+
+        Returns True to enable filter pushdown optimization.
+        """
+        return True
 
     def can_absorb_limit(self) -> bool:
         return False
@@ -137,6 +141,22 @@ class PaimonScanOperator(ScanOperator):
 
         if pushdowns.limit is not None:
             read_builder = read_builder.with_limit(pushdowns.limit)
+
+        # Apply filter pushdown if filters are provided
+        if pushdowns.filters is not None:
+            from daft.io.paimon._filter_convert import convert_filters_to_paimon
+
+            pushed_filters, remaining_filters, paimon_predicate = convert_filters_to_paimon(
+                self._table, pushdowns.filters
+            )
+            if paimon_predicate is not None:
+                read_builder = read_builder.with_filter(paimon_predicate)
+                logger.debug(
+                    "Applied Paimon filter pushdown: %s (pushed: %d, remaining: %d)",
+                    paimon_predicate,
+                    len(pushed_filters),
+                    len(remaining_filters),
+                )
 
         if len(self._partition_keys) > 0 and pushdowns.partition_filters is None:
             logger.warning(

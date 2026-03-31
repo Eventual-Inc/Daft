@@ -7,11 +7,15 @@ reader to ensure correctness.
 
 from __future__ import annotations
 
+import pyarrow as pa
 import pytest
 
 pypaimon = pytest.importorskip("pypaimon")
 
 import daft
+
+# Import paimon_write to apply the patch for complex types support
+from daft.io.paimon import paimon_write  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Basic append
@@ -151,3 +155,96 @@ def test_write_paimon_pk_table(pk_table):
     result = daft.read_paimon(table).sort("id").to_arrow()
     assert result.num_rows == 3
     assert result.column("id").to_pylist() == [1, 2, 3]
+
+
+# ---------------------------------------------------------------------------
+# Schema conversion tests
+# ---------------------------------------------------------------------------
+
+
+class TestSchemaConversion:
+    """Tests for schema conversion utilities."""
+
+    def test_write_large_string_conversion(self, local_paimon_catalog):
+        """Test that large_string columns are converted to string for pypaimon.
+
+        Daft uses large_string internally, but pypaimon doesn't support it.
+        The write path should automatically convert.
+        """
+        catalog, tmp_path = local_paimon_catalog
+
+        # Create table with string column
+        pa_schema = pa.schema([("id", pa.int64()), ("text", pa.string())])
+        paimon_schema = pypaimon.Schema.from_pyarrow_schema(pa_schema)
+        catalog.create_table("test_db.large_str", paimon_schema, ignore_if_exists=True)
+        table = catalog.get_table("test_db.large_str")
+
+        # Create DataFrame with large_string (Daft's default)
+        df = daft.from_pydict({"id": [1, 2, 3], "text": ["a", "b", "c"]})
+
+        # Write should succeed (conversion happens internally)
+        df.write_paimon(table, mode="append")
+
+        # Verify data
+        result = daft.read_paimon(table).to_pydict()
+        assert result["id"] == [1, 2, 3]
+        assert result["text"] == ["a", "b", "c"]
+
+    def test_write_large_binary_conversion(self, local_paimon_catalog):
+        """Test that large_binary columns are converted to binary for pypaimon."""
+        catalog, tmp_path = local_paimon_catalog
+
+        # Create table with binary column
+        pa_schema = pa.schema([("id", pa.int64()), ("data", pa.binary())])
+        paimon_schema = pypaimon.Schema.from_pyarrow_schema(pa_schema)
+        catalog.create_table("test_db.large_bin", paimon_schema, ignore_if_exists=True)
+        table = catalog.get_table("test_db.large_bin")
+
+        # Create DataFrame with binary data
+        df = daft.from_pydict({"id": [1, 2], "data": [b"abc", b"def"]})
+
+        # Write should succeed (conversion happens internally)
+        df.write_paimon(table, mode="append")
+
+        # Verify data
+        result = daft.read_paimon(table).to_pydict()
+        assert result["id"] == [1, 2]
+
+
+# ---------------------------------------------------------------------------
+# Complex type tests
+# ---------------------------------------------------------------------------
+
+
+class TestComplexTypes:
+    """Tests for writing complex data types."""
+
+    def test_write_nested_list(self, local_paimon_catalog):
+        """Test writing Paimon table with list type.
+
+        Note: Writing complex types requires a workaround because pypaimon's
+        stats computation uses pyarrow min/max which doesn't support these types.
+        Daft patches pypaimon's _get_column_stats to handle this gracefully.
+        """
+        catalog, tmp_path = local_paimon_catalog
+
+        pa_schema = pa.schema([
+            ("id", pa.int64()),
+            ("list_col", pa.list_(pa.int64())),
+        ])
+        paimon_schema = pypaimon.Schema.from_pyarrow_schema(pa_schema)
+        catalog.create_table("test_db.write_list", paimon_schema, ignore_if_exists=True)
+        table = catalog.get_table("test_db.write_list")
+
+        # Create DataFrame with list data
+        df = daft.from_pydict({
+            "id": [1, 2],
+            "list_col": [[1, 2, 3], [4, 5]],
+        })
+
+        # Write should succeed with the patch
+        df.write_paimon(table, mode="append")
+
+        # Verify data
+        result = daft.read_paimon(table).to_pydict()
+        assert result["id"] == [1, 2]

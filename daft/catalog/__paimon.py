@@ -250,10 +250,33 @@ class PaimonTable(Table):
 
     @property
     def name(self) -> str:
-        identifier = getattr(self._inner, "identifier", None)
-        if identifier is not None and hasattr(identifier, "get_table_name"):
-            return identifier.get_table_name()
-        return "paimon_table"
+        identifier = self._inner.identifier
+        return identifier.object
+
+    @property
+    def primary_keys(self) -> list[str]:
+        """Returns the primary key columns of this table."""
+        return list(self._inner.primary_keys)
+
+    @property
+    def partition_keys(self) -> list[str]:
+        """Returns the partition key columns of this table."""
+        return list(self._inner.partition_keys)
+
+    @property
+    def is_primary_key_table(self) -> bool:
+        """Returns True if this is a primary key table (merge-on-read)."""
+        return self._inner.is_primary_key_table
+
+    @property
+    def bucket_count(self) -> int:
+        """Returns the number of buckets for this table."""
+        return self._inner.total_buckets
+
+    @property
+    def table_options(self) -> dict[str, str]:
+        """Returns the table options/configuration."""
+        return dict(self._inner.options)
 
     def schema(self) -> Schema:
         return self.read().schema()
@@ -307,20 +330,7 @@ def _to_paimon_ident_str(ident: Identifier) -> str:
 
 
 def _cast_large_types(pa_schema: Any) -> Any:
-    """Cast large_string → string and large_binary → binary in a PyArrow schema.
+    """Cast large_string → string and large_binary → binary in a PyArrow schema."""
+    from daft.io.paimon._utils import convert_arrow_schema_for_paimon
 
-    pypaimon does not support large_string / large_binary (Arrow 'large' variants).
-    Daft's ``schema.to_pyarrow_schema()`` emits large_string for string columns.
-    """
-    import pyarrow as pa
-
-    new_fields = []
-    for i in range(len(pa_schema)):
-        field = pa_schema.field(i)
-        if pa.types.is_large_string(field.type):
-            new_fields.append(field.with_type(pa.string()))
-        elif pa.types.is_large_binary(field.type):
-            new_fields.append(field.with_type(pa.binary()))
-        else:
-            new_fields.append(field)
-    return pa.schema(new_fields, metadata=pa_schema.metadata)
+    return convert_arrow_schema_for_paimon(pa_schema)
