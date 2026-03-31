@@ -1,22 +1,9 @@
 name: Set file mtimes for cargo caching
 description: >
-  Ensure cargo correctly detects changed files when the target/ directory
-  is cached across CI runs.
-
-  Problem: actions/checkout sets all file mtimes to "now", which is newer
-  than the cached invoked.timestamp, causing cargo to rebuild everything.
-  We need unchanged files to be older than invoked.timestamp (skip) and
-  changed files to be newer (rebuild).
-
-  Approach: hash all source files and compare against saved hashes from
-  the previous cache-save build. Unchanged files get a fixed past
-  timestamp (2020-01-01). Changed files keep the checkout mtime ("now").
-  Since "now" (2026+) > any cached invoked.timestamp > 2020, cargo
-  correctly skips unchanged files and rebuilds changed ones.
-
-  Note: the previous git-commit-timestamp approach was broken because
-  commit timestamps are always in the past relative to the cached
-  invoked.timestamp, so cargo never rebuilt anything from cache.
+  Set stable file mtimes so cargo correctly skips unchanged files and
+  rebuilds changed ones when the target/ directory is cached across CI
+  runs. Compares content hashes against the previous build to distinguish
+  the two cases.
 runs:
   using: composite
   steps:
