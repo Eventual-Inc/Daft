@@ -4,17 +4,25 @@ from __future__ import annotations
 
 import io
 import pathlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import daft
 from daft.daft import io_put
-from daft.file.typing import AudioMetadata
 from daft.udf.udf_v2 import Func
 
 if TYPE_CHECKING:
     from daft import Expression
+    from daft.file.typing import AudioMetadata
 
 _CLOUD_SCHEMES = ("s3://", "gs://", "gcs://", "az://", "abfs://", "hf://", "http://", "https://")
+
+
+class WriteAudioMetadata(TypedDict):
+    sample_rate: int
+    channels: int
+    frames: float
+    format: str
+    subtype: str | None
 
 
 def get_metadata_impl(
@@ -188,7 +196,7 @@ def write_audio_impl(
     sample_rate: int | None,
     format: str | None,
     subtype: str | None,
-) -> AudioMetadata:
+) -> WriteAudioMetadata:
     from daft.dependencies import np, sf
 
     # Extract audio data and sample rate from input
@@ -223,9 +231,7 @@ def write_audio_impl(
 
     if is_cloud:
         if write_format is None:
-            raise ValueError(
-                "Cannot infer audio format from destination path. Please specify the 'format' parameter."
-            )
+            raise ValueError("Cannot infer audio format from destination path. Please specify the 'format' parameter.")
         buf = io.BytesIO()
         sf.write(buf, data, samplerate=sample_rate, format=write_format, subtype=subtype)
         io_put(destination, buf.getvalue())
@@ -237,7 +243,7 @@ def write_audio_impl(
     channels = data.shape[1] if data.ndim == 2 else 1
     frames = float(data.shape[0])
 
-    return AudioMetadata(
+    return WriteAudioMetadata(
         sample_rate=sample_rate,
         channels=channels,
         frames=frames,
@@ -307,7 +313,7 @@ def write_audio(
         >>> df = daft.from_glob_path("audio/*.mp3")
         >>> df = (
         ...     df.with_column("file", audio_file(daft.col("path")))
-        ...     .with_column("out_path", daft.col("path").str.replace(".mp3", ".wav"))
+        ...     .with_column("out_path", daft.col("path").replace(".mp3", ".wav"))
         ...     .with_column("result", write_audio(daft.col("file"), daft.col("out_path")))
         ... )
     """
@@ -315,11 +321,10 @@ def write_audio(
 
     if not sf.module_available():
         raise ImportError(
-            "The 'soundfile' module is required to write audio files. "
-            "Please install it with: pip install 'daft[audio]'"
+            "The 'soundfile' module is required to write audio files. Please install it with: pip install 'daft[audio]'"
         )
 
     if isinstance(destination, str):
         destination = daft.lit(destination)
 
-    return write_audio_fn(audio_expr, destination, sample_rate, format, subtype)
+    return cast("Expression", write_audio_fn(audio_expr, destination, sample_rate, format, subtype))
