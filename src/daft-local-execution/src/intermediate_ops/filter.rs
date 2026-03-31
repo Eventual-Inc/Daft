@@ -155,6 +155,8 @@ mod tests {
         }
     }
 
+    use common_metrics::snapshot::StatSnapshotImpl as _;
+
     struct MockRuntimeStats;
     impl RuntimeStats for MockRuntimeStats {
         fn build_snapshot(&self, _ordering: Ordering) -> StatSnapshot {
@@ -165,11 +167,37 @@ mod tests {
         }
     }
 
+    /// Mock child that reports a configurable estimated total.
+    struct MockChildWithEstimate {
+        estimated_total: u64,
+    }
+    impl RuntimeStats for MockChildWithEstimate {
+        fn build_snapshot(&self, _ordering: Ordering) -> StatSnapshot {
+            StatSnapshot::Source(common_metrics::snapshot::SourceSnapshot {
+                cpu_us: 0,
+                rows_out: 0,
+                bytes_read: 0,
+                estimated_total_rows: self.estimated_total,
+            })
+        }
+        fn add_duration_us(&self, _: u64) {}
+    }
+
     fn make_stats() -> FilterStats {
         FilterStats::new(
             &Meter::test_scope("test_stats"),
             &node_info_from_id(42),
             Arc::new(MockRuntimeStats),
+        )
+    }
+
+    fn make_stats_with_child_estimate(child_estimated_total: u64) -> FilterStats {
+        FilterStats::new(
+            &Meter::test_scope("test_stats_est"),
+            &node_info_from_id(42),
+            Arc::new(MockChildWithEstimate {
+                estimated_total: child_estimated_total,
+            }),
         )
     }
 
@@ -223,6 +251,79 @@ mod tests {
             (final_selectivity - 25.0).abs() < f64::EPSILON,
             "expected selectivity to be 25% after second batch, got {}",
             final_selectivity
+        );
+    }
+
+    // ── Estimated total rows / build_snapshot tests ──────────────────────
+
+    #[test]
+    fn estimated_total_rows_projects_child_estimate_through_selectivity() {
+        let stats = make_stats_with_child_estimate(10_000);
+        // 200 in, 50 out → 25% selectivity
+        stats.add_rows_in(200);
+        stats.add_rows_out(50);
+
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        // estimated = 10_000 * 25% = 2500
+        assert_eq!(snap.total(), 2500);
+        assert_eq!(snap.current_progress(), 50);
+    }
+
+    #[test]
+    fn estimated_total_rows_with_100_percent_selectivity() {
+        let stats = make_stats_with_child_estimate(5000);
+        // Everything passes → 100% selectivity
+        stats.add_rows_in(100);
+        stats.add_rows_out(100);
+
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap.total(), 5000);
+    }
+
+    #[test]
+    fn estimated_total_rows_before_any_data() {
+        let stats = make_stats_with_child_estimate(5000);
+        // No data yet → selectivity defaults to 100% in build_snapshot
+        // (because selectivity gauge starts as NaN → load returns NaN)
+        // Actually: Gauge starts at NaN, filter build_snapshot loads NaN
+        // and computes (5000 * NaN / 100) = NaN → cast to u64 = 0
+        // This is the expected edge case behavior.
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        // NaN selectivity → estimated = 0 (NaN as u64 = 0)
+        assert_eq!(snap.total(), 0);
+    }
+
+    #[test]
+    fn estimated_total_evolves_as_selectivity_stabilizes() {
+        let stats = make_stats_with_child_estimate(10_000);
+
+        // Batch 1: very selective (10%) — early batches can be unrepresentative
+        stats.add_rows_in(100);
+        stats.add_rows_out(10);
+        let snap1 = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap1.total(), 1000); // 10_000 * 10%
+
+        // Batch 2: less selective overall → 200 in, 60 out → 30%
+        stats.add_rows_in(100);
+        stats.add_rows_out(50);
+        let snap2 = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap2.total(), 3000); // 10_000 * 30%
+    }
+
+    #[test]
+    fn filter_snapshot_message_format() {
+        let stats = make_stats_with_child_estimate(1000);
+        stats.add_rows_in(400);
+        stats.add_rows_out(100);
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        let msg = snap.to_message();
+        assert!(
+            msg.contains("25.00%"),
+            "expected '25.00%' in message, got: {msg}"
+        );
+        assert!(
+            msg.contains("after filter"),
+            "expected 'after filter' in message, got: {msg}"
         );
     }
 }

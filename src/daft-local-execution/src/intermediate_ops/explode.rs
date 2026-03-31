@@ -158,3 +158,108 @@ impl IntermediateOperator for ExplodeOperator {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, atomic::Ordering};
+
+    use common_metrics::{Meter, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl as _};
+
+    use super::ExplodeStats;
+    use crate::runtime_stats::{IntermediateRuntimeStats as _, RuntimeStats};
+
+    fn node_info_from_id(id: usize) -> NodeInfo {
+        NodeInfo {
+            id,
+            ..Default::default()
+        }
+    }
+
+    /// A mock child that reports a fixed estimated total.
+    struct MockChildStats {
+        estimated_total: u64,
+    }
+    impl RuntimeStats for MockChildStats {
+        fn build_snapshot(&self, _ordering: Ordering) -> StatSnapshot {
+            StatSnapshot::Source(common_metrics::snapshot::SourceSnapshot {
+                cpu_us: 0,
+                rows_out: 0,
+                bytes_read: 0,
+                estimated_total_rows: self.estimated_total,
+            })
+        }
+        fn add_duration_us(&self, _: u64) {}
+    }
+
+    fn make_stats(child_estimated_total: u64) -> ExplodeStats {
+        ExplodeStats::new(
+            &Meter::test_scope("explode_test"),
+            &node_info_from_id(1),
+            Arc::new(MockChildStats {
+                estimated_total: child_estimated_total,
+            }),
+        )
+    }
+
+    #[test]
+    fn amplification_defaults_to_1x_with_no_input() {
+        let stats = make_stats(1000);
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        // No rows processed yet → amplification = 1.0 → estimated = 1000 * 1.0 = 1000
+        assert_eq!(snap.total(), 1000);
+        assert_eq!(snap.current_progress(), 0);
+    }
+
+    #[test]
+    fn amplification_computed_from_rows_in_out() {
+        let stats = make_stats(1000);
+        // Simulate: 100 rows in, 300 rows out → 3x amplification
+        stats.add_rows_in(100);
+        stats.add_rows_out(300);
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        // estimated = 1000 * 3.0 = 3000
+        assert_eq!(snap.total(), 3000);
+        assert_eq!(snap.current_progress(), 300);
+    }
+
+    #[test]
+    fn amplification_updates_over_multiple_batches() {
+        let stats = make_stats(2000);
+
+        // Batch 1: 100 in, 200 out → 2x
+        stats.add_rows_in(100);
+        stats.add_rows_out(200);
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap.total(), 4000); // 2000 * 2.0
+
+        // Batch 2: another 100 in, 400 out → cumulative 200 in, 600 out → 3x
+        stats.add_rows_in(100);
+        stats.add_rows_out(400);
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap.total(), 6000); // 2000 * 3.0
+        assert_eq!(snap.current_progress(), 600);
+    }
+
+    #[test]
+    fn fractional_amplification() {
+        let stats = make_stats(1000);
+        // 200 in, 100 out → 0.5x (e.g., many null lists filtered)
+        stats.add_rows_in(200);
+        stats.add_rows_out(100);
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        assert_eq!(snap.total(), 500); // 1000 * 0.5
+    }
+
+    #[test]
+    fn snapshot_message_contains_amplification() {
+        let stats = make_stats(1000);
+        stats.add_rows_in(100);
+        stats.add_rows_out(250);
+        let snap = stats.build_snapshot(Ordering::SeqCst);
+        let msg = snap.to_message();
+        assert!(
+            msg.contains("2.50x"),
+            "expected '2.50x' in message, got: {msg}"
+        );
+    }
+}
