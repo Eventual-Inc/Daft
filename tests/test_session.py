@@ -428,9 +428,9 @@ def test_session_catalog_function_fallback_returns_none():
 def test_session_function_priority_over_catalog():
     """Test that session-scoped functions take priority over catalog functions."""
     catalog = _FunctionCatalog()
-    catalog.register_function(Identifier("shared_fn"), "tests.udf.my_funcs", "my_catalog_udf")
+    catalog.register_function(Identifier("shared_fn"), "tests.udf.my_funcs", "none_catalog_udf")
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func(return_dtype=daft.DataType.int64())
     def session_udf(x):
         return x + 1
 
@@ -443,8 +443,8 @@ def test_session_function_priority_over_catalog():
     df = daft.from_pydict({"x": [1, 2, 3]})
     sess.attach_table(Table.from_df("t", df), alias="t")
     daft.set_session(sess)
-    result = sess.sql("SELECT shared_fn(x) FROM t")
-    assert result is not None
+    result = sess.sql("SELECT shared_fn(x) FROM t").to_pydict()
+    assert result == {"x": [2, 3, 4]}
 
 
 def test_dataframe_select_with_catalog_get_function():
