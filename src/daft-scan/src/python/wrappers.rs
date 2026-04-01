@@ -22,6 +22,19 @@ use crate::{
     storage_config::StorageConfig,
 };
 
+/// Unwrap `Ok(v)` or send the error through `$tx` and return from the enclosing function.
+macro_rules! try_or_send {
+    ($tx:expr, $expr:expr) => {
+        match $expr {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = $tx.send(Err(e.into()));
+                return;
+            }
+        }
+    };
+}
+
 // ---------------------------------------------------------------------------
 // PyDataSourceWrapper — bridges a Python DataSource to Rust DataSource +
 //                       ScanOperator traits.
@@ -143,34 +156,30 @@ impl DataSource for PyDataSourceWrapper {
         let pushdowns = pushdowns.clone();
         let (tx, rx) = mpsc::unbounded_channel();
 
-        // The JoinHandle is intentionally dropped. If the closure panics the
-        // sender is dropped, which ends the receiver stream gracefully.
+        // The JoinHandle is intentionally dropped: once the setup succeeds,
+        // all loop errors are forwarded through `tx`. Setup errors are also
+        // sent through `tx` so the caller always sees them as stream items.
         tokio::task::spawn_blocking(move || {
             Python::attach(|py| {
                 // Wrap PyPushdowns in the Python Pushdowns dataclass so the
                 // user's get_tasks() receives the public API type.
-                let py_pushdowns = PyPushdowns(Arc::new(pushdowns))
-                    .into_pyobject(py)
-                    .expect("PyPushdowns conversion should never fail");
-                let pushdowns_mod = py
-                    .import(intern!(py, "daft.io.pushdowns"))
-                    .expect("daft.io.pushdowns import should never fail");
-                let pushdowns_cls = pushdowns_mod
-                    .getattr(intern!(py, "Pushdowns"))
-                    .expect("Pushdowns class should exist");
-                let pushdowns_obj = pushdowns_cls
-                    .call_method1(intern!(py, "_from_pypushdowns"), (py_pushdowns,))
-                    .expect("Pushdowns._from_pypushdowns should never fail");
-                let async_gen = py_source
-                    .call_method1(py, intern!(py, "get_tasks"), (pushdowns_obj,))
-                    .expect("DataSource.get_tasks call should never fail");
+                let py_pushdowns =
+                    try_or_send!(tx, PyPushdowns(Arc::new(pushdowns)).into_pyobject(py));
+                let pushdowns_mod = try_or_send!(tx, py.import(intern!(py, "daft.io.pushdowns")));
+                let pushdowns_cls =
+                    try_or_send!(tx, pushdowns_mod.getattr(intern!(py, "Pushdowns")));
+                let pushdowns_obj = try_or_send!(
+                    tx,
+                    pushdowns_cls.call_method1(intern!(py, "_from_pypushdowns"), (py_pushdowns,))
+                );
+                let async_gen = try_or_send!(
+                    tx,
+                    py_source.call_method1(py, intern!(py, "get_tasks"), (pushdowns_obj,))
+                );
 
-                let asyncio = py
-                    .import(intern!(py, "asyncio"))
-                    .expect("asyncio import should never fail");
-                let event_loop = asyncio
-                    .call_method0(intern!(py, "new_event_loop"))
-                    .expect("asyncio.new_event_loop should never fail");
+                let asyncio = try_or_send!(tx, py.import(intern!(py, "asyncio")));
+                let event_loop =
+                    try_or_send!(tx, asyncio.call_method0(intern!(py, "new_event_loop")));
 
                 loop {
                     let anext = match async_gen.call_method0(py, intern!(py, "__anext__")) {
@@ -331,16 +340,10 @@ impl DataSourceTask for PyDataSourceTaskWrapper {
 
         tokio::task::spawn_blocking(move || {
             Python::attach(|py| {
-                let async_gen = py_task
-                    .call_method0(py, intern!(py, "read"))
-                    .expect("DataSourceTask.read call should never fail");
-
-                let asyncio = py
-                    .import(intern!(py, "asyncio"))
-                    .expect("asyncio import should never fail");
-                let event_loop = asyncio
-                    .call_method0(intern!(py, "new_event_loop"))
-                    .expect("asyncio.new_event_loop should never fail");
+                let async_gen = try_or_send!(tx, py_task.call_method0(py, intern!(py, "read")));
+                let asyncio = try_or_send!(tx, py.import(intern!(py, "asyncio")));
+                let event_loop =
+                    try_or_send!(tx, asyncio.call_method0(intern!(py, "new_event_loop")));
 
                 loop {
                     let anext = match async_gen.call_method0(py, intern!(py, "__anext__")) {
@@ -353,11 +356,16 @@ impl DataSourceTask for PyDataSourceTaskWrapper {
 
                     match event_loop.call_method1(intern!(py, "run_until_complete"), (anext,)) {
                         Ok(batch_obj) => {
-                            let rb = batch_obj
+                            let rb = match batch_obj
                                 .getattr(intern!(py, "_recordbatch"))
                                 .and_then(|inner| Ok(inner.extract::<PyRecordBatch>()?))
-                                .expect("DataSourceTask.read must yield RecordBatch")
-                                .record_batch;
+                            {
+                                Ok(py_rb) => py_rb.record_batch,
+                                Err(e) => {
+                                    let _ = tx.send(Err(e.into()));
+                                    break;
+                                }
+                            };
                             if tx.send(Ok(rb)).is_err() {
                                 break;
                             }
