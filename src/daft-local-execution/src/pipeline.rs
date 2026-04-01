@@ -17,11 +17,11 @@ use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 pub use daft_local_plan::InputId;
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
-    HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
-    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, RepartitionWrite,
-    RepartitionWriteBackend, Sample, ShuffleReadBackend, Sort, SortMergeJoin, SourceId, TopN,
-    UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
+    AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
+    GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext,
+    LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
+    RepartitionWrite, RepartitionWriteBackend, Sample, ShuffleReadBackend, Sort, SortMergeJoin,
+    SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
@@ -43,7 +43,9 @@ use crate::{
         into_batches::IntoBatchesOperator, project::ProjectOperator, udf::UdfOperator,
         unpivot::UnpivotOperator,
     },
-    join::{CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator},
+    join::{
+        AsofJoinOperator, CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator,
+    },
     shuffle_metadata::ShuffleMetadata,
     sinks::{
         aggregate::AggregateSink,
@@ -1239,8 +1241,38 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
-        LocalPhysicalPlan::AsofJoin(_) => {
-            panic!("AsofJoin pipeline translation is not implemented yet")
+        LocalPhysicalPlan::AsofJoin(AsofJoin {
+            left,
+            right,
+            left_by,
+            right_by,
+            left_on,
+            right_on,
+            stats_state,
+            context,
+            ..
+        }) => {
+            let left_node = physical_plan_to_pipeline(left, cfg, ctx, input_senders)?;
+            let right_node = physical_plan_to_pipeline(right, cfg, ctx, input_senders)?;
+
+            let asof_join_op = AsofJoinOperator::new(
+                left_by.clone(),
+                right_by.clone(),
+                left_on.clone(),
+                right_on.clone(),
+                left.schema().clone(),
+                right.schema().clone(),
+            );
+
+            JoinNode::new(
+                Arc::new(asof_join_op),
+                left_node,
+                right_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
         }
         LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
             input,
