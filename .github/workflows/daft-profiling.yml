@@ -24,7 +24,6 @@ jobs:
     - uses: actions/checkout@v6
       with:
         fetch-depth: 0
-    - uses: ./.github/actions/restore-mtime
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -34,6 +33,7 @@ jobs:
         cache-all-crates: "true"
         cache-workspace-crates: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
 
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7

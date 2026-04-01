@@ -70,12 +70,19 @@ def test_scarf_telemetry_basic(
     else:
         assert result_container["extra_value"] is None
 
-    # Verify URL format and parameters
-    called_url = mock_urlopen.call_args[0][0]
-    assert called_url.startswith(f"https://daft.gateway.scarf.sh/{endpoint}?")
-    assert "version=0.0.0" in called_url
+    # Verify Scarf URL format and parameters (first call)
+    scarf_url = mock_urlopen.call_args_list[0][0][0]
+    assert scarf_url.startswith(f"https://daft.gateway.scarf.sh/{endpoint}?")
+    assert "version=0.0.0" in scarf_url
     if extra_params and "runner" in extra_params:
-        assert f"runner={extra_params['runner']}" in called_url
+        assert f"runner={extra_params['runner']}" in scarf_url
+
+    # Verify osstelemetry.io URL format and parameters (second call)
+    ot_url = mock_urlopen.call_args_list[1][0][0]
+    assert ot_url.startswith("https://osstelemetry.io/data?")
+    assert f"activity_type={endpoint}" in ot_url
+    assert "package=daft" in ot_url
+    assert "version=0.0.0" in ot_url
 
 
 @pytest.mark.parametrize(
