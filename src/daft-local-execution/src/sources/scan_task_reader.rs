@@ -97,7 +97,10 @@ async fn read_parquet(
     let source = scan_task.sources.first().unwrap();
 
     if let Some(aggregation) = &scan_task.pushdowns.aggregation
-        && let Expr::Agg(AggExpr::Count(_, _)) = aggregation.as_ref()
+        && matches!(
+            aggregation.as_ref(),
+            Expr::Agg(AggExpr::Count(..) | AggExpr::CountRows)
+        )
     {
         daft_parquet::read::stream_parquet_count_pushdown(
             url,

@@ -1074,6 +1074,7 @@ pub mod pylib_scan_info {
                 .as_ref()
                 .and_then(|expr| match expr.as_ref() {
                     Expr::Agg(AggExpr::Count(_, count_mode)) => Some(*count_mode),
+                    Expr::Agg(AggExpr::CountRows) => Some(CountMode::All),
                     _ => None,
                 })
         }
