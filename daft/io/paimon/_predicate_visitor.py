@@ -8,15 +8,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from pypaimon.common.predicate import Predicate
-from pypaimon.common.predicate_builder import PredicateBuilder
-
+from daft.daft import PyExpr
+from daft.expressions import Expression
 from daft.expressions.visitor import PredicateVisitor
 
 if TYPE_CHECKING:
-    from daft.daft import PyExpr
-    from daft.expressions import Expression
+    from pypaimon.common.predicate import Predicate
+    from pypaimon.common.predicate_builder import PredicateBuilder
     from pypaimon.table.file_store_table import FileStoreTable
+
 
 logger = logging.getLogger(__name__)
 

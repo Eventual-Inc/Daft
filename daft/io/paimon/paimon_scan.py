@@ -8,6 +8,7 @@ import daft
 from daft.daft import (
     FileFormatConfig,
     ParquetSourceConfig,
+    PyExpr,
     PyPartitionField,
     PyPushdowns,
     ScanTask,
@@ -24,10 +25,10 @@ from ..pushdowns import SupportsPushdownFilters
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from daft.daft import PyExpr
     from pypaimon.common.predicate import Predicate
     from pypaimon.read.split import Split
     from pypaimon.table.file_store_table import FileStoreTable
+
 
 logger = logging.getLogger(__name__)
 

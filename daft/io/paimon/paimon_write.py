@@ -5,8 +5,16 @@ including schema conversion and patches for pypaimon compatibility.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pyarrow as pa
 import pyarrow.compute as pc
+
+if TYPE_CHECKING:
+    from pypaimon.write.writer.data_writer import DataWriter
+
+
+_patched = False
 
 
 def _patch_pypaimon_stats_for_complex_types() -> None:
@@ -21,7 +29,9 @@ def _patch_pypaimon_stats_for_complex_types() -> None:
 
     This is a workaround for: https://github.com/apache/paimon-python/issues
     """
-    from pypaimon.write.writer.data_writer import DataWriter
+    global _patched
+    if _patched:
+        return
 
     def _patched_get_column_stats(record_batch: pa.RecordBatch, column_name: str) -> dict:
         """Patched version that handles complex types gracefully."""
@@ -51,9 +61,8 @@ def _patch_pypaimon_stats_for_complex_types() -> None:
             "null_counts": null_counts,
         }
 
-    # Apply the patch
+    # Apply the patch (import here to avoid requiring pypaimon at module load)
+    from pypaimon.write.writer.data_writer import DataWriter
+
     DataWriter._get_column_stats = staticmethod(_patched_get_column_stats)
-
-
-# Apply the patch at module load time
-_patch_pypaimon_stats_for_complex_types()
+    _patched = True

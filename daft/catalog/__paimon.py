@@ -295,7 +295,7 @@ class PaimonTable(Table):
 
     def read(self, **options: Any) -> DataFrame:
         Table._validate_options("Paimon read", options, set())
-        from daft.io.paimon._paimon import read_paimon
+        from daft.io.paimon import read_paimon
 
         return read_paimon(self._inner)
 

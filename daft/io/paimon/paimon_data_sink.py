@@ -31,6 +31,10 @@ class PaimonDataSink(DataSink[list[Any]]):
         self._table = table
         self._mode = mode
 
+        # Apply pypaimon patch for complex type stats
+        from daft.io.paimon.paimon_write import _patch_pypaimon_stats_for_complex_types
+        _patch_pypaimon_stats_for_complex_types()
+
         from pypaimon.schema.data_types import PyarrowFieldParser
 
         self._target_schema: pa.Schema = PyarrowFieldParser.from_paimon_schema(table.fields)

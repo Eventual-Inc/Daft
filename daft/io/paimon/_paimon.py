@@ -10,10 +10,6 @@ from daft.dataframe import DataFrame
 from daft.io import IOConfig, S3Config
 from daft.logical.builder import LogicalPlanBuilder
 
-# Import paimon_write to apply complex type patch at module load time
-# (no-op if pypaimon is not installed)
-import daft.io.paimon.paimon_write  # noqa: F401
-
 if TYPE_CHECKING:
     from pypaimon.table.table import Table as PaimonTable
 
