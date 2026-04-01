@@ -1239,6 +1239,9 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
+        LocalPhysicalPlan::AsofJoin(_) => {
+            panic!("AsofJoin pipeline translation is not implemented yet")
+        }
         LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
             input,
             file_info,
