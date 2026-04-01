@@ -23,6 +23,7 @@ pub enum NodeType {
     IntoBatches,
     Project,
     Sample,
+    StageCheckpointKeys,
     UDFProject,
     Unpivot,
     VLLMProject,
