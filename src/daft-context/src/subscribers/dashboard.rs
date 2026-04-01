@@ -290,12 +290,17 @@ impl Subscriber for DashboardSubscriber {
         let results_ipc = if let Some((_, results)) = results {
             let result = MicroPartition::concat(results)?;
             debug_assert!(result.len() <= TOTAL_ROWS);
-            let results_ipc = result.write_to_ipc_stream()?;
-            if results_ipc.len() > 1024 * 1024 * 2 {
-                // 2MB, our dashboard cap
+            if result.is_empty() {
+                // Flotilla queries never call on_result_out, so preview is empty (#6559)
                 None
             } else {
-                Some(results_ipc)
+                let results_ipc = result.write_to_ipc_stream()?;
+                if results_ipc.len() > 1024 * 1024 * 2 {
+                    // 2MB, our dashboard cap
+                    None
+                } else {
+                    Some(results_ipc)
+                }
             }
         } else {
             None
