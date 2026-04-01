@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use pyo3::{Bound, Py, PyAny, PyResult, Python, intern, prelude::*, types::PyModule};
 
 use crate::provider::Provider;
@@ -6,9 +8,15 @@ use crate::provider::Provider;
 #[derive(Debug)]
 pub struct PyProviderWrapper(Py<PyAny>);
 
-impl From<Py<PyAny>> for PyProviderWrapper {
-    fn from(value: Py<PyAny>) -> Self {
-        Self(value)
+impl From<Bound<'_, PyAny>> for PyProviderWrapper {
+    fn from(obj: Bound<'_, PyAny>) -> Self {
+        Self(obj.unbind())
+    }
+}
+
+impl PyProviderWrapper {
+    pub fn arced(self) -> Arc<Self> {
+        Arc::new(self)
     }
 }
 
