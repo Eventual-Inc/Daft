@@ -12,6 +12,7 @@ use hash_join::hash_semi_anti_join;
 
 use self::hash_join::{hash_inner_join, hash_left_right_join, hash_outer_join};
 use crate::RecordBatch;
+mod asof_join;
 mod hash_join;
 mod merge_join;
 
@@ -74,6 +75,74 @@ fn add_non_join_key_columns(
 }
 
 impl RecordBatch {
+    pub fn asof_join(
+        &self,
+        right: &Self,
+        left_by: &[BoundExpr],
+        right_by: &[BoundExpr],
+        left_on: &BoundExpr,
+        right_on: &BoundExpr,
+    ) -> DaftResult<Self> {
+        if left_by.len() != right_by.len() {
+            return Err(DaftError::ValueError(format!(
+                "Mismatch of asof by clauses: left: {:?} vs right: {:?}",
+                left_by.len(),
+                right_by.len()
+            )));
+        }
+
+        let left_sort_keys = left_by
+            .iter()
+            .cloned()
+            .chain(std::iter::once(left_on.clone()))
+            .collect::<Vec<_>>();
+        let right_sort_keys = right_by
+            .iter()
+            .cloned()
+            .chain(std::iter::once(right_on.clone()))
+            .collect::<Vec<_>>();
+
+        let left = self.sort(
+            left_sort_keys.as_slice(),
+            std::iter::repeat_n(false, left_sort_keys.len())
+                .collect::<Vec<_>>()
+                .as_slice(),
+            std::iter::repeat_n(false, left_sort_keys.len())
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )?;
+        let right = right.sort(
+            right_sort_keys.as_slice(),
+            std::iter::repeat_n(false, right_sort_keys.len())
+                .collect::<Vec<_>>()
+                .as_slice(),
+            std::iter::repeat_n(false, right_sort_keys.len())
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )?;
+
+        let left_key_table = left.eval_expression_list(left_sort_keys.as_slice())?;
+        let right_key_table = right.eval_expression_list(right_sort_keys.as_slice())?;
+        let (left_key_table, right_key_table) =
+            match_types_for_tables(&left_key_table, &right_key_table)?;
+        let (lidx, ridx) = asof_join::asof_join_backward(&left_key_table, &right_key_table)?;
+
+        let join_schema = infer_join_schema(&left.schema, &right.schema, JoinType::Left)?;
+
+        let common_cols: Vec<_> = get_common_join_cols(&left.schema, &right.schema).collect();
+
+        let join_series: Vec<Series> =
+            Arc::unwrap_or_clone(get_columns_by_name(&left, &common_cols)?.columns)
+                .into_iter()
+                .map(|c| c.take_materialized_series())
+                .collect();
+
+        let num_rows = lidx.len();
+        let join_series = add_non_join_key_columns(&left, &right, lidx, ridx, join_series)?;
+
+        Self::new_with_size(join_schema, join_series, num_rows)
+    }
+
     pub fn hash_join(
         &self,
         right: &Self,
