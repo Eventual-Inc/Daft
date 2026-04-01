@@ -320,13 +320,11 @@ impl<'py> PyVisitor<'py> {
     }
 
     fn visit_coalesce(&self, inputs: &[ExprRef]) -> PyVisitorResult<'py> {
-        let name = "coalesce";
         let items = PyList::empty(self.py);
         for item in inputs {
             items.append(self.to_expr(item)?)?;
         }
-        let args = vec![items.into_any()];
-        self.visit_function(name, args)
+        self.visitor.call_method1("visit_coalesce", (items,))
     }
 
     // Developer Note
