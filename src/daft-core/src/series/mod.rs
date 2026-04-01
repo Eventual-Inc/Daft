@@ -235,6 +235,10 @@ impl Series {
         self.inner.get_lit(idx)
     }
 
+    pub(crate) fn str_value_result(&self, idx: usize) -> DaftResult<String> {
+        self.inner.str_value(idx)
+    }
+
     pub fn to_literals(&self) -> impl ExactSizeIterator<Item = Literal> + use<'_> {
         (0..self.len()).map(|i| self.get_lit(i))
     }

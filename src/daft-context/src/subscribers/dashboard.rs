@@ -17,7 +17,7 @@ use tokio::{sync::mpsc, task::JoinHandle};
 use uuid::Uuid;
 
 use crate::subscribers::{
-    QueryMetadata, QueryResult, Subscriber,
+    Event, QueryMetadata, QueryResult, Subscriber,
     events::{OperatorEndEvent, OperatorStartEvent, StatsEvent},
 };
 
@@ -290,12 +290,17 @@ impl Subscriber for DashboardSubscriber {
         let results_ipc = if let Some((_, results)) = results {
             let result = MicroPartition::concat(results)?;
             debug_assert!(result.len() <= TOTAL_ROWS);
-            let results_ipc = result.write_to_ipc_stream()?;
-            if results_ipc.len() > 1024 * 1024 * 2 {
-                // 2MB, our dashboard cap
+            if result.is_empty() {
+                // Flotilla queries never call on_result_out, so preview is empty (#6559)
                 None
             } else {
-                Some(results_ipc)
+                let results_ipc = result.write_to_ipc_stream()?;
+                if results_ipc.len() > 1024 * 1024 * 2 {
+                    // 2MB, our dashboard cap
+                    None
+                } else {
+                    Some(results_ipc)
+                }
             }
         } else {
             None
@@ -534,6 +539,15 @@ impl Subscriber for DashboardSubscriber {
             ),
             "exec_operator_end",
         );
+        Ok(())
+    }
+
+    async fn on_event(&self, event: Event) -> DaftResult<()> {
+        match event {
+            Event::Stats(e) => self.on_stats(e).await?,
+            Event::OperatorStart(e) => self.on_operator_start(e).await?,
+            Event::OperatorEnd(e) => self.on_operator_end(e).await?,
+        }
         Ok(())
     }
 }
