@@ -13,14 +13,13 @@ use crate::{
 
 struct InputBuffer {
     buffer: RowBasedBuffer,
-    active_workers: usize,
     pending_flush: bool,
 }
 
 /// Manages per-input buffering and batch extraction for pipeline operators.
 ///
 /// `BatchManager` is the single abstraction for getting data in and out of an operator's
-/// input buffers. It owns per-input `RowBasedBuffer`s, tracks worker and flush lifecycle,
+/// input buffers. It owns per-input `RowBasedBuffer`s, manages flush lifecycle,
 /// and delegates batch extraction to a pluggable `BatchingStrategy`.
 ///
 /// # Usage
@@ -32,15 +31,16 @@ struct InputBuffer {
 ///
 /// // Data out (strategy-controlled, flush-aware)
 /// while let Some(batch) = manager.next_batch(input_id)? {
-///     manager.increment_workers(input_id);
 ///     // spawn worker with batch...
 /// }
 ///
 /// // Worker completes
 /// manager.record_completion(stats, batch_size, duration);
-/// manager.decrement_workers(input_id);
 /// ```
 pub struct BatchManager<S: BatchingStrategy> {
+    // TODO: Remove Arc<Mutex<>> once streaming sink is migrated to the consolidated API.
+    // Only needed because the legacy &self methods (calculate_batch_size/record_execution_stats)
+    // require interior mutability. The consolidated &mut self methods don't need it.
     state: Arc<Mutex<S::State>>,
     pub(crate) strategy: S,
     inputs: HashMap<InputId, InputBuffer>,
@@ -97,7 +97,6 @@ where
             let (lower, upper) = self.current_requirements.values();
             InputBuffer {
                 buffer: RowBasedBuffer::new(lower, upper),
-                active_workers: 0,
                 pending_flush: false,
             }
         });
@@ -114,32 +113,16 @@ where
             .get_mut(&input_id)
             .expect("Input should be present");
         input.buffer.update_bounds(self.current_requirements);
-        let mut state = self.state.lock();
-        let batch = self.strategy.next_batch(&mut state, &mut input.buffer)?;
-        drop(state);
+
+        let batch = {
+            let mut state = self.state.lock();
+            self.strategy.next_batch(&mut state, &mut input.buffer)?
+        };
         match batch {
             Some(b) => Ok(Some(b)),
             None if input.pending_flush => input.buffer.pop_all(),
             None => Ok(None),
         }
-    }
-
-    /// Marks that a worker task has been spawned for this input.
-    /// Must be paired with a later `decrement_workers` call when the worker completes.
-    /// The in-flight count prevents premature flush propagation.
-    pub fn increment_workers(&mut self, input_id: InputId) {
-        self.inputs
-            .get_mut(&input_id)
-            .expect("Input should be present")
-            .active_workers += 1;
-    }
-
-    /// Marks that a worker task for this input has completed.
-    pub fn decrement_workers(&mut self, input_id: InputId) {
-        self.inputs
-            .get_mut(&input_id)
-            .expect("Input should be present")
-            .active_workers -= 1;
     }
 
     /// Records execution metrics from a completed worker and recalculates
@@ -158,24 +141,31 @@ where
 
     /// Signals that the given input has finished sending data. `next_batch`
     /// will drain remaining buffered data, and `can_flush` will return true
-    /// once the buffer is empty and all workers have completed.
+    /// once the buffer is empty.
     pub fn set_pending_flush(&mut self, input_id: InputId) {
         if let Some(input) = self.inputs.get_mut(&input_id) {
             input.pending_flush = true;
         }
     }
 
-    /// Returns true when the input is ready to propagate a flush downstream:
-    /// flush has been requested, all workers have completed, and the buffer is empty.
+    /// Returns true when the input's buffer is fully drained after a flush signal.
+    /// The caller must separately verify that all in-flight workers have completed
+    /// before propagating the flush downstream.
     pub fn can_flush(&self, input_id: InputId) -> bool {
-        self.inputs.get(&input_id).is_some_and(|input| {
-            input.pending_flush && input.active_workers == 0 && input.buffer.is_empty()
-        })
+        self.inputs
+            .get(&input_id)
+            .is_some_and(|input| input.pending_flush && input.buffer.is_empty())
     }
 
-    /// Removes all state for the given input. Called after flush has been propagated.
-    pub fn remove_input(&mut self, input_id: InputId) {
-        self.inputs.remove(&input_id);
+    /// Removes the input and returns any remaining buffered data.
+    /// If the input was fully drained (e.g. after `can_flush` returned true),
+    /// this returns `Ok(None)`.
+    pub fn drain(&mut self, input_id: InputId) -> DaftResult<Option<MicroPartition>> {
+        if let Some(mut input) = self.inputs.remove(&input_id) {
+            input.buffer.pop_all()
+        } else {
+            Ok(None)
+        }
     }
 
     /// Returns true if the given input has been seen (via `push`).

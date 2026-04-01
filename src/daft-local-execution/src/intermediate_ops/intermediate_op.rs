@@ -90,6 +90,7 @@ struct ExecutionContext<Op: IntermediateOperator> {
     operator_states: Vec<Op::State>,
     output_sender: Sender<PipelineMessage>,
     batch_manager: BatchManager<Op::BatchingStrategy>,
+    active_workers: HashMap<InputId, usize>,
     per_input_stats: HashMap<InputId, Arc<Op::Stats>>,
     stats_manager: RuntimeStatsManagerHandle,
     meter: Meter,
@@ -116,7 +117,7 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
             let Some(batch) = self.batch_manager.next_batch(input_id)? else {
                 break;
             };
-            self.batch_manager.increment_workers(input_id);
+            *self.active_workers.entry(input_id).or_insert(0) += 1;
             let state = self.operator_states.pop().unwrap();
             let op = self.op.clone();
             let task_spawner = self.task_spawner.clone();
@@ -151,8 +152,10 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
     }
 
     async fn try_flush_input(&mut self, input_id: InputId) -> DaftResult<ControlFlow<(), ()>> {
-        if self.batch_manager.can_flush(input_id) {
-            self.batch_manager.remove_input(input_id);
+        let workers_idle = self.active_workers.get(&input_id).copied().unwrap_or(0) == 0;
+        if workers_idle && self.batch_manager.can_flush(input_id) {
+            _ = self.batch_manager.drain(input_id)?;
+            self.active_workers.remove(&input_id);
             self.per_input_stats.remove(&input_id);
             if self
                 .output_sender
@@ -195,7 +198,7 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
             return Ok(ControlFlow::Break(()));
         }
 
-        self.batch_manager.decrement_workers(input_id);
+        *self.active_workers.get_mut(&input_id).unwrap() -= 1;
         self.operator_states.push(state);
         self.try_dispatch()?;
         self.try_flush_input(input_id).await
@@ -422,6 +425,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
                     operator_states,
                     output_sender: destination_sender,
                     batch_manager,
+                    active_workers: HashMap::new(),
                     per_input_stats: HashMap::new(),
                     stats_manager: stats_manager.clone(),
                     meter,
