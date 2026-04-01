@@ -183,32 +183,22 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
         if workers_idle && self.batch_manager.can_flush(input_id) {
             let remaining = self.batch_manager.drain(input_id)?;
             let per_input = self.inputs.remove(&input_id).unwrap();
-            Self::spawn_complete_input(
-                self.op.clone(),
-                per_input,
-                remaining,
-                input_id,
-                self.task_spawner.clone(),
-                self.finalize_spawner.clone(),
-                self.output_sender.clone(),
-                &mut self.task_set,
-            );
+            self.spawn_complete_input(per_input, remaining, input_id);
         }
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn spawn_complete_input(
-        op: Arc<Op>,
+        &mut self,
         per_input: PerInputState<Op>,
         remaining: Option<MicroPartition>,
         input_id: InputId,
-        task_spawner: ExecutionTaskSpawner,
-        finalize_spawner: ExecutionTaskSpawner,
-        output_tx: Sender<PipelineMessage>,
-        tasks: &mut OrderingAwareJoinSet<DaftResult<TaskResult<Op>>>,
     ) {
-        tasks.spawn(async move {
+        let op = self.op.clone();
+        let task_spawner = self.task_spawner.clone();
+        let finalize_spawner = self.finalize_spawner.clone();
+        let output_tx = self.output_sender.clone();
+        self.task_set.spawn(async move {
             let PerInputState {
                 mut states,
                 runtime_stats,
@@ -375,6 +365,9 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
                         self.node_initialized = true;
                     }
                     self.batch_manager.set_pending_flush(input_id);
+                    if self.inputs.contains_key(&input_id) {
+                        self.dispatch_ready_batches(input_id)?;
+                    }
                     self.try_complete_input(input_id)?;
                     ControlFlow::Continue(())
                 }
@@ -382,6 +375,7 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
                     self.batch_manager.set_all_pending_flush();
                     let input_ids: Vec<_> = self.inputs.keys().copied().collect();
                     for input_id in input_ids {
+                        self.dispatch_ready_batches(input_id)?;
                         self.try_complete_input(input_id)?;
                     }
                     ControlFlow::Continue(())
