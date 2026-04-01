@@ -116,6 +116,7 @@ impl DpCcpJoinOrderer {
                 graph.adj_list.get_connections(&left_tree, &right_tree);
             if !connections.is_empty() {
                 let cardinality = left_card * right_card / total_domain;
+                // C_out: sum of intermediate cardinalities (System R / DuckDB).
                 let cost = cardinality + left_cost + right_cost;
                 let combined = s1.union(s2);
                 if dp.get(&combined).is_none_or(|(c, _)| cost < *c) {
@@ -278,7 +279,7 @@ mod tests {
         let dp_build = graph.build_joins_from_join_order(&dp_order);
         assert!(dp_build.is_ok(), "DP-ccp build failed: {:?}", dp_build);
 
-        // Compute cumulative costs.
+        // Compute cumulative costs (must match the cost formula in process_pair / find_min_cost_order).
         fn cumulative_cost(tree: &JoinOrderTree) -> usize {
             match tree {
                 JoinOrderTree::Relation(_, card) => *card,

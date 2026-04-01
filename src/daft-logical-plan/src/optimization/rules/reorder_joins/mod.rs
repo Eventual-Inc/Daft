@@ -1,5 +1,5 @@
-#[cfg(test)]
 mod brute_force_join_order;
+#[cfg(test)]
 mod dp_ccp_join_order;
 mod join_graph;
 #[cfg(test)]
@@ -55,7 +55,7 @@ impl OptimizerRule for ReorderJoins {
             if !join_graph.could_reorder() {
                 return Ok(Transformed::no(plan));
             }
-            let orderer = dp_ccp_join_order::DpCcpJoinOrderer {};
+            let orderer = brute_force_join_order::BruteForceJoinOrderer {};
             let join_order = orderer.order(&join_graph);
             join_graph
                 .build_logical_plan(join_order)
