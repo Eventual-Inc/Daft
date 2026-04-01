@@ -14,6 +14,7 @@ where
     T: DaftPrimitiveType,
 {
     // applies a native function to a numeric DataArray maintaining validity of the source array.
+    #[inline(never)]
     pub fn apply<F>(&self, func: F) -> DaftResult<Self>
     where
         F: Fn(T::Native) -> T::Native + Copy,
@@ -30,6 +31,7 @@ where
     // If the two arrays have the same length, applies row-by-row.
     // If one of the arrays has length 1, treats it as if the value were repeated.
     // Note: the name of the output array takes the name of the left hand side.
+    #[inline(never)]
     pub fn binary_apply<F, R>(&self, rhs: &DataArray<R>, func: F) -> DaftResult<Self>
     where
         R: DaftNumericType,

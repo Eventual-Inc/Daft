@@ -10,6 +10,7 @@ use daft_dsl::{
     join::normalize_join_keys,
     resolved_col, window_to_agg_exprs,
 };
+use daft_functions::random::random_int_expr;
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState};
 use daft_micropartition::MicroPartitionRef;
 use daft_scan::{ScanState, ScanTaskRef};
@@ -374,6 +375,24 @@ fn translate_helper(
                     sort.descending.clone(),
                     sort.nulls_first.clone(),
                     sort.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
+        }
+        LogicalPlan::Shuffle(shuffle) => {
+            let (input_plan, inputs) = translate_helper(&shuffle.input, source_counter, psets)?;
+            let sort_by = BoundExpr::bind_all(
+                &[random_int_expr(i64::MIN, i64::MAX, shuffle.seed)],
+                input_plan.schema(),
+            )?;
+            Ok((
+                LocalPhysicalPlan::sort(
+                    input_plan,
+                    sort_by,
+                    vec![false],
+                    vec![false],
+                    shuffle.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
                 inputs,

@@ -218,8 +218,7 @@ mod tests {
     use std::any::TypeId;
 
     use daft_core::prelude::Operator;
-    use daft_dsl::{Column, ExprRef, ResolvedColumn, lit};
-    use daft_functions_binary::{BinaryDecode, Codec};
+    use daft_dsl::{Column, ResolvedColumn};
     use daft_functions_uri::download::UrlDownload;
     use daft_functions_utf8::{Capitalize, capitalize, lower};
     use daft_scan::Pushdowns;
@@ -281,12 +280,9 @@ mod tests {
             Pushdowns::default(),
         )
         .select(vec![
-            ExprRef::from(BuiltinScalarFn::new(
-                BinaryDecode,
-                vec![
-                    BuiltinScalarFn::new_async(UrlDownload, vec![resolved_col("url")]).into(),
-                    lit(Codec::Utf8),
-                ],
+            Arc::new(Expr::Cast(
+                BuiltinScalarFn::new_async(UrlDownload, vec![resolved_col("url")]).into(),
+                DataType::Utf8,
             ))
             .alias("url_data"),
             lower(Expr::Column(Column::Resolved(ResolvedColumn::Basic("name".into()))).arced())
@@ -322,10 +318,7 @@ mod tests {
         let Expr::Alias(func, ..) = top_project.projection[0].as_ref() else {
             panic!("Expected alias");
         };
-        assert!(matches!(
-            func.as_ref(),
-            Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func, .. })) if func.type_id() == TypeId::of::<BinaryDecode>()
-        ));
+        assert!(matches!(func.as_ref(), Expr::Cast(_, DataType::Utf8)));
 
         // Check that the top level project has a single child, which is a project
         assert!(matches!(
