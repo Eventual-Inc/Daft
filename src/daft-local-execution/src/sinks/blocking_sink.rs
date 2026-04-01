@@ -295,7 +295,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     per_input.pending.push_back(partition);
                     per_input.flush_pending(&mut tasks, &op, &task_spawner, input_id)?;
                 }
-                PipelineEvent::ShuffleMetadata { .. } => {
+                PipelineEvent::ShuffleMetadata => {
                     unreachable!("BlockingSinkNode should not receive shuffle metadata from child")
                 }
                 PipelineEvent::Flush(input_id) => {

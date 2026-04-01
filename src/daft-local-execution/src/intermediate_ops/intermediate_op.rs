@@ -291,7 +291,7 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
                     self.try_dispatch()?;
                     self.try_flush_input(input_id).await?
                 }
-                PipelineEvent::ShuffleMetadata { .. } => {
+                PipelineEvent::ShuffleMetadata => {
                     unreachable!("IntermediateNode should not receive shuffle metadata")
                 }
                 PipelineEvent::InputClosed => {

@@ -82,9 +82,7 @@ pub enum PipelineMessage {
         partition: MicroPartition,
     },
     ShuffleMetadata {
-        #[allow(dead_code)]
         input_id: InputId,
-        #[allow(dead_code)]
         metadata: ShuffleMetadata,
     },
     /// Flush signal for a specific input_id - indicates that input is finished
@@ -92,17 +90,13 @@ pub enum PipelineMessage {
 }
 
 /// Events yielded by [`next_event`].
-#[allow(dead_code)]
 pub(crate) enum PipelineEvent<TaskResult> {
     TaskCompleted(TaskResult),
     Morsel {
         input_id: InputId,
         partition: MicroPartition,
     },
-    ShuffleMetadata {
-        input_id: InputId,
-        metadata: ShuffleMetadata,
-    },
+    ShuffleMetadata,
     Flush(InputId),
     InputClosed,
 }
@@ -124,8 +118,8 @@ pub(crate) async fn next_event<TaskResult: Send + 'static>(
                 Some(PipelineMessage::Morsel { input_id, partition }) => {
                     Ok(Some(PipelineEvent::Morsel { input_id, partition }))
                 }
-                Some(PipelineMessage::ShuffleMetadata { input_id, metadata }) => {
-                    Ok(Some(PipelineEvent::ShuffleMetadata { input_id, metadata }))
+                Some(PipelineMessage::ShuffleMetadata { .. }) => {
+                    Ok(Some(PipelineEvent::ShuffleMetadata))
                 }
                 Some(PipelineMessage::Flush(input_id)) => {
                     Ok(Some(PipelineEvent::Flush(input_id)))

@@ -422,7 +422,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                         );
                     }
                 }
-                PipelineEvent::ShuffleMetadata { .. } => {
+                PipelineEvent::ShuffleMetadata => {
                     unreachable!("StreamingSinkNode should not receive shuffle metadata")
                 }
                 PipelineEvent::InputClosed => {
