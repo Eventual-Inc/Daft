@@ -11,6 +11,7 @@ use common_error::{DaftError, DaftResult};
 use num_traits::Float;
 
 #[allow(clippy::eq_op)]
+#[inline(never)]
 fn search_sorted_primitive_array<T>(
     sorted_array: &PrimitiveArray<T>,
     keys: &PrimitiveArray<T>,

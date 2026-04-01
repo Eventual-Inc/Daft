@@ -97,6 +97,9 @@ class ComparisonExtractor(PredicateVisitor[dict[str, Any]]):
     def visit_list(self, items: list[Expression]) -> dict[str, Any]:
         return {"op": "list", "items": [self.visit(i) for i in items]}
 
+    def visit_coalesce(self, args: list[Expression]) -> dict[str, Any]:
+        return {"op": "coalesce", "args": [self.visit(arg) for arg in args]}
+
 
 EXTRACTOR = ComparisonExtractor()
 

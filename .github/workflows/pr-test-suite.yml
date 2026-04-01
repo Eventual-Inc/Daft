@@ -124,7 +124,6 @@ jobs:
     - uses: actions/checkout@v6
       with:
         fetch-depth: 0
-    - uses: ./.github/actions/restore-mtime
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -134,6 +133,7 @@ jobs:
         cache-all-crates: "true"
         cache-workspace-crates: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
     - name: Install cargo-llvm-cov
       if: matrix.coverage != false
       uses: taiki-e/install-action@cargo-llvm-cov
@@ -290,7 +290,6 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: ./.github/actions/restore-mtime
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -312,6 +311,7 @@ jobs:
         cache-all-crates: "true"
         cache-workspace-crates: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
     - uses: actions/setup-node@v6
       with:
         node-version: "22"
@@ -1243,7 +1243,6 @@ jobs:
     - uses: actions/checkout@v6
       with:
         fetch-depth: 0
-    - uses: ./.github/actions/restore-mtime
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1254,6 +1253,7 @@ jobs:
         cache-workspace-crates: "true"
         cache-provider: github
         save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1331,8 +1331,6 @@ jobs:
     - uses: actions/checkout@v6
       with:
         fetch-depth: 0
-    - uses: ./.github/actions/restore-mtime
-      if: ${{ matrix.os != 'Windows' }}
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1346,6 +1344,8 @@ jobs:
         cache-all-crates: "true"
         cache-workspace-crates: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
+      if: ${{ matrix.os != 'Windows' }}
     - name: Free Disk Space (Ubuntu)
       if: ${{ matrix.os == 'ubuntu' }}
       uses: jlumbroso/free-disk-space@v1.3.1
@@ -1445,7 +1445,6 @@ jobs:
     - uses: actions/checkout@v6
       with:
         fetch-depth: 0
-    - uses: ./.github/actions/restore-mtime
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1455,6 +1454,7 @@ jobs:
         cache-all-crates: "true"
         cache-workspace-crates: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1541,8 +1541,6 @@ jobs:
     - uses: actions/checkout@v6
       with:
         fetch-depth: 0
-    - uses: ./.github/actions/restore-mtime
-      if: ${{ runner.os != 'Windows' }}
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1552,6 +1550,8 @@ jobs:
         cache-all-crates: "true"
         cache-workspace-crates: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
+      if: ${{ runner.os != 'Windows' }}
 
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
@@ -1641,7 +1641,6 @@ jobs:
     - uses: actions/checkout@v6
       with:
         fetch-depth: 0
-    - uses: ./.github/actions/restore-mtime
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1661,6 +1660,7 @@ jobs:
         cache-all-crates: "true"
         cache-workspace-crates: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
 
     - uses: actions/cache@v5
       id: pre-commit-cache

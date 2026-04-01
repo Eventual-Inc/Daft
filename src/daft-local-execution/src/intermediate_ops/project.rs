@@ -71,6 +71,7 @@ fn is_interesting(expr: &Arc<Expr>) -> bool {
         Expr::Alias(expr, ..) => is_interesting(expr),
         Expr::InSubquery(expr, _) => is_interesting(expr),
         Expr::List(exprs) => exprs.iter().any(is_interesting),
+        Expr::Coalesce(inputs) => inputs.iter().any(is_interesting),
     }
 }
 
