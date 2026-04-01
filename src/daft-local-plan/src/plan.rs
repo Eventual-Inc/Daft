@@ -2200,6 +2200,7 @@ pub enum ShuffleWriteSpec {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ShuffleReadBackend {
+    Ray,
     Flight {
         shuffle_id: u64,
         server_cache_mapping: HashMap<String, Vec<u32>>,

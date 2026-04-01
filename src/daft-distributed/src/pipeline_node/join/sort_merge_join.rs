@@ -7,7 +7,7 @@ use common_metrics::{
 };
 use common_partitioning::PartitionRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend};
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
@@ -111,34 +111,26 @@ impl SortMergeJoinNode {
         right_partition_group: Vec<PartitionRef>,
         result_tx: &Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
-        let left_total_size_bytes = left_partition_group
-            .iter()
-            .map(|partition| partition.size_bytes())
-            .sum();
-        let left_in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
+        let left_shuffle_read_plan = LocalPhysicalPlan::shuffle_read(
             self.left.node_id(),
             self.left.config().schema.clone(),
-            left_total_size_bytes,
+            ShuffleReadBackend::Ray,
             StatsState::NotMaterialized,
             LocalNodeContext::new(Some(self.left.node_id() as usize)),
         );
 
-        let right_total_size_bytes = right_partition_group
-            .iter()
-            .map(|partition| partition.size_bytes())
-            .sum();
-        let right_in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
+        let right_shuffle_read_plan = LocalPhysicalPlan::shuffle_read(
             self.right.node_id(),
             self.right.config().schema.clone(),
-            right_total_size_bytes,
+            ShuffleReadBackend::Ray,
             StatsState::NotMaterialized,
             LocalNodeContext::new(Some(self.right.node_id() as usize)),
         );
 
         // Build the join plan
         let plan = LocalPhysicalPlan::sort_merge_join(
-            left_in_memory_source_plan,
-            right_in_memory_source_plan,
+            left_shuffle_read_plan,
+            right_shuffle_read_plan,
             self.left_on.clone(),
             self.right_on.clone(),
             self.join_type,

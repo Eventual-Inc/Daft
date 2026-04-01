@@ -1496,26 +1496,40 @@ fn physical_plan_to_pipeline(
             schema,
             stats_state,
             context,
-        }) => {
-            let ShuffleReadBackend::Flight {
+        }) => match backend {
+            ShuffleReadBackend::Ray => {
+                let (tx, rx) = create_unbounded_channel::<(InputId, Vec<MicroPartitionRef>)>();
+                input_senders.insert(*source_id, InputSender::InMemory(tx));
+
+                let in_memory_source = InMemorySource::new(rx, schema.clone(), 0);
+                SourceNode::new(
+                    Box::new(in_memory_source),
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed()
+            }
+            ShuffleReadBackend::Flight {
                 shuffle_id,
                 server_cache_mapping,
-            } = backend;
-            let shuffle_server = ctx
-                .shuffle_server()
-                .expect("Flight shuffle server must be initialized for FlightShuffleWrite plans when using flight_shuffle algorithm");
-            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
-            input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
-            let source = FlightShuffleReadSource::new(
-                rx,
-                *shuffle_id,
-                server_cache_mapping.clone(),
-                schema.clone(),
-                cfg,
-                shuffle_server,
-            );
-            SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
-        }
+            } => {
+                let shuffle_server = ctx
+                    .shuffle_server()
+                    .expect("Flight shuffle server must be initialized for FlightShuffleWrite plans when using flight_shuffle algorithm");
+                let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
+                input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
+                let source = FlightShuffleReadSource::new(
+                    rx,
+                    *shuffle_id,
+                    server_cache_mapping.clone(),
+                    schema.clone(),
+                    cfg,
+                    shuffle_server,
+                );
+                SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
+            }
+        },
         LocalPhysicalPlan::VLLMProject(VLLMProject {
             input,
             expr,

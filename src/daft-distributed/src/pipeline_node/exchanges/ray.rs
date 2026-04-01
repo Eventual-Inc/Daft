@@ -1,6 +1,6 @@
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
@@ -18,19 +18,15 @@ pub(crate) async fn emit_read_tasks(
     result_tx: Sender<SwordfishTaskBuilder>,
 ) -> DaftResult<()> {
     for partition_group in partition_groups {
-        let total_size_bytes = partition_group
-            .iter()
-            .map(|p| p.size_bytes())
-            .sum::<usize>();
-        let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
+        let shuffle_read = LocalPhysicalPlan::shuffle_read(
             node_id,
             schema.clone(),
-            total_size_bytes,
+            ShuffleReadBackend::Ray,
             StatsState::NotMaterialized,
             LocalNodeContext::new(Some(node_id as usize)),
         );
 
-        let builder = SwordfishTaskBuilder::new(in_memory_scan, node, node_id)
+        let builder = SwordfishTaskBuilder::new(shuffle_read, node, node_id)
             .with_psets(node_id, partition_group);
 
         let _ = result_tx.send(builder).await;
