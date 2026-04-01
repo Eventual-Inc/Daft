@@ -1,8 +1,7 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, time::Duration};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
-use parking_lot::Mutex;
 
 use crate::{
     buffer::RowBasedBuffer,
@@ -38,7 +37,7 @@ struct InputBuffer {
 /// manager.record_completion(stats, batch_size, duration);
 /// ```
 pub struct BatchManager<S: BatchingStrategy> {
-    state: Arc<Mutex<S::State>>,
+    state: S::State,
     pub(crate) strategy: S,
     inputs: HashMap<InputId, InputBuffer>,
     current_requirements: MorselSizeRequirement,
@@ -54,7 +53,6 @@ where
     pub fn new(strategy: S) -> Self {
         let state = strategy.make_state();
         let current_requirements = strategy.initial_requirements();
-        let state = Arc::new(Mutex::new(state));
 
         Self {
             state,
@@ -88,10 +86,9 @@ where
             .expect("Input should be present");
         input.buffer.update_bounds(self.current_requirements);
 
-        let batch = {
-            let mut state = self.state.lock();
-            self.strategy.next_batch(&mut state, &mut input.buffer)?
-        };
+        let batch = self
+            .strategy
+            .next_batch(&mut self.state, &mut input.buffer)?;
         match batch {
             Some(b) => Ok(Some(b)),
             None if input.pending_flush => input.buffer.pop_all(),
@@ -108,9 +105,9 @@ where
         batch_size: usize,
         duration: Duration,
     ) {
-        let mut state = self.state.lock();
-        state.record_execution_stat(stats, batch_size, duration);
-        self.current_requirements = self.strategy.calculate_new_requirements(&mut state);
+        self.state
+            .record_execution_stat(stats, batch_size, duration);
+        self.current_requirements = self.strategy.calculate_new_requirements(&mut self.state);
     }
 
     /// Signals that the given input has finished sending data. `next_batch`
@@ -174,7 +171,10 @@ where
 mod tests {
     use std::{
         num::NonZeroUsize,
-        sync::atomic::{AtomicUsize, Ordering},
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
         time::Duration,
     };
 
