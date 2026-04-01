@@ -27,7 +27,10 @@ def run_benchmark(benchmark_name: str):
 
     submission_id = client.submit_job(
         entrypoint="DAFT_RUNNER=ray DAFT_PROGRESS_BAR=0 python daft_main.py",
-        runtime_env={"working_dir": f"./benchmarking/ai/{benchmark_name}"},
+        runtime_env={
+            "working_dir": f"./benchmarking/ai/{benchmark_name}",
+            "uv": ["daft[aws]"],
+        },
     )
 
     job_details = asyncio.run(tail_logs(client, submission_id))

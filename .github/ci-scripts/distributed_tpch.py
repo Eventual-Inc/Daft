@@ -39,6 +39,7 @@ def run_benchmark(up_to_query: int = 22):
             entrypoint=f"DAFT_RUNNER=ray python answers_sql.py {parquet_path} {q}",
             runtime_env={
                 "working_dir": "./benchmarking/tpch",
+                "uv": ["daft[aws]"],
                 "env_vars": {
                     "DAFT_PROGRESS_BAR": "0",
                     "DAFT_SHUFFLE_ALGORITHM": os.getenv("DAFT_SHUFFLE_ALGORITHM", "auto"),
