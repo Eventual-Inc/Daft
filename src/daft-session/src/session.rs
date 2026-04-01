@@ -272,12 +272,12 @@ impl Session {
 
         let wrap = |py_func: daft_catalog::FunctionRef| {
             pyo3::Python::attach(|py| {
-                let callable = py_func.to_py_func(py)?;
+                let callable = py_func.to_py(py)?;
                 pyo3::PyResult::Ok(ScalarFunction::Python(WrappedUDFClass {
                     inner: std::sync::Arc::new(callable),
                 }))
             })
-            .expect("Function.to_py_func() failed")
+            .expect("wrap Function failed")
         };
 
         // Rule 1: try to resolve using the current catalog and current namespace.

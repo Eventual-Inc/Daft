@@ -17,16 +17,6 @@ pub trait Function: Sync + Send + std::fmt::Debug {
     /// Create/extract a Python object that subclasses the Function ABC.
     #[cfg(feature = "python")]
     fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>>;
-
-    /// Resolve and return the underlying Python callable via `Function.to_py_func()`.
-    #[cfg(feature = "python")]
-    fn to_py_func(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-        use pyo3::types::PyAnyMethods;
-        self.to_py(py)?
-            .bind(py)
-            .call_method0("to_py_func")
-            .map(|b| b.unbind())
-    }
 }
 
 #[cfg(not(debug_assertions))]
@@ -40,16 +30,6 @@ pub trait Function: Sync + Send {
     /// Create/extract a Python object that subclasses the Function ABC.
     #[cfg(feature = "python")]
     fn to_py(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>>;
-
-    /// Resolve and return the underlying Python callable via `Function.to_py_func()`.
-    #[cfg(feature = "python")]
-    fn to_py_func(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-        use pyo3::types::PyAnyMethods;
-        self.to_py(py)?
-            .bind(py)
-            .call_method0("to_py_func")
-            .map(|b| b.unbind())
-    }
 }
 
 /// A wrapper around an opaque Python object that implements the `Function` ABC.
