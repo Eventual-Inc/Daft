@@ -11,11 +11,14 @@ use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
         TaskBuilderStream,
-        exchanges::{
-            DistributedExchangeBackend, ExchangeBackend, ExchangeReadSpec, ExchangeWriteConfig,
-        },
-        shuffles::partition_groups::{
-            flight_server_cache_mapping_from_outputs, ray_partition_groups_from_outputs,
+        shuffles::{
+            backends::{
+                DistributedShuffleBackend, ShuffleBackend, ShuffleBackendReadSpec,
+                ShuffleBackendWriteConfig,
+            },
+            partition_groups::{
+                flight_server_cache_mapping_from_outputs, ray_partition_groups_from_outputs,
+            },
         },
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -30,7 +33,7 @@ pub(crate) struct RepartitionNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     repartition_spec: RepartitionSpec,
-    exchange_backend: ExchangeBackend,
+    shuffle_backend: ShuffleBackend,
     child: DistributedPipelineNode,
 }
 
@@ -44,7 +47,7 @@ impl RepartitionNode {
         repartition_spec: RepartitionSpec,
         schema: SchemaRef,
         num_partitions: usize,
-        backend: DistributedExchangeBackend,
+        backend: DistributedShuffleBackend,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -67,7 +70,7 @@ impl RepartitionNode {
             config,
             context: context.clone(),
             repartition_spec,
-            exchange_backend: ExchangeBackend::new(&context, schema, num_partitions, backend),
+            shuffle_backend: ShuffleBackend::new(&context, schema, num_partitions, backend),
             child,
         }
     }
@@ -88,19 +91,19 @@ impl RepartitionNode {
             .try_collect::<Vec<_>>()
             .await?;
 
-        let read_spec = match self.exchange_backend.backend() {
-            DistributedExchangeBackend::Ray => ExchangeReadSpec::Ray {
+        let read_spec = match self.shuffle_backend.backend() {
+            DistributedShuffleBackend::Ray => ShuffleBackendReadSpec::Ray {
                 partition_groups: ray_partition_groups_from_outputs(
                     outputs,
-                    self.exchange_backend.num_partitions(),
+                    self.shuffle_backend.num_partitions(),
                 )?,
             },
-            DistributedExchangeBackend::Flight(_) => ExchangeReadSpec::Flight {
+            DistributedShuffleBackend::Flight(_) => ShuffleBackendReadSpec::Flight {
                 server_cache_mapping: flight_server_cache_mapping_from_outputs(outputs)?,
             },
         };
 
-        self.exchange_backend
+        self.shuffle_backend
             .emit_read_tasks(read_spec, self.as_ref(), result_tx)
             .await
     }
@@ -125,17 +128,17 @@ impl PipelineNodeImpl for RepartitionNode {
     ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let self_arc = self.clone();
-        self.exchange_backend.register_cleanup(plan_context);
+        self.shuffle_backend.register_cleanup(plan_context);
         let local_shuffle_write_node =
-            self.exchange_backend
-                .build_write_stage(ExchangeWriteConfig {
+            self.shuffle_backend
+                .build_write_stage(ShuffleBackendWriteConfig {
                     input_node,
                     producer: self.clone(),
-                    backend: match self.exchange_backend.backend() {
-                        DistributedExchangeBackend::Ray => RepartitionWriteBackend::Ray,
-                        DistributedExchangeBackend::Flight(backend) => {
+                    backend: match self.shuffle_backend.backend() {
+                        DistributedShuffleBackend::Ray => RepartitionWriteBackend::Ray,
+                        DistributedShuffleBackend::Flight(backend) => {
                             RepartitionWriteBackend::Flight {
-                                shuffle_id: backend.exchange_id,
+                                shuffle_id: backend.shuffle_id,
                                 shuffle_dirs: backend.shuffle_dirs.clone(),
                                 compression: backend.compression.clone(),
                             }
@@ -165,9 +168,9 @@ impl PipelineNodeImpl for RepartitionNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let backend_name = match self.exchange_backend.backend() {
-            DistributedExchangeBackend::Ray => "RayShuffle",
-            DistributedExchangeBackend::Flight(_) => "FlightShuffle",
+        let backend_name = match self.shuffle_backend.backend() {
+            DistributedShuffleBackend::Ray => "RayShuffle",
+            DistributedShuffleBackend::Flight(_) => "FlightShuffle",
         };
         let mut res = vec![format!(
             "{backend_name}: {}",

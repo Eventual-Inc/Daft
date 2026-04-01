@@ -15,49 +15,49 @@ use crate::{
 mod flight;
 mod ray;
 
-pub(crate) use flight::FlightDistributedExchangeConfig;
-use flight::FlightReadSpec;
+pub(crate) use flight::FlightShuffleBackendConfig;
+use flight::FlightShuffleReadSpec;
 
-fn make_exchange_id(context: &PipelineNodeContext) -> u64 {
+fn make_shuffle_id(context: &PipelineNodeContext) -> u64 {
     ((context.query_idx as u64) << 32) | (context.node_id as u64)
 }
 
 #[derive(Clone)]
-pub(crate) enum DistributedExchangeBackend {
+pub(crate) enum DistributedShuffleBackend {
     Ray,
-    Flight(FlightDistributedExchangeConfig),
+    Flight(FlightShuffleBackendConfig),
 }
 
-pub(crate) struct ExchangeWriteConfig {
+pub(crate) struct ShuffleBackendWriteConfig {
     pub(crate) input_node: TaskBuilderStream,
     pub(crate) producer: Arc<dyn PipelineNodeImpl>,
     pub(crate) backend: RepartitionWriteBackend,
     pub(crate) repartition_spec: RepartitionSpec,
 }
 
-pub(crate) struct ExchangeBackend {
-    backend: DistributedExchangeBackend,
+pub(crate) struct ShuffleBackend {
+    backend: DistributedShuffleBackend,
     schema: SchemaRef,
     num_partitions: usize,
     node_id: NodeID,
 }
 
-impl ExchangeBackend {
+impl ShuffleBackend {
     pub(crate) fn new(
         context: &PipelineNodeContext,
         schema: SchemaRef,
         num_partitions: usize,
-        backend: DistributedExchangeBackend,
+        backend: DistributedShuffleBackend,
     ) -> Self {
         Self {
             schema,
             num_partitions,
             node_id: context.node_id,
             backend: match backend {
-                DistributedExchangeBackend::Ray => DistributedExchangeBackend::Ray,
-                DistributedExchangeBackend::Flight(backend) => {
-                    DistributedExchangeBackend::Flight(FlightDistributedExchangeConfig {
-                        exchange_id: make_exchange_id(context),
+                DistributedShuffleBackend::Ray => DistributedShuffleBackend::Ray,
+                DistributedShuffleBackend::Flight(backend) => {
+                    DistributedShuffleBackend::Flight(FlightShuffleBackendConfig {
+                        shuffle_id: make_shuffle_id(context),
                         shuffle_dirs: backend.shuffle_dirs,
                         compression: backend.compression,
                     })
@@ -66,7 +66,7 @@ impl ExchangeBackend {
         }
     }
 
-    pub(crate) fn backend(&self) -> &DistributedExchangeBackend {
+    pub(crate) fn backend(&self) -> &DistributedShuffleBackend {
         &self.backend
     }
 
@@ -76,14 +76,14 @@ impl ExchangeBackend {
 
     pub(crate) fn register_cleanup(&self, plan_context: &mut PlanExecutionContext) {
         match &self.backend {
-            DistributedExchangeBackend::Ray => {}
-            DistributedExchangeBackend::Flight(backend) => {
+            DistributedShuffleBackend::Ray => {}
+            DistributedShuffleBackend::Flight(backend) => {
                 flight::register_cleanup(backend, plan_context);
             }
         }
     }
 
-    pub(crate) fn build_write_stage(&self, config: ExchangeWriteConfig) -> TaskBuilderStream {
+    pub(crate) fn build_write_stage(&self, config: ShuffleBackendWriteConfig) -> TaskBuilderStream {
         let num_partitions = self.num_partitions;
         let schema = self.schema.clone();
         let node_id = self.node_id;
@@ -104,12 +104,12 @@ impl ExchangeBackend {
 
     pub(crate) async fn emit_read_tasks(
         &self,
-        read_spec: ExchangeReadSpec,
+        read_spec: ShuffleBackendReadSpec,
         node: &dyn PipelineNodeImpl,
         result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         match (&self.backend, read_spec) {
-            (DistributedExchangeBackend::Ray, ExchangeReadSpec::Ray { partition_groups }) => {
+            (DistributedShuffleBackend::Ray, ShuffleBackendReadSpec::Ray { partition_groups }) => {
                 ray::emit_read_tasks(
                     self.node_id,
                     self.schema.clone(),
@@ -120,12 +120,12 @@ impl ExchangeBackend {
                 .await
             }
             (
-                DistributedExchangeBackend::Flight(backend),
-                ExchangeReadSpec::Flight {
+                DistributedShuffleBackend::Flight(backend),
+                ShuffleBackendReadSpec::Flight {
                     server_cache_mapping,
                 },
             ) => {
-                let read_spec: FlightReadSpec =
+                let read_spec: FlightShuffleReadSpec =
                     flight::read_spec_from_server_cache_mapping(backend, server_cache_mapping);
                 flight::emit_read_tasks(
                     self.node_id,
@@ -137,21 +137,21 @@ impl ExchangeBackend {
                 )
                 .await
             }
-            (DistributedExchangeBackend::Ray, ExchangeReadSpec::Flight { .. }) => {
+            (DistributedShuffleBackend::Ray, ShuffleBackendReadSpec::Flight { .. }) => {
                 Err(common_error::DaftError::InternalError(
-                    "Expected Ray exchange read spec".to_string(),
+                    "Expected Ray shuffle read spec".to_string(),
                 ))
             }
-            (DistributedExchangeBackend::Flight(_), ExchangeReadSpec::Ray { .. }) => {
+            (DistributedShuffleBackend::Flight(_), ShuffleBackendReadSpec::Ray { .. }) => {
                 Err(common_error::DaftError::InternalError(
-                    "Expected Flight exchange read spec".to_string(),
+                    "Expected Flight shuffle read spec".to_string(),
                 ))
             }
         }
     }
 }
 
-pub(crate) enum ExchangeReadSpec {
+pub(crate) enum ShuffleBackendReadSpec {
     Ray {
         partition_groups: Vec<Vec<common_partitioning::PartitionRef>>,
     },

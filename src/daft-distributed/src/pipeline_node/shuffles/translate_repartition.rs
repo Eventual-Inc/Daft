@@ -6,9 +6,11 @@ use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
     DistributedPipelineNode,
-    exchanges::{DistributedExchangeBackend, FlightDistributedExchangeConfig},
     shuffles::{
-        gather::GatherNode, pre_shuffle_merge::PreShuffleMergeNode, repartition::RepartitionNode,
+        backends::{DistributedShuffleBackend, FlightShuffleBackendConfig},
+        gather::GatherNode,
+        pre_shuffle_merge::PreShuffleMergeNode,
+        repartition::RepartitionNode,
     },
     translate::LogicalPlanToPipelineNodeTranslator,
 };
@@ -21,13 +23,13 @@ impl LogicalPlanToPipelineNodeTranslator {
         child: DistributedPipelineNode,
     ) -> DaftResult<DistributedPipelineNode> {
         let backend = if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
-            DistributedExchangeBackend::Flight(FlightDistributedExchangeConfig {
-                exchange_id: 0,
+            DistributedShuffleBackend::Flight(FlightShuffleBackendConfig {
+                shuffle_id: 0,
                 shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),
                 compression: None,
             })
         } else {
-            DistributedExchangeBackend::Ray
+            DistributedShuffleBackend::Ray
         };
         self.gen_repartition_node_with_backend(repartition_spec, schema, child, backend)
     }
@@ -37,7 +39,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         repartition_spec: RepartitionSpec,
         schema: SchemaRef,
         child: DistributedPipelineNode,
-        backend: DistributedExchangeBackend,
+        backend: DistributedShuffleBackend,
     ) -> DaftResult<DistributedPipelineNode> {
         let num_partitions = match &repartition_spec {
             RepartitionSpec::Hash(config) => config

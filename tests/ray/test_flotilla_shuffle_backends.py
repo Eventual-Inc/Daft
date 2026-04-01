@@ -42,7 +42,7 @@ class _FlightPartitionRef:
 
 
 @pytest.mark.skipif(flotilla.ray is None, reason="Ray is required for flotilla tests")
-def test_task_handle_converts_ray_exchange_results(monkeypatch):
+def test_task_handle_converts_ray_shuffle_results(monkeypatch):
     captured: dict[str, object] = {}
 
     def _fake_success(refs, stats):
@@ -50,13 +50,13 @@ def test_task_handle_converts_ray_exchange_results(monkeypatch):
         captured["stats"] = stats
         return ("ray", refs, stats)
 
-    monkeypatch.setattr(flotilla.RayTaskResult, "ray_exchange_success", staticmethod(_fake_success))
+    monkeypatch.setattr(flotilla.RayTaskResult, "ray_shuffle_success", staticmethod(_fake_success))
 
     object_ref = object()
     handle = flotilla.RaySwordfishTaskHandle(
         result_handle=_AwaitableResultHandle(("ray", [(object_ref, 3, 24)], b"stats")),
         actor_handle=_FakeActorHandle("grpc://unused"),
-        exchange_write_info=("ray", 0, 1),
+        shuffle_write_info=("ray", 0, 1),
     )
 
     result = asyncio.run(handle._get_result())
@@ -72,7 +72,7 @@ def test_task_handle_converts_ray_exchange_results(monkeypatch):
 
 
 @pytest.mark.skipif(flotilla.ray is None, reason="Ray is required for flotilla tests")
-def test_task_handle_converts_flight_exchange_results(monkeypatch):
+def test_task_handle_converts_flight_shuffle_results(monkeypatch):
     captured: dict[str, object] = {}
 
     def _fake_success(refs, stats):
@@ -80,13 +80,13 @@ def test_task_handle_converts_flight_exchange_results(monkeypatch):
         captured["stats"] = stats
         return ("flight", refs, stats)
 
-    monkeypatch.setattr(flotilla.RayTaskResult, "flight_exchange_success", staticmethod(_fake_success))
+    monkeypatch.setattr(flotilla.RayTaskResult, "flight_shuffle_success", staticmethod(_fake_success))
     monkeypatch.setattr(flotilla, "FlightShufflePartitionRef", _FlightPartitionRef)
 
     handle = flotilla.RaySwordfishTaskHandle(
         result_handle=_AwaitableResultHandle(("flight", [(None, 4, 40), (None, 5, 50)], b"stats")),
         actor_handle=_FakeActorHandle("grpc://127.0.0.1:9000"),
-        exchange_write_info=("flight", 17, 2),
+        shuffle_write_info=("flight", 17, 2),
         cache_id=9,
     )
 

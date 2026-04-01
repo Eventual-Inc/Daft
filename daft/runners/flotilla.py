@@ -36,7 +36,7 @@ from daft.runners.profiler import profile
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Generator
 
-    from daft.daft import ExchangeWriteInfo
+    from daft.daft import ShuffleWriteInfo
     from daft.runners.ray_runner import RayMaterializedResult
 
 try:
@@ -46,9 +46,9 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-ExchangeMetadata = list[tuple[object | None, int, int]]
-ExchangePlanResult = tuple[str, ExchangeMetadata, bytes]
-ExchangeWriteInfoLike: TypeAlias = "ExchangeWriteInfo | tuple[str, int, int]"
+ShufflePlanMetadata = list[tuple[object | None, int, int]]
+ShufflePlanResult = tuple[str, ShufflePlanMetadata, bytes]
+ShuffleWriteInfoLike: TypeAlias = "ShuffleWriteInfo | tuple[str, int, int]"
 
 
 class SwordfishTaskMetadata(NamedTuple):
@@ -56,16 +56,16 @@ class SwordfishTaskMetadata(NamedTuple):
     stats: bytes
 
 
-def _exchange_write_backend(info: ExchangeWriteInfoLike) -> str:
+def _shuffle_write_backend(info: ShuffleWriteInfoLike) -> str:
     if isinstance(info, tuple):
         return info[0]
     return info.backend
 
 
-def _exchange_write_id(info: ExchangeWriteInfoLike) -> int:
+def _shuffle_write_id(info: ShuffleWriteInfoLike) -> int:
     if isinstance(info, tuple):
         return info[1]
-    return info.exchange_id
+    return info.shuffle_id
 
 
 @ray.remote  # type: ignore[untyped-decorator]
@@ -186,13 +186,13 @@ class RaySwordfishActor:
             stats = await result_handle.try_finish()
             yield SwordfishTaskMetadata(partition_metadatas=metas, stats=stats.encode())
 
-    async def run_exchange_plan(
+    async def run_shuffle_plan(
         self,
         plan: LocalPhysicalPlan,
         exec_cfg: PyDaftExecutionConfig,
         context: dict[str, str] | None,
         **inputs: Input | list[ray.ObjectRef],
-    ) -> ExchangePlanResult:
+    ) -> ShufflePlanResult:
         from daft.daft import PyDaftContext
 
         with profile():
@@ -201,10 +201,10 @@ class RaySwordfishActor:
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
 
-            backend_info = plan.exchange_write_info()
+            backend_info = plan.shuffle_write_info()
             if backend_info is None:
-                raise ValueError("run_exchange_plan() requires an exchange write or repartition plan")
-            backend = _exchange_write_backend(backend_info)
+                raise ValueError("run_shuffle_plan() requires a repartition write plan")
+            backend = _shuffle_write_backend(backend_info)
 
             result_handle = await self.native_executor.run(
                 plan,
@@ -214,16 +214,13 @@ class RaySwordfishActor:
                 context,
                 False,
             )
-            stats, exchange_metadata = await result_handle.try_finish_with_exchange_metadata()
-            if exchange_metadata is None:
-                raise ValueError("Exchange plan did not return exchange metadata")
+            stats, shuffle_metadata = await result_handle.try_finish_with_shuffle_metadata()
+            if shuffle_metadata is None:
+                raise ValueError("Shuffle plan did not return shuffle metadata")
 
             return (
                 backend,
-                [
-                    (object_ref, int(num_rows), int(size_bytes))
-                    for object_ref, num_rows, size_bytes in exchange_metadata
-                ],
+                [(object_ref, int(num_rows), int(size_bytes)) for object_ref, num_rows, size_bytes in shuffle_metadata],
                 stats.encode(),
             )
 
@@ -269,35 +266,35 @@ class RaySwordfishTaskHandle:
 
     result_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
-    exchange_write_info: ExchangeWriteInfoLike | None = None
+    shuffle_write_info: ShuffleWriteInfoLike | None = None
     cache_id: int | None = None
     task: asyncio.Task[RayTaskResult] | None = None
 
     async def _get_result(self) -> RayTaskResult:
         try:
-            if self.exchange_write_info is not None:
+            if self.shuffle_write_info is not None:
                 backend, refs, stats = await self.result_handle
                 if backend == "ray":
                     ray_refs: list[RayPartitionRef] = []
                     for object_ref, num_rows, size_bytes in refs:
                         if object_ref is None:
-                            raise ValueError("Expected Ray exchange metadata to include object refs")
+                            raise ValueError("Expected Ray shuffle metadata to include object refs")
                         ray_refs.append(RayPartitionRef(object_ref, num_rows, size_bytes))
-                    return RayTaskResult.ray_exchange_success(
+                    return RayTaskResult.ray_shuffle_success(
                         ray_refs,
                         stats,
                     )
                 if backend == "flight":
-                    exchange_id = _exchange_write_id(self.exchange_write_info)
+                    shuffle_id = _shuffle_write_id(self.shuffle_write_info)
                     actor_address = await self.actor_handle.get_address.remote()
                     cache_id = self.cache_id if self.cache_id is not None else 0
                     flight_refs: list[FlightShufflePartitionRef] = []
                     for partition_idx, (object_ref, num_rows, size_bytes) in enumerate(refs):
                         if object_ref is not None:
-                            raise ValueError("Expected Flight exchange metadata to not include object refs")
+                            raise ValueError("Expected Flight shuffle metadata to not include object refs")
                         flight_refs.append(
                             FlightShufflePartitionRef(
-                                exchange_id,
+                                shuffle_id,
                                 partition_idx,
                                 actor_address,
                                 cache_id,
@@ -305,11 +302,11 @@ class RaySwordfishTaskHandle:
                                 size_bytes,
                             )
                         )
-                    return RayTaskResult.flight_exchange_success(
+                    return RayTaskResult.flight_shuffle_success(
                         flight_refs,
                         stats,
                     )
-                raise NotImplementedError(f"Unsupported exchange write backend: {backend}")
+                raise NotImplementedError(f"Unsupported shuffle write backend: {backend}")
 
             await self.result_handle.completed()
             results = [result for result in self.result_handle]
@@ -360,8 +357,8 @@ class RaySwordfishActorHandle:
             inputs[str(source_id)] = py_input
         for source_id, refs in task.psets().items():
             inputs[str(source_id)] = [ref.object_ref for ref in refs]
-        exchange_write_info = plan.exchange_write_info()
-        if exchange_write_info is None:
+        shuffle_write_info = plan.shuffle_write_info()
+        if shuffle_write_info is None:
             result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
                 plan,
                 task.config(),
@@ -369,7 +366,7 @@ class RaySwordfishActorHandle:
                 **inputs,
             )
         else:
-            result_handle = self.actor_handle.run_exchange_plan.options(name=task.name()).remote(
+            result_handle = self.actor_handle.run_shuffle_plan.options(name=task.name()).remote(
                 plan,
                 task.config(),
                 task.context(),
@@ -378,7 +375,7 @@ class RaySwordfishActorHandle:
         return RaySwordfishTaskHandle(
             result_handle,
             self.actor_handle,
-            exchange_write_info,
+            shuffle_write_info,
             task.id(),
         )
 

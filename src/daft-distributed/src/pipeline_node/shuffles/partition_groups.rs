@@ -53,7 +53,7 @@ pub(crate) fn flight_server_cache_mapping_from_outputs(
     for output in outputs {
         let TaskOutput::ShuffleWrite(output) = output else {
             return Err(DaftError::InternalError(
-                "Expected shuffle write task output for Flight exchange write stage".to_string(),
+                "Expected shuffle write task output for Flight shuffle write stage".to_string(),
             ));
         };
 

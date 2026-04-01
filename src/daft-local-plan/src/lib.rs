@@ -19,7 +19,7 @@ pub use plan::{
     WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 #[cfg(feature = "python")]
-pub use python::{PyExchangeWriteInfo, PyLocalPhysicalPlan, register_modules};
+pub use python::{PyLocalPhysicalPlan, PyShuffleWriteInfo, register_modules};
 pub use results::ExecutionStats;
 use serde::{Deserialize, Serialize};
 pub use translate::translate;
