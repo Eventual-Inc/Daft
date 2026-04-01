@@ -4,7 +4,7 @@ mod values;
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -77,11 +77,16 @@ fn progress_bar_mode() -> ProgressBarMode {
 }
 
 #[derive(Clone)]
-pub struct RuntimeStatsManagerHandle(Arc<mpsc::UnboundedSender<StatsManagerMessage>>);
+pub struct RuntimeStatsManagerHandle {
+    tx: Arc<mpsc::UnboundedSender<StatsManagerMessage>>,
+    // Final per-input snapshots are retained here after the stats manager exits so
+    // callers can still retrieve metrics during executor teardown.
+    finished_snapshots: Arc<Mutex<Option<HashMap<InputId, ExecutionStats>>>>,
+}
 
 impl RuntimeStatsManagerHandle {
     pub fn activate_node(&self, node_id: usize) {
-        if let Err(e) = self.0.send(StatsManagerMessage::NodeEvent(node_id, true)) {
+        if let Err(e) = self.tx.send(StatsManagerMessage::NodeEvent(node_id, true)) {
             log::warn!(
                 "Unable to activate node: {node_id} because RuntimeStatsManager was already finished: {e}"
             );
@@ -89,7 +94,7 @@ impl RuntimeStatsManagerHandle {
     }
 
     pub fn finalize_node(&self, node_id: usize) {
-        if let Err(e) = self.0.send(StatsManagerMessage::NodeEvent(node_id, false)) {
+        if let Err(e) = self.tx.send(StatsManagerMessage::NodeEvent(node_id, false)) {
             log::warn!(
                 "Unable to finalize node: {node_id} because RuntimeStatsManager was already finished: {e}"
             );
@@ -103,7 +108,7 @@ impl RuntimeStatsManagerHandle {
         input_id: InputId,
         stats: Arc<dyn RuntimeStats>,
     ) {
-        if let Err(e) = self.0.send(StatsManagerMessage::RegisterRuntimeStats(
+        if let Err(e) = self.tx.send(StatsManagerMessage::RegisterRuntimeStats(
             node_id, input_id, stats,
         )) {
             log::warn!(
@@ -112,11 +117,25 @@ impl RuntimeStatsManagerHandle {
         }
     }
 
-    /// Take a snapshot scoped to the given input_id, removing those stats afterwards.
+    /// Take a snapshot scoped to the given input_id.
+    ///
+    /// If the stats manager has already exited, fall back to the finalized snapshot
+    /// that was captured during shutdown. The snapshot is removed on read so cached
+    /// plans do not retain metrics for completed inputs indefinitely.
     #[allow(dead_code)]
     pub async fn take_input_snapshot(&self, input_id: InputId) -> DaftResult<ExecutionStats> {
+        if let Some(stats) = self
+            .finished_snapshots
+            .lock()
+            .expect("finished_snapshots lock poisoned")
+            .as_mut()
+            .and_then(|snapshots| snapshots.remove(&input_id))
+        {
+            return Ok(stats);
+        }
+
         let (tx, rx) = oneshot::channel();
-        self.0
+        self.tx
             .send(StatsManagerMessage::TakeInputSnapshot(input_id, tx))
             .map_err(|_| {
                 common_error::DaftError::InternalError(
@@ -139,7 +158,7 @@ impl RuntimeStatsManagerHandle {
 /// For a given event, the event handler ensures that the subscribers only get the latest event at a frequency of once every 500ms
 /// This prevents the subscribers from being overwhelmed by too many events.
 pub struct RuntimeStatsManager {
-    node_tx: Arc<mpsc::UnboundedSender<StatsManagerMessage>>,
+    handle: RuntimeStatsManagerHandle,
     finish_tx: oneshot::Sender<QueryEndState>,
     stats_manager_task: RuntimeTask<()>,
 }
@@ -289,6 +308,10 @@ impl RuntimeStatsManager {
     ) -> Self {
         let (node_tx, mut node_rx) = mpsc::unbounded_channel::<StatsManagerMessage>();
         let node_tx = Arc::new(node_tx);
+
+        // Preserve finalized per-input stats after shutdown so executor teardown can
+        // still retrieve metrics even after the manager task has exited.
+        let finished_snapshots = Arc::new(Mutex::new(None));
         let (finish_tx, mut finish_rx) = oneshot::channel::<QueryEndState>();
 
         let mut process_stats = if enable_process_monitor {
@@ -298,6 +321,7 @@ impl RuntimeStatsManager {
             None
         };
 
+        let finished_snapshots_for_task = finished_snapshots.clone();
         let event_loop = async move {
             let mut interval = interval(throttle_interval);
             let mut active_nodes = HashSet::with_capacity(node_info_map.len());
@@ -437,6 +461,36 @@ impl RuntimeStatsManager {
                 log::warn!("Failed to finish progress bar: {}", e);
             }
 
+            let mut snapshots_by_input: HashMap<InputId, Vec<(Arc<NodeInfo>, StatSnapshot)>> =
+                HashMap::new();
+
+            for ((node_id, input_id), stats) in input_stats {
+                if let Some(node_info) = node_info_map.get(&node_id) {
+                    snapshots_by_input
+                        .entry(input_id)
+                        .or_default()
+                        .push((node_info.clone(), stats.flush()));
+                }
+            }
+
+            let finished = snapshots_by_input
+                .into_iter()
+                .map(|(input_id, mut nodes)| {
+                    nodes.sort_by_key(|(node_info, _)| node_info.id);
+                    (
+                        input_id,
+                        ExecutionStats::new(query_id.clone(), nodes)
+                            .with_query_plan(query_plan.clone()),
+                    )
+                })
+                .collect();
+
+            // Publish finalized snapshots before exiting so callers can retrieve per-input
+            // metrics after the stats manager task has shut down.
+            *finished_snapshots_for_task
+                .lock()
+                .expect("finished_snapshots lock poisoned") = Some(finished);
+
             for subscriber in subscribers {
                 if let Err(e) = subscriber.on_exec_end(query_id.clone()).await {
                     log::error!("Failed to flush subscriber: {}", e);
@@ -446,14 +500,17 @@ impl RuntimeStatsManager {
 
         let task_handle = RuntimeTask::new(handle, event_loop);
         Self {
-            node_tx,
+            handle: RuntimeStatsManagerHandle {
+                tx: node_tx,
+                finished_snapshots,
+            },
             finish_tx,
             stats_manager_task: task_handle,
         }
     }
 
     pub fn handle(&self) -> RuntimeStatsManagerHandle {
-        RuntimeStatsManagerHandle(self.node_tx.clone())
+        self.handle.clone()
     }
 
     pub async fn finish(self, status: QueryEndState) {
