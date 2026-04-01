@@ -201,7 +201,7 @@ def test_sql_function_table_name_is_keyword(set_global_df):
         daft.sql("SELECT * FROM UNNEST")
     with pytest.raises(Exception, match="is a SQL keyword, not a valid table name"):
         daft.sql("SELECT * FROM LATERAL")
-    with pytest.raises(Exception, match="failed to parse sql"):
+    with pytest.raises(Exception, match="Expected"):
         daft.sql("SELECT * FROM")
 
 
@@ -214,6 +214,108 @@ def test_sql_function_raises_when_cant_get_frame(monkeypatch):
 def test_sql_multi_statement_sql_error():
     with pytest.raises(Exception, match="one SQL statement allowed"):
         daft.sql("SELECT * FROM df; SELECT * FROM df")
+
+
+def test_sql_caret_error_eof():
+    """Test that EOF errors also get caret formatting."""
+    with pytest.raises(Exception) as exc_info:
+        daft.sql("select * from")
+    msg = str(exc_info.value)
+    assert "LINE 1:" in msg
+    assert "^" in msg
+    assert "REASON:" in msg
+    assert "EOF" in msg
+
+
+def test_sql_caret_error_multiline():
+    """Test that multi-line SQL errors reference the correct line number and content."""
+    with pytest.raises(Exception) as exc_info:
+        daft.sql("SELECT a\nFROM\nWHERE x = 1")
+    msg = str(exc_info.value)
+
+    assert "Line: 3" in msg or "LINE 3" in msg
+
+    lines = msg.split("\n")
+    error_line = next((line for line in lines if line.startswith("LINE 3:")), None)
+    assert error_line is not None
+    assert "WHERE" in error_line
+
+    assert "^" in msg
+    assert "REASON:" in msg
+
+
+def test_sql_expr_caret_error():
+    """Test that sql_expr also produces caret error messages."""
+    with pytest.raises(Exception) as exc_info:
+        daft.sql_expr(";")
+    msg = str(exc_info.value)
+    assert "LINE 1:" in msg
+    assert "^" in msg
+    assert "REASON:" in msg
+
+
+def test_sql_caret_error_caret_position():
+    """Test that the caret points to the exact error column."""
+    with pytest.raises(Exception) as exc_info:
+        daft.sql("select ;")
+    msg = str(exc_info.value)
+    lines = msg.split("\n")
+    sql_line = next(line for line in lines if line.startswith("LINE 1:"))
+    caret_line = lines[lines.index(sql_line) + 1]
+    caret_col = caret_line.index("^")
+    semicolon_col = sql_line.index(";")
+    assert caret_col == semicolon_col
+
+
+def test_sql_caret_error_expr_eof():
+    """Test sql_expr EOF error includes correct position at end of input."""
+    with pytest.raises(Exception) as exc_info:
+        daft.sql_expr("1 +")
+    msg = str(exc_info.value)
+    assert "LINE 1:" in msg
+    assert "1 +" in msg
+    assert "^" in msg
+    assert "EOF" in msg
+
+
+def test_sql_caret_error_missing_closing_paren():
+    """Test error for unclosed parenthesis."""
+    with pytest.raises(Exception) as exc_info:
+        daft.sql("SELECT (1 + 2")
+    msg = str(exc_info.value)
+    assert "LINE 1:" in msg
+    assert "^" in msg
+    assert "REASON:" in msg
+
+
+def test_sql_caret_error_invalid_token():
+    """Test error for invalid SQL that triggers a parse-level error."""
+    with pytest.raises(Exception) as exc_info:
+        daft.sql("SELECT 1 FROM foo WHERE ,")
+    msg = str(exc_info.value)
+    assert "LINE 1:" in msg
+    assert "^" in msg
+    assert "REASON:" in msg
+
+
+def test_sql_caret_error_empty_input():
+    """Test error for empty SQL input."""
+    with pytest.raises(Exception, match="Empty SQL statement"):
+        daft.sql("")
+
+
+def test_sql_caret_error_keyword_as_identifier():
+    """Test that SQL keyword used as table name still produces clear errors."""
+    with pytest.raises(Exception, match="is a SQL keyword, not a valid table name"):
+        daft.sql("SELECT * FROM TABLE")
+    with pytest.raises(Exception, match="is a SQL keyword, not a valid table name"):
+        daft.sql("SELECT * FROM LATERAL")
+
+
+def test_sql_caret_error_preserves_multi_statement_error():
+    """Ensure multi-statement error (non-parse error) is unaffected."""
+    with pytest.raises(Exception, match="one SQL statement allowed"):
+        daft.sql("SELECT 1; SELECT 2")
 
 
 def test_sql_tbl_alias():

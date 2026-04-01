@@ -34,7 +34,7 @@ use sqlparser::{
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
-    tokenizer::{Token, Tokenizer},
+    tokenizer::{Token, TokenWithSpan, Tokenizer},
 };
 
 use crate::{
@@ -263,13 +263,21 @@ impl SQLPlanner<'_> {
     }
 
     pub fn plan(&mut self, input: &str) -> SQLPlannerResult<Statement> {
-        let tokens: Vec<sqlparser::tokenizer::Token> =
-            Tokenizer::new(&GenericDialect {}, input).tokenize()?;
+        let tokens: Vec<TokenWithSpan> = Tokenizer::new(&GenericDialect {}, input)
+            .tokenize_with_location()
+            .map_err(|e| {
+                PlannerError::caret_error(format_sql_error_with_caret(
+                    input,
+                    &e.message,
+                    e.location.line,
+                    e.location.column,
+                ))
+            })?;
 
         let from_positions: Vec<usize> = tokens
             .iter()
             .enumerate()
-            .filter_map(|(i, token)| match token {
+            .filter_map(|(i, tws)| match &tws.token {
                 Token::Word(w) if w.keyword == sqlparser::keywords::Keyword::FROM => Some(i),
                 _ => None,
             })
@@ -279,8 +287,12 @@ impl SQLPlanner<'_> {
             let next_token = tokens
                 .iter()
                 .skip(pos + 1)
-                .find(|token| !matches!(token, Token::Whitespace(_)));
-            if let Some(Token::Word(w)) = next_token {
+                .find(|tws| !matches!(tws.token, Token::Whitespace(_)));
+            if let Some(TokenWithSpan {
+                token: Token::Word(w),
+                ..
+            }) = next_token
+            {
                 match w.keyword {
                     sqlparser::keywords::Keyword::LATERAL
                     | sqlparser::keywords::Keyword::TABLE
@@ -300,15 +312,25 @@ impl SQLPlanner<'_> {
                 trailing_commas: true,
                 ..Default::default()
             })
-            .with_tokens(tokens);
+            .with_tokens_with_locations(tokens);
 
         // currently only allow one statement
-        let statements = parser.parse_statements()?;
+        let statements = parser.parse_statements().map_err(|e| {
+            let error_str = e.to_string();
+            // Strip the "sql parser error: " prefix that ParserError::Display adds
+            let raw_msg = error_str
+                .strip_prefix("sql parser error: ")
+                .unwrap_or(&error_str);
+            PlannerError::caret_error(format_sql_error_from_message(input, raw_msg))
+        })?;
         if statements.len() > 1 {
             unsupported_sql_err!(
                 "Only exactly one SQL statement allowed, found {}",
                 statements.len()
             )
+        }
+        if statements.is_empty() {
+            invalid_operation_err!("Empty SQL statement")
         }
 
         // plan single statement
@@ -2177,19 +2199,35 @@ pub fn sql_schema<S: AsRef<str>>(s: S) -> SQLPlannerResult<SchemaRef> {
 }
 
 pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
+    let sql = s.as_ref();
     let session = Session::empty();
     let mut planner = SQLPlanner::new(&session);
 
-    let tokens = Tokenizer::new(&GenericDialect {}, s.as_ref()).tokenize()?;
+    let tokens = Tokenizer::new(&GenericDialect {}, sql)
+        .tokenize_with_location()
+        .map_err(|e| {
+            PlannerError::caret_error(format_sql_error_with_caret(
+                sql,
+                &e.message,
+                e.location.line,
+                e.location.column,
+            ))
+        })?;
 
     let mut parser = Parser::new(&GenericDialect {})
         .with_options(ParserOptions {
             trailing_commas: true,
             ..Default::default()
         })
-        .with_tokens(tokens);
+        .with_tokens_with_locations(tokens);
 
-    let expr = parser.parse_select_item()?;
+    let expr = parser.parse_select_item().map_err(|e| {
+        let error_str = e.to_string();
+        let raw_msg = error_str
+            .strip_prefix("sql parser error: ")
+            .unwrap_or(&error_str);
+        PlannerError::caret_error(format_sql_error_from_message(sql, raw_msg))
+    })?;
     let exprs = planner.select_item_to_expr(&expr)?;
     if exprs.len() != 1 {
         invalid_operation_err!("expected a single expression, found {}", exprs.len())
