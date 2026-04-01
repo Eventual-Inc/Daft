@@ -11,8 +11,8 @@ use common_error::{DaftError, DaftResult};
 use common_metrics::{NodeID, QueryEndState, QueryID, QueryPlan, Stats};
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartitionRef;
-
-use crate::subscribers::events::{OperatorEndEvent, OperatorStartEvent, StatsEvent};
+pub use events::Event;
+use events::{OperatorEndEvent, OperatorStartEvent, StatsEvent};
 
 pub struct QueryMetadata {
     pub output_schema: SchemaRef,
@@ -87,6 +87,10 @@ pub trait Subscriber: Send + Sync + std::fmt::Debug + 'static {
     }
 
     async fn on_stats(&self, _event: Arc<StatsEvent>) -> DaftResult<()> {
+        Ok(())
+    }
+
+    async fn on_event(&self, _event: Event) -> DaftResult<()> {
         Ok(())
     }
 }

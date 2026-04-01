@@ -16,7 +16,7 @@ use common_runtime::RuntimeTask;
 use daft_context::{
     Subscriber,
     subscribers::events::{
-        EventHeader, OperatorEndEvent, OperatorMeta, OperatorStartEvent, StatsEvent,
+        Event, EventHeader, OperatorEndEvent, OperatorMeta, OperatorStartEvent, StatsEvent,
     },
 };
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
@@ -174,27 +174,27 @@ impl RuntimeStatsManager {
         };
 
         if let Some(snapshot) = snapshot {
-            let stats_event = Arc::new(StatsEvent {
+            let stats_event = Event::Stats(Arc::new(StatsEvent {
                 header: EventHeader {
                     query_id: query_id.clone(),
                     timestamp_epoch_secs: now_epoch_secs(),
                 },
                 stats: Arc::new(vec![(node_id, snapshot.to_stats())]),
-            });
+            }));
 
-            let end_event = Arc::new(OperatorEndEvent {
+            let end_event = Event::OperatorEnd(Arc::new(OperatorEndEvent {
                 header: EventHeader {
                     query_id: query_id.clone(),
                     timestamp_epoch_secs: now_epoch_secs(),
                 },
                 operator: operator_meta.clone(),
-            });
+            }));
             for res in future::join_all(subscribers.iter().map(|subscriber| {
                 let stats_event = stats_event.clone();
                 let end_event = end_event.clone();
                 async move {
-                    subscriber.on_stats(stats_event).await?;
-                    subscriber.on_operator_end(end_event).await
+                    subscriber.on_event(stats_event).await?;
+                    subscriber.on_event(end_event).await
                 }
             }))
             .await
@@ -204,17 +204,17 @@ impl RuntimeStatsManager {
                 }
             }
         } else {
-            let end_event = Arc::new(OperatorEndEvent {
+            let end_event = Event::OperatorEnd(Arc::new(OperatorEndEvent {
                 header: EventHeader {
                     query_id: query_id.clone(),
                     timestamp_epoch_secs: now_epoch_secs(),
                 },
                 operator: operator_meta.clone(),
-            });
+            }));
             for res in future::join_all(
                 subscribers
                     .iter()
-                    .map(|subscriber| subscriber.on_operator_end(end_event.clone())),
+                    .map(|subscriber| subscriber.on_event(end_event.clone())),
             )
             .await
             {
@@ -322,16 +322,16 @@ impl RuntimeStatsManager {
                                         continue;
                                     };
 
-                                    let event = Arc::new(OperatorStartEvent {
+                                    let event = Event::OperatorStart(Arc::new(OperatorStartEvent {
                                         header: EventHeader {
                                             query_id: query_id.clone(),
                                             timestamp_epoch_secs: now_epoch_secs(),
                                         },
                                         operator: operator_meta.clone(),
-                                    });
+                                    }));
 
                                     for res in future::join_all(subscribers.iter().map(|subscriber| {
-                                        subscriber.on_operator_start(event.clone())
+                                        subscriber.on_event(event.clone())
                                     })).await {
                                         if let Err(e) = res {
                                             log::error!("Failed to initialize node: {}", e);
@@ -606,6 +606,18 @@ mod tests {
             }
             Ok(())
         }
+
+        async fn on_event(&self, event: Event) -> DaftResult<()> {
+            if let Event::Stats(e) = event {
+                self.state
+                    .total_calls
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                for (_, snapshot) in e.stats.iter() {
+                    *self.state.event.lock().unwrap() = Some(snapshot.clone());
+                }
+            }
+            Ok(())
+        }
     }
 
     #[tokio::test(start_paused = true)]
@@ -740,6 +752,15 @@ mod tests {
                 Err(common_error::DaftError::InternalError(
                     "Test error".to_string(),
                 ))
+            }
+
+            async fn on_event(&self, event: Event) -> DaftResult<()> {
+                if let Event::Stats(_) = event {
+                    return Err(common_error::DaftError::InternalError(
+                        "Test error".to_string(),
+                    ));
+                }
+                Ok(())
             }
         }
 

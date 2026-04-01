@@ -8,8 +8,8 @@ import pytest
 import daft
 from daft.context import get_context
 from daft.daft import PyQueryMetadata, PyQueryResult, QueryEndState
-from daft.subscribers import events as subscriber_events
-from daft.subscribers.events import _EVENT_LOG_ALIAS, EventLogSubscriber, disable_event_log, enable_event_log
+from daft.subscribers import event_log as subscriber_event_log
+from daft.subscribers.event_log import _EVENT_LOG_ALIAS, EventLogSubscriber, disable_event_log, enable_event_log
 from tests.conftest import get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
@@ -127,7 +127,7 @@ def test_on_query_end_only_clears_ended_query_state(tmp_path):
 
 def test_enable_event_log_attach_and_disable_close(tmp_path):
     enable_event_log(tmp_path)
-    subscriber = subscriber_events._EVENT_LOG_SUBSCRIBER
+    subscriber = subscriber_event_log._EVENT_LOG_SUBSCRIBER
 
     assert subscriber is not None
 
@@ -136,7 +136,7 @@ def test_enable_event_log_attach_and_disable_close(tmp_path):
 
     disable_event_log()
 
-    assert subscriber_events._EVENT_LOG_SUBSCRIBER is None
+    assert subscriber_event_log._EVENT_LOG_SUBSCRIBER is None
     assert subscriber._closed is True
 
     event_logs = list(tmp_path.rglob("events.jsonl"))
