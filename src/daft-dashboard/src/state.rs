@@ -27,6 +27,8 @@ pub(crate) struct NodeInfo {
     pub name: String,
     pub node_type: Arc<str>,
     pub node_category: Arc<str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_phase: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

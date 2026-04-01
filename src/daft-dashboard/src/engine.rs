@@ -140,6 +140,7 @@ struct PlanJsonConfig {
     #[serde(rename = "type")]
     pub node_type: Arc<str>,
     pub category: Arc<str>,
+    pub phase: Option<String>,
     pub children: Option<Vec<PlanJsonConfig>>,
 }
 
@@ -156,6 +157,7 @@ fn parse_physical_plan(physical_plan: &QueryPlan) -> OperatorInfos {
             name: plan.name,
             node_type: plan.node_type.clone(),
             node_category: plan.category.clone(),
+            node_phase: plan.phase,
         };
 
         operators.insert(

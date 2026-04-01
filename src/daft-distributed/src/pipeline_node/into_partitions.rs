@@ -131,7 +131,8 @@ impl IntoPartitionsNode {
                 in_memory_scan,
                 1,
                 StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(self.node_id() as usize)),
+                LocalNodeContext::new(Some(self.node_id() as usize))
+                    .with_phase("coalesce"),
             );
             let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
                 .with_psets(self.node_id(), psets);
@@ -177,7 +178,8 @@ impl IntoPartitionsNode {
                     plan,
                     num_outputs,
                     StatsState::NotMaterialized,
-                    LocalNodeContext::new(Some(self.node_id() as usize)),
+                    LocalNodeContext::new(Some(self.node_id() as usize))
+                        .with_phase("split"),
                 )
             });
             // Build and submit
@@ -243,7 +245,8 @@ impl IntoPartitionsNode {
                                 plan,
                                 1,
                                 StatsState::NotMaterialized,
-                                LocalNodeContext::new(Some(node_id as usize)),
+                                LocalNodeContext::new(Some(node_id as usize))
+                                    .with_phase("coalesce"),
                             )
                         });
                         let _ = result_tx.send(builder).await;

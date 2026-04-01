@@ -10,6 +10,7 @@ export type NodeInfo = {
   name: string;
   id: number;
   node_category: "Intermediate" | "Source" | "StreamingSink" | "BlockingSink";
+  node_phase?: string;
   context: Record<string, string>;
 };
 
@@ -53,6 +54,7 @@ export type PhysicalPlanNode = {
   name: string;
   type: string;
   category: string;
+  phase?: string;
   children?: PhysicalPlanNode[];
 };
 

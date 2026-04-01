@@ -211,7 +211,8 @@ impl BroadcastJoinNode {
                         self.join_type,
                         self.config.schema.clone(),
                         StatsState::NotMaterialized,
-                        LocalNodeContext::new(Some(self.node_id() as usize)),
+                        LocalNodeContext::new(Some(self.node_id() as usize))
+                            .with_phase("join"),
                     )
                 })
                 .with_psets(self.node_id(), broadcast_psets.clone());

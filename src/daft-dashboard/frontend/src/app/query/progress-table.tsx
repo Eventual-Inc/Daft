@@ -103,9 +103,14 @@ export default function ProgressTable({
                     </span>
                   </div>
                   <div
-                    className={`px-3 py-4 text-sm text-zinc-200 truncate border-r border-zinc-700 h-full flex items-center`}
+                    className={`px-3 py-4 text-sm text-zinc-200 truncate border-r border-zinc-700 h-full flex items-center gap-2`}
                   >
                     {name}
+                    {operator.node_info.node_phase && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-400 font-mono whitespace-nowrap">
+                        {operator.node_info.node_phase}
+                      </span>
+                    )}
                   </div>
                   <div className="px-3 py-4 text-right text-sm text-zinc-300 font-mono border-r border-zinc-700 h-full flex items-center justify-end">
                     {name.includes("Scan") ? "-" : rowsIn.toLocaleString()}

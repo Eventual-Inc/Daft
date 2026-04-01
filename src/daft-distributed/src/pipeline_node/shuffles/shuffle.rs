@@ -140,7 +140,8 @@ impl ShuffleNode {
                     compression: compression.clone(),
                 },
                 StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(self.context.node_id as usize)),
+                LocalNodeContext::new(Some(self.context.node_id as usize))
+                    .with_phase("shuffle-write"),
             )
         })
     }
@@ -194,7 +195,8 @@ impl ShuffleNode {
                     server_cache_mapping: read_spec.server_cache_mapping.clone(),
                 },
                 StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(self.context.node_id as usize)),
+                LocalNodeContext::new(Some(self.context.node_id as usize))
+                    .with_phase("shuffle-read"),
             );
 
             let task = SwordfishTaskBuilder::new(shuffle_read_plan, self, self.node_id())

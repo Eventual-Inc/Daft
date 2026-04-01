@@ -28,11 +28,15 @@ use crate::{
     plan::{PlanConfig, PlanExecutionContext},
 };
 
+const PRE_AGG_PHASE: &str = "pre-aggregate";
+const FINAL_AGG_PHASE: &str = "final-aggregate";
+
 pub(crate) struct AggregateNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     group_by: Vec<BoundExpr>,
     aggs: Vec<BoundAggExpr>,
+    phase: Option<&'static str>,
     child: DistributedPipelineNode,
 }
 
@@ -65,6 +69,7 @@ impl AggregateNode {
         group_by: Vec<BoundExpr>,
         aggs: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
+        phase: Option<&'static str>,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -87,6 +92,7 @@ impl AggregateNode {
             context,
             group_by,
             aggs,
+            phase,
             child,
         }
     }
@@ -135,13 +141,17 @@ impl PipelineNodeImpl for AggregateNode {
         let self_clone = self.clone();
 
         input_node.pipeline_instruction(self, move |input| {
+            let mut ctx = LocalNodeContext::new(Some(self_clone.node_id() as usize));
+            if let Some(phase) = self_clone.phase {
+                ctx = ctx.with_phase(phase);
+            }
             if self_clone.group_by.is_empty() {
                 LocalPhysicalPlan::ungrouped_aggregate(
                     input,
                     self_clone.aggs.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    LocalNodeContext::new(Some(self_clone.node_id() as usize)),
+                    ctx,
                 )
             } else {
                 LocalPhysicalPlan::hash_aggregate(
@@ -150,7 +160,7 @@ impl PipelineNodeImpl for AggregateNode {
                     self_clone.group_by.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
-                    LocalNodeContext::new(Some(self_clone.node_id() as usize)),
+                    ctx,
                 )
             }
         })
@@ -266,6 +276,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 group_by,
                 aggregations,
                 output_schema,
+                None,
                 shuffle,
             )) as Arc<dyn PipelineNodeImpl>,
             &self.meter,
@@ -289,6 +300,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 split_details.first_stage_group_by,
                 split_details.first_stage_aggs,
                 split_details.first_stage_schema.clone(),
+                Some(PRE_AGG_PHASE),
                 input_node,
             )) as Arc<dyn PipelineNodeImpl>,
             &self.meter,
@@ -327,6 +339,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 split_details.second_stage_group_by,
                 split_details.second_stage_aggs,
                 split_details.second_stage_schema.clone(),
+                Some(FINAL_AGG_PHASE),
                 shuffle,
             )) as Arc<dyn PipelineNodeImpl>,
             &self.meter,
@@ -373,6 +386,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                     group_by,
                     aggregations,
                     output_schema,
+                    None,
                     input_node,
                 )) as Arc<dyn PipelineNodeImpl>,
                 &self.meter,

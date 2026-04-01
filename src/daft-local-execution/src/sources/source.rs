@@ -164,6 +164,9 @@ impl TreeDisplay for SourceNode {
         if let StatsState::Materialized(stats) = &self.plan_stats {
             json["approx_stats"] = serde_json::json!(stats);
         }
+        if let Some(phase) = &self.node_info.node_phase {
+            json["phase"] = serde_json::json!(phase);
+        }
 
         json
     }

@@ -78,6 +78,11 @@ function PhysicalNodeCard({
         >
           {node.name}
         </span>
+        {node.phase && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/30 text-zinc-400 font-mono whitespace-nowrap">
+            {node.phase}
+          </span>
+        )}
         {hasExpandable && (
           <span className="text-zinc-500 text-xs ml-auto">
             {expanded ? "▾" : "▸"}
