@@ -973,7 +973,10 @@ class DataFrame:
         assert write_df._result is not None
 
         # Populate and return a new disconnected DataFrame
-        result_df = DataFrame(write_df._builder)
+        # Keep the original logical plan so explain() can still show upstream operators
+        # (e.g. filters/projections before the write), instead of collapsing to an
+        # in-memory source after collect() caches the result.
+        result_df = DataFrame(write_df._get_current_builder())
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
         result_df._metadata = write_df._metadata
@@ -1086,7 +1089,10 @@ class DataFrame:
         assert write_df._result is not None
 
         # Populate and return a new disconnected DataFrame
-        result_df = DataFrame(write_df._builder)
+        # Keep the original logical plan so explain() can still show upstream operators
+        # (e.g. filters/projections before the write), instead of collapsing to an
+        # in-memory source after collect() caches the result.
+        result_df = DataFrame(write_df._get_current_builder())
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
         result_df._metadata = write_df._metadata
@@ -1184,7 +1190,10 @@ class DataFrame:
         assert write_df._result is not None
 
         # Populate and return a new disconnected DataFrame
-        result_df = DataFrame(write_df._builder)
+        # Keep the original logical plan so explain() can still show upstream operators
+        # (e.g. filters/projections before the write), instead of collapsing to an
+        # in-memory source after collect() caches the result.
+        result_df = DataFrame(write_df._get_current_builder())
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
         result_df._metadata = write_df._metadata
