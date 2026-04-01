@@ -280,6 +280,12 @@ filterwarnings = [
   "ignore:invalid value encountered in arccosh:RuntimeWarning"
 ]
 
+[tool.uv]
+# Supply-chain hardening: prevent uv from resolving any package version
+# published in the last 7 days. This gives the community time to detect
+# and yank malicious releases before they land in our lockfile.
+exclude-newer = "2026-03-25T00:00:00Z"
+
 [tool.uv.sources.daft_dashboard]
 workspace = true
 
