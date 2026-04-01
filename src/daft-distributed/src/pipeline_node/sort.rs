@@ -3,7 +3,9 @@ use std::{future, sync::Arc};
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, SamplingMethod, ShuffleWriteBackend};
+use daft_local_plan::{
+    LocalNodeContext, LocalPhysicalPlan, SamplingMethod, ShuffleWriteBackend, ShuffleWriteSpec,
+};
 use daft_logical_plan::{
     partitioning::{RangeRepartitionConfig, RepartitionSpec},
     stats::StatsState,
@@ -16,7 +18,8 @@ use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, TaskOutput, exchanges::ray_partition_groups_from_outputs,
+        PipelineNodeContext, TaskOutput,
+        shuffles::partition_groups::ray_partition_groups_from_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -189,14 +192,13 @@ pub(crate) fn create_range_repartition_tasks(
                 in_memory_source_plan,
                 num_partitions,
                 input_schema.clone(),
-                ShuffleWriteBackend::Ray {
-                    repartition_spec: RepartitionSpec::Range(RangeRepartitionConfig::new(
-                        Some(num_partitions),
-                        boundaries.clone(),
-                        partition_by.clone(),
-                        descending.clone(),
-                    )),
-                },
+                ShuffleWriteBackend::Ray,
+                ShuffleWriteSpec::Repartition(RepartitionSpec::Range(RangeRepartitionConfig::new(
+                    Some(num_partitions),
+                    boundaries.clone(),
+                    partition_by.clone(),
+                    descending.clone(),
+                ))),
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(node_id as usize)),
             );

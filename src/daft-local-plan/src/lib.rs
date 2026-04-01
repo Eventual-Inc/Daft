@@ -14,8 +14,8 @@ pub use plan::{
     HashAggregate, HashJoin, InMemoryScan, IntoBatches, IntoPartitions, Limit, LocalNodeContext,
     LocalPhysicalPlan, LocalPhysicalPlanRef, MonotonicallyIncreasingId, PhysicalScan,
     PhysicalWrite, Pivot, PlaceholderScan, Project, Repartition, Sample, SamplingMethod,
-    ShuffleRead, ShuffleReadBackend, ShuffleWrite, ShuffleWriteBackend, Sort, SortMergeJoin, TopN,
-    UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
+    ShuffleRead, ShuffleReadBackend, ShuffleWrite, ShuffleWriteBackend, ShuffleWriteSpec, Sort,
+    SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 #[cfg(feature = "python")]

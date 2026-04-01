@@ -20,9 +20,9 @@ use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
     HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
     MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Sample,
-    ShuffleReadBackend, ShuffleWriteBackend, Sort, SortMergeJoin, SourceId, TopN, UDFProject,
-    UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
-    WindowPartitionAndOrderBy, WindowPartitionOnly,
+    ShuffleReadBackend, ShuffleWriteBackend, ShuffleWriteSpec, Sort, SortMergeJoin, SourceId, TopN,
+    UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
+    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -1439,30 +1439,35 @@ fn physical_plan_to_pipeline(
             num_partitions,
             schema,
             backend,
+            write_spec,
             stats_state,
             context,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            match backend {
-                ShuffleWriteBackend::Ray { repartition_spec } => BlockingSinkNode::new(
-                    Arc::new(RepartitionSink::new_ray(
-                        repartition_spec.clone(),
-                        *num_partitions,
-                        schema.clone(),
-                    )),
-                    child_node,
-                    stats_state.clone(),
-                    ctx,
-                    context,
-                )
-                .boxed(),
-                ShuffleWriteBackend::Flight {
-                    shuffle_id,
-                    shuffle_dirs,
-                    compression,
-                    repartition_spec,
-                } => {
+            match (backend, write_spec) {
+                (ShuffleWriteBackend::Ray, ShuffleWriteSpec::Repartition(repartition_spec)) => {
+                    BlockingSinkNode::new(
+                        Arc::new(RepartitionSink::new_ray(
+                            repartition_spec.clone(),
+                            *num_partitions,
+                            schema.clone(),
+                        )),
+                        child_node,
+                        stats_state.clone(),
+                        ctx,
+                        context,
+                    )
+                    .boxed()
+                }
+                (
+                    ShuffleWriteBackend::Flight {
+                        shuffle_id,
+                        shuffle_dirs,
+                        compression,
+                    },
+                    ShuffleWriteSpec::Repartition(repartition_spec),
+                ) => {
                     let repartition_sink = RepartitionSink::try_new_flight(
                         *num_partitions,
                         *shuffle_id,

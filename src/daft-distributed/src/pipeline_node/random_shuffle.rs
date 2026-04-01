@@ -8,7 +8,7 @@ use common_metrics::ops::{NodeCategory, NodeType};
 use common_partitioning::PartitionRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_functions::random::random_int_expr;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleWriteBackend};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleWriteBackend, ShuffleWriteSpec};
 use daft_logical_plan::{partitioning::RandomShuffleConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
@@ -17,7 +17,7 @@ use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,
-        exchanges::ray_partition_groups_from_outputs,
+        shuffles::partition_groups::ray_partition_groups_from_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -169,11 +169,12 @@ impl PipelineNodeImpl for RandomShuffleNode {
                 input,
                 num_partitions,
                 schema.clone(),
-                ShuffleWriteBackend::Ray {
-                    repartition_spec: daft_logical_plan::partitioning::RepartitionSpec::Random(
+                ShuffleWriteBackend::Ray,
+                ShuffleWriteSpec::Repartition(
+                    daft_logical_plan::partitioning::RepartitionSpec::Random(
                         RandomShuffleConfig::new_with_seed(Some(num_partitions), seed),
                     ),
-                },
+                ),
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(node_id as usize)),
             )

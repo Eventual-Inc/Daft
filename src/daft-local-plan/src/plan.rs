@@ -982,6 +982,7 @@ impl LocalPhysicalPlan {
         num_partitions: usize,
         schema: SchemaRef,
         backend: ShuffleWriteBackend,
+        write_spec: ShuffleWriteSpec,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
@@ -990,6 +991,7 @@ impl LocalPhysicalPlan {
             num_partitions,
             schema,
             backend,
+            write_spec,
             stats_state,
             context,
         })
@@ -1613,6 +1615,7 @@ impl LocalPhysicalPlan {
                     num_partitions,
                     schema,
                     backend,
+                    write_spec,
                     context,
                     ..
                 }) => Self::shuffle_write(
@@ -1620,6 +1623,7 @@ impl LocalPhysicalPlan {
                     *num_partitions,
                     schema.clone(),
                     backend.clone(),
+                    write_spec.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
@@ -2181,15 +2185,17 @@ pub struct VLLMProject {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ShuffleWriteBackend {
-    Ray {
-        repartition_spec: RepartitionSpec,
-    },
+    Ray,
     Flight {
         shuffle_id: u64,
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
-        repartition_spec: RepartitionSpec,
     },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ShuffleWriteSpec {
+    Repartition(RepartitionSpec),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -2206,6 +2212,7 @@ pub struct ShuffleWrite {
     pub num_partitions: usize,
     pub schema: SchemaRef,
     pub backend: ShuffleWriteBackend,
+    pub write_spec: ShuffleWriteSpec,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }

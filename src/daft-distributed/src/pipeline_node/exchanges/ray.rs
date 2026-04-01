@@ -1,54 +1,14 @@
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
 use crate::{
-    pipeline_node::{NodeID, PipelineNodeImpl, ShufflePartitionRef, TaskOutput},
+    pipeline_node::{NodeID, PipelineNodeImpl},
     scheduling::task::SwordfishTaskBuilder,
     utils::channel::Sender,
 };
-
-pub(crate) fn ray_partition_groups_from_outputs(
-    outputs: Vec<TaskOutput>,
-    num_partitions: usize,
-) -> DaftResult<Vec<Vec<PartitionRef>>> {
-    let mut partition_groups = (0..num_partitions).map(|_| Vec::new()).collect::<Vec<_>>();
-
-    for output in outputs {
-        let TaskOutput::ShuffleWrite(output) = output else {
-            return Err(DaftError::InternalError(
-                "Expected Ray shuffle write task output".to_string(),
-            ));
-        };
-
-        if output.partitions.len() != num_partitions {
-            return Err(DaftError::InternalError(format!(
-                "Expected {} Ray shuffle partitions, got {}",
-                num_partitions,
-                output.partitions.len()
-            )));
-        }
-
-        for (partition_idx, partition) in output.partitions.into_iter().enumerate() {
-            match partition {
-                ShufflePartitionRef::Ray(partition) => {
-                    if partition.num_rows() > 0 {
-                        partition_groups[partition_idx].push(partition);
-                    }
-                }
-                ShufflePartitionRef::Flight(_) => {
-                    return Err(DaftError::InternalError(
-                        "Expected Ray shuffle partition ref but received Flight".to_string(),
-                    ));
-                }
-            }
-        }
-    }
-
-    Ok(partition_groups)
-}
 
 pub(crate) async fn emit_read_tasks(
     node_id: NodeID,

@@ -17,7 +17,7 @@ use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, TaskOutput,
-        exchanges::ray_partition_groups_from_outputs,
+        shuffles::partition_groups::ray_partition_groups_from_outputs,
         sort::{
             create_range_repartition_tasks, create_sample_tasks,
             get_partition_boundaries_from_samples,

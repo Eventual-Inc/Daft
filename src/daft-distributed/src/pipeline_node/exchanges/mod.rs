@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleWriteBackend};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleWriteBackend, ShuffleWriteSpec};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
 use crate::{
-    pipeline_node::{NodeID, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, TaskOutput},
+    pipeline_node::{NodeID, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream},
     plan::PlanExecutionContext,
     scheduling::task::SwordfishTaskBuilder,
     utils::channel::Sender,
@@ -17,7 +17,6 @@ mod ray;
 
 pub(crate) use flight::FlightDistributedExchangeConfig;
 use flight::FlightReadSpec;
-pub(crate) use ray::ray_partition_groups_from_outputs;
 
 fn make_exchange_id(context: &PipelineNodeContext) -> u64 {
     ((context.query_idx as u64) << 32) | (context.node_id as u64)
@@ -33,6 +32,7 @@ pub(crate) struct ExchangeWriteConfig {
     pub(crate) input_node: TaskBuilderStream,
     pub(crate) producer: Arc<dyn PipelineNodeImpl>,
     pub(crate) backend: ShuffleWriteBackend,
+    pub(crate) write_spec: ShuffleWriteSpec,
 }
 
 pub(crate) struct ExchangeBackend {
@@ -70,6 +70,10 @@ impl ExchangeBackend {
         &self.backend
     }
 
+    pub(crate) fn num_partitions(&self) -> usize {
+        self.num_partitions
+    }
+
     pub(crate) fn register_cleanup(&self, plan_context: &mut PlanExecutionContext) {
         match &self.backend {
             DistributedExchangeBackend::Ray => {}
@@ -91,6 +95,7 @@ impl ExchangeBackend {
                     num_partitions,
                     schema.clone(),
                     config.backend.clone(),
+                    config.write_spec.clone(),
                     StatsState::NotMaterialized,
                     LocalNodeContext::new(Some(node_id as usize)),
                 )
@@ -99,14 +104,12 @@ impl ExchangeBackend {
 
     pub(crate) async fn emit_read_tasks(
         &self,
-        outputs: Vec<TaskOutput>,
+        read_spec: ExchangeReadSpec,
         node: &dyn PipelineNodeImpl,
         result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
-        match &self.backend {
-            DistributedExchangeBackend::Ray => {
-                let partition_groups =
-                    ray::ray_partition_groups_from_outputs(outputs, self.num_partitions)?;
+        match (&self.backend, read_spec) {
+            (DistributedExchangeBackend::Ray, ExchangeReadSpec::Ray { partition_groups }) => {
                 ray::emit_read_tasks(
                     self.node_id,
                     self.schema.clone(),
@@ -116,8 +119,14 @@ impl ExchangeBackend {
                 )
                 .await
             }
-            DistributedExchangeBackend::Flight(backend) => {
-                let read_spec: FlightReadSpec = flight::read_spec_from_outputs(backend, outputs)?;
+            (
+                DistributedExchangeBackend::Flight(backend),
+                ExchangeReadSpec::Flight {
+                    server_cache_mapping,
+                },
+            ) => {
+                let read_spec: FlightReadSpec =
+                    flight::read_spec_from_server_cache_mapping(backend, server_cache_mapping);
                 flight::emit_read_tasks(
                     self.node_id,
                     self.schema.clone(),
@@ -128,6 +137,25 @@ impl ExchangeBackend {
                 )
                 .await
             }
+            (DistributedExchangeBackend::Ray, ExchangeReadSpec::Flight { .. }) => {
+                Err(common_error::DaftError::InternalError(
+                    "Expected Ray exchange read spec".to_string(),
+                ))
+            }
+            (DistributedExchangeBackend::Flight(_), ExchangeReadSpec::Ray { .. }) => {
+                Err(common_error::DaftError::InternalError(
+                    "Expected Flight exchange read spec".to_string(),
+                ))
+            }
         }
     }
+}
+
+pub(crate) enum ExchangeReadSpec {
+    Ray {
+        partition_groups: Vec<Vec<common_partitioning::PartitionRef>>,
+    },
+    Flight {
+        server_cache_mapping: std::collections::HashMap<String, Vec<u32>>,
+    },
 }

@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_local_plan::{
     FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend,
 };
@@ -8,7 +8,7 @@ use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
 use crate::{
-    pipeline_node::{NodeID, PipelineNodeImpl, ShufflePartitionRef, TaskOutput},
+    pipeline_node::{NodeID, PipelineNodeImpl},
     plan::PlanExecutionContext,
     scheduling::task::SwordfishTaskBuilder,
     utils::channel::Sender,
@@ -38,43 +38,14 @@ pub(crate) fn register_cleanup(
     plan_context.register_shuffle_dirs(shuffle_dirs_to_register);
 }
 
-pub(crate) fn read_spec_from_outputs(
+pub(crate) fn read_spec_from_server_cache_mapping(
     backend: &FlightDistributedExchangeConfig,
-    outputs: Vec<TaskOutput>,
-) -> DaftResult<FlightReadSpec> {
-    let mut server_cache_mapping: HashMap<String, HashSet<u32>> = HashMap::new();
-
-    for output in outputs {
-        let TaskOutput::ShuffleWrite(output) = output else {
-            return Err(DaftError::InternalError(
-                "Expected shuffle write task output for Flight exchange write stage".to_string(),
-            ));
-        };
-
-        for partition in output.partitions {
-            match partition {
-                ShufflePartitionRef::Ray(_) => {
-                    return Err(DaftError::InternalError(
-                        "Expected Flight shuffle partition ref but received Ray".to_string(),
-                    ));
-                }
-                ShufflePartitionRef::Flight(partition) => {
-                    server_cache_mapping
-                        .entry(partition.server_address)
-                        .or_default()
-                        .insert(partition.cache_id);
-                }
-            }
-        }
-    }
-
-    Ok(FlightReadSpec {
+    server_cache_mapping: HashMap<String, Vec<u32>>,
+) -> FlightReadSpec {
+    FlightReadSpec {
         exchange_id: backend.exchange_id,
-        server_cache_mapping: server_cache_mapping
-            .into_iter()
-            .map(|(server, cache_ids)| (server, cache_ids.into_iter().collect()))
-            .collect(),
-    })
+        server_cache_mapping,
+    }
 }
 
 pub(crate) async fn emit_read_tasks(
