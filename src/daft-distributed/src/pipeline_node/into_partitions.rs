@@ -12,7 +12,7 @@ use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext,
+        PipelineNodeContext, TaskOutput,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -60,10 +60,6 @@ impl IntoPartitionsNode {
             num_partitions,
             child,
         }
-    }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
     }
 
     async fn coalesce_tasks(
@@ -117,7 +113,8 @@ impl IntoPartitionsNode {
                     .await?
                     .into_iter()
                     .flatten()
-                    .collect::<Vec<_>>();
+                    .map(TaskOutput::into_materialized)
+                    .collect::<DaftResult<Vec<_>>>()?;
                 DaftResult::Ok(materialized_output)
             });
         }
@@ -136,8 +133,8 @@ impl IntoPartitionsNode {
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(self.node_id() as usize)),
             );
-            let builder =
-                SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
+            let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+                .with_psets(self.node_id(), psets);
             if result_tx.send(builder).await.is_err() {
                 break;
             }
@@ -199,6 +196,7 @@ impl IntoPartitionsNode {
         while let Some(result) = output_futures.join_next().await {
             let materialized_outputs = result??;
             if let Some(output) = materialized_outputs {
+                let output = output.into_materialized()?;
                 for output in output.split_into_materialized_outputs() {
                     let materialized_outputs = vec![output];
                     let (in_memory_scan, psets) =
@@ -207,8 +205,9 @@ impl IntoPartitionsNode {
                             self.config.schema.clone(),
                             self.node_id(),
                         );
-                    let builder = SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())
-                        .with_psets(self.node_id(), psets);
+                    let builder =
+                        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref(), self.node_id())
+                            .with_psets(self.node_id(), psets);
                     if result_tx.send(builder).await.is_err() {
                         break;
                     }

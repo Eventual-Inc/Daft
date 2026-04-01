@@ -2,7 +2,7 @@ use common_error::DaftResult;
 use common_runtime::{JoinSet, OrderedJoinSet};
 use futures::{Stream, StreamExt};
 
-use super::MaterializedOutput;
+use super::{MaterializedOutput, TaskOutput};
 use crate::{
     scheduling::{
         scheduler::{SchedulerHandle, SubmittableTask, SubmittedTask},
@@ -14,11 +14,11 @@ use crate::{
     },
 };
 
-pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
+pub(crate) fn task_outputs_from_pipeline<T: Task>(
     input: impl Stream<Item = SubmittableTask<T>> + Send + Unpin + 'static,
     scheduler_handle: SchedulerHandle<T>,
     joinset: Option<JoinSet<DaftResult<()>>>,
-) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
+) -> impl Stream<Item = DaftResult<TaskOutput>> + Send + Unpin + 'static {
     /// Force all tasks in the `input`` stream to start running if un-submitted
     async fn task_finalizer<T: Task>(
         mut input: impl Stream<Item = SubmittableTask<T>> + Unpin,
@@ -37,9 +37,9 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
     /// Materialize the output of all running or finished tasks
     async fn task_materializer(
         mut finalized_tasks_receiver: Receiver<SubmittedTask>,
-        tx: Sender<DaftResult<MaterializedOutput>>,
+        tx: Sender<DaftResult<TaskOutput>>,
     ) -> DaftResult<()> {
-        let mut pending_tasks: OrderedJoinSet<DaftResult<Option<MaterializedOutput>>> =
+        let mut pending_tasks: OrderedJoinSet<DaftResult<Option<TaskOutput>>> =
             OrderedJoinSet::new();
         loop {
             let num_pending = pending_tasks.num_pending();
@@ -50,8 +50,8 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
                 }
                 Some(result) = pending_tasks.join_next(), if num_pending > 0 => {
                     match result {
-                        Ok(Ok(Some(materialized_output))) => {
-                            if tx.send(Ok(materialized_output)).await.is_err() {
+                        Ok(Ok(Some(task_output))) => {
+                            if tx.send(Ok(task_output)).await.is_err() {
                                 break;
                             }
                         }
@@ -90,6 +90,15 @@ pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
         tokio_stream::wrappers::ReceiverStream::new(materialized_results_receiver);
     JoinableForwardingStream::new(materialized_result_stream, joinset)
         .map(|result| result.and_then(|result| result))
+}
+
+pub(crate) fn materialize_all_pipeline_outputs<T: Task>(
+    input: impl Stream<Item = SubmittableTask<T>> + Send + Unpin + 'static,
+    scheduler_handle: SchedulerHandle<T>,
+    joinset: Option<JoinSet<DaftResult<()>>>,
+) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
+    task_outputs_from_pipeline(input, scheduler_handle, joinset)
+        .map(|result| result.and_then(TaskOutput::into_materialized))
 }
 
 #[cfg(test)]
@@ -222,9 +231,7 @@ mod tests {
         verify_materialized_results(
             &results,
             &partition_specs,
-            &std::iter::repeat(false)
-                .take(partition_specs.len())
-                .collect::<Vec<_>>(),
+            &std::iter::repeat_n(false, partition_specs.len()).collect::<Vec<_>>(),
         );
         test_context.cleanup().await?;
         Ok(())
@@ -243,9 +250,9 @@ mod tests {
         let partition_specs = create_incremental_partition_specs(num_partitions);
         let partitions = create_test_partitions(&partition_specs);
 
-        let mut rng = rand::rngs::StdRng::from_entropy();
+        let mut rng = rand::rngs::StdRng::from_os_rng();
         let task_iter = (0..num_partitions).map(move |i| {
-            let sleep_duration = Duration::from_millis(rng.gen_range(100..300));
+            let sleep_duration = Duration::from_millis(rng.random_range(100..300));
             SubmittableTask::task_only(
                 MockTaskBuilder::new(partitions[i].clone())
                     .with_task_id(i as u32)
@@ -265,9 +272,7 @@ mod tests {
         verify_materialized_results(
             &results,
             &partition_specs,
-            &std::iter::repeat(false)
-                .take(partition_specs.len())
-                .collect::<Vec<_>>(),
+            &std::iter::repeat_n(false, partition_specs.len()).collect::<Vec<_>>(),
         );
         test_context.cleanup().await?;
         Ok(())
@@ -279,14 +284,14 @@ mod tests {
         let worker_slots = 10;
         let error_probability = 0.1;
         let task_sleep_ms = 100;
-        let mut rng = rand::rngs::StdRng::from_entropy();
+        let mut rng = rand::rngs::StdRng::from_os_rng();
 
         let test_context = TestContext::new(&[("worker1".into(), worker_slots)])?;
         let partition_specs = create_incremental_partition_specs(num_partitions);
         let partitions = create_test_partitions(&partition_specs);
 
         let should_error = (0..num_partitions)
-            .map(move |_| rng.gen_bool(error_probability))
+            .map(move |_| rng.random_bool(error_probability))
             .collect::<Vec<_>>();
 
         let task_iter = (0..num_partitions)

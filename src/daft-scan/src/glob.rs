@@ -20,7 +20,7 @@ use snafu::Snafu;
 
 use crate::{
     ChunkSpec, CsvSourceConfig, FileFormatConfig, ParquetSourceConfig, PartitionField, Pushdowns,
-    ScanOperator, ScanSource, ScanTask, ScanTaskRef, SourceConfig,
+    ScanOperator, ScanSource, ScanSourceKind, ScanTask, ScanTaskRef, SourceConfig,
     hive::{hive_partitions_to_fields, hive_partitions_to_series, parse_hive_partitioning},
     storage_config::StorageConfig,
 };
@@ -391,6 +391,25 @@ impl GlobScanOperator {
                 .collect::<Result<Vec<_>, _>>()?;
             (partitioning_keys, generated_fields)
         };
+
+        let mut final_schema = (*schema).clone();
+        if let (true, Some(hint)) = (infer_schema, &user_provided_schema) {
+            let mut added = false;
+            let mut current_fields = final_schema.fields().to_vec();
+            for hint_field in hint.fields() {
+                if !final_schema.has_field(hint_field.name.as_ref())
+                    && !generated_fields.has_field(hint_field.name.as_ref())
+                {
+                    current_fields.push(hint_field.clone());
+                    added = true;
+                }
+            }
+            if added {
+                final_schema = Schema::new(current_fields);
+            }
+        }
+        let schema = Arc::new(final_schema);
+
         Ok(Self {
             glob_paths,
             file_format_config,
@@ -576,7 +595,7 @@ impl ScanOperator for GlobScanOperator {
                         .flatten();
                     let chunk_spec = row_group.map(ChunkSpec::Parquet);
                     Ok(Some(ScanTask::new(
-                        vec![ScanSource::File {
+                        vec![ScanSource {
                             metadata: if let Some(first_filepath) = first_filepath
                                 && path == *first_filepath
                             {
@@ -584,13 +603,15 @@ impl ScanOperator for GlobScanOperator {
                             } else {
                                 None
                             },
-                            path,
-                            chunk_spec,
                             size_bytes,
-                            iceberg_delete_files: None,
                             partition_spec,
                             statistics: None,
-                            parquet_metadata: None,
+                            kind: ScanSourceKind::File {
+                                path,
+                                chunk_spec,
+                                iceberg_delete_files: None,
+                                parquet_metadata: None,
+                            },
                         }],
                         source_config.clone(),
                         schema.clone(),

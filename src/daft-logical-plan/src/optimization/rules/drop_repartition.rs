@@ -113,7 +113,7 @@ mod tests {
             Field::new("b", DataType::Utf8),
         ]);
         let plan = dummy_scan_node(scan_op.clone())
-            .hash_repartition(Some(num_partitions1), partition_by.clone())?
+            .hash_repartition(Some(num_partitions1), partition_by)?
             .into_partitions(num_partitions2)?
             .build();
         let expected = dummy_scan_node(scan_op)

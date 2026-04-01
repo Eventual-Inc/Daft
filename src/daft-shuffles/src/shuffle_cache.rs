@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common_error::{DaftError, DaftResult};
 use common_runtime::{RuntimeTask, get_io_runtime};
 use daft_io::{SourceType, parse_url};
@@ -33,14 +31,14 @@ struct WriterTaskResult {
 type WriterTask = RuntimeTask<DaftResult<WriterTaskResult>>;
 
 struct InProgressShuffleCacheState {
-    writer_senders: Option<Vec<async_channel::Sender<Arc<MicroPartition>>>>,
+    writer_senders: Option<Vec<async_channel::Sender<MicroPartition>>>,
     writer_tasks: Vec<WriterTask>,
     error: Option<String>,
 }
 
 pub struct InProgressShuffleCache {
     state: Mutex<InProgressShuffleCacheState>,
-    writer_senders_weak: Vec<async_channel::WeakSender<Arc<MicroPartition>>>,
+    writer_senders_weak: Vec<async_channel::WeakSender<MicroPartition>>,
     shuffle_dirs: Vec<String>,
     cache_id: String,
 }
@@ -90,9 +88,7 @@ impl InProgressShuffleCache {
     }
 
     fn try_new_with_writers(
-        writers: Vec<
-            Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
-        >,
+        writers: Vec<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>>,
         shuffle_dirs: Vec<String>,
         cache_id: String,
     ) -> DaftResult<Self> {
@@ -129,7 +125,7 @@ impl InProgressShuffleCache {
     /// The input should be a Vec<Arc<MicroPartition>> where each element corresponds to a writer.
     pub async fn push_partitioned_data(
         &self,
-        partitioned_data: Vec<Arc<MicroPartition>>,
+        partitioned_data: Vec<MicroPartition>,
     ) -> DaftResult<()> {
         // Verify we have the right number of partitions
         if partitioned_data.len() != self.writer_senders_weak.len() {
@@ -222,7 +218,7 @@ impl InProgressShuffleCache {
     }
 
     async fn close_internal(
-        writer_senders: Vec<async_channel::Sender<Arc<MicroPartition>>>,
+        writer_senders: Vec<async_channel::Sender<MicroPartition>>,
         writer_tasks: Vec<WriterTask>,
     ) -> DaftResult<Vec<WriterTaskResult>> {
         // Drop the writer senders so that the writer tasks can exit
@@ -239,8 +235,8 @@ impl InProgressShuffleCache {
 
 // Writer task that takes partitions from a writer sender, writes them to a file, and returns the schema and file paths
 async fn writer_task(
-    rx: async_channel::Receiver<Arc<MicroPartition>>,
-    mut writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+    rx: async_channel::Receiver<MicroPartition>,
+    mut writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
 ) -> DaftResult<WriterTaskResult> {
     let io_runtime = get_io_runtime(true);
     let mut schema = None;
@@ -485,7 +481,7 @@ mod tests {
             shuffle_cache
                 .file_paths_per_partition
                 .iter()
-                .all(|paths| paths.len() == 0),
+                .all(|paths| paths.is_empty()),
             "All partitions should have no file paths: {:?}",
             shuffle_cache.file_paths_per_partition
         );

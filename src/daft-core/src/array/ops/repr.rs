@@ -20,7 +20,6 @@ use crate::{
     utils::display::{
         display_date32, display_decimal128, display_duration, display_time64, display_timestamp,
     },
-    with_match_daft_types,
 };
 
 // Default implementation of str_value: format the value with the given format string.
@@ -250,14 +249,15 @@ impl Decimal128Array {
 
 /// Helper that prints a Series as a list ("[e1, e2, e3, ...]")
 fn series_as_list_str(series: &Series) -> DaftResult<String> {
-    with_match_daft_types!(series.data_type(), |$T| {
-        let arr = series.downcast::<<$T as DaftDataType>::ArrayType>()?;
-        let mut s = String::new();
-        s += "[";
-        s += (0..series.len()).map(|i| arr.str_value(i)).collect::<DaftResult<Vec<String>>>()?.join(", ").as_str();
-        s += "]";
-        Ok(s)
-    })
+    let mut s = String::new();
+    s += "[";
+    s += (0..series.len())
+        .map(|i| series.str_value_result(i))
+        .collect::<DaftResult<Vec<String>>>()?
+        .join(", ")
+        .as_str();
+    s += "]";
+    Ok(s)
 }
 
 impl ListArray {
@@ -456,7 +456,6 @@ impl StructArray {
                     let fields_to_strs = fields
                         .iter()
                         .zip(self.children.iter())
-                        .filter(|(f, _)| !f.name.is_empty() && f.dtype != DataType::Null)
                         .map(|(f, s)| Ok(format!("{}: {},\n", f.name.as_ref(), s.str_value(idx))))
                         .collect::<DaftResult<Vec<_>>>()?;
                     let mut result = "{".to_string();

@@ -250,6 +250,10 @@ class LogicalPlanBuilder:
         builder = self._builder.random_shuffle(num_partitions)
         return LogicalPlanBuilder(builder)
 
+    def shuffle(self, seed: int | None = None) -> LogicalPlanBuilder:
+        builder = self._builder.shuffle(seed)
+        return LogicalPlanBuilder(builder)
+
     def into_partitions(self, num_partitions: int) -> LogicalPlanBuilder:
         builder = self._builder.into_partitions(num_partitions)
         return LogicalPlanBuilder(builder)

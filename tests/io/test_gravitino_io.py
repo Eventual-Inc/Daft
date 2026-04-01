@@ -95,7 +95,7 @@ class TestGravitinoIOIntegration:
     @pytest.fixture
     def mock_gravitino_client(self):
         """Create a mock Gravitino client for testing."""
-        with patch("daft.gravitino.gravitino_catalog.GravitinoClient") as mock_client_class:
+        with patch("daft.catalog.__gravitino._client.GravitinoClient") as mock_client_class:
             mock_client = Mock()
             mock_client_class.return_value = mock_client
 

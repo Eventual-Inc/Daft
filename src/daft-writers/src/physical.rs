@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use daft_core::prelude::*;
@@ -105,7 +103,7 @@ impl PhysicalWriterFactory {
 }
 
 impl WriterFactory for PhysicalWriterFactory {
-    type Input = Arc<MicroPartition>;
+    type Input = MicroPartition;
     type Result = Option<RecordBatch>;
 
     fn create_writer(
@@ -144,8 +142,7 @@ pub fn create_pyarrow_file_writer(
     format: FileFormat,
     partition: Option<&RecordBatch>,
     format_option: Option<FormatSinkOption>,
-) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
-{
+) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
     match format {
         #[cfg(feature = "python")]
         FileFormat::Parquet => Ok(Box::new(crate::pyarrow::PyArrowWriter::new_parquet_writer(
@@ -176,8 +173,7 @@ fn create_native_writer(
     partition_values: Option<&RecordBatch>,
     io_config: Option<daft_io::IOConfig>,
     format_option: Option<FormatSinkOption>,
-) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
-{
+) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
     match file_format {
         FileFormat::Parquet => {
             create_native_parquet_writer(root_dir, schema, file_idx, partition_values, io_config)

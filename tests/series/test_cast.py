@@ -281,6 +281,23 @@ def test_cast_fixed_size_binary_to_binary():
     assert casted.to_pylist() == [b"abc", b"def", None, b"bcd", None]
 
 
+def test_cast_utf8_to_fixed_size_binary():
+    data = ["a", "b", None, "c"]
+
+    input = Series.from_pylist(data)
+    casted = input.cast(DataType.fixed_size_binary(1))
+    assert casted.datatype() == DataType.fixed_size_binary(1)
+    assert casted.to_pylist() == [b"a", b"b", None, b"c"]
+
+
+def test_cast_utf8_to_fixed_size_binary_fails_with_variable_length():
+    data = ["a", "bc", None]
+
+    input = Series.from_pylist(data)
+    with pytest.raises(DaftCoreException):
+        input.cast(DataType.fixed_size_binary(1))
+
+
 ### Python ###
 
 
@@ -484,6 +501,18 @@ def test_series_cast_numpy_to_image() -> None:
     pydata = t.to_pylist()
     assert pydata[-1] is None
     np.testing.assert_equal(data[:-1], pydata[:-1])
+
+
+def test_series_cast_numpy_to_image_preserves_name() -> None:
+    data = [
+        np.arange(12, dtype=np.uint8).reshape((2, 2, 3)),
+        None,
+    ]
+    s = Series.from_pylist(data, name="frame", dtype=DataType.python())
+
+    casted = s.cast(DataType.image("RGB"))
+
+    assert casted.name() == "frame"
 
 
 def test_series_cast_numpy_to_image_infer_mode() -> None:

@@ -167,11 +167,7 @@ mod tests {
         let worker_2: WorkerId = Arc::from("worker2");
         let worker_3: WorkerId = Arc::from("worker3");
 
-        let workers = setup_workers(&[
-            (worker_1.clone(), 1),
-            (worker_2.clone(), 2),
-            (worker_3.clone(), 3),
-        ]);
+        let workers = setup_workers(&[(worker_1, 1), (worker_2, 2), (worker_3, 3)]);
 
         let mut scheduler: LinearScheduler<MockTask> = setup_scheduler(&workers);
 
@@ -198,7 +194,7 @@ mod tests {
         // Update worker state to reflect that the workers are all idle
         let worker_snapshots = workers
             .values()
-            .map(|worker| WorkerSnapshot::from(worker))
+            .map(WorkerSnapshot::from)
             .collect::<Vec<_>>();
         scheduler.update_worker_state(&worker_snapshots);
 
@@ -214,11 +210,7 @@ mod tests {
         let worker_2: WorkerId = Arc::from("worker2");
         let worker_3: WorkerId = Arc::from("worker3");
 
-        let workers = setup_workers(&[
-            (worker_1.clone(), 1),
-            (worker_2.clone(), 1),
-            (worker_3.clone(), 2),
-        ]);
+        let workers = setup_workers(&[(worker_1.clone(), 1), (worker_2.clone(), 1), (worker_3, 2)]);
 
         let mut scheduler: LinearScheduler<MockTask> = setup_scheduler(&workers);
 
@@ -249,7 +241,7 @@ mod tests {
         // Update worker state to reflect that the workers are all idle
         let worker_snapshots = workers
             .values()
-            .map(|worker| WorkerSnapshot::from(worker))
+            .map(WorkerSnapshot::from)
             .collect::<Vec<_>>();
         scheduler.update_worker_state(&worker_snapshots);
 
@@ -306,7 +298,7 @@ mod tests {
         // Update worker state to reflect that the workers are all idle
         let worker_snapshots = workers
             .values()
-            .map(|worker| WorkerSnapshot::from(worker))
+            .map(WorkerSnapshot::from)
             .collect::<Vec<_>>();
         scheduler.update_worker_state(&worker_snapshots);
 
@@ -326,7 +318,7 @@ mod tests {
         let worker_1: WorkerId = Arc::from("worker1");
         let worker_2: WorkerId = Arc::from("worker2");
 
-        let workers = setup_workers(&[(worker_1.clone(), 1), (worker_2.clone(), 1)]);
+        let workers = setup_workers(&[(worker_1, 1), (worker_2, 1)]);
 
         let mut scheduler: LinearScheduler<MockTask> = setup_scheduler(&workers);
 

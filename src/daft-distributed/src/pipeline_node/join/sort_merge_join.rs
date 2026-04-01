@@ -1,7 +1,10 @@
 use std::{future, sync::Arc};
 
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    Meter,
+    ops::{NodeCategory, NodeType},
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{JoinType, stats::StatsState};
@@ -12,7 +15,7 @@ use futures::{TryStreamExt, future::try_join_all};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, TaskOutput,
         sort::{
             create_range_repartition_tasks, create_sample_tasks,
             get_partition_boundaries_from_samples,
@@ -23,6 +26,7 @@ use crate::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
+    statistics::stats::RuntimeStatsRef,
     utils::{
         channel::{Sender, create_channel},
         transpose::transpose_materialized_outputs_from_vec,
@@ -85,10 +89,6 @@ impl SortMergeJoinNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     fn multiline_display(&self) -> Vec<String> {
         use itertools::Itertools;
         let mut res = vec!["SortMergeJoin".to_string()];
@@ -139,7 +139,7 @@ impl SortMergeJoinNode {
         );
 
         // Create the task
-        let builder = SwordfishTaskBuilder::new(plan, self.as_ref())
+        let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
             .with_psets(self.left.node_id(), left_psets)
             .with_psets(self.right.node_id(), right_psets);
 
@@ -170,6 +170,7 @@ impl SortMergeJoinNode {
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
+            Some(0),
         )?;
 
         let left_boundary_key_names = self
@@ -197,6 +198,7 @@ impl SortMergeJoinNode {
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
+            Some(1),
         )?;
 
         // Collect all samples
@@ -208,7 +210,8 @@ impl SortMergeJoinNode {
         .await?
         .into_iter()
         .flatten()
-        .collect::<Vec<_>>();
+        .map(TaskOutput::into_materialized)
+        .collect::<DaftResult<Vec<_>>>()?;
 
         // Compute partition boundaries from combined samples
         let left_partition_boundaries = get_partition_boundaries_from_samples(
@@ -232,6 +235,7 @@ impl SortMergeJoinNode {
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
+            Some(0),
         )?;
 
         let right_boundary_names = self
@@ -249,7 +253,7 @@ impl SortMergeJoinNode {
                 .columns()
                 .iter()
                 .zip(right_boundary_names)
-                .map(|(series, name)| series.clone().rename(name))
+                .map(|(col, name)| col.as_materialized_series().rename(&name))
                 .collect::<Vec<_>>(),
         )?;
 
@@ -265,6 +269,7 @@ impl SortMergeJoinNode {
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
+            Some(1),
         )?;
 
         // Wait for both sides to be partitioned
@@ -276,12 +281,14 @@ impl SortMergeJoinNode {
         let left_partitioned_outputs = left_partitioned_outputs
             .into_iter()
             .flatten()
-            .collect::<Vec<_>>();
+            .map(TaskOutput::into_materialized)
+            .collect::<DaftResult<Vec<_>>>()?;
 
         let right_partitioned_outputs = right_partitioned_outputs
             .into_iter()
             .flatten()
-            .collect::<Vec<_>>();
+            .map(TaskOutput::into_materialized)
+            .collect::<DaftResult<Vec<_>>>()?;
 
         // Transpose outputs to group by partition index
         let left_transposed_outputs =
@@ -371,6 +378,10 @@ impl PipelineNodeImpl for SortMergeJoinNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         self.multiline_display()
+    }
+
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(super::stats::BasicJoinStats::new(meter, self.context()))
     }
 
     fn produce_tasks(

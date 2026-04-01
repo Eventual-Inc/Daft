@@ -1,5 +1,4 @@
 use common_error::DaftError;
-use futures::stream::TryChunksError;
 use snafu::Snafu;
 
 mod decoding;
@@ -17,7 +16,7 @@ pub mod schema;
 pub use options::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-pub use read::{read_json, read_json_bulk};
+pub use read::read_json;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -29,10 +28,6 @@ pub enum Error {
     ArrowError { source: arrow::error::ArrowError },
     #[snafu(display("JSON deserialization error: {}", string))]
     JsonDeserializationError { string: String },
-    #[snafu(display("Error chunking: {}", source))]
-    ChunkError {
-        source: TryChunksError<String, std::io::Error>,
-    },
     #[snafu(display("Error joining spawned task: {}", source))]
     JoinError { source: tokio::task::JoinError },
     #[snafu(display(

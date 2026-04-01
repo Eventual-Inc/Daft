@@ -13,6 +13,7 @@ use daft_dsl::{
     right_col,
 };
 
+use super::relation_set::RelationSet;
 use crate::{
     LogicalPlan, LogicalPlanBuilder, LogicalPlanRef,
     ops::{Filter, Join, Project, join::JoinPredicate},
@@ -50,10 +51,10 @@ impl JoinOrderTree {
         }
     }
 
-    fn iter(&self) -> Box<dyn Iterator<Item = usize> + '_> {
+    pub(super) fn relation_set(&self) -> RelationSet {
         match self {
-            Self::Relation(id, ..) => Box::new(std::iter::once(*id)),
-            Self::Join(left, right, ..) => Box::new(left.iter().chain(right.iter())),
+            Self::Relation(id, ..) => RelationSet::singleton(*id),
+            Self::Join(left, right, ..) => left.relation_set().union(right.relation_set()),
         }
     }
 
@@ -68,11 +69,10 @@ impl JoinOrderTree {
     // Check if the join structure is the same, regardless of cardinality or join conditions.
     pub(super) fn order_eq(this: &Self, other: &Self) -> bool {
         match (this, other) {
-            (JoinOrderTree::Relation(id1, _), JoinOrderTree::Relation(id2, _)) => id1 == id2,
-            (
-                JoinOrderTree::Join(left1, right1, _, _),
-                JoinOrderTree::Join(left2, right2, _, _),
-            ) => Self::order_eq(left1, left2) && Self::order_eq(right1, right2),
+            (Self::Relation(id1, _), Self::Relation(id2, _)) => id1 == id2,
+            (Self::Join(left1, right1, _, _), Self::Join(left2, right2, _, _)) => {
+                Self::order_eq(left1, left2) && Self::order_eq(right1, right2)
+            }
             _ => false,
         }
     }
@@ -80,8 +80,8 @@ impl JoinOrderTree {
     #[cfg(test)]
     pub(super) fn num_join_conditions(this: &Self) -> usize {
         match this {
-            JoinOrderTree::Relation(_, _) => 0,
-            JoinOrderTree::Join(left, right, conditions, _) => {
+            Self::Relation(_, _) => 0,
+            Self::Join(left, right, conditions, _) => {
                 Self::num_join_conditions(left)
                     + Self::num_join_conditions(right)
                     + conditions.len()
@@ -381,9 +381,9 @@ impl JoinAdjList {
         let mut added_equivalence_set_id_for_conds = HashSet::new();
         let mut double_counted_equivalence_set_ids = HashSet::new();
         let mut td = 1;
-        for left_node in left.iter() {
+        for left_node in left.relation_set().iter() {
             if let Some(neighbors) = self.edges.get(&left_node) {
-                for right_node in right.iter() {
+                for right_node in right.relation_set().iter() {
                     if let Some(edges) = neighbors.get(&right_node) {
                         // When there is only one join condition, we multiply the total domain by the domain of the equivalence set.
                         // However, when there's more than one join condition between two nodes, then we know that this is not a pk-fk join
@@ -1092,7 +1092,7 @@ mod tests {
         let cfg = Arc::new(DaftExecutionConfig::default());
         let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan, cfg).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -1159,8 +1159,7 @@ mod tests {
         let cfg = Arc::new(DaftExecutionConfig::default());
         let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph =
-            JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg.clone()).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan, cfg).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -1228,8 +1227,7 @@ mod tests {
         let cfg = Arc::new(DaftExecutionConfig::default());
         let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph =
-            JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg.clone()).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan, cfg).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a_beta <-> b
@@ -1269,10 +1267,7 @@ mod tests {
             dummy_scan_operator(vec![Field::new("c_prime", DataType::Int64)]),
             Pushdowns::default(),
         )
-        .select(vec![
-            unresolved_col("c_prime").alias("c"),
-            double_proj.clone(),
-        ])
+        .select(vec![unresolved_col("c_prime").alias("c"), double_proj])
         .unwrap();
         let scan_d = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("d", DataType::Int64)]),
@@ -1296,8 +1291,7 @@ mod tests {
         let cfg = Arc::new(DaftExecutionConfig::default());
         let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph =
-            JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg.clone()).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan, cfg).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -1356,14 +1350,11 @@ mod tests {
             dummy_scan_operator(vec![Field::new("c_prime", DataType::Int64)]),
             Pushdowns::default(),
         )
-        .filter(filter_c_prime.clone())
+        .filter(filter_c_prime)
         .unwrap()
-        .select(vec![
-            unresolved_col("c_prime").alias("c"),
-            double_proj.clone(),
-        ])
+        .select(vec![unresolved_col("c_prime").alias("c"), double_proj])
         .unwrap()
-        .filter(filter_c.clone())
+        .filter(filter_c)
         .unwrap();
         let scan_d = dummy_scan_node_with_pushdowns(
             dummy_scan_operator(vec![Field::new("d", DataType::Int64)]),
@@ -1378,7 +1369,7 @@ mod tests {
         let join_plan_r = scan_c
             .inner_join(scan_d, unresolved_col("c").eq(unresolved_col("d")))
             .unwrap()
-            .select(vec![unresolved_col("d"), quad_proj.clone()])
+            .select(vec![unresolved_col("d"), quad_proj])
             .unwrap();
         let join_plan = join_plan_l
             .inner_join(join_plan_r, unresolved_col("a").eq(unresolved_col("d")))
@@ -1392,7 +1383,7 @@ mod tests {
         let cfg = Arc::new(DaftExecutionConfig::default());
         let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan, cfg).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b
@@ -1438,7 +1429,7 @@ mod tests {
             dummy_scan_operator(vec![Field::new("a_prime", DataType::Int64)]),
             Pushdowns::default(),
         )
-        .select(vec![a_proj.clone()])
+        .select(vec![a_proj])
         .unwrap()
         .aggregate(
             vec![Arc::new(Expr::Agg(AggExpr::Count(
@@ -1480,7 +1471,7 @@ mod tests {
         let cfg = Arc::new(DaftExecutionConfig::default());
         let stats_enricher = EnrichWithStats::new(Some(cfg.clone()));
         let original_plan = stats_enricher.try_optimize(original_plan).data().unwrap();
-        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan.clone(), cfg).build();
+        let join_graph = JoinGraphBuilder::from_logical_plan(original_plan, cfg).build();
         assert!(join_graph.fully_connected());
         // There should be edges between:
         // - a <-> b

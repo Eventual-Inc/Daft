@@ -207,6 +207,7 @@ where
         self.len += additional;
     }
 
+    #[inline(never)]
     fn build(&mut self) -> DaftResult<Series> {
         let null_buffer = self.validity.as_mut().and_then(|v| v.finish());
 
@@ -290,7 +291,7 @@ mod tests {
     fn test_extend_from_nonzero_start() {
         let field = Field::new("test", DataType::Int32);
         let src = Int32Array::from_iter(
-            field.clone(),
+            field,
             vec![Some(10), Some(20), Some(30), Some(40), Some(50)],
         );
         let mut growable =

@@ -5,7 +5,7 @@ use daft_schema::schema::SchemaRef;
 
 use crate::{
     ChunkSpec, FileFormatConfig, ParquetSourceConfig, PartitionField, Pushdowns, ScanOperator,
-    ScanSource, ScanTask, ScanTaskRef, SourceConfig, storage_config::StorageConfig,
+    ScanSource, ScanSourceKind, ScanTask, ScanTaskRef, SourceConfig, storage_config::StorageConfig,
 };
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
@@ -104,15 +104,17 @@ impl ScanOperator for AnonymousScanOperator {
             .map(|(f, rg)| {
                 let chunk_spec = rg.map(ChunkSpec::Parquet);
                 Arc::new(ScanTask::new(
-                    vec![ScanSource::File {
-                        path: f,
-                        chunk_spec,
+                    vec![ScanSource {
                         size_bytes: None,
-                        iceberg_delete_files: None,
                         metadata: None,
-                        partition_spec: None,
                         statistics: None,
-                        parquet_metadata: None,
+                        partition_spec: None,
+                        kind: ScanSourceKind::File {
+                            path: f,
+                            chunk_spec,
+                            iceberg_delete_files: None,
+                            parquet_metadata: None,
+                        },
                     }],
                     source_config.clone(),
                     schema.clone(),

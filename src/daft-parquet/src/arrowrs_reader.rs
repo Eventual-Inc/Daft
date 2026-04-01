@@ -1350,7 +1350,7 @@ mod tests {
         let mut writer = ArrowWriter::try_new(&mut buf, schema.clone(), None).unwrap();
 
         let batch = arrow::array::RecordBatch::try_new(
-            schema.clone(),
+            schema,
             vec![
                 Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5])),
                 Arc::new(Int32Array::from(vec![10, 20, 30, 40, 50])),
@@ -1673,7 +1673,7 @@ mod tests {
         .unwrap();
 
         // The MVP parquet file should have some rows and columns.
-        assert!(result.len() > 0, "MVP parquet should have rows");
+        assert!(!result.is_empty(), "MVP parquet should have rows");
         assert!(result.num_columns() > 0, "MVP parquet should have columns");
     }
 
@@ -1690,7 +1690,7 @@ mod tests {
         let vals: Vec<i32> = (0..n).collect();
         let labels: Vec<String> = (0..n).map(|i| format!("row_{i}")).collect();
         let batch = arrow::array::RecordBatch::try_new(
-            schema.clone(),
+            schema,
             vec![
                 Arc::new(Int32Array::from(vals)),
                 Arc::new(arrow::array::StringArray::from(labels)),
@@ -1710,7 +1710,7 @@ mod tests {
     fn extract_val_column(batch: &RecordBatch) -> Vec<i32> {
         let idx = batch.schema.get_index("val").unwrap();
         let series = &batch.columns()[idx];
-        let arr = series.i32().unwrap();
+        let arr = series.as_materialized_series().i32().unwrap();
         (0..arr.len()).map(|i| arr.get(i).unwrap()).collect()
     }
 

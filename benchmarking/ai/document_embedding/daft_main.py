@@ -13,7 +13,7 @@ from daft import col
 EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
 NUM_GPU_NODES = 8
-INPUT_PATH = "s3://daft-public-datasets/digitalcorpora_metadata"
+INPUT_PATH = "s3://daft-oss-public-datasets/digitalcorpora_metadata"
 OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/document-embedding-results"
 MAX_PDF_PAGES = 100
 CHUNK_SIZE = 2048
@@ -22,10 +22,13 @@ EMBEDDING_BATCH_SIZE = 10
 
 daft.set_runner_ray()
 
+
 # Wait for Ray cluster to be ready
 @ray.remote
 def warmup():
     pass
+
+
 ray.get([warmup.remote() for _ in range(64)])
 
 
@@ -77,6 +80,7 @@ class Embedder:
         )
         return embeddings
 
+
 daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.from_env()))
 
 start_time = time.time()
@@ -87,7 +91,9 @@ df = df.with_column(
     "pages",
     df["pdf_bytes"].apply(
         extract_text_from_parsed_pdf,
-        return_dtype=daft.DataType.list(daft.DataType.struct({"text": daft.DataType.string(), "page_number": daft.DataType.int64()})),
+        return_dtype=daft.DataType.list(
+            daft.DataType.struct({"text": daft.DataType.string(), "page_number": daft.DataType.int64()})
+        ),
     ),
 )
 df = df.explode("pages")
@@ -95,7 +101,11 @@ df = df.with_columns({"page_text": col("pages")["text"], "page_number": col("pag
 df = df.where(daft.col("page_text").not_null())
 df = df.with_column(
     "chunks",
-    df["page_text"].apply(chunk, return_dtype=daft.DataType.list(daft.DataType.struct({"text": daft.DataType.string(), "chunk_id": daft.DataType.int64()})),
+    df["page_text"].apply(
+        chunk,
+        return_dtype=daft.DataType.list(
+            daft.DataType.struct({"text": daft.DataType.string(), "chunk_id": daft.DataType.int64()})
+        ),
     ),
 )
 df = df.explode("chunks")

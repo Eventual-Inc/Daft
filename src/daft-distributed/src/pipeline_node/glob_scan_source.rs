@@ -2,14 +2,16 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_io_config::IOConfig;
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    Meter,
+    ops::{NodeCategory, NodeType},
+};
 use daft_io::utils::group_glob_paths;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_scan::Pushdowns;
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
-use opentelemetry::metrics::Meter;
 
 use super::{
     DistributedPipelineNode, PipelineNodeConfig, PipelineNodeContext, scan_source::SourceStats,
@@ -67,10 +69,6 @@ impl GlobScanSourceNode {
             io_config,
         })
     }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
 }
 
 impl PipelineNodeImpl for GlobScanSourceNode {
@@ -103,7 +101,7 @@ impl PipelineNodeImpl for GlobScanSourceNode {
                     LocalNodeContext::new(Some(self.node_id() as usize)),
                 );
 
-                SwordfishTaskBuilder::new(glob_scan_plan, self.as_ref())
+                SwordfishTaskBuilder::new(glob_scan_plan, self.as_ref(), self.node_id())
                     .with_glob_paths(self.node_id(), paths.clone())
             })
             .collect::<Vec<_>>();
@@ -131,7 +129,7 @@ impl PipelineNodeImpl for GlobScanSourceNode {
         res
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(SourceStats::new(meter, self.context()))
     }
 }

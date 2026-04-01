@@ -21,14 +21,16 @@ from daft.io._text import read_text
 from daft.io.delta_lake._deltalake import read_deltalake
 from daft.io.hudi._hudi import read_hudi
 from daft.io.iceberg._iceberg import read_iceberg
+from daft.io.paimon._paimon import read_paimon
 from daft.io._json import read_json
+from daft.io._kafka import read_kafka
 from daft.io._parquet import read_parquet
 from daft.io._sql import read_sql
 from daft.io._warc import read_warc
 from daft.io.huggingface import read_huggingface
 from daft.io.mcap._mcap import read_mcap
 from daft.io._range import _range
-from daft.io.catalog import DataCatalogTable, DataCatalogType
+from daft.io._files import from_files
 from daft.io.file_path import from_glob_path
 from daft.io.sink import DataSink
 from daft.io.source import DataSource, DataSourceTask
@@ -50,8 +52,6 @@ def __getattr__(name: str) -> object:
 __all__ = [
     "AzureConfig",
     "CosConfig",
-    "DataCatalogTable",
-    "DataCatalogType",
     "DataSink",
     "DataSource",
     "DataSourceTask",
@@ -65,6 +65,7 @@ __all__ = [
     "TosConfig",
     "UnityConfig",
     "_range",
+    "from_files",
     "from_glob_path",
     "read_csv",
     "read_deltalake",
@@ -72,8 +73,10 @@ __all__ = [
     "read_huggingface",
     "read_iceberg",
     "read_json",
+    "read_kafka",
     "read_lance",
     "read_mcap",
+    "read_paimon",
     "read_parquet",
     "read_sql",
     "read_text",

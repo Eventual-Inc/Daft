@@ -5,6 +5,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_display::{DisplayLevel, tree::TreeDisplay};
+use common_metrics::Meter;
 use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_local_plan::python::PyExecutionStats;
@@ -13,7 +14,7 @@ use dashboard::DashboardStatisticsSubscriber;
 use futures::StreamExt;
 use progress_bar::FlotillaProgressBar;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
-use ray::{RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
+use ray::{FlightShufflePartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
@@ -106,6 +107,7 @@ impl PyDistributedPhysicalPlan {
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
+            &Meter::global_scope("daft.execution.distributed.num_partitions"),
         )?;
 
         Ok(pipeline_node.num_partitions())
@@ -123,6 +125,7 @@ impl PyDistributedPhysicalPlan {
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
+            &Meter::global_scope("daft.execution.distributed.repr_ascii"),
         )?;
 
         Ok(viz_distributed_pipeline_ascii(&pipeline_node, simple))
@@ -140,6 +143,7 @@ impl PyDistributedPhysicalPlan {
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
+            &Meter::global_scope("daft.execution.distributed.repr_mermaid"),
         )?;
 
         let display_level = if simple {
@@ -165,6 +169,7 @@ impl PyDistributedPhysicalPlan {
             plan_config,
             self.plan.logical_plan().clone(),
             Arc::new(HashMap::new()), // No psets needed for repr_json
+            &Meter::global_scope("daft.execution.distributed.repr_json"),
         )
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
@@ -232,6 +237,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDistributedPhysicalPlanRunner>()?;
     parent.add_class::<RaySwordfishTask>()?;
     parent.add_class::<RayPartitionRef>()?;
+    parent.add_class::<FlightShufflePartitionRef>()?;
     parent.add_class::<RaySwordfishWorker>()?;
     parent.add_class::<RayTaskResult>()?;
     Ok(())

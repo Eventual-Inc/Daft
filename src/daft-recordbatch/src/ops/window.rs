@@ -654,12 +654,17 @@ impl RecordBatch {
         let order_by_table = self.eval_expression_list(order_by)?;
 
         // Create a comparator for checking equality between rows
+        let order_by_cols: Vec<Series> = order_by_table
+            .as_materialized_series()
+            .into_iter()
+            .cloned()
+            .collect();
         let comparator: Box<dyn Fn(usize, usize) -> bool + Send + Sync> =
             build_multi_array_is_equal(
-                order_by_table.columns.as_slice(),
-                order_by_table.columns.as_slice(),
-                &vec![true; order_by_table.columns.len()],
-                &vec![true; order_by_table.columns.len()],
+                order_by_cols.as_slice(),
+                order_by_cols.as_slice(),
+                &vec![true; order_by_cols.len()],
+                &vec![true; order_by_cols.len()],
             )?;
 
         // Use iterator to generate rank numbers

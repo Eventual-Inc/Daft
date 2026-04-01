@@ -2,7 +2,6 @@ use std::{collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::partitioning::RepartitionSpec;
@@ -10,10 +9,11 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) struct RepartitionState {
     states: VecDeque<Vec<MicroPartition>>,
@@ -57,8 +57,9 @@ impl BlockingSink for RepartitionSink {
     #[instrument(skip_all, name = "RepartitionSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let repartition_spec = self.repartition_spec.clone();
@@ -76,8 +77,9 @@ impl BlockingSink for RepartitionSink {
                                 .collect::<DaftResult<Vec<_>>>()?;
                             input.partition_by_hash(&bound_exprs, num_partitions)?
                         }
-                        RepartitionSpec::Random(_) => {
-                            input.partition_by_random(num_partitions, 0)?
+                        RepartitionSpec::Random(config) => {
+                            // TODO: Should default seed be 0?
+                            input.partition_by_random(num_partitions, config.seed.unwrap_or(0))?
                         }
                         RepartitionSpec::Range(config) => input.partition_by_range(
                             &config.by,
@@ -98,7 +100,7 @@ impl BlockingSink for RepartitionSink {
         &self,
         mut states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let num_partitions = self.num_partitions;
         let schema = self.schema.clone();
 
@@ -115,7 +117,7 @@ impl BlockingSink for RepartitionSink {
                             .collect::<Vec<_>>();
                         let schema = schema.clone();
                         let fut = tokio::spawn(async move {
-                            let together = MicroPartition::concat(&data)?;
+                            let together = MicroPartition::concat(data)?;
                             let concated = together.concat_or_get()?;
                             let mp = MicroPartition::new_loaded(
                                 schema,
@@ -126,7 +128,7 @@ impl BlockingSink for RepartitionSink {
                                 }),
                                 None,
                             );
-                            Ok(Arc::new(mp))
+                            Ok(mp)
                         });
                         outputs.push(fut);
                     }
@@ -135,7 +137,7 @@ impl BlockingSink for RepartitionSink {
                         .unwrap()
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(outputs))
+                    Ok(outputs)
                 },
                 Span::current(),
             )
@@ -178,11 +180,7 @@ impl BlockingSink for RepartitionSink {
         }
     }
 
-    fn max_concurrency(&self) -> usize {
-        get_compute_pool_num_threads()
-    }
-
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         Ok(RepartitionState {
             states: (0..self.num_partitions).map(|_| vec![]).collect(),
         })

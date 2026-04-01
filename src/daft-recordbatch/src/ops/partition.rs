@@ -74,8 +74,8 @@ impl RecordBatch {
                 "Can not partition a Table by 0 partitions".to_string(),
             ));
         }
-        use rand::{Rng, distributions::Uniform};
-        let range = Uniform::from(0..num_partitions as u64);
+        use rand::{Rng, distr::Uniform};
+        let range = Uniform::try_from(0..num_partitions as u64).unwrap();
 
         let rng = rand::rngs::StdRng::seed_from_u64(seed);
         let values: Vec<u64> = rng.sample_iter(&range).take(self.len()).collect();

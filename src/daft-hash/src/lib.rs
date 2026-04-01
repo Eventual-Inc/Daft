@@ -1,5 +1,3 @@
-#![feature(split_array)]
-
 use std::{
     hash::{BuildHasher, Hasher},
     str::FromStr,
@@ -41,8 +39,10 @@ pub struct Sha1Hasher {
 impl Hasher for Sha1Hasher {
     fn finish(&self) -> u64 {
         let result = self.state.clone().finalize();
-        let (&result, _) = result.0.split_array_ref::<8>();
-        u64::from_le_bytes(result)
+        let bytes: [u8; 8] = result[..8]
+            .try_into()
+            .expect("sha1 digest should be 20 bytes");
+        u64::from_le_bytes(bytes)
     }
 
     fn write(&mut self, bytes: &[u8]) {

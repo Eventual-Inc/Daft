@@ -63,15 +63,12 @@ mod tests {
             let path_owned = path.to_string();
 
             stream! {
-                let mut sent_chunks = 0usize;
-                for chunk_data in data.chunks(chunk) {
-                    if let Some(fail) = fail_idx {
-                        if sent_chunks == fail {
+                for (sent_chunks, chunk_data) in data.chunks(chunk).enumerate() {
+                    if let Some(fail) = fail_idx
+                        && sent_chunks == fail {
                             yield Err(Error::UnableToReadBytes { path: path_owned.clone(), source: std::io::Error::new(std::io::ErrorKind::Interrupted, "mock fail") });
                             break;
                         }
-                    }
-                    sent_chunks += 1;
                     yield Ok(Bytes::copy_from_slice(chunk_data));
                 }
             }.boxed()
@@ -197,7 +194,7 @@ mod tests {
                 Some(GetRange::Offset(chunk_size * fail_at_chunk * 2 + init_off)),
                 Some(GetRange::Offset(chunk_size * fail_at_chunk * 3 + init_off)),
             ]
-        )
+        );
     }
 
     #[tokio::test]
@@ -230,7 +227,7 @@ mod tests {
                 Some(GetRange::Suffix(n - chunk_size * fail_at_chunk)),
                 Some(GetRange::Suffix(n - chunk_size * fail_at_chunk * 2)),
             ]
-        )
+        );
     }
 
     #[tokio::test]

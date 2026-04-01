@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
@@ -11,7 +12,6 @@ use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
 use daft_io::IOStatsRef;
-use daft_local_plan::InputId;
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
 use daft_scan::{FileFormatConfig, Pushdowns, ScanTask, ScanTaskRef, SourceConfig};
@@ -19,8 +19,11 @@ use futures::{FutureExt, Stream, StreamExt};
 use tracing::instrument;
 
 use crate::{
-    channel::{Receiver, Sender, UnboundedReceiver, create_channel, create_unbounded_channel},
-    pipeline::NodeName,
+    channel::{
+        Receiver, Sender, UnboundedReceiver, UnboundedSender, create_channel,
+        create_unbounded_channel,
+    },
+    pipeline::{InputId, NodeName, PipelineMessage},
     sources::{
         scan_task_reader,
         source::{Source, SourceStream},
@@ -28,7 +31,7 @@ use crate::{
 };
 
 pub struct ScanTaskSource {
-    receiver: Option<UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>>,
+    receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
     source_config: Option<Arc<SourceConfig>>,
     pushdowns: Pushdowns,
     schema: SchemaRef,
@@ -50,7 +53,7 @@ impl ScanTaskSource {
             num_cpus
         };
         Self {
-            receiver: Some(receiver),
+            receiver,
             source_config,
             pushdowns,
             schema,
@@ -59,20 +62,22 @@ impl ScanTaskSource {
     }
 
     fn spawn_scan_task_processor(
-        &self,
+        num_parallel_tasks: usize,
         mut receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
-        output_sender: Sender<Arc<MicroPartition>>,
+        output_sender: Sender<PipelineMessage>,
         io_stats: IOStatsRef,
         chunk_size: usize,
         schema: SchemaRef,
         maintain_order: bool,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
-        let num_parallel_tasks = self.num_parallel_tasks;
 
-        // When maintain_order is true, spawn flattener outside so it drains stream outputs in order.
-        let mut flattener_state = if maintain_order {
-            let (agg_tx, agg_rx) = create_unbounded_channel::<Receiver<Arc<MicroPartition>>>();
+        // When maintain_order is true, spawn flattener so it drains stream outputs in order.
+        let mut flattener_state: Option<(
+            UnboundedSender<FlattenerMessage>,
+            common_runtime::RuntimeTask<()>,
+        )> = if maintain_order {
+            let (agg_tx, agg_rx) = create_unbounded_channel::<FlattenerMessage>();
             let flattener_handle = io_runtime.spawn(run_order_preserving_flattener(
                 agg_rx,
                 output_sender.clone(),
@@ -84,20 +89,24 @@ impl ScanTaskSource {
 
         io_runtime.spawn(async move {
             let mut task_set = JoinSet::new();
+            // Store pending tasks: (scan_task, delete_map, input_id)
             let mut pending_tasks = VecDeque::new();
+            // Track how many scan tasks are pending per input_id (only when !maintain_order)
+            let mut input_id_pending_counts: HashMap<InputId, usize> = HashMap::new();
+            let max_parallel = num_parallel_tasks;
             let mut receiver_exhausted = false;
 
             while !receiver_exhausted || !pending_tasks.is_empty() || !task_set.is_empty() {
-                while task_set.len() < num_parallel_tasks && !pending_tasks.is_empty() {
-                    let (scan_task, delete_map, input_id) =
-                        pending_tasks.pop_front().expect("Pending tasks should not be empty");
+                // Spawn from pending_tasks if we have capacity
+                while task_set.len() < max_parallel && !pending_tasks.is_empty() {
+                    let (scan_task, delete_map, input_id, is_last) = pending_tasks.pop_front().unwrap();
                     let sender = match &flattener_state {
                         Some((agg_tx, _)) => {
-                            let (stream_tx, stream_rx) = create_channel(1);
-                            let _ = agg_tx.send(stream_rx);
-                            stream_tx
+                            let (stream_tx, stream_rx) = create_channel::<MicroPartition>(1);
+                            let _ = agg_tx.send(FlattenerMessage { input_id, inner_rx: stream_rx, is_last });
+                            ScanTaskOutputSender::OrderPreserving(stream_tx)
                         }
-                        None => output_sender.clone(),
+                        None => ScanTaskOutputSender::Pipeline(output_sender.clone()),
                     };
                     task_set.spawn(forward_scan_task_stream(
                         scan_task,
@@ -113,17 +122,24 @@ impl ScanTaskSource {
                 tokio::select! {
                     recv_result = receiver.recv(), if !receiver_exhausted => {
                         match recv_result {
-                            Some((_input_id, scan_tasks_batch)) if scan_tasks_batch.is_empty() => {
-                                let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
+                            Some((input_id, scan_tasks_batch)) if scan_tasks_batch.is_empty() => {
+                                let empty = MicroPartition::empty(Some(schema.clone()));
                                 match &flattener_state {
                                     Some((agg_tx, _)) => {
-                                        let (tx, rx) = create_channel(1);
-                                        let _ = tx.send(empty).await;
-                                        drop(tx);
-                                        let _ = agg_tx.send(rx);
+                                        let (stream_tx, stream_rx) =
+                                            create_channel::<MicroPartition>(1);
+                                        let _ = stream_tx.send(empty).await;
+                                        drop(stream_tx);
+                                        let _ = agg_tx.send(FlattenerMessage { input_id, inner_rx: stream_rx, is_last: true });
                                     }
                                     None => {
-                                        if output_sender.send(empty).await.is_err() {
+                                        if output_sender.send(PipelineMessage::Morsel {
+                                            input_id,
+                                            partition: empty,
+                                        }).await.is_err() {
+                                            return Ok(());
+                                        }
+                                        if output_sender.send(PipelineMessage::Flush(input_id)).await.is_err() {
                                             return Ok(());
                                         }
                                     }
@@ -138,8 +154,16 @@ impl ScanTaskSource {
                                     .flat_map(|scan_task| scan_task.split())
                                     .collect();
 
-                                for scan_task in split_tasks {
-                                    pending_tasks.push_back((scan_task, delete_map.clone(), input_id));
+                                let num_tasks = split_tasks.len();
+                                *input_id_pending_counts.entry(input_id).or_insert(0) += num_tasks;
+
+                                for (i, scan_task) in split_tasks.into_iter().enumerate() {
+                                    pending_tasks.push_back((
+                                        scan_task,
+                                        delete_map.clone(),
+                                        input_id,
+                                        i == num_tasks - 1,
+                                    ));
                                 }
                             }
                             None => {
@@ -149,7 +173,18 @@ impl ScanTaskSource {
                     }
                     Some(join_result) = task_set.join_next(), if !task_set.is_empty() => {
                         match join_result {
-                            Ok(Ok(_)) => {}
+                            Ok(Ok(completed_input_id)) => {
+                                if flattener_state.is_none() {
+                                    let count = input_id_pending_counts.get_mut(&completed_input_id).expect("Input id should be present in input_id_pending_counts");
+                                    *count = count.saturating_sub(1);
+                                    if *count == 0 {
+                                        input_id_pending_counts.remove(&completed_input_id);
+                                        if output_sender.send(PipelineMessage::Flush(completed_input_id)).await.is_err() {
+                                            return Ok(());
+                                        }
+                                    }
+                                }
+                            }
                             Ok(Err(e)) => {
                                 let _ = flattener_state.take();
                                 return Err(e.into());
@@ -165,7 +200,6 @@ impl ScanTaskSource {
             debug_assert!(pending_tasks.is_empty(), "Pending tasks should be empty");
             debug_assert!(task_set.is_empty(), "Task set should be empty");
             debug_assert!(receiver_exhausted, "Receiver should be exhausted");
-
             if let Some((agg_tx, flattener_handle)) = flattener_state {
                 drop(agg_tx);
                 flattener_handle
@@ -182,15 +216,17 @@ impl ScanTaskSource {
 impl Source for ScanTaskSource {
     #[instrument(name = "ScanTaskSource::get_data", level = "info", skip_all)]
     fn get_data(
-        &mut self,
+        self: Box<Self>,
         maintain_order: bool,
         io_stats: IOStatsRef,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
-        let input_receiver = self.receiver.take().expect("Receiver not found");
+        let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
+        let input_receiver = self.receiver;
+        let num_parallel_tasks = self.num_parallel_tasks;
 
-        let processor_task = self.spawn_scan_task_processor(
+        let processor_task = Self::spawn_scan_task_processor(
+            num_parallel_tasks,
             input_receiver,
             output_sender,
             io_stats,
@@ -395,19 +431,49 @@ async fn get_delete_map(
         .await?
 }
 
-/// Drains a "receiver of receivers" in order, forwarding each inner stream's
-/// micropartitions to `output_sender`. Used when `maintain_order` is true.
+struct FlattenerMessage {
+    input_id: InputId,
+    inner_rx: Receiver<MicroPartition>,
+    is_last: bool,
+}
+
+/// Drains a "receiver of (input_id, stream)" in order, forwarding each stream's
+/// micropartitions as Morsels. Sends Flush(input_id) only when the last receiver
+/// for that input_id has been drained (i.e. when we see a different input_id or
+/// the channel closes). Used when `maintain_order` is true.
 async fn run_order_preserving_flattener(
-    mut agg_rx: UnboundedReceiver<Receiver<Arc<MicroPartition>>>,
-    output_sender: Sender<Arc<MicroPartition>>,
+    mut agg_rx: UnboundedReceiver<FlattenerMessage>,
+    output_sender: Sender<PipelineMessage>,
 ) {
-    while let Some(mut inner_rx) = agg_rx.recv().await {
+    while let Some(FlattenerMessage {
+        input_id,
+        mut inner_rx,
+        is_last,
+    }) = agg_rx.recv().await
+    {
         while let Some(mp) = inner_rx.recv().await {
-            if output_sender.send(mp).await.is_err() {
+            if output_sender
+                .send(PipelineMessage::Morsel {
+                    input_id,
+                    partition: mp,
+                })
+                .await
+                .is_err()
+            {
                 return;
             }
         }
+        if is_last {
+            let _ = output_sender.send(PipelineMessage::Flush(input_id)).await;
+        }
     }
+}
+
+/// Sender type for scan task output: either direct PipelineMessage (unordered) or
+/// MicroPartition-only for the order-preserving flattener to wrap.
+enum ScanTaskOutputSender {
+    Pipeline(Sender<PipelineMessage>),
+    OrderPreserving(Sender<MicroPartition>),
 }
 
 async fn forward_scan_task_stream(
@@ -416,7 +482,7 @@ async fn forward_scan_task_stream(
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
     chunk_size: usize,
-    sender: Sender<Arc<MicroPartition>>,
+    sender: ScanTaskOutputSender,
     input_id: InputId,
 ) -> DaftResult<InputId> {
     let schema = scan_task.materialized_schema();
@@ -426,15 +492,42 @@ async fn forward_scan_task_stream(
     while let Some(result) = stream.next().await {
         has_data = true;
         let partition = result?;
-        if sender.send(partition).await.is_err() {
-            break;
+        match &sender {
+            ScanTaskOutputSender::Pipeline(s) => {
+                if s.send(PipelineMessage::Morsel {
+                    input_id,
+                    partition,
+                })
+                .await
+                .is_err()
+                {
+                    break;
+                }
+            }
+            ScanTaskOutputSender::OrderPreserving(s) => {
+                if s.send(partition).await.is_err() {
+                    break;
+                }
+            }
         }
     }
 
     // If no data was emitted, send empty micropartition
     if !has_data {
-        let empty = Arc::new(MicroPartition::empty(Some(schema)));
-        let _ = sender.send(empty).await;
+        let empty = MicroPartition::empty(Some(schema));
+        match &sender {
+            ScanTaskOutputSender::Pipeline(s) => {
+                let _ = s
+                    .send(PipelineMessage::Morsel {
+                        input_id,
+                        partition: empty,
+                    })
+                    .await;
+            }
+            ScanTaskOutputSender::OrderPreserving(s) => {
+                let _ = s.send(empty).await;
+            }
+        }
     }
 
     Ok(input_id)
@@ -446,7 +539,7 @@ async fn stream_scan_task(
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
     chunk_size: usize,
-) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
+) -> DaftResult<impl Stream<Item = DaftResult<MicroPartition>> + Send> {
     let pushdown_columns = scan_task
         .pushdowns
         .columns
@@ -525,11 +618,11 @@ async fn stream_scan_task(
             })
             .transpose()?;
 
-        let mp = Arc::new(MicroPartition::new_loaded(
+        let mp = MicroPartition::new_loaded(
             scan_task.materialized_schema(),
             Arc::new(vec![casted_table]),
             stats,
-        ));
+        );
         Ok(mp)
     }))
 }

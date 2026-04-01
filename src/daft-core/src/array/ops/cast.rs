@@ -111,6 +111,10 @@ where
                     let utf8_series = self.cast(&DataType::Utf8)?;
                     return utf8_series.cast(dtype);
                 }
+                if matches!(src, DataType::Utf8) && matches!(dtype, DataType::FixedSizeBinary(_)) {
+                    let binary_series = self.cast(&DataType::Binary)?;
+                    return binary_series.cast(dtype);
+                }
 
                 // Binary -> FixedSizeBinary: validate all non-null values match the target width
                 if let DataType::FixedSizeBinary(target_size) = dtype
@@ -327,31 +331,26 @@ impl TimestampArray {
                 let DataType::Timestamp(unit, timezone) = self.data_type() else {
                     panic!("Wrong dtype for TimestampArray: {}", self.data_type())
                 };
+                let tz_parsed = timezone.as_ref().map(|tz| {
+                    daft_schema::time_unit::parse_timezone(tz)
+                        .unwrap_or_else(|_| panic!("Unable to parse timezone string {tz}"))
+                });
+                let str_array = Utf8Array::from_iter(
+                    self.name(),
+                    self.physical.into_iter().map(|val| {
+                        val.map(|val| match &tz_parsed {
+                            Some(daft_schema::time_unit::ParsedTimezone::Fixed(offset)) => {
+                                timestamp_to_str_offset(val, unit, offset)
+                            }
+                            Some(daft_schema::time_unit::ParsedTimezone::Tz(tz)) => {
+                                timestamp_to_str_tz(val, unit, tz)
+                            }
+                            None => timestamp_to_str_naive(val, unit),
+                        })
+                    }),
+                );
 
-                let str_iter: Box<dyn Iterator<Item = Option<String>>> = match timezone.as_ref() {
-                    None => Box::new(
-                        self.physical
-                            .into_iter()
-                            .map(|val| val.map(|val| timestamp_to_str_naive(val, unit))),
-                    ),
-                    Some(timezone) => {
-                        if let Ok(offset) = daft_schema::time_unit::parse_offset(timezone) {
-                            Box::new(self.physical.into_iter().map(move |val| {
-                                val.map(|val| timestamp_to_str_offset(val, unit, &offset))
-                            }))
-                        } else if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(timezone) {
-                            Box::new(
-                                self.physical.into_iter().map(move |val| {
-                                    val.map(|val| timestamp_to_str_tz(val, unit, &tz))
-                                }),
-                            )
-                        } else {
-                            panic!("Unable to parse timezone string {}", timezone)
-                        }
-                    }
-                };
-
-                Ok(Utf8Array::from_iter(self.name(), str_iter).into_series())
+                Ok(str_array.into_series())
             }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
@@ -1665,13 +1664,13 @@ impl StructArray {
                             Some(field_idx) => self.children[*field_idx].cast(&field.dtype),
                         },
                     )
-                    .collect::<DaftResult<Vec<Series>>>();
-                Ok(Self::new(
-                    Field::new(self.name(), dtype.clone()),
-                    casted_series?,
-                    self.nulls().cloned(),
-                )
-                .into_series())
+                    .collect::<DaftResult<Vec<Series>>>()?;
+                let field = Field::new(self.name(), dtype.clone());
+                if other_fields.is_empty() {
+                    Ok(Self::new_empty(field, self.len(), self.nulls().cloned()).into_series())
+                } else {
+                    Ok(Self::new(field, casted_series, self.nulls().cloned()).into_series())
+                }
             }
             (DataType::Struct(..), DataType::Tensor(..)) => {
                 let casted_struct_array =
@@ -1984,26 +1983,26 @@ mod tests {
     fn test_utf8_to_float64_with_whitespace() {
         let utf8_array = Utf8Array::from_iter(
             "test",
-            vec![Some("  3.14  "), Some("-2.5"), Some("  1e10  "), None].into_iter(),
+            vec![Some("  3.13  "), Some("-2.5"), Some("  1e10  "), None].into_iter(),
         );
         let result = utf8_array
             .cast(&DataType::Float64)
             .expect("Failed to cast Utf8 to Float64");
 
         let values: Vec<Option<f64>> = result.f64().unwrap().into_iter().collect();
-        assert_eq!(values, vec![Some(3.14), Some(-2.5), Some(1e10), None]);
+        assert_eq!(values, vec![Some(3.13), Some(-2.5), Some(1e10), None]);
     }
 
     #[test]
     fn test_utf8_to_float32_with_whitespace() {
         let utf8_array =
-            Utf8Array::from_iter("test", vec![Some("  3.14  "), Some("  -2.5  ")].into_iter());
+            Utf8Array::from_iter("test", vec![Some("  3.13  "), Some("  -2.5  ")].into_iter());
         let result = utf8_array
             .cast(&DataType::Float32)
             .expect("Failed to cast Utf8 to Float32");
 
         let values: Vec<Option<f32>> = result.f32().unwrap().into_iter().collect();
-        assert_eq!(values, vec![Some(3.14_f32), Some(-2.5_f32)]);
+        assert_eq!(values, vec![Some(3.13_f32), Some(-2.5_f32)]);
     }
 
     #[test]
