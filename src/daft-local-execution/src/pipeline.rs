@@ -1402,14 +1402,6 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
-        LocalPhysicalPlan::Repartition(daft_local_plan::Repartition { .. }) => {
-            return Err(crate::Error::PipelineCreationError {
-                source: DaftError::InternalError(
-                    "LocalPhysicalPlan::Repartition is no longer executable; use ShuffleWriteBackend::Ray instead".to_string(),
-                ),
-                plan_name: "Repartition".to_string(),
-            });
-        }
         LocalPhysicalPlan::IntoPartitions(daft_local_plan::IntoPartitions {
             input,
             num_partitions,

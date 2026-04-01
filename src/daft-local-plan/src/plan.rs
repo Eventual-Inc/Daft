@@ -105,7 +105,6 @@ pub enum LocalPhysicalPlan {
     WindowOrderByOnly(WindowOrderByOnly),
 
     // Flotilla Only Nodes
-    Repartition(Repartition),
     IntoPartitions(IntoPartitions),
     ShuffleWrite(ShuffleWrite),
     ShuffleRead(ShuffleRead),
@@ -160,7 +159,6 @@ impl LocalPhysicalPlan {
             | Self::SortMergeJoin(SortMergeJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::CommitWrite(CommitWrite { stats_state, .. })
-            | Self::Repartition(Repartition { stats_state, .. })
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
             | Self::ShuffleWrite(ShuffleWrite { stats_state, .. })
             | Self::ShuffleRead(ShuffleRead { stats_state, .. })
@@ -210,7 +208,6 @@ impl LocalPhysicalPlan {
             | Self::SortMergeJoin(SortMergeJoin { context, .. })
             | Self::PhysicalWrite(PhysicalWrite { context, .. })
             | Self::CommitWrite(CommitWrite { context, .. })
-            | Self::Repartition(Repartition { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
             | Self::ShuffleWrite(ShuffleWrite { context, .. })
             | Self::ShuffleRead(ShuffleRead { context, .. })
@@ -919,25 +916,6 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn repartition(
-        input: LocalPhysicalPlanRef,
-        repartition_spec: RepartitionSpec,
-        num_partitions: usize,
-        schema: SchemaRef,
-        stats_state: StatsState,
-        context: LocalNodeContext,
-    ) -> LocalPhysicalPlanRef {
-        Self::Repartition(Repartition {
-            input,
-            repartition_spec,
-            num_partitions,
-            schema,
-            stats_state,
-            context,
-        })
-        .arced()
-    }
-
     pub fn into_partitions(
         input: LocalPhysicalPlanRef,
         num_partitions: usize,
@@ -1056,7 +1034,6 @@ impl LocalPhysicalPlan {
             Self::DataSink(DataSink { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
-            Self::Repartition(Repartition { schema, .. }) => schema,
             Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
             Self::ShuffleWrite(ShuffleWrite { schema, .. }) => schema,
             Self::ShuffleRead(ShuffleRead { schema, .. }) => schema,
@@ -1139,7 +1116,6 @@ impl LocalPhysicalPlan {
             Self::DistributedActorPoolProject(DistributedActorPoolProject { input, .. }) => {
                 vec![input.clone()]
             }
-            Self::Repartition(Repartition { input, .. }) => vec![input.clone()],
             Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
             Self::ShuffleWrite(ShuffleWrite { input, .. }) => vec![input.clone()],
             Self::ShuffleRead(ShuffleRead { .. }) => vec![], // No input children
@@ -1567,20 +1543,6 @@ impl LocalPhysicalPlan {
                     schema.clone(),
                     passthrough_columns.clone(),
                     required_columns.clone(),
-                    StatsState::NotMaterialized,
-                    context.clone(),
-                ),
-                Self::Repartition(Repartition {
-                    repartition_spec,
-                    num_partitions,
-                    schema,
-                    context,
-                    ..
-                }) => Self::repartition(
-                    new_child.clone(),
-                    repartition_spec.clone(),
-                    *num_partitions,
-                    schema.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
@@ -2147,17 +2109,6 @@ pub struct WindowOrderByOnly {
     pub stats_state: StatsState,
     pub functions: Vec<BoundWindowExpr>,
     pub aliases: Vec<String>,
-    pub context: LocalNodeContext,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(debug_assertions, derive(Debug))]
-pub struct Repartition {
-    pub input: LocalPhysicalPlanRef,
-    pub repartition_spec: RepartitionSpec,
-    pub num_partitions: usize,
-    pub schema: SchemaRef,
-    pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
 
