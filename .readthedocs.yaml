@@ -6,7 +6,7 @@ build:
     python: "3.10"
   jobs:
     post_install:
-    - pip install uv==0.9.2
+    - pip install uv==0.11.2
     - UV_PROJECT_ENVIRONMENT=$READTHEDOCS_VIRTUALENV_PATH uv sync --only-group docs
     - UV_PROJECT_ENVIRONMENT=$READTHEDOCS_VIRTUALENV_PATH uv pip install -e docs/plugins/nav_hide_children
 
