@@ -13,10 +13,10 @@ pub use plan::{
     CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
     HashAggregate, HashJoin, InMemoryScan, IntoBatches, IntoPartitions, Limit, LocalNodeContext,
     LocalPhysicalPlan, LocalPhysicalPlanRef, MonotonicallyIncreasingId, PhysicalScan,
-    PhysicalWrite, Pivot, PlaceholderScan, Project, Sample, SamplingMethod, ShuffleRead,
-    ShuffleReadBackend, ShuffleWrite, ShuffleWriteBackend, ShuffleWriteSpec, Sort, SortMergeJoin,
-    TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
-    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
+    PhysicalWrite, Pivot, PlaceholderScan, Project, RepartitionWrite, RepartitionWriteBackend,
+    Sample, SamplingMethod, ShuffleRead, ShuffleReadBackend, Sort, SortMergeJoin, TopN, UDFProject,
+    UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
+    WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 #[cfg(feature = "python")]
 pub use python::{PyExchangeWriteInfo, PyLocalPhysicalPlan, register_modules};

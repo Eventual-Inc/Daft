@@ -8,7 +8,7 @@ use common_metrics::ops::{NodeCategory, NodeType};
 use common_partitioning::PartitionRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_functions::random::random_int_expr;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleWriteBackend, ShuffleWriteSpec};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, RepartitionWriteBackend};
 use daft_logical_plan::{partitioning::RandomShuffleConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
@@ -165,15 +165,13 @@ impl PipelineNodeImpl for RandomShuffleNode {
         let seed = self.seed;
 
         let partitioned_input = input_node.pipeline_instruction(self.clone(), move |input| {
-            LocalPhysicalPlan::shuffle_write(
+            LocalPhysicalPlan::repartition_write(
                 input,
                 num_partitions,
                 schema.clone(),
-                ShuffleWriteBackend::Ray,
-                ShuffleWriteSpec::Repartition(
-                    daft_logical_plan::partitioning::RepartitionSpec::Random(
-                        RandomShuffleConfig::new_with_seed(Some(num_partitions), seed),
-                    ),
+                RepartitionWriteBackend::Ray,
+                daft_logical_plan::partitioning::RepartitionSpec::Random(
+                    RandomShuffleConfig::new_with_seed(Some(num_partitions), seed),
                 ),
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(node_id as usize)),

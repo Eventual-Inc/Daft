@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleWriteBackend, ShuffleWriteSpec};
-use daft_logical_plan::stats::StatsState;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, RepartitionWriteBackend};
+use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
 use crate::{
@@ -31,8 +31,8 @@ pub(crate) enum DistributedExchangeBackend {
 pub(crate) struct ExchangeWriteConfig {
     pub(crate) input_node: TaskBuilderStream,
     pub(crate) producer: Arc<dyn PipelineNodeImpl>,
-    pub(crate) backend: ShuffleWriteBackend,
-    pub(crate) write_spec: ShuffleWriteSpec,
+    pub(crate) backend: RepartitionWriteBackend,
+    pub(crate) repartition_spec: RepartitionSpec,
 }
 
 pub(crate) struct ExchangeBackend {
@@ -90,12 +90,12 @@ impl ExchangeBackend {
         config
             .input_node
             .pipeline_instruction(config.producer, move |input| {
-                LocalPhysicalPlan::shuffle_write(
+                LocalPhysicalPlan::repartition_write(
                     input,
                     num_partitions,
                     schema.clone(),
                     config.backend.clone(),
-                    config.write_spec.clone(),
+                    config.repartition_spec.clone(),
                     StatsState::NotMaterialized,
                     LocalNodeContext::new(Some(node_id as usize)),
                 )

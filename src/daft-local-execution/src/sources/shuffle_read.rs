@@ -22,7 +22,7 @@ use crate::{
     pipeline::{NodeName, PipelineMessage},
 };
 
-pub struct FlightShuffleReadSource {
+pub struct ShuffleReadSource {
     receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
     shuffle_id: u64,
     server_cache_mapping: HashMap<String, Vec<u32>>,
@@ -31,7 +31,7 @@ pub struct FlightShuffleReadSource {
     _local_server: Arc<ShuffleFlightServer>,
 }
 
-impl FlightShuffleReadSource {
+impl ShuffleReadSource {
     pub fn new(
         receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
         shuffle_id: u64,
@@ -166,9 +166,9 @@ async fn forward_partition_stream(
 }
 
 #[async_trait]
-impl Source for FlightShuffleReadSource {
+impl Source for ShuffleReadSource {
     fn name(&self) -> NodeName {
-        "FlightShuffleRead".into()
+        "ShuffleRead".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -180,10 +180,10 @@ impl Source for FlightShuffleReadSource {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        vec![format!("FlightShuffleRead: shuffle_id={}", self.shuffle_id)]
+        vec![format!("ShuffleRead: shuffle_id={}", self.shuffle_id)]
     }
 
-    #[instrument(skip_all, name = "FlightShuffleReadSource::get_data")]
+    #[instrument(skip_all, name = "ShuffleReadSource::get_data")]
     fn get_data(
         self: Box<Self>,
         _maintain_order: bool,

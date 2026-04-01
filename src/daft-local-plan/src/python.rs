@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use crate::{ExecutionStats, LocalPhysicalPlanRef, translate};
-use crate::{Input, LocalPhysicalPlan, ShuffleWriteBackend};
+use crate::{Input, LocalPhysicalPlan, RepartitionWriteBackend};
 
 #[pyclass(
     module = "daft.daft",
@@ -75,18 +75,22 @@ impl PyLocalPhysicalPlan {
 
     fn exchange_write_info(&self) -> Option<PyExchangeWriteInfo> {
         match self.plan.as_ref() {
-            LocalPhysicalPlan::ShuffleWrite(shuffle_write) => match &shuffle_write.backend {
-                ShuffleWriteBackend::Ray => Some(PyExchangeWriteInfo {
-                    backend: "ray".to_string(),
-                    exchange_id: 0,
-                    num_partitions: shuffle_write.num_partitions,
-                }),
-                ShuffleWriteBackend::Flight { shuffle_id, .. } => Some(PyExchangeWriteInfo {
-                    backend: "flight".to_string(),
-                    exchange_id: *shuffle_id,
-                    num_partitions: shuffle_write.num_partitions,
-                }),
-            },
+            LocalPhysicalPlan::RepartitionWrite(repartition_write) => {
+                match &repartition_write.backend {
+                    RepartitionWriteBackend::Ray => Some(PyExchangeWriteInfo {
+                        backend: "ray".to_string(),
+                        exchange_id: 0,
+                        num_partitions: repartition_write.num_partitions,
+                    }),
+                    RepartitionWriteBackend::Flight { shuffle_id, .. } => {
+                        Some(PyExchangeWriteInfo {
+                            backend: "flight".to_string(),
+                            exchange_id: *shuffle_id,
+                            num_partitions: repartition_write.num_partitions,
+                        })
+                    }
+                }
+            }
             _ => None,
         }
     }
@@ -184,14 +188,14 @@ mod tests {
     };
 
     use super::PyLocalPhysicalPlan;
-    use crate::{LocalNodeContext, LocalPhysicalPlan, ShuffleWriteBackend, ShuffleWriteSpec};
+    use crate::{LocalNodeContext, LocalPhysicalPlan, RepartitionWriteBackend};
 
     fn test_schema() -> Arc<Schema> {
         Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)]))
     }
 
     #[test]
-    fn exchange_write_info_reports_shuffle_write_backends() {
+    fn exchange_write_info_reports_repartition_write_backends() {
         let schema = test_schema();
         let input = LocalPhysicalPlan::in_memory_scan(
             0,
@@ -204,12 +208,12 @@ mod tests {
             RepartitionSpec::Hash(HashRepartitionConfig::new(Some(2), vec![resolved_col("a")]));
 
         let ray_plan = PyLocalPhysicalPlan {
-            plan: LocalPhysicalPlan::shuffle_write(
+            plan: LocalPhysicalPlan::repartition_write(
                 input.clone(),
                 2,
                 schema.clone(),
-                ShuffleWriteBackend::Ray,
-                ShuffleWriteSpec::Repartition(repartition_spec.clone()),
+                RepartitionWriteBackend::Ray,
+                repartition_spec.clone(),
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(None),
             ),
@@ -220,16 +224,16 @@ mod tests {
         assert_eq!(ray_info.num_partitions, 2);
 
         let flight_plan = PyLocalPhysicalPlan {
-            plan: LocalPhysicalPlan::shuffle_write(
+            plan: LocalPhysicalPlan::repartition_write(
                 input,
                 3,
                 schema.clone(),
-                ShuffleWriteBackend::Flight {
+                RepartitionWriteBackend::Flight {
                     shuffle_id: 42,
                     shuffle_dirs: vec!["/tmp".to_string()],
                     compression: None,
                 },
-                ShuffleWriteSpec::Repartition(repartition_spec),
+                repartition_spec,
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(None),
             ),

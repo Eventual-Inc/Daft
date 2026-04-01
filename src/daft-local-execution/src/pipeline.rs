@@ -19,8 +19,8 @@ pub use daft_local_plan::InputId;
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
     HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
-    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Sample,
-    ShuffleReadBackend, ShuffleWriteBackend, ShuffleWriteSpec, Sort, SortMergeJoin, SourceId, TopN,
+    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, RepartitionWrite,
+    RepartitionWriteBackend, Sample, ShuffleReadBackend, Sort, SortMergeJoin, SourceId, TopN,
     UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
@@ -63,8 +63,8 @@ use crate::{
         write::{WriteFormat, WriteSink},
     },
     sources::{
-        flight_shuffle_read::FlightShuffleReadSource, glob_scan::GlobScanSource,
-        in_memory::InMemorySource, scan_task::ScanTaskSource, source::SourceNode,
+        glob_scan::GlobScanSource, in_memory::InMemorySource, scan_task::ScanTaskSource,
+        shuffle_read::ShuffleReadSource, source::SourceNode,
     },
     streaming_sink::{
         async_udf::AsyncUdfSink, base::StreamingSinkNode, limit::LimitSink,
@@ -1420,40 +1420,35 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
-        LocalPhysicalPlan::ShuffleWrite(daft_local_plan::ShuffleWrite {
+        LocalPhysicalPlan::RepartitionWrite(RepartitionWrite {
             input,
             num_partitions,
             schema,
             backend,
-            write_spec,
+            repartition_spec,
             stats_state,
             context,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            match (backend, write_spec) {
-                (ShuffleWriteBackend::Ray, ShuffleWriteSpec::Repartition(repartition_spec)) => {
-                    BlockingSinkNode::new(
-                        Arc::new(RepartitionSink::new_ray(
-                            repartition_spec.clone(),
-                            *num_partitions,
-                            schema.clone(),
-                        )),
-                        child_node,
-                        stats_state.clone(),
-                        ctx,
-                        context,
-                    )
-                    .boxed()
-                }
-                (
-                    ShuffleWriteBackend::Flight {
-                        shuffle_id,
-                        shuffle_dirs,
-                        compression,
-                    },
-                    ShuffleWriteSpec::Repartition(repartition_spec),
-                ) => {
+            match backend {
+                RepartitionWriteBackend::Ray => BlockingSinkNode::new(
+                    Arc::new(RepartitionSink::new_ray(
+                        repartition_spec.clone(),
+                        *num_partitions,
+                        schema.clone(),
+                    )),
+                    child_node,
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed(),
+                RepartitionWriteBackend::Flight {
+                    shuffle_id,
+                    shuffle_dirs,
+                    compression,
+                } => {
                     let repartition_sink = RepartitionSink::try_new_flight(
                         *num_partitions,
                         *shuffle_id,
@@ -1505,7 +1500,7 @@ fn physical_plan_to_pipeline(
                     .expect("Flight shuffle server must be initialized for FlightShuffleWrite plans when using flight_shuffle algorithm");
                 let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
                 input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
-                let source = FlightShuffleReadSource::new(
+                let source = ShuffleReadSource::new(
                     rx,
                     *shuffle_id,
                     server_cache_mapping.clone(),

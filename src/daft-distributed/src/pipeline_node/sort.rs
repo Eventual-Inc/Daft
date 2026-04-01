@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{
-    LocalNodeContext, LocalPhysicalPlan, SamplingMethod, ShuffleWriteBackend, ShuffleWriteSpec,
+    LocalNodeContext, LocalPhysicalPlan, RepartitionWriteBackend, SamplingMethod,
 };
 use daft_logical_plan::{
     partitioning::{RangeRepartitionConfig, RepartitionSpec},
@@ -188,17 +188,17 @@ pub(crate) fn create_range_repartition_tasks(
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(node_id as usize)),
             );
-            let plan = LocalPhysicalPlan::shuffle_write(
+            let plan = LocalPhysicalPlan::repartition_write(
                 in_memory_source_plan,
                 num_partitions,
                 input_schema.clone(),
-                ShuffleWriteBackend::Ray,
-                ShuffleWriteSpec::Repartition(RepartitionSpec::Range(RangeRepartitionConfig::new(
+                RepartitionWriteBackend::Ray,
+                RepartitionSpec::Range(RangeRepartitionConfig::new(
                     Some(num_partitions),
                     boundaries.clone(),
                     partition_by.clone(),
                     descending.clone(),
-                ))),
+                )),
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(node_id as usize)),
             );
