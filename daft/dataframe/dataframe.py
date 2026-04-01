@@ -59,6 +59,7 @@ if TYPE_CHECKING:
     import pandas
     import pyarrow
     import pyiceberg
+    import pypaimon
     import ray
     import torch
     from sqlalchemy.engine import Connection
@@ -684,6 +685,23 @@ class DataFrame:
         except ImportError:
             return preview._repr_html_()
 
+    @DataframePublicAPI
+    def _repr_mimebundle_(
+        self, include: Iterable[str] | None = None, exclude: Iterable[str] | None = None
+    ) -> dict[str, str]:
+        include_set = set(include) if include is not None else None
+        exclude_set = set(exclude) if exclude is not None else set()
+
+        mimebundle: dict[str, str] = {}
+
+        if (include_set is None or "text/plain" in include_set) and "text/plain" not in exclude_set:
+            mimebundle["text/plain"] = self.__repr__()
+
+        if (include_set is None or "text/html" in include_set) and "text/html" not in exclude_set:
+            mimebundle["text/html"] = self._repr_html_()
+
+        return mimebundle
+
     ###
     # Creation methods
     ###
@@ -899,6 +917,7 @@ class DataFrame:
         root_dir: str | pathlib.Path,
         compression: str = "snappy",
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
+        write_success_file: bool = False,
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
     ) -> "DataFrame":
@@ -910,6 +929,7 @@ class DataFrame:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
             write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
+            write_success_file (bool, optional): Whether to write a `_SUCCESS` file upon successful completion. Defaults to False.
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
@@ -945,6 +965,7 @@ class DataFrame:
             root_dir=root_dir,
             partition_cols=cols,
             write_mode=WriteMode.from_str(write_mode),
+            write_success_file=write_success_file,
             file_format=FileFormat.Parquet,
             compression=compression,
             io_config=io_config,
@@ -1339,6 +1360,44 @@ class DataFrame:
         df = from_pydict(with_operations)
         df._metadata = write_df._metadata
         return df
+
+    @DataframePublicAPI
+    def write_paimon(
+        self,
+        table: "pypaimon.table.Table",
+        mode: str = "append",
+    ) -> "DataFrame":
+        """Writes the DataFrame to an Apache Paimon table, returning a summary DataFrame.
+
+        Args:
+            table (pypaimon.table.Table): Destination Paimon table obtained via
+                ``pypaimon.CatalogFactory.create(options).get_table(identifier)``.
+            mode (str, optional): Write mode – ``"append"`` adds new data,
+                ``"overwrite"`` replaces existing data. Defaults to ``"append"``.
+
+        Returns:
+            DataFrame: A summary DataFrame with columns ``operation``, ``rows``,
+            ``file_size``, and ``file_name`` describing each written file.
+
+        Note:
+            This call is **blocking** and will execute the DataFrame when called.
+
+        Examples:
+            >>> import pypaimon, daft  # doctest: +SKIP
+            >>>
+            >>> catalog = pypaimon.CatalogFactory.create({"warehouse": "/tmp/warehouse"})  # doctest: +SKIP
+            >>> table = catalog.get_table("mydb.mytable")  # doctest: +SKIP
+            >>> df = daft.from_pydict({"id": [1, 2, 3], "name": ["a", "b", "c"]})  # doctest: +SKIP
+            >>> df.write_paimon(table)  # doctest: +SKIP
+        """
+        try:
+            import pypaimon  # noqa: F401
+        except ImportError:
+            raise ImportError("pypaimon is required to use write_paimon. Install it with: `pip install pypaimon`")
+
+        from daft.io.paimon.paimon_data_sink import PaimonDataSink
+
+        return self.write_sink(PaimonDataSink(table, mode))
 
     @DataframePublicAPI
     def write_deltalake(
@@ -3010,6 +3069,26 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def shuffle(self, seed: int | None = None) -> "DataFrame":
+        """Randomly reorders rows of the DataFrame.
+
+        This is analogous to ``shuffle`` operation in the Hugging Face ``datasets`` library.
+
+        Note:
+            This performs a global sort and is expensive. For randomly redistributing rows across
+            partitions see :meth:`DataFrame.repartition` with no ``partition_by`` (random partition shuffle).
+
+        Args:
+            seed: Optional RNG seed passed to ``random_int`` for best-effort reproducibility
+                on a fixed partition layout; not guaranteed across runners or plan changes.
+
+        Returns:
+            DataFrame: A new DataFrame with rows in random order.
+        """
+        builder = self._builder.shuffle(seed)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def into_partitions(self, num: int) -> "DataFrame":
         """Splits or coalesces DataFrame to ``num`` partitions. Order is preserved.
 
@@ -4545,7 +4624,7 @@ class DataFrame:
         Args:
             n: number of rows to show. Defaults to 8.
             format (PreviewFormat): the box-drawing format e.g. "fancy" or "markdown".
-            verbose (bool): verbose will print header info
+            verbose (bool): if True, headers include the column's data type.
             max_width (int): global max column width
             align (PreviewAlign): global column align
             columns (list[PreviewColumn]): column overrides
@@ -4893,21 +4972,35 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
             >>> ray_dataset = df.to_ray_dataset()  # doctest: +SKIP
 
         Note:
-            This function can only work if Daft is running using the RayRunner
+            This function requires Ray to be installed. It works with any Daft runner -
+            when using the native runner, partitions are converted to Arrow tables locally
+            and then handed to Ray.
         """
         from daft.runners.ray_runner import RayPartitionSet
 
         self.collect()
         partition_set = self._result
         assert partition_set is not None
-        if not isinstance(partition_set, RayPartitionSet):
-            raise ValueError("Cannot convert to Ray Dataset if not running on Ray backend")
-        return partition_set.to_ray_dataset()
+        if isinstance(partition_set, RayPartitionSet):
+            return partition_set.to_ray_dataset()
+
+        # Native runner path: convert MicroPartitions to Arrow tables locally,
+        # then create a Ray Dataset from them.
+        import ray.data
+
+        from daft.runners.ray_runner import _micropartition_to_ray_dataset_block
+
+        blocks = [_micropartition_to_ray_dataset_block(result.micropartition()) for _, result in partition_set.items()]
+        # All partitions share the same schema, so either all convert to Arrow or all
+        # fall back to pylist. Handle both cases.
+        if blocks and isinstance(blocks[0], list):
+            all_items = [item for block in blocks for item in block]
+            return ray.data.from_items(all_items)
+        return ray.data.from_arrow(blocks)
 
     @classmethod
     def _from_ray_dataset(cls, ds: "ray.data.dataset.DataSet") -> "DataFrame":

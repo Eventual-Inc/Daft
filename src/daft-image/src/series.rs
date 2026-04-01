@@ -3,7 +3,7 @@ use common_image::CowImage;
 use daft_core::{array::ops::image::image_array_from_img_buffers, prelude::*};
 use daft_schema::image_property::ImageProperty;
 
-use crate::ops::ImageOps;
+use crate::ops::{ImageHashOps, ImageOps};
 
 fn image_decode_impl(
     ba: &BinaryArray,
@@ -250,6 +250,117 @@ pub(crate) fn infer_to_tensor_dtype(dtype: &DataType) -> DaftResult<DataType> {
         DataType::Image(None) => Ok(DataType::Tensor(Box::new(DataType::UInt8))),
         _ => Err(DaftError::ValueError(format!(
             "datatype: {dtype} does not support Image to_tensor"
+        ))),
+    }
+}
+
+/// Computes the average hash (aHash) of images in a Series.
+///
+/// # Arguments
+/// * `s` - Input Series containing image data
+///
+/// # Returns
+/// A DaftResult containing a Series of UInt64 hashes
+pub fn average_hash(s: &Series) -> DaftResult<Series> {
+    match s.data_type() {
+        DataType::Image(_) => Ok(s.downcast::<ImageArray>()?.average_hash()?.into_series()),
+        DataType::FixedShapeImage(..) => Ok(s
+            .downcast::<FixedShapeImageArray>()?
+            .average_hash()?
+            .into_series()),
+        dt => Err(DaftError::ValueError(format!(
+            "datatype: {dt} does not support image average_hash. Occurred while processing Series: {}",
+            s.name()
+        ))),
+    }
+}
+
+/// Computes the difference hash (dHash) of images in a Series.
+///
+/// # Arguments
+/// * `s` - Input Series containing image data
+///
+/// # Returns
+/// A DaftResult containing a Series of UInt64 hashes
+pub fn difference_hash(s: &Series) -> DaftResult<Series> {
+    match s.data_type() {
+        DataType::Image(_) => Ok(s.downcast::<ImageArray>()?.difference_hash()?.into_series()),
+        DataType::FixedShapeImage(..) => Ok(s
+            .downcast::<FixedShapeImageArray>()?
+            .difference_hash()?
+            .into_series()),
+        dt => Err(DaftError::ValueError(format!(
+            "datatype: {dt} does not support image difference_hash. Occurred while processing Series: {}",
+            s.name()
+        ))),
+    }
+}
+
+/// Computes the perceptual hash (pHash) of images in a Series.
+///
+/// # Arguments
+/// * `s` - Input Series containing image data
+///
+/// # Returns
+/// A DaftResult containing a Series of UInt64 hashes
+pub fn perceptual_hash(s: &Series) -> DaftResult<Series> {
+    match s.data_type() {
+        DataType::Image(_) => Ok(s.downcast::<ImageArray>()?.perceptual_hash()?.into_series()),
+        DataType::FixedShapeImage(..) => Ok(s
+            .downcast::<FixedShapeImageArray>()?
+            .perceptual_hash()?
+            .into_series()),
+        dt => Err(DaftError::ValueError(format!(
+            "datatype: {dt} does not support image perceptual_hash. Occurred while processing Series: {}",
+            s.name()
+        ))),
+    }
+}
+
+/// Computes the wavelet hash (wHash) of images in a Series.
+///
+/// # Arguments
+/// * `s` - Input Series containing image data
+///
+/// # Returns
+/// A DaftResult containing a Series of UInt64 hashes
+pub fn wavelet_hash(s: &Series) -> DaftResult<Series> {
+    match s.data_type() {
+        DataType::Image(_) => Ok(s.downcast::<ImageArray>()?.wavelet_hash()?.into_series()),
+        DataType::FixedShapeImage(..) => Ok(s
+            .downcast::<FixedShapeImageArray>()?
+            .wavelet_hash()?
+            .into_series()),
+        dt => Err(DaftError::ValueError(format!(
+            "datatype: {dt} does not support image wavelet_hash. Occurred while processing Series: {}",
+            s.name()
+        ))),
+    }
+}
+
+/// Computes a crop-resistant hash of images in a Series.
+///
+/// The image is divided into overlapping segments and a dHash is computed for each.
+/// The concatenated segment hashes are returned as a variable-length binary value.
+///
+/// # Arguments
+/// * `s` - Input Series containing image data
+///
+/// # Returns
+/// A DaftResult containing a Series of binary values (concatenated segment hashes)
+pub fn crop_resistant_hash(s: &Series) -> DaftResult<Series> {
+    match s.data_type() {
+        DataType::Image(_) => Ok(s
+            .downcast::<ImageArray>()?
+            .crop_resistant_hash()?
+            .into_series()),
+        DataType::FixedShapeImage(..) => Ok(s
+            .downcast::<FixedShapeImageArray>()?
+            .crop_resistant_hash()?
+            .into_series()),
+        dt => Err(DaftError::ValueError(format!(
+            "datatype: {dt} does not support image crop_resistant_hash. Occurred while processing Series: {}",
+            s.name()
         ))),
     }
 }

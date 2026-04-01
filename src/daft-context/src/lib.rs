@@ -14,8 +14,7 @@ use common_metrics::{QueryID, QueryPlan};
 use daft_micropartition::MicroPartitionRef;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-
-pub use crate::subscribers::{QueryMetadata, QueryResult, Subscriber};
+pub use subscribers::{Event, QueryMetadata, QueryResult, Subscriber};
 
 #[derive(Default)]
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -277,6 +276,27 @@ impl DaftContext {
             handle.spawn(async move {
                 if let Err(e) = subscriber.on_exec_emit_stats(query_id, stats).await {
                     log::error!("Failed to notify exec emit stats: {}", e);
+                }
+            });
+        }
+        Ok(())
+    }
+
+    pub fn notify_event(&self, event: Event) -> DaftResult<()> {
+        let subscribers = self.with_state(|state| {
+            state
+                .subscribers
+                .values()
+                .cloned()
+                .collect::<Vec<Arc<dyn Subscriber>>>()
+        });
+        let rt = common_runtime::get_io_runtime(false);
+        let handle = rt.runtime.handle().clone();
+        for subscriber in subscribers {
+            let evt = event.clone();
+            handle.spawn(async move {
+                if let Err(e) = subscriber.on_event(evt).await {
+                    log::error!("Failed to notify_event: {}", e);
                 }
             });
         }

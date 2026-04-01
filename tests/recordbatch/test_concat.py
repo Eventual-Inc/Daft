@@ -40,7 +40,7 @@ def test_table_concat_schema_mismatch() -> None:
         MicroPartition.from_pydict({"y": [1, 2, 3]}),
     ]
 
-    with pytest.raises(ValueError, match=f"{MicroPartition.__name__} concat requires all schemas to match"):
+    with pytest.raises(ValueError, match=f"{MicroPartition.__name__}::concat requires all schemas to match"):
         MicroPartition.concat(mix_types_table)
 
     mix_types_table = [
@@ -48,7 +48,7 @@ def test_table_concat_schema_mismatch() -> None:
         MicroPartition.from_pydict({"x": [1.0, 2.0, 3.0]}),
     ]
 
-    with pytest.raises(ValueError, match=f"{MicroPartition.__name__} concat requires all schemas to match"):
+    with pytest.raises(ValueError, match=f"{MicroPartition.__name__}::concat requires all schemas to match"):
         MicroPartition.concat(mix_types_table)
 
     mix_types_table = [
@@ -56,7 +56,7 @@ def test_table_concat_schema_mismatch() -> None:
         MicroPartition.from_pydict({"x": [object(), object(), object()]}),
     ]
 
-    with pytest.raises(ValueError, match=f"{MicroPartition.__name__} concat requires all schemas to match"):
+    with pytest.raises(ValueError, match=f"{MicroPartition.__name__}::concat requires all schemas to match"):
         MicroPartition.concat(mix_types_table)
 
     mix_types_table = [
@@ -64,5 +64,5 @@ def test_table_concat_schema_mismatch() -> None:
         MicroPartition.from_pydict({"x": [1, 2, 3], "y": [2, 3, 4]}),
     ]
 
-    with pytest.raises(ValueError, match=f"{MicroPartition.__name__} concat requires all schemas to match"):
+    with pytest.raises(ValueError, match=f"{MicroPartition.__name__}::concat requires all schemas to match"):
         MicroPartition.concat(mix_types_table)

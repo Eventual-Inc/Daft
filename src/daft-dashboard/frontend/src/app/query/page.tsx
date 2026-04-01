@@ -188,7 +188,7 @@ function QueryPageInner() {
           defaultValue="progress-table"
           className="w-full h-full flex flex-col"
         >
-          <TabsList className="grid w-full grid-cols-4 flex-shrink-0">
+          <TabsList className={`grid w-full flex-shrink-0 ${getEngineName(query.runner) === "Swordfish" ? "grid-cols-4" : "grid-cols-3"}`}>
             <TabsTrigger
               value="progress-table"
               disabled={
@@ -206,12 +206,15 @@ function QueryPageInner() {
               Optimized Plan
             </TabsTrigger>
             <TabsTrigger value="unoptimized-plan">Unoptimized Plan</TabsTrigger>
-            <TabsTrigger
-              value="results"
-              disabled={query.state.status !== "Finished"}
-            >
-              Results
-            </TabsTrigger>
+            {/* Results preview only supported for Swordfish for now (#6559) */}
+            {getEngineName(query.runner) === "Swordfish" && (
+              <TabsTrigger
+                value="results"
+                disabled={query.state.status !== "Finished"}
+              >
+                Results
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent

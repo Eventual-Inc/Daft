@@ -14,10 +14,11 @@ use futures::TryStreamExt;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) struct CommitWriteState {
     written_file_path_record_batches: Vec<RecordBatch>,
@@ -61,8 +62,9 @@ impl BlockingSink for CommitWriteSink {
     #[instrument(skip_all, name = "CommitWriteSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         state.append(input.record_batches().iter().cloned());
@@ -74,7 +76,7 @@ impl BlockingSink for CommitWriteSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let data_schema = self.data_schema.clone();
         let file_schema = self.file_schema.clone();
         let file_info = self.file_info.clone();
@@ -102,11 +104,11 @@ impl BlockingSink for CommitWriteSink {
                                     )?;
                                 let mut writer = writer_factory.create_writer(0, None)?;
                                 let empty_rb = RecordBatch::empty(Some(data_schema.clone()));
-                                let empty_mp = Arc::new(MicroPartition::new_loaded(
+                                let empty_mp = MicroPartition::new_loaded(
                                     data_schema.clone(),
                                     vec![empty_rb].into(),
                                     None,
-                                ));
+                                );
                                 writer.write(empty_mp).await?;
                                 if let Some(rb) = writer.close().await? {
                                     written_file_path_record_batches.push(rb);
@@ -151,7 +153,7 @@ impl BlockingSink for CommitWriteSink {
                         overwrite_files(
                             root_uri.to_string(),
                             written_paths,
-                            get_io_client(true, file_info.io_config.unwrap_or_default().into())?,
+                            get_io_client(true, file_info.io_config.clone().unwrap_or_default().into())?,
                             matches!(file_info.write_mode, WriteMode::OverwritePartitions),
                         )
                         .await?;
@@ -161,9 +163,25 @@ impl BlockingSink for CommitWriteSink {
                         written_file_path_record_batches.into(),
                         None,
                     );
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        written_file_paths_mp,
-                    )]))
+
+                    // Create _SUCCESS file if write_success_file is true
+                    if file_info.write_success_file {
+                        let (_, root_uri) = parse_url(&file_info.root_dir)?;
+                        let io_config_clone = file_info.io_config.clone();
+                        let io_client = get_io_client(true, io_config_clone.unwrap_or_default().into())?;
+                        let source = io_client.get_source(&root_uri).await?;
+                        let success_file_path = format!("{}/_SUCCESS", root_uri.trim_end_matches('/'));
+
+                        if let Err(e) = source.put(&success_file_path, tokio_util::bytes::Bytes::new(), None).await {
+                            log::warn!(
+                                "Failed to create _SUCCESS file at {}: {}.",
+                                success_file_path,
+                                e
+                            );
+                        }
+                    }
+
+                    Ok(vec![written_file_paths_mp])
                 },
                 Span::current(),
             )
@@ -178,7 +196,7 @@ impl BlockingSink for CommitWriteSink {
         NodeType::CommitWrite
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         Ok(CommitWriteState::new())
     }
 

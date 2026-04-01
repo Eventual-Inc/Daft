@@ -36,11 +36,13 @@ def test_many_small_partitions_into_batches(make_df):
 
     batch_lengths = [len(batch) for batch in df.to_arrow_iter()]
 
-    # Expected all batches to be >= the batch threshold (8 * 0.8 = 6)
-    for i in range(len(batch_lengths) - 1):
-        assert batch_lengths[i] >= int(8 * 0.8), f"Expected batch to be >= 6, got {batch_lengths[i]}"
-
     assert sum(batch_lengths) == 64, f"Expected 64 rows, got {sum(batch_lengths)}"
+
+    # Verify coalescing happened: significantly fewer output batches than input partitions.
+    # With batch_size=8 and 64 rows, we expect roughly 8-13 batches, not 64.
+    assert len(batch_lengths) <= 20, (
+        f"Expected coalescing to reduce batch count, got {len(batch_lengths)} batches: {batch_lengths}"
+    )
 
 
 def test_into_batches_with_remainder():

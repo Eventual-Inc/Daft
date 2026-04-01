@@ -103,10 +103,10 @@ Complete execution logs for all AI benchmark runs are available for transparency
 
 | Workload | Daft | Ray Data | Spark |
 | -------- | ---- | -------- | ----- |
-| Audio Transcription | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/audio_transcription/daft.txt | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/audio_transcription/ray_data.txt | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/audio_transcription/spark.txt |
-| Document Embedding | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/document_embedding/daft.txt | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/document_embedding/ray_data.txt | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/document_embedding/spark.txt |
-| Image Classification | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/image_classification/daft.txt | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/image_classification/ray_data.txt | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/image_classification/spark.txt |
-| Video Object Detection | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/video_object_detection/daft.txt | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/video_object_detection/ray_data.txt | s3://daft-public-data/benchmarking/logs/ai_benchmarking_logs/video_object_detection/spark.txt |
+| Audio Transcription | s3://daft-oss-public-data/benchmarking/logs/ai_benchmarking_logs/audio_transcription/daft.txt | s3://daft-oss-public-data/benchmarking/logs/ai_benchmarking_logs/audio_transcription/ray_data.txt | s3://daft-oss-public-data/benchmarking/logs/ai_benchmarking_logs/audio_transcription/spark.txt |
+| Document Embedding | s3://daft-oss-public-data/benchmarking/logs/ai_benchmarking_logs/document_embedding/daft.txt | s3://daft-oss-public-data/benchmarking/logs/ai_benchmarking_logs/document_embedding/ray_data.txt | s3://daft-oss-public-data/benchmarking/logs/ai_benchmarking_logs/document_embedding/spark.txt |
+| Image Classification | s3://daft-oss-public-data/benchmarking/logs/ai_benchmarking_logs/image_classification/daft.txt | s3://daft-oss-public-data/benchmarking/logs/ai_benchmarking_logs/image_classification/ray_data.txt | s3://daft-oss-public-data/benchmarking/logs/ai_benchmarking_logs/image_classification/spark.txt |
+| Video Object Detection | s3://daft-oss-public-data/benchmarking/logs/ai_benchmarking_logs/video_object_detection/daft.txt | s3://daft-oss-public-data/benchmarking/logs/ai_benchmarking_logs/video_object_detection/ray_data.txt | s3://daft-oss-public-data/benchmarking/logs/ai_benchmarking_logs/video_object_detection/spark.txt |
 
 ---
 
@@ -385,14 +385,14 @@ For benchmarking Spark we used AWS EMR, the official managed Spark solution prov
 
 | Dataframe | Scale Factor | Nodes  | Links                     |
 | --------- | ------------ | ------ | ------------------------- |
-| Daft      | 1000         | 8      | 1. s3://daft-public-data/benchmarking/logs/daft.0_1_3.1tb.8-i32xlarge.log     |
-| Daft      | 1000         | 4      | 1. s3://daft-public-data/benchmarking/logs/daft.0_1_3.1tb.4-i32xlarge.log     |
-| Daft      | 1000         | 1      | 1. s3://daft-public-data/benchmarking/logs/daft.1tb.1.i3-2xlarge.part1.log <br> 2. s3://daft-public-data/benchmarking/logs/daft.1tb.1.i3-2xlarge.part2.log    |
-| Daft      | 100          | 4      | 1. s3://daft-public-data/benchmarking/logs/daft.0_1_3.100gb.4-i32xlarge.log
-| Spark     | 1000         | 4      | 1. s3://daft-public-data/benchmarking/logs/emr-spark.6_10_0.1tb.4-i32xlarge.log
-| Spark     | 100          | 4      | 1. s3://daft-public-data/benchmarking/logs/emr-spark.6_10_0.100gb.4-i32xlarge.log.gz
-|Dask (failed, multiple retries) | 1000 | 16 | 1. s3://daft-public-data/benchmarking/logs/dask.2023_5_0.1tb.16-i32xlarge.0.log <br> 2. s3://daft-public-data/benchmarking/logs/dask.2023_5_0.1tb.16-i32xlarge.1.log <br> 3. s3://daft-public-data/benchmarking/logs/dask.2023_5_0.1tb.16-i32xlarge.2.log <br> 4. s3://daft-public-data/benchmarking/logs/dask.2023_5_0.1tb.16-i32xlarge.3.log |
-| Dask (failed, multiple retries)| 1000 | 4  | 1. s3://daft-public-data/benchmarking/logs/dask.2023_5_0.1tb.4-i32xlarge.q126.log |
-| Dask (multiple retries) | 100 | 4 | 1. s3://daft-public-data/benchmarking/logs/dask.2023_5_0.100gb.4-i32xlarge.0.log <br> 2. s3://daft-public-data/benchmarking/logs/dask.2023_5_0.100gb.4-i32xlarge.0.log <br> 3. s3://daft-public-data/benchmarking/logs/dask.2023_5_0.100gb.4-i32xlarge.1.log |
-| Modin (failed, multiple retries) | 1000 | 16 | 1. s3://daft-public-data/benchmarking/logs/modin.0_20_1.1tb.16-i32xlarge.0.log <br> 2. s3://daft-public-data/benchmarking/logs/modin.0_20_1.1tb.16-i32xlarge.1.log |
-| Modin (failed, multiple retries) | 100  | 4  | 1. s3://daft-public-data/benchmarking/logs/modin.0_20_1.100gb.4-i32xlarge.log |
+| Daft      | 1000         | 8      | 1. s3://daft-oss-public-data/benchmarking/logs/daft.0_1_3.1tb.8-i32xlarge.log     |
+| Daft      | 1000         | 4      | 1. s3://daft-oss-public-data/benchmarking/logs/daft.0_1_3.1tb.4-i32xlarge.log     |
+| Daft      | 1000         | 1      | 1. s3://daft-oss-public-data/benchmarking/logs/daft.1tb.1.i3-2xlarge.part1.log <br> 2. s3://daft-oss-public-data/benchmarking/logs/daft.1tb.1.i3-2xlarge.part2.log    |
+| Daft      | 100          | 4      | 1. s3://daft-oss-public-data/benchmarking/logs/daft.0_1_3.100gb.4-i32xlarge.log
+| Spark     | 1000         | 4      | 1. s3://daft-oss-public-data/benchmarking/logs/emr-spark.6_10_0.1tb.4-i32xlarge.log
+| Spark     | 100          | 4      | 1. s3://daft-oss-public-data/benchmarking/logs/emr-spark.6_10_0.100gb.4-i32xlarge.log.gz
+|Dask (failed, multiple retries) | 1000 | 16 | 1. s3://daft-oss-public-data/benchmarking/logs/dask.2023_5_0.1tb.16-i32xlarge.0.log <br> 2. s3://daft-oss-public-data/benchmarking/logs/dask.2023_5_0.1tb.16-i32xlarge.1.log <br> 3. s3://daft-oss-public-data/benchmarking/logs/dask.2023_5_0.1tb.16-i32xlarge.2.log <br> 4. s3://daft-oss-public-data/benchmarking/logs/dask.2023_5_0.1tb.16-i32xlarge.3.log |
+| Dask (failed, multiple retries)| 1000 | 4  | 1. s3://daft-oss-public-data/benchmarking/logs/dask.2023_5_0.1tb.4-i32xlarge.q126.log |
+| Dask (multiple retries) | 100 | 4 | 1. s3://daft-oss-public-data/benchmarking/logs/dask.2023_5_0.100gb.4-i32xlarge.0.log <br> 2. s3://daft-oss-public-data/benchmarking/logs/dask.2023_5_0.100gb.4-i32xlarge.0.log <br> 3. s3://daft-oss-public-data/benchmarking/logs/dask.2023_5_0.100gb.4-i32xlarge.1.log |
+| Modin (failed, multiple retries) | 1000 | 16 | 1. s3://daft-oss-public-data/benchmarking/logs/modin.0_20_1.1tb.16-i32xlarge.0.log <br> 2. s3://daft-oss-public-data/benchmarking/logs/modin.0_20_1.1tb.16-i32xlarge.1.log |
+| Modin (failed, multiple retries) | 100  | 4  | 1. s3://daft-oss-public-data/benchmarking/logs/modin.0_20_1.100gb.4-i32xlarge.log |

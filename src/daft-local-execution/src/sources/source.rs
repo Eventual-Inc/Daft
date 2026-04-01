@@ -1,30 +1,34 @@
-use std::sync::{Arc, atomic::Ordering};
+use std::{
+    collections::HashMap,
+    sync::{Arc, atomic::Ordering},
+};
 
 use async_trait::async_trait;
-use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
     Counter, Meter, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
-    snapshot::{SourceSnapshot, StatSnapshotImpl},
+    snapshot::SourceSnapshot,
 };
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
-use daft_local_plan::LocalNodeContext;
+use daft_local_plan::{InputId, LocalNodeContext};
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
+// MicroPartition is used in PipelineMessage
 use futures::{StreamExt, stream::BoxStream};
 use opentelemetry::KeyValue;
 use snafu::ResultExt;
 
 use crate::{
     ExecutionRuntimeContext, PipelineExecutionSnafu,
-    pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
-    runtime_stats::RuntimeStats,
+    channel::create_channel,
+    pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineMessage, PipelineNode},
+    runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle},
 };
 
-pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
+pub type SourceStream<'a> = BoxStream<'a, DaftResult<PipelineMessage>>;
 
 pub(crate) struct SourceStats {
     duration_us: Counter,
@@ -35,22 +39,19 @@ pub(crate) struct SourceStats {
 }
 
 impl SourceStats {
-    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
-        let node_kv = node_info.to_key_values();
-
+    fn with_io_stats(meter: &Meter, node_info: &NodeInfo, io_stats: IOStatsRef) -> Self {
         Self {
             duration_us: meter.duration_us_metric(),
             rows_out: meter.rows_out_metric(),
-            io_stats: IOStatsRef::default(),
-
-            node_kv,
+            io_stats,
+            node_kv: node_info.to_key_values(),
         }
     }
 }
 
 impl RuntimeStats for SourceStats {
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
-        self
+    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        Self::with_io_stats(meter, node_info, IOStatsRef::default())
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
@@ -72,7 +73,7 @@ impl RuntimeStats for SourceStats {
         self.rows_out.add(rows, self.node_kv.as_slice());
     }
 
-    fn add_cpu_us(&self, cpu_us: u64) {
+    fn add_duration_us(&self, cpu_us: u64) {
         self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
@@ -81,12 +82,9 @@ impl RuntimeStats for SourceStats {
 pub trait Source: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
-    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<SourceStats> {
-        Arc::new(SourceStats::new(meter, node_info))
-    }
     fn multiline_display(&self) -> Vec<String>;
     fn get_data(
-        &mut self,
+        self: Box<Self>,
         maintain_order: bool,
         io_stats: IOStatsRef,
         chunk_size: usize,
@@ -96,7 +94,7 @@ pub trait Source: Send + Sync {
 
 pub(crate) struct SourceNode {
     source: Box<dyn Source>,
-    runtime_stats: Arc<SourceStats>,
+    meter: Meter,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
     morsel_size_requirement: MorselSizeRequirement,
@@ -115,10 +113,9 @@ impl SourceNode {
             NodeCategory::Source,
             context,
         );
-        let runtime_stats = source.make_runtime_stats(&ctx.meter, &info);
         Self {
             source,
-            runtime_stats,
+            meter: ctx.meter.clone(),
             plan_stats,
             node_info: Arc::new(info),
             morsel_size_requirement: MorselSizeRequirement::default(),
@@ -143,7 +140,7 @@ impl TreeDisplay for SourceNode {
             DisplayLevel::Compact => {
                 writeln!(display, "{}", self.source.name()).unwrap();
             }
-            level => {
+            _ => {
                 let multiline_display = self.source.multiline_display().join("\n");
                 writeln!(display, "{}", multiline_display).unwrap();
 
@@ -151,15 +148,6 @@ impl TreeDisplay for SourceNode {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
                 writeln!(display, "Batch Size = {}", self.morsel_size_requirement).unwrap();
-
-                if matches!(level, DisplayLevel::Verbose) {
-                    let rt_result = self.runtime_stats.snapshot();
-
-                    writeln!(display).unwrap();
-                    for (name, value) in rt_result.to_stats() {
-                        writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
-                    }
-                }
             }
         }
         display
@@ -206,15 +194,19 @@ impl PipelineNode for SourceNode {
         self.morsel_size_requirement = downstream_requirement;
     }
     fn start(
-        mut self: Box<Self>,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>> {
-        let io_stats = self.runtime_stats.io_stats.clone();
+    ) -> crate::Result<crate::channel::Receiver<PipelineMessage>> {
+        let io_stats = IOStatsRef::default();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
+        let schema = self.source.schema().clone();
+        let name = self.name();
+        let meter = self.meter.clone();
+        let node_info = self.node_info.clone();
 
-        let (destination_sender, destination_receiver) = crate::channel::create_channel(1);
+        let (destination_sender, destination_receiver) = create_channel(1);
         let chunk_size = match self.morsel_size_requirement {
             MorselSizeRequirement::Strict(size) => size,
             MorselSizeRequirement::Flexible(_, upper) => upper,
@@ -222,38 +214,71 @@ impl PipelineNode for SourceNode {
 
         let mut source_stream = self
             .source
-            .get_data(maintain_order, io_stats, chunk_size.into())
+            .get_data(maintain_order, io_stats.clone(), chunk_size.into())
             .with_context(|_| PipelineExecutionSnafu {
-                node_name: self.name().to_string(),
+                node_name: name.to_string(),
             })?;
-        let runtime_stats = self.runtime_stats.clone();
-        let schema = self.source.schema().clone();
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;
+                let mut per_input_stats: HashMap<InputId, Arc<SourceStats>> = HashMap::new();
                 stats_manager.activate_node(node_id);
 
-                while let Some(part) = source_stream.next().await {
+                while let Some(msg) = source_stream.next().await {
                     has_data = true;
-                    let part = part?;
-                    runtime_stats.add_rows_out(part.len() as u64);
-                    if destination_sender.send(part).await.is_err() {
+                    let msg = msg?;
+                    match &msg {
+                        PipelineMessage::Morsel {
+                            input_id,
+                            partition,
+                        } => {
+                            let stats = get_or_create_source_stats(
+                                &mut per_input_stats,
+                                *input_id,
+                                &meter,
+                                &node_info,
+                                &io_stats,
+                                &stats_manager,
+                                node_id,
+                            );
+                            stats.add_rows_out(partition.len() as u64);
+                        }
+                        PipelineMessage::Flush(input_id) => {
+                            per_input_stats.remove(input_id);
+                        }
+                    }
+                    if destination_sender.send(msg).await.is_err() {
                         break;
                     }
                 }
                 if !has_data {
-                    let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
-                    let _ = destination_sender.send(empty).await;
-                    runtime_stats.add_rows_out(0);
+                    let empty = MicroPartition::empty(Some(schema.clone()));
+                    let stats = get_or_create_source_stats(
+                        &mut per_input_stats,
+                        0,
+                        &meter,
+                        &node_info,
+                        &io_stats,
+                        &stats_manager,
+                        node_id,
+                    );
+                    stats.add_rows_out(0);
+                    let _ = destination_sender
+                        .send(PipelineMessage::Morsel {
+                            input_id: 0,
+                            partition: empty,
+                        })
+                        .await;
                 }
 
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            &self.name(),
+            &name,
         );
         Ok(destination_receiver)
     }
+
     fn as_tree_display(&self) -> &dyn TreeDisplay {
         self
     }
@@ -265,8 +290,27 @@ impl PipelineNode for SourceNode {
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()
     }
+}
 
-    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        self.runtime_stats.clone()
-    }
+fn get_or_create_source_stats(
+    per_input_stats: &mut HashMap<InputId, Arc<SourceStats>>,
+    input_id: InputId,
+    meter: &Meter,
+    node_info: &NodeInfo,
+    io_stats: &IOStatsRef,
+    stats_manager: &RuntimeStatsManagerHandle,
+    node_id: usize,
+) -> Arc<SourceStats> {
+    per_input_stats
+        .entry(input_id)
+        .or_insert_with(|| {
+            let stats = Arc::new(SourceStats::with_io_stats(
+                meter,
+                node_info,
+                io_stats.clone(),
+            ));
+            stats_manager.register_runtime_stats(node_id, input_id, stats.clone());
+            stats
+        })
+        .clone()
 }

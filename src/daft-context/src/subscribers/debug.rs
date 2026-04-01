@@ -2,11 +2,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{NodeID, QueryID, QueryPlan, Stats};
+use common_metrics::{NodeID, QueryID, QueryPlan, Stat, Stats};
 use daft_micropartition::MicroPartitionRef;
 use dashmap::DashMap;
 
-use crate::subscribers::{QueryMetadata, QueryResult, Subscriber};
+use crate::subscribers::{
+    Event, QueryMetadata, QueryResult, Subscriber,
+    events::{OperatorEndEvent, OperatorStartEvent, StatsEvent},
+};
 
 #[derive(Debug)]
 pub struct DebugSubscriber {
@@ -110,5 +113,83 @@ impl Subscriber for DebugSubscriber {
     async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
         eprintln!("Finished executing query `{}`", query_id);
         Ok(())
+    }
+
+    async fn on_operator_start(&self, event: Arc<OperatorStartEvent>) -> DaftResult<()> {
+        if event.operator.origin_node_id == event.operator.node_id {
+            eprintln!(
+                "operator_start query_id={} node_id={} name=\"{}\" type={:?} category={:?}",
+                event.header.query_id,
+                event.operator.node_id,
+                event.operator.name,
+                event.operator.node_type,
+                event.operator.node_category,
+            );
+        } else {
+            eprintln!(
+                "operator_start query_id={} node_id={} origin_node_id={} name=\"{}\" type={:?} category={:?}",
+                event.header.query_id,
+                event.operator.node_id,
+                event.operator.origin_node_id,
+                event.operator.name,
+                event.operator.node_type,
+                event.operator.node_category,
+            );
+        }
+        Ok(())
+    }
+
+    async fn on_operator_end(&self, event: Arc<OperatorEndEvent>) -> DaftResult<()> {
+        if event.operator.origin_node_id == event.operator.node_id {
+            eprintln!(
+                "operator_end query_id={} node_id={} name=\"{}\"",
+                event.header.query_id, event.operator.node_id, event.operator.name,
+            );
+        } else {
+            eprintln!(
+                "operator_end query_id={} node_id={} origin_node_id={} name=\"{}\"",
+                event.header.query_id,
+                event.operator.node_id,
+                event.operator.origin_node_id,
+                event.operator.name,
+            );
+        }
+        Ok(())
+    }
+
+    async fn on_stats(&self, event: Arc<StatsEvent>) -> DaftResult<()> {
+        for (node_id, stats) in event.stats.iter() {
+            let rendered = stats
+                .0
+                .iter()
+                .map(|(key, stat)| format!("{key}={}", render_stat(stat)))
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            eprintln!(
+                "stats query_id={} node_id={} {}",
+                event.header.query_id, node_id, rendered,
+            );
+        }
+        Ok(())
+    }
+
+    async fn on_event(&self, event: Event) -> DaftResult<()> {
+        match event {
+            Event::Stats(e) => self.on_stats(e).await?,
+            Event::OperatorStart(e) => self.on_operator_start(e).await?,
+            Event::OperatorEnd(e) => self.on_operator_end(e).await?,
+        }
+        Ok(())
+    }
+}
+
+fn render_stat(stat: &Stat) -> String {
+    match stat {
+        Stat::Count(v) => v.to_string(),
+        Stat::Bytes(v) => v.to_string(),
+        Stat::Duration(v) => format!("{v:?}"),
+        Stat::Percent(v) => format!("{v}%"),
+        Stat::Float(v) => v.to_string(),
     }
 }

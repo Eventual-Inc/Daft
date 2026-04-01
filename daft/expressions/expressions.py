@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from daft.udf.legacy import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
 
-    ENCODING_CHARSET = Literal["utf-8", "utf8", "base64"]
+    ENCODING_CHARSET = Literal["utf-8", "utf8", "base64", "hex"]
     COMPRESSION_CODEC = Literal["deflate", "gzip", "gz", "zlib"]
 
 
@@ -1890,6 +1890,26 @@ class Expression:
 
         return to_datetime(self, format, timezone)
 
+    def convert_time_zone(self, to_timezone: builtins.str, from_timezone: builtins.str | None = None) -> Expression:
+        """Converts a timestamp to another timezone while preserving the instant in time.
+
+        Tip: See Also
+            [`daft.functions.convert_time_zone`](https://docs.daft.ai/en/stable/api/functions/convert_time_zone/)
+        """
+        from daft.functions import convert_time_zone
+
+        return convert_time_zone(self, to_timezone, from_timezone)
+
+    def replace_time_zone(self, timezone: builtins.str | None = None) -> Expression:
+        """Replaces the timezone of a timestamp while preserving the local time.
+
+        Tip: See Also
+            [`daft.functions.replace_time_zone`](https://docs.daft.ai/en/stable/api/functions/replace_time_zone/)
+        """
+        from daft.functions import replace_time_zone
+
+        return replace_time_zone(self, timezone)
+
     def contains(self, substr: builtins.str | Expression) -> Expression:
         """Checks whether each string contains the given pattern in a string column.
 
@@ -1959,6 +1979,16 @@ class Expression:
         from daft.functions import rstrip
 
         return rstrip(self)
+
+    def strip(self) -> Expression:
+        """Strip whitespace from both sides of a UTF-8 string.
+
+        Tip: See Also
+            [`daft.functions.strip`](https://docs.daft.ai/en/stable/api/functions/strip/)
+        """
+        from daft.functions import strip
+
+        return strip(self)
 
     def reverse(self) -> Expression:
         """Reverse a UTF-8 string.

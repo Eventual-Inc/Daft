@@ -10,9 +10,9 @@ from daft import col
 
 TOKEN_FILE = "tests/assets/tokens/tokens_5k.tiktoken"
 HTTP_TOKEN_FILE = (
-    "https://daft-public-data.s3.us-west-2.amazonaws.com/test_fixtures/tiktoken_testing/p50k_base.tiktoken"
+    "https://daft-oss-public-data.s3.us-west-2.amazonaws.com/test_fixtures/tiktoken_testing/p50k_base.tiktoken"
 )
-AWS_TOKEN_FILE = "s3://daft-public-data/test_fixtures/tiktoken_testing/p50k_base.tiktoken"
+AWS_TOKEN_FILE = "s3://daft-oss-public-data/test_fixtures/tiktoken_testing/p50k_base.tiktoken"
 P50K_REGEX = "'(?:[sdmt]|ll|ve|re)| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+"
 
 

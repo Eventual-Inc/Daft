@@ -14,9 +14,7 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::{
@@ -73,6 +71,7 @@ fn is_interesting(expr: &Arc<Expr>) -> bool {
         Expr::Alias(expr, ..) => is_interesting(expr),
         Expr::InSubquery(expr, _) => is_interesting(expr),
         Expr::List(exprs) => exprs.iter().any(is_interesting),
+        Expr::Coalesce(inputs) => inputs.iter().any(is_interesting),
     }
 }
 
@@ -149,8 +148,9 @@ impl IntermediateOperator for ProjectOperator {
     #[instrument(skip_all, name = "ProjectOperator::execute")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         let projection = self.projection.clone();
@@ -168,10 +168,7 @@ impl IntermediateOperator for ProjectOperator {
                             .eval_expression_list_async(Arc::unwrap_or_clone(projection))
                             .await?
                     };
-                    Ok((
-                        state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                    ))
+                    Ok((state, out))
                 },
                 Span::current(),
             )

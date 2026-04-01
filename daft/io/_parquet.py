@@ -34,7 +34,7 @@ def read_parquet(
         path (str): Path to Parquet file (allows for wildcards; supports remote URLs to object stores such as ``s3://`` or ``gs://``)
         row_groups (List[int] or List[List[int]]): List of row groups to read corresponding to each file.
         infer_schema (bool): Whether to infer the schema of the Parquet, defaults to True.
-        schema (dict[str, DataType]): A schema that is used as the definitive schema for the Parquet file if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred.
+        schema (dict[str, DataType]): A schema that is used as the definitive schema for the Parquet file if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred (overriding the types of inferred columns, and appending any new columns not found during inference).
         io_config (IOConfig): Config to be used with the native downloader
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
         hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.

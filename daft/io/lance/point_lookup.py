@@ -100,6 +100,9 @@ class _PointLookupVisitor(PredicateVisitor[list[_PointPredicate] | None]):
     def visit_function(self, func: str, args: list[Expression]) -> list[_PointPredicate] | None:
         return None
 
+    def visit_coalesce(self, args: list[Expression]) -> list[_PointPredicate] | None:
+        return None
+
     def visit_lit(self, value: Expression) -> list[_PointPredicate] | None:
         return []
 

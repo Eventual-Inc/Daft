@@ -28,7 +28,7 @@ def files(request):
     with tempfile.TemporaryDirectory() as tmpdir:
         local_file = f"{tmpdir}/small-fake-data.parquet.parquet"
 
-        s3.download_file("daft-public-data", "test_fixtures/parquet/small-fake-data.parquet", local_file)
+        s3.download_file("daft-oss-public-data", "test_fixtures/parquet/small-fake-data.parquet", local_file)
         if request.param == 1:
             yield local_file
         else:

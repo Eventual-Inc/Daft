@@ -16,7 +16,7 @@ use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext,
+        PipelineNodeContext, TaskOutput,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -115,6 +115,7 @@ pub(crate) fn create_sample_tasks(
     pipeline_node: &dyn PipelineNodeImpl,
     task_id_counter: &TaskIDCounter,
     scheduler_handle: &SchedulerHandle<SwordfishTask>,
+    fingerprint_salt: Option<u32>,
 ) -> DaftResult<Vec<SubmittedTask>> {
     let sample_size = pipeline_node.config().execution_config.sample_size_for_sort;
     let context = pipeline_node.context();
@@ -147,8 +148,12 @@ pub(crate) fn create_sample_tasks(
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(pipeline_node.node_id() as usize)),
             );
-            let builder = SwordfishTaskBuilder::new(plan, pipeline_node, pipeline_node.node_id())
-                .with_psets(pipeline_node.node_id(), psets);
+            let mut builder =
+                SwordfishTaskBuilder::new(plan, pipeline_node, pipeline_node.node_id())
+                    .with_psets(pipeline_node.node_id(), psets);
+            if let Some(salt) = fingerprint_salt {
+                builder = builder.extend_fingerprint(salt);
+            }
             let submittable_task = builder.build(context.query_idx, task_id_counter);
             let submitted_task = submittable_task.submit(scheduler_handle)?;
             Ok(submitted_task)
@@ -169,6 +174,7 @@ pub(crate) fn create_range_repartition_tasks(
     pipeline_node: &dyn PipelineNodeImpl,
     task_id_counter: &TaskIDCounter,
     scheduler_handle: &SchedulerHandle<SwordfishTask>,
+    fingerprint_salt: Option<u32>,
 ) -> DaftResult<Vec<SubmittedTask>> {
     let context = pipeline_node.context();
     let node_id = pipeline_node.node_id();
@@ -195,8 +201,12 @@ pub(crate) fn create_range_repartition_tasks(
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(node_id as usize)),
             );
-            let builder = SwordfishTaskBuilder::new(plan, pipeline_node, pipeline_node.node_id())
-                .with_psets(node_id, mo.into_inner().0);
+            let mut builder =
+                SwordfishTaskBuilder::new(plan, pipeline_node, pipeline_node.node_id())
+                    .with_psets(node_id, mo.into_inner().0);
+            if let Some(salt) = fingerprint_salt {
+                builder = builder.extend_fingerprint(salt);
+            }
             let submittable_task = builder.build(context.query_idx, task_id_counter);
             let submitted_task = submittable_task.submit(scheduler_handle)?;
             Ok(submitted_task)
@@ -302,13 +312,15 @@ impl SortNode {
             self.as_ref(),
             &task_id_counter,
             &scheduler_handle,
+            None,
         )?;
 
         let sampled_outputs = try_join_all(sample_tasks)
             .await?
             .into_iter()
             .flatten()
-            .collect::<Vec<_>>();
+            .map(TaskOutput::into_materialized)
+            .collect::<DaftResult<Vec<_>>>()?;
 
         // Compute partition boundaries from samples
         let boundaries = get_partition_boundaries_from_samples(
@@ -330,13 +342,15 @@ impl SortNode {
             self.as_ref(),
             &task_id_counter,
             &scheduler_handle,
+            None,
         )?;
 
         let partitioned_outputs = try_join_all(partition_tasks)
             .await?
             .into_iter()
             .flatten()
-            .collect::<Vec<_>>();
+            .map(TaskOutput::into_materialized)
+            .collect::<DaftResult<Vec<_>>>()?;
 
         let transposed_outputs =
             transpose_materialized_outputs_from_vec(partitioned_outputs, num_partitions);

@@ -37,6 +37,7 @@ pub enum NodeType {
     IntoPartitions,
     Pivot,
     Repartition,
+    RandomShuffle,
     Sort,
     TopN,
     Window,

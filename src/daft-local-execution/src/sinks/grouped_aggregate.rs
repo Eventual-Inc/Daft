@@ -6,7 +6,6 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::{
     bound_col,
@@ -16,10 +15,11 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 #[derive(Clone, Debug)]
 pub(crate) enum AggStrategy {
@@ -33,7 +33,7 @@ impl AggStrategy {
     fn execute_strategy(
         &self,
         inner_states: &mut [Option<SinglePartitionAggregateState>],
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         params: &GroupedAggregateParams,
     ) -> DaftResult<()> {
         match self {
@@ -47,7 +47,7 @@ impl AggStrategy {
 
     fn execute_agg_then_partition(
         inner_states: &mut [Option<SinglePartitionAggregateState>],
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         params: &GroupedAggregateParams,
     ) -> DaftResult<()> {
         let agged = input.agg(
@@ -65,7 +65,7 @@ impl AggStrategy {
 
     fn execute_partition_then_agg(
         inner_states: &mut [Option<SinglePartitionAggregateState>],
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         params: &GroupedAggregateParams,
         partial_agg_threshold: usize,
     ) -> DaftResult<()> {
@@ -74,12 +74,12 @@ impl AggStrategy {
         for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
             let state = state.get_or_insert_default();
             if state.unaggregated_size + p.len() >= partial_agg_threshold {
-                let unaggregated = std::mem::take(&mut state.unaggregated);
-                let aggregated =
-                    MicroPartition::concat(unaggregated.iter().chain(std::iter::once(&p)))?.agg(
-                        params.partial_agg_exprs.as_slice(),
-                        params.group_by.as_slice(),
-                    )?;
+                let mut unaggregated = std::mem::take(&mut state.unaggregated);
+                unaggregated.push(p);
+                let aggregated = MicroPartition::concat(unaggregated)?.agg(
+                    params.partial_agg_exprs.as_slice(),
+                    params.group_by.as_slice(),
+                )?;
                 state.partially_aggregated.push(aggregated);
                 state.unaggregated_size = 0;
             } else {
@@ -92,7 +92,7 @@ impl AggStrategy {
 
     fn execute_partition_only(
         inner_states: &mut [Option<SinglePartitionAggregateState>],
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         params: &GroupedAggregateParams,
     ) -> DaftResult<()> {
         let partitioned =
@@ -140,7 +140,7 @@ impl GroupedAggregateState {
 
     fn push(
         &mut self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         params: &GroupedAggregateParams,
         global_strategy_lock: &Arc<Mutex<Option<AggStrategy>>>,
     ) -> DaftResult<()> {
@@ -173,7 +173,7 @@ impl GroupedAggregateState {
     }
 
     fn determine_agg_strategy(
-        input: &Arc<MicroPartition>,
+        input: &MicroPartition,
         params: &GroupedAggregateParams,
         high_cardinality_threshold_ratio: f64,
         partial_agg_threshold: usize,
@@ -315,8 +315,9 @@ impl BlockingSink for GroupedAggregateSink {
     #[instrument(skip_all, name = "GroupedAggregateSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.grouped_aggregate_params.clone();
@@ -337,7 +338,7 @@ impl BlockingSink for GroupedAggregateSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.grouped_aggregate_params.clone();
         let num_partitions = self.num_partitions();
         spawner
@@ -369,14 +370,14 @@ impl BlockingSink for GroupedAggregateSink {
 
                             // If we have no partially aggregated partitions, aggregate the unaggregated partitions using the original aggregations
                             if params.partial_agg_exprs.is_empty() && !unaggregated.is_empty() {
-                                let concated = MicroPartition::concat(&unaggregated)?;
+                                let concated = MicroPartition::concat(unaggregated)?;
                                 let agged = concated
                                     .agg(&params.original_aggregations, &params.group_by)?;
                                 Ok(agged)
                             }
                             // If we have no unaggregated partitions, finalize the partially aggregated partitions
                             else if unaggregated.is_empty() {
-                                let concated = MicroPartition::concat(&partially_aggregated)?;
+                                let concated = MicroPartition::concat(partially_aggregated)?;
                                 let agged = concated
                                     .agg(&params.final_agg_exprs, &params.final_group_by)?;
                                 let projected =
@@ -385,14 +386,10 @@ impl BlockingSink for GroupedAggregateSink {
                             }
                             // Otherwise, partially aggregate the unaggregated partitions, concatenate them with the partially aggregated partitions, and finalize the result.
                             else {
-                                let leftover_partial_agg =
-                                    MicroPartition::concat(&unaggregated)?
-                                        .agg(&params.partial_agg_exprs, &params.group_by)?;
-                                let concated = MicroPartition::concat(
-                                    partially_aggregated
-                                        .iter()
-                                        .chain(std::iter::once(&leftover_partial_agg)),
-                                )?;
+                                let leftover_partial_agg = MicroPartition::concat(unaggregated)?
+                                    .agg(&params.partial_agg_exprs, &params.group_by)?;
+                                partially_aggregated.push(leftover_partial_agg);
+                                let concated = MicroPartition::concat(partially_aggregated)?;
                                 let agged = concated
                                     .agg(&params.final_agg_exprs, &params.final_group_by)?;
                                 let projected =
@@ -406,10 +403,8 @@ impl BlockingSink for GroupedAggregateSink {
                         .await
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
-                    let concated = MicroPartition::concat(&results)?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        concated,
-                    )]))
+                    let concated = MicroPartition::concat(results)?;
+                    Ok(vec![concated])
                 },
                 Span::current(),
             )
@@ -445,11 +440,7 @@ impl BlockingSink for GroupedAggregateSink {
         display
     }
 
-    fn max_concurrency(&self) -> usize {
-        get_compute_pool_num_threads()
-    }
-
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         Ok(GroupedAggregateState::new(
             self.num_partitions(),
             self.partial_agg_threshold,
