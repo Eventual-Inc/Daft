@@ -1,5 +1,6 @@
 #![feature(associated_type_defaults)]
 
+mod batch_manager;
 mod buffer;
 mod channel;
 mod concat;

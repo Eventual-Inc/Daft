@@ -18,9 +18,10 @@ use tracing::info_span;
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
+    batch_manager::BatchManager,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
-    dynamic_batching::{BatchManager, BatchingStrategy},
+    dynamic_batching::BatchingStrategy,
     pipeline::{
         BuilderContext, InputId, MorselSizeRequirement, NodeName, PipelineEvent, PipelineMessage,
         PipelineNode, next_event,
