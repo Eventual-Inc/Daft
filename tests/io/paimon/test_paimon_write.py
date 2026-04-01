@@ -228,19 +228,23 @@ class TestComplexTypes:
         """
         catalog, tmp_path = local_paimon_catalog
 
-        pa_schema = pa.schema([
-            ("id", pa.int64()),
-            ("list_col", pa.list_(pa.int64())),
-        ])
+        pa_schema = pa.schema(
+            [
+                ("id", pa.int64()),
+                ("list_col", pa.list_(pa.int64())),
+            ]
+        )
         paimon_schema = pypaimon.Schema.from_pyarrow_schema(pa_schema)
         catalog.create_table("test_db.write_list", paimon_schema, ignore_if_exists=True)
         table = catalog.get_table("test_db.write_list")
 
         # Create DataFrame with list data
-        df = daft.from_pydict({
-            "id": [1, 2],
-            "list_col": [[1, 2, 3], [4, 5]],
-        })
+        df = daft.from_pydict(
+            {
+                "id": [1, 2],
+                "list_col": [[1, 2, 3], [4, 5]],
+            }
+        )
 
         # Write should succeed with the patch
         df.write_paimon(table, mode="append")

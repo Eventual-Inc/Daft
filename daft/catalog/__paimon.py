@@ -5,8 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import pyarrow as pa
-
+import pyarrow as pa  # noqa: TID253
 from pypaimon.catalog.catalog import Catalog as InnerCatalog
 from pypaimon.catalog.catalog_exception import (
     DatabaseNotExistException,
@@ -319,6 +318,7 @@ def _to_paimon_ident(ident: Identifier) -> str:
         return ".".join(str(part) for part in ident)
     return ident
 
+
 def _cast_large_types(arrow_schema: pa.Schema) -> pa.Schema:
     """Convert PyArrow schema to be compatible with pypaimon.
 
@@ -331,7 +331,6 @@ def _cast_large_types(arrow_schema: pa.Schema) -> pa.Schema:
     Returns:
         pa.Schema: Converted schema compatible with pypaimon
     """
-
     new_fields = []
     need_conversion = False
 
@@ -345,9 +344,7 @@ def _cast_large_types(arrow_schema: pa.Schema) -> pa.Schema:
         elif pa.types.is_large_binary(field_type):
             field_type = pa.binary()
             need_conversion = True
-        new_fields.append(
-            pa.field(field.name, field_type, nullable=field.nullable, metadata=field.metadata)
-        )
+        new_fields.append(pa.field(field.name, field_type, nullable=field.nullable, metadata=field.metadata))
 
     if need_conversion:
         return pa.schema(new_fields, metadata=arrow_schema.metadata)

@@ -7,7 +7,6 @@ import pytest
 
 import daft
 from daft.catalog import Catalog, Identifier, NotFoundError, Table
-from daft.catalog.__paimon import PaimonCatalog, PaimonTable
 
 pypaimon = pytest.importorskip("pypaimon")
 
@@ -312,11 +311,13 @@ class TestPaimonTableProperties:
 
         # Create primary key table
         schema = pypaimon.Schema.from_pyarrow_schema(
-            pa.schema([
-                pa.field("id", pa.int64()),
-                pa.field("name", pa.string()),
-                pa.field("value", pa.int64()),
-            ]),
+            pa.schema(
+                [
+                    pa.field("id", pa.int64()),
+                    pa.field("name", pa.string()),
+                    pa.field("value", pa.int64()),
+                ]
+            ),
             primary_keys=["id"],
             options={"bucket": "2"},
         )
@@ -324,11 +325,13 @@ class TestPaimonTableProperties:
 
         # Create partitioned primary key table
         schema2 = pypaimon.Schema.from_pyarrow_schema(
-            pa.schema([
-                pa.field("id", pa.int64()),
-                pa.field("name", pa.string()),
-                pa.field("dt", pa.string()),
-            ]),
+            pa.schema(
+                [
+                    pa.field("id", pa.int64()),
+                    pa.field("name", pa.string()),
+                    pa.field("dt", pa.string()),
+                ]
+            ),
             partition_keys=["dt"],
             primary_keys=["id"],
             options={"bucket": "1"},
@@ -403,4 +406,3 @@ def test_session_read_table(paimon_catalog):
 
     df = sess.read_table("test_paimon.test_db.test_table")
     assert df.count_rows() == 3
-

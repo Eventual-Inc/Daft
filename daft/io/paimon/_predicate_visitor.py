@@ -3,13 +3,12 @@
 This module provides utilities to convert Daft expressions to Paimon predicates
 for filter pushdown optimization using the Visitor pattern.
 """
+
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any
 
-from daft.daft import PyExpr
-from daft.expressions import Expression
 from daft.expressions.visitor import PredicateVisitor
 
 if TYPE_CHECKING:
@@ -17,11 +16,16 @@ if TYPE_CHECKING:
     from pypaimon.common.predicate_builder import PredicateBuilder
     from pypaimon.table.file_store_table import FileStoreTable
 
+    from daft.daft import PyExpr
+    from daft.expressions import Expression
+
 
 logger = logging.getLogger(__name__)
 
 
-class PaimonPredicateVisitor(PredicateVisitor[Predicate | None]):
+# Use Any as type parameter since Predicate comes from optional pypaimon dependency
+# At runtime, the actual Predicate type from pypaimon will be used
+class PaimonPredicateVisitor(PredicateVisitor[Any]):
     """Converts Daft expressions to Paimon predicates using the Visitor pattern.
 
     This converter supports a subset of Daft expressions that can be
@@ -63,6 +67,10 @@ class PaimonPredicateVisitor(PredicateVisitor[Predicate | None]):
 
     def visit_cast(self, expr: Expression, dtype: Any) -> Predicate | None:
         """Cast expressions are not directly supported for pushdown."""
+        return None
+
+    def visit_coalesce(self, args: list[Expression]) -> Predicate | None:
+        """Coalesce expressions are not supported for pushdown."""
         return None
 
     def visit_function(self, name: str, args: list[Expression]) -> Predicate | None:

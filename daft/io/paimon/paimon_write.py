@@ -3,16 +3,10 @@
 This module provides utility functions for writing to Apache Paimon tables,
 including schema conversion and patches for pypaimon compatibility.
 """
+
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-import pyarrow as pa
-import pyarrow.compute as pc
-
-if TYPE_CHECKING:
-    from pypaimon.write.writer.data_writer import DataWriter
-
+from typing import Any
 
 _patched = False
 
@@ -26,14 +20,14 @@ def _patch_pypaimon_stats_for_complex_types() -> None:
 
     This patch makes the stats computation skip complex types, returning None
     for their min/max values instead of failing.
-
-    This is a workaround for: https://github.com/apache/paimon-python/issues
     """
+    from daft.dependencies import pa, pc
+
     global _patched
     if _patched:
         return
 
-    def _patched_get_column_stats(record_batch: pa.RecordBatch, column_name: str) -> dict:
+    def _patched_get_column_stats(record_batch: pa.RecordBatch, column_name: str) -> dict[str, Any]:
         """Patched version that handles complex types gracefully."""
         column_array = record_batch.column(column_name)
         if column_array.null_count == len(column_array):

@@ -21,7 +21,6 @@ from daft.recordbatch import RecordBatch
 
 from ..pushdowns import SupportsPushdownFilters
 
-
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -152,9 +151,7 @@ class PaimonScanOperator(ScanOperator, SupportsPushdownFilters):
         """
         from daft.io.paimon._predicate_visitor import convert_filters_to_paimon
 
-        pushed_filters, remaining_filters, paimon_predicate = convert_filters_to_paimon(
-            self._table, filters
-        )
+        pushed_filters, remaining_filters, paimon_predicate = convert_filters_to_paimon(self._table, filters)
 
         self._pushed_filters = pushed_filters if pushed_filters else None
         self._remaining_filters = remaining_filters if remaining_filters else None

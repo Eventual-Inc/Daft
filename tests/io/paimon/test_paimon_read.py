@@ -7,16 +7,17 @@ to create and populate test tables, then Daft's read_paimon() is validated.
 from __future__ import annotations
 
 import decimal
+
 import pyarrow as pa
 import pytest
 
 pypaimon = pytest.importorskip("pypaimon")
 
 import daft
-from tests.io.paimon.conftest import _write_to_paimon
 
 # Import paimon_write to apply the patch for complex types support
 from daft.io.paimon import paimon_write  # noqa: F401
+from tests.io.paimon.conftest import _write_to_paimon
 
 # ---------------------------------------------------------------------------
 # Basic read roundtrip
@@ -381,9 +382,7 @@ class TestFilterPushdown:
 
     def test_filter_pushdown_combined(self, filter_table):
         """Test combined filter pushdown with AND."""
-        df = daft.read_paimon(filter_table).where(
-            (daft.col("id") >= 2) & (daft.col("id") <= 4)
-        )
+        df = daft.read_paimon(filter_table).where((daft.col("id") >= 2) & (daft.col("id") <= 4))
         result = df.to_pydict()
         assert result["id"] == [2, 3, 4]
 
@@ -405,18 +404,23 @@ class TestNestedTypes:
         """
         catalog, tmp_path = local_paimon_catalog
 
-        pa_schema = pa.schema([
-            ("id", pa.int64()),
-            ("list_col", pa.list_(pa.int64())),
-        ])
+        pa_schema = pa.schema(
+            [
+                ("id", pa.int64()),
+                ("list_col", pa.list_(pa.int64())),
+            ]
+        )
         paimon_schema = pypaimon.Schema.from_pyarrow_schema(pa_schema)
         catalog.create_table("test_db.nested_list", paimon_schema, ignore_if_exists=True)
         table = catalog.get_table("test_db.nested_list")
 
-        data = pa.table({
-            "id": [1, 2],
-            "list_col": [[1, 2, 3], [4, 5]],
-        }, schema=pa_schema)
+        data = pa.table(
+            {
+                "id": [1, 2],
+                "list_col": [[1, 2, 3], [4, 5]],
+            },
+            schema=pa_schema,
+        )
         _write_to_paimon(table, data)
 
         df = daft.read_paimon(table)
@@ -429,18 +433,23 @@ class TestNestedTypes:
         """Test reading Paimon table with map type."""
         catalog, tmp_path = local_paimon_catalog
 
-        pa_schema = pa.schema([
-            ("id", pa.int64()),
-            ("map_col", pa.map_(pa.string(), pa.int64())),
-        ])
+        pa_schema = pa.schema(
+            [
+                ("id", pa.int64()),
+                ("map_col", pa.map_(pa.string(), pa.int64())),
+            ]
+        )
         paimon_schema = pypaimon.Schema.from_pyarrow_schema(pa_schema)
         catalog.create_table("test_db.nested_map", paimon_schema, ignore_if_exists=True)
         table = catalog.get_table("test_db.nested_map")
 
-        data = pa.table({
-            "id": [1, 2],
-            "map_col": [[("k1", 1), ("k2", 2)], [("k3", 3)]],
-        }, schema=pa_schema)
+        data = pa.table(
+            {
+                "id": [1, 2],
+                "map_col": [[("k1", 1), ("k2", 2)], [("k3", 3)]],
+            },
+            schema=pa_schema,
+        )
         _write_to_paimon(table, data)
 
         df = daft.read_paimon(table)
@@ -456,21 +465,24 @@ class TestDecimalType:
         """Test reading Paimon table with decimal type."""
         catalog, tmp_path = local_paimon_catalog
 
-        pa_schema = pa.schema([
-            ("id", pa.int64()),
-            ("amount", pa.decimal128(10, 2)),
-        ])
+        pa_schema = pa.schema(
+            [
+                ("id", pa.int64()),
+                ("amount", pa.decimal128(10, 2)),
+            ]
+        )
         paimon_schema = pypaimon.Schema.from_pyarrow_schema(pa_schema)
         catalog.create_table("test_db.decimal_table", paimon_schema, ignore_if_exists=True)
         table = catalog.get_table("test_db.decimal_table")
 
         # Write data using decimal.Decimal
-        data = pa.table({
-            "id": [1, 2, 3],
-            "amount": [decimal.Decimal("100.50"),
-                       decimal.Decimal("200.75"),
-                       decimal.Decimal("300.00")],
-        }, schema=pa_schema)
+        data = pa.table(
+            {
+                "id": [1, 2, 3],
+                "amount": [decimal.Decimal("100.50"), decimal.Decimal("200.75"), decimal.Decimal("300.00")],
+            },
+            schema=pa_schema,
+        )
         _write_to_paimon(table, data)
 
         df = daft.read_paimon(table)
@@ -486,21 +498,25 @@ class TestNullValues:
         """Test reading table with null values."""
         catalog, tmp_path = local_paimon_catalog
 
-        pa_schema = pa.schema([
-            ("id", pa.int64()),
-            ("name", pa.string()),
-            ("value", pa.float64()),
-        ])
+        pa_schema = pa.schema(
+            [
+                ("id", pa.int64()),
+                ("name", pa.string()),
+                ("value", pa.float64()),
+            ]
+        )
         paimon_schema = pypaimon.Schema.from_pyarrow_schema(pa_schema)
         catalog.create_table("test_db.null_table", paimon_schema, ignore_if_exists=True)
         table = catalog.get_table("test_db.null_table")
 
         # Write data with nulls
-        data = pa.table({
-            "id": [1, 2, 3],
-            "name": ["alice", None, "charlie"],
-            "value": [1.1, 2.2, None],
-        })
+        data = pa.table(
+            {
+                "id": [1, 2, 3],
+                "name": ["alice", None, "charlie"],
+                "value": [1.1, 2.2, None],
+            }
+        )
         _write_to_paimon(table, data)
 
         df = daft.read_paimon(table)
@@ -518,11 +534,13 @@ class TestCompositePrimaryKey:
         """Test reading from a table with composite primary key."""
         catalog, tmp_path = local_paimon_catalog
 
-        pa_schema = pa.schema([
-            ("pk1", pa.int64()),
-            ("pk2", pa.string()),
-            ("value", pa.float64()),
-        ])
+        pa_schema = pa.schema(
+            [
+                ("pk1", pa.int64()),
+                ("pk2", pa.string()),
+                ("value", pa.float64()),
+            ]
+        )
         # Composite primary key table
         paimon_schema = pypaimon.Schema.from_pyarrow_schema(
             pa_schema,
@@ -533,11 +551,13 @@ class TestCompositePrimaryKey:
         table = catalog.get_table("test_db.composite_pk")
 
         # Write data
-        data = pa.table({
-            "pk1": [1, 1, 2],
-            "pk2": ["a", "b", "a"],
-            "value": [1.1, 2.2, 3.3],
-        })
+        data = pa.table(
+            {
+                "pk1": [1, 1, 2],
+                "pk2": ["a", "b", "a"],
+                "value": [1.1, 2.2, 3.3],
+            }
+        )
         _write_to_paimon(table, data)
 
         df = daft.read_paimon(table)
