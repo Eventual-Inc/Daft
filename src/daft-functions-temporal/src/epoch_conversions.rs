@@ -1,6 +1,5 @@
 use daft_core::datatypes::TimeUnit;
-use daft_dsl::functions::prelude::*;
-use daft_dsl::functions::UnaryArg;
+use daft_dsl::functions::{UnaryArg, prelude::*};
 
 // --- DateFromUnixDate ---
 
