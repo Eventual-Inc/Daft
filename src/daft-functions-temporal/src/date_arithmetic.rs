@@ -42,8 +42,8 @@ impl ScalarUDF for DateAdd {
         let input_field = input.to_field(schema)?;
         let days_field = days.to_field(schema)?;
         ensure!(
-            matches!(input_field.dtype, DataType::Date | DataType::Timestamp(..)),
-            TypeError: "Expected date or timestamp input, got {}",
+            input_field.dtype == DataType::Date,
+            TypeError: "Expected date input, got {}",
             input_field.dtype
         );
         ensure!(
@@ -60,6 +60,12 @@ impl ScalarUDF for DateAdd {
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct DateSub;
 
+#[derive(FunctionArgs)]
+struct DateSubArgs<T> {
+    input: T,
+    days: T,
+}
+
 #[typetag::serde]
 impl ScalarUDF for DateSub {
     fn name(&self) -> &'static str {
@@ -71,7 +77,7 @@ impl ScalarUDF for DateSub {
         inputs: FunctionArgs<Series>,
         _ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
-        let DateAddArgs { input, days } = inputs.try_into()?;
+        let DateSubArgs { input, days } = inputs.try_into()?;
         let date_series = input.cast(&DataType::Date)?;
         let days_i32 = days.cast(&DataType::Int32)?;
         let days_arr = days_i32.downcast::<daft_core::array::DataArray<Int32Type>>()?;
@@ -84,12 +90,12 @@ impl ScalarUDF for DateSub {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        let DateAddArgs { input, days } = inputs.try_into()?;
+        let DateSubArgs { input, days } = inputs.try_into()?;
         let input_field = input.to_field(schema)?;
         let days_field = days.to_field(schema)?;
         ensure!(
-            matches!(input_field.dtype, DataType::Date | DataType::Timestamp(..)),
-            TypeError: "Expected date or timestamp input, got {}",
+            input_field.dtype == DataType::Date,
+            TypeError: "Expected date input, got {}",
             input_field.dtype
         );
         ensure!(
