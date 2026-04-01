@@ -2,6 +2,7 @@ use std::{cmp::Ordering, collections::HashMap, fmt::Debug, future::Future, sync:
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftError;
+use common_metrics::QueryID;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
 use daft_local_plan::{
@@ -49,6 +50,8 @@ pub(crate) type TaskName = String;
 pub(crate) struct TaskContext {
     /// The query index that the task belongs to.
     pub query_idx: QueryIdx,
+    /// Stable query identity that remains unique across processes.
+    pub query_id: QueryID,
     /// The ID of the last operator / node in the task's pipeline.
     /// This gives us a general indication of what portion of the query this task is related to.
     pub last_node_id: NodeID,
@@ -64,6 +67,7 @@ pub(crate) struct TaskContext {
 impl TaskContext {
     pub fn new(
         query_idx: QueryIdx,
+        query_id: QueryID,
         node_id: NodeID,
         task_id: TaskID,
         node_ids: Vec<NodeID>,
@@ -71,6 +75,7 @@ impl TaskContext {
     ) -> Self {
         Self {
             query_idx,
+            query_id,
             last_node_id: node_id,
             task_id,
             node_ids,
@@ -83,8 +88,8 @@ impl std::fmt::Debug for TaskContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "TaskContext(query_idx = {}, last_node_id = {}, task_id = {}, plan_fingerprint = {})",
-            self.query_idx, self.last_node_id, self.task_id, self.plan_fingerprint
+            "TaskContext(query_idx = {}, query_id = {}, last_node_id = {}, task_id = {}, plan_fingerprint = {})",
+            self.query_idx, self.query_id, self.last_node_id, self.task_id, self.plan_fingerprint
         )
     }
 }
@@ -93,6 +98,7 @@ impl From<(&PipelineNodeContext, TaskID)> for TaskContext {
     fn from((node_context, task_id): (&PipelineNodeContext, TaskID)) -> Self {
         Self::new(
             node_context.query_idx,
+            node_context.query_id.clone(),
             node_context.node_id,
             task_id,
             vec![node_context.node_id],
@@ -450,11 +456,18 @@ impl SwordfishTaskBuilder {
         task_id_counter: &TaskIDCounter,
     ) -> SubmittableTask<SwordfishTask> {
         let strategy = self.strategy.unwrap_or(SchedulingStrategy::Spread);
+        let query_id: QueryID = self
+            .context
+            .get("query_id")
+            .cloned()
+            .expect("query_id must be set in task context")
+            .into();
 
         let plan_fingerprint = hash_fingerprint(&[self.plan_fingerprint, query_idx as u32]);
 
         let task_context = TaskContext {
             query_idx,
+            query_id,
             last_node_id: *self
                 .pending_node_ids
                 .last()
@@ -926,5 +939,13 @@ pub(super) mod tests {
             }
         );
         assert!(heap.pop().is_none()); // Heap should be empty
+    }
+
+    #[test]
+    fn test_task_context_identity_includes_query_id() {
+        let left = TaskContext::new(0, "driver-query".into(), 1, 0, vec![1], 123);
+        let right = TaskContext::new(0, "worker-query".into(), 1, 0, vec![1], 123);
+
+        assert_ne!(left, right);
     }
 }

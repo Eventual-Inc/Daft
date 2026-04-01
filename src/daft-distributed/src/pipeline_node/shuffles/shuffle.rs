@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    hash::{DefaultHasher, Hash, Hasher},
     sync::Arc,
 };
 
@@ -27,7 +28,10 @@ use crate::{
 };
 
 fn make_shuffle_id(context: &PipelineNodeContext) -> u64 {
-    ((context.query_idx as u64) << 32) | (context.node_id as u64)
+    let mut hasher = DefaultHasher::new();
+    context.query_id.hash(&mut hasher);
+    context.node_id.hash(&mut hasher);
+    hasher.finish()
 }
 
 struct FlightDistributedShuffleConfig {

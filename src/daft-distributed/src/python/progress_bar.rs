@@ -1,3 +1,5 @@
+use std::hash::{DefaultHasher, Hash, Hasher};
+
 use common_error::DaftResult;
 use pyo3::{Py, PyAny, PyResult, Python, types::PyAnyMethods};
 
@@ -11,7 +13,10 @@ struct BarId(i64);
 
 impl From<&TaskContext> for BarId {
     fn from(task_context: &TaskContext) -> Self {
-        Self(((task_context.query_idx as i64) << 32) | (task_context.last_node_id as i64))
+        let mut hasher = DefaultHasher::new();
+        task_context.query_id.hash(&mut hasher);
+        task_context.last_node_id.hash(&mut hasher);
+        Self(hasher.finish() as i64)
     }
 }
 
