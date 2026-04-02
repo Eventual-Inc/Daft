@@ -141,12 +141,11 @@ function PhysicalNodeCard({
               </span>
             </div>
           ))}
-          {/* Phase breakdown */}
+          {/* Phase breakdown — only duration (row counts are misleading
+              because each phase has multiple local pipeline nodes) */}
           {node.phases?.map((phase) => {
             const phaseOp = operators[phase.id];
             if (!phaseOp) return null;
-            const phaseRowsIn = phaseOp.stats[ROWS_IN_STAT_KEY];
-            const phaseRowsOut = phaseOp.stats[ROWS_OUT_STAT_KEY];
             const phaseDuration = phaseOp.stats[DURATION_US_STAT_KEY];
             return (
               <div key={phase.id} className="flex justify-between gap-2">
@@ -156,9 +155,7 @@ function PhysicalNodeCard({
                   {phase.phase}
                 </span>
                 <span className={`${main.className} text-xs text-zinc-400 font-mono`}>
-                  {phaseRowsIn && `in:${formatStatValue(phaseRowsIn)} `}
-                  {phaseRowsOut && `out:${formatStatValue(phaseRowsOut)} `}
-                  {phaseDuration ? formatStatValue(phaseDuration) : ""}
+                  {phaseDuration ? formatStatValue(phaseDuration) : "-"}
                 </span>
               </div>
             );

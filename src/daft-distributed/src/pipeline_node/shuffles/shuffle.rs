@@ -287,12 +287,7 @@ impl RuntimeStats for ShuffleStats {
         if let StatSnapshot::Default(s) = snapshot {
             self.base.add_rows_in(s.rows_in);
             self.base.add_rows_out(s.rows_out);
-            if let Some(phase) = &node_info.node_phase {
-                if let Some(counters) = self.phase_counters(phase) {
-                    counters.add_rows_in(s.rows_in);
-                    counters.add_rows_out(s.rows_out);
-                }
-            }
+            // Don't track per-phase rows (see SortStats comment for rationale)
         }
     }
 

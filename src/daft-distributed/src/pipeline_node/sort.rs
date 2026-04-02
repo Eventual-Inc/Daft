@@ -85,9 +85,11 @@ impl RuntimeStats for SortStats {
                 self.base.add_duration_us(snapshot.cpu_us);
                 if let Some(phase) = &node_info.node_phase {
                     if let Some(counters) = self.phase_counters(phase) {
+                        // Only track duration per-phase; row counts would be
+                        // misleading because each phase has multiple local
+                        // pipeline nodes (e.g., InMemoryScan → Sample → Project)
+                        // whose rows_in/out would all be summed together.
                         counters.add_duration_us(snapshot.cpu_us);
-                        counters.add_rows_in(snapshot.rows_in);
-                        counters.add_rows_out(snapshot.rows_out);
                     }
                     if phase == FINAL_SORT_PHASE {
                         // Only the final sort phase contributes to the aggregate row counts
@@ -571,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sort_stats_per_phase_snapshots() {
+    fn test_sort_stats_per_phase_duration_only() {
         let stats = make_sort_stats(5);
 
         let sample_info = make_node_info(5, Some(SAMPLE_PHASE));
@@ -586,29 +588,24 @@ mod tests {
         let phase_snapshots = stats.export_phase_snapshots();
         assert_eq!(phase_snapshots.len(), 3);
 
-        // sample phase
+        // Per-phase snapshots only track duration (not rows, since a phase
+        // has multiple local pipeline nodes whose rows would be double-counted)
         let (id, snap) = &phase_snapshots[0];
         assert_eq!(*id, phase_node_id(5, 0));
         let (cpu, rows_in, rows_out) = extract_default(snap);
         assert_eq!(cpu, 100);
-        assert_eq!(rows_in, 1000);
-        assert_eq!(rows_out, 50);
+        assert_eq!(rows_in, 0);
+        assert_eq!(rows_out, 0);
 
-        // repartition phase
         let (id, snap) = &phase_snapshots[1];
         assert_eq!(*id, phase_node_id(5, 1));
-        let (cpu, rows_in, rows_out) = extract_default(snap);
+        let (cpu, _, _) = extract_default(snap);
         assert_eq!(cpu, 200);
-        assert_eq!(rows_in, 500);
-        assert_eq!(rows_out, 500);
 
-        // final-sort phase
         let (id, snap) = &phase_snapshots[2];
         assert_eq!(*id, phase_node_id(5, 2));
-        let (cpu, rows_in, rows_out) = extract_default(snap);
+        let (cpu, _, _) = extract_default(snap);
         assert_eq!(cpu, 300);
-        assert_eq!(rows_in, 500);
-        assert_eq!(rows_out, 500);
     }
 
     #[test]
@@ -625,12 +622,10 @@ mod tests {
         stats.handle_worker_node_stats(&info, &make_default_snapshot(300, 500, 500));
 
         let phase_snapshots = stats.export_phase_snapshots();
-        // sample counters should accumulate
+        // sample duration should accumulate
         let (_, snap) = &phase_snapshots[0];
-        let (cpu, rows_in, rows_out) = extract_default(snap);
+        let (cpu, _, _) = extract_default(snap);
         assert_eq!(cpu, 110); // 50 + 60
-        assert_eq!(rows_in, 300); // 100 + 200
-        assert_eq!(rows_out, 30); // 10 + 20
     }
 
     #[test]

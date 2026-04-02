@@ -62,16 +62,13 @@ impl RuntimeStats for LimitStats {
         self.base.add_duration_us(snapshot.duration_us());
         if let Some(phase) = &node_info.node_phase {
             if let Some(counters) = self.phase_counters(phase) {
+                // Only track duration per-phase (see SortStats comment for rationale)
                 counters.add_duration_us(snapshot.duration_us());
             }
         }
         match snapshot {
             StatSnapshot::Default(snapshot) => {
                 if let Some(phase) = &node_info.node_phase {
-                    if let Some(counters) = self.phase_counters(phase) {
-                        counters.add_rows_in(snapshot.rows_in);
-                        counters.add_rows_out(snapshot.rows_out);
-                    }
                     // The first limit is used for pruning, the second limit is for the final output
                     if phase == FIRST_LIMIT_PHASE {
                         self.base.add_rows_in(snapshot.rows_in);
@@ -81,13 +78,10 @@ impl RuntimeStats for LimitStats {
                 }
             }
             StatSnapshot::Source(snapshot) => {
-                if let Some(phase) = &node_info.node_phase {
-                    if let Some(counters) = self.phase_counters(phase) {
-                        counters.add_rows_out(snapshot.rows_out);
-                    }
-                    if phase == SECOND_LIMIT_PHASE {
-                        self.base.add_rows_out(snapshot.rows_out);
-                    }
+                if let Some(phase) = &node_info.node_phase
+                    && phase == SECOND_LIMIT_PHASE
+                {
+                    self.base.add_rows_out(snapshot.rows_out);
                 }
             }
             _ => {} // Limit don't receive stats from other Swordfish nodes
@@ -473,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn test_limit_stats_per_phase_snapshots() {
+    fn test_limit_stats_per_phase_duration_only() {
         let stats = make_limit_stats(7);
 
         let info = make_node_info(7, Some(FIRST_LIMIT_PHASE));
@@ -485,28 +479,24 @@ mod tests {
         let phase_snapshots = stats.export_phase_snapshots();
         assert_eq!(phase_snapshots.len(), 2);
 
-        // local-limit phase
+        // Per-phase snapshots only track duration
         let (id, snap) = &phase_snapshots[0];
         assert_eq!(*id, phase_node_id(7, 0));
         let (cpu, rows_in, rows_out) = extract_default(snap);
         assert_eq!(cpu, 100);
-        assert_eq!(rows_in, 1000);
-        assert_eq!(rows_out, 500);
+        assert_eq!(rows_in, 0);
+        assert_eq!(rows_out, 0);
 
-        // post-limit phase
         let (id, snap) = &phase_snapshots[1];
         assert_eq!(*id, phase_node_id(7, 1));
-        let (cpu, rows_in, rows_out) = extract_default(snap);
+        let (cpu, _, _) = extract_default(snap);
         assert_eq!(cpu, 50);
-        assert_eq!(rows_in, 500);
-        assert_eq!(rows_out, 100);
     }
 
     #[test]
-    fn test_limit_stats_source_snapshot_post_limit_contributes_rows_out() {
+    fn test_limit_stats_source_snapshot_contributes_duration_to_phase() {
         let stats = make_limit_stats(7);
 
-        // Source snapshot in post-limit phase should contribute rows_out
         let info = make_node_info(7, Some(SECOND_LIMIT_PHASE));
         let source_snap = StatSnapshot::Source(SourceSnapshot {
             cpu_us: 80,
@@ -515,15 +505,17 @@ mod tests {
         });
         stats.handle_worker_node_stats(&info, &source_snap);
 
+        // Aggregate: source contributes duration and rows_out for post-limit
         let (cpu, _, rows_out) = extract_default(&stats.export_snapshot());
         assert_eq!(cpu, 80);
         assert_eq!(rows_out, 42);
 
-        // Phase counters should also track it
+        // Phase: only duration tracked
         let phase_snapshots = stats.export_phase_snapshots();
         let (_, snap) = &phase_snapshots[1]; // post-limit
-        let (cpu, _, rows_out) = extract_default(snap);
+        let (cpu, rows_in, rows_out) = extract_default(snap);
         assert_eq!(cpu, 80);
-        assert_eq!(rows_out, 42);
+        assert_eq!(rows_in, 0);
+        assert_eq!(rows_out, 0);
     }
 }

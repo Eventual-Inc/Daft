@@ -103,8 +103,6 @@ function PhaseSubRow({
   phase: { id: number; name: string; phase: string };
   operator: OperatorInfo;
 }) {
-  const rowsIn = operator.stats[ROWS_IN_STAT_KEY]?.value || 0;
-  const rowsOut = operator.stats[ROWS_OUT_STAT_KEY]?.value || 0;
   const durationUs = operator.stats[DURATION_US_STAT_KEY];
   const durationStr = durationUs
     ? formatStatValue(durationUs)
@@ -121,10 +119,10 @@ function PhaseSubRow({
         </span>
       </div>
       <div className="px-3 py-2 text-right text-xs text-zinc-500 font-mono border-r border-zinc-700/50 h-full flex items-center justify-end">
-        {rowsIn.toLocaleString()}
+        -
       </div>
       <div className="px-3 py-2 text-right text-xs text-zinc-500 font-mono border-r border-zinc-700/50 h-full flex items-center justify-end">
-        {rowsOut.toLocaleString()}
+        -
       </div>
       <div className="px-3 py-2 text-right text-xs text-zinc-500 font-mono border-r border-zinc-700/50 h-full flex items-center justify-end">
         {durationStr}
