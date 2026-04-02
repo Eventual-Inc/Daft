@@ -1,0 +1,29 @@
+[dependencies]
+common-error = {path = "../common/error"}
+daft-core = {path = "../daft-core"}
+daft-dsl = {path = "../daft-dsl"}
+daft-functions = {path = "../daft-functions"}
+daft-schema = {path = "../daft-schema"}
+onnx-rs = "0.1.2"
+serde = {workspace = true}
+snafu = {workspace = true}
+typetag = {workspace = true}
+
+[dev-dependencies]
+rstest = {workspace = true}
+
+[features]
+python = [
+  "common-error/python",
+  "daft-core/python",
+  "daft-dsl/python",
+  "daft-schema/python",
+]
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-onnx"
+edition.workspace = true
+version.workspace = true

@@ -2277,6 +2277,7 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-minhash",
+ "daft-onnx",
  "daft-parquet",
  "daft-recordbatch",
  "daft-runners",
@@ -3064,6 +3065,22 @@ dependencies = [
  "proptest",
  "tango-bench",
  "xxhash-rust",
+]
+
+[[package]]
+name = "daft-onnx"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "daft-core",
+ "daft-dsl",
+ "daft-functions",
+ "daft-schema",
+ "onnx-rs",
+ "rstest",
+ "serde",
+ "snafu",
+ "typetag",
 ]
 
 [[package]]
@@ -5568,6 +5585,12 @@ name = "oneshot"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "269bca4c2591a28585d6bf10d9ed0332b7d76900a1b02bec41bdc3a2cdcda107"
+
+[[package]]
+name = "onnx-rs"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2646a116e96c9ca9ed8e595464acbbf69139048623e952acfbe1d04d2e097b81"
 
 [[package]]
 name = "oorandom"
