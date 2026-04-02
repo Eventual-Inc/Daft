@@ -51,7 +51,11 @@ pub struct AggregateSink {
 }
 
 impl AggregateSink {
-    pub fn new(aggregations: &[BoundAggExpr], input_schema: &SchemaRef) -> DaftResult<Self> {
+    pub fn new(
+        aggregations: &[BoundAggExpr],
+        aliases: &[Option<Arc<str>>],
+        input_schema: &SchemaRef,
+    ) -> DaftResult<Self> {
         let aggregate_name = if aggregations.len() == 1 {
             aggregations[0].as_ref().agg_name()
         } else {
@@ -64,6 +68,17 @@ impl AggregateSink {
                 input_schema,
                 &[],
             )?;
+        let final_projections = final_projections
+            .into_iter()
+            .zip(aliases.iter())
+            .map(|(expr, alias)| {
+                if let Some(alias) = alias {
+                    BoundExpr::new_unchecked(expr.into_inner().alias(alias.clone()))
+                } else {
+                    expr
+                }
+            })
+            .collect();
 
         Ok(Self {
             aggregate_name,

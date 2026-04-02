@@ -441,6 +441,7 @@ impl LocalPhysicalPlan {
     pub fn ungrouped_aggregate(
         input: LocalPhysicalPlanRef,
         aggregations: Vec<BoundAggExpr>,
+        aliases: Vec<Option<Arc<str>>>,
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
@@ -448,6 +449,7 @@ impl LocalPhysicalPlan {
         Self::UnGroupedAggregate(UnGroupedAggregate {
             input,
             aggregations,
+            aliases,
             schema,
             stats_state,
             context,
@@ -459,6 +461,7 @@ impl LocalPhysicalPlan {
         input: LocalPhysicalPlanRef,
         aggregations: Vec<BoundAggExpr>,
         group_by: Vec<BoundExpr>,
+        aliases: Vec<Option<Arc<str>>>,
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
@@ -467,6 +470,7 @@ impl LocalPhysicalPlan {
             input,
             aggregations,
             group_by,
+            aliases,
             schema,
             stats_state,
             context,
@@ -1222,12 +1226,14 @@ impl LocalPhysicalPlan {
                 ),
                 Self::UnGroupedAggregate(UnGroupedAggregate {
                     aggregations,
+                    aliases,
                     schema,
                     context,
                     ..
                 }) => Self::ungrouped_aggregate(
                     new_child.clone(),
                     aggregations.clone(),
+                    aliases.clone(),
                     schema.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
@@ -1235,6 +1241,7 @@ impl LocalPhysicalPlan {
                 Self::HashAggregate(HashAggregate {
                     aggregations,
                     group_by,
+                    aliases,
                     schema,
                     context,
                     ..
@@ -1242,6 +1249,7 @@ impl LocalPhysicalPlan {
                     new_child.clone(),
                     aggregations.clone(),
                     group_by.clone(),
+                    aliases.clone(),
                     schema.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
@@ -1933,6 +1941,7 @@ pub struct MonotonicallyIncreasingId {
 pub struct UnGroupedAggregate {
     pub input: LocalPhysicalPlanRef,
     pub aggregations: Vec<BoundAggExpr>,
+    pub aliases: Vec<Option<Arc<str>>>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
@@ -1944,6 +1953,7 @@ pub struct HashAggregate {
     pub input: LocalPhysicalPlanRef,
     pub aggregations: Vec<BoundAggExpr>,
     pub group_by: Vec<BoundExpr>,
+    pub aliases: Vec<Option<Arc<str>>>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,

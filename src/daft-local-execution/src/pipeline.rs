@@ -773,16 +773,18 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
             input,
             aggregations,
+            aliases,
             stats_state,
             context,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let agg_sink = AggregateSink::new(aggregations, input.schema()).with_context(|_| {
-                PipelineCreationSnafu {
-                    plan_name: physical_plan.name(),
-                }
-            })?;
+            let agg_sink =
+                AggregateSink::new(aggregations, aliases, input.schema()).with_context(|_| {
+                    PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    }
+                })?;
             BlockingSinkNode::new(
                 Arc::new(agg_sink),
                 child_node,

@@ -201,14 +201,14 @@ fn translate_helper(
         LogicalPlan::Aggregate(aggregate) => {
             let (input_plan, inputs) = translate_helper(&aggregate.input, source_counter, psets)?;
 
-            let aggregations = aggregate
+            let (aggregations, aliases) = aggregate
                 .aggregations
                 .iter()
                 .map(|expr| {
-                    let agg_expr = extract_agg_expr(expr)?;
-                    BoundAggExpr::try_new(agg_expr, input_plan.schema())
+                    let (agg_expr, alias) = extract_agg_expr(expr)?;
+                    Ok((BoundAggExpr::try_new(agg_expr, input_plan.schema())?, alias))
                 })
-                .collect::<DaftResult<Vec<_>>>()?;
+                .collect::<DaftResult<(Vec<_>, Vec<_>)>>()?;
 
             let groupby = BoundExpr::bind_all(&aggregate.groupby, input_plan.schema())?;
 
@@ -217,6 +217,7 @@ fn translate_helper(
                     LocalPhysicalPlan::ungrouped_aggregate(
                         input_plan,
                         aggregations,
+                        aliases,
                         aggregate.output_schema.clone(),
                         aggregate.stats_state.clone(),
                         LocalNodeContext::default(),
@@ -229,6 +230,7 @@ fn translate_helper(
                         input_plan,
                         aggregations,
                         groupby,
+                        aliases,
                         aggregate.output_schema.clone(),
                         aggregate.stats_state.clone(),
                         LocalNodeContext::default(),
