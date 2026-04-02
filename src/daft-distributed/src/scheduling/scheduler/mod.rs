@@ -79,7 +79,7 @@ impl<T: Task> std::fmt::Debug for PendingTask<T> {
 
 impl<T: Task> PartialEq for PendingTask<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.task.task_id() == other.task.task_id()
+        self.task.task_context() == other.task.task_context()
     }
 }
 

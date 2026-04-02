@@ -45,6 +45,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+_INSIDE_FLOTILLA_RUNNER_ENV = "DAFT_INSIDE_FLOTILLA_RUNNER"
+
 
 class SwordfishTaskMetadata(NamedTuple):
     partition_metadatas: list[PartitionMetadata]
@@ -356,6 +358,7 @@ def try_autoscale(bundles: list[dict[str, int]]) -> None:
 @ray.remote(num_cpus=0)
 class RemoteFlotillaRunner:
     def __init__(self, dashboard_url: str | None = None) -> None:
+        os.environ[_INSIDE_FLOTILLA_RUNNER_ENV] = "1"
         if dashboard_url:
             os.environ["DAFT_DASHBOARD_URL"] = dashboard_url
             try:
@@ -382,8 +385,9 @@ class RemoteFlotillaRunner:
             k: [RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0) for v in v.values()]
             for k, v in partition_sets.items()
         }
-        self.curr_plans[plan.idx()] = plan
-        self.curr_result_gens[plan.idx()] = self.plan_runner.run_plan(plan, psets)
+        plan_key = plan.query_id()
+        self.curr_plans[plan_key] = plan
+        self.curr_result_gens[plan_key] = self.plan_runner.run_plan(plan, psets)
 
     async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | PyExecutionStats | None:
         from daft.runners.ray_runner import (
@@ -436,9 +440,41 @@ def _get_ray_job_id_for_actor_naming() -> str | None:
     return None
 
 
+def _get_ray_actor_id_for_actor_naming() -> str | None:
+    """Best-effort detection of the current Ray actor id for nested flotilla naming."""
+    try:
+        runtime_ctx = ray.get_runtime_context()
+    except Exception:
+        runtime_ctx = None
+
+    if runtime_ctx is not None:
+        try:
+            actor_id = runtime_ctx.get_actor_id()
+        except Exception:
+            actor_id = None
+
+        if actor_id is not None:
+            try:
+                return actor_id.hex()
+            except Exception:
+                return str(actor_id)
+
+    return None
+
+
 def get_flotilla_runner_actor_name() -> str:
     """Return the per-Ray-job actor name for RemoteFlotillaRunner."""
     global _FLOTILLA_RUNNER_NAME_SUFFIX
+
+    if os.environ.get(_INSIDE_FLOTILLA_RUNNER_ENV) == "1":
+        actor_id = _get_ray_actor_id_for_actor_naming()
+        if actor_id is None:
+            actor_id = uuid.uuid4().hex
+
+        nested_job_id = _get_ray_job_id_for_actor_naming()
+        if nested_job_id is None:
+            return f"{FLOTILLA_RUNNER_NAME}-nested-{actor_id}"
+        return f"{FLOTILLA_RUNNER_NAME}-{nested_job_id}-nested-{actor_id}"
 
     if _FLOTILLA_RUNNER_NAME_SUFFIX is None:
         job_id: str | None
@@ -492,7 +528,7 @@ class FlotillaRunner:
         plan: DistributedPhysicalPlan,
         partition_sets: dict[str, PartitionSet[RayMaterializedResult]],
     ) -> Generator[RayMaterializedResult, None, PyExecutionStats]:
-        plan_id = plan.idx()
+        plan_id = plan.query_id()
         ray.get(self.runner.run_plan.remote(plan, partition_sets))
 
         while True:
