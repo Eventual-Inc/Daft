@@ -130,7 +130,7 @@ def test_skip_existing_e2e(tmp_path: Path, fmt):
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
 def test_skip_existing_e2e_with_custom_cpus_per_worker(tmp_path: Path, fmt):
     """Goal: end-to-end verification of skip_existing behavior."""
-    cfg = {"key_column": "id", "num_workers": 4, "cpus_per_worker": 2.0}
+    cfg = {"key_column": "id", "num_workers": 4, "cpus_per_worker": 0.5}
     df_all = build_df_ids_sequential(100)
     df_first_50 = df_all.where(col("id") <= 50)
 

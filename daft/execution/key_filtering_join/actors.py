@@ -225,7 +225,7 @@ def create_key_filter_actors(
     actor_handles: list[ActorHandle] = []
     try:
         for i in range(num_workers):
-            actor = (
+            actor: ActorHandle = (
                 ray.remote(max_concurrency=max_concurrency_per_worker)(KeyFilterActor)
                 .options(
                     num_cpus=cpus_per_worker,

@@ -2732,13 +2732,22 @@ class DataFrame:
 
         Examples:
             >>> import daft
+            >>> import tempfile
+            >>> from pathlib import Path
+            >>> import pyarrow as pa
+            >>> import pyarrow.parquet as pq
             >>> df = daft.from_pydict({"id": [1, 2, 3, 4], "value": ["a", "b", "c", "d"]})
-            >>> # Filter out rows where 'id' already exists in existing Parquet data
-            >>> filtered_df = df.skip_existing(
-            ...     existing_path="s3://bucket/existing_data/",
-            ...     key_column="id",
-            ...     file_format="parquet",
-            ... )
+            >>> # Filter out rows where 'id' already exists in local Parquet data
+            >>> daft.set_runner_ray()  # doctest: +SKIP
+            >>> with tempfile.TemporaryDirectory() as tmpdir:  # doctest: +SKIP
+            ...     pq.write_table(pa.table({"id": [1, 3]}), Path(tmpdir) / "part-0.parquet")
+            ...     filtered_df = df.skip_existing(
+            ...         existing_path=tmpdir,
+            ...         key_column="id",
+            ...         file_format="parquet",
+            ...     ).collect()
+            ...     filtered_df.select("id").to_pydict()["id"]
+            [2, 4]
         """
         if isinstance(file_format, str):
             fmt = file_format.strip().lower()
