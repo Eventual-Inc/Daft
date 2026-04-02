@@ -430,3 +430,100 @@ impl PipelineNodeImpl for LimitNode {
         TaskBuilderStream::from(result_rx)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use common_metrics::{Meter, ops::NodeCategory, snapshot::SourceSnapshot};
+
+    use super::*;
+    use crate::{
+        pipeline_node::{PipelineNodeContext, phase_node_id},
+        statistics::stats::test_utils::*,
+    };
+
+    fn make_limit_stats(node_id: u32) -> LimitStats {
+        let meter = Meter::test_scope("test.limit");
+        let context = PipelineNodeContext::new(
+            0,
+            "test".into(),
+            node_id,
+            "Limit".into(),
+            NodeType::Sort, // doesn't matter for stats
+            NodeCategory::StreamingSink,
+        );
+        LimitStats::new(&meter, &context, node_id)
+    }
+
+    #[test]
+    fn test_limit_stats_aggregate_rows_from_correct_phases() {
+        let stats = make_limit_stats(7);
+
+        // First limit phase contributes rows_in to aggregate
+        let info = make_node_info(7, Some(FIRST_LIMIT_PHASE));
+        stats.handle_worker_node_stats(&info, &make_default_snapshot(100, 1000, 500));
+
+        // Post-limit phase contributes rows_out to aggregate
+        let info = make_node_info(7, Some(SECOND_LIMIT_PHASE));
+        stats.handle_worker_node_stats(&info, &make_default_snapshot(50, 500, 100));
+
+        let (cpu, rows_in, rows_out) = extract_default(&stats.export_snapshot());
+        assert_eq!(cpu, 150); // both contribute duration
+        assert_eq!(rows_in, 1000); // from first limit phase
+        assert_eq!(rows_out, 100); // from post-limit phase
+    }
+
+    #[test]
+    fn test_limit_stats_per_phase_snapshots() {
+        let stats = make_limit_stats(7);
+
+        let info = make_node_info(7, Some(FIRST_LIMIT_PHASE));
+        stats.handle_worker_node_stats(&info, &make_default_snapshot(100, 1000, 500));
+
+        let info = make_node_info(7, Some(SECOND_LIMIT_PHASE));
+        stats.handle_worker_node_stats(&info, &make_default_snapshot(50, 500, 100));
+
+        let phase_snapshots = stats.export_phase_snapshots();
+        assert_eq!(phase_snapshots.len(), 2);
+
+        // local-limit phase
+        let (id, snap) = &phase_snapshots[0];
+        assert_eq!(*id, phase_node_id(7, 0));
+        let (cpu, rows_in, rows_out) = extract_default(snap);
+        assert_eq!(cpu, 100);
+        assert_eq!(rows_in, 1000);
+        assert_eq!(rows_out, 500);
+
+        // post-limit phase
+        let (id, snap) = &phase_snapshots[1];
+        assert_eq!(*id, phase_node_id(7, 1));
+        let (cpu, rows_in, rows_out) = extract_default(snap);
+        assert_eq!(cpu, 50);
+        assert_eq!(rows_in, 500);
+        assert_eq!(rows_out, 100);
+    }
+
+    #[test]
+    fn test_limit_stats_source_snapshot_post_limit_contributes_rows_out() {
+        let stats = make_limit_stats(7);
+
+        // Source snapshot in post-limit phase should contribute rows_out
+        let info = make_node_info(7, Some(SECOND_LIMIT_PHASE));
+        let source_snap = StatSnapshot::Source(SourceSnapshot {
+            cpu_us: 80,
+            rows_out: 42,
+            bytes_read: 0,
+        });
+        stats.handle_worker_node_stats(&info, &source_snap);
+
+        let (cpu, _, rows_out) = extract_default(&stats.export_snapshot());
+        assert_eq!(cpu, 80);
+        assert_eq!(rows_out, 42);
+
+        // Phase counters should also track it
+        let phase_snapshots = stats.export_phase_snapshots();
+        let (_, snap) = &phase_snapshots[1]; // post-limit
+        let (cpu, _, rows_out) = extract_default(snap);
+        assert_eq!(cpu, 80);
+        assert_eq!(rows_out, 42);
+    }
+}

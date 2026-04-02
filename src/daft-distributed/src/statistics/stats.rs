@@ -214,3 +214,73 @@ impl RuntimeStats for DefaultRuntimeStats {
         self.base.export_default_snapshot()
     }
 }
+
+#[cfg(test)]
+pub(crate) mod test_utils {
+    use std::sync::Arc;
+
+    use common_metrics::{
+        StatSnapshot,
+        ops::NodeInfo,
+        snapshot::DefaultSnapshot,
+    };
+
+    /// Create a NodeInfo with the given origin node id and optional phase.
+    pub fn make_node_info(origin_node_id: usize, phase: Option<&str>) -> Arc<NodeInfo> {
+        Arc::new(NodeInfo {
+            name: "test".into(),
+            id: origin_node_id,
+            node_origin_id: origin_node_id,
+            node_phase: phase.map(|s| s.to_string()),
+            ..Default::default()
+        })
+    }
+
+    /// Create a default StatSnapshot with the given rows and duration.
+    pub fn make_default_snapshot(cpu_us: u64, rows_in: u64, rows_out: u64) -> StatSnapshot {
+        StatSnapshot::Default(DefaultSnapshot {
+            cpu_us,
+            rows_in,
+            rows_out,
+        })
+    }
+
+    /// Extract (cpu_us, rows_in, rows_out) from a DefaultSnapshot.
+    pub fn extract_default(snapshot: &StatSnapshot) -> (u64, u64, u64) {
+        match snapshot {
+            StatSnapshot::Default(s) => (s.cpu_us, s.rows_in, s.rows_out),
+            _ => panic!("Expected DefaultSnapshot"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::test_utils::*;
+
+    #[test]
+    fn test_simple_counters_accumulate() {
+        let c = SimpleCounters::new();
+        c.add_duration_us(100);
+        c.add_duration_us(200);
+        c.add_rows_in(10);
+        c.add_rows_out(5);
+
+        let snap = c.export_default_snapshot();
+        let (cpu, rows_in, rows_out) = extract_default(&snap);
+        assert_eq!(cpu, 300);
+        assert_eq!(rows_in, 10);
+        assert_eq!(rows_out, 5);
+    }
+
+    #[test]
+    fn test_simple_counters_empty() {
+        let c = SimpleCounters::new();
+        let snap = c.export_default_snapshot();
+        let (cpu, rows_in, rows_out) = extract_default(&snap);
+        assert_eq!(cpu, 0);
+        assert_eq!(rows_in, 0);
+        assert_eq!(rows_out, 0);
+    }
+}

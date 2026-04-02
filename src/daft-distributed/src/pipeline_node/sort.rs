@@ -524,3 +524,164 @@ impl PipelineNodeImpl for SortNode {
         TaskBuilderStream::from(result_rx)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use common_metrics::{Meter, ops::NodeCategory, snapshot::SourceSnapshot};
+
+    use super::*;
+    use crate::{
+        pipeline_node::{PipelineNodeContext, phase_node_id},
+        statistics::stats::test_utils::*,
+    };
+
+    fn make_sort_stats(node_id: u32) -> SortStats {
+        let meter = Meter::test_scope("test.sort");
+        let context = PipelineNodeContext::new(
+            0,
+            "test".into(),
+            node_id,
+            "Sort".into(),
+            NodeType::Sort,
+            NodeCategory::BlockingSink,
+        );
+        SortStats::new(&meter, &context, node_id)
+    }
+
+    #[test]
+    fn test_sort_stats_aggregate_only_final_sort_rows() {
+        let stats = make_sort_stats(5);
+
+        // Sample phase: should contribute duration but NOT rows to aggregate
+        let sample_info = make_node_info(5, Some(SAMPLE_PHASE));
+        stats.handle_worker_node_stats(&sample_info, &make_default_snapshot(100, 1000, 50));
+
+        // Repartition phase: should contribute duration but NOT rows to aggregate
+        let repart_info = make_node_info(5, Some(REPARTITION_PHASE));
+        stats.handle_worker_node_stats(&repart_info, &make_default_snapshot(200, 500, 500));
+
+        // Final sort phase: should contribute both duration AND rows to aggregate
+        let final_info = make_node_info(5, Some(FINAL_SORT_PHASE));
+        stats.handle_worker_node_stats(&final_info, &make_default_snapshot(300, 500, 500));
+
+        let (cpu, rows_in, rows_out) = extract_default(&stats.export_snapshot());
+        assert_eq!(cpu, 600); // all phases contribute duration
+        assert_eq!(rows_in, 500); // only final-sort rows
+        assert_eq!(rows_out, 500); // only final-sort rows
+    }
+
+    #[test]
+    fn test_sort_stats_per_phase_snapshots() {
+        let stats = make_sort_stats(5);
+
+        let sample_info = make_node_info(5, Some(SAMPLE_PHASE));
+        stats.handle_worker_node_stats(&sample_info, &make_default_snapshot(100, 1000, 50));
+
+        let repart_info = make_node_info(5, Some(REPARTITION_PHASE));
+        stats.handle_worker_node_stats(&repart_info, &make_default_snapshot(200, 500, 500));
+
+        let final_info = make_node_info(5, Some(FINAL_SORT_PHASE));
+        stats.handle_worker_node_stats(&final_info, &make_default_snapshot(300, 500, 500));
+
+        let phase_snapshots = stats.export_phase_snapshots();
+        assert_eq!(phase_snapshots.len(), 3);
+
+        // sample phase
+        let (id, snap) = &phase_snapshots[0];
+        assert_eq!(*id, phase_node_id(5, 0));
+        let (cpu, rows_in, rows_out) = extract_default(snap);
+        assert_eq!(cpu, 100);
+        assert_eq!(rows_in, 1000);
+        assert_eq!(rows_out, 50);
+
+        // repartition phase
+        let (id, snap) = &phase_snapshots[1];
+        assert_eq!(*id, phase_node_id(5, 1));
+        let (cpu, rows_in, rows_out) = extract_default(snap);
+        assert_eq!(cpu, 200);
+        assert_eq!(rows_in, 500);
+        assert_eq!(rows_out, 500);
+
+        // final-sort phase
+        let (id, snap) = &phase_snapshots[2];
+        assert_eq!(*id, phase_node_id(5, 2));
+        let (cpu, rows_in, rows_out) = extract_default(snap);
+        assert_eq!(cpu, 300);
+        assert_eq!(rows_in, 500);
+        assert_eq!(rows_out, 500);
+    }
+
+    #[test]
+    fn test_sort_stats_multiple_tasks_per_phase_accumulate() {
+        let stats = make_sort_stats(3);
+
+        // Two tasks in the sample phase
+        let info = make_node_info(3, Some(SAMPLE_PHASE));
+        stats.handle_worker_node_stats(&info, &make_default_snapshot(50, 100, 10));
+        stats.handle_worker_node_stats(&info, &make_default_snapshot(60, 200, 20));
+
+        // One task in final sort
+        let info = make_node_info(3, Some(FINAL_SORT_PHASE));
+        stats.handle_worker_node_stats(&info, &make_default_snapshot(300, 500, 500));
+
+        let phase_snapshots = stats.export_phase_snapshots();
+        // sample counters should accumulate
+        let (_, snap) = &phase_snapshots[0];
+        let (cpu, rows_in, rows_out) = extract_default(snap);
+        assert_eq!(cpu, 110); // 50 + 60
+        assert_eq!(rows_in, 300); // 100 + 200
+        assert_eq!(rows_out, 30); // 10 + 20
+    }
+
+    #[test]
+    fn test_sort_stats_source_snapshot_only_contributes_duration() {
+        let stats = make_sort_stats(5);
+
+        // InMemorySource nodes produce Source snapshots
+        let info = make_node_info(5, Some(SAMPLE_PHASE));
+        let source_snap = StatSnapshot::Source(SourceSnapshot {
+            cpu_us: 150,
+            rows_out: 100,
+            bytes_read: 0,
+        });
+        stats.handle_worker_node_stats(&info, &source_snap);
+
+        // Aggregate: source contributes duration but not rows (no final-sort)
+        let (cpu, rows_in, rows_out) = extract_default(&stats.export_snapshot());
+        assert_eq!(cpu, 150);
+        assert_eq!(rows_in, 0);
+        assert_eq!(rows_out, 0);
+
+        // Phase: source contributes duration to its phase counter
+        let phase_snapshots = stats.export_phase_snapshots();
+        let (_, snap) = &phase_snapshots[0]; // sample phase
+        let (cpu, _, _) = extract_default(snap);
+        assert_eq!(cpu, 150);
+    }
+
+    #[test]
+    fn test_sort_stats_empty_phases() {
+        let stats = make_sort_stats(5);
+
+        // No events -> all zeros
+        let phase_snapshots = stats.export_phase_snapshots();
+        assert_eq!(phase_snapshots.len(), 3);
+        for (_, snap) in &phase_snapshots {
+            let (cpu, rows_in, rows_out) = extract_default(snap);
+            assert_eq!(cpu, 0);
+            assert_eq!(rows_in, 0);
+            assert_eq!(rows_out, 0);
+        }
+    }
+
+    #[test]
+    fn test_phase_node_id_scheme() {
+        assert_eq!(phase_node_id(0, 0), 0);
+        assert_eq!(phase_node_id(0, 1), 1);
+        assert_eq!(phase_node_id(5, 0), 5_000_000);
+        assert_eq!(phase_node_id(5, 1), 5_000_001);
+        assert_eq!(phase_node_id(5, 2), 5_000_002);
+        // Ensure no collision with reasonable node IDs
+        assert_eq!(phase_node_id(100, 0), 100_000_000);
+    }
+}
