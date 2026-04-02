@@ -13,7 +13,7 @@ use crate::{
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender},
     join::{
-        build::{BuildStateBridge, FinalizedBuildStateReceiver},
+        build::{BuildKey, BuildStateBridge, FinalizedBuildStateReceiver},
         join_operator::{JoinOperator, ProbeOutput},
         stats::JoinStats,
     },
@@ -101,6 +101,7 @@ pub(crate) struct ProbeExecutionContext<Op: JoinOperator> {
     finalize_spawner: ExecutionTaskSpawner,
     output_sender: Sender<PipelineMessage>,
     build_state_bridge: Arc<BuildStateBridge<Op>>,
+    shared_build_key: Option<String>,
     maintain_order: bool,
     stats_manager: RuntimeStatsManagerHandle,
     node_id: usize,
@@ -116,6 +117,7 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
         finalize_spawner: ExecutionTaskSpawner,
         output_sender: Sender<PipelineMessage>,
         build_state_bridge: Arc<BuildStateBridge<Op>>,
+        shared_build_key: Option<String>,
         maintain_order: bool,
         stats_manager: RuntimeStatsManagerHandle,
         node_id: usize,
@@ -128,12 +130,17 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
             finalize_spawner,
             output_sender,
             build_state_bridge,
+            shared_build_key,
             maintain_order,
             stats_manager,
             node_id,
             meter,
             node_info,
         }
+    }
+
+    fn build_key(&self, input_id: InputId) -> BuildKey {
+        BuildKey::for_input(self.shared_build_key.as_deref(), input_id)
     }
 
     /// Drain remaining buffer, finalize, and send output downstream.
@@ -331,8 +338,9 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
                             );
 
                             let bridge = self.build_state_bridge.clone();
+                            let build_key = self.build_key(input_id);
                             tasks.spawn(async move {
-                                let finalized = match bridge.subscribe(input_id) {
+                                let finalized = match bridge.subscribe(build_key) {
                                     FinalizedBuildStateReceiver::Receiver(rx) => {
                                         rx.await.map_err(|e| {
                                             common_error::DaftError::ValueError(format!(

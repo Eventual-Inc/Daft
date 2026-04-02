@@ -25,6 +25,7 @@ pub struct JoinNode<Op: JoinOperator> {
     op: Arc<Op>,
     left: Box<dyn PipelineNode>,
     right: Box<dyn PipelineNode>,
+    shared_build_key: Option<String>,
     meter: Meter,
     plan_stats: StatsState,
     morsel_size_requirement: MorselSizeRequirement,
@@ -43,10 +44,16 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
         let name: Arc<str> = op.name().into();
         let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::Intermediate, context);
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
+        let shared_build_key = context
+            .additional
+            .as_ref()
+            .and_then(|additional| additional.get("shared_build_key"))
+            .cloned();
         Self {
             op,
             left,
             right,
+            shared_build_key,
             meter: ctx.meter.clone(),
             plan_stats,
             morsel_size_requirement,
@@ -189,6 +196,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
             self.op.clone(),
             build_task_spawner,
             build_state_bridge.clone(),
+            self.shared_build_key.clone(),
             stats_manager.clone(),
             node_id,
             self.meter.clone(),
@@ -202,6 +210,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
             probe_finalize_spawner,
             destination_sender,
             build_state_bridge,
+            self.shared_build_key,
             maintain_order,
             stats_manager.clone(),
             node_id,

@@ -1,5 +1,6 @@
 use std::{
     borrow::Cow,
+    collections::HashMap,
     sync::{Arc, atomic::Ordering},
 };
 
@@ -211,7 +212,12 @@ impl BroadcastJoinNode {
                         self.join_type,
                         self.config.schema.clone(),
                         StatsState::NotMaterialized,
-                        LocalNodeContext::new(Some(self.node_id() as usize)),
+                        LocalNodeContext::new(Some(self.node_id() as usize)).with_additional(
+                            HashMap::from([(
+                                "shared_build_key".to_string(),
+                                format!("broadcast_join:{}", self.node_id()),
+                            )]),
+                        ),
                     )
                 })
                 .with_psets(self.node_id(), broadcast_psets.clone());
