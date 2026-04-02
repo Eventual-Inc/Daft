@@ -2471,7 +2471,6 @@ class PyDaftContext:
 def set_runner_ray(
     address: str | None = None,
     noop_if_initialized: bool = False,
-    max_task_backlog: int | None = None,
     force_client_mode: bool = False,
 ) -> Runner[PartitionT]: ...
 def set_runner_native(num_threads: int | None = None) -> Runner[PartitionT]: ...
