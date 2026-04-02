@@ -3211,6 +3211,67 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def join_where(
+        self,
+        other: "DataFrame",
+        predicates: list["Expression"] = [],
+        prefix: str | None = None,
+        suffix: str | None = None,
+    ) -> "DataFrame":
+        """Join two DataFrames using inequality predicates, similar to a SQL ``JOIN ... ON`` with non-equality conditions.
+
+        Each predicate is a comparison expression that references columns from the left and/or right DataFrames.
+        All predicates are ANDed together. Only inner joins are currently supported.
+
+        Args:
+            other (DataFrame): the right DataFrame to join with.
+            predicates (list[Expression]): list of comparison expressions to join on (e.g., ``[col("a") < col("b")]``).
+            prefix (Optional[str]): Prefix to add to conflicting right column names. Defaults to "right.".
+            suffix (Optional[str]): Suffix to add to conflicting right column names. Defaults to None.
+
+        Returns:
+            DataFrame: Joined DataFrame.
+
+        Examples:
+            >>> import daft
+            >>> from daft import col
+            >>> df1 = daft.from_pydict({"a": [1, 2, 3]})
+            >>> df2 = daft.from_pydict({"b": [2, 3, 4]})
+            >>> joined_df = df1.join_where(df2, [col("a") < col("b")])
+            >>> joined_df = joined_df.sort("a")
+            >>> joined_df.show()
+            ╭───────┬───────╮
+            │ a     ┆ b     │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 2     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 1     ┆ 3     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 3     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 4     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 6 of 6 rows)
+        """
+        if len(predicates) == 0:
+            return self.join(other, how="cross", prefix=prefix, suffix=suffix)
+
+        builder = self._builder.join_where(
+            other._builder,
+            predicates=predicates,
+            prefix=prefix,
+            suffix=suffix,
+        )
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def concat(self, other: "DataFrame") -> "DataFrame":
         """Concatenates two DataFrames together in a "vertical" concatenation.
 

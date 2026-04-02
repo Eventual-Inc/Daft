@@ -18,9 +18,9 @@ use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
     HashAggregate, HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext,
-    LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
-    Sample, ShuffleReadBackend, ShuffleWriteBackend, Sort, SortMergeJoin, SourceId, TopN,
-    UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
+    LocalPhysicalPlan, MonotonicallyIncreasingId, NestedLoopJoin, PhysicalScan, PhysicalWrite,
+    Pivot, Project, Sample, ShuffleReadBackend, ShuffleWriteBackend, Sort, SortMergeJoin, SourceId,
+    TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
@@ -41,7 +41,10 @@ use crate::{
         into_batches::IntoBatchesOperator, project::ProjectOperator, udf::UdfOperator,
         unpivot::UnpivotOperator,
     },
-    join::{CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator},
+    join::{
+        CrossJoinOperator, HashJoinOperator, JoinNode, NestedLoopJoinOperator,
+        SortMergeJoinOperator,
+    },
     runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
@@ -1124,6 +1127,54 @@ fn physical_plan_to_pipeline(
 
             JoinNode::new(
                 Arc::new(cross_join_op),
+                build_child_node,
+                probe_child_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::NestedLoopJoin(NestedLoopJoin {
+            left,
+            right,
+            predicate,
+            schema,
+            stats_state,
+            context,
+            ..
+        }) => {
+            // Stream the larger side for better parallelism; build/collect the smaller side.
+            let left_stats_state = left.get_stats_state();
+            let right_stats_state = right.get_stats_state();
+            let stream_on_left = match (left_stats_state, right_stats_state) {
+                (StatsState::Materialized(left_stats), StatsState::Materialized(right_stats)) => {
+                    left_stats.approx_stats.num_rows > right_stats.approx_stats.num_rows
+                }
+                (StatsState::Materialized(left_stats), StatsState::NotMaterialized) => {
+                    left_stats.approx_stats.size_bytes > cfg.broadcast_join_size_bytes_threshold
+                }
+                _ => true,
+            };
+
+            let stream_side = if stream_on_left {
+                JoinSide::Left
+            } else {
+                JoinSide::Right
+            };
+            let (build_child, probe_child) = match stream_side {
+                JoinSide::Left => (right, left),
+                JoinSide::Right => (left, right),
+            };
+
+            let build_child_node = physical_plan_to_pipeline(build_child, cfg, ctx, input_senders)?;
+            let probe_child_node = physical_plan_to_pipeline(probe_child, cfg, ctx, input_senders)?;
+
+            let nested_loop_join_op =
+                NestedLoopJoinOperator::new(predicate.clone(), schema.clone(), stream_side);
+
+            JoinNode::new(
+                Arc::new(nested_loop_join_op),
                 build_child_node,
                 probe_child_node,
                 stats_state.clone(),

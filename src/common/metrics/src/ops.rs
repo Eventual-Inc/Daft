@@ -56,6 +56,7 @@ pub enum NodeType {
     CrossJoin,
     // Specific to distributed only
     BroadcastJoin,
+    NestedLoopJoin,
 }
 
 impl Display for NodeType {

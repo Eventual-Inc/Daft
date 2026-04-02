@@ -743,6 +743,36 @@ impl LogicalPlanBuilder {
         self.join(right, None, vec![], JoinType::Inner, None, options)
     }
 
+    pub fn join_where<Right: Into<LogicalPlanRef>>(
+        &self,
+        right: Right,
+        on: Option<ExprRef>,
+        options: JoinOptions,
+    ) -> DaftResult<Self> {
+        let left_plan = self.plan.clone();
+        let right_plan = right.into();
+
+        let expr_resolver = ExprResolver::default();
+        let on = on
+            .map(|expr| expr_resolver.resolve_join_on(expr, left_plan.clone(), right_plan.clone()))
+            .transpose()?;
+
+        let (left_plan, right_plan, on) = ops::join::Join::deduplicate_join_columns(
+            left_plan,
+            right_plan,
+            on,
+            &[],
+            JoinType::Inner,
+            options,
+        )?;
+
+        let on = JoinPredicate::try_new(on)?;
+
+        let logical_plan: LogicalPlan =
+            ops::Join::try_new(left_plan, right_plan, on, JoinType::Inner, None)?.into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     pub fn concat(&self, other: &Self) -> DaftResult<Self> {
         let logical_plan: LogicalPlan =
             ops::Concat::try_new(self.plan.clone(), other.plan.clone())?.into();
@@ -1433,6 +1463,22 @@ impl PyLogicalPlanBuilder {
                 join_strategy,
                 JoinOptions { prefix, suffix },
             )?
+            .into())
+    }
+
+    pub fn join_where(
+        &self,
+        right: &Self,
+        predicates: Vec<PyExpr>,
+        prefix: Option<String>,
+        suffix: Option<String>,
+    ) -> PyResult<Self> {
+        let exprs: Vec<ExprRef> = predicates.into_iter().map(|e| e.expr).collect();
+        let on = combine_conjunction(exprs);
+
+        Ok(self
+            .builder
+            .join_where(&right.builder, on, JoinOptions { prefix, suffix })?
             .into())
     }
 

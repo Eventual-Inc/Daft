@@ -65,7 +65,7 @@ impl JoinPredicate {
     }
 
     /// Replace ResolvedColumn::JoinSide with ResolvedColumn::Basic
-    fn replace_join_side_cols(expr: ExprRef) -> ExprRef {
+    pub fn replace_join_side_cols(expr: ExprRef) -> ExprRef {
         expr.transform(|e| {
             if let Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(Field { name, .. }, _))) =
                 e.as_ref()

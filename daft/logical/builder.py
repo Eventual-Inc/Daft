@@ -305,6 +305,21 @@ class LogicalPlanBuilder:
         )
         return LogicalPlanBuilder(builder)
 
+    def join_where(
+        self,
+        right: LogicalPlanBuilder,
+        predicates: list[Expression],
+        prefix: str | None = None,
+        suffix: str | None = None,
+    ) -> LogicalPlanBuilder:
+        builder = self._builder.join_where(
+            right._builder,
+            [pred._expr for pred in predicates],
+            prefix,
+            suffix,
+        )
+        return LogicalPlanBuilder(builder)
+
     def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:
         builder = self._builder.concat(other._builder)
         return LogicalPlanBuilder(builder)
