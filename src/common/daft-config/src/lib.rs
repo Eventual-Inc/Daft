@@ -202,6 +202,7 @@ impl DaftExecutionConfig {
     const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
     const ENV_TEXT_INFLATION_FACTOR: &'static str = "DAFT_TEXT_INFLATION_FACTOR";
     const ENV_DAFT_MAINTAIN_ORDER: &'static str = "DAFT_MAINTAIN_ORDER";
+
     #[must_use]
     pub fn from_env() -> Self {
         let mut cfg = Self::default();
