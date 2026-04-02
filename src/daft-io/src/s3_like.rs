@@ -245,7 +245,7 @@ impl From<Error> for super::Error {
             err: E,
         ) -> super::Error {
             match err.code() {
-                Some("InternalError") => super::Error::MiscTransient {
+                Some("InternalError") | None => super::Error::MiscTransient {
                     path,
                     source: err.into(),
                 },
