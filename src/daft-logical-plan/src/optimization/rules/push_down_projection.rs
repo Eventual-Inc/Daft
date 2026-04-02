@@ -143,19 +143,15 @@ impl PushDownProjection {
                 match source.source_info.as_ref() {
                     SourceInfo::Physical(external_info) => {
                         if required_columns.len() < upstream_schema.names().len() {
-                            let can_absorb = external_info
-                                .scan_state
-                                .get_scan_op()
-                                .0
-                                .can_absorb_select();
+                            let can_absorb =
+                                external_info.scan_state.get_scan_op().0.can_absorb_select();
 
                             // Always pass the column list as a hint so the
                             // source can optimise I/O (e.g. skip reading
                             // unneeded columns from disk / network).
-                            let new_pushdowns =
-                                external_info.pushdowns.with_columns(Some(Arc::new(
-                                    required_columns.iter().cloned().collect(),
-                                )));
+                            let new_pushdowns = external_info.pushdowns.with_columns(Some(
+                                Arc::new(required_columns.iter().cloned().collect()),
+                            ));
 
                             // Only prune the Source node's schema when the
                             // scan operator can absorb the select.  When
@@ -167,9 +163,7 @@ impl PushDownProjection {
                             let new_schema: SchemaRef = if can_absorb {
                                 let pruned = upstream_schema
                                     .into_iter()
-                                    .filter(|field| {
-                                        required_columns.contains(&*field.name)
-                                    })
+                                    .filter(|field| required_columns.contains(&*field.name))
                                     .cloned()
                                     .collect::<Vec<_>>();
                                 Schema::new(pruned).into()
@@ -184,13 +178,20 @@ impl PushDownProjection {
                                 )),
                             )
                             .into();
-                            let new_plan =
-                                Arc::new(plan.with_new_children(&[new_source.into()]));
-                            // Retry optimization now that the upstream node is different.
-                            let new_plan = self
-                                .try_optimize_node(new_plan.clone())?
-                                .or(Transformed::yes(new_plan));
-                            Ok(new_plan)
+                            let new_plan = Arc::new(plan.with_new_children(&[new_source.into()]));
+
+                            if can_absorb {
+                                // Retry optimization now that the upstream schema changed.
+                                let new_plan = self
+                                    .try_optimize_node(new_plan.clone())?
+                                    .or(Transformed::yes(new_plan));
+                                Ok(new_plan)
+                            } else {
+                                // The projection still needs to remain above the source, so
+                                // re-entering this rule would just rebuild the same plan and
+                                // recurse indefinitely.
+                                Ok(Transformed::yes(new_plan))
+                            }
                         } else {
                             Ok(Transformed::no(plan))
                         }
@@ -699,12 +700,13 @@ mod tests {
 
     use crate::{
         LogicalPlan,
-        ops::{Project, Unpivot},
+        ops::{Project, Source, Unpivot},
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::PushDownProjection,
             test::assert_optimized_plan_with_rules_eq,
         },
+        source_info::SourceInfo,
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
     };
 
@@ -823,12 +825,23 @@ mod tests {
             .build();
 
         let proj_pushdown = vec!["b".to_string()];
-        let expected = dummy_scan_node_with_pushdowns(
-            scan_op,
-            Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown))),
-        )
-        .select(proj)?
-        .build();
+        let new_pushdowns = Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown)));
+        let source = match plan.as_ref() {
+            LogicalPlan::Project(project) => match project.input.as_ref() {
+                LogicalPlan::Source(source) => source,
+                _ => panic!("Expected Project input to be Source"),
+            },
+            _ => panic!("Expected Project plan"),
+        };
+        let source_info = match source.source_info.as_ref() {
+            SourceInfo::Physical(external_info) => Arc::new(SourceInfo::Physical(
+                external_info.with_pushdowns(new_pushdowns),
+            )),
+            _ => panic!("Expected physical source"),
+        };
+        let expected_source: LogicalPlan =
+            Source::new(source.output_schema.clone(), source_info).into();
+        let expected = Arc::new(plan.with_new_children(&[expected_source.into()]));
 
         assert_optimized_plan_eq(plan, expected)?;
 

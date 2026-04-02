@@ -16,6 +16,7 @@ import pyarrow as pa
 
 import daft
 from daft import col
+from daft.io.pushdowns import Pushdowns
 from daft.io.source import DataSource, DataSourceTask
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema
@@ -61,8 +62,6 @@ class InMemorySource(DataSource):
         return Schema.from_pyarrow_schema(self._table.schema)
 
     def get_tasks(self, pushdowns) -> Iterator[_InMemoryTask]:
-        from daft.io.pushdowns import Pushdowns
-
         columns = None
         if isinstance(pushdowns, Pushdowns) and pushdowns.columns:
             table_col_set = set(self._table.schema.names)
