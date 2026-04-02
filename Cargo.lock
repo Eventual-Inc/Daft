@@ -2541,7 +2541,6 @@ dependencies = [
  "rand 0.9.2",
  "serde",
  "serde_json",
- "smallvec",
  "tokio",
  "tokio-stream",
  "tokio-util",
