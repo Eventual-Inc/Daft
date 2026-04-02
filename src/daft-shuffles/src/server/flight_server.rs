@@ -71,15 +71,11 @@ impl ParsedTicket {
 #[derive(Clone, Default)]
 pub struct ShuffleFlightServer {
     shuffle_caches: Arc<Mutex<HashMap<u64, Vec<Arc<ShuffleCache>>>>>,
-    pub ip_address: String,
 }
 
 impl ShuffleFlightServer {
-    pub fn new(ip_address: String) -> Self {
-        Self {
-            shuffle_caches: Default::default(),
-            ip_address,
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub async fn register_shuffle_cache(
@@ -305,6 +301,7 @@ impl FlightService for ShuffleFlightServer {
 }
 
 pub struct FlightServerConnectionHandle {
+    ip: String,
     port: u16,
     shutdown_signal: Option<tokio::sync::oneshot::Sender<()>>,
     server_task: Option<RuntimeTask<DaftResult<()>>>,
@@ -325,6 +322,10 @@ impl FlightServerConnectionHandle {
 
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    pub fn shuffle_address(&self) -> String {
+        format!("grpc://{}:{}", self.ip, self.port)
     }
 }
 
@@ -368,6 +369,7 @@ pub fn start_server_loop(
     let port = port_rx.blocking_recv().expect("Failed to receive port");
 
     FlightServerConnectionHandle {
+        ip: ip.to_string(),
         port,
         shutdown_signal: Some(shutdown_tx),
         server_task: Some(server_task),

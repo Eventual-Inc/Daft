@@ -252,7 +252,7 @@ pub struct BuilderContext {
     index_counter: std::cell::RefCell<usize>,
     pub meter: Meter,
     context: HashMap<String, String>,
-    shuffle_server: Option<Arc<ShuffleFlightServer>>,
+    shuffle_server: Option<(Arc<ShuffleFlightServer>, String)>,
 }
 
 impl BuilderContext {
@@ -263,7 +263,7 @@ impl BuilderContext {
     pub fn new_with_context(
         query_id: QueryID,
         context: HashMap<String, String>,
-        shuffle_server: Option<Arc<ShuffleFlightServer>>,
+        shuffle_server: Option<(Arc<ShuffleFlightServer>, String)>,
     ) -> Self {
         let meter = Meter::query_scope(query_id, "daft.execution.local");
 
@@ -275,7 +275,7 @@ impl BuilderContext {
         }
     }
 
-    pub fn shuffle_server(&self) -> Option<Arc<ShuffleFlightServer>> {
+    pub fn shuffle_server(&self) -> Option<(Arc<ShuffleFlightServer>, String)> {
         self.shuffle_server.clone()
     }
 
@@ -1442,7 +1442,7 @@ fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let shuffle_server = ctx
+            let (shuffle_server, _) = ctx
                 .shuffle_server()
                 .expect("Flight shuffle server must be initialized for FlightShuffleWrite plans when using flight_shuffle algorithm");
             let ShuffleWriteBackend::Flight {
@@ -1482,19 +1482,23 @@ fn physical_plan_to_pipeline(
                 shuffle_id,
                 server_cache_mapping,
             } = backend;
-            let shuffle_server = ctx
+            let (shuffle_server, shuffle_address) = ctx
                 .shuffle_server()
                 .expect("Flight shuffle server must be initialized for FlightShuffleWrite plans when using flight_shuffle algorithm");
             let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
             input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
-            let source = FlightShuffleReadSource::new(
+            let source = FlightShuffleReadSource::try_new(
                 rx,
                 *shuffle_id,
                 server_cache_mapping.clone(),
                 shuffle_server,
+                shuffle_address,
                 schema.clone(),
                 cfg,
-            );
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
             SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
         }
         LocalPhysicalPlan::VLLMProject(VLLMProject {

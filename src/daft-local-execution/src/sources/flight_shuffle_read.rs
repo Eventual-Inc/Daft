@@ -34,14 +34,15 @@ pub struct FlightShuffleReadSource {
 }
 
 impl FlightShuffleReadSource {
-    pub fn new(
+    pub fn try_new(
         receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
         shuffle_id: u64,
         server_cache_mapping: HashMap<String, Vec<u32>>,
         local_server: Arc<ShuffleFlightServer>,
+        local_address: String,
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
-    ) -> Self {
+    ) -> DaftResult<Self> {
         let num_cpus = get_compute_pool_num_threads();
         let num_parallel_tasks = if cfg.scantask_max_parallel > 0 {
             cfg.scantask_max_parallel
@@ -49,11 +50,10 @@ impl FlightShuffleReadSource {
             num_cpus
         };
 
-        let local_address = &local_server.ip_address;
         let (local_cache_ids, remote_cache_mapping) =
-            if server_cache_mapping.contains_key(local_address) {
+            if server_cache_mapping.contains_key(&local_address) {
                 (
-                    server_cache_mapping.get(local_address).cloned(),
+                    server_cache_mapping.get(&local_address).cloned(),
                     server_cache_mapping
                         .into_iter()
                         .filter(|(addr, _)| addr.as_str() != local_address)
@@ -63,7 +63,13 @@ impl FlightShuffleReadSource {
                 (None, server_cache_mapping)
             };
 
-        Self {
+        if local_cache_ids.is_none() && remote_cache_mapping.is_empty() {
+            return Err(DaftError::ValueError(
+                "No local or remote flight shuffle partition streams found".to_string(),
+            ));
+        }
+
+        Ok(Self {
             receiver,
             shuffle_id,
             local_cache_ids,
@@ -71,7 +77,7 @@ impl FlightShuffleReadSource {
             local_server,
             schema,
             num_parallel_tasks,
-        }
+        })
     }
 
     async fn get_partition_stream(
@@ -109,9 +115,7 @@ impl FlightShuffleReadSource {
         };
 
         match (local_stream, remote_stream) {
-            (None, None) => Err(DaftError::ValueError(
-                "No local or remote flight shuffle partition streams found".to_string(),
-            )),
+            (None, None) => Ok(futures::stream::empty().boxed()),
             (Some(local_stream), None) => Ok(local_stream.boxed()),
             (None, Some(remote_stream)) => Ok(remote_stream.boxed()),
             (Some(local_stream), Some(remote_stream)) => {
