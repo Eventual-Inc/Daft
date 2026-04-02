@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use daft_core::{lit::Literal, prelude::*, series::IntoSeries};
-use daft_dsl::{ExprRef, functions::struct_::get as struct_get, lit, unresolved_col};
-use daft_functions::to_struct::to_struct;
+use daft_dsl::{ExprRef, lit, unresolved_col};
 use onnx_rs::ast;
 
 use crate::{
@@ -17,29 +16,35 @@ impl OnnxPlanner {
         Self
     }
 
-    /// Translate an ONNX model into a single Daft expression.
+    /// Translate an ONNX model into a list of aliased Daft expressions (one per graph output).
     ///
-    /// The returned expression is `struct(output_0, output_1, ...).get("*")`,
-    /// which unnests into one column per graph output when used in `df.select()`.
-    ///
-    /// - Graph inputs become `col("name")` references into the caller's DataFrame
-    /// - Initializers (weights/biases) become tensor literals
-    /// - Each ONNX node becomes a nested function call
-    pub fn plan(&self, model: &ast::Model) -> OnnxPlannerResult<ExprRef> {
+    /// `inputs` are bound positionally to the graph's non-initializer inputs.
+    pub fn plan(&self, model: &ast::Model, inputs: &[ExprRef]) -> OnnxPlannerResult<Vec<ExprRef>> {
         let graph = model
             .graph
             .as_ref()
             .ok_or_else(|| OnnxPlannerError::InvalidGraph {
                 message: "model has no graph".to_string(),
             })?;
-        self.plan_graph(graph)
+        self.plan_graph(graph, inputs)
     }
 
-    fn plan_graph(&self, graph: &ast::Graph) -> OnnxPlannerResult<ExprRef> {
+    fn plan_graph(&self, graph: &ast::Graph, user_inputs: &[ExprRef]) -> OnnxPlannerResult<Vec<ExprRef>> {
         let mut values: HashMap<&str, ExprRef> = HashMap::new();
 
-        for input in graph.non_init_inputs() {
-            values.insert(input.name, unresolved_col(input.name));
+        let graph_inputs = graph.non_init_inputs();
+        if user_inputs.len() != graph_inputs.len() {
+            return Err(OnnxPlannerError::InvalidGraph {
+                message: format!(
+                    "model expects {} input(s) [{}], but got {}",
+                    graph_inputs.len(),
+                    graph_inputs.iter().map(|i| i.name).collect::<Vec<_>>().join(", "),
+                    user_inputs.len(),
+                ),
+            });
+        }
+        for (graph_input, user_expr) in graph_inputs.iter().zip(user_inputs.iter()) {
+            values.insert(graph_input.name, user_expr.clone());
         }
 
         for init in &graph.initializer {
@@ -88,11 +93,7 @@ impl OnnxPlanner {
             })
             .collect::<OnnxPlannerResult<Vec<_>>>()?;
 
-        if output_exprs.len() == 1 {
-            Ok(output_exprs.into_iter().next().unwrap())
-        } else {
-            Ok(struct_get(to_struct(output_exprs), "*"))
-        }
+        Ok(output_exprs)
     }
 }
 
@@ -185,16 +186,46 @@ mod tests {
     }
 
     #[test]
-    fn test_plan_real_mlp() {
+    fn test_dbg() {
         setup();
-        let bytes = load_onnx_bytes("../../tests/assets/onnx/mlp.onnx").unwrap();
+        let bytes = load_onnx_bytes("../../tests/assets/onnx/mlp.onnx", None).unwrap();
         let model = parse_model(&bytes).unwrap();
 
         let planner = OnnxPlanner::new();
-        let expr = planner.plan(&model).unwrap();
-
-        // Should be struct(add2=...).get("*")
+        let inputs: Vec<ExprRef> = model
+            .graph
+            .as_ref()
+            .unwrap()
+            .non_init_inputs()
+            .iter()
+            .map(|i| unresolved_col(i.name))
+            .collect();
+        let expr = planner.plan(&model, &inputs).unwrap();
+        dbg!(&expr);
         let expr_str = format!("{expr:?}");
+        eprintln!("expr_str: {expr_str}");
+        assert!(false);
+    }
+
+    #[test]
+    fn test_plan_real_mlp() {
+        setup();
+        let bytes = load_onnx_bytes("../../tests/assets/onnx/mlp.onnx", None).unwrap();
+        let model = parse_model(&bytes).unwrap();
+
+        let planner = OnnxPlanner::new();
+        let inputs: Vec<ExprRef> = model
+            .graph
+            .as_ref()
+            .unwrap()
+            .non_init_inputs()
+            .iter()
+            .map(|i| unresolved_col(i.name))
+            .collect();
+        let exprs = planner.plan(&model, &inputs).unwrap();
+        assert_eq!(exprs.len(), 1);
+
+        let expr_str = format!("{:?}", exprs[0]);
         assert!(expr_str.contains("onnx.MatMul"));
         assert!(expr_str.contains("onnx.Add"));
         assert!(expr_str.contains("onnx.Relu"));
@@ -203,13 +234,22 @@ mod tests {
     #[test]
     fn test_plan_real_residual_block() {
         setup();
-        let bytes = load_onnx_bytes("../../tests/assets/onnx/residual_block.onnx").unwrap();
+        let bytes = load_onnx_bytes("../../tests/assets/onnx/residual_block.onnx", None).unwrap();
         let model = parse_model(&bytes).unwrap();
 
         let planner = OnnxPlanner::new();
-        let expr = planner.plan(&model).unwrap();
+        let inputs: Vec<ExprRef> = model
+            .graph
+            .as_ref()
+            .unwrap()
+            .non_init_inputs()
+            .iter()
+            .map(|i| unresolved_col(i.name))
+            .collect();
+        let exprs = planner.plan(&model, &inputs).unwrap();
+        assert_eq!(exprs.len(), 1);
 
-        let expr_str = format!("{expr:?}");
+        let expr_str = format!("{:?}", exprs[0]);
         assert!(expr_str.contains("onnx.Conv"));
         assert!(expr_str.contains("onnx.BatchNormalization"));
         assert!(expr_str.contains("onnx.Relu"));
@@ -250,7 +290,7 @@ mod tests {
         };
 
         let planner = OnnxPlanner::new();
-        let result = planner.plan(&model);
+        let result = planner.plan(&model, &[unresolved_col("X")]);
         assert!(matches!(
             result,
             Err(OnnxPlannerError::UnsupportedOp { .. })

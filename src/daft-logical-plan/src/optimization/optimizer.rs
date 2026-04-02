@@ -17,7 +17,7 @@ use super::{
         UnnestScalarSubquery,
     },
 };
-use crate::{LogicalPlan, optimization::rules::SplitVLLM};
+use crate::{LogicalPlan, optimization::rules::{ResolveOnnxModel, SplitVLLM}};
 
 /// Config for optimizer.
 #[derive(Debug)]
@@ -123,6 +123,11 @@ impl OptimizerBuilder {
 
     pub fn with_default_optimizations(mut self) -> Self {
         self.rule_batches.extend(vec![
+            // --- Resolve ONNX model expressions into op-level expression trees ---
+            RuleBatch::new(
+                vec![Box::new(ResolveOnnxModel)],
+                RuleExecutionStrategy::FixedPoint(Some(10)),
+            ),
             // --- Rewrite rules ---
             RuleBatch::new(
                 vec![

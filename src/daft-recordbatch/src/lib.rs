@@ -1033,6 +1033,9 @@ impl RecordBatch {
             Expr::VLLM(..) => unreachable!(
                 "VLLM expressions should not be evaluated directly. This indicates a bug in the query optimizer."
             ),
+            Expr::OnnxModel(..) => unreachable!(
+                "OnnxModel expressions should not be evaluated directly. This indicates a bug in the query optimizer."
+            ),
             Expr::Coalesce(inputs) => {
                 if inputs.is_empty() {
                     return Err(DaftError::ValueError("COALESCE requires at least one argument".to_string()));
@@ -1352,6 +1355,9 @@ impl RecordBatch {
             Expr::Column(_) => unreachable!("bound expressions should not have unbound columns"),
             Expr::VLLM(..) => unreachable!(
                 "VLLM expressions should not be evaluated directly. This indicates a bug in the query optimizer."
+            ),
+            Expr::OnnxModel(..) => unreachable!(
+                "OnnxModel expressions should not be evaluated directly. This indicates a bug in the query optimizer."
             ),
             Expr::Coalesce(inputs) => {
                 if inputs.is_empty() {

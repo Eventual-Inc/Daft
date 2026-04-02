@@ -3,6 +3,7 @@ async-trait = {workspace = true}
 common-runtime = {path = "../common/runtime", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
+common-io-config = {path = "../common/io-config", default-features = false}
 common-macros = {path = "../common/macros"}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-resource-request = {path = "../common/resource-request", default-features = false}
@@ -31,6 +32,7 @@ python = [
   "dep:pyo3",
   "dep:tokio",
   "common-error/python",
+  "common-io-config/python",
   "common-runtime/python",
   "daft-core/python",
   "common-treenode/python",

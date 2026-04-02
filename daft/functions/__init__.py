@@ -111,6 +111,7 @@ from .list import (
     to_list,
 )
 from .llm import llm_generate
+from .onnx import onnx_model
 from .misc import (
     monotonically_increasing_id,
     uuid,
@@ -389,6 +390,7 @@ __all__ = [
     "negate",
     "normalize",
     "not_nan",
+    "onnx_model",
     "not_null",
     "over",
     "parse_url",

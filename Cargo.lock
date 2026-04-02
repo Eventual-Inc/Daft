@@ -2556,6 +2556,7 @@ dependencies = [
  "async-trait",
  "common-error",
  "common-hashable-float-wrapper",
+ "common-io-config",
  "common-macros",
  "common-metrics",
  "common-py-serde",
@@ -3003,6 +3004,7 @@ dependencies = [
  "daft-functions-list",
  "daft-functions-uri",
  "daft-functions-utf8",
+ "daft-onnx",
  "daft-recordbatch",
  "daft-scan",
  "daft-schema",
@@ -3072,9 +3074,11 @@ name = "daft-onnx"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-io-config",
+ "common-runtime",
  "daft-core",
  "daft-dsl",
- "daft-functions",
+ "daft-io",
  "daft-schema",
  "onnx-rs",
  "rstest",

@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ExprRef,
-    expr::{Expr, VLLMExpr, WindowExpr},
+    expr::{Expr, OnnxModelExpr, VLLMExpr, WindowExpr},
     visitor::accept,
 };
 
@@ -773,6 +773,23 @@ impl PyExpr {
             batch_size,
             engine_args: engine_args.into(),
             generate_args: generate_args.into(),
+        })
+        .into())
+    }
+
+    #[staticmethod]
+    pub fn onnx_model(
+        model: String,
+        inputs: Vec<Self>,
+        return_dtype: PyDataType,
+        io_config: Option<common_io_config::python::IOConfig>,
+    ) -> PyResult<Self> {
+        let output_fields = vec![Field::new("output", return_dtype.dtype)];
+        Ok(Expr::OnnxModel(OnnxModelExpr {
+            model,
+            inputs: inputs.into_iter().map(|e| e.expr).collect(),
+            output_fields,
+            io_config: io_config.map(|c| c.config),
         })
         .into())
     }

@@ -40,6 +40,7 @@ pub fn requires_computation(e: &Expr) -> bool {
         | Expr::Over(..)
         | Expr::WindowFunction(..)
         | Expr::VLLM(..)
+        | Expr::OnnxModel(..)
         | Expr::Coalesce(..) => true,
     }
 }

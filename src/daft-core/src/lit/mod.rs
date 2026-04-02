@@ -246,12 +246,23 @@ impl Display for Literal {
             }
             Self::File(file) => write!(f, "{file}"),
             Self::Tensor { data, shape } => {
-                write!(
-                    f,
-                    "Tensor({}, shape=[{:?}]",
-                    display_series_in_literal(data),
-                    shape
-                )
+                let num_elements: u64 = shape.iter().product();
+                if num_elements > 8 {
+                    write!(
+                        f,
+                        "Tensor({}, shape={:?}, len={})",
+                        data.data_type(),
+                        shape,
+                        num_elements
+                    )
+                } else {
+                    write!(
+                        f,
+                        "Tensor({}, shape={:?})",
+                        display_series_in_literal(data),
+                        shape
+                    )
+                }
             }
             Self::SparseTensor {
                 values,

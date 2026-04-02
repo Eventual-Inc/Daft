@@ -62,6 +62,7 @@ fn is_interesting(expr: &Arc<Expr>) -> bool {
         // TODO: Some casts could be considered no-ops
         Expr::Cast(..) => true,
         Expr::VLLM(..) => true,
+        Expr::OnnxModel(..) => true,
         Expr::Not(..) => true,
         Expr::IsNull(..) => true,
         Expr::NotNull(..) => true,

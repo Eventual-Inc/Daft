@@ -304,6 +304,9 @@ pub enum Expr {
 
     #[display("vllm({_0})")]
     VLLM(VLLMExpr),
+
+    #[display("onnx_model({_0})")]
+    OnnxModel(OnnxModelExpr),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -326,6 +329,30 @@ pub struct VLLMExpr {
 impl std::fmt::Display for VLLMExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "vllm(model: {}, input: {})", self.model, self.input)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct OnnxModelExpr {
+    /// Path to the .onnx model file.
+    pub model: String,
+    /// Input expressions mapped to ONNX graph input names.
+    pub inputs: Vec<ExprRef>,
+    /// Output field(s) of the model, populated at construction time.
+    pub output_fields: Vec<Field>,
+    /// IO config for loading the model from remote storage.
+    pub io_config: Option<common_io_config::IOConfig>,
+}
+
+impl std::fmt::Display for OnnxModelExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let inputs_str = self
+            .inputs
+            .iter()
+            .map(|e| format!("{e}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        write!(f, "onnx_model(model: {}, inputs: [{}])", self.model, inputs_str)
     }
 }
 
@@ -1487,6 +1514,14 @@ impl Expr {
             }) => FieldID::new(format!(
                 "VLLM({model}, {input}, {concurrency}, {gpus_per_actor}, {do_prefix_routing}, {max_buffer_size}, {min_bucket_size}, {prefix_match_threshold:?}, {load_balance_threshold}, {batch_size:?}, {engine_args:?}, {generate_args:?})"
             )),
+            Self::OnnxModel(OnnxModelExpr { model, inputs, .. }) => {
+                let inputs_id = inputs
+                    .iter()
+                    .map(|i| i.semantic_id(schema).id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                FieldID::new(format!("OnnxModel({model}, [{inputs_id}])"))
+            }
             Self::Coalesce(inputs) => {
                 let inputs_id = inputs
                     .iter()
@@ -1677,6 +1712,7 @@ impl Expr {
             Self::ScalarFn(ScalarFn::Builtin(sf)) => sf.inputs.clone().into_inner(),
             Self::ScalarFn(ScalarFn::Python(udf)) => udf.args(),
             Self::VLLM(VLLMExpr { input, .. }) => vec![input.clone()],
+            Self::OnnxModel(OnnxModelExpr { inputs, .. }) => inputs.clone(),
             Self::Coalesce(inputs) => inputs.clone(),
         }
     }
@@ -1825,6 +1861,14 @@ impl Expr {
                 engine_args: engine_args.clone(),
                 generate_args: generate_args.clone(),
             }),
+            Self::OnnxModel(OnnxModelExpr { model, output_fields, io_config, .. }) => {
+                Self::OnnxModel(OnnxModelExpr {
+                    model: model.clone(),
+                    inputs: children,
+                    output_fields: output_fields.clone(),
+                    io_config: io_config.clone(),
+                })
+            }
             Self::Coalesce(inputs) => {
                 assert_eq!(
                     children.len(),
@@ -2035,6 +2079,16 @@ impl Expr {
             Self::Over(expr, _) => expr.to_field(schema),
             Self::WindowFunction(expr) => expr.to_field(schema),
             Self::VLLM(VLLMExpr { input, .. }) => input.to_field(schema),
+            Self::OnnxModel(OnnxModelExpr { output_fields, .. }) => {
+                if output_fields.len() == 1 {
+                    Ok(output_fields[0].clone())
+                } else {
+                    Ok(Field::new(
+                        "onnx_output",
+                        DataType::Struct(output_fields.clone()),
+                    ))
+                }
+            }
             Self::Coalesce(inputs) => {
                 if inputs.is_empty() {
                     return Err(DaftError::ValueError(
@@ -2119,6 +2173,7 @@ impl Expr {
                 }
             },
             Self::VLLM(VLLMExpr { input, .. }) => input.name(),
+            Self::OnnxModel(OnnxModelExpr { model, .. }) => model.as_str(),
             Self::Coalesce(inputs) => inputs.first().map(|e| e.name()).unwrap_or("coalesce"),
         }
     }
@@ -2208,6 +2263,7 @@ impl Expr {
                 | Expr::WindowFunction(..)
                 | Expr::Column(_)
                 | Expr::VLLM(..)
+                | Expr::OnnxModel(..)
                 | Expr::Coalesce(..) => Err(io::Error::other(
                     "Unsupported expression for SQL translation",
                 )),
@@ -2264,6 +2320,7 @@ impl Expr {
             Self::InSubquery(expr, _) => expr.has_compute(),
             Self::List(..) => true,
             Self::VLLM(..) => true,
+            Self::OnnxModel(..) => true,
             Self::Coalesce(inputs) => inputs.iter().any(|input| input.has_compute()),
         }
     }
@@ -2451,7 +2508,8 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         | Expr::Column(_)
         | Expr::IfElse { .. }
         | Expr::FillNull(_, _)
-        | Expr::VLLM(..) => match expr.to_field(schema) {
+        | Expr::VLLM(..)
+        | Expr::OnnxModel(..) => match expr.to_field(schema) {
             Ok(field) if field.dtype == DataType::Boolean => 0.2,
             _ => 1.0,
         },

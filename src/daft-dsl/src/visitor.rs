@@ -54,6 +54,7 @@ pub fn accept<'py>(expr: &PyExpr, visitor: Bound<'py, PyAny>) -> PyVisitorResult
         Expr::InSubquery(expr, subquery) => visitor.visit_in_subquery(expr, subquery),
         Expr::Exists(subquery) => visitor.visit_exists(subquery),
         Expr::VLLM(..) => todo!(),
+        Expr::OnnxModel(..) => todo!(),
         Expr::Coalesce(inputs) => visitor.visit_coalesce(inputs),
     }
 }

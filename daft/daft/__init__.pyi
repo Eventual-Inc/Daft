@@ -1562,6 +1562,9 @@ class PyExpr:
         generate_args: Any,
     ) -> PyExpr: ...
 
+    @staticmethod
+    def onnx_model(model: str, inputs: list[PyExpr], return_dtype: PyDataType, io_config: IOConfig | None = None) -> PyExpr: ...
+
     ###
     # Visitor methods
     ###

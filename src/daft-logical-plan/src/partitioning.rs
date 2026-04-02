@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_dsl::{
     Column, ExprRef, ResolvedColumn,
-    expr::{VLLMExpr, bound_expr::BoundExpr},
+    expr::{OnnxModelExpr, VLLMExpr, bound_expr::BoundExpr},
     functions::{FunctionArgs, scalar::ScalarFn},
 };
 use daft_recordbatch::RecordBatch;
@@ -396,6 +396,15 @@ fn translate_clustering_spec_expr(
             let new_input = translate_clustering_spec_expr(input, old_colname_to_new_colname)?;
             Ok(Arc::new(
                 clustering_spec_expr.with_new_children(vec![new_input]),
+            ))
+        }
+        Expr::OnnxModel(OnnxModelExpr { inputs, .. }) => {
+            let new_inputs = inputs
+                .iter()
+                .map(|input| translate_clustering_spec_expr(input, old_colname_to_new_colname))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Arc::new(
+                clustering_spec_expr.with_new_children(new_inputs),
             ))
         }
         Expr::Coalesce(inputs) => {
