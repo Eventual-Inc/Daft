@@ -62,6 +62,7 @@ export type PhysicalPlanNode = {
   type: string;
   category: string;
   phase?: string;
+  phases?: PhaseInfo[];
   children?: PhysicalPlanNode[];
 };
 
