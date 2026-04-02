@@ -760,7 +760,8 @@ impl RecordBatch {
                     metrics,
                 )
                 .await?
-                .cast(dtype),
+                .cast(dtype)
+                .map(|s| s.rename(expected_field.name.clone())),
             Expr::Column(Column::Bound(BoundColumn { index, .. })) => {
                 Ok(self.columns[*index].as_materialized_series().clone())
             }
@@ -1151,7 +1152,8 @@ impl RecordBatch {
             )),
             Expr::Cast(child, dtype) => self
                 .eval_expression_internal(&BoundExpr::new_unchecked(child.clone()), metrics)?
-                .cast(dtype),
+                .cast(dtype)
+                .map(|s| s.rename(expected_field.name.clone())),
             Expr::Column(Column::Bound(BoundColumn { index, .. })) => {
                 Ok(self.columns[*index].as_materialized_series().clone())
             }

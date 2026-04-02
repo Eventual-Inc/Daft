@@ -339,6 +339,21 @@ def test_cast_image():
     assert actual.schema()["img"].dtype == DataType.image("RGB")
 
 
+def test_cast_fixed_shape_image_preserves_column_name():
+    data = [
+        np.arange(12, dtype=np.uint8).reshape((2, 2, 3)),
+        np.arange(12, 24, dtype=np.uint8).reshape((2, 2, 3)),
+        None,
+    ]
+    s = Series.from_pylist(data, dtype=DataType.python())
+    df = daft.from_pydict({"frame": s})
+
+    actual = daft.sql("select cast(frame as image(RGB, 2, 2)) from df", **{"df": df}).collect()
+
+    assert actual.schema().column_names() == ["frame"]
+    assert actual.schema()["frame"].dtype == DataType.image("RGB", 2, 2)
+
+
 def test_count_pushdown(capsys):
     data = [
         {"id_spec": 1, "age": "2020-01-15", "tags": ["a", "b"]},
