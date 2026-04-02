@@ -33,7 +33,7 @@ pub struct FlightShuffleWriteSink {
     partition_by: Option<Vec<ExprRef>>,
     shuffle_dirs: Vec<String>,
     compression: Option<String>,
-    target_in_memory_size_per_partition: usize,
+    target_file_size_per_partition: usize,
     local_server: Arc<ShuffleFlightServer>,
     // We want num_compute_thread many instances of this operator, but only 1 instance of cache per task / input_id
     // To work around this, we save and reuse caches as states per input_id
@@ -56,8 +56,7 @@ impl FlightShuffleWriteSink {
             partition_by,
             shuffle_dirs,
             compression,
-            target_in_memory_size_per_partition: (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES
-                / num_partitions)
+            target_file_size_per_partition: (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES / num_partitions)
                 .clamp(1024 * 1024 * 8, 1024 * 1024 * 128),
             local_server,
             caches: Mutex::new(HashMap::new()),
@@ -174,7 +173,7 @@ impl BlockingSink for FlightShuffleWriteSink {
                     &self.shuffle_dirs,
                     input_id.to_string(),
                     self.shuffle_id,
-                    self.target_in_memory_size_per_partition,
+                    self.target_file_size_per_partition,
                     self.compression.as_deref(),
                 )?);
                 e.insert(c.clone());

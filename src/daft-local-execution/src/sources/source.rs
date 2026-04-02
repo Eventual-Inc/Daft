@@ -193,6 +193,7 @@ impl PipelineNode for SourceNode {
     ) {
         self.morsel_size_requirement = downstream_requirement;
     }
+
     fn start(
         self: Box<Self>,
         maintain_order: bool,
@@ -218,6 +219,7 @@ impl PipelineNode for SourceNode {
             .with_context(|_| PipelineExecutionSnafu {
                 node_name: name.to_string(),
             })?;
+
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;
@@ -251,6 +253,7 @@ impl PipelineNode for SourceNode {
                         break;
                     }
                 }
+
                 if !has_data {
                     let empty = MicroPartition::empty(Some(schema.clone()));
                     let stats = get_or_create_source_stats(

@@ -138,7 +138,7 @@ struct PlanState {
 )]
 pub struct PyNativeExecutor {
     executor: Arc<Mutex<NativeExecutor>>,
-    port: u16,
+    address: Option<String>,
 }
 
 #[cfg(feature = "python")]
@@ -154,15 +154,15 @@ impl PyNativeExecutor {
     #[new]
     pub fn new(is_flotilla_worker: bool, ip: &str) -> Self {
         let executor = NativeExecutor::new(is_flotilla_worker, ip);
-        let port = executor.shuffle_port();
+        let address = executor.shuffle_address();
         Self {
             executor: Arc::new(Mutex::new(executor)),
-            port,
+            address,
         }
     }
 
-    pub fn shuffle_port(&self) -> u16 {
-        self.port
+    pub fn shuffle_address(&self) -> Option<String> {
+        self.address.clone()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -371,11 +371,10 @@ impl NativeExecutor {
         }
     }
 
-    pub fn shuffle_port(&self) -> u16 {
+    pub fn shuffle_address(&self) -> Option<String> {
         self.shuffle_server_connection
             .as_ref()
-            .map(|conn| conn.port())
-            .unwrap_or(0)
+            .map(|conn| conn.shuffle_address())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -394,10 +393,13 @@ impl NativeExecutor {
         if !self.plans.contains_key(&fingerprint) {
             let cancel = self.cancel.clone();
             let additional_context = additional_context.unwrap_or_default();
+            let shuffle_address = self.shuffle_address();
             let ctx = BuilderContext::new_with_context(
                 query_id.clone(),
                 additional_context,
-                self.shuffle_server.clone(),
+                self.shuffle_server
+                    .as_ref()
+                    .map(|server| (server.clone(), shuffle_address.unwrap())),
             );
             let (pipeline, input_senders) =
                 translate_physical_plan_to_pipeline(local_physical_plan, &exec_cfg, &ctx)?;
