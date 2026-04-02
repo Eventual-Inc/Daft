@@ -87,20 +87,21 @@ impl From<(TaskContext, &DaftResult<TaskStatus>)> for TaskEvent {
 
 pub trait StatisticsSubscriber: Send + Sync + 'static {
     fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()>;
+    fn set_runtime_node_managers(&mut self, _managers: Arc<HashMap<NodeID, RuntimeNodeManager>>) {}
 }
 
 pub type StatisticsManagerRef = Arc<StatisticsManager>;
 
 #[derive(Default)]
 pub struct StatisticsManager {
-    runtime_node_managers: HashMap<NodeID, RuntimeNodeManager>,
+    runtime_node_managers: Arc<HashMap<NodeID, RuntimeNodeManager>>,
     subscribers: Mutex<Vec<Box<dyn StatisticsSubscriber>>>,
 }
 
 impl StatisticsManager {
     pub fn from_pipeline_node(
         pipeline_node: &DistributedPipelineNode,
-        subscribers: Vec<Box<dyn StatisticsSubscriber>>,
+        mut subscribers: Vec<Box<dyn StatisticsSubscriber>>,
         meter: &Meter,
     ) -> DaftResult<StatisticsManagerRef> {
         let mut runtime_node_managers = HashMap::new();
@@ -120,6 +121,12 @@ impl StatisticsManager {
             );
             Ok(TreeNodeRecursion::Continue)
         })?;
+
+        let runtime_node_managers = Arc::new(runtime_node_managers);
+
+        for subscriber in &mut subscribers {
+            subscriber.set_runtime_node_managers(runtime_node_managers.clone());
+        }
 
         Ok(Arc::new(Self {
             runtime_node_managers,
