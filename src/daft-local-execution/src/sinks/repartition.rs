@@ -10,7 +10,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
 use daft_shuffles::{
-    server::flight_server::register_shuffle_cache, shuffle_cache::InProgressShuffleCache,
+    server::flight_server::ShuffleFlightServer, shuffle_cache::InProgressShuffleCache,
 };
 use itertools::Itertools;
 use tracing::{Span, instrument};
@@ -60,6 +60,7 @@ enum RepartitionBackend {
         repartition_spec: RepartitionSpec,
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
+        local_server: Arc<ShuffleFlightServer>,
         target_in_memory_size_per_partition: usize,
         // Only accessed from the single-threaded event loop; Mutex is just for Sync.
         caches: Mutex<HashMap<InputId, Arc<InProgressShuffleCache>>>,
@@ -92,6 +93,7 @@ impl RepartitionSink {
         repartition_spec: RepartitionSpec,
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
+        local_server: Arc<ShuffleFlightServer>,
     ) -> DaftResult<Self> {
         const TARGET_TOTAL_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 2000;
         Ok(Self {
@@ -101,6 +103,7 @@ impl RepartitionSink {
                 repartition_spec,
                 shuffle_dirs,
                 compression,
+                local_server,
                 target_in_memory_size_per_partition: (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES
                     / num_partitions)
                     .clamp(1024 * 1024 * 8, 1024 * 1024 * 128),
@@ -293,8 +296,13 @@ impl BlockingSink for RepartitionSink {
                     )
                     .into()
             }
-            RepartitionBackend::Flight { shuffle_id, .. } => {
+            RepartitionBackend::Flight {
+                shuffle_id,
+                local_server,
+                ..
+            } => {
                 let shuffle_id = *shuffle_id;
+                let local_server = local_server.clone();
                 let states = states
                     .into_iter()
                     .map(|state| match state {
@@ -312,7 +320,9 @@ impl BlockingSink for RepartitionSink {
                             let finalized = cache.close().await?;
                             let all_rows = finalized.rows_per_partition();
                             let all_bytes = finalized.bytes_per_partition();
-                            register_shuffle_cache(shuffle_id, finalized.into()).await?;
+                            local_server
+                                .register_shuffle_cache(shuffle_id, finalized.into())
+                                .await?;
                             Ok(BlockingSinkOutput::ShuffleMetadata(ShuffleMetadata {
                                 partitions: all_rows
                                     .into_iter()

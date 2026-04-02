@@ -1449,12 +1449,16 @@ fn physical_plan_to_pipeline(
                     shuffle_dirs,
                     compression,
                 } => {
+                    let shuffle_server = ctx
+                        .shuffle_server()
+                        .expect("Flight shuffle server must be initialized for Flight repartition plans when using flight_shuffle algorithm");
                     let repartition_sink = RepartitionSink::try_new_flight(
                         *num_partitions,
                         *shuffle_id,
                         repartition_spec.clone(),
                         shuffle_dirs.clone(),
                         compression.clone(),
+                        shuffle_server,
                     )
                     .with_context(|_| PipelineCreationSnafu {
                         plan_name: physical_plan.name(),
