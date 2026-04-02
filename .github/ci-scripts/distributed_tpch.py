@@ -18,6 +18,17 @@ SF_TO_S3_PATH = {
 }
 
 
+def _daft_uv_runtime_env() -> dict:
+    """Build the uv runtime_env config, pinning the exact Daft version if available."""
+    daft_version = os.getenv("DAFT_VERSION")
+    daft_index_url = os.getenv("DAFT_INDEX_URL")
+    daft_pkg = f"daft[aws]=={daft_version}" if daft_version else "daft[aws]"
+    uv_env: dict = {"packages": [daft_pkg]}
+    if daft_index_url:
+        uv_env["uv_pip_install_options"] = ["--extra-index-url", daft_index_url]
+    return uv_env
+
+
 def run_benchmark(up_to_query: int = 22):
     results = {}
 
@@ -40,7 +51,7 @@ def run_benchmark(up_to_query: int = 22):
             entrypoint=f"DAFT_RUNNER=ray python answers_sql.py {parquet_path} {q}",
             runtime_env={
                 "working_dir": "./benchmarking/tpch",
-                "uv": ["daft[aws]"],
+                "uv": _daft_uv_runtime_env(),
                 "env_vars": {
                     "DAFT_PROGRESS_BAR": "0",
                     "DAFT_SHUFFLE_ALGORITHM": os.getenv("DAFT_SHUFFLE_ALGORITHM", "auto"),
