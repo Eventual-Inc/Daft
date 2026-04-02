@@ -107,21 +107,29 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
                     }
                 }
             }
-            TaskEvent::Completed { .. } => {
+            TaskEvent::Completed {
+                context: task_ctx,
+                stats: _,
+            } => {
                 // Read smart-aggregated stats from RuntimeNodeManagers
                 // (already updated by StatisticsManager before this subscriber runs)
                 if let Some(managers) = &self.runtime_node_managers {
-                    let all_stats = managers
+                    // managers give us stats for all operators, but just notify for the
+                    // ones that did something according to this TaskCompleted event
+                    let relevant_stats = managers
                         .values()
                         .map(|mgr| {
                             let (info, snapshot) = mgr.export_snapshot();
                             (info.node_origin_id, snapshot.to_stats())
                         })
+                        .filter(|(node_origin_id, _)| {
+                            task_ctx.node_ids.contains(&(*node_origin_id as u32))
+                        })
                         .collect::<Vec<_>>();
 
-                    if !all_stats.is_empty()
+                    if !relevant_stats.is_empty()
                         && let Err(e) =
-                            context.notify_exec_emit_stats(self.query_id.clone(), all_stats)
+                            context.notify_exec_emit_stats(self.query_id.clone(), relevant_stats)
                     {
                         tracing::error!("Failed to notify exec emit stats: {}", e);
                     }
