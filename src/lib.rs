@@ -137,7 +137,6 @@ pub mod pylib {
         daft_scan::register_modules(m)?;
         daft_session::register_modules(m)?;
         daft_sql::register_modules(m)?;
-        daft_shuffles::python::register_modules(m)?;
         daft_file::python::register_modules(m)?;
         // Register testing module
         let testing_module = PyModule::new(m.py(), "testing")?;
