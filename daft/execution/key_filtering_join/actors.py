@@ -59,14 +59,14 @@ class KeySpec:
             return to_struct(**{k: col(k) for k in self.key_columns})
         return col(self.key_columns[0])
 
-    def to_numpy(self, input: Series) -> "np.ndarray":  # noqa: UP037
+    def to_numpy(self, input: Series) -> np.ndarray:  # type: ignore[type-arg, unused-ignore]
         if self.is_composite:
             keys = input.to_pylist()
             return _composite_keys_to_numpy(keys, self.composite_key_fields)
         return input.to_arrow().to_numpy(zero_copy_only=False)
 
 
-def _composite_keys_to_numpy(keys: list[Any], composite_key_fields: tuple[str, ...]) -> "np.ndarray":  # noqa: UP037
+def _composite_keys_to_numpy(keys: list[Any], composite_key_fields: tuple[str, ...]) -> np.ndarray:  # type: ignore[type-arg, unused-ignore]
     from daft.dependencies import np
 
     keys_as_tuples: list[Any] = []
@@ -92,7 +92,7 @@ class KeyFilterActor:
     def add_keys(self, input_keys: list[Any]) -> None:
         self.key_set.update(input_keys)
 
-    def filter(self, input_keys: "np.ndarray") -> "np.ndarray":  # noqa: UP037
+    def filter(self, input_keys: np.ndarray) -> np.ndarray:  # type: ignore[type-arg, unused-ignore]
         from daft.dependencies import np
 
         input_list = input_keys.tolist()
@@ -105,7 +105,7 @@ class KeyFilterActor:
 # ---------------------------------------------------------------------------
 
 
-def _group_row_indices_by_worker(input: Series, num_workers: int) -> list[tuple[int, "np.ndarray"]]:  # noqa: UP037
+def _group_row_indices_by_worker(input: Series, num_workers: int) -> list[tuple[int, np.ndarray]]:  # type: ignore[type-arg, unused-ignore]
     from daft.dependencies import np
 
     hash_arr = input.hash().to_arrow()
@@ -153,7 +153,7 @@ def build_key_filter_predicate(
         keys_np = key_spec.to_numpy(input)
 
         futures = []
-        row_indices_list: list[np.ndarray] = []
+        row_indices_list: list[np.ndarray] = []  # type: ignore[type-arg, unused-ignore]
 
         for worker_id, row_indices in _group_row_indices_by_worker(input, num_workers):
             actor = actor_handles[worker_id]
