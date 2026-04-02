@@ -34,9 +34,15 @@ pub struct GravitinoSource {
     cached_sources: tokio::sync::RwLock<HashMap<String, Arc<ClientAndLocation>>>,
 }
 
-struct ClientAndLocation {
+pub struct ClientAndLocation {
     io_client: IOClient,
     storage_location: String,
+}
+
+impl ClientAndLocation {
+    pub fn get_io_client(&self) -> &IOClient {
+        &self.io_client
+    }
 }
 
 impl GravitinoSource {
@@ -143,10 +149,10 @@ impl GravitinoSource {
         Ok(client)
     }
 
-    async fn fileset_path_to_source_and_url(
+    pub async fn fileset_path_to_client_and_url(
         &self,
         path: &str,
-    ) -> super::Result<(Arc<dyn ObjectSource>, String)> {
+    ) -> super::Result<(Arc<ClientAndLocation>, String)> {
         let url = url::Url::parse(path).context(InvalidUrlSnafu { path })?;
 
         // Check that the scheme is gvfs and host is fileset
@@ -183,7 +189,16 @@ impl GravitinoSource {
             format!("{}/{}", client.storage_location, fileset_path)
         };
 
-        let source = client.io_client.get_source(&source_path).await?;
+        Ok((client, source_path))
+    }
+
+    async fn fileset_path_to_source_and_url(
+        &self,
+        path: &str,
+    ) -> super::Result<(Arc<dyn ObjectSource>, String)> {
+        let (client, source_path) = self.fileset_path_to_client_and_url(path).await?;
+
+        let source = client.get_io_client().get_source(&source_path).await?;
 
         Ok((source, source_path))
     }
