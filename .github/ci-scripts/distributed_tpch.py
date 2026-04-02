@@ -28,7 +28,8 @@ def run_benchmark(up_to_query: int = 22):
         )
     parquet_path = SF_TO_S3_PATH[scale_factor]
 
-    client = JobSubmissionClient(address="http://localhost:8265")
+    ray_address = os.getenv("RAY_ADDRESS", "http://localhost:8265")
+    client = JobSubmissionClient(address=ray_address)
 
     for q in range(1, up_to_query + 1):
         print(f"Running TPC-H Q{q}... ", end="", flush=True)
