@@ -4,7 +4,14 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    Meter, StatSnapshot,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::StatSnapshotImpl as _,
+};
+
+pub(crate) const SHUFFLE_WRITE_PHASE: &str = "shuffle-write";
+pub(crate) const SHUFFLE_READ_PHASE: &str = "shuffle-read";
 use daft_local_plan::{
     FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend,
     ShuffleWriteBackend,
@@ -22,6 +29,10 @@ use crate::{
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
+    },
+    statistics::{
+        RuntimeStats,
+        stats::{BaseCounters, RuntimeStatsRef, SimpleCounters},
     },
     utils::channel::{Sender, create_channel},
 };
@@ -239,6 +250,65 @@ impl ShuffleNode {
     }
 }
 
+pub struct ShuffleStats {
+    base: BaseCounters,
+    node_id: u32,
+    write_counters: SimpleCounters,
+    read_counters: SimpleCounters,
+}
+
+impl ShuffleStats {
+    pub fn new(meter: &Meter, context: &PipelineNodeContext, node_id: u32) -> Self {
+        Self {
+            base: BaseCounters::new(meter, context),
+            node_id,
+            write_counters: SimpleCounters::new(),
+            read_counters: SimpleCounters::new(),
+        }
+    }
+
+    fn phase_counters(&self, phase: &str) -> Option<&SimpleCounters> {
+        match phase {
+            SHUFFLE_WRITE_PHASE => Some(&self.write_counters),
+            SHUFFLE_READ_PHASE => Some(&self.read_counters),
+            _ => None,
+        }
+    }
+}
+
+impl RuntimeStats for ShuffleStats {
+    fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot) {
+        self.base.add_duration_us(snapshot.duration_us());
+        if let Some(phase) = &node_info.node_phase {
+            if let Some(counters) = self.phase_counters(phase) {
+                counters.add_duration_us(snapshot.duration_us());
+            }
+        }
+        if let StatSnapshot::Default(s) = snapshot {
+            self.base.add_rows_in(s.rows_in);
+            self.base.add_rows_out(s.rows_out);
+            if let Some(phase) = &node_info.node_phase {
+                if let Some(counters) = self.phase_counters(phase) {
+                    counters.add_rows_in(s.rows_in);
+                    counters.add_rows_out(s.rows_out);
+                }
+            }
+        }
+    }
+
+    fn export_snapshot(&self) -> StatSnapshot {
+        self.base.export_default_snapshot()
+    }
+
+    fn export_phase_snapshots(&self) -> Vec<(usize, StatSnapshot)> {
+        use crate::pipeline_node::phase_node_id;
+        vec![
+            (phase_node_id(self.node_id, 0), self.write_counters.export_default_snapshot()),
+            (phase_node_id(self.node_id, 1), self.read_counters.export_default_snapshot()),
+        ]
+    }
+}
+
 impl PipelineNodeImpl for ShuffleNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
@@ -250,6 +320,14 @@ impl PipelineNodeImpl for ShuffleNode {
 
     fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
+    }
+
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(ShuffleStats::new(meter, self.context(), self.node_id()))
+    }
+
+    fn phases(&self) -> &[&str] {
+        &[SHUFFLE_WRITE_PHASE, SHUFFLE_READ_PHASE]
     }
 
     fn produce_tasks(

@@ -71,6 +71,12 @@ mod window;
 pub(crate) use translate::logical_plan_to_pipeline_node;
 pub(crate) type NodeID = u32;
 pub(crate) type NodeName = Arc<str>;
+
+/// Compute a synthetic node ID for a phase sub-entry.
+/// Uses `parent_id * 1_000_000 + phase_index` to avoid collisions with real node IDs.
+pub(crate) fn phase_node_id(parent_id: NodeID, phase_index: usize) -> usize {
+    parent_id as usize * 1_000_000 + phase_index
+}
 /// Fingerprint identifying tasks with functionally identical plans.
 /// Tasks sharing a fingerprint can reuse the same pipeline.
 pub(crate) type PlanFingerprint = u32;
@@ -328,6 +334,9 @@ pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn phase(&self) -> Option<&str> {
         None
     }
+    fn phases(&self) -> &[&str] {
+        &[]
+    }
     fn multiline_display(&self, verbose: bool) -> Vec<String>;
 }
 
@@ -413,6 +422,20 @@ impl TreeDisplay for DistributedPipelineNode {
         });
         if let Some(phase) = self.op.phase() {
             json["phase"] = serde_json::json!(phase);
+        }
+        let phases = self.op.phases();
+        if !phases.is_empty() {
+            json["phases"] = phases
+                .iter()
+                .enumerate()
+                .map(|(i, phase)| {
+                    serde_json::json!({
+                        "id": phase_node_id(self.node_id(), i),
+                        "name": format!("{} ({})", self.name(), phase),
+                        "phase": *phase,
+                    })
+                })
+                .collect();
         }
         json
     }

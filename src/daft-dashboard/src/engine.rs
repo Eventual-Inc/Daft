@@ -18,8 +18,8 @@ fn secs_from_epoch() -> f64 {
 }
 
 use crate::state::{
-    DashboardState, ExecInfo, NodeInfo, OperatorInfo, OperatorInfos, OperatorStatus, PlanInfo,
-    QueryInfo, QueryState,
+    DashboardState, ExecInfo, NodeInfo, OperatorInfo, OperatorInfos, OperatorStatus, PhaseInfo,
+    PlanInfo, QueryInfo, QueryState,
 };
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -141,7 +141,15 @@ struct PlanJsonConfig {
     pub node_type: Arc<str>,
     pub category: Arc<str>,
     pub phase: Option<String>,
+    pub phases: Option<Vec<PhaseJsonConfig>>,
     pub children: Option<Vec<PlanJsonConfig>>,
+}
+
+#[derive(Clone, Deserialize)]
+struct PhaseJsonConfig {
+    pub id: usize,
+    pub name: String,
+    pub phase: String,
 }
 
 fn parse_physical_plan(physical_plan: &QueryPlan) -> OperatorInfos {
@@ -152,12 +160,26 @@ fn parse_physical_plan(physical_plan: &QueryPlan) -> OperatorInfos {
     let mut plans = vec![parsed_plan];
     while let Some(plan) = plans.pop() {
         let node_id = plan.id;
+
+        // Collect phase sub-entries if present
+        let phases_info: Option<Vec<PhaseInfo>> = plan.phases.as_ref().map(|phases| {
+            phases
+                .iter()
+                .map(|p| PhaseInfo {
+                    id: p.id,
+                    name: p.name.clone(),
+                    phase: p.phase.clone(),
+                })
+                .collect()
+        });
+
         let node_info = NodeInfo {
             id: node_id,
             name: plan.name,
             node_type: plan.node_type.clone(),
             node_category: plan.category.clone(),
             node_phase: plan.phase,
+            phases: phases_info.clone(),
         };
 
         operators.insert(
@@ -171,6 +193,31 @@ fn parse_physical_plan(physical_plan: &QueryPlan) -> OperatorInfos {
                 end_sec: None,
             },
         );
+
+        // Create OperatorInfo entries for each phase sub-entry
+        if let Some(phases) = &phases_info {
+            for phase_entry in phases {
+                let phase_node_info = NodeInfo {
+                    id: phase_entry.id,
+                    name: phase_entry.name.clone(),
+                    node_type: plan.node_type.clone(),
+                    node_category: plan.category.clone(),
+                    node_phase: Some(phase_entry.phase.clone()),
+                    phases: None,
+                };
+                operators.insert(
+                    phase_entry.id,
+                    OperatorInfo {
+                        status: OperatorStatus::Pending,
+                        node_info: phase_node_info,
+                        stats: HashMap::new(),
+                        source_stats: HashMap::new(),
+                        start_sec: None,
+                        end_sec: None,
+                    },
+                );
+            }
+        }
 
         if let Some(children) = plan.children {
             plans.extend(children);

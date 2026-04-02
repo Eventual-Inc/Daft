@@ -22,6 +22,13 @@ pub(crate) enum OperatorStatus {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub(crate) struct PhaseInfo {
+    pub id: NodeID,
+    pub name: String,
+    pub phase: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub(crate) struct NodeInfo {
     pub id: NodeID,
     pub name: String,
@@ -29,6 +36,8 @@ pub(crate) struct NodeInfo {
     pub node_category: Arc<str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub node_phase: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phases: Option<Vec<PhaseInfo>>,
 }
 
 #[derive(Debug, Clone, Serialize)]

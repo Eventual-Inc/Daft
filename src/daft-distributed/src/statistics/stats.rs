@@ -1,4 +1,7 @@
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
 use common_metrics::{
     Counter, Meter, StatSnapshot, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY, TASK_COMPLETED_KEY,
@@ -17,6 +20,11 @@ pub trait RuntimeStats: Send + Sync + 'static {
     fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot);
     /// Returns the accumulated stats.
     fn export_snapshot(&self) -> StatSnapshot;
+    /// Returns per-phase stats as (synthetic_node_id, snapshot) pairs.
+    /// Default: no per-phase breakdown.
+    fn export_phase_snapshots(&self) -> Vec<(usize, StatSnapshot)> {
+        vec![]
+    }
 }
 pub type RuntimeStatsRef = Arc<dyn RuntimeStats>;
 
@@ -60,6 +68,11 @@ impl RuntimeNodeManager {
     /// Returns the accumulated stats for this node as (NodeInfo, StatSnapshot) for export to the driver.
     pub fn export_snapshot(&self) -> (Arc<NodeInfo>, StatSnapshot) {
         (self.node_info.clone(), self.runtime_stats.export_snapshot())
+    }
+
+    /// Returns per-phase stats as (synthetic_node_id, Stats) pairs for dashboard emission.
+    pub fn export_phase_snapshots(&self) -> Vec<(usize, StatSnapshot)> {
+        self.runtime_stats.export_phase_snapshots()
     }
 
     fn dec_active_tasks(&self) {
@@ -124,6 +137,43 @@ impl BaseCounters {
 
     pub fn add_rows_out(&self, v: u64) {
         self.rows_out.add(v, self.node_kv.as_slice());
+    }
+
+    pub fn export_default_snapshot(&self) -> StatSnapshot {
+        StatSnapshot::Default(DefaultSnapshot {
+            cpu_us: self.duration_us.load(Ordering::Relaxed),
+            rows_in: self.rows_in.load(Ordering::Relaxed),
+            rows_out: self.rows_out.load(Ordering::Relaxed),
+        })
+    }
+}
+
+/// Lightweight per-phase counters using simple atomics (no OpenTelemetry instrumentation).
+pub struct SimpleCounters {
+    duration_us: AtomicU64,
+    rows_in: AtomicU64,
+    rows_out: AtomicU64,
+}
+
+impl SimpleCounters {
+    pub fn new() -> Self {
+        Self {
+            duration_us: AtomicU64::new(0),
+            rows_in: AtomicU64::new(0),
+            rows_out: AtomicU64::new(0),
+        }
+    }
+
+    pub fn add_duration_us(&self, v: u64) {
+        self.duration_us.fetch_add(v, Ordering::Relaxed);
+    }
+
+    pub fn add_rows_in(&self, v: u64) {
+        self.rows_in.fetch_add(v, Ordering::Relaxed);
+    }
+
+    pub fn add_rows_out(&self, v: u64) {
+        self.rows_out.fetch_add(v, Ordering::Relaxed);
     }
 
     pub fn export_default_snapshot(&self) -> StatSnapshot {

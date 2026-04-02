@@ -23,7 +23,7 @@ use crate::{
     },
     statistics::{
         RuntimeStats,
-        stats::{BaseCounters, RuntimeStatsRef},
+        stats::{BaseCounters, RuntimeStatsRef, SimpleCounters},
     },
     utils::channel::{Sender, create_channel},
 };
@@ -33,12 +33,26 @@ const SECOND_LIMIT_PHASE: &str = "post-limit";
 
 pub struct LimitStats {
     base: BaseCounters,
+    node_id: u32,
+    first_limit_counters: SimpleCounters,
+    post_limit_counters: SimpleCounters,
 }
 
 impl LimitStats {
-    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+    pub fn new(meter: &Meter, context: &PipelineNodeContext, node_id: u32) -> Self {
         Self {
             base: BaseCounters::new(meter, context),
+            node_id,
+            first_limit_counters: SimpleCounters::new(),
+            post_limit_counters: SimpleCounters::new(),
+        }
+    }
+
+    fn phase_counters(&self, phase: &str) -> Option<&SimpleCounters> {
+        match phase {
+            FIRST_LIMIT_PHASE => Some(&self.first_limit_counters),
+            SECOND_LIMIT_PHASE => Some(&self.post_limit_counters),
+            _ => None,
         }
     }
 }
@@ -46,9 +60,18 @@ impl LimitStats {
 impl RuntimeStats for LimitStats {
     fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot) {
         self.base.add_duration_us(snapshot.duration_us());
+        if let Some(phase) = &node_info.node_phase {
+            if let Some(counters) = self.phase_counters(phase) {
+                counters.add_duration_us(snapshot.duration_us());
+            }
+        }
         match snapshot {
             StatSnapshot::Default(snapshot) => {
                 if let Some(phase) = &node_info.node_phase {
+                    if let Some(counters) = self.phase_counters(phase) {
+                        counters.add_rows_in(snapshot.rows_in);
+                        counters.add_rows_out(snapshot.rows_out);
+                    }
                     // The first limit is used for pruning, the second limit is for the final output
                     if phase == FIRST_LIMIT_PHASE {
                         self.base.add_rows_in(snapshot.rows_in);
@@ -58,10 +81,13 @@ impl RuntimeStats for LimitStats {
                 }
             }
             StatSnapshot::Source(snapshot) => {
-                if let Some(phase) = &node_info.node_phase
-                    && phase == SECOND_LIMIT_PHASE
-                {
-                    self.base.add_rows_out(snapshot.rows_out);
+                if let Some(phase) = &node_info.node_phase {
+                    if let Some(counters) = self.phase_counters(phase) {
+                        counters.add_rows_out(snapshot.rows_out);
+                    }
+                    if phase == SECOND_LIMIT_PHASE {
+                        self.base.add_rows_out(snapshot.rows_out);
+                    }
                 }
             }
             _ => {} // Limit don't receive stats from other Swordfish nodes
@@ -70,6 +96,14 @@ impl RuntimeStats for LimitStats {
 
     fn export_snapshot(&self) -> StatSnapshot {
         self.base.export_default_snapshot()
+    }
+
+    fn export_phase_snapshots(&self) -> Vec<(usize, StatSnapshot)> {
+        use crate::pipeline_node::phase_node_id;
+        vec![
+            (phase_node_id(self.node_id, 0), self.first_limit_counters.export_default_snapshot()),
+            (phase_node_id(self.node_id, 1), self.post_limit_counters.export_default_snapshot()),
+        ]
     }
 }
 
@@ -366,7 +400,11 @@ impl PipelineNodeImpl for LimitNode {
     }
 
     fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(LimitStats::new(meter, self.context()))
+        Arc::new(LimitStats::new(meter, self.context(), self.node_id()))
+    }
+
+    fn phases(&self) -> &[&str] {
+        &[FIRST_LIMIT_PHASE, SECOND_LIMIT_PHASE]
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {

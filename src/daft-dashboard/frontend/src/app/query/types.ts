@@ -6,11 +6,18 @@ export type PlanInfo = {
 
 export type OperatorStatus = "Pending" | "Executing" | "Finished" | "Failed";
 
+export type PhaseInfo = {
+  id: number;
+  name: string;
+  phase: string;
+};
+
 export type NodeInfo = {
   name: string;
   id: number;
   node_category: "Intermediate" | "Source" | "StreamingSink" | "BlockingSink";
   node_phase?: string;
+  phases?: PhaseInfo[];
   context: Record<string, string>;
 };
 

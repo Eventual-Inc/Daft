@@ -126,9 +126,14 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
                 if let Some(managers) = &self.runtime_node_managers {
                     let all_stats = managers
                         .values()
-                        .map(|mgr| {
+                        .flat_map(|mgr| {
                             let (info, snapshot) = mgr.export_snapshot();
-                            (info.node_origin_id, snapshot.to_stats())
+                            let mut entries = vec![(info.node_origin_id, snapshot.to_stats())];
+                            // Include per-phase stats with synthetic node IDs
+                            for (phase_id, phase_snapshot) in mgr.export_phase_snapshots() {
+                                entries.push((phase_id, phase_snapshot.to_stats()));
+                            }
+                            entries
                         })
                         .collect::<Vec<_>>();
 

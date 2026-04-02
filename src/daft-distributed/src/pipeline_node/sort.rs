@@ -28,7 +28,7 @@ use crate::{
     },
     statistics::{
         RuntimeStats,
-        stats::{BaseCounters, RuntimeStatsRef},
+        stats::{BaseCounters, RuntimeStatsRef, SimpleCounters},
     },
     utils::{
         channel::{Sender, create_channel},
@@ -42,12 +42,29 @@ const FINAL_SORT_PHASE: &str = "final-sort";
 
 pub struct SortStats {
     base: BaseCounters,
+    node_id: u32,
+    sample_counters: SimpleCounters,
+    repartition_counters: SimpleCounters,
+    final_sort_counters: SimpleCounters,
 }
 
 impl SortStats {
-    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+    pub fn new(meter: &Meter, context: &PipelineNodeContext, node_id: u32) -> Self {
         Self {
             base: BaseCounters::new(meter, context),
+            node_id,
+            sample_counters: SimpleCounters::new(),
+            repartition_counters: SimpleCounters::new(),
+            final_sort_counters: SimpleCounters::new(),
+        }
+    }
+
+    fn phase_counters(&self, phase: &str) -> Option<&SimpleCounters> {
+        match phase {
+            SAMPLE_PHASE => Some(&self.sample_counters),
+            REPARTITION_PHASE => Some(&self.repartition_counters),
+            FINAL_SORT_PHASE => Some(&self.final_sort_counters),
+            _ => None,
         }
     }
 }
@@ -58,15 +75,25 @@ impl RuntimeStats for SortStats {
             StatSnapshot::Source(snapshot) => {
                 // InMemorySource nodes only contribute duration
                 self.base.add_duration_us(snapshot.cpu_us);
+                if let Some(phase) = &node_info.node_phase {
+                    if let Some(counters) = self.phase_counters(phase) {
+                        counters.add_duration_us(snapshot.cpu_us);
+                    }
+                }
             }
             StatSnapshot::Default(snapshot) => {
                 self.base.add_duration_us(snapshot.cpu_us);
-                if let Some(phase) = &node_info.node_phase
-                    && phase == FINAL_SORT_PHASE
-                {
-                    // Only the final sort phase contributes row counts
-                    self.base.add_rows_in(snapshot.rows_in);
-                    self.base.add_rows_out(snapshot.rows_out);
+                if let Some(phase) = &node_info.node_phase {
+                    if let Some(counters) = self.phase_counters(phase) {
+                        counters.add_duration_us(snapshot.cpu_us);
+                        counters.add_rows_in(snapshot.rows_in);
+                        counters.add_rows_out(snapshot.rows_out);
+                    }
+                    if phase == FINAL_SORT_PHASE {
+                        // Only the final sort phase contributes to the aggregate row counts
+                        self.base.add_rows_in(snapshot.rows_in);
+                        self.base.add_rows_out(snapshot.rows_out);
+                    }
                 }
             }
             _ => {}
@@ -75,6 +102,15 @@ impl RuntimeStats for SortStats {
 
     fn export_snapshot(&self) -> StatSnapshot {
         self.base.export_default_snapshot()
+    }
+
+    fn export_phase_snapshots(&self) -> Vec<(usize, StatSnapshot)> {
+        use crate::pipeline_node::phase_node_id;
+        vec![
+            (phase_node_id(self.node_id, 0), self.sample_counters.export_default_snapshot()),
+            (phase_node_id(self.node_id, 1), self.repartition_counters.export_default_snapshot()),
+            (phase_node_id(self.node_id, 2), self.final_sort_counters.export_default_snapshot()),
+        ]
     }
 }
 
@@ -448,7 +484,11 @@ impl PipelineNodeImpl for SortNode {
     }
 
     fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(SortStats::new(meter, self.context()))
+        Arc::new(SortStats::new(meter, self.context(), self.node_id()))
+    }
+
+    fn phases(&self) -> &[&str] {
+        &[SAMPLE_PHASE, REPARTITION_PHASE, FINAL_SORT_PHASE]
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {

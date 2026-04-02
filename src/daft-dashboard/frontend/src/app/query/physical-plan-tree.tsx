@@ -40,9 +40,11 @@ function useWallClockDuration(operator?: OperatorInfo): string | null {
 function PhysicalNodeCard({
   node,
   operator,
+  operators,
 }: {
   node: PhysicalPlanNode;
   operator?: OperatorInfo;
+  operators: Record<number, OperatorInfo>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const catColor = getCategoryColor(node);
@@ -62,7 +64,8 @@ function PhysicalNodeCard({
         )
         .sort(([a], [b]) => a.localeCompare(b))
     : [];
-  const hasExpandable = extraStats.length > 0 || cpuTimeStat;
+  const hasPhases = (node.phases?.length ?? 0) > 0;
+  const hasExpandable = extraStats.length > 0 || cpuTimeStat || hasPhases;
 
   return (
     <div
@@ -138,6 +141,28 @@ function PhysicalNodeCard({
               </span>
             </div>
           ))}
+          {/* Phase breakdown */}
+          {node.phases?.map((phase) => {
+            const phaseOp = operators[phase.id];
+            if (!phaseOp) return null;
+            const phaseRowsIn = phaseOp.stats[ROWS_IN_STAT_KEY]?.value ?? 0;
+            const phaseRowsOut = phaseOp.stats[ROWS_OUT_STAT_KEY]?.value ?? 0;
+            const phaseDuration = phaseOp.stats[DURATION_US_STAT_KEY];
+            return (
+              <div key={phase.id} className="flex justify-between gap-2">
+                <span
+                  className={`${main.className} text-[10px] uppercase tracking-wider text-zinc-500`}
+                >
+                  {phase.phase}
+                </span>
+                <span className={`${main.className} text-xs text-zinc-400 font-mono`}>
+                  {phaseRowsIn > 0 && `in:${phaseRowsIn.toLocaleString()} `}
+                  {phaseRowsOut > 0 && `out:${phaseRowsOut.toLocaleString()} `}
+                  {phaseDuration ? formatStatValue(phaseDuration) : ""}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -211,7 +236,7 @@ export default function PhysicalPlanTree({
               node={plan}
               getChildren={(node) => node.children ?? []}
               renderNode={(node) => (
-                <PhysicalNodeCard node={node} operator={operators[node.id]} />
+                <PhysicalNodeCard node={node} operator={operators[node.id]} operators={operators} />
               )}
             />
           </div>
