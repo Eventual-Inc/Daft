@@ -87,6 +87,10 @@ impl From<(TaskContext, &DaftResult<TaskStatus>)> for TaskEvent {
 
 pub trait StatisticsSubscriber: Send + Sync + 'static {
     fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()>;
+
+    /// Called once during [`StatisticsManager`] construction, before any events
+    /// are dispatched. Provides shared access to the runtime node managers for
+    /// subscribers that need aggregated stats.
     fn set_runtime_node_managers(&mut self, _managers: Arc<HashMap<NodeID, RuntimeNodeManager>>) {}
 }
 
