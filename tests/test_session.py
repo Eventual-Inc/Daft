@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import daft
-from daft.catalog import Catalog, Identifier, NotFoundError, PythonFunction, Table
+from daft.catalog import Catalog, Identifier, InMemoryFunction, NotFoundError, Table
 from daft.session import Session
 
 ###
@@ -353,13 +353,8 @@ class _FunctionCatalog(Catalog):
     def __init__(self):
         self._functions = {}
 
-    def register_function(
-        self,
-        ident: Identifier,
-        module_name: str,
-        binding_name: str,
-    ):
-        self._functions[str(ident)] = PythonFunction(ident, module_name, binding_name)
+    def _create_function(self, ident, function):
+        self._functions[str(ident)] = function
 
     @property
     def name(self):
@@ -394,13 +389,18 @@ class _FunctionCatalog(Catalog):
 
     def _get_function(self, ident):
         # ident is an Identifier; the last part is the function name
-        return self._functions.get(str(ident))
+        func = self._functions.get(str(ident))
+        if func is None:
+            raise NotFoundError(f"Function '{ident}' not found")
+        return func
 
 
 def test_session_catalog_function_fallback():
     """Test that catalog _get_function is used during SQL plan resolution."""
+    from tests.udf.my_funcs import catalog_udf
+
     catalog = _FunctionCatalog()
-    catalog.register_function(Identifier("my_catalog_udf"), "tests.udf.my_funcs", "catalog_udf")
+    catalog.create_function(Identifier("my_catalog_udf"), InMemoryFunction(Identifier("my_catalog_udf"), catalog_udf))
 
     sess = Session()
     sess.attach_catalog(catalog)
@@ -417,18 +417,21 @@ def test_session_catalog_function_fallback():
     assert result is not None
 
 
-def test_session_catalog_function_fallback_returns_none():
-    """Test that catalog get_function returns None when function is not found."""
+def test_session_catalog_function_fallback_raises():
+    """Test that catalog get_function raises NotFoundError when function is not found."""
     catalog = _FunctionCatalog()
 
-    # Catalog itself should return None for nonexistent functions
-    assert catalog.get_function("nonexistent_function") is None
+    # Catalog itself should raise NotFoundError for nonexistent functions
+    with pytest.raises(NotFoundError):
+        catalog.get_function("nonexistent_function")
 
 
 def test_session_function_priority_over_catalog():
     """Test that session-scoped functions take priority over catalog functions."""
+    from tests.udf.my_funcs import catalog_udf
+
     catalog = _FunctionCatalog()
-    catalog.register_function(Identifier("shared_fn"), "tests.udf.my_funcs", "none_catalog_udf")
+    catalog.create_function(Identifier("shared_fn"), InMemoryFunction(Identifier("shared_fn"), catalog_udf))
 
     @daft.func(return_dtype=daft.DataType.int64())
     def session_udf(x):
@@ -449,8 +452,10 @@ def test_session_function_priority_over_catalog():
 
 def test_dataframe_select_with_catalog_get_function():
     """Test that dataframe.select can use a UDF retrieved via catalog.get_function."""
+    from tests.udf.my_funcs import double_value
+
     catalog = _FunctionCatalog()
-    catalog.register_function(Identifier("double_value"), "tests.udf.my_funcs", "double_value")
+    catalog.create_function(Identifier("double_value"), InMemoryFunction(Identifier("double_value"), double_value))
 
     sess = Session()
     sess.attach_catalog(catalog)
@@ -467,17 +472,17 @@ def test_dataframe_select_with_catalog_get_function():
 
 def test_catalog_register_cls_udf_from_external_module():
     """Test that a @daft.cls UDF can be loaded from an external module via register_function."""
+    from tests.udf.my_funcs import MockModelPredictor
+
     catalog = _FunctionCatalog()
-    catalog.register_function(
-        Identifier("mock_predictor"),
-        module_name="tests.udf.my_funcs",
-        binding_name="MockModelPredictor",
+    catalog.create_function(
+        Identifier("mock_predictor"), InMemoryFunction(Identifier("mock_predictor"), MockModelPredictor)
     )
 
-    predictor_cls = catalog.get_function(Identifier("mock_predictor"))
-    assert predictor_cls is not None
+    predictor_fn = catalog.get_function(Identifier("mock_predictor"))
+    assert predictor_fn is not None
 
-    predictor = predictor_cls("bert-base")
+    predictor = predictor_fn("bert-base")
     df = daft.from_pydict({"text": ["hello", "world", "daft"]})
     result = df.select(predictor(df["text"])).to_pydict()
 

@@ -25,6 +25,11 @@ impl PyCatalog {
         self.0.name()
     }
 
+    fn create_function(&self, ident: PyIdentifier, function: Py<PyAny>) -> PyResult<()> {
+        let func_ref = crate::function_from_py(function)?;
+        Ok(self.0.create_function(&ident.0, func_ref)?)
+    }
+
     fn create_namespace(&self, ident: PyIdentifier) -> PyResult<()> {
         Ok(self.0.create_namespace(&ident.0)?)
     }
@@ -45,11 +50,8 @@ impl PyCatalog {
         Ok(self.0.drop_table(&ident.0)?)
     }
 
-    fn get_function(&self, ident: PyIdentifier, py: Python) -> PyResult<Option<Py<PyAny>>> {
-        match self.0.get_function(&ident.0)? {
-            Some(func) => Ok(Some(func.to_py(py)?)),
-            None => Ok(None),
-        }
+    fn get_function(&self, ident: PyIdentifier, py: Python) -> PyResult<Py<PyAny>> {
+        self.0.get_function(&ident.0)?.to_py(py)
     }
 
     fn get_table(&self, ident: PyIdentifier, py: Python) -> PyResult<Py<PyAny>> {

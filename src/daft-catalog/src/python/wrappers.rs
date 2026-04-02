@@ -141,18 +141,12 @@ impl Catalog for PyCatalogWrapper {
         })
     }
 
-    fn get_function(&self, ident: &Identifier) -> CatalogResult<Option<FunctionRef>> {
+    fn get_function(&self, ident: &Identifier) -> CatalogResult<FunctionRef> {
         Python::attach(|py| {
             let catalog = self.0.bind(py);
             let ident_py = PyIdentifier(ident.clone()).to_pyobj(py)?;
             let result = catalog.call_method1(intern!(py, "_get_function"), (ident_py,))?;
-            if result.is_none() {
-                Ok(None)
-            } else {
-                Ok(Some(
-                    Arc::new(PyFunctionWrapper::new(result.unbind())) as Arc<dyn Function>
-                ))
-            }
+            Ok(Arc::new(PyFunctionWrapper::new(result.unbind())) as Arc<dyn Function>)
         })
     }
 }

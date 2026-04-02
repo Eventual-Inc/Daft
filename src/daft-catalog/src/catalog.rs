@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use daft_core::prelude::SchemaRef;
 
-use crate::{FunctionRef, Identifier, TableRef, error::CatalogResult};
+use crate::{
+    FunctionRef, Identifier, TableRef,
+    error::{CatalogError, CatalogResult},
+};
 
 /// Catalog implementation reference.
 pub type CatalogRef = Arc<dyn Catalog>;
@@ -13,6 +16,12 @@ pub trait Catalog: Sync + Send + std::fmt::Debug {
     /// Returns the catalog name.
     fn name(&self) -> String;
 
+    /// Create a function in the catalog.
+    fn create_function(&self, _ident: &Identifier, _function: FunctionRef) -> CatalogResult<()> {
+        Err(CatalogError::unsupported(
+            "create_function is not supported by this catalog".to_string(),
+        ))
+    }
     /// Create a namespace in the catalog, erroring if the namespace already exists.
     fn create_namespace(&self, ident: &Identifier) -> CatalogResult<()>;
     /// Create a table in the catalog, erroring if the table already exists.
@@ -24,9 +33,9 @@ pub trait Catalog: Sync + Send + std::fmt::Debug {
 
     /// Get a function from the catalog by identifier.
     /// The identifier's last part is the function name, and preceding parts form the namespace.
-    /// Returns None if the catalog does not support function lookup or the function does not exist.
-    fn get_function(&self, _ident: &Identifier) -> CatalogResult<Option<FunctionRef>> {
-        Ok(None)
+    /// Errors if the function does not exist.
+    fn get_function(&self, ident: &Identifier) -> CatalogResult<FunctionRef> {
+        Err(CatalogError::obj_not_found("function", ident))
     }
     /// Get a table from the catalog.
     fn get_table(&self, ident: &Identifier) -> CatalogResult<TableRef>;
@@ -49,6 +58,12 @@ pub trait Catalog: Sync + Send {
     /// Returns the catalog name.
     fn name(&self) -> String;
 
+    /// Create a function in the catalog.
+    fn create_function(&self, _ident: &Identifier, _function: FunctionRef) -> CatalogResult<()> {
+        Err(CatalogError::unsupported(
+            "create_function is not supported by this catalog".to_string(),
+        ))
+    }
     /// Create a namespace in the catalog, erroring if the namespace already exists.
     fn create_namespace(&self, ident: &Identifier) -> CatalogResult<()>;
     /// Create a table in the catalog, erroring if the table already exists.
@@ -60,9 +75,9 @@ pub trait Catalog: Sync + Send {
 
     /// Get a function from the catalog by identifier.
     /// The identifier's last part is the function name, and preceding parts form the namespace.
-    /// Returns None if the catalog does not support function lookup or the function does not exist.
-    fn get_function(&self, _ident: &Identifier) -> CatalogResult<Option<FunctionRef>> {
-        Ok(None)
+    /// Errors if the function does not exist.
+    fn get_function(&self, ident: &Identifier) -> CatalogResult<FunctionRef> {
+        Err(CatalogError::obj_not_found("function", ident))
     }
     /// Get a table from the catalog.
     fn get_table(&self, ident: &Identifier) -> CatalogResult<TableRef>;

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from daft.catalog import Catalog, Function, Identifier, Properties, PythonFunction, Table
+import pytest
+
+from daft.catalog import Catalog, Function, Identifier, InMemoryFunction, NotFoundError, Properties, Table
 from daft.dataframe import DataFrame
 from daft.logical.schema import DataType as dt
 from daft.logical.schema import Schema
@@ -248,13 +250,8 @@ class MockCatalogWithFunctions(Catalog):
     def __init__(self):
         self._functions = {}
 
-    def register_function(
-        self,
-        ident: Identifier,
-        module_name: str,
-        binding_name: str,
-    ):
-        self._functions[str(ident)] = PythonFunction(ident, module_name, binding_name)
+    def _create_function(self, ident, function):
+        self._functions[str(ident)] = function
 
     @property
     def name(self) -> str:
@@ -287,65 +284,48 @@ class MockCatalogWithFunctions(Catalog):
     def _has_table(self, ident):
         raise NotImplementedError
 
-    def _get_function(self, ident: Identifier) -> Function | None:
-        return self._functions.get(str(ident))
+    def _get_function(self, ident: Identifier) -> Function:
+        func = self._functions.get(str(ident))
+        if func is None:
+            raise NotFoundError(f"Function '{ident}' not found")
+        return func
 
 
-def test_catalog_get_function_default_returns_none():
-    """Test that the default _get_function returns None."""
+def test_catalog_get_function_default_raises():
+    """Test that the default _get_function raises NotFoundError."""
     catalog = MockCatalog()
-    assert catalog.get_function(Identifier("any_function")) is None
+    with pytest.raises(NotFoundError):
+        catalog.get_function(Identifier("any_function"))
 
 
 def test_catalog_get_function_with_override():
     """Test that a catalog with _get_function override returns the function."""
-    catalog = MockCatalogWithFunctions()
+    from tests.udf.my_funcs import catalog_udf
 
-    catalog.register_function(Identifier("my_func"), "tests.udf.my_funcs", "catalog_udf")
+    catalog = MockCatalogWithFunctions()
+    catalog.create_function(Identifier("my_func"), InMemoryFunction(Identifier("my_func"), catalog_udf))
 
     # found
     assert catalog.get_function(Identifier("my_func")) is not None
 
     # not found
-    assert catalog.get_function(Identifier("nonexistent")) is None
+    with pytest.raises(NotFoundError):
+        catalog.get_function(Identifier("nonexistent"))
 
 
-def test_catalog_get_function_from_pydict_returns_none():
-    """Test that the built-in from_pydict catalog returns None for get_function (default behavior)."""
+def test_catalog_get_function_from_pydict_raises():
+    """Test that the built-in from_pydict catalog raises NotFoundError for get_function (default behavior)."""
     catalog = Catalog.from_pydict({"t": {"x": [1, 2, 3]}})
-    assert catalog.get_function(Identifier("anything")) is None
+    with pytest.raises(NotFoundError):
+        catalog.get_function(Identifier("anything"))
 
 
-def test_catalog_get_function_module_not_found():
-    """Test that func call raises ImportError when the module does not exist."""
+def test_catalog_create_and_get_function():
+    """Test that create_function stores a function and get_function retrieves it."""
+    from tests.udf.my_funcs import double_value
+
     catalog = MockCatalogWithFunctions()
-    catalog.register_function(
-        Identifier("bad_module_fn"),
-        module_name="tests.udf.nonexistent_module",
-        binding_name="some_func",
-    )
+    catalog.create_function(Identifier("double_fn"), InMemoryFunction(Identifier("double_fn"), double_value))
 
-    func = catalog.get_function(Identifier("bad_module_fn"))
+    func = catalog.get_function(Identifier("double_fn"))
     assert func is not None
-
-    import pytest
-
-    with pytest.raises((ImportError, ModuleNotFoundError)):
-        func()
-
-
-def test_catalog_get_function_binding_not_found():
-    """Test that func call raises RuntimeError when the binding name does not exist in the module."""
-    catalog = MockCatalogWithFunctions()
-    catalog.register_function(
-        Identifier("bad_binding_fn"),
-        module_name="tests.udf.my_funcs",
-        binding_name="nonexistent_function_name",
-    )
-
-    func = catalog.get_function(Identifier("bad_binding_fn"))
-    assert func is not None
-    import pytest
-
-    with pytest.raises(RuntimeError):
-        func()

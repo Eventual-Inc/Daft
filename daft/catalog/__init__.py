@@ -47,6 +47,7 @@ from daft.daft import PyIdentifier
 
 from daft.dataframe import DataFrame
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, overload
 
 from daft.logical.schema import Schema
@@ -62,9 +63,9 @@ __all__ = [
     "Catalog",
     "Function",
     "Identifier",
+    "InMemoryFunction",
     "NotFoundError",
     "Properties",
-    "PythonFunction",
     "Schema",
     "Table",
 ]
@@ -99,6 +100,17 @@ class Catalog(ABC):
     def name(self) -> str:
         """Returns the catalog's name."""
 
+    def _create_function(self, ident: Identifier, function: Function) -> None:
+        """Register a function in the catalog.
+
+        Subclasses can override this to provide catalog-scoped function registration.
+
+        Args:
+            ident: the function identifier.
+            function: the function to register.
+        """
+        raise NotImplementedError
+
     @abstractmethod
     def _create_namespace(self, ident: Identifier) -> None:
         """Create a namespace in the catalog, erroring if the namespace already exists."""
@@ -121,20 +133,23 @@ class Catalog(ABC):
     def _drop_table(self, ident: Identifier) -> None:
         """Remove a table from the catalog, erroring if the table did not exist."""
 
-    def _get_function(self, ident: Identifier) -> Function | None:
+    def _get_function(self, ident: Identifier) -> Function:
         """Get a function from the catalog by identifier.
 
-        Returns the function object if found, or None if the catalog does not support
-        function lookup or the function does not exist. Subclasses can override this
-        to provide catalog-scoped function resolution.
+        Returns the function object if found, or raises NotFoundError if the function
+        does not exist. Subclasses can override this to provide catalog-scoped
+        function resolution.
 
         Args:
             ident: the function identifier to look up.
 
         Returns:
-            A Function instance if found, otherwise None.
+            A Function instance.
+
+        Raises:
+            NotFoundError: if the function does not exist.
         """
-        return None
+        raise NotFoundError(f"Function '{ident}' not found in catalog '{self.name}'")
 
     @abstractmethod
     def _get_table(self, ident: Identifier) -> Table:
@@ -464,6 +479,18 @@ class Catalog(ABC):
     # create_*
     ###
 
+    def create_function(self, identifier: Identifier | str, function: Function) -> None:
+        """Registers a function in this catalog.
+
+        Args:
+            identifier (Identifier | str): function identifier
+            function (Function): the function to register.
+        """
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        self._create_function(identifier, function)
+
     def create_namespace(self, identifier: Identifier | str) -> None:
         """Creates a namespace in this catalog.
 
@@ -568,15 +595,18 @@ class Catalog(ABC):
     # get_*
     ###
 
-    def get_function(self, identifier: Identifier | str) -> Function | None:
-        """Get a function from the catalog by identifier.
+    def get_function(self, identifier: Identifier | str) -> Function:
+        """Get a function from the catalog by identifier or raises if the function does not exist.
 
         Args:
             identifier (Identifier | str): function identifier, where the last part is the
                 function name and preceding parts form the namespace.
 
         Returns:
-            A Function instance if found, otherwise None.
+            A Function instance.
+
+        Raises:
+            NotFoundError: if the function does not exist.
         """
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
@@ -843,98 +873,54 @@ class Function(ABC):
         return str(self._identifier)
 
 
-class PythonFunction(Function):
-    """A Function backed by a Python callable located in a specific module.
+class InMemoryFunction(Function):
+    """A Function backed by a Python callable.
 
-    A PythonFunction holds a reference to a callable defined in a Python module,
-    described by ``module_name`` and ``binding_name`` attributes that locate the
-    underlying Python callable.
+    An InMemoryFunction holds a direct reference to a callable (typically a
+    ``@daft.func`` decorated function) and delegates ``__call__`` to it.
 
     Attributes:
         identifier (Identifier): The full catalog identifier for this function.
         name (str): The last part of the identifier (the function's local name).
         namespace (Identifier): The namespace portion of the identifier (all parts except the last).
-        module_name (str): The fully-qualified Python module that contains the function.
-        binding_name (str): The name under which the function is bound within the module.
+        udf (Callable): The underlying callable udf.
 
-    Examples:
-        >>> from daft.catalog import PythonFunction, Identifier
-        >>> fn = PythonFunction(Identifier("my_schema", "my_udf"), module_name="my_package.udf", binding_name="my_udf")
-        >>> fn.identifier
-        Identifier('my_schema.my_udf')
-        >>> fn.name
-        'my_udf'
-        >>> fn.namespace
-        Identifier('my_schema')
-        >>> fn.module_name
-        'my_package.udf'
-        >>> fn.binding_name
-        'my_udf'
-        >>> fn
-        PythonFunction(identifier=Identifier('my_schema.my_udf'), module_name='my_package.udf', binding_name='my_udf')
     """
 
-    def __init__(self, identifier: Identifier, module_name: str, binding_name: str) -> None:
-        """Creates a new PythonFunction.
+    def __init__(self, identifier: Identifier, udf: Callable[..., Any]) -> None:
+        """Creates a new InMemoryFunction.
 
         Args:
             identifier (Identifier): The full catalog identifier for this function.
-            module_name (str): The fully-qualified Python module that contains the function.
-            binding_name (str): The name under which the function is bound within the module.
+            udf (Callable[..., Any]): The underlying callable.
         """
         super().__init__(identifier)
-        if not isinstance(module_name, str):
-            raise TypeError(f"module_name must be a str, got {type(module_name).__name__!r}")
-        if not isinstance(binding_name, str):
-            raise TypeError(f"binding_name must be a str, got {type(binding_name).__name__!r}")
-        self._module_name = module_name
-        self._binding_name = binding_name
-
-    @property
-    def module_name(self) -> str:
-        """The fully-qualified Python module that contains the function."""
-        return self._module_name
-
-    @property
-    def binding_name(self) -> str:
-        """The name under which the function is bound within the module."""
-        return self._binding_name
+        if not callable(udf):
+            raise TypeError(f"udf must be callable, got {type(udf).__name__!r}")
+        self._udf = udf
 
     def __call__(self, *args: Any, **kwargs: Any) -> Expression:
-        """Import the user defined function from module and call it.
+        """Call the underlying function.
 
         Args:
             *args: Positional arguments passed to the underlying function.
             **kwargs: Keyword arguments passed to the underlying function.
 
         Returns:
-            Expression: a Daft Expression produced by the underlying @daft.func decorated function.
+            Expression: a Daft Expression produced by the underlying callable.
         """
-        module = __import__(self.module_name, fromlist=[self._binding_name])
-        py_func = getattr(module, self.binding_name, None)
-
-        if py_func is None:
-            raise RuntimeError(f"Could not resolve function {self._binding_name!r} from module {self._module_name!r}")
-        return py_func(*args, **kwargs)
+        return self._udf(*args, **kwargs)
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, PythonFunction):
+        if not isinstance(other, InMemoryFunction):
             return False
-        return (
-            self._identifier == other._identifier
-            and self._module_name == other._module_name
-            and self._binding_name == other._binding_name
-        )
+        return self._identifier == other._identifier and self._udf is other._udf
 
     def __hash__(self) -> int:
-        return hash((self._identifier, self._module_name, self._binding_name))
+        return hash((self._identifier, id(self._udf)))
 
     def __repr__(self) -> str:
-        return (
-            f"PythonFunction(identifier={self._identifier!r},"
-            f" module_name={self._module_name!r},"
-            f" binding_name={self._binding_name!r})"
-        )
+        return f"InMemoryFunction(identifier={self._identifier!r}, udf={self._udf!r})"
 
     def __str__(self) -> str:
         return str(self._identifier)

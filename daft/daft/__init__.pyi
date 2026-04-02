@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
     from daft.ai import Provider
-    from daft.catalog import Catalog, Table
+    from daft.catalog import Catalog, Function, Table
     from daft.expressions.visitor import ExpressionVisitor
     from daft.runners.runner import Runner
     from daft.subscribers import Subscriber
@@ -2485,6 +2485,7 @@ class SystemInfo:
 
 class PyCatalog:
     def name(self) -> str: ...
+    def create_function(self, ident: PyIdentifier, function: Function) -> None: ...
     def create_namespace(self, ident: PyIdentifier) -> None: ...
     def create_table(self, ident: PyIdentifier, schema: PySchema) -> Table: ...
     def drop_namespace(self, ident: PyIdentifier) -> None: ...

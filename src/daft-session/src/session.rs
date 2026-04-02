@@ -254,6 +254,7 @@ impl Session {
     ///   Rule 3: try to resolve as catalog-qualified (first part of the identifier).
     #[cfg(feature = "python")]
     pub fn get_function(&self, ident: &Identifier) -> CatalogResult<Option<ScalarFunction>> {
+        use daft_catalog::error::CatalogError;
         use daft_dsl::functions::python::WrappedUDFClass;
 
         // Rule 0: check session-scoped functions by the unqualified name.
@@ -280,16 +281,29 @@ impl Session {
             .expect("wrap Function failed")
         };
 
+        // Helper: try a catalog lookup, returning Ok(None) on not-found/unsupported errors.
+        let try_get = |catalog: &dyn daft_catalog::Catalog,
+                       ident: &daft_catalog::Identifier|
+         -> CatalogResult<Option<daft_catalog::FunctionRef>> {
+            match catalog.get_function(ident) {
+                Ok(func) => Ok(Some(func)),
+                Err(CatalogError::ObjectNotFound { .. } | CatalogError::Unsupported { .. }) => {
+                    Ok(None)
+                }
+                Err(e) => Err(e),
+            }
+        };
+
         // Rule 1: try to resolve using the current catalog and current namespace.
         if let Some(qualifier) = curr_namespace {
             let ident = ident.qualify(qualifier);
-            if let Some(py_func) = curr_catalog.get_function(&ident)? {
+            if let Some(py_func) = try_get(curr_catalog.as_ref(), &ident)? {
                 return Ok(Some(wrap(py_func)));
             }
         }
 
         // Rule 2: try to resolve as namespace-qualified using the current catalog.
-        if let Some(py_func) = curr_catalog.get_function(ident)? {
+        if let Some(py_func) = try_get(curr_catalog.as_ref(), ident)? {
             return Ok(Some(wrap(py_func)));
         }
 
@@ -298,7 +312,7 @@ impl Session {
             && let Ok(catalog) = self.get_catalog(ident.get(0))
         {
             let ident = ident.drop(1);
-            if let Some(py_func) = catalog.get_function(&ident)? {
+            if let Some(py_func) = try_get(catalog.as_ref(), &ident)? {
                 return Ok(Some(wrap(py_func)));
             }
         }
