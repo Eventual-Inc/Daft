@@ -13,20 +13,8 @@ daft-schema = {path = "../daft-schema", default-features = false}
 daft-writers = {path = "../daft-writers", default-features = false}
 futures = {workspace = true}
 itertools = {workspace = true}
-pyo3 = {workspace = true, optional = true}
 tokio = {workspace = true, features = ["fs", "io-util"]}
 tonic = {workspace = true}
-
-[features]
-python = [
-  "dep:pyo3",
-  "common-error/python",
-  "daft-io/python",
-  "daft-micropartition/python",
-  "daft-recordbatch/python",
-  "daft-schema/python",
-  "daft-writers/python"
-]
 
 [lints]
 workspace = true

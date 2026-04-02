@@ -39,6 +39,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::bound_col, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::lit, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::list_, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::coalesce, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::date_lit, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::time_lit, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::timestamp_lit, parent)?)?;

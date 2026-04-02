@@ -14,6 +14,9 @@ use daft_context::{DaftContext, Subscriber};
 use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
+use daft_shuffles::server::flight_server::{
+    FlightServerConnectionHandle, ShuffleFlightServer, start_server_loop,
+};
 use futures::{FutureExt, future::BoxFuture};
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
@@ -135,12 +138,13 @@ struct PlanState {
 )]
 pub struct PyNativeExecutor {
     executor: Arc<Mutex<NativeExecutor>>,
+    port: u16,
 }
 
 #[cfg(feature = "python")]
 impl Default for PyNativeExecutor {
     fn default() -> Self {
-        Self::new()
+        Self::new(false, "")
     }
 }
 
@@ -148,10 +152,17 @@ impl Default for PyNativeExecutor {
 #[pymethods]
 impl PyNativeExecutor {
     #[new]
-    pub fn new() -> Self {
+    pub fn new(is_flotilla_worker: bool, ip: &str) -> Self {
+        let executor = NativeExecutor::new(is_flotilla_worker, ip);
+        let port = executor.shuffle_port();
         Self {
-            executor: Arc::new(Mutex::new(NativeExecutor::new())),
+            executor: Arc::new(Mutex::new(executor)),
+            port,
         }
+    }
+
+    pub fn shuffle_port(&self) -> u16 {
+        self.port
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -329,15 +340,42 @@ async fn run_execution_loop(
 
 pub(crate) struct NativeExecutor {
     cancel: CancellationToken,
+    is_flotilla_worker: bool,
+    shuffle_server: Option<Arc<ShuffleFlightServer>>,
+    shuffle_server_connection: Option<FlightServerConnectionHandle>,
     plans: HashMap<u64, PlanState>,
 }
 
 impl NativeExecutor {
-    pub fn new() -> Self {
-        Self {
-            cancel: CancellationToken::new(),
-            plans: HashMap::new(),
+    pub fn new(is_flotilla_worker: bool, ip: &str) -> Self {
+        // Determine if we are running in a flotilla worker.
+        if is_flotilla_worker {
+            let shuffle_server = Arc::new(ShuffleFlightServer::new());
+            let shuffle_server_connection = Some(start_server_loop(ip, shuffle_server.clone()));
+
+            Self {
+                cancel: CancellationToken::new(),
+                is_flotilla_worker: true,
+                shuffle_server: Some(shuffle_server),
+                shuffle_server_connection,
+                plans: HashMap::new(),
+            }
+        } else {
+            Self {
+                cancel: CancellationToken::new(),
+                is_flotilla_worker: false,
+                shuffle_server: None,
+                shuffle_server_connection: None,
+                plans: HashMap::new(),
+            }
         }
+    }
+
+    pub fn shuffle_port(&self) -> u16 {
+        self.shuffle_server_connection
+            .as_ref()
+            .map(|conn| conn.port())
+            .unwrap_or(0)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -356,13 +394,22 @@ impl NativeExecutor {
         if !self.plans.contains_key(&fingerprint) {
             let cancel = self.cancel.clone();
             let additional_context = additional_context.unwrap_or_default();
-            let ctx = BuilderContext::new_with_context(query_id.clone(), additional_context);
+            let ctx = BuilderContext::new_with_context(
+                query_id.clone(),
+                additional_context,
+                self.shuffle_server.clone(),
+            );
             let (pipeline, input_senders) =
                 translate_physical_plan_to_pipeline(local_physical_plan, &exec_cfg, &ctx)?;
 
             let handle = get_global_runtime();
-            let stats_manager =
-                RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
+            let stats_manager = RuntimeStatsManager::try_new(
+                handle,
+                &pipeline,
+                subscribers,
+                query_id,
+                self.is_flotilla_worker,
+            )?;
             let stats_handle = stats_manager.handle();
 
             let (enqueue_input_tx, enqueue_input_rx) = create_channel::<EnqueueInputMessage>(1);
@@ -504,6 +551,9 @@ impl NativeExecutor {
 impl Drop for NativeExecutor {
     fn drop(&mut self) {
         self.cancel.cancel();
+        if let Some(conn) = &mut self.shuffle_server_connection {
+            let _ = conn.shutdown();
+        }
     }
 }
 

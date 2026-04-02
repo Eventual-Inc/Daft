@@ -1033,6 +1033,66 @@ impl RecordBatch {
             Expr::VLLM(..) => unreachable!(
                 "VLLM expressions should not be evaluated directly. This indicates a bug in the query optimizer."
             ),
+            Expr::Coalesce(inputs) => {
+                if inputs.is_empty() {
+                    return Err(DaftError::ValueError("COALESCE requires at least one argument".to_string()));
+                }
+
+                let mut result = self.eval_expression_async_with_metrics(
+                    BoundExpr::try_new(inputs[0].clone(), self.schema.as_ref())?,
+                    metrics,
+                ).await?;
+
+                if result.len() != self.len() && result.len() == 1 {
+                    result = result.broadcast(self.len())?;
+                }
+
+                // DataType::Null has null_count() == 0 despite all values being null
+                if result.null_count() == 0 && result.data_type() != &DataType::Null {
+                    if result.field().name != expected_field.name {
+                        result = result.rename(expected_field.name.as_ref());
+                    }
+                    if result.field().dtype != expected_field.dtype {
+                        result = result.cast(&expected_field.dtype)?;
+                    }
+                    return Ok(result);
+                }
+
+                for input in inputs.iter().skip(1) {
+                    let null_mask = result.is_null()?;
+                    let null_mask_bool = null_mask.bool()?;
+
+                    if null_mask_bool.false_count() == null_mask_bool.len() {
+                        break;
+                    }
+
+                    let filtered_batch = self.mask_filter(&null_mask)?;
+                    if filtered_batch.is_empty() {
+                        break;
+                    }
+
+                    let filtered_series = filtered_batch.eval_expression_async_with_metrics(
+                        BoundExpr::try_new(input.clone(), filtered_batch.schema.as_ref())?,
+                        metrics,
+                    ).await?;
+
+                    let full_fill = Self::scatter_with_mask(&filtered_series, null_mask_bool, result.len())?;
+                    result = result.fill_null(&full_fill)?;
+
+                    if result.null_count() == 0 && result.data_type() != &DataType::Null {
+                        break;
+                    }
+                }
+
+                if result.field().name != expected_field.name {
+                    result = result.rename(expected_field.name.as_ref());
+                }
+                if result.field().dtype != expected_field.dtype {
+                    result = result.cast(&expected_field.dtype)?;
+                }
+
+                Ok(result)
+            },
         }?;
 
         if expected_field.name != series.field().name {
@@ -1293,6 +1353,65 @@ impl RecordBatch {
             Expr::VLLM(..) => unreachable!(
                 "VLLM expressions should not be evaluated directly. This indicates a bug in the query optimizer."
             ),
+            Expr::Coalesce(inputs) => {
+                if inputs.is_empty() {
+                    return Err(DaftError::ValueError("COALESCE requires at least one argument".to_string()));
+                }
+                let mut result = self.eval_expression_internal(
+                    &BoundExpr::new_unchecked(inputs[0].clone()),
+                    metrics,
+                )?;
+
+                if result.len() != self.len() && result.len() == 1 {
+                    result = result.broadcast(self.len())?;
+                }
+
+                // DataType::Null has null_count() == 0 despite all values being null
+                if result.null_count() == 0 && result.data_type() != &DataType::Null {
+                    if result.field().name != expected_field.name {
+                        result = result.rename(expected_field.name.as_ref());
+                    }
+                    if result.field().dtype != expected_field.dtype {
+                        result = result.cast(&expected_field.dtype)?;
+                    }
+                    return Ok(result);
+                }
+
+                for input in inputs.iter().skip(1) {
+                    let null_mask = result.is_null()?;
+                    let null_mask_bool = null_mask.bool()?;
+
+                    if null_mask_bool.false_count() == null_mask_bool.len() {
+                        break;
+                    }
+
+                    let filtered_batch = self.mask_filter(&null_mask)?;
+                    if filtered_batch.is_empty() {
+                        break;
+                    }
+
+                    let filtered_series = filtered_batch.eval_expression_internal(
+                        &BoundExpr::try_new(input.clone(), filtered_batch.schema.as_ref())?,
+                        metrics,
+                    )?;
+
+                    let full_fill = Self::scatter_with_mask(&filtered_series, null_mask_bool, result.len())?;
+                    result = result.fill_null(&full_fill)?;
+
+                    if result.null_count() == 0 && result.data_type() != &DataType::Null {
+                        break;
+                    }
+                }
+
+                if result.field().name != expected_field.name {
+                    result = result.rename(expected_field.name.as_ref());
+                }
+                if result.field().dtype != expected_field.dtype {
+                    result = result.cast(&expected_field.dtype)?;
+                }
+
+                Ok(result)
+            },
         }?;
 
         if expected_field.name != series.field().name {
@@ -1450,6 +1569,36 @@ impl RecordBatch {
         };
 
         Self::new_with_broadcast(new_schema, result_series, num_rows)
+    }
+
+    /// Scatter `filtered_series` values back into a full-length series using a boolean mask.
+    /// Positions where mask is true get values from `filtered_series` (in order).
+    /// Positions where mask is false get null.
+    fn scatter_with_mask(
+        filtered_series: &Series,
+        mask: &BooleanArray,
+        total_len: usize,
+    ) -> DaftResult<Series> {
+        // If filtered_series is a broadcast value (length 1), return it directly.
+        // fill_null/if_else natively supports length-1 broadcasting.
+        if filtered_series.len() == 1 {
+            return Ok(filtered_series.clone());
+        }
+        let mut take_indices: Vec<Option<u64>> = Vec::with_capacity(total_len);
+        let mut j: u64 = 0;
+        for i in 0..total_len {
+            if mask.get(i) == Some(true) {
+                take_indices.push(Some(j));
+                j += 1;
+            } else {
+                take_indices.push(None);
+            }
+        }
+        let idx = UInt64Array::from_iter(
+            Field::new("__scatter_idx", DataType::UInt64),
+            take_indices.into_iter(),
+        );
+        filtered_series.take(&idx)
     }
 
     pub fn as_physical(&self) -> DaftResult<Self> {

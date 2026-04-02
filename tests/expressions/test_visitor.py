@@ -205,6 +205,14 @@ class TracingVisitor(PredicateVisitor[list[Trace]]):
         acc += [trace]
         return acc
 
+    def visit_coalesce(self, args: list[Expression]) -> list[Trace]:
+        trace = Trace("visit_coalesce", args)
+        acc = []
+        for arg in args:
+            acc += self.visit(arg)
+        acc += [trace]
+        return acc
+
 
 # tracing is stateless and therefore effectively just a function module, hence the singleton
 TRACING = TracingVisitor()
