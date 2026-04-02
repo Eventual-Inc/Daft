@@ -7,14 +7,13 @@ use common_metrics::{
 };
 use common_py_serde::PyObjectWrapper;
 use common_runtime::{JoinSet, python::execute_python_coroutine};
-use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, python::PyExpr};
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{
-    LogicalPlanBuilder, LogicalPlanRef, PyLogicalPlanBuilder, ops::KeyFilteringConfig,
-    stats::StatsState,
+use daft_dsl::{
+    ExprRef, expr::bound_expr::BoundExpr, functions::python::UDFProperties, python::PyExpr,
 };
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+use daft_logical_plan::{ops::KeyFilteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
-use futures::StreamExt;
+use futures::{StreamExt, TryStreamExt};
 use pyo3::{Py, PyAny, Python, types::PyAnyMethods};
 
 use crate::{
@@ -22,140 +21,104 @@ use crate::{
         DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
         TaskBuilderStream,
     },
-    plan::{PlanConfig, PlanExecutionContext},
-    scheduling::task::SwordfishTaskBuilder,
+    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    scheduling::{
+        scheduler::SchedulerHandle,
+        task::{SwordfishTask, SwordfishTaskBuilder},
+    },
     statistics::stats::{DefaultRuntimeStats, RuntimeStatsRef},
     utils::channel::{Sender, create_channel},
 };
 
-/// State machine for lazy key-filter actor initialization.
+/// Result of calling the Python ``create_key_filter`` coroutine.
 ///
-/// Mirrors the `UDFActors` pattern from `actor_udf.rs`:
-/// actors are NOT created during node construction —
-/// they are lazily initialized on the first partition and reused across all batches.
-enum KeyFilterActors {
-    /// Actors have not been created yet; holds the config and right plan for deferred initialization.
-    Uninitialized {
-        config: Box<KeyFilteringConfig>,
-        right_plan: LogicalPlanRef,
-    },
-    /// Actors are running and ready to filter.
-    Initialized {
-        /// The resolved filter predicate expression (an async-batch UDF that calls actors).
-        filter_predicate: BoundExpr,
-        /// Actor handles (Python list), kept alive for teardown.
-        actor_handles: PyObjectWrapper,
-        /// Placement group (Python object or None), kept alive for teardown.
-        placement_group: PyObjectWrapper,
-    },
-    /// No existing data found; all rows pass through (no filtering needed).
-    NoExistingData,
+/// Contains the ingest UDF expression (to append to right-side tasks),
+/// the filter UDF expression (to append to left-side tasks), and
+/// opaque Python handles that must be kept alive for teardown.
+struct KeyFilterResources {
+    /// UDF expression that ingests keys into the actors when evaluated.
+    ingest_expr: BoundExpr,
+    /// UDF properties for the ingest expression (needed for async UDF path).
+    ingest_udf_properties: UDFProperties,
+    /// UDF expression that filters rows against the actors when evaluated.
+    filter_expr: BoundExpr,
+    /// Actor handles (Python list), kept alive for teardown.
+    actor_handles: PyObjectWrapper,
+    /// Placement group (Python object), kept alive for teardown.
+    placement_group: PyObjectWrapper,
 }
 
-impl KeyFilterActors {
-    /// Initialize actors lazily by calling Python's
-    /// `daft.execution.key_filtering_join.bridge.initialize_key_filter`.
+impl KeyFilterResources {
+    /// Create Ray actors and build the ingest/filter UDF expressions.
     ///
-    /// Uses `execute_python_coroutine` so that the blocking Python code
-    /// (which internally calls `df.collect()` → Rust runtime) runs on the
-    /// asyncio event loop thread instead of a tokio worker thread, avoiding
-    /// "Cannot start a runtime from within a runtime" panics.
-    ///
-    /// Returns the new state.
-    async fn initialize(
+    /// Calls Python's ``create_key_filter(config)`` via ``execute_python_coroutine``.
+    /// The Python side only creates actors and builds expressions — no data loading.
+    async fn create(
         config: &KeyFilteringConfig,
-        right_plan: &LogicalPlanRef,
-        input_schema: &SchemaRef,
+        right_schema: &SchemaRef,
+        left_schema: &SchemaRef,
     ) -> DaftResult<Self> {
         let config_clone = config.clone();
-        let right_plan_clone = right_plan.clone();
-        let input_schema = input_schema.clone();
+        let right_schema = right_schema.clone();
+        let left_schema = left_schema.clone();
 
-        // Call the async Python `initialize_key_filter(config, right_builder)` coroutine.
-        // It internally delegates blocking work to `asyncio.to_thread` so
-        // the tokio runtime is never re-entered.
-        //
-        // Python returns a list: [] if no existing data, or
-        // [filter_expr, actor_handles, placement_group].
-        // Vec<Py<PyAny>> satisfies the FromPyObject trait bounds.
         let result: Vec<Py<PyAny>> = execute_python_coroutine::<_, Vec<Py<PyAny>>>(move |py| {
             let module = py.import(pyo3::intern!(
                 py,
                 "daft.execution.key_filtering_join.bridge"
             ))?;
             let py_config: daft_logical_plan::ops::PyKeyFilteringConfig = config_clone.into();
-            let py_right_builder: PyLogicalPlanBuilder =
-                LogicalPlanBuilder::from(right_plan_clone).into();
-            module.call_method1(
-                pyo3::intern!(py, "initialize_key_filter"),
-                (py_config, py_right_builder),
-            )
+            module.call_method1(pyo3::intern!(py, "create_key_filter"), (py_config,))
         })
         .await?;
 
-        // Extract the result components.
-        if result.is_empty() {
-            return Ok(Self::NoExistingData);
+        if result.len() != 4 {
+            return Err(DaftError::InternalError(format!(
+                "create_key_filter returned {} elements, expected 4",
+                result.len()
+            )));
         }
 
-        let extracted = Python::attach(|py| -> DaftResult<(ExprRef, Py<PyAny>, Py<PyAny>)> {
-            let py_expr: PyExpr = result[0].extract(py)?;
-            let actors = result[1].clone_ref(py);
-            let pg = result[2].clone_ref(py);
-            Ok((py_expr.expr, actors, pg))
-        })?;
+        let (ingest_ref, filter_ref, actors, pg) = Python::attach(
+            |py| -> DaftResult<(ExprRef, ExprRef, Py<PyAny>, Py<PyAny>)> {
+                let ingest_py_expr: PyExpr = result[0].extract(py)?;
+                let filter_py_expr: PyExpr = result[1].extract(py)?;
+                let actors = result[2].clone_ref(py);
+                let pg = result[3].clone_ref(py);
+                Ok((ingest_py_expr.expr, filter_py_expr.expr, actors, pg))
+            },
+        )?;
 
-        let (expr_ref, actors, pg) = extracted;
-        let bound = BoundExpr::try_new(expr_ref, &input_schema)?;
-        Ok(Self::Initialized {
-            filter_predicate: bound,
+        let ingest_expr = BoundExpr::try_new(ingest_ref.clone(), &right_schema)?;
+        let ingest_udf_properties = UDFProperties::from_expr(&ingest_ref)?;
+        let filter_expr = BoundExpr::try_new(filter_ref, &left_schema)?;
+
+        Ok(Self {
+            ingest_expr,
+            ingest_udf_properties,
+            filter_expr,
             actor_handles: PyObjectWrapper(Arc::new(actors)),
             placement_group: PyObjectWrapper(Arc::new(pg)),
         })
     }
 
-    /// Ensure actors are initialized. Returns the filter predicate (or None if no existing data).
-    async fn get_filter_predicate(
-        &mut self,
-        input_schema: &SchemaRef,
-    ) -> DaftResult<Option<BoundExpr>> {
-        if let Self::Uninitialized { config, right_plan } = self {
-            let new_state = Self::initialize(config, right_plan, input_schema).await?;
-            *self = new_state;
-        }
-        match self {
-            Self::Initialized {
-                filter_predicate, ..
-            } => Ok(Some(filter_predicate.clone())),
-            Self::NoExistingData => Ok(None),
-            Self::Uninitialized { .. } => unreachable!(),
-        }
-    }
-
     /// Teardown actors and cleanup placement group.
-    fn teardown(&mut self) {
+    fn teardown(&self) {
         Python::attach(|py| {
-            if let Self::Initialized {
-                actor_handles,
-                placement_group,
-                ..
-            } = self
+            let module = py.import(pyo3::intern!(
+                py,
+                "daft.execution.key_filtering_join.bridge"
+            ));
+            if let Ok(module) = module
+                && let Err(e) = module.call_method1(
+                    pyo3::intern!(py, "teardown_key_filter"),
+                    (
+                        self.actor_handles.0.as_ref().clone_ref(py),
+                        self.placement_group.0.as_ref().clone_ref(py),
+                    ),
+                )
             {
-                let module = py.import(pyo3::intern!(
-                    py,
-                    "daft.execution.key_filtering_join.bridge"
-                ));
-                if let Ok(module) = module
-                    && let Err(e) = module.call_method1(
-                        pyo3::intern!(py, "teardown_key_filter"),
-                        (
-                            actor_handles.0.as_ref().clone_ref(py),
-                            placement_group.0.as_ref().clone_ref(py),
-                        ),
-                    )
-                {
-                    tracing::error!("Error tearing down key filter actors: {:?}", e);
-                }
+                tracing::error!("Error tearing down key filter actors: {:?}", e);
             }
         });
     }
@@ -163,18 +126,21 @@ impl KeyFilterActors {
 
 /// Pipeline node for `JoinStrategy::KeyFiltering`.
 ///
-/// This is the physical execution node for actor-backed key-filtering anti-joins.
-/// Like `ActorUDF`, it lazily creates Ray actors when the first partition arrives,
-/// then filters each partition through the actors.
+/// Two-child node (like `BroadcastJoinNode`):
+/// - `right_child`: the key source; tasks get an ingest-UDF appended and are
+///   fully materialised through the scheduler before the left side starts.
+/// - `left_child`: the data to filter; each task gets a filter-UDF appended.
 ///
-/// Only has a single child (the left/input side of the anti-join).
-/// The right logical plan is materialized lazily in Python to build the actor-backed key set.
+/// This avoids the nested `df.collect()` problem of the old single-child
+/// design: both sides share the parent query's `query_idx` and are scheduled
+/// by the same scheduler, so there are no cross-process ID conflicts.
 pub(crate) struct KeyFilteringJoinNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    child: DistributedPipelineNode,
+    left_child: DistributedPipelineNode,
+    right_child: DistributedPipelineNode,
+    right_schema: SchemaRef,
     key_filtering_config: KeyFilteringConfig,
-    right_plan: LogicalPlanRef,
     filter_batch_size: Option<usize>,
 }
 
@@ -185,9 +151,9 @@ impl KeyFilteringJoinNode {
         node_id: NodeID,
         plan_config: &PlanConfig,
         key_filtering_config: KeyFilteringConfig,
-        right_plan: LogicalPlanRef,
         schema: SchemaRef,
-        child: DistributedPipelineNode,
+        left_child: DistributedPipelineNode,
+        right_child: DistributedPipelineNode,
     ) -> Self {
         let filter_batch_size = key_filtering_config.filter_batch_size;
         let context = PipelineNodeContext::new(
@@ -196,19 +162,21 @@ impl KeyFilteringJoinNode {
             node_id,
             Arc::from(Self::NODE_NAME),
             NodeType::KeyFilteringJoin,
-            NodeCategory::Intermediate,
+            NodeCategory::BlockingSink,
         );
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            child.config().clustering_spec.clone(),
+            left_child.config().clustering_spec.clone(),
         );
+        let right_schema = right_child.config().schema.clone();
         Self {
             config,
             context,
-            child,
+            left_child,
+            right_child,
+            right_schema,
             key_filtering_config,
-            right_plan,
             filter_batch_size,
         }
     }
@@ -219,25 +187,76 @@ impl KeyFilteringJoinNode {
 
     async fn execution_loop(
         self: Arc<Self>,
-        mut input_task_stream: TaskBuilderStream,
+        right_input: TaskBuilderStream,
+        mut left_input: TaskBuilderStream,
+        task_id_counter: TaskIDCounter,
         result_tx: Sender<SwordfishTaskBuilder>,
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
-        let mut actors = KeyFilterActors::Uninitialized {
-            config: Box::new(self.key_filtering_config.clone()),
-            right_plan: self.right_plan.clone(),
-        };
+        // Phase 1: Create Ray actors and build UDF expressions.
+        let resources = KeyFilterResources::create(
+            &self.key_filtering_config,
+            &self.right_schema,
+            &self.config.schema,
+        )
+        .await?;
 
+        // Phase 2: Materialise right-side (key source) with ingest UDF.
+        //
+        // Each right-side task gets the ingest UDF appended via udf_project
+        // so the async UDF can run without blocking the swordfish worker.
+        // Keys are hash-routed to actors on the workers — data never
+        // travels to head.
+        let ingest_expr = resources.ingest_expr.clone();
+        let ingest_udf_properties = resources.ingest_udf_properties.clone();
+        let node_id = self.node_id();
+        let keys_load_batch_size = self.key_filtering_config.keys_load_batch_size;
+        let ingest_output_schema: SchemaRef = Arc::new(daft_schema::schema::Schema::new(vec![
+            ingest_expr.inner().to_field(&self.right_schema)?,
+        ]));
+        let right_with_ingest = right_input.pipeline_instruction(
+            self.clone() as Arc<dyn PipelineNodeImpl>,
+            move |input| {
+                // Optionally batch the right side for ingest
+                let batched = if let Some(batch_size) = keys_load_batch_size {
+                    LocalPhysicalPlan::into_batches(
+                        input,
+                        batch_size,
+                        false,
+                        StatsState::NotMaterialized,
+                        LocalNodeContext::new(Some(node_id as usize)),
+                    )
+                } else {
+                    input
+                };
+                // Append ingest as a UDFProject so async UDFs are handled
+                // by the AsyncUdfSink path, not blocking the worker thread.
+                LocalPhysicalPlan::udf_project(
+                    batched,
+                    ingest_expr.clone(),
+                    ingest_udf_properties.clone(),
+                    vec![], // no passthrough columns — we discard the output
+                    ingest_output_schema.clone(),
+                    StatsState::NotMaterialized,
+                    LocalNodeContext::new(Some(node_id as usize)),
+                )
+            },
+        );
+
+        // Materialise all right-side tasks through the scheduler.
+        // We don't need the output data — only the side-effect of key ingestion.
+        right_with_ingest
+            .materialize(scheduler_handle, self.context.query_idx, task_id_counter)
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        // Phase 3: Stream left-side with filter UDF.
+        let filter_predicate = resources.filter_expr.clone();
         let mut running_tasks = JoinSet::new();
-        while let Some(builder) = input_task_stream.next().await {
-            let filter_predicate = actors.get_filter_predicate(&self.config.schema).await?;
 
-            let modified_builder = match filter_predicate {
-                Some(predicate) => self.append_key_filter_to_builder(builder, predicate),
-                None => {
-                    // No existing data — pass through without filtering
-                    builder
-                }
-            };
+        while let Some(builder) = left_input.next().await {
+            let modified_builder =
+                self.append_key_filter_to_builder(builder, filter_predicate.clone());
 
             let (builder_with_token, notify_token) = modified_builder.add_notify_token();
             running_tasks.spawn(notify_token);
@@ -245,7 +264,8 @@ impl KeyFilteringJoinNode {
                 break;
             }
         }
-        // Wait for all tasks to finish.
+
+        // Wait for all left-side tasks to finish.
         let mut first_error = None;
         while let Some(result) = running_tasks.join_next().await {
             match result? {
@@ -254,8 +274,10 @@ impl KeyFilteringJoinNode {
                 Err(_) => {}
             }
         }
-        // Only teardown actors after all tasks are finished.
-        actors.teardown();
+
+        // Teardown actors after all tasks are finished.
+        resources.teardown();
+
         if let Some(err) = first_error {
             return Err(DaftError::InternalError(format!(
                 "Sender of OneShot Channel dropped before sending task completion notification: {err}"
@@ -273,7 +295,6 @@ impl KeyFilteringJoinNode {
         let filter_batch_size = self.filter_batch_size;
 
         builder.map_plan(self.as_ref(), move |input| {
-            // Optionally wrap with IntoBatches if filter_batch_size is set
             let filter_input = if let Some(batch_size) = filter_batch_size {
                 LocalPhysicalPlan::into_batches(
                     input,
@@ -285,7 +306,6 @@ impl KeyFilteringJoinNode {
             } else {
                 input
             };
-            // Apply the filter predicate (async-batch UDF that calls key filter actors)
             LocalPhysicalPlan::filter(
                 filter_input,
                 filter_predicate.clone(),
@@ -306,7 +326,7 @@ impl PipelineNodeImpl for KeyFilteringJoinNode {
     }
 
     fn children(&self) -> Vec<DistributedPipelineNode> {
-        vec![self.child.clone()]
+        vec![self.right_child.clone(), self.left_child.clone()]
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
@@ -330,10 +350,17 @@ impl PipelineNodeImpl for KeyFilteringJoinNode {
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
-        let input_node = self.child.clone().produce_tasks(plan_context);
+        let right_input = self.right_child.clone().produce_tasks(plan_context);
+        let left_input = self.left_child.clone().produce_tasks(plan_context);
 
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(input_node, result_tx);
+        let execution_loop = self.execution_loop(
+            right_input,
+            left_input,
+            plan_context.task_id_counter(),
+            result_tx,
+            plan_context.scheduler_handle(),
+        );
         plan_context.spawn(execution_loop);
 
         TaskBuilderStream::from(result_rx)

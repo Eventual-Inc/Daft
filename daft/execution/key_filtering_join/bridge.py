@@ -1,6 +1,6 @@
 """Rust ↔ Python bridge for the key-filtering anti-join.
 
-Provides ``initialize_key_filter`` and ``teardown_key_filter`` —
+Provides ``create_key_filter_actors`` and ``teardown_key_filter`` —
 called from Rust's ``KeyFilteringJoinNode`` via ``execute_python_coroutine``.
 """
 
@@ -11,13 +11,13 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from daft import col
-from daft.logical.builder import LogicalPlanBuilder
 
 from .actors import (
     KeySpec,
     build_key_filter_predicate,
-    build_key_filter_resources,
+    build_key_ingest_expression,
     cleanup_key_filter_resources,
+    create_key_filter_actors,
 )
 
 if TYPE_CHECKING:
@@ -26,91 +26,90 @@ if TYPE_CHECKING:
 logger = logging.getLogger("daft.execution.key_filtering_join")
 
 
-def _initialize_key_filter_sync(
+def _create_actors_sync(
     config: KeyFilteringConfig,
-    right_builder: Any,
-) -> tuple[Any, list[Any], Any] | None:
-    """Synchronous core of key filter initialization.
+) -> tuple[Any, Any, list[Any], Any]:
+    """Synchronous core of actor creation.
 
-    Creates Ray actors, loads right-side join keys, and builds a filter predicate.
-    This is blocking (calls ``df.collect()`` internally) and MUST NOT be called
-    from a tokio worker thread.
+    Creates Ray actors + placement group and builds the ingest and filter
+    UDF expressions.  Does NOT load any keys — that happens when the
+    scheduler materialises the right-side pipeline with the ingest UDF
+    appended to each task.
+
+    The ingest expression references right-side columns but aliases them
+    to left-side names so that hash routing and set lookups are
+    consistent between ingest and filter.
     """
     left_key_columns = config.left_key_columns
     right_key_columns = config.right_key_columns
     num_workers = config.num_workers
     cpus_per_worker = config.cpus_per_worker
-    keys_load_batch_size = config.keys_load_batch_size
     max_concurrency_per_worker = config.max_concurrency_per_worker
 
     if num_workers is None:
         raise RuntimeError("[key_filtering_join] num_workers must be provided")
     if cpus_per_worker is None:
         raise RuntimeError("[key_filtering_join] cpus_per_worker must be provided")
-    if keys_load_batch_size is None:
-        raise RuntimeError("[key_filtering_join] keys_load_batch_size must be provided")
     if max_concurrency_per_worker is None:
         raise RuntimeError("[key_filtering_join] max_concurrency_per_worker must be provided")
 
+    # Use left key column names everywhere for consistent hashing/lookups.
     key_spec = KeySpec(left_key_columns)
     key_expr = key_spec.to_expr()
 
-    try:
-        from daft.dataframe.dataframe import DataFrame
-
-        right_df = DataFrame(LogicalPlanBuilder(right_builder))
-        # KeyFiltering currently requires the right side to be a replayable scan-backed plan.
-        # Actor initialization performs a nested collect during key ingestion, so an in-memory
-        # right DataFrame is not yet supported on this path.
-        # TODO: Plumb in-memory partition sets through the nested execution path if needed.
-        df_keys = right_df.select(
-            *[
-                col(right_name).alias(left_name) if left_name != right_name else col(right_name)
-                for left_name, right_name in zip(left_key_columns, right_key_columns)
-            ]
-        )
-    except Exception as e:
-        raise RuntimeError(f"[key_filtering_join] Unable to prepare right-side key plan: {e}") from e
-
-    actor_handles, placement_group = build_key_filter_resources(
-        df_keys=df_keys,
+    actor_handles, placement_group = create_key_filter_actors(
         key_spec=key_spec,
         num_workers=num_workers,
         cpus_per_worker=cpus_per_worker,
-        keys_load_batch_size=keys_load_batch_size,
         max_concurrency_per_worker=max_concurrency_per_worker,
     )
 
-    if not actor_handles:
-        return None
+    # Build the ingest expression.
+    # The ingest UDF input expression references right-side columns but
+    # aliases them to left-side names so the UDF sees left-compatible
+    # column names — matching both the hash routing and set lookups.
+    if key_spec.is_composite:
+        from daft.functions.struct import to_struct
 
-    key_filter_expr = build_key_filter_predicate(
+        ingest_key_expr = to_struct(
+            **{left_name: col(right_name) for left_name, right_name in zip(left_key_columns, right_key_columns)}
+        )
+    else:
+        left_name = left_key_columns[0]
+        right_name = right_key_columns[0]
+        ingest_key_expr = col(right_name).alias(left_name) if left_name != right_name else col(right_name)
+
+    ingest_expr = build_key_ingest_expression(
+        num_workers,
+        actor_handles,
+        key_spec,
+    )(ingest_key_expr)
+
+    # Build the filter expression — directly uses left-side column names.
+    filter_expr = build_key_filter_predicate(
         num_workers,
         actor_handles,
         key_spec,
     )(key_expr)
 
-    # Return the internal PyExpr (Expression._expr) for Rust to use directly
-    return (key_filter_expr._expr, actor_handles, placement_group)
+    # Return internal PyExpr objects for Rust to use directly
+    return (ingest_expr._expr, filter_expr._expr, actor_handles, placement_group)
 
 
-async def initialize_key_filter(
+async def create_key_filter(
     config: KeyFilteringConfig,
-    right_builder: Any,
 ) -> list[Any]:
-    """Async wrapper for key filter initialization.
+    """Async wrapper for actor creation.
 
-    Called from Rust via ``execute_python_coroutine``. Delegates the blocking
-    work (actor creation, key ingestion via ``df.collect()``) to a separate
-    thread via ``asyncio.to_thread`` so the tokio runtime is not re-entered.
+    Called from Rust via ``execute_python_coroutine``.  Delegates the
+    blocking work (placement group allocation, actor creation) to a
+    separate thread via ``asyncio.to_thread``.
 
     Returns:
-        Empty list if no existing data, or ``[filter_expr, actor_handles, placement_group]``.
-        We use a list (not tuple/None) so Rust can extract it as ``Vec<Py<PyAny>>``.
+        ``[ingest_expr, filter_expr, actor_handles, placement_group]``.
+        We use a list (not tuple) so Rust can extract it as ``Vec<Py<PyAny>>``.
     """
-    result = await asyncio.to_thread(_initialize_key_filter_sync, config, right_builder)
-    if result is None:
-        return []
+    result = await asyncio.to_thread(_create_actors_sync, config)
     return list(result)
 
 

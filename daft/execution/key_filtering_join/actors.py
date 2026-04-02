@@ -11,11 +11,10 @@ from __future__ import annotations
 import logging
 import os
 import warnings
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from daft.datatype import DataType
 from daft.expressions import col
-from daft.runners import get_or_create_runner
 from daft.series import Series
 from daft.udf import func
 
@@ -25,7 +24,6 @@ if TYPE_CHECKING:
     from ray.actor import ActorHandle
     from ray.util.placement_group import PlacementGroup
 
-    from daft import DataFrame
     from daft.dependencies import np
     from daft.expressions import Expression
 
@@ -185,78 +183,17 @@ def build_key_filter_predicate(
 
 
 # ---------------------------------------------------------------------------
-# Key ingestion UDF (loads right-side join keys into actors)
-# ---------------------------------------------------------------------------
-
-
-@func.batch(return_dtype=DataType.null())
-async def _ingest_keys_udf(
-    input: Series,
-    *,
-    actors_by_worker: dict[int, Any],
-    num_workers: int,
-    key_spec: KeySpec,
-) -> Series:
-    import asyncio
-
-    from daft.dependencies import pa
-
-    num_rows = len(input)
-    if num_rows == 0:
-        return Series.from_arrow(pa.nulls(0))
-
-    keys_np = key_spec.to_numpy(input)
-
-    futures = []
-    for worker_id, row_indices in _group_row_indices_by_worker(input, num_workers):
-        actor = actors_by_worker[worker_id]
-        subset = keys_np[row_indices].tolist()
-        futures.append(actor.add_keys.remote(subset))
-    del keys_np
-
-    if futures:
-        await asyncio.wait_for(asyncio.gather(*futures), timeout=ASYNC_AWAIT_TIMEOUT_SECONDS)
-
-    return Series.from_arrow(pa.nulls(num_rows))
-
-
-def _ingest_keys_to_actors(
-    df_keys: DataFrame,
-    key_spec: KeySpec,
-    *,
-    actors_by_worker: dict[int, Any],
-    num_workers: int,
-    keys_load_batch_size: int,
-) -> None:
-    key_expr = key_spec.to_expr()
-    expr = cast(
-        "Expression",
-        _ingest_keys_udf(
-            key_expr,
-            actors_by_worker=actors_by_worker,
-            num_workers=num_workers,
-            key_spec=key_spec,
-        ),
-    )
-    df_keys.into_batches(keys_load_batch_size).select(expr).collect()
-
-
-# ---------------------------------------------------------------------------
 # Resource management: build and cleanup
 # ---------------------------------------------------------------------------
 
 
-def build_key_filter_resources(
-    df_keys: DataFrame,
+def create_key_filter_actors(
     key_spec: KeySpec,
     num_workers: int,
     cpus_per_worker: float,
-    keys_load_batch_size: int,
     max_concurrency_per_worker: int,
-) -> tuple[list[ActorHandle], PlacementGroup | None]:
-    if get_or_create_runner().name != "ray":
-        raise RuntimeError("key_filtering_join is only supported on Ray runner")
-
+) -> tuple[list[ActorHandle], PlacementGroup]:
+    """Create Ray actors and placement group for key filtering (no key ingestion)."""
     key_columns = key_spec.key_columns
 
     logger.info(
@@ -286,7 +223,6 @@ def build_key_filter_resources(
         ) from timeout_err
 
     actor_handles: list[ActorHandle] = []
-    actors_by_worker: dict[int, ActorHandle] = {}
     try:
         for i in range(num_workers):
             actor = (
@@ -301,26 +237,53 @@ def build_key_filter_resources(
                 .remote(i)
             )
             actor_handles.append(actor)
-            actors_by_worker[i] = actor
-
-        try:
-            _ingest_keys_to_actors(
-                df_keys,
-                key_spec,
-                actors_by_worker=actors_by_worker,
-                num_workers=num_workers,
-                keys_load_batch_size=keys_load_batch_size,
-            )
-        except Exception as e:
-            raise RuntimeError(f"[key_filtering_join] Unable to read keys from right side: {e}") from e
-    except RuntimeError:
-        cleanup_key_filter_resources(actor_handles, pg)
-        raise
     except Exception as e:
         cleanup_key_filter_resources(actor_handles, pg)
         raise RuntimeError(f"[key_filtering_join] Failed to create all key filter actors: {e}") from e
 
     return actor_handles, pg
+
+
+def build_key_ingest_expression(
+    num_workers: int,
+    actor_handles: list[ActorHandle],
+    key_spec: KeySpec,
+) -> Callable[[Expression], Expression]:
+    """Build an expression that ingests keys into actors when evaluated.
+
+    Returns a callable that takes a key expression and returns a UDF expression
+    that, when executed on a worker, hash-routes rows to the correct actor
+    and calls ``actor.add_keys.remote()``.
+    """
+    actors_by_worker: dict[int, ActorHandle] = {i: actor_handles[i] for i in range(num_workers)}
+
+    @func.batch(return_dtype=DataType.null())
+    async def _ingest_keys(
+        input: Series,
+    ) -> Series:
+        import asyncio
+
+        from daft.dependencies import pa
+
+        num_rows = len(input)
+        if num_rows == 0:
+            return Series.from_arrow(pa.nulls(0))
+
+        keys_np = key_spec.to_numpy(input)
+
+        futures = []
+        for worker_id, row_indices in _group_row_indices_by_worker(input, num_workers):
+            actor = actors_by_worker[worker_id]
+            subset = keys_np[row_indices].tolist()
+            futures.append(actor.add_keys.remote(subset))
+        del keys_np
+
+        if futures:
+            await asyncio.wait_for(asyncio.gather(*futures), timeout=ASYNC_AWAIT_TIMEOUT_SECONDS)
+
+        return Series.from_arrow(pa.nulls(num_rows))
+
+    return _ingest_keys
 
 
 def cleanup_key_filter_resources(actor_handles: list[ActorHandle] | None, pg: PlacementGroup | None) -> None:

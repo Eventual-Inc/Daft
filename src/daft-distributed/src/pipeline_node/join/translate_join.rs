@@ -359,9 +359,9 @@ impl LogicalPlanToPipelineNodeTranslator {
                         self.get_next_pipeline_node_id(),
                         &self.plan_config,
                         key_filtering_config,
-                        join.right.clone(),
                         join.output_schema.clone(),
                         left_node,
+                        right_node,
                     )
                     .into_node(&self.meter))
                 }
