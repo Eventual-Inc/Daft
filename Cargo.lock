@@ -3105,7 +3105,6 @@ dependencies = [
  "async-recursion",
  "comfy-table",
  "common-arrow-ffi",
- "common-daft-config",
  "common-display",
  "common-error",
  "common-metrics",

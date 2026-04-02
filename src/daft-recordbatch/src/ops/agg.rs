@@ -1,4 +1,3 @@
-use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::{IntoGroups, IntoUniqueIdxs},
@@ -52,7 +51,7 @@ impl RecordBatch {
         }
 
         // Fast path: inline aggregation for supported agg types (count, sum).
-        if can_inline_agg(to_agg, self) && DaftExecutionConfig::from_env().enable_inline_agg {
+        if can_inline_agg(to_agg, self) {
             return self.agg_groupby_inline(to_agg, group_by);
         }
 

@@ -562,8 +562,11 @@ impl RecordBatch {
         let mut output_names: Vec<String> = Vec::with_capacity(to_agg.len());
 
         for agg_expr in to_agg {
-            let (acc, name) = try_create_accumulator(agg_expr, self)?
-                .expect("can_inline_agg check should prevent unsupported agg types");
+            let (acc, name) = try_create_accumulator(agg_expr, self)?.ok_or_else(|| {
+                common_error::DaftError::ComputeError(
+                    "Inline aggregation reached an unsupported type; this is a bug".into(),
+                )
+            })?;
             accumulators.push(acc);
             output_names.push(name);
         }
