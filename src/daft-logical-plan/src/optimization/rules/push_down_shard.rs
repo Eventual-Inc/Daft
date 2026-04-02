@@ -100,7 +100,9 @@ impl PushDownShard {
                                 .into();
                                 Ok(Transformed::yes(new_source))
                             }
-                            SourceInfo::PlaceHolder(..) => Ok(Transformed::no(plan)),
+                            SourceInfo::PlaceHolder(..) => {
+                                panic!("PlaceHolderInfo should not exist for optimization!");
+                            }
                         }
                     }
                     // Shards cannot be folded together.

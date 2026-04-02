@@ -234,7 +234,9 @@ impl PushDownFilter {
                             return Ok(Transformed::yes(new_source.into()));
                         }
                     }
-                    SourceInfo::PlaceHolder(..) => return Ok(Transformed::no(plan)),
+                    SourceInfo::PlaceHolder(..) => {
+                        panic!("PlaceHolderInfo should not exist for optimization!");
+                    }
                 }
             }
             LogicalPlan::Project(child_project) => {

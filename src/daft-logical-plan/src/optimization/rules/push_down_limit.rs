@@ -142,7 +142,9 @@ impl PushDownLimit {
                                     };
                                 Ok(Transformed::yes(out_plan))
                             }
-                            SourceInfo::PlaceHolder(..) => Ok(Transformed::no(plan)),
+                            SourceInfo::PlaceHolder(..) => {
+                                panic!("PlaceHolderInfo should not exist for optimization!");
+                            }
                         }
                     }
                     // Fold Limit together.

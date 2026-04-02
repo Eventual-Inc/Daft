@@ -427,7 +427,7 @@ impl LogicalPlan {
     // useful if stats become stale during query planning.
     pub fn with_materialized_stats(self, cfg: &DaftExecutionConfig) -> Self {
         match self {
-            Self::Source(source) => Self::Source(source.with_materialized_stats(cfg)),
+            Self::Source(plan) => Self::Source(plan.with_materialized_stats(cfg)),
             Self::Shard(plan) => Self::Shard(plan.with_materialized_stats()),
             Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
             Self::UDFProject(plan) => Self::UDFProject(plan.with_materialized_stats()),
@@ -1150,19 +1150,6 @@ macro_rules! impl_from_data_struct_for_logical_plan {
         impl From<$name> for Arc<LogicalPlan> {
             fn from(data: $name) -> Self {
                 Self::new(LogicalPlan::$name(data))
-            }
-        }
-    };
-    ($name:ident, $ctor:expr) => {
-        impl From<$name> for LogicalPlan {
-            fn from(data: $name) -> Self {
-                ($ctor)(data)
-            }
-        }
-
-        impl From<$name> for Arc<LogicalPlan> {
-            fn from(data: $name) -> Self {
-                Self::new(($ctor)(data))
             }
         }
     };

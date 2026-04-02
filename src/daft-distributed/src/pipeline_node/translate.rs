@@ -164,29 +164,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         )?),
                         &self.meter,
                     ),
-                    SourceInfo::PlaceHolder(info) => {
-                        // PlaceHolder sources are logical no-data sentinels. We create a dummy
-                        // InMemorySourceNode here so tree translation can keep its stack discipline.
-                        let dummy_info = daft_logical_plan::InMemoryInfo::new(
-                            info.source_schema.clone(),
-                            "__placeholder__".to_string(),
-                            None,
-                            0,
-                            0,
-                            0,
-                            None,
-                            None,
-                        );
-                        DistributedPipelineNode::new(
-                            Arc::new(InMemorySourceNode::new(
-                                self.get_next_pipeline_node_id(),
-                                &self.plan_config,
-                                dummy_info,
-                                self.psets.clone(),
-                            )),
-                            &self.meter,
-                        )
-                    }
+                    SourceInfo::PlaceHolder(_) => unreachable!(
+                        "PlaceHolder should not be present in the logical plan for pipeline node translation"
+                    ),
                 }
             }
             LogicalPlan::UDFProject(udf) if udf.is_actor_pool_udf() => {
