@@ -24,7 +24,7 @@ jobs:
       python-version: "3.10"
     steps:
     - name: Free Disk Space
-      uses: jlumbroso/free-disk-space@main
+      uses: jlumbroso/free-disk-space@v1.3.1
       with:
         tool-cache: false
         android: true
@@ -64,7 +64,7 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install dependencies
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 10
         max_attempts: 3

@@ -148,6 +148,23 @@ def test_explain_with_cross_join(small_df, large_df):
         assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
 
 
+@pytest.mark.parametrize(
+    "write_fn,kwargs",
+    [
+        ("write_csv", {"write_mode": "overwrite"}),
+        ("write_parquet", {"write_mode": "overwrite"}),
+        ("write_json", {"write_mode": "overwrite"}),
+    ],
+)
+def test_explain_after_write_preserves_upstream_plan(tmp_path, write_fn, kwargs):
+    output_path = str(tmp_path / "written")
+    write_df = getattr(daft.from_pydict({"a": [1, 2, 3]}).filter(col("a") > 1), write_fn)(output_path, **kwargs)
+    explain_text = explain_to_text(write_df)
+    assert "Result is cached and will skip computation" in explain_text
+    assert "However here is the logical plan used to produce this result" in explain_text
+    assert "Filter:" in explain_text
+
+
 def test_explain_with_hash_join(small_df, large_df):
     runner_type = get_or_infer_runner_type()
     if runner_type == "native":

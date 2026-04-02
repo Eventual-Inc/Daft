@@ -10,7 +10,19 @@ use crate::{Catalog, Identifier, Table, TableRef, error::CatalogResult};
 
 /// Newtype to implement the Catalog trait for a Python catalog
 #[cfg_attr(debug_assertions, derive(Debug))]
-pub struct PyCatalogWrapper(pub(super) Py<PyAny>);
+pub struct PyCatalogWrapper(Py<PyAny>);
+
+impl From<Bound<'_, PyAny>> for PyCatalogWrapper {
+    fn from(obj: Bound<'_, PyAny>) -> Self {
+        Self(obj.unbind())
+    }
+}
+
+impl PyCatalogWrapper {
+    pub fn arced(self) -> Arc<Self> {
+        Arc::new(self)
+    }
+}
 
 impl Catalog for PyCatalogWrapper {
     fn name(&self) -> String {
@@ -141,7 +153,19 @@ impl Catalog for PyCatalogWrapper {
 
 /// Newtype to implement the Table trait for a Python table
 #[cfg_attr(debug_assertions, derive(Debug))]
-pub struct PyTableWrapper(pub(super) Py<PyAny>);
+pub struct PyTableWrapper(Py<PyAny>);
+
+impl From<Bound<'_, PyAny>> for PyTableWrapper {
+    fn from(obj: Bound<'_, PyAny>) -> Self {
+        Self(obj.unbind())
+    }
+}
+
+impl PyTableWrapper {
+    pub fn arced(self) -> Arc<Self> {
+        Arc::new(self)
+    }
+}
 
 impl Table for PyTableWrapper {
     fn name(&self) -> String {

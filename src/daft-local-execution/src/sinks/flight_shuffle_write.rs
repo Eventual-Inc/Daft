@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    sync::{Arc, Mutex},
+};
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
@@ -10,7 +13,7 @@ use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_shuffles::{
-    server::flight_server::register_shuffle_cache, shuffle_cache::InProgressShuffleCache,
+    server::flight_server::ShuffleFlightServer, shuffle_cache::InProgressShuffleCache,
 };
 use tracing::{Span, instrument};
 
@@ -31,8 +34,10 @@ pub struct FlightShuffleWriteSink {
     shuffle_dirs: Vec<String>,
     compression: Option<String>,
     target_in_memory_size_per_partition: usize,
-    // Only accessed from the single-threaded event loop; Mutex is just for Sync.
-    caches: std::sync::Mutex<HashMap<InputId, Arc<InProgressShuffleCache>>>,
+    local_server: Arc<ShuffleFlightServer>,
+    // We want num_compute_thread many instances of this operator, but only 1 instance of cache per task / input_id
+    // To work around this, we save and reuse caches as states per input_id
+    caches: Mutex<HashMap<InputId, Arc<InProgressShuffleCache>>>,
 }
 
 impl FlightShuffleWriteSink {
@@ -42,9 +47,9 @@ impl FlightShuffleWriteSink {
         shuffle_id: u64,
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
-        _cache_id: String,
+        local_server: Arc<ShuffleFlightServer>,
     ) -> DaftResult<Self> {
-        const TARGET_TOTAL_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 2000;
+        const TARGET_TOTAL_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 1024 * 2; // 2GB
         Ok(Self {
             num_partitions,
             shuffle_id,
@@ -54,7 +59,8 @@ impl FlightShuffleWriteSink {
             target_in_memory_size_per_partition: (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES
                 / num_partitions)
                 .clamp(1024 * 1024 * 8, 1024 * 1024 * 128),
-            caches: std::sync::Mutex::new(HashMap::new()),
+            local_server,
+            caches: Mutex::new(HashMap::new()),
         })
     }
 }
@@ -102,6 +108,8 @@ impl BlockingSink for FlightShuffleWriteSink {
     ) -> BlockingSinkFinalizeResult {
         let num_partitions = self.num_partitions;
         let shuffle_id = self.shuffle_id;
+        let local_server = self.local_server.clone();
+
         spawner
             .spawn(
                 async move {
@@ -110,7 +118,9 @@ impl BlockingSink for FlightShuffleWriteSink {
                     let finalized = cache.close().await?;
                     let all_rows = finalized.rows_per_partition();
                     let all_bytes = finalized.bytes_per_partition();
-                    register_shuffle_cache(shuffle_id, finalized.into()).await?;
+                    local_server
+                        .register_shuffle_cache(shuffle_id, finalized.into())
+                        .await?;
                     let rows_series = Int32Array::from_values(
                         "rows_per_partition",
                         all_rows.iter().map(|&i| i as i32),
@@ -157,8 +167,8 @@ impl BlockingSink for FlightShuffleWriteSink {
     fn make_state(&self, input_id: InputId) -> DaftResult<Self::State> {
         let mut caches = self.caches.lock().unwrap();
         let cache = match caches.entry(input_id) {
-            std::collections::hash_map::Entry::Occupied(e) => e.get().clone(),
-            std::collections::hash_map::Entry::Vacant(e) => {
+            Entry::Occupied(e) => e.get().clone(),
+            Entry::Vacant(e) => {
                 let c = Arc::new(InProgressShuffleCache::try_new(
                     self.num_partitions,
                     &self.shuffle_dirs,

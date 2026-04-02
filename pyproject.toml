@@ -96,6 +96,7 @@ dev = [
   "Pillow==12.1.1",
   "reportlab==4.4.10",
   "opencv-python==4.10.0.84",
+  "imagehash==4.3.1",
   "tiktoken==0.12.0",
   "duckdb==1.4.4",
   "datasets==4.5.0",
@@ -279,6 +280,12 @@ filterwarnings = [
   "ignore:invalid value encountered in arctanh:RuntimeWarning",
   "ignore:invalid value encountered in arccosh:RuntimeWarning"
 ]
+
+[tool.uv]
+# Supply-chain hardening: prevent uv from resolving any package version
+# published in the last 7 days. This gives the community time to detect
+# and yank malicious releases before they land in our lockfile.
+exclude-newer = "7 days"
 
 [tool.uv.sources.daft_dashboard]
 workspace = true

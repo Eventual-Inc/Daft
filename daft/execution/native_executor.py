@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 class NativeExecutor:
     def __init__(self) -> None:
-        self._executor = _NativeExecutor()
+        self._executor = _NativeExecutor(False, "")
 
     def run(
         self,
