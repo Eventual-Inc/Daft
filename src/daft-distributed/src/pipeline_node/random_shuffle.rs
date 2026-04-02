@@ -5,30 +5,26 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
+use common_partitioning::PartitionRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_functions::random::random_int_expr;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{
-    partitioning::{RandomShuffleConfig, RepartitionSpec},
-    stats::StatsState,
-};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, RepartitionWriteBackend};
+use daft_logical_plan::{partitioning::RandomShuffleConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
+use futures::TryStreamExt;
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext,
+        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,
+        shuffles::partition_groups::ray_partition_groups_from_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
-    utils::{
-        channel::{Sender, create_channel},
-        transpose::transpose_materialized_outputs_from_stream,
-    },
+    utils::channel::{Sender, create_channel},
 };
 
 pub(crate) struct RandomShuffleNode {
@@ -72,13 +68,19 @@ impl RandomShuffleNode {
 
     fn local_sort_with_random_key(
         &self,
-        partition_group: Vec<MaterializedOutput>,
+        partition_group: Vec<PartitionRef>,
         partition_idx: usize,
     ) -> DaftResult<SwordfishTaskBuilder> {
-        let (in_memory_scan, psets) = MaterializedOutput::into_in_memory_scan_with_psets(
-            partition_group,
-            self.config.schema.clone(),
+        let total_size_bytes = partition_group
+            .iter()
+            .map(|partition| partition.size_bytes())
+            .sum();
+        let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
             self.node_id(),
+            self.config.schema.clone(),
+            total_size_bytes,
+            StatsState::NotMaterialized,
+            LocalNodeContext::new(Some(self.node_id() as usize)),
         );
 
         let partition_seed = self.seed.map(|s| {
@@ -100,7 +102,8 @@ impl RandomShuffleNode {
             StatsState::NotMaterialized,
             LocalNodeContext::new(Some(self.node_id() as usize)),
         );
-        Ok(SwordfishTaskBuilder::new(plan, self, self.node_id()).with_psets(self.node_id(), psets))
+        Ok(SwordfishTaskBuilder::new(plan, self, self.node_id())
+            .with_psets(self.node_id(), partition_group))
     }
 
     async fn execution_loop(
@@ -111,16 +114,17 @@ impl RandomShuffleNode {
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         let num_partitions = self.child.config().clustering_spec.num_partitions();
-        let materialized_stream = input_node.materialize(
-            scheduler_handle.clone(),
-            self.context.query_idx,
-            task_id_counter.clone(),
-        );
+        let outputs = input_node
+            .task_outputs(
+                scheduler_handle.clone(),
+                self.context.query_idx,
+                task_id_counter.clone(),
+            )
+            .try_collect::<Vec<_>>()
+            .await?;
+        let partition_groups = ray_partition_groups_from_outputs(outputs, num_partitions)?;
 
-        let transposed_outputs =
-            transpose_materialized_outputs_from_stream(materialized_stream, num_partitions).await?;
-
-        for (partition_idx, partition_group) in transposed_outputs.into_iter().enumerate() {
+        for (partition_idx, partition_group) in partition_groups.into_iter().enumerate() {
             let task = self.local_sort_with_random_key(partition_group, partition_idx)?;
             let _ = result_tx.send(task).await;
         }
@@ -161,14 +165,14 @@ impl PipelineNodeImpl for RandomShuffleNode {
         let seed = self.seed;
 
         let partitioned_input = input_node.pipeline_instruction(self.clone(), move |input| {
-            LocalPhysicalPlan::repartition(
+            LocalPhysicalPlan::repartition_write(
                 input,
-                RepartitionSpec::Random(RandomShuffleConfig::new_with_seed(
-                    Some(num_partitions),
-                    seed,
-                )),
                 num_partitions,
                 schema.clone(),
+                RepartitionWriteBackend::Ray,
+                daft_logical_plan::partitioning::RepartitionSpec::Random(
+                    RandomShuffleConfig::new_with_seed(Some(num_partitions), seed),
+                ),
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(node_id as usize)),
             )
