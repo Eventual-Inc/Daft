@@ -47,20 +47,6 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
             return Ok(());
         }
 
-        // Track started operators
-        if let TaskEvent::Submitted {
-            context: task_ctx, ..
-        } = event
-        {
-            let mut started = self.started_operators.lock().unwrap();
-            for node_id in &task_ctx.node_ids {
-                let node_id = *node_id as usize;
-                if !started.contains(&node_id) {
-                    started.insert(node_id);
-                }
-            }
-        }
-
         // Initialize dashboard subscriber if needed
         let context = get_context();
         let should_initialize = {
@@ -88,20 +74,15 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
             TaskEvent::Submitted {
                 context: task_ctx, ..
             } => {
-                // Notify about newly started operators
-                let node_ids_to_notify = {
-                    let started = self.started_operators.lock().unwrap();
-                    task_ctx
-                        .node_ids
-                        .iter()
-                        .map(|id| *id as usize)
-                        .filter(|id| started.contains(id))
-                        .collect::<Vec<_>>()
-                };
+                // Notify about newly started operators, avoiding duplicate notifications
+                let mut started = self.started_operators.lock().unwrap();
 
-                for node_id in node_ids_to_notify {
-                    if let Err(e) =
-                        context.notify_exec_operator_start(self.query_id.clone(), node_id)
+                for node_id in &task_ctx.node_ids {
+                    let node_id = *node_id as usize;
+                    if started.insert(node_id)
+                        // if insert returned false, short-circuit will skip notify
+                        && let Err(e) =
+                            context.notify_exec_operator_start(self.query_id.clone(), node_id)
                     {
                         tracing::error!("Failed to notify exec operator start: {}", e);
                     }
