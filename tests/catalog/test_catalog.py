@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from daft.catalog import Catalog, Function, Identifier, Properties, Table
+from daft.catalog import Catalog, Function, Identifier, Properties, PythonFunction, Table
 from daft.dataframe import DataFrame
 from daft.logical.schema import DataType as dt
 from daft.logical.schema import Schema
@@ -254,7 +254,7 @@ class MockCatalogWithFunctions(Catalog):
         module_name: str,
         binding_name: str,
     ):
-        self._functions[str(ident)] = Function(ident, module_name, binding_name)
+        self._functions[str(ident)] = PythonFunction(ident, module_name, binding_name)
 
     @property
     def name(self) -> str:

@@ -52,6 +52,7 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
+    from daft.expressions import Expression
     from daft.utils import ColumnInputType
     from daft.convert import InputListType
     from daft.io.partitioning import PartitionField
@@ -63,6 +64,7 @@ __all__ = [
     "Identifier",
     "NotFoundError",
     "Properties",
+    "PythonFunction",
     "Schema",
     "Table",
 ]
@@ -775,54 +777,29 @@ class Identifier(Sequence[str]):
         return ".".join(self)
 
 
-class Function:
-    """Represents a registered function in a catalog, identified by an Identifier and its module binding.
+class Function(ABC):
+    """A registered function in a catalog, identified by an Identifier.
 
-    A Function holds a reference to a callable defined in a Python module,
-    described by an ``Identifier`` for catalog addressing, plus ``module_name`` and ``binding_name``
-    attributes that locate the underlying Python callable.
+    A Function can be called with arguments to produce a Daft Expression.
+    Subclasses implement the specific mechanism for resolving and invoking
+    the underlying callable.
 
     Attributes:
         identifier (Identifier): The full catalog identifier for this function.
         name (str): The last part of the identifier (the function's local name).
         namespace (Identifier): The namespace portion of the identifier (all parts except the last).
-        module_name (str): The fully-qualified Python module that contains the function.
-        binding_name (str): The name under which the function is bound within the module.
 
-    Examples:
-        >>> from daft.catalog import Function, Identifier
-        >>> fn = Function(Identifier("my_schema", "my_udf"), module_name="my_package.udf", binding_name="my_udf")
-        >>> fn.identifier
-        Identifier('my_schema.my_udf')
-        >>> fn.name
-        'my_udf'
-        >>> fn.namespace
-        Identifier('my_schema')
-        >>> fn.module_name
-        'my_package.udf'
-        >>> fn.binding_name
-        'my_udf'
-        >>> fn
-        Function(identifier=Identifier('my_schema.my_udf'), module_name='my_package.udf', binding_name='my_udf')
     """
 
-    def __init__(self, identifier: Identifier, module_name: str, binding_name: str) -> None:
+    def __init__(self, identifier: Identifier) -> None:
         """Creates a new Function.
 
         Args:
             identifier (Identifier): The full catalog identifier for this function.
-            module_name (str): The fully-qualified Python module that contains the function.
-            binding_name (str): The name under which the function is bound within the module.
         """
         if not isinstance(identifier, Identifier):
             raise TypeError(f"identifier must be an Identifier, got {type(identifier).__name__!r}")
-        if not isinstance(module_name, str):
-            raise TypeError(f"module_name must be a str, got {type(module_name).__name__!r}")
-        if not isinstance(binding_name, str):
-            raise TypeError(f"binding_name must be a str, got {type(binding_name).__name__!r}")
         self._identifier = identifier
-        self._module_name = module_name
-        self._binding_name = binding_name
 
     @property
     def identifier(self) -> Identifier:
@@ -839,6 +816,80 @@ class Function:
         """The namespace portion of the identifier (all parts except the last)."""
         return self._identifier.drop(1)
 
+    @abstractmethod
+    def __call__(self, *args: Any, **kwargs: Any) -> Expression:
+        """Call the function with the given arguments.
+
+        Args:
+            *args: Positional arguments passed to the underlying function.
+            **kwargs: Keyword arguments passed to the underlying function.
+
+        Returns:
+            Expression: a Daft Expression produced by the function.
+        """
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Function):
+            return False
+        return self._identifier == other._identifier
+
+    def __hash__(self) -> int:
+        return hash(self._identifier)
+
+    def __repr__(self) -> str:
+        return f"Function(identifier={self._identifier!r})"
+
+    def __str__(self) -> str:
+        return str(self._identifier)
+
+
+class PythonFunction(Function):
+    """A Function backed by a Python callable located in a specific module.
+
+    A PythonFunction holds a reference to a callable defined in a Python module,
+    described by ``module_name`` and ``binding_name`` attributes that locate the
+    underlying Python callable.
+
+    Attributes:
+        identifier (Identifier): The full catalog identifier for this function.
+        name (str): The last part of the identifier (the function's local name).
+        namespace (Identifier): The namespace portion of the identifier (all parts except the last).
+        module_name (str): The fully-qualified Python module that contains the function.
+        binding_name (str): The name under which the function is bound within the module.
+
+    Examples:
+        >>> from daft.catalog import PythonFunction, Identifier
+        >>> fn = PythonFunction(Identifier("my_schema", "my_udf"), module_name="my_package.udf", binding_name="my_udf")
+        >>> fn.identifier
+        Identifier('my_schema.my_udf')
+        >>> fn.name
+        'my_udf'
+        >>> fn.namespace
+        Identifier('my_schema')
+        >>> fn.module_name
+        'my_package.udf'
+        >>> fn.binding_name
+        'my_udf'
+        >>> fn
+        PythonFunction(identifier=Identifier('my_schema.my_udf'), module_name='my_package.udf', binding_name='my_udf')
+    """
+
+    def __init__(self, identifier: Identifier, module_name: str, binding_name: str) -> None:
+        """Creates a new PythonFunction.
+
+        Args:
+            identifier (Identifier): The full catalog identifier for this function.
+            module_name (str): The fully-qualified Python module that contains the function.
+            binding_name (str): The name under which the function is bound within the module.
+        """
+        super().__init__(identifier)
+        if not isinstance(module_name, str):
+            raise TypeError(f"module_name must be a str, got {type(module_name).__name__!r}")
+        if not isinstance(binding_name, str):
+            raise TypeError(f"binding_name must be a str, got {type(binding_name).__name__!r}")
+        self._module_name = module_name
+        self._binding_name = binding_name
+
     @property
     def module_name(self) -> str:
         """The fully-qualified Python module that contains the function."""
@@ -849,15 +900,15 @@ class Function:
         """The name under which the function is bound within the module."""
         return self._binding_name
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+    def __call__(self, *args: Any, **kwargs: Any) -> Expression:
         """Import the user defined function from module and call it.
 
         Args:
-            *args.
-            **kwargs.
+            *args: Positional arguments passed to the underlying function.
+            **kwargs: Keyword arguments passed to the underlying function.
 
         Returns:
-            Any:  execution result of the user defined function
+            Expression: a Daft Expression produced by the underlying @daft.func decorated function.
         """
         module = __import__(self.module_name, fromlist=[self._binding_name])
         py_func = getattr(module, self.binding_name, None)
@@ -867,7 +918,7 @@ class Function:
         return py_func(*args, **kwargs)
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Function):
+        if not isinstance(other, PythonFunction):
             return False
         return (
             self._identifier == other._identifier
@@ -880,7 +931,7 @@ class Function:
 
     def __repr__(self) -> str:
         return (
-            f"Function(identifier={self._identifier!r},"
+            f"PythonFunction(identifier={self._identifier!r},"
             f" module_name={self._module_name!r},"
             f" binding_name={self._binding_name!r})"
         )

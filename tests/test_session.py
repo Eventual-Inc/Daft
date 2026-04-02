@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import daft
-from daft.catalog import Catalog, Function, Identifier, NotFoundError, Table
+from daft.catalog import Catalog, Identifier, NotFoundError, PythonFunction, Table
 from daft.session import Session
 
 ###
@@ -359,7 +359,7 @@ class _FunctionCatalog(Catalog):
         module_name: str,
         binding_name: str,
     ):
-        self._functions[str(ident)] = Function(ident, module_name, binding_name)
+        self._functions[str(ident)] = PythonFunction(ident, module_name, binding_name)
 
     @property
     def name(self):
