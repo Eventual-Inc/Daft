@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 fn get_shuffle_dirs(shuffle_dirs: &[String], cache_id: String, shuffle_id: u64) -> Vec<String> {
     shuffle_dirs
         .iter()
-        .map(|dir| format!("{}/daft_shuffle/{}/{}", dir, cache_id, shuffle_id))
+        .map(|dir| format!("{}/daft_shuffle/{}/{}", dir, shuffle_id, cache_id))
         .collect()
 }
 
