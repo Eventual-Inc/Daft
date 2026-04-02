@@ -94,6 +94,8 @@ impl FlightShuffleReadSource {
         };
 
         let remote_stream = if remote_cache_mapping.is_empty() {
+            None
+        } else {
             Some(
                 client_manager
                     .fetch_partition(
@@ -104,13 +106,11 @@ impl FlightShuffleReadSource {
                     )
                     .await?,
             )
-        } else {
-            None
         };
 
         match (local_stream, remote_stream) {
             (None, None) => Err(DaftError::ValueError(
-                "No local or remote streams found".to_string(),
+                "No local or remote flight shuffle partition streams found".to_string(),
             )),
             (Some(local_stream), None) => Ok(local_stream.boxed()),
             (None, Some(remote_stream)) => Ok(remote_stream.boxed()),

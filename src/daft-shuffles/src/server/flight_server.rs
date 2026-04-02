@@ -25,7 +25,7 @@ use crate::{
 struct ParsedTicket {
     shuffle_id: u64,
     partition_idx: usize,
-    _cache_ids: Option<Vec<u32>>,
+    cache_ids: Option<Vec<u32>>,
 }
 
 impl ParsedTicket {
@@ -63,7 +63,7 @@ impl ParsedTicket {
         Ok(Self {
             shuffle_id,
             partition_idx,
-            _cache_ids: cache_ids,
+            cache_ids,
         })
     }
 }
@@ -235,7 +235,7 @@ impl FlightService for ShuffleFlightServer {
             .get_shuffle_file_paths(
                 ticket.shuffle_id,
                 ticket.partition_idx,
-                ticket._cache_ids.as_deref(),
+                ticket.cache_ids.as_deref(),
             )
             .await
             .ok_or_else(|| {
