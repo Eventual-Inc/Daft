@@ -245,6 +245,8 @@ impl From<Error> for super::Error {
             err: E,
         ) -> super::Error {
             match err.code() {
+                // None: S3 returned a service error with no Code element -- observed on AWS
+                // for connection resets / malformed error bodies, which are always transient.
                 Some("InternalError") | None => super::Error::MiscTransient {
                     path,
                     source: err.into(),
