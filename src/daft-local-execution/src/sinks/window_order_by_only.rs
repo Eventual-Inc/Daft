@@ -11,7 +11,9 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
@@ -121,7 +123,7 @@ impl BlockingSink for WindowOrderByOnlySink {
                     if sorted.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(vec![empty_result]);
+                        return Ok(BlockingSinkOutput::Partitions(vec![empty_result]));
                     }
 
                     // Convert to RecordBatch for window operations
@@ -177,7 +179,7 @@ impl BlockingSink for WindowOrderByOnlySink {
                         )
                     };
 
-                    Ok(vec![output])
+                    Ok(BlockingSinkOutput::Partitions(vec![output]))
                 },
                 Span::current(),
             )

@@ -6,7 +6,9 @@ use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
@@ -104,7 +106,7 @@ impl BlockingSink for IntoPartitionsSink {
                             outputs.push(mp);
                         }
                     }
-                    Ok(outputs)
+                    Ok(BlockingSinkOutput::Partitions(outputs))
                 },
                 Span::current(),
             )

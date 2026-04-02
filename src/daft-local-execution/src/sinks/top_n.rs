@@ -7,7 +7,9 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
@@ -136,7 +138,7 @@ impl BlockingSink for TopNSink {
                         params.limit,
                         params.offset,
                     )?;
-                    Ok(vec![final_output])
+                    Ok(BlockingSinkOutput::Partitions(vec![final_output]))
                 },
                 Span::current(),
             )

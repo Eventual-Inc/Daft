@@ -115,7 +115,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         let left = if num_left_partitions != num_partitions
             || (num_partitions > 1 && !is_left_hash_partitioned)
         {
-            self.gen_shuffle_node(
+            self.gen_repartition_node(
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     Some(num_partitions),
                     left_on.iter().map(|e| e.clone().into()).collect(),
@@ -130,7 +130,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         let right = if num_right_partitions != num_partitions
             || (num_partitions > 1 && !is_right_hash_partitioned)
         {
-            self.gen_shuffle_node(
+            self.gen_repartition_node(
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     Some(num_partitions),
                     right_on.iter().map(|e| e.clone().into()).collect(),
