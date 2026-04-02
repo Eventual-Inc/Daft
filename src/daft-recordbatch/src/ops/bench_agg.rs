@@ -92,7 +92,7 @@ mod bench {
     }
 
     #[test]
-    #[ignore] // Run explicitly with --ignored
+    #[ignore = "manual benchmark"]
     fn bench_agg_5m_rows() {
         eprintln!("\nRust-level aggregation benchmark (no query planning overhead)");
         eprintln!("warmup={WARMUP} iters={ITERS}");
@@ -176,7 +176,7 @@ mod bench {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "manual benchmark"]
     fn bench_q1_like() {
         eprintln!("\nQ1-like benchmark: 2 string keys, 6 groups, float64 sum+count");
         eprintln!("warmup={WARMUP} iters={ITERS}");

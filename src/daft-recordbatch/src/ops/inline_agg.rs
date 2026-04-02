@@ -462,11 +462,16 @@ fn agg_generic_hash_path(
     let num_rows = groupby_physical.len();
     let hashes = groupby_physical.hash_rows()?;
     let initial_capacity = std::cmp::min(num_rows, 1024).max(1);
+    let cols: Vec<Series> = groupby_physical
+        .as_materialized_series()
+        .into_iter()
+        .cloned()
+        .collect();
     let comparator = build_multi_array_is_equal(
-        groupby_physical.columns.as_slice(),
-        groupby_physical.columns.as_slice(),
-        vec![true; groupby_physical.columns.len()].as_slice(),
-        vec![true; groupby_physical.columns.len()].as_slice(),
+        cols.as_slice(),
+        cols.as_slice(),
+        vec![true; cols.len()].as_slice(),
+        vec![true; cols.len()].as_slice(),
     )?;
 
     let mut group_table = HashMap::<IndexHash, u32, IdentityBuildHasher>::with_capacity_and_hasher(
@@ -564,8 +569,8 @@ impl RecordBatch {
         }
 
         // 3. Dispatch: single-column integer → FNV fast path, otherwise generic.
-        let groupkey_indices = if groupby_physical.columns.len() == 1 {
-            let col = &groupby_physical.columns[0];
+        let groupkey_indices = if groupby_physical.num_columns() == 1 {
+            let col = groupby_physical.get_column(0);
             let fast_result = dispatch_single_col_int!(
                 col, &mut accumulators,
                 Int8 => i8, Int16 => i16, Int32 => i32, Int64 => i64,
@@ -591,7 +596,13 @@ impl RecordBatch {
             .map(|(acc, name)| acc.finalize(name))
             .collect::<DaftResult<Vec<_>>>()?;
 
-        Self::from_nonempty_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
+        let all_series: Vec<Series> = groupkeys_table
+            .as_materialized_series()
+            .into_iter()
+            .cloned()
+            .chain(grouped_cols)
+            .collect();
+        Self::from_nonempty_columns(all_series)
     }
 
     /// Fallback to the existing groupby path (used by benchmarks).
@@ -620,7 +631,13 @@ impl RecordBatch {
             .map(|e| self.eval_agg_expression(e, group_idx_input))
             .collect::<DaftResult<Vec<_>>>()?;
 
-        Self::from_nonempty_columns([&groupkeys_table.columns[..], &grouped_cols].concat())
+        let all_series: Vec<Series> = groupkeys_table
+            .as_materialized_series()
+            .into_iter()
+            .cloned()
+            .chain(grouped_cols)
+            .collect();
+        Self::from_nonempty_columns(all_series)
     }
 }
 
@@ -729,8 +746,10 @@ mod tests {
         let a = sort_by_key(a);
         let b = sort_by_key(b);
         assert_eq!(a.num_rows, b.num_rows, "Row count mismatch");
-        assert_eq!(a.columns.len(), b.columns.len(), "Column count mismatch");
-        for (ac, bc) in a.columns.iter().zip(b.columns.iter()) {
+        assert_eq!(a.num_columns(), b.num_columns(), "Column count mismatch");
+        let a_cols = a.as_materialized_series();
+        let b_cols = b.as_materialized_series();
+        for (ac, bc) in a_cols.iter().zip(b_cols.iter()) {
             assert_eq!(ac.name(), bc.name(), "Column name mismatch");
             assert_eq!(
                 ac.data_type(),
