@@ -11,6 +11,8 @@ import pyarrow as pa
 import pytest
 
 import daft
+from daft import Window
+from daft.functions import row_number
 from daft.io._generator import read_generator
 from daft.recordbatch.recordbatch import RecordBatch
 from tests.conftest import get_tests_daft_runner_name
@@ -222,3 +224,49 @@ def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions)
 
         assert base_df.to_arrow().sort_by("ids") == df.to_arrow().sort_by("ids")
         assert len(df) == input_partitions * output_partitions
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+def test_flight_gather_for_global_aggregate(flight_shuffle_ctx):
+    with flight_shuffle_ctx():
+        df = daft.from_pydict({"id": list(range(32)), "value": [1] * 32}).repartition(4, "id")
+        result = df.sum("value").to_pydict()
+
+    assert result == {"value": [32]}
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+def test_flight_gather_for_order_by_only_window(flight_shuffle_ctx):
+    with flight_shuffle_ctx():
+        df = daft.from_pydict(
+            {
+                "id": list(range(8)),
+                "value": [100, 200, 50, 500, 125, 300, 250, 150],
+            }
+        ).repartition(4, "id")
+        window_spec = Window().order_by("value")
+        result = df.with_column("row_num", row_number().over(window_spec)).sort("value").to_pydict()
+
+    assert result == {
+        "id": [2, 0, 4, 7, 1, 6, 5, 3],
+        "value": [50, 100, 125, 150, 200, 250, 300, 500],
+        "row_num": [1, 2, 3, 4, 5, 6, 7, 8],
+    }
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+def test_flight_gather_for_sort_limit(flight_shuffle_ctx):
+    with flight_shuffle_ctx():
+        df = daft.from_pydict({"id": [7, 3, 9, 1, 8, 2, 6, 4, 5]}).repartition(3, "id")
+        result = df.sort("id").limit(4).to_pydict()
+
+    assert result == {"id": [1, 2, 3, 4]}

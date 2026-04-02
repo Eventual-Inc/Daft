@@ -106,6 +106,7 @@ pub enum LocalPhysicalPlan {
 
     // Flotilla Only Nodes
     IntoPartitions(IntoPartitions),
+    GatherWrite(GatherWrite),
     RepartitionWrite(RepartitionWrite),
     ShuffleRead(ShuffleRead),
     SortMergeJoin(SortMergeJoin),
@@ -160,6 +161,7 @@ impl LocalPhysicalPlan {
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
+            | Self::GatherWrite(GatherWrite { stats_state, .. })
             | Self::RepartitionWrite(RepartitionWrite { stats_state, .. })
             | Self::ShuffleRead(ShuffleRead { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
@@ -209,6 +211,7 @@ impl LocalPhysicalPlan {
             | Self::PhysicalWrite(PhysicalWrite { context, .. })
             | Self::CommitWrite(CommitWrite { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
+            | Self::GatherWrite(GatherWrite { context, .. })
             | Self::RepartitionWrite(RepartitionWrite { context, .. })
             | Self::ShuffleRead(ShuffleRead { context, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { context, .. })
@@ -976,6 +979,23 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub fn gather_write(
+        input: LocalPhysicalPlanRef,
+        schema: SchemaRef,
+        backend: GatherWriteBackend,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::GatherWrite(GatherWrite {
+            input,
+            schema,
+            backend,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
     pub fn shuffle_read(
         source_id: SourceId,
         schema: SchemaRef,
@@ -1026,6 +1046,7 @@ impl LocalPhysicalPlan {
             Self::PhysicalWrite(PhysicalWrite { file_schema, .. }) => file_schema,
             Self::CommitWrite(CommitWrite { file_schema, .. }) => file_schema,
             Self::InMemoryScan(InMemoryScan { schema, .. }) => schema,
+            Self::GatherWrite(GatherWrite { schema, .. }) => schema,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
@@ -1117,6 +1138,7 @@ impl LocalPhysicalPlan {
                 vec![input.clone()]
             }
             Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
+            Self::GatherWrite(GatherWrite { input, .. }) => vec![input.clone()],
             Self::RepartitionWrite(RepartitionWrite { input, .. }) => vec![input.clone()],
             Self::ShuffleRead(ShuffleRead { .. }) => vec![], // No input children
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
@@ -1586,6 +1608,18 @@ impl LocalPhysicalPlan {
                     schema.clone(),
                     backend.clone(),
                     repartition_spec.clone(),
+                    StatsState::NotMaterialized,
+                    context.clone(),
+                ),
+                Self::GatherWrite(GatherWrite {
+                    schema,
+                    backend,
+                    context,
+                    ..
+                }) => Self::gather_write(
+                    new_child.clone(),
+                    schema.clone(),
+                    backend.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
@@ -2145,6 +2179,16 @@ pub enum RepartitionWriteBackend {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum GatherWriteBackend {
+    Ray,
+    Flight {
+        shuffle_id: u64,
+        shuffle_dirs: Vec<String>,
+        compression: Option<String>,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ShuffleReadBackend {
     Ray,
     Flight {
@@ -2160,6 +2204,15 @@ pub struct RepartitionWrite {
     pub schema: SchemaRef,
     pub backend: RepartitionWriteBackend,
     pub repartition_spec: RepartitionSpec,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GatherWrite {
+    pub input: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub backend: GatherWriteBackend,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }

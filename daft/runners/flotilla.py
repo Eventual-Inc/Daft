@@ -203,7 +203,7 @@ class RaySwordfishActor:
 
             backend_info = plan.shuffle_write_info()
             if backend_info is None:
-                raise ValueError("run_shuffle_plan() requires a repartition write plan")
+                raise ValueError("run_shuffle_plan() requires a shuffle write plan")
             backend = _shuffle_write_backend(backend_info)
 
             result_handle = await self.native_executor.run(
