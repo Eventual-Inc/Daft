@@ -118,6 +118,7 @@ impl PyDaftExecutionConfig {
         native_parquet_writer=None,
         min_cpu_per_task=None,
         actor_udf_ready_timeout=None,
+        ray_worker_actor_startup_timeout=None,
         maintain_order=None,
         enable_dynamic_batching=None,
         dynamic_batching_strategy=None,
@@ -155,6 +156,7 @@ impl PyDaftExecutionConfig {
         native_parquet_writer: Option<bool>,
         min_cpu_per_task: Option<f64>,
         actor_udf_ready_timeout: Option<usize>,
+        ray_worker_actor_startup_timeout: Option<usize>,
         maintain_order: Option<bool>,
         enable_dynamic_batching: Option<bool>,
         dynamic_batching_strategy: Option<&str>,
@@ -272,6 +274,10 @@ impl PyDaftExecutionConfig {
 
         if let Some(actor_udf_ready_timeout) = actor_udf_ready_timeout {
             config.actor_udf_ready_timeout = actor_udf_ready_timeout;
+        }
+
+        if let Some(ray_worker_actor_startup_timeout) = ray_worker_actor_startup_timeout {
+            config.ray_worker_actor_startup_timeout = ray_worker_actor_startup_timeout;
         }
 
         if let Some(maintain_order) = maintain_order {
@@ -444,6 +450,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn actor_udf_ready_timeout(&self) -> PyResult<usize> {
         Ok(self.config.actor_udf_ready_timeout)
+    }
+
+    #[getter]
+    fn ray_worker_actor_startup_timeout(&self) -> PyResult<usize> {
+        Ok(self.config.ray_worker_actor_startup_timeout)
     }
 
     #[getter]
