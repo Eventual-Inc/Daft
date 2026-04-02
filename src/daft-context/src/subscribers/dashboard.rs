@@ -434,14 +434,11 @@ impl Subscriber for DashboardSubscriber {
             return Ok(());
         }
 
-        let source_id = if let Some(worker_id) = &self.worker_id {
-            worker_id.clone()
-        } else {
-            self.execution_ids
-                .get(&query_id)
-                .map(|id| id.clone())
-                .unwrap_or_else(|| "unknown".to_string())
-        };
+        let source_id = self
+            .execution_ids
+            .get(&query_id)
+            .map(|id| id.clone())
+            .unwrap_or_else(|| "unknown".to_string());
         self.on_exec_emit_stats_with_id(query_id, &source_id, stats)
             .await
     }
@@ -500,14 +497,11 @@ impl Subscriber for DashboardSubscriber {
         }
 
         let query_id = event.header.query_id.clone();
-        let source_id = if let Some(worker_id) = &self.worker_id {
-            worker_id.clone()
-        } else {
-            self.execution_ids
-                .get(&query_id)
-                .map(|id| id.clone())
-                .unwrap_or_else(|| "unknown".to_string())
-        };
+        let source_id = self
+            .execution_ids
+            .get(&query_id)
+            .map(|id| id.clone())
+            .unwrap_or_else(|| "unknown".to_string());
 
         self.enqueue_json(
             format!("engine/query/{}/exec/emit_stats", query_id),
