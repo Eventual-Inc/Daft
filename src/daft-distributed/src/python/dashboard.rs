@@ -48,30 +48,17 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
         }
 
         // Track started operators
-        match event {
-            TaskEvent::Submitted {
-                context: task_ctx, ..
-            } => {
-                let mut started = self.started_operators.lock().unwrap();
-                for node_id in &task_ctx.node_ids {
-                    let node_id = *node_id as usize;
-                    if !started.contains(&node_id) {
-                        started.insert(node_id);
-                    }
+        if let TaskEvent::Submitted {
+            context: task_ctx, ..
+        } = event
+        {
+            let mut started = self.started_operators.lock().unwrap();
+            for node_id in &task_ctx.node_ids {
+                let node_id = *node_id as usize;
+                if !started.contains(&node_id) {
+                    started.insert(node_id);
                 }
             }
-            TaskEvent::Completed {
-                context: task_ctx, ..
-            } => {
-                let mut started = self.started_operators.lock().unwrap();
-                for node_id in &task_ctx.node_ids {
-                    let node_id = *node_id as usize;
-                    if !started.contains(&node_id) {
-                        started.insert(node_id);
-                    }
-                }
-            }
-            _ => {}
         }
 
         // Initialize dashboard subscriber if needed
