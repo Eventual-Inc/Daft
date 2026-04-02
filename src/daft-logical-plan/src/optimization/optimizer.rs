@@ -855,11 +855,11 @@ mod tests {
             _ => panic!("Expected Source plan"),
         };
         let source_info = match source.source_info.as_ref() {
-            SourceInfo::Physical(external_info) => Arc::new(SourceInfo::Physical(
-                external_info.with_pushdowns(
+            SourceInfo::Physical(external_info) => {
+                Arc::new(SourceInfo::Physical(external_info.with_pushdowns(
                     Pushdowns::default().with_columns(Some(Arc::new(vec!["a".to_string()]))),
-                ),
-            )),
+                )))
+            }
             _ => panic!("Expected physical source"),
         };
         let expected_source: Arc<LogicalPlan> =
