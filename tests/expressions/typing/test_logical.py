@@ -41,7 +41,7 @@ def test_logical_binary(binary_data_fixture, op):
 @pytest.mark.parametrize("op", [ops.invert])
 def test_logical_unary(unary_data_fixture, op):
     arg = unary_data_fixture
-    # NOT is resolvable for bool and null (NOT NULL = NULL is valid SQL).
+    # NOT is resolvable for bool and null; `NOT (NULL)` is valid SQL and evaluates to NULL.
     assert_typing_resolve_vs_runtime_behavior(
         data=(unary_data_fixture,),
         expr=op(col(arg.name())),

@@ -1476,7 +1476,9 @@ mod tests {
             Field::new("a", DataType::Int32),
             Field::new("b", DataType::Int32),
         ]);
-        let pred: ExprRef = resolved_col("a").lt(lit(0i32)).and(resolved_col("c").eq(lit(1i32)));
+        let pred: ExprRef = resolved_col("a")
+            .lt(lit(0i32))
+            .and(resolved_col("c").eq(lit(1i32)));
         let result =
             prune_row_groups(&metadata, None, Some(&pred), &schema, "test.parquet").unwrap();
         assert_eq!(result.len(), 0);
@@ -1492,7 +1494,9 @@ mod tests {
             Field::new("a", DataType::Int32),
             Field::new("b", DataType::Int32),
         ]);
-        let pred: ExprRef = resolved_col("a").lt(lit(0i32)).or(resolved_col("c").eq(lit(1i32)));
+        let pred: ExprRef = resolved_col("a")
+            .lt(lit(0i32))
+            .or(resolved_col("c").eq(lit(1i32)));
         let result =
             prune_row_groups(&metadata, None, Some(&pred), &schema, "test.parquet").unwrap();
         assert_eq!(result.len(), metadata.num_row_groups());
@@ -1509,7 +1513,9 @@ mod tests {
             Field::new("a", DataType::Int32),
             Field::new("b", DataType::Int32),
         ]);
-        let ab = resolved_col("a").gt(lit(0i32)).and(resolved_col("b").gt(lit(0i32)));
+        let ab = resolved_col("a")
+            .gt(lit(0i32))
+            .and(resolved_col("b").gt(lit(0i32)));
         let pred: ExprRef = ab.and(resolved_col("c").eq(lit("y")));
         let result =
             prune_row_groups(&metadata, None, Some(&pred), &schema, "test.parquet").unwrap();
@@ -1542,7 +1548,9 @@ mod tests {
             Field::new("a", DataType::Int32),
             Field::new("b", DataType::Int32),
         ]);
-        let pred: ExprRef = resolved_col("a").lt(lit(0i32)).and(resolved_col("c").is_null());
+        let pred: ExprRef = resolved_col("a")
+            .lt(lit(0i32))
+            .and(resolved_col("c").is_null());
         let result =
             prune_row_groups(&metadata, None, Some(&pred), &schema, "test.parquet").unwrap();
         assert_eq!(result.len(), 0);
