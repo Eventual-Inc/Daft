@@ -147,55 +147,27 @@ impl PushDownProjection {
                             return Ok(Transformed::no(plan));
                         }
                         if required_columns.len() < upstream_schema.names().len() {
-                            let can_absorb =
-                                external_info.scan_state.get_scan_op().0.can_absorb_select();
-
-                            // Always pass the column list as a hint so the
-                            // source can optimise I/O (e.g. skip reading
-                            // unneeded columns from disk / network).
-                            let new_pushdowns = external_info.pushdowns.with_columns(Some(
-                                Arc::new(required_columns.iter().cloned().collect()),
-                            ));
-
-                            // Only prune the Source node's schema when the
-                            // scan operator can absorb the select.  When
-                            // can_absorb_select() is false the Project node
-                            // above stays and handles projection; pruning
-                            // the schema here would make downstream
-                            // operators (e.g. HashJoin) see a narrower
-                            // schema than the data actually produced.
-                            let new_schema: SchemaRef = if can_absorb {
-                                let pruned = upstream_schema
-                                    .into_iter()
-                                    .filter(|field| required_columns.contains(&*field.name))
-                                    .cloned()
-                                    .collect::<Vec<_>>();
-                                Schema::new(pruned).into()
-                            } else {
-                                source.output_schema.clone()
-                            };
-
+                            let pruned_upstream_schema = upstream_schema
+                                .into_iter()
+                                .filter(|field| required_columns.contains(&*field.name))
+                                .cloned()
+                                .collect::<Vec<_>>();
+                            let schema = Schema::new(pruned_upstream_schema);
                             let new_source: LogicalPlan = Source::new(
-                                new_schema,
-                                Arc::new(SourceInfo::Physical(
-                                    external_info.with_pushdowns(new_pushdowns),
-                                )),
+                                schema.into(),
+                                Arc::new(SourceInfo::Physical(external_info.with_pushdowns(
+                                    external_info.pushdowns.with_columns(Some(Arc::new(
+                                        required_columns.iter().cloned().collect(),
+                                    ))),
+                                ))),
                             )
                             .into();
                             let new_plan = Arc::new(plan.with_new_children(&[new_source.into()]));
-
-                            if can_absorb {
-                                // Retry optimization now that the upstream schema changed.
-                                let new_plan = self
-                                    .try_optimize_node(new_plan.clone())?
-                                    .or(Transformed::yes(new_plan));
-                                Ok(new_plan)
-                            } else {
-                                // The projection still needs to remain above the source, so
-                                // re-entering this rule would just rebuild the same plan and
-                                // recurse indefinitely.
-                                Ok(Transformed::yes(new_plan))
-                            }
+                            // Retry optimization now that the upstream node is different.
+                            let new_plan = self
+                                .try_optimize_node(new_plan.clone())?
+                                .or(Transformed::yes(new_plan));
+                            Ok(new_plan)
                         } else {
                             Ok(Transformed::no(plan))
                         }
@@ -700,20 +672,19 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{ExprRef, lit, resolved_col, unresolved_col};
+    use daft_dsl::{lit, resolved_col, unresolved_col};
     use daft_scan::Pushdowns;
 
     use crate::{
         LogicalPlan,
         builder::LogicalPlanBuilder,
-        ops::{Project, Source, Unpivot},
+        ops::{Project, Unpivot},
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::PushDownProjection,
             test::assert_optimized_plan_with_rules_eq,
         },
-        source_info::SourceInfo,
-        test::{dummy_scan_node, dummy_scan_operator},
+        test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
     };
 
     /// Helper that creates an optimizer with the PushDownProjection rule registered, optimizes
@@ -731,32 +702,6 @@ mod tests {
                 RuleExecutionStrategy::Once,
             )],
         )
-    }
-
-    fn non_absorbing_scan_with_pushdowns(
-        scan_op: daft_scan::ScanOperatorRef,
-        pushdowns: Pushdowns,
-        projection: Option<Vec<ExprRef>>,
-    ) -> DaftResult<LogicalPlanBuilder> {
-        let source = dummy_scan_node(scan_op).build();
-        let source = match source.as_ref() {
-            LogicalPlan::Source(source) => source,
-            _ => panic!("Expected Source plan"),
-        };
-        let source_info = match source.source_info.as_ref() {
-            SourceInfo::Physical(external_info) => Arc::new(SourceInfo::Physical(
-                external_info.with_pushdowns(pushdowns),
-            )),
-            _ => panic!("Expected physical source"),
-        };
-        let source: Arc<LogicalPlan> =
-            LogicalPlan::Source(Source::new(source.output_schema.clone(), source_info)).into();
-        let plan = if let Some(projection) = projection {
-            Arc::new(LogicalPlan::Project(Project::try_new(source, projection)?))
-        } else {
-            source
-        };
-        Ok(LogicalPlanBuilder::from(plan))
     }
 
     /// Projection merging: Ensure factored projections do not get merged.
@@ -857,11 +802,10 @@ mod tests {
             .build();
 
         let proj_pushdown = vec!["b".to_string()];
-        let expected = non_absorbing_scan_with_pushdowns(
+        let expected = dummy_scan_node_with_pushdowns(
             scan_op,
             Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown))),
-            None,
-        )?
+        )
         .select(proj)?
         .build();
 
@@ -921,11 +865,10 @@ mod tests {
 
         let proj_pushdown = vec!["a".to_string(), "c".to_string()];
         let new_agg = vec![unresolved_col("a").mean()];
-        let expected = non_absorbing_scan_with_pushdowns(
+        let expected = dummy_scan_node_with_pushdowns(
             scan_op,
             Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown))),
-            Some(vec![resolved_col("a"), resolved_col("c")]),
-        )?
+        )
         .aggregate(new_agg, group_by)?
         .select(proj)?
         .build();
@@ -951,11 +894,10 @@ mod tests {
             .build();
 
         let proj_pushdown = vec!["a".to_string(), "b".to_string()];
-        let expected = non_absorbing_scan_with_pushdowns(
+        let expected = dummy_scan_node_with_pushdowns(
             scan_op,
             Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown))),
-            Some(vec![resolved_col("a"), resolved_col("b")]),
-        )?
+        )
         .filter(pred)?
         .select(proj)?
         .build();
@@ -1007,7 +949,7 @@ mod tests {
             Project::try_new(plan.into(), vec![resolved_col("inventory").alias("year2")]).unwrap(),
         )
         .into();
-        let expected_scan = non_absorbing_scan_with_pushdowns(
+        let expected_scan = dummy_scan_node_with_pushdowns(
             scan_op,
             Pushdowns {
                 limit: None,
@@ -1022,15 +964,7 @@ mod tests {
                 pushed_filters: None,
                 aggregation: None,
             },
-            None,
         )
-        .unwrap()
-        .select(vec![
-            resolved_col("year"),
-            resolved_col("Jan"),
-            resolved_col("Feb"),
-        ])
-        .unwrap()
         .build();
 
         let expected = LogicalPlan::Unpivot(

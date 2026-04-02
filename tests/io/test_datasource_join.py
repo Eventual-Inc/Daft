@@ -59,7 +59,7 @@ class InMemorySource(DataSource):
     def schema(self) -> Schema:
         return Schema.from_pyarrow_schema(self._table.schema)
 
-    def get_tasks(self, pushdowns) -> Iterator[_InMemoryTask]:
+    async def get_tasks(self, pushdowns) -> AsyncIterator[_InMemoryTask]:
         columns = None
         if isinstance(pushdowns, Pushdowns) and pushdowns.columns:
             table_col_set = set(self._table.schema.names)
