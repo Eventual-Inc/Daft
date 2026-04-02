@@ -1189,11 +1189,12 @@ Project: col(a), col(c)
         Passthrough Columns = None
         Properties = { concurrency = 8, async = false, scalar = false }
         Resource request = { num_cpus = 8, num_gpus = 1 }
-          DummyScanOperator
-          File schema = a#Int64, b#Boolean, c#Int64
-          Partitioning keys = []
-          Projection pushdown = [c]
-          Output schema = c#Int64
+          Project: col(c)
+            DummyScanOperator
+            File schema = a#Int64, b#Boolean, c#Int64
+            Partitioning keys = []
+            Projection pushdown = [c]
+            Output schema = a#Int64, b#Boolean, c#Int64
         "},
         )?;
         Ok(())
@@ -1250,11 +1251,12 @@ Project: col(a), col(c)
           Passthrough Columns = col(a)
           Properties = { concurrency = 8, async = false, scalar = false }
           Resource request = { num_cpus = 8, num_gpus = 1 }
-            DummyScanOperator
-            File schema = a#Int64, b#Boolean, c#Int64
-            Partitioning keys = []
-            Projection pushdown = [a]
-            Output schema = a#Int64
+            Project: col(a)
+              DummyScanOperator
+              File schema = a#Int64, b#Boolean, c#Int64
+              Partitioning keys = []
+              Projection pushdown = [a]
+              Output schema = a#Int64, b#Boolean, c#Int64
         "},
         )?;
         Ok(())
@@ -1279,11 +1281,12 @@ Project: col(a), col(c)
         assert_optimized_plan_eq_with_projection_pushdown(
             plan,
             indoc! {"
-            DummyScanOperator
-            File schema = a#Int64, b#Boolean, c#Int64
-            Partitioning keys = []
-            Projection pushdown = [a]
-            Output schema = a#Int64
+            Project: col(a)
+              DummyScanOperator
+              File schema = a#Int64, b#Boolean, c#Int64
+              Partitioning keys = []
+              Projection pushdown = [a]
+              Output schema = a#Int64, b#Boolean, c#Int64
         "},
         )?;
         Ok(())

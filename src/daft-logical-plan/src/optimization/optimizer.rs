@@ -850,14 +850,10 @@ mod tests {
 
         let expected = dummy_scan_node_with_pushdowns(
             scan_op,
-            Pushdowns::default()
-                .with_aggregation(Some(Arc::new(Expr::Agg(AggExpr::Count(
-                    resolved_col("a"),
-                    CountMode::All,
-                )))))
-                .with_columns(Some(Arc::new(vec!["a".to_string()]))),
+            Pushdowns::default().with_columns(Some(Arc::new(vec!["a".to_string()]))),
         )
-        .aggregate(vec![unresolved_col("a").sum()], vec![])?
+        .select(vec![resolved_col("a")])?
+        .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
         .build();
 
         let scan_materializer_and_stats_enricher = get_scan_materializer_and_stats_enricher();
