@@ -8,6 +8,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NamedTuple, TypeAlias
 
+from daft.context import get_context
 from daft.daft import (
     DistributedPhysicalPlan,
     DistributedPhysicalPlanRunner,
@@ -384,8 +385,6 @@ class RaySwordfishActorHandle:
 
 
 def _get_ray_worker_actor_startup_timeout() -> int:
-    from daft.context import get_context
-
     return get_context().daft_execution_config.ray_worker_actor_startup_timeout
 
 
