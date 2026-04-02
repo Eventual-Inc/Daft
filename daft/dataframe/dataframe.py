@@ -2681,7 +2681,7 @@ class DataFrame:
         file_format: str | FileFormat,
         io_config: IOConfig | None = None,
         num_workers: int = 4,
-        cpus_per_worker: float = 1.0,
+        cpus_per_worker: float = 0.5,
         keys_load_batch_size: int = 100000,
         max_concurrency_per_worker: int = 1,
         filter_batch_size: int = 10000,
