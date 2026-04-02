@@ -143,10 +143,11 @@ impl PushDownProjection {
                 let required_columns = plan.required_columns().single();
                 match source.source_info.as_ref() {
                     SourceInfo::Physical(external_info) => {
-                        if matches!(external_info.scan_state, ScanState::Tasks(_)) {
-                            return Ok(Transformed::no(plan));
-                        }
                         if required_columns.len() < upstream_schema.names().len() {
+                            // Don't modify materialized scans — their tasks are already built.
+                            if matches!(external_info.scan_state, ScanState::Tasks(_)) {
+                                return Ok(Transformed::no(plan));
+                            }
                             let pruned_upstream_schema = upstream_schema
                                 .into_iter()
                                 .filter(|field| required_columns.contains(&*field.name))
