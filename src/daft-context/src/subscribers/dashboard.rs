@@ -148,6 +148,12 @@ impl DashboardSubscriber {
         }))
     }
 
+    /// Returns true if this process is a flotilla worker.
+    /// Workers should not emit most lifecycle events (they race with the driver).
+    fn is_worker(&self) -> bool {
+        self.worker_id.is_some()
+    }
+
     async fn handle_request(request: RequestBuilder) -> DaftResult<()> {
         request
             .send()
@@ -240,7 +246,7 @@ impl Drop for DashboardSubscriber {
 #[async_trait]
 impl Subscriber for DashboardSubscriber {
     fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
 
@@ -283,7 +289,7 @@ impl Subscriber for DashboardSubscriber {
     }
 
     fn on_query_end(&self, query_id: QueryID, end_result: QueryResult) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
         let results = self.preview_rows.remove(&query_id);
@@ -320,7 +326,7 @@ impl Subscriber for DashboardSubscriber {
     }
 
     fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
 
@@ -335,7 +341,7 @@ impl Subscriber for DashboardSubscriber {
     }
 
     fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
 
@@ -356,6 +362,10 @@ impl Subscriber for DashboardSubscriber {
         execution_id: &str,
         physical_plan: QueryPlan,
     ) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
         self.execution_ids
             .insert(query_id.clone(), execution_id.to_string());
 
@@ -375,6 +385,10 @@ impl Subscriber for DashboardSubscriber {
     }
 
     async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
         self.enqueue_no_body(
             format!("engine/query/{}/exec/{}/start", query_id, node_id),
             "exec_operator_start",
@@ -416,23 +430,24 @@ impl Subscriber for DashboardSubscriber {
         query_id: QueryID,
         stats: Arc<Vec<(NodeID, Stats)>>,
     ) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
 
-        let source_id = if let Some(worker_id) = &self.worker_id {
-            worker_id.clone()
-        } else {
-            self.execution_ids
-                .get(&query_id)
-                .map(|id| id.clone())
-                .unwrap_or_else(|| "unknown".to_string())
-        };
+        let source_id = self
+            .execution_ids
+            .get(&query_id)
+            .map(|id| id.clone())
+            .unwrap_or_else(|| "unknown".to_string());
         self.on_exec_emit_stats_with_id(query_id, &source_id, stats)
             .await
     }
 
     async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
         self.enqueue_no_body(
             format!("engine/query/{}/exec/{}/end", query_id, node_id),
             "exec_operator_end",
@@ -441,6 +456,10 @@ impl Subscriber for DashboardSubscriber {
     }
 
     async fn on_exec_end_with_id(&self, query_id: QueryID, _execution_id: &str) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
         self.execution_ids.remove(&query_id);
 
         self.enqueue_json(
@@ -458,6 +477,10 @@ impl Subscriber for DashboardSubscriber {
     }
 
     async fn on_operator_start(&self, event: Arc<OperatorStartEvent>) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
         self.enqueue_no_body(
             format!(
                 "engine/query/{}/exec/{}/start",
@@ -469,19 +492,16 @@ impl Subscriber for DashboardSubscriber {
     }
 
     async fn on_stats(&self, event: Arc<StatsEvent>) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
 
         let query_id = event.header.query_id.clone();
-        let source_id = if let Some(worker_id) = &self.worker_id {
-            worker_id.clone()
-        } else {
-            self.execution_ids
-                .get(&query_id)
-                .map(|id| id.clone())
-                .unwrap_or_else(|| "unknown".to_string())
-        };
+        let source_id = self
+            .execution_ids
+            .get(&query_id)
+            .map(|id| id.clone())
+            .unwrap_or_else(|| "unknown".to_string());
 
         self.enqueue_json(
             format!("engine/query/{}/exec/emit_stats", query_id),
@@ -508,6 +528,10 @@ impl Subscriber for DashboardSubscriber {
     }
 
     async fn on_operator_end(&self, event: Arc<OperatorEndEvent>) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
         self.enqueue_no_body(
             format!(
                 "engine/query/{}/exec/{}/end",
