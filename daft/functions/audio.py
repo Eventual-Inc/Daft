@@ -2,27 +2,16 @@
 
 from __future__ import annotations
 
-import io
-import pathlib
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import daft
-from daft.daft import io_put
+from daft.file.audio import write_audio as write_audio_file
 from daft.udf.udf_v2 import Func
 
 if TYPE_CHECKING:
     from daft import Expression
+    from daft.file.audio import WriteAudioMetadata
     from daft.file.typing import AudioMetadata
-
-_CLOUD_SCHEMES = ("s3://", "gs://", "gcs://", "az://", "abfs://", "hf://", "http://", "https://")
-
-
-class WriteAudioMetadata(TypedDict):
-    sample_rate: int
-    channels: int
-    frames: float
-    format: str
-    subtype: str | None
 
 
 def get_metadata_impl(
@@ -197,59 +186,7 @@ def write_audio_impl(
     format: str | None,
     subtype: str | None,
 ) -> WriteAudioMetadata:
-    from daft.dependencies import np, sf
-
-    # Extract audio data and sample rate from input
-    if isinstance(audio, daft.AudioFile):
-        meta = audio.metadata()
-        data = audio.to_numpy()
-        if sample_rate is None:
-            sample_rate = meta["sample_rate"]
-    else:
-        data = np.asarray(audio)
-        if sample_rate is None:
-            raise ValueError(
-                "sample_rate is required when writing tensor/array data. "
-                "Pass sample_rate to write_audio() or use an AudioFile input."
-            )
-
-    # Normalize channel layout: channel-first → channel-last for soundfile
-    # Heuristic: treat the smaller dimension as channels
-    if data.ndim == 2 and data.shape[0] < data.shape[1]:
-        data = data.T
-
-    # Clip to [-1.0, 1.0] and convert to float32
-    data = np.clip(data.astype(np.float32), -1.0, 1.0)
-
-    # Determine format: explicit override > infer from extension
-    ext = pathlib.PurePosixPath(destination).suffix.lstrip(".")
-    inferred_format = ext.upper() if ext else None
-    write_format = format or inferred_format
-
-    # Write the audio
-    is_cloud = any(destination.startswith(scheme) for scheme in _CLOUD_SCHEMES)
-
-    if is_cloud:
-        if write_format is None:
-            raise ValueError("Cannot infer audio format from destination path. Please specify the 'format' parameter.")
-        buf = io.BytesIO()
-        sf.write(buf, data, samplerate=sample_rate, format=write_format, subtype=subtype)
-        io_put(destination, buf.getvalue())
-    else:
-        pathlib.Path(destination).parent.mkdir(parents=True, exist_ok=True)
-        sf.write(destination, data, samplerate=sample_rate, format=write_format, subtype=subtype)
-
-    # Return metadata about the written audio
-    channels = data.shape[1] if data.ndim == 2 else 1
-    frames = float(data.shape[0])
-
-    return WriteAudioMetadata(
-        sample_rate=sample_rate,
-        channels=channels,
-        frames=frames,
-        format=write_format or "",
-        subtype=subtype,
-    )
+    return write_audio_file(audio, destination, sample_rate=sample_rate, format=format, subtype=subtype)
 
 
 write_audio_fn = Func._from_func(

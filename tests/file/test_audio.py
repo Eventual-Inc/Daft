@@ -265,18 +265,18 @@ def test_write_audio_from_tensor(tmp_path):
     assert meta["format"] == "WAV"
 
 
-def test_write_audio_impl_channel_first_multichannel_tensor(tmp_path):
+def test_file_write_audio_channel_first_multichannel_tensor(tmp_path):
     """Test that channel-first tensor input is written with the expected channel-last layout."""
     import numpy as np
     import soundfile as sf
 
-    from daft.functions.audio import write_audio_impl
+    from daft.file.audio import write_audio
 
     sample_rate = 16000
     audio_data = np.linspace(-1.0, 1.0, 9 * 32, dtype=np.float64).reshape(9, 32)
     output_path = str(tmp_path / "channel_first.wav")
 
-    meta = write_audio_impl(audio_data, output_path, sample_rate=sample_rate, format=None, subtype=None)
+    meta = write_audio(audio_data, output_path, sample_rate=sample_rate, format=None, subtype=None)
     written_data, written_sr = sf.read(output_path)
 
     assert written_sr == sample_rate
@@ -285,17 +285,17 @@ def test_write_audio_impl_channel_first_multichannel_tensor(tmp_path):
     assert meta["frames"] == 32.0
 
 
-def test_write_audio_impl_clips_audio_and_creates_parent_dirs(tmp_path):
-    """Test clipping behavior and parent directory creation in the direct write implementation."""
+def test_file_write_audio_clips_audio_and_creates_parent_dirs(tmp_path):
+    """Test clipping behavior and parent directory creation in the file audio implementation."""
     import numpy as np
     import soundfile as sf
 
-    from daft.functions.audio import write_audio_impl
+    from daft.file.audio import write_audio
 
     audio_data = np.array([1.5, -1.5, 0.25], dtype=np.float64)
     output_path = str(tmp_path / "nested" / "clipped.wav")
 
-    meta = write_audio_impl(audio_data, output_path, sample_rate=16000, format=None, subtype=None)
+    meta = write_audio(audio_data, output_path, sample_rate=16000, format=None, subtype=None)
     written_data, written_sr = sf.read(output_path)
 
     assert written_sr == 16000
@@ -303,28 +303,28 @@ def test_write_audio_impl_clips_audio_and_creates_parent_dirs(tmp_path):
     assert meta["frames"] == 3.0
 
 
-def test_write_audio_impl_cloud_requires_format_without_extension():
+def test_file_write_audio_cloud_requires_format_without_extension():
     """Test that cloud destinations without an extension require an explicit format."""
     import numpy as np
 
-    from daft.functions.audio import write_audio_impl
+    from daft.file.audio import write_audio
 
     audio_data = np.zeros(16, dtype=np.float64)
 
     with pytest.raises(ValueError, match="Cannot infer audio format"):
-        write_audio_impl(audio_data, "s3://bucket/output", sample_rate=16000, format=None, subtype=None)
+        write_audio(audio_data, "s3://bucket/output", sample_rate=16000, format=None, subtype=None)
 
 
-def test_write_audio_impl_cloud_writes_with_io_put():
+def test_file_write_audio_cloud_writes_with_io_put():
     """Test cloud writes go through io_put with encoded audio bytes."""
     import numpy as np
 
-    from daft.functions.audio import write_audio_impl
+    from daft.file.audio import write_audio
 
     audio_data = np.zeros(16, dtype=np.float64)
 
-    with patch("daft.functions.audio.io_put") as mock_io_put:
-        meta = write_audio_impl(audio_data, "s3://bucket/output.wav", sample_rate=16000, format=None, subtype=None)
+    with patch("daft.file.audio.io_put") as mock_io_put:
+        meta = write_audio(audio_data, "s3://bucket/output.wav", sample_rate=16000, format=None, subtype=None)
 
     mock_io_put.assert_called_once()
     destination, payload = mock_io_put.call_args.args
@@ -332,6 +332,20 @@ def test_write_audio_impl_cloud_writes_with_io_put():
     assert isinstance(payload, bytes)
     assert len(payload) > 0
     assert meta["format"] == "WAV"
+
+
+def test_audiofile_write_method(sample_audio_path, tmp_path):
+    """Test the AudioFile.write() method delegates correctly."""
+    import soundfile as sf
+
+    audio_file = daft.AudioFile(sample_audio_path)
+    output_path = str(tmp_path / "method.wav")
+
+    meta = audio_file.write(output_path)
+    info = sf.info(output_path)
+
+    assert info.format == "WAV"
+    assert meta["sample_rate"] == 44100
 
 
 def test_write_audio_format_override(sample_audio_path, tmp_path):
