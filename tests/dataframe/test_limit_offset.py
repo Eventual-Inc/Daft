@@ -1,10 +1,21 @@
 from __future__ import annotations
 
+import tempfile
+from contextlib import contextmanager
+
 import pytest
 
 import daft
 from daft import col
 from daft.functions import format
+from tests.conftest import get_tests_daft_runner_name
+
+
+@contextmanager
+def flight_shuffle_ctx():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with daft.execution_config_ctx(shuffle_algorithm="flight_shuffle", flight_shuffle_dirs=[temp_dir]) as ctx:
+            yield ctx
 
 
 @pytest.fixture(params=["memory", "parquet", "lance"], scope="session")
@@ -205,6 +216,18 @@ def test_limit(input_df, df_fn, expected_count):
 def test_limit_with_sort(input_df, df_fn, expected_dict):
     df = df_fn(input_df)
     assert df.to_pydict() == expected_dict
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed gather backend routing is only relevant on the ray runner",
+)
+def test_limit_with_sort_and_offset_uses_flight_gather():
+    with flight_shuffle_ctx():
+        df = daft.range(start=0, end=64, partitions=8).sort("id").offset(5).limit(7)
+        result = df.to_pydict()
+
+    assert result == {"id": [5, 6, 7, 8, 9, 10, 11]}
 
 
 def test_negative_offset(input_df):

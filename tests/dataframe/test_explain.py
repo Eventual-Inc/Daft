@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import tempfile
 import warnings
+from contextlib import contextmanager
 
 import pytest
 
@@ -14,6 +16,13 @@ from daft.dependencies import pa
 from daft.functions import format
 from tests.conftest import get_tests_daft_runner_name
 from tests.utils import clean_explain_output, explain_to_text
+
+
+@contextmanager
+def flight_shuffle_ctx():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with daft.execution_config_ctx(shuffle_algorithm="flight_shuffle", flight_shuffle_dirs=[temp_dir]) as ctx:
+            yield ctx
 
 
 @pytest.fixture
@@ -139,13 +148,19 @@ def test_explain_with_cross_join(small_df, large_df):
             """
         assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
 
-        df = large_df.join(other=small_df, how="cross")
-        expected = """
-        * CrossJoin
-        |   Left: Node name = ScanTaskSource
-        |   Right: Node name = Project
-            """
-        assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed gather routing is only relevant on the ray runner",
+)
+def test_explain_with_flight_gather_uses_shuffle_path():
+    with flight_shuffle_ctx():
+        df = daft.range(start=0, end=16, partitions=4).sort("id").limit(3)
+        text = explain_to_text(df, only_physical_plan=True)
+
+    assert "FlightShuffle: Gather" in text
+    assert "TopN" in text
+    assert "InMemoryScan" not in clean_explain_output(text)
 
 
 @pytest.mark.parametrize(

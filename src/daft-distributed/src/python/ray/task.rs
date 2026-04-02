@@ -20,7 +20,8 @@ use crate::{
 #[derive(Clone)]
 pub(crate) enum RayTaskResult {
     Success(Vec<RayPartitionRef>, Vec<u8>),
-    ShuffleSuccess(Vec<FlightShufflePartitionRef>, Vec<u8>),
+    RayShuffleSuccess(Vec<RayPartitionRef>, Vec<u8>),
+    FlightShuffleSuccess(Vec<FlightShufflePartitionRef>, Vec<u8>),
     WorkerDied(),
     WorkerUnavailable(),
 }
@@ -33,11 +34,19 @@ impl RayTaskResult {
     }
 
     #[staticmethod]
-    fn shuffle_success(
+    fn ray_shuffle_success(
+        shuffle_part_refs: Vec<RayPartitionRef>,
+        stats_serialized: Vec<u8>,
+    ) -> Self {
+        Self::RayShuffleSuccess(shuffle_part_refs, stats_serialized)
+    }
+
+    #[staticmethod]
+    fn flight_shuffle_success(
         shuffle_part_refs: Vec<FlightShufflePartitionRef>,
         stats_serialized: Vec<u8>,
     ) -> Self {
-        Self::ShuffleSuccess(shuffle_part_refs, stats_serialized)
+        Self::FlightShuffleSuccess(shuffle_part_refs, stats_serialized)
     }
 
     #[staticmethod]
@@ -121,7 +130,25 @@ impl TaskResultHandle for RayTaskResultHandle {
                         stats,
                     }
                 }
-                Ok(RayTaskResult::ShuffleSuccess(shuffle_part_refs, stats_serialized)) => {
+                Ok(RayTaskResult::RayShuffleSuccess(ray_part_refs, stats_serialized)) => {
+                    let stats: ExecutionStats = ExecutionStats::decode(&stats_serialized);
+                    let shuffle_output = ShuffleWriteOutput::new(
+                        ray_part_refs
+                            .into_iter()
+                            .map(|ray_part_ref| {
+                                ShufflePartitionRef::Ray(Arc::new(ray_part_ref) as PartitionRef)
+                            })
+                            .collect(),
+                        worker_id.clone(),
+                        task_id,
+                    );
+
+                    TaskStatus::Success {
+                        result: TaskOutput::ShuffleWrite(shuffle_output),
+                        stats,
+                    }
+                }
+                Ok(RayTaskResult::FlightShuffleSuccess(shuffle_part_refs, stats_serialized)) => {
                     let stats: ExecutionStats = ExecutionStats::decode(&stats_serialized);
                     let shuffle_output = ShuffleWriteOutput::new(
                         shuffle_part_refs
