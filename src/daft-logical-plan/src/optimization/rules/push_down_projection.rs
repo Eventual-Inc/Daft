@@ -695,11 +695,12 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{lit, resolved_col, unresolved_col};
+    use daft_dsl::{ExprRef, lit, resolved_col, unresolved_col};
     use daft_scan::Pushdowns;
 
     use crate::{
         LogicalPlan,
+        builder::LogicalPlanBuilder,
         ops::{Project, Source, Unpivot},
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
@@ -707,7 +708,7 @@ mod tests {
             test::assert_optimized_plan_with_rules_eq,
         },
         source_info::SourceInfo,
-        test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
+        test::{dummy_scan_node, dummy_scan_operator},
     };
 
     /// Helper that creates an optimizer with the PushDownProjection rule registered, optimizes
@@ -725,6 +726,32 @@ mod tests {
                 RuleExecutionStrategy::Once,
             )],
         )
+    }
+
+    fn non_absorbing_scan_with_pushdowns(
+        scan_op: daft_scan::ScanOperatorRef,
+        pushdowns: Pushdowns,
+        projection: Option<Vec<ExprRef>>,
+    ) -> DaftResult<LogicalPlanBuilder> {
+        let source = dummy_scan_node(scan_op).build();
+        let source = match source.as_ref() {
+            LogicalPlan::Source(source) => source,
+            _ => panic!("Expected Source plan"),
+        };
+        let source_info = match source.source_info.as_ref() {
+            SourceInfo::Physical(external_info) => Arc::new(SourceInfo::Physical(
+                external_info.with_pushdowns(pushdowns),
+            )),
+            _ => panic!("Expected physical source"),
+        };
+        let source: Arc<LogicalPlan> =
+            LogicalPlan::Source(Source::new(source.output_schema.clone(), source_info)).into();
+        let plan = if let Some(projection) = projection {
+            Arc::new(LogicalPlan::Project(Project::try_new(source, projection)?))
+        } else {
+            source
+        };
+        Ok(LogicalPlanBuilder::from(plan))
     }
 
     /// Projection merging: Ensure factored projections do not get merged.
@@ -825,23 +852,13 @@ mod tests {
             .build();
 
         let proj_pushdown = vec!["b".to_string()];
-        let new_pushdowns = Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown)));
-        let source = match plan.as_ref() {
-            LogicalPlan::Project(project) => match project.input.as_ref() {
-                LogicalPlan::Source(source) => source,
-                _ => panic!("Expected Project input to be Source"),
-            },
-            _ => panic!("Expected Project plan"),
-        };
-        let source_info = match source.source_info.as_ref() {
-            SourceInfo::Physical(external_info) => Arc::new(SourceInfo::Physical(
-                external_info.with_pushdowns(new_pushdowns),
-            )),
-            _ => panic!("Expected physical source"),
-        };
-        let expected_source: LogicalPlan =
-            Source::new(source.output_schema.clone(), source_info).into();
-        let expected = Arc::new(plan.with_new_children(&[expected_source.into()]));
+        let expected = non_absorbing_scan_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown))),
+            None,
+        )?
+        .select(proj)?
+        .build();
 
         assert_optimized_plan_eq(plan, expected)?;
 
@@ -899,10 +916,11 @@ mod tests {
 
         let proj_pushdown = vec!["a".to_string(), "c".to_string()];
         let new_agg = vec![unresolved_col("a").mean()];
-        let expected = dummy_scan_node_with_pushdowns(
+        let expected = non_absorbing_scan_with_pushdowns(
             scan_op,
             Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown))),
-        )
+            Some(vec![resolved_col("a"), resolved_col("c")]),
+        )?
         .aggregate(new_agg, group_by)?
         .select(proj)?
         .build();
@@ -928,10 +946,11 @@ mod tests {
             .build();
 
         let proj_pushdown = vec!["a".to_string(), "b".to_string()];
-        let expected = dummy_scan_node_with_pushdowns(
+        let expected = non_absorbing_scan_with_pushdowns(
             scan_op,
             Pushdowns::default().with_columns(Some(Arc::new(proj_pushdown))),
-        )
+            Some(vec![resolved_col("a"), resolved_col("b")]),
+        )?
         .filter(pred)?
         .select(proj)?
         .build();
@@ -983,7 +1002,7 @@ mod tests {
             Project::try_new(plan.into(), vec![resolved_col("inventory").alias("year2")]).unwrap(),
         )
         .into();
-        let expected_scan = dummy_scan_node_with_pushdowns(
+        let expected_scan = non_absorbing_scan_with_pushdowns(
             scan_op,
             Pushdowns {
                 limit: None,
@@ -998,7 +1017,15 @@ mod tests {
                 pushed_filters: None,
                 aggregation: None,
             },
+            None,
         )
+        .unwrap()
+        .select(vec![
+            resolved_col("year"),
+            resolved_col("Jan"),
+            resolved_col("Feb"),
+        ])
+        .unwrap()
         .build();
 
         let expected = LogicalPlan::Unpivot(

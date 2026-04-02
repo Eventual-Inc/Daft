@@ -14,13 +14,11 @@ from collections.abc import Iterator
 
 import pyarrow as pa
 
-import daft
 from daft import col
 from daft.io.pushdowns import Pushdowns
 from daft.io.source import DataSource, DataSourceTask
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema
-
 
 # ---------------------------------------------------------------------------
 # Minimal in-memory DataSource (can_absorb_select=False by default)
