@@ -397,7 +397,7 @@ mod tests {
     use common_treenode::{Transformed, TreeNode};
     use daft_core::prelude::*;
     use daft_dsl::{
-        AggExpr, Expr,
+        Expr,
         functions::{FunctionExpr, python::LegacyPythonUDF},
         lit, resolved_col, unresolved_col,
     };
