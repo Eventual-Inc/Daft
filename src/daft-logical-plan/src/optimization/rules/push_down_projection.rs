@@ -7,6 +7,7 @@ use daft_dsl::{
     Column, Expr, ExprRef, ResolvedColumn, optimization::replace_columns_with_expressions,
     resolved_col,
 };
+use daft_scan::ScanState;
 use indexmap::IndexSet;
 
 use super::OptimizerRule;
@@ -142,6 +143,9 @@ impl PushDownProjection {
                 let required_columns = plan.required_columns().single();
                 match source.source_info.as_ref() {
                     SourceInfo::Physical(external_info) => {
+                        if matches!(external_info.scan_state, ScanState::Tasks(_)) {
+                            return Ok(Transformed::no(plan));
+                        }
                         if required_columns.len() < upstream_schema.names().len() {
                             let can_absorb =
                                 external_info.scan_state.get_scan_op().0.can_absorb_select();
@@ -1048,5 +1052,27 @@ mod tests {
         )
         .into();
         assert_optimized_plan_eq(plan, expected).unwrap();
+    }
+
+    #[test]
+    fn test_projection_does_not_pushdown_into_materialized_scan() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+        ]);
+        let source = dummy_scan_node(scan_op).build();
+        let materialized_source: Arc<LogicalPlan> = match source.as_ref() {
+            LogicalPlan::Source(source) => {
+                LogicalPlan::Source(source.clone().build_materialized_scan_source()?).into()
+            }
+            _ => panic!("Expected Source plan"),
+        };
+        let plan = LogicalPlanBuilder::from(materialized_source)
+            .select(vec![resolved_col("a")])?
+            .build();
+
+        assert_optimized_plan_eq(plan.clone(), plan)?;
+
+        Ok(())
     }
 }
