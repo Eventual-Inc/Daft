@@ -111,6 +111,10 @@ impl PipelineNodeImpl for AggregateNode {
         vec![self.child.clone()]
     }
 
+    fn phase(&self) -> Option<&str> {
+        self.phase.map(|s| s as &str)
+    }
+
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
         let agg_str = self.aggs.iter().map(|e| e.to_string()).join(", ");

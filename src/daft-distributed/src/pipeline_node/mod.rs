@@ -325,6 +325,9 @@ pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn node_id(&self) -> NodeID {
         self.context().node_id
     }
+    fn phase(&self) -> Option<&str> {
+        None
+    }
     fn multiline_display(&self, verbose: bool) -> Vec<String>;
 }
 
@@ -401,13 +404,17 @@ impl TreeDisplay for DistributedPipelineNode {
     }
 
     fn repr_json(&self) -> serde_json::Value {
-        serde_json::json!({
+        let mut json = serde_json::json!({
             "id": self.node_id(),
             "type": self.op.name(),
             "name": self.name(),
             "category": "Physical",
             "children": self.children.iter().map(|child| child.repr_json()).collect::<Vec<_>>(),
-        })
+        });
+        if let Some(phase) = self.op.phase() {
+            json["phase"] = serde_json::json!(phase);
+        }
+        json
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
