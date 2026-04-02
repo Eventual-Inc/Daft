@@ -10,7 +10,7 @@ joins and aggregations.  This caused a HashJoin schema assertion panic.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 
 import pyarrow as pa
 
