@@ -148,6 +148,12 @@ impl DashboardSubscriber {
         }))
     }
 
+    /// Returns true if this process is a flotilla worker.
+    /// Workers should not emit most lifecycle events (they race with the driver).
+    fn is_worker(&self) -> bool {
+        self.worker_id.is_some()
+    }
+
     async fn handle_request(request: RequestBuilder) -> DaftResult<()> {
         request
             .send()
@@ -240,7 +246,7 @@ impl Drop for DashboardSubscriber {
 #[async_trait]
 impl Subscriber for DashboardSubscriber {
     fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
 
@@ -283,7 +289,7 @@ impl Subscriber for DashboardSubscriber {
     }
 
     fn on_query_end(&self, query_id: QueryID, end_result: QueryResult) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
         let results = self.preview_rows.remove(&query_id);
@@ -320,7 +326,7 @@ impl Subscriber for DashboardSubscriber {
     }
 
     fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
 
@@ -335,7 +341,7 @@ impl Subscriber for DashboardSubscriber {
     }
 
     fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
 
@@ -356,7 +362,7 @@ impl Subscriber for DashboardSubscriber {
         execution_id: &str,
         physical_plan: QueryPlan,
     ) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
 
@@ -379,7 +385,7 @@ impl Subscriber for DashboardSubscriber {
     }
 
     async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
 
@@ -424,7 +430,7 @@ impl Subscriber for DashboardSubscriber {
         query_id: QueryID,
         stats: Arc<Vec<(NodeID, Stats)>>,
     ) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
 
@@ -441,7 +447,7 @@ impl Subscriber for DashboardSubscriber {
     }
 
     async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
 
@@ -453,7 +459,7 @@ impl Subscriber for DashboardSubscriber {
     }
 
     async fn on_exec_end_with_id(&self, query_id: QueryID, _execution_id: &str) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
 
@@ -474,7 +480,7 @@ impl Subscriber for DashboardSubscriber {
     }
 
     async fn on_operator_start(&self, event: Arc<OperatorStartEvent>) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
 
@@ -489,7 +495,7 @@ impl Subscriber for DashboardSubscriber {
     }
 
     async fn on_stats(&self, event: Arc<StatsEvent>) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
 
@@ -528,7 +534,7 @@ impl Subscriber for DashboardSubscriber {
     }
 
     async fn on_operator_end(&self, event: Arc<OperatorEndEvent>) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+        if self.is_worker() {
             return Ok(());
         }
 
