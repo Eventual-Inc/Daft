@@ -42,6 +42,19 @@ use crate::{
     statement::Statement, table_not_found_err, unsupported_sql_err,
 };
 
+/// Map a sqlparser ParserError to PlannerError with caret-formatted message.
+///
+/// This strips the "sql parser error: " prefix from the Display output and
+/// extracts location information to format with source context and caret pointer.
+fn map_parser_error(sql: &str, e: sqlparser::parser::ParserError) -> PlannerError {
+    let error_str = e.to_string();
+    // Strip the "sql parser error: " prefix that ParserError::Display adds
+    let raw_msg = error_str
+        .strip_prefix("sql parser error: ")
+        .unwrap_or(&error_str);
+    PlannerError::caret_error(format_sql_error_from_message(sql, raw_msg))
+}
+
 /// Bindings are used to lookup in-scope tables, views, and columns (targets T).
 /// This is an incremental step towards proper name resolution.
 struct Bindings<T>(HashMap<String, T>);
@@ -315,14 +328,7 @@ impl SQLPlanner<'_> {
             .with_tokens_with_locations(tokens);
 
         // currently only allow one statement
-        let statements = parser.parse_statements().map_err(|e| {
-            let error_str = e.to_string();
-            // Strip the "sql parser error: " prefix that ParserError::Display adds
-            let raw_msg = error_str
-                .strip_prefix("sql parser error: ")
-                .unwrap_or(&error_str);
-            PlannerError::caret_error(format_sql_error_from_message(input, raw_msg))
-        })?;
+        let statements = parser.parse_statements().map_err(|e| map_parser_error(input, e))?;
         if statements.len() > 1 {
             unsupported_sql_err!(
                 "Only exactly one SQL statement allowed, found {}",
@@ -2221,13 +2227,7 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
         })
         .with_tokens_with_locations(tokens);
 
-    let expr = parser.parse_select_item().map_err(|e| {
-        let error_str = e.to_string();
-        let raw_msg = error_str
-            .strip_prefix("sql parser error: ")
-            .unwrap_or(&error_str);
-        PlannerError::caret_error(format_sql_error_from_message(sql, raw_msg))
-    })?;
+    let expr = parser.parse_select_item().map_err(|e| map_parser_error(sql, e))?;
     let exprs = planner.select_item_to_expr(&expr)?;
     if exprs.len() != 1 {
         invalid_operation_err!("expected a single expression, found {}", exprs.len())

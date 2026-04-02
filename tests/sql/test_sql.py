@@ -318,6 +318,33 @@ def test_sql_caret_error_preserves_multi_statement_error():
         daft.sql("SELECT 1; SELECT 2")
 
 
+def test_sql_error_location_parsing_robustness():
+    """Test that location parsing from sqlparser error strings works correctly.
+    
+    This test locks in the expected format of sqlparser error messages to detect
+    if upstream changes break our location extraction logic.
+    """
+    # Test various sqlparser error formats to ensure robust parsing
+    test_cases = [
+        # (sql, expected_line, should_have_caret)
+        ("select ;", 1, True),  # Basic syntax error
+        ("select * from", 1, True),  # EOF error
+        ("SELECT a\nFROM\nWHERE x = 1", 3, True),  # Multi-line error
+        ("SELECT (1 + 2", 1, True),  # Unclosed paren
+    ]
+    
+    for sql, expected_line, should_have_caret in test_cases:
+        with pytest.raises(Exception) as exc_info:
+            daft.sql(sql)
+        msg = str(exc_info.value)
+        
+        # Verify error message structure
+        assert f"LINE {expected_line}:" in msg or f"Line: {expected_line}" in msg
+        if should_have_caret:
+            assert "^" in msg
+        assert "ERROR:" in msg or "SQL error" in msg
+
+
 def test_sql_tbl_alias():
     bindings = {"df": daft.from_pydict({"n": [1, 2, 3]})}
     df = daft.sql("SELECT df_alias.n FROM df AS df_alias where df_alias.n = 2", **bindings)
