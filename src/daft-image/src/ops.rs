@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use arrow::array::{BooleanBufferBuilder, LargeBinaryArray, OffsetBufferBuilder};
+use arrow::{
+    array::{BooleanBufferBuilder, LargeBinaryArray, OffsetBufferBuilder},
+    buffer::ScalarBuffer,
+};
 use base64::Engine;
 use common_error::{DaftError, DaftResult};
 use common_image::{BBox, CowImage};
@@ -18,6 +21,14 @@ use daft_schema::image_property::ImageProperty;
 use rayon::prelude::*;
 
 use crate::{CountingWriter, iters::ImageBufferIter};
+
+pub trait ImageHashOps {
+    fn average_hash(&self) -> DaftResult<UInt64Array>;
+    fn difference_hash(&self) -> DaftResult<UInt64Array>;
+    fn perceptual_hash(&self) -> DaftResult<UInt64Array>;
+    fn wavelet_hash(&self) -> DaftResult<UInt64Array>;
+    fn crop_resistant_hash(&self) -> DaftResult<BinaryArray>;
+}
 
 pub trait ImageOps {
     fn encode(&self, image_format: ImageFormat) -> DaftResult<BinaryArray>;
@@ -199,6 +210,96 @@ impl ImageOps for FixedShapeImageArray {
                 &vec![(*self.image_mode() as u8) as u32; self.len()],
             )),
         }
+    }
+}
+
+fn compute_hash<Arr, F>(images: &Arr, hash_fn: F) -> UInt64Array
+where
+    Arr: AsImageObj,
+    F: for<'a> Fn(&CowImage<'a>) -> u64,
+{
+    let mut values: Vec<u64> = Vec::with_capacity(images.len());
+    let mut validity = BooleanBufferBuilder::new(images.len());
+
+    for img in ImageBufferIter::new(images) {
+        match img.as_ref() {
+            Some(img) => {
+                values.push(hash_fn(img));
+                validity.append(true);
+            }
+            None => {
+                values.push(0);
+                validity.append(false);
+            }
+        }
+    }
+
+    let sb = ScalarBuffer::from(arrow::buffer::Buffer::from_vec(values));
+    let arrow_arr = arrow::array::UInt64Array::new(sb, Some(validity.finish().into()));
+    UInt64Array::from_arrow(
+        daft_core::datatypes::Field::new(images.name(), DataType::UInt64),
+        Arc::new(arrow_arr),
+    )
+    .unwrap()
+}
+
+fn compute_crop_resistant_hash<Arr: AsImageObj>(images: &Arr) -> BinaryArray {
+    let hashes: Vec<Option<Vec<u8>>> = ImageBufferIter::new(images)
+        .map(|img| {
+            img.as_ref().map(|img| {
+                let segment_hashes: Vec<u64> = img.crop_resistant_hash();
+                let mut bytes = Vec::with_capacity(segment_hashes.len() * 8);
+                for h in &segment_hashes {
+                    bytes.extend_from_slice(&h.to_be_bytes());
+                }
+                bytes
+            })
+        })
+        .collect();
+    BinaryArray::from_iter(images.name(), hashes.into_iter())
+}
+
+impl ImageHashOps for ImageArray {
+    fn average_hash(&self) -> DaftResult<UInt64Array> {
+        Ok(compute_hash(self, |img| img.average_hash()))
+    }
+
+    fn difference_hash(&self) -> DaftResult<UInt64Array> {
+        Ok(compute_hash(self, |img| img.difference_hash()))
+    }
+
+    fn perceptual_hash(&self) -> DaftResult<UInt64Array> {
+        Ok(compute_hash(self, |img| img.perceptual_hash()))
+    }
+
+    fn wavelet_hash(&self) -> DaftResult<UInt64Array> {
+        Ok(compute_hash(self, |img| img.wavelet_hash()))
+    }
+
+    fn crop_resistant_hash(&self) -> DaftResult<BinaryArray> {
+        Ok(compute_crop_resistant_hash(self))
+    }
+}
+
+impl ImageHashOps for FixedShapeImageArray {
+    fn average_hash(&self) -> DaftResult<UInt64Array> {
+        Ok(compute_hash(self, |img| img.average_hash()))
+    }
+
+    fn difference_hash(&self) -> DaftResult<UInt64Array> {
+        Ok(compute_hash(self, |img| img.difference_hash()))
+    }
+
+    fn perceptual_hash(&self) -> DaftResult<UInt64Array> {
+        Ok(compute_hash(self, |img| img.perceptual_hash()))
+    }
+
+    fn wavelet_hash(&self) -> DaftResult<UInt64Array> {
+        Ok(compute_hash(self, |img| img.wavelet_hash()))
+    }
+
+    fn crop_resistant_hash(&self) -> DaftResult<BinaryArray> {
+        Ok(compute_crop_resistant_hash(self))
     }
 }
 

@@ -525,6 +525,21 @@ fn replace_column_with_semantic_id(
                         |e| e,
                     )
             }
+            Expr::Coalesce(inputs) => {
+                let transforms = inputs
+                    .iter()
+                    .map(|input| {
+                        replace_column_with_semantic_id(input.clone(), subexprs_to_replace, schema)
+                    })
+                    .collect::<Vec<_>>();
+                if transforms.iter().all(|t| !t.transformed) {
+                    Transformed::no(e)
+                } else {
+                    Transformed::yes(
+                        Expr::Coalesce(transforms.iter().map(|t| t.data.clone()).collect()).into(),
+                    )
+                }
+            }
         }
     }
 }

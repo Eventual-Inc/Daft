@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use daft_ai::{provider::ProviderRef, python::PyProviderWrapper};
+use daft_ai::python::PyProviderWrapper;
 use daft_catalog::{
     Identifier,
-    python::{PyIdentifier, PyTableSource, pyobj_to_catalog, pyobj_to_table},
+    python::{PyCatalogWrapper, PyIdentifier, PyTableSource, PyTableWrapper},
 };
 use daft_dsl::functions::python::WrappedUDFClass;
 use pyo3::{prelude::*, types::PyTuple};
@@ -27,17 +27,21 @@ impl PySession {
     }
 
     pub fn attach_catalog(&self, catalog: Bound<PyAny>, alias: String) -> PyResult<()> {
-        Ok(self.0.attach_catalog(pyobj_to_catalog(catalog)?, alias)?)
+        Ok(self
+            .0
+            .attach_catalog(PyCatalogWrapper::from(catalog).arced(), alias)?)
     }
 
     pub fn attach_provider(&self, provider: Bound<PyAny>, alias: String) -> PyResult<()> {
         Ok(self
             .0
-            .attach_provider(pyobj_to_provider(provider)?, alias)?)
+            .attach_provider(PyProviderWrapper::from(provider).arced(), alias)?)
     }
 
     pub fn attach_table(&self, table: Bound<PyAny>, alias: String) -> PyResult<()> {
-        Ok(self.0.attach_table(pyobj_to_table(table)?, alias)?)
+        Ok(self
+            .0
+            .attach_table(PyTableWrapper::from(table).arced(), alias)?)
     }
 
     pub fn detach_catalog(&self, alias: &str) -> PyResult<()> {
@@ -211,11 +215,6 @@ impl PySession {
             )),
         }
     }
-}
-
-fn pyobj_to_provider(obj: Bound<PyAny>) -> PyResult<ProviderRef> {
-    // no current rust-based providers, so just wrap
-    Ok(Arc::new(PyProviderWrapper::from(obj.unbind())))
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {

@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import warnings
 from abc import ABC, abstractmethod
-from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from daft.daft import FileFormatConfig, ParquetSourceConfig, ScanTask, StorageConfig
+from daft.daft import PyDataSourceTask, StorageConfig
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -65,19 +64,15 @@ class DataSource(ABC):
         """Reads a DataSource as a DataFrame."""
         from daft.daft import ScanOperatorHandle
         from daft.dataframe import DataFrame
-        from daft.io.__shim import _DataSourceShim
         from daft.logical.builder import LogicalPlanBuilder
 
-        scan = _DataSourceShim(self)
-        handle = ScanOperatorHandle.from_python_scan_operator(scan)
+        handle = ScanOperatorHandle.from_data_source(self)
         builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
         return DataFrame(builder)
 
 
 class DataSourceTask(ABC):
     """DataSourceTask represents a partition of data that can be processed independently.
-
-    - DataSourceTask.parquet — read a Parquet file with the native reader
 
     Warning:
         This API is early in its development and is subject to change.
@@ -164,62 +159,39 @@ class DataSourceTask(ABC):
         Returns:
             A DataSourceTask executed by the native Parquet reader.
         """
-        sc = storage_config if storage_config is not None else StorageConfig(multithreaded_io=True, io_config=None)
-
-        # Strip partition_filters before constructing the ScanTask. In the
-        # DataSource model, partition pruning is the DataSource's job (it
-        # decides which files to yield in get_tasks). We keep the execution
-        # pushdowns (filters, columns, limit) so the native reader can apply
-        # them per-file. Without partition_filters, catalog_scan_task never
-        # returns None.
-        if pushdowns is not None:
-            py_pd = replace(pushdowns, partition_filters=None)._to_pypushdowns()
-        else:
-            py_pd = None
-
-        st = ScanTask.catalog_scan_task(
-            file=path,
-            file_format=FileFormatConfig.from_parquet_config(ParquetSourceConfig()),
+        inner = PyDataSourceTask.parquet(
+            path=path,
             schema=schema._schema,
-            storage_config=sc,
+            pushdowns=pushdowns._to_pypushdowns() if pushdowns is not None else None,
             num_rows=num_rows,
             size_bytes=size_bytes,
-            iceberg_delete_files=None,
-            pushdowns=py_pd,
             partition_values=partition_values._recordbatch if partition_values is not None else None,
             stats=stats._recordbatch if stats is not None else None,
+            storage_config=storage_config,
         )
-        assert st is not None, "catalog_scan_task returned None unexpectedly (partition_filters were stripped)"
-        return _PyDataSourceTask(st, schema)
+
+        return _RustDataSourceTask(inner)
 
 
-class _PyDataSourceTask(DataSourceTask):
-    """Internal wrapper around a pre-built native ScanTask.
+class _RustDataSourceTask(DataSourceTask):
+    """Wraps a Rust-backed ``PyDataSourceTask`` as a Python ``DataSourceTask``.
 
-    This is not exactly our traditional _Py* wrapper class because we do
-    not have the equivalent trait fully plumbed on the Rust side yet. This
-    is a way to wrap the existing native ScanTasks in a DataSourceTask interface
-    so we can use them in the DataSource model, and our shim is able to
-    unwrap them into the native ScanTasks for execution.
+    This follows the same pattern as ``_RustTable(Table)`` in ``daft.catalog``:
+    the Python ABC subclass delegates to the Rust object so that
+    ``isinstance(task, DataSourceTask)`` holds.
     """
 
-    __slots__ = ("_task", "_schema")
+    __slots__ = ("_inner",)
 
-    def __init__(self, task: ScanTask, schema: Schema) -> None:
-        self._task = task
-        self._schema = schema
-
-    def unwrap(self) -> ScanTask:
-        """Unwraps the native ScanTask from this DataSourceTask, used by the shim."""
-        return self._task
+    def __init__(self, inner: PyDataSourceTask) -> None:
+        self._inner = inner
 
     @property
     def schema(self) -> Schema:
-        return self._schema
+        from daft.schema import Schema
+
+        return Schema._from_pyschema(self._inner.schema())
 
     async def read(self) -> AsyncIterator[RecordBatch]:
-        """We will actually implement this in the near future, but this path is unused for now."""
-        raise NotImplementedError(
-            "Native scan tasks are executed by the Rust engine. Subclass DataSourceTask for Python-based reading."
-        )
+        raise NotImplementedError("Native scan tasks are executed by the Rust engine, not via read().")
         yield  # pragma: no cover

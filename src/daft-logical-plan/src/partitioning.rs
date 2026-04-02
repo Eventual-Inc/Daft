@@ -50,7 +50,7 @@ impl RepartitionSpec {
                     by.clone(),
                 ))
             }
-            Self::Random(RandomShuffleConfig { num_partitions }) => ClusteringSpec::Random(
+            Self::Random(RandomShuffleConfig { num_partitions, .. }) => ClusteringSpec::Random(
                 RandomClusteringConfig::new(num_partitions.unwrap_or(upstream_num_partitions)),
             ),
             Self::Range(RangeRepartitionConfig {
@@ -92,11 +92,22 @@ impl HashRepartitionConfig {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct RandomShuffleConfig {
     pub num_partitions: Option<usize>,
+    pub seed: Option<u64>,
 }
 
 impl RandomShuffleConfig {
     pub fn new(num_partitions: Option<usize>) -> Self {
-        Self { num_partitions }
+        Self {
+            num_partitions,
+            seed: None,
+        }
+    }
+
+    pub fn new_with_seed(num_partitions: Option<usize>, seed: Option<u64>) -> Self {
+        Self {
+            num_partitions,
+            seed,
+        }
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
@@ -386,6 +397,13 @@ fn translate_clustering_spec_expr(
             Ok(Arc::new(
                 clustering_spec_expr.with_new_children(vec![new_input]),
             ))
+        }
+        Expr::Coalesce(inputs) => {
+            let new_inputs = inputs
+                .iter()
+                .map(|input| translate_clustering_spec_expr(input, old_colname_to_new_colname))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Expr::Coalesce(new_inputs).into())
         }
         // Cannot have agg exprs or references to other tables in clustering specs.
         Expr::Agg(_) | Expr::Column(..) | Expr::Over(..) | Expr::WindowFunction(_) => Err(()),

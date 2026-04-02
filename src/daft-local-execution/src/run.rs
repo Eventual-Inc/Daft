@@ -1,20 +1,24 @@
 use std::{
-    collections::HashMap,
-    sync::{Arc, OnceLock},
+    collections::{HashMap, HashSet},
+    sync::{Arc, Mutex, OnceLock},
+    time::Instant,
 };
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
 use common_error::DaftResult;
-use common_metrics::{QueryEndState, QueryPlan};
+use common_metrics::{QueryEndState, QueryID};
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
 use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
+use daft_shuffles::server::flight_server::{
+    FlightServerConnectionHandle, ShuffleFlightServer, start_server_loop,
+};
 use futures::{FutureExt, future::BoxFuture};
-use tokio::{runtime::Handle, sync::Mutex};
+use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
@@ -23,18 +27,18 @@ use {
     daft_local_plan::python::PyExecutionStats,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    pyo3::{Bound, PyAny, PyRef, PyResult, Python, pyclass, pymethods},
+    pyo3::{Bound, PyAny, PyRef, PyResult, Python, pyclass, pymethods, sync::MutexExt},
 };
 
 use crate::{
     ExecutionRuntimeContext,
-    channel::{Receiver, create_channel},
+    channel::{Sender, UnboundedSender, create_channel, create_unbounded_channel},
     pipeline::{
-        BuilderContext, translate_physical_plan_to_pipeline, viz_pipeline_ascii,
+        BuilderContext, PipelineMessage, translate_physical_plan_to_pipeline, viz_pipeline_ascii,
         viz_pipeline_mermaid,
     },
     resource_manager::get_or_init_memory_manager,
-    runtime_stats::RuntimeStatsManager,
+    runtime_stats::{RuntimeStatsManager, RuntimeStatsManagerHandle},
 };
 
 /// Global tokio runtime shared by all NativeExecutor instances
@@ -59,11 +63,73 @@ fn get_global_runtime() -> &'static Handle {
     unimplemented!("get_global_runtime is not implemented without python feature");
 }
 
+/// Message sent to the execution task to enqueue inputs
+#[derive(Clone)]
 pub(crate) struct EnqueueInputMessage {
     /// The input_id for this enqueue operation
     input_id: InputId,
     /// Plan inputs grouped by source_id
     inputs: HashMap<SourceId, Input>,
+    /// Sender for results of this input_id
+    result_sender: UnboundedSender<MicroPartition>,
+}
+
+/// Routes pipeline messages to per-input_id channels.
+struct MessageRouter {
+    output_senders: HashMap<InputId, UnboundedSender<MicroPartition>>,
+    /// Wall-clock start instant when each `input_id` was enqueued to the pipeline.
+    input_start_times: HashMap<InputId, Instant>,
+}
+
+impl MessageRouter {
+    fn new() -> Self {
+        Self {
+            output_senders: HashMap::new(),
+            input_start_times: HashMap::new(),
+        }
+    }
+
+    /// Route a message to the appropriate channel based on its input_id.
+    fn route_message(&mut self, msg: PipelineMessage) {
+        match msg {
+            PipelineMessage::Flush(input_id) => {
+                self.input_start_times.remove(&input_id);
+                self.output_senders.remove(&input_id);
+            }
+            PipelineMessage::Morsel {
+                input_id,
+                partition,
+            } => {
+                if let Some(sender) = self.output_senders.get(&input_id) {
+                    let _ = sender.send(partition);
+                }
+            }
+        }
+    }
+
+    fn insert_output_sender(&mut self, input_id: InputId, sender: UnboundedSender<MicroPartition>) {
+        self.input_start_times.insert(input_id, Instant::now());
+        self.output_senders.insert(input_id, sender);
+    }
+}
+
+impl Drop for MessageRouter {
+    fn drop(&mut self) {
+        for (input_id, started) in self.input_start_times.drain() {
+            log::debug!(
+                "NativeExecutor: input_id={input_id} ended without Flush after {:?} (cancel/shutdown?)",
+                started.elapsed()
+            );
+        }
+    }
+}
+
+/// Per-plan execution state
+struct PlanState {
+    task_handle: RuntimeTask<DaftResult<()>>,
+    enqueue_input_sender: Sender<EnqueueInputMessage>,
+    stats_handle: RuntimeStatsManagerHandle,
+    active_input_ids: HashSet<InputId>,
 }
 
 #[cfg_attr(
@@ -71,13 +137,14 @@ pub(crate) struct EnqueueInputMessage {
     pyclass(module = "daft.daft", name = "NativeExecutor", frozen)
 )]
 pub struct PyNativeExecutor {
-    executor: NativeExecutor,
+    executor: Arc<Mutex<NativeExecutor>>,
+    port: u16,
 }
 
 #[cfg(feature = "python")]
 impl Default for PyNativeExecutor {
     fn default() -> Self {
-        Self::new()
+        Self::new(false, "")
     }
 }
 
@@ -85,13 +152,21 @@ impl Default for PyNativeExecutor {
 #[pymethods]
 impl PyNativeExecutor {
     #[new]
-    pub fn new() -> Self {
+    pub fn new(is_flotilla_worker: bool, ip: &str) -> Self {
+        let executor = NativeExecutor::new(is_flotilla_worker, ip);
+        let port = executor.shuffle_port();
         Self {
-            executor: NativeExecutor::new(),
+            executor: Arc::new(Mutex::new(executor)),
+            port,
         }
     }
 
-    #[pyo3(signature = (local_physical_plan, daft_ctx, input_id, inputs, context=None))]
+    pub fn shuffle_port(&self) -> u16 {
+        self.port
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (local_physical_plan, daft_ctx, input_id, inputs, context=None, maintain_order=true))]
     pub fn run<'py>(
         &self,
         py: Python<'py>,
@@ -100,22 +175,46 @@ impl PyNativeExecutor {
         input_id: InputId,
         inputs: HashMap<SourceId, Input>,
         context: Option<HashMap<String, String>>,
+        maintain_order: bool,
     ) -> PyResult<Bound<'py, pyo3::PyAny>> {
         let daft_ctx: &DaftContext = daft_ctx.into();
         let plan = local_physical_plan.plan.clone();
         let exec_cfg = daft_ctx.execution_config();
         let subscribers = daft_ctx.subscribers();
-        let enqueue_future = {
-            self.executor
-                .run(&plan, exec_cfg, subscribers, context, input_id, inputs)?
+        let (fingerprint, enqueue_future) = {
+            self.executor.lock_py_attached(py).unwrap().run(
+                &plan,
+                exec_cfg,
+                subscribers,
+                context,
+                inputs,
+                input_id,
+                maintain_order,
+            )?
         };
 
+        let executor = self.executor.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let result = enqueue_future.await;
-            Ok(PyExecutionEngineResult {
-                result: Arc::new(Mutex::new(Some(result))),
+            let result = enqueue_future.await?;
+            Ok(PyResultReceiver {
+                result: Arc::new(tokio::sync::Mutex::new(Some(result))),
+                fingerprint,
+                input_id,
+                executor,
             })
         })
+    }
+
+    pub fn active_plan_count(&self, py: Python<'_>) -> usize {
+        self.executor.lock_py_attached(py).unwrap().plans.len()
+    }
+
+    pub fn cancel_plan(&self, py: Python<'_>, fingerprint: u64) -> PyResult<()> {
+        self.executor
+            .lock_py_attached(py)
+            .unwrap()
+            .cancel_plan(fingerprint);
+        Ok(())
     }
 
     #[staticmethod]
@@ -145,119 +244,269 @@ impl PyNativeExecutor {
     }
 }
 
+fn parse_context(ctx: Option<&HashMap<String, String>>) -> (QueryID, u64) {
+    let query_id = ctx
+        .as_ref()
+        .and_then(|c| c.get("query_id"))
+        .map(|s| QueryID::from(s.as_str()))
+        .unwrap_or_else(|| QueryID::from(""));
+    let fingerprint = ctx
+        .as_ref()
+        .and_then(|c| c.get("plan_fingerprint"))
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+    (query_id, fingerprint)
+}
+
+/// The core execution loop that drives a pipeline to completion.
+/// Receives inputs via `enqueue_input_rx`, routes pipeline outputs to
+/// per-input_id channels, and runs until the pipeline finishes, errors,
+/// or is cancelled.
+async fn run_execution_loop(
+    cancel: CancellationToken,
+    stats_manager: RuntimeStatsManager,
+    mut enqueue_input_rx: crate::channel::Receiver<EnqueueInputMessage>,
+    input_senders: Arc<HashMap<SourceId, crate::input_sender::InputSender>>,
+    pipeline: Box<dyn crate::pipeline::PipelineNode>,
+    maintain_order: bool,
+) -> DaftResult<()> {
+    let stats_manager_handle = stats_manager.handle();
+    let memory_manager = get_or_init_memory_manager();
+    let mut runtime_handle =
+        ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
+    let mut output_receiver = pipeline.start(maintain_order, &mut runtime_handle)?;
+
+    let mut message_router = MessageRouter::new();
+    let mut input_senders = Some(input_senders);
+    let mut input_exhausted = false;
+
+    let (result, finish_status) = loop {
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => {
+                println!("Execution engine cancelled");
+                break (Ok(()), QueryEndState::Canceled);
+            }
+            _ = tokio::signal::ctrl_c() => {
+                println!("Received Ctrl-C, shutting down execution engine");
+                break (Ok(()), QueryEndState::Canceled);
+            }
+            Some(join_result) = runtime_handle.join_next() => {
+                if let Err(e) = join_result {
+                    if matches!(&e, common_error::DaftError::JoinError(source) if source.is_cancelled()) {
+                        break (Ok(()), QueryEndState::Canceled);
+                    }
+                    break (Err(e), QueryEndState::Failed);
+                }
+            }
+            enqueue_msg = enqueue_input_rx.recv(), if !input_exhausted => {
+                if let Some(EnqueueInputMessage { input_id, inputs, result_sender }) = enqueue_msg {
+                    message_router.insert_output_sender(input_id, result_sender);
+                    let senders = input_senders.as_ref().unwrap();
+                    for (key, plan_input) in inputs {
+                        if let Some(sender) = senders.get(&key) {
+                            let _ = sender.send(input_id, plan_input);
+                        }
+                    }
+                } else {
+                    // All senders dropped — drop input channels so
+                    // pipeline sources see EOF.
+                    input_senders.take();
+                    input_exhausted = true;
+                }
+            }
+            msg = output_receiver.recv() => {
+                match msg {
+                    Some(msg) => {
+                        message_router.route_message(msg);
+                    }
+                    None => {
+                        // Pipeline finished. Close result channels so waiters
+                        // unblock, then drain runtime tasks.
+                        drop(message_router);
+                        let res = runtime_handle.shutdown().await;
+                        let status = if res.is_ok() { QueryEndState::Finished } else { QueryEndState::Failed };
+                        break (res, status);
+                    }
+                }
+            }
+        }
+    };
+
+    stats_manager.finish(finish_status).await;
+    flush_opentelemetry_providers();
+    result
+}
+
 pub(crate) struct NativeExecutor {
     cancel: CancellationToken,
+    is_flotilla_worker: bool,
+    shuffle_server: Option<Arc<ShuffleFlightServer>>,
+    shuffle_server_connection: Option<FlightServerConnectionHandle>,
+    plans: HashMap<u64, PlanState>,
 }
 
 impl NativeExecutor {
-    pub fn new() -> Self {
-        Self {
-            cancel: CancellationToken::new(),
+    pub fn new(is_flotilla_worker: bool, ip: &str) -> Self {
+        // Determine if we are running in a flotilla worker.
+        if is_flotilla_worker {
+            let shuffle_server = Arc::new(ShuffleFlightServer::new());
+            let shuffle_server_connection = Some(start_server_loop(ip, shuffle_server.clone()));
+
+            Self {
+                cancel: CancellationToken::new(),
+                is_flotilla_worker: true,
+                shuffle_server: Some(shuffle_server),
+                shuffle_server_connection,
+                plans: HashMap::new(),
+            }
+        } else {
+            Self {
+                cancel: CancellationToken::new(),
+                is_flotilla_worker: false,
+                shuffle_server: None,
+                shuffle_server_connection: None,
+                plans: HashMap::new(),
+            }
         }
     }
 
+    pub fn shuffle_port(&self) -> u16 {
+        self.shuffle_server_connection
+            .as_ref()
+            .map(|conn| conn.port())
+            .unwrap_or(0)
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub fn run(
-        &self,
+        &mut self,
         local_physical_plan: &LocalPhysicalPlanRef,
         exec_cfg: Arc<DaftExecutionConfig>,
         subscribers: Vec<Arc<dyn Subscriber>>,
         additional_context: Option<HashMap<String, String>>,
-        input_id: InputId,
         inputs: HashMap<SourceId, Input>,
-    ) -> DaftResult<BoxFuture<'static, ExecutionEngineResult>> {
-        let cancel = self.cancel.clone();
-        let additional_context = additional_context.unwrap_or_default();
+        input_id: InputId,
+        maintain_order: bool,
+    ) -> DaftResult<(u64, BoxFuture<'static, DaftResult<ExecutionEngineResult>>)> {
+        let (query_id, fingerprint) = parse_context(additional_context.as_ref());
 
-        let query_id: common_metrics::QueryID = additional_context
-            .get("query_id")
-            .ok_or_else(|| {
-                common_error::DaftError::ValueError(
-                    "query_id not found in additional_context".to_string(),
-                )
-            })?
-            .clone()
-            .into();
+        if !self.plans.contains_key(&fingerprint) {
+            let cancel = self.cancel.clone();
+            let additional_context = additional_context.unwrap_or_default();
+            let ctx = BuilderContext::new_with_context(
+                query_id.clone(),
+                additional_context,
+                self.shuffle_server.clone(),
+            );
+            let (pipeline, input_senders) =
+                translate_physical_plan_to_pipeline(local_physical_plan, &exec_cfg, &ctx)?;
 
-        let ctx = BuilderContext::new_with_context(query_id.clone(), additional_context);
-        let (pipeline, input_senders) =
-            translate_physical_plan_to_pipeline(local_physical_plan.as_ref(), &exec_cfg, &ctx)?;
-        let plan_json = pipeline.repr_json();
+            let handle = get_global_runtime();
+            let stats_manager = RuntimeStatsManager::try_new(
+                handle,
+                &pipeline,
+                subscribers,
+                query_id,
+                self.is_flotilla_worker,
+            )?;
+            let stats_handle = stats_manager.handle();
 
-        let (tx, rx) = create_channel(1);
+            let (enqueue_input_tx, enqueue_input_rx) = create_channel::<EnqueueInputMessage>(1);
 
-        // Spawn execution on the global runtime - returns immediately
-        let handle = get_global_runtime();
-        let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
+            let input_senders = Arc::new(input_senders);
+            let task = run_execution_loop(
+                cancel,
+                stats_manager,
+                enqueue_input_rx,
+                input_senders,
+                pipeline,
+                maintain_order,
+            );
 
-        let (enqueue_input_tx, mut enqueue_input_rx) = create_channel::<EnqueueInputMessage>(1);
-
-        let task = async move {
-            let stats_manager_handle = stats_manager.handle();
-            let execution_task = async {
-                let memory_manager = get_or_init_memory_manager();
-                let mut runtime_handle =
-                    ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
-                let mut receiver = pipeline.start(true, &mut runtime_handle)?;
-
-                if let Some(message) = enqueue_input_rx.recv().await {
-                    for (key, plan_input) in message.inputs {
-                        if let Some(sender) = input_senders.get(&key) {
-                            let _ = sender.send(message.input_id, plan_input);
-                        }
-                    }
-                }
-                drop(input_senders);
-
-                while let Some(val) = receiver.recv().await {
-                    if tx.send(val).await.is_err() {
-                        runtime_handle.shutdown().await?;
-                        return Ok(());
-                    }
-                }
-
-                runtime_handle.shutdown().await
-            };
-
-            let (result, finish_status) = tokio::select! {
-                biased;
-                () = cancel.cancelled() => {
-                    log::info!("Execution engine cancelled");
-                    (Ok(()), QueryEndState::Canceled)
-                }
-                _ = tokio::signal::ctrl_c() => {
-                    log::info!("Received Ctrl-C, shutting down execution engine");
-                    (Ok(()), QueryEndState::Canceled)
-                }
-                result = execution_task => {
-                    let status = if result.is_err() {
-                        QueryEndState::Failed
-                    } else {
-                        QueryEndState::Finished
-                    };
-                    (result, status)
+            let task_handle = RuntimeTask::new(handle, task);
+            self.plans.insert(
+                fingerprint,
+                PlanState {
+                    task_handle,
+                    enqueue_input_sender: enqueue_input_tx,
+                    stats_handle,
+                    active_input_ids: HashSet::new(),
                 },
-            };
+            );
+        }
 
-            // Finish the stats manager
-            let final_stats = stats_manager.finish(finish_status).await;
+        let plan_state = self.plans.get_mut(&fingerprint).unwrap();
+        let enqueue_input_sender = plan_state.enqueue_input_sender.clone();
+        plan_state.active_input_ids.insert(input_id);
 
-            flush_opentelemetry_providers();
-            result.map(|()| final_stats)
+        Ok((
+            fingerprint,
+            async move {
+                let (result_tx, result_rx) = create_unbounded_channel();
+                let enqueue_msg = EnqueueInputMessage {
+                    input_id,
+                    inputs,
+                    result_sender: result_tx,
+                };
+                if enqueue_input_sender.send(enqueue_msg).await.is_err() {
+                    return Err(common_error::DaftError::InternalError(
+                        "Plan execution task has died; cannot enqueue new input".to_string(),
+                    ));
+                }
+                Ok(ExecutionEngineResult {
+                    receiver: result_rx,
+                })
+            }
+            .boxed(),
+        ))
+    }
+
+    /// Finish tracking an input_id. If no active input_ids remain (or the
+    /// enqueue channel is closed), removes the plan and awaits the exec task.
+    pub fn try_finish(
+        &mut self,
+        fingerprint: u64,
+        input_id: InputId,
+    ) -> DaftResult<BoxFuture<'static, DaftResult<ExecutionStats>>> {
+        let Some(plan_state) = self.plans.get_mut(&fingerprint) else {
+            // Plan already removed (pipeline died and another input_id cleaned it up).
+            // Return empty stats; the actual error was already surfaced by the first caller.
+            let query_id = QueryID::from("");
+            return Ok(async move { Ok(ExecutionStats::new(query_id, vec![])) }.boxed());
         };
 
-        let handle = RuntimeTask::new(handle, task);
+        plan_state.active_input_ids.remove(&input_id);
+        let pipeline_dead = plan_state.enqueue_input_sender.is_closed();
+        let should_remove = plan_state.active_input_ids.is_empty() || pipeline_dead;
 
-        Ok(async move {
-            let enqueue_msg = EnqueueInputMessage { input_id, inputs };
-
-            let _ = enqueue_input_tx.send(enqueue_msg).await;
-            ExecutionEngineResult {
-                query_plan: serde_json::to_string(&plan_json).unwrap().into(),
-                handle,
-                receiver: rx,
+        if should_remove {
+            let plan_state = self.plans.remove(&fingerprint).unwrap();
+            Ok(async move {
+                // Try to get stats for this input_id. If the pipeline already died,
+                // the stats manager may be finished so this can fail — that's OK.
+                let stats = plan_state.stats_handle.take_input_snapshot(input_id).await;
+                drop(plan_state.enqueue_input_sender);
+                plan_state.task_handle.await??;
+                // If the snapshot failed (e.g. pipeline died), return empty stats.
+                Ok(stats.unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![])))
             }
+            .boxed())
+        } else {
+            let stats_handle = plan_state.stats_handle.clone();
+            Ok(async move {
+                Ok(stats_handle
+                    .take_input_snapshot(input_id)
+                    .await
+                    .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![])))
+            }
+            .boxed())
         }
-        .boxed())
+    }
+
+    pub fn cancel_plan(&mut self, fingerprint: u64) {
+        // RuntimeTask drop cancels the spawned task
+        self.plans.remove(&fingerprint);
     }
 
     fn repr_ascii(
@@ -302,56 +551,36 @@ impl NativeExecutor {
 impl Drop for NativeExecutor {
     fn drop(&mut self) {
         self.cancel.cancel();
+        if let Some(conn) = &mut self.shuffle_server_connection {
+            let _ = conn.shutdown();
+        }
     }
 }
 
 pub struct ExecutionEngineResult {
-    query_plan: QueryPlan,
-    handle: RuntimeTask<DaftResult<ExecutionStats>>,
-    receiver: Receiver<MicroPartition>,
+    receiver: crate::channel::UnboundedReceiver<MicroPartition>,
 }
 
 impl ExecutionEngineResult {
     async fn next(&mut self) -> Option<MicroPartition> {
         self.receiver.recv().await
     }
-
-    async fn finish(self) -> DaftResult<ExecutionStats> {
-        drop(self.receiver);
-        let result = self.handle.await;
-        match result {
-            Ok(Ok(final_stats)) => Ok(final_stats),
-            Ok(Err(e)) => Err(e),
-            Err(e) => Err(e),
-        }
-    }
 }
 
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "daft.daft", name = "PyExecutionEngineResult", frozen)
+    pyclass(module = "daft.daft", name = "PyResultReceiver", frozen)
 )]
-pub struct PyExecutionEngineResult {
-    result: Arc<Mutex<Option<ExecutionEngineResult>>>,
+pub struct PyResultReceiver {
+    result: Arc<tokio::sync::Mutex<Option<ExecutionEngineResult>>>,
+    fingerprint: u64,
+    input_id: InputId,
+    executor: Arc<Mutex<NativeExecutor>>,
 }
 
 #[cfg(feature = "python")]
 #[pymethods]
-impl PyExecutionEngineResult {
-    fn query_plan<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let result = self.result.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let result = result.lock().await;
-            let query_plan = result
-                .as_ref()
-                .expect("ExecutionEngineResult.query_plan() should not be called after finish().")
-                .query_plan
-                .clone()
-                .to_string();
-            Ok(query_plan)
-        })
-    }
-
+impl PyResultReceiver {
     fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
@@ -362,22 +591,29 @@ impl PyExecutionEngineResult {
             let mut result = result.lock().await;
             let part = result
                 .as_mut()
-                .expect("ExecutionEngineResult.__anext__() should not be called after finish().")
+                .expect("PyResultReceiver.__anext__() should not be called after try_finish().")
                 .next()
                 .await;
             Ok(part.map(PyMicroPartition::from))
         })
     }
 
-    fn finish<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    fn try_finish<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let result = self.result.clone();
+        let executor = self.executor.clone();
+        let fingerprint = self.fingerprint;
+        let input_id = self.input_id;
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            // Take the result to drop the receiver
             let mut result = result.lock().await;
-            let stats = result
+            let _ = result
                 .take()
-                .expect("ExecutionEngineResult.finish() should not be called more than once.")
-                .finish()
-                .await?;
+                .expect("PyResultReceiver.try_finish() should not be called more than once.");
+            drop(result);
+
+            // Delegate to NativeExecutor::try_finish
+            let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
+            let stats = finish_future.await?;
             Ok(PyExecutionStats::from(stats))
         })
     }

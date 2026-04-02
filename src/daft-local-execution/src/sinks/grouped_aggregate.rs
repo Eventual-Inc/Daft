@@ -15,10 +15,11 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 #[derive(Clone, Debug)]
 pub(crate) enum AggStrategy {
@@ -337,7 +338,7 @@ impl BlockingSink for GroupedAggregateSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.grouped_aggregate_params.clone();
         let num_partitions = self.num_partitions();
         spawner
@@ -403,7 +404,7 @@ impl BlockingSink for GroupedAggregateSink {
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
                     let concated = MicroPartition::concat(results)?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![concated]))
+                    Ok(vec![concated])
                 },
                 Span::current(),
             )
@@ -439,7 +440,7 @@ impl BlockingSink for GroupedAggregateSink {
         display
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         Ok(GroupedAggregateState::new(
             self.num_partitions(),
             self.partial_agg_threshold,

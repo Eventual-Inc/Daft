@@ -48,7 +48,10 @@ pub use source_config::SourceConfig;
 pub mod test_utils;
 
 // Re-export source module for DataSource and DataSourceTask traits.
-pub use source::{DataSource, DataSourceStatistics, DataSourceTask, Precision};
+pub use source::{
+    DataSource, DataSourceRef, DataSourceStatistics, DataSourceTask, DataSourceTaskRef,
+    DataSourceTaskStream, Precision, ReadOptions, RecordBatchStream, ShimSourceTask,
+};
 
 #[cfg(feature = "python")]
 pub mod python;

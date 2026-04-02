@@ -1121,6 +1121,37 @@ def to_datetime(expr: Expression, format: str, timezone: str | None = None) -> E
     return Expression._call_builtin_scalar_fn("to_datetime", expr, format=format, timezone=timezone)
 
 
+def convert_time_zone(expr: Expression, to_timezone: str, from_timezone: str | None = None) -> Expression:
+    """Converts a timestamp to another timezone while preserving the instant in time.
+
+    If the timestamp has no timezone, `from_timezone` must be provided to interpret the local time before converting to `to_timezone`.
+
+    Args:
+        expr: Timestamp expression to convert.
+        to_timezone: Target timezone (e.g. "UTC", "+02:00", "America/New_York").
+        from_timezone: Source timezone for timestamps without a timezone.
+
+    Returns:
+        Expression: Timestamp expression with the target timezone.
+    """
+    return Expression._call_builtin_scalar_fn("convert_time_zone", expr, to_timezone, from_timezone)
+
+
+def replace_time_zone(expr: Expression, timezone: str | None = None) -> Expression:
+    """Replaces the timezone of a timestamp while preserving the local time.
+
+    If `timezone` is not provided, the timezone is removed.
+
+    Args:
+        expr: Timestamp expression to update.
+        timezone: New timezone (e.g. "UTC", "+02:00", "America/New_York").
+
+    Returns:
+        Expression: Timestamp expression with the updated timezone.
+    """
+    return Expression._call_builtin_scalar_fn("replace_time_zone", expr, timezone)
+
+
 def date_trunc(interval: str, expr: Expression, relative_to: Expression | None = None) -> Expression:
     """Truncates the datetime column to the specified interval.
 
@@ -1202,3 +1233,54 @@ def to_unix_epoch(expr: Expression, time_unit: str | TimeUnit | None = None) -> 
         (Showing first 4 of 4 rows)
     """
     return Expression._call_builtin_scalar_fn("to_unix_epoch", expr, time_unit=time_unit)
+
+
+def current_date() -> Expression:
+    """Returns the current date (UTC).
+
+    Returns:
+        Expression: a Date expression containing today's date, broadcast to every row.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import current_date
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
+        >>> df = df.with_column("today", current_date())
+        >>> df.schema()["today"].dtype == daft.DataType.date()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("current_date")
+
+
+def current_timestamp() -> Expression:
+    """Returns the current timestamp (UTC) with microsecond precision.
+
+    Returns:
+        Expression: a Timestamp[us] expression containing the current datetime, broadcast to every row.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import current_timestamp
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
+        >>> df = df.with_column("now", current_timestamp())
+        >>> df.schema()["now"].dtype == daft.DataType.timestamp("us")
+        True
+    """
+    return Expression._call_builtin_scalar_fn("current_timestamp")
+
+
+def current_timezone() -> Expression:
+    """Returns the current timezone as a string (always 'UTC' in Daft).
+
+    Returns:
+        Expression: a String expression containing 'UTC', broadcast to every row.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import current_timezone
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
+        >>> df = df.with_column("tz", current_timezone())
+        >>> df.schema()["tz"].dtype == daft.DataType.string()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("current_timezone")

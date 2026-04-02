@@ -95,7 +95,7 @@ jobs:
     if: ${{ failure() }}
 
     steps:
-    - uses: slackapi/slack-github-action@v2.1.1
+    - uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -147,7 +147,7 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 10
         max_attempts: 3
@@ -170,7 +170,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
+      uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.ref == 'refs/heads/main') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -208,7 +208,7 @@ jobs:
       contents: read
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@main
+      uses: jlumbroso/free-disk-space@v1.3.1
       with:
         tool-cache: false
         android: true
@@ -228,7 +228,7 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: docker-practice/actions-setup-docker@master
+    - uses: docker-practice/actions-setup-docker@v1
       timeout-minutes: 15
       if: runner.os == 'macos'
 
@@ -243,7 +243,7 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 10
         max_attempts: 3
@@ -275,7 +275,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
+      uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.ref == 'refs/heads/main') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

@@ -1,16 +1,21 @@
-"""WARNING! These APIs are internal; please use Catalog.from_gravitino() and Table.from_gravitino()."""
+"""WARNING! These APIs are internal; please use load_gravitino() or Catalog.from_gravitino()."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, Any, Literal
 
 from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
 from daft.catalog.__gravitino._client import GravitinoClient as InnerCatalog
 from daft.catalog.__gravitino._client import GravitinoTable as InnerTable
+from daft.io._parquet import read_parquet
 from daft.io.iceberg._iceberg import read_iceberg
 
 if TYPE_CHECKING:
+    from pyiceberg.table import Table as PyIcebergTable
+
     from daft.dataframe import DataFrame
+    from daft.io import IOConfig
     from daft.io.partitioning import PartitionField
 
 
@@ -76,35 +81,31 @@ class GravitinoCatalog(Catalog):
     ###
 
     def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
-        if pattern is None or pattern == "":
+        if not pattern:
             return [
                 Identifier.from_str(namespace)
                 for cat in self._inner.list_catalogs()
                 for namespace in self._inner.list_namespaces(cat)
             ]
-        # If pattern is provided, treat it as a catalog name
-        catalog_name = pattern
-        return [Identifier.from_str(namespace) for namespace in self._inner.list_namespaces(catalog_name)]
+        return [Identifier.from_str(namespace) for namespace in self._inner.list_namespaces(pattern)]
 
     def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
-        if pattern is None or pattern == "":
+        if not pattern:
             return [
                 Identifier.from_str(tbl)
                 for cat in self._inner.list_catalogs()
                 for namespace in self._inner.list_namespaces(cat)
                 for tbl in self._inner.list_tables(namespace)
             ]
-        num_namespaces = pattern.count(".")
-        if num_namespaces == 0:
-            catalog_name = pattern
+        dot_count = pattern.count(".")
+        if dot_count == 0:
             return [
                 Identifier.from_str(tbl)
-                for namespace in self._inner.list_namespaces(catalog_name)
+                for namespace in self._inner.list_namespaces(pattern)
                 for tbl in self._inner.list_tables(namespace)
             ]
-        elif num_namespaces == 1:
-            namespace_name = pattern
-            return [Identifier.from_str(tbl) for tbl in self._inner.list_tables(namespace_name)]
+        elif dot_count == 1:
+            return [Identifier.from_str(tbl) for tbl in self._inner.list_tables(pattern)]
         else:
             raise ValueError(
                 f"Unrecognized catalog name or namespace name, expected a '.'-separated namespace but received: {pattern}"
@@ -113,12 +114,11 @@ class GravitinoCatalog(Catalog):
     ###
     # has_.*
     ###
+
     def _has_namespace(self, ident: Identifier) -> bool:
-        # Namespace should be in format "catalog.schema"
         if len(ident) != 2:
             return False
         catalog_name = ident[0]
-        # List namespaces for the catalog and check if our identifier is in the list
         namespaces = self._inner.list_namespaces(catalog_name)
         return str(ident) in namespaces
 
@@ -130,14 +130,33 @@ class GravitinoCatalog(Catalog):
             return False
 
 
-class GravitinoTable(Table):
-    _inner: InnerTable
+class GravitinoTable(Table, ABC):
+    """Base class for Gravitino table formats."""
 
-    _read_options: set[str] = {"snapshot_id"}
-    _write_options: set[str] = set()
+    _inner: InnerTable
 
     def __init__(self) -> None:
         raise RuntimeError("GravitinoTable.__init__ is not supported, please use `Table.from_gravitino` instead.")
+
+    @classmethod
+    @abstractmethod
+    def _from_inner(cls, inner: InnerTable) -> GravitinoTable:
+        """Returns a table wrapping the given InnerTable, or raises ValueError if the format is not supported."""
+
+    @staticmethod
+    def _from_obj(obj: object) -> GravitinoTable:
+        """Returns a GravitinoTable if the given object can be adapted so."""
+        if isinstance(obj, InnerTable):
+            for impl in (GravitinoIcebergTable, GravitinoParquetTable):
+                try:
+                    return impl._from_inner(obj)
+                except ValueError:
+                    pass
+            raise ValueError(
+                f"Unsupported Gravitino table format: {obj.table_info.format!r} "
+                f"(table_type={obj.table_info.table_type!r})"
+            )
+        raise ValueError(f"Unsupported gravitino table type: {type(obj)}")
 
     @property
     def name(self) -> str:
@@ -146,60 +165,139 @@ class GravitinoTable(Table):
     def schema(self) -> Schema:
         return self.read().schema()
 
-    @staticmethod
-    def _from_obj(obj: object) -> GravitinoTable:
-        """Returns a GravitinoTable if the given object can be adapted so."""
-        if isinstance(obj, InnerTable):
-            t = GravitinoTable.__new__(GravitinoTable)
-            t._inner = obj
-            return t
-        raise ValueError(f"Unsupported gravitino table type: {type(obj)}")
 
-    ###
-    # read methods
-    ###
+class GravitinoIcebergTable(GravitinoTable):
+    """GravitinoIcebergTable is for Gravitino tables with format starting with 'ICEBERG'."""
+
+    _pyiceberg_table: PyIcebergTable
+    _read_options: set[str] = {"snapshot_id"}
+    _write_options: set[str] = set()
+
+    @classmethod
+    def _from_inner(cls, inner: InnerTable) -> GravitinoIcebergTable:
+        if not inner.table_info.format.upper().startswith("ICEBERG"):
+            raise ValueError(f"Expected ICEBERG format, got {inner.table_info.format!r}")
+        t = GravitinoIcebergTable.__new__(GravitinoIcebergTable)
+        t._inner = inner
+        t._pyiceberg_table = _open_iceberg_table(inner.table_info.storage_location, inner.io_config)
+        return t
 
     def read(self, **options: Any) -> DataFrame:
-        Table._validate_options("Gravitino read", options, GravitinoTable._read_options)
-
-        # For Iceberg tables, use the storage location (metadata path)
-        if self._inner.table_info.format.upper().startswith("ICEBERG"):
-            try:
-                return read_iceberg(
-                    table=self._inner.table_uri,
-                    snapshot_id=options.get("snapshot_id"),
-                    io_config=self._inner.io_config,
-                )
-            except ImportError as e:
-                if "pyiceberg" in str(e):
-                    raise ImportError(
-                        "PyIceberg is required to read Iceberg tables. "
-                        "Install it with: pip install 'daft[iceberg]' or pip install pyiceberg"
-                    ) from e
-                raise
-        else:
-            # For other formats, we might need different handling
-            raise NotImplementedError(
-                f"Reading {self._inner.table_info.format} format tables is not yet supported. "
-                f"Currently only ICEBERG format (and variants like ICEBERG/PARQUET) are supported."
-            )
-
-    ###
-    # write methods
-    ###
+        Table._validate_options("Gravitino read", options, self._read_options)
+        return read_iceberg(
+            table=self._pyiceberg_table,
+            snapshot_id=options.get("snapshot_id"),
+            io_config=self._inner.io_config,
+        )
 
     def append(self, df: DataFrame, **options: Any) -> None:
-        self._validate_options("Gravitino write", options, GravitinoTable._write_options)
-
-        if self._inner.table_info.format.upper().startswith("ICEBERG"):
-            raise NotImplementedError("Writing to Iceberg tables through Gravitino is not yet supported")
-        else:
-            raise NotImplementedError(f"Writing {self._inner.table_info.format} format tables is not yet supported")
+        self._validate_options("Gravitino write", options, self._write_options)
+        raise NotImplementedError("Writing to Iceberg tables through Gravitino is not yet supported")
 
     def overwrite(self, df: DataFrame, **options: Any) -> None:
-        self._validate_options("Gravitino write", options, GravitinoTable._write_options)
+        self._validate_options("Gravitino write", options, self._write_options)
+        raise NotImplementedError("Writing to Iceberg tables through Gravitino is not yet supported")
 
-        if self._inner.table_info.format.upper().startswith("ICEBERG"):
-            raise NotImplementedError("Writing to Iceberg tables through Gravitino is not yet supported")
-        else:
-            raise NotImplementedError(f"Writing {self._inner.table_info.format} format tables is not yet supported")
+
+class GravitinoParquetTable(GravitinoTable):
+    """GravitinoParquetTable is for Gravitino Hive tables with PARQUET format."""
+
+    _read_options: set[str] = set()
+    _write_options: set[str] = set()
+
+    @classmethod
+    def _from_inner(cls, inner: InnerTable) -> GravitinoParquetTable:
+        if not (inner.table_info.format.upper() == "PARQUET" and "HIVE" in inner.table_info.table_type.upper()):
+            raise ValueError(
+                f"Expected PARQUET/Hive table, got format={inner.table_info.format!r} "
+                f"table_type={inner.table_info.table_type!r}"
+            )
+        t = GravitinoParquetTable.__new__(GravitinoParquetTable)
+        t._inner = inner
+        return t
+
+    def read(self, **options: Any) -> DataFrame:
+        Table._validate_options("Gravitino read", options, self._read_options)
+        return read_parquet(
+            path=self._inner.table_info.storage_location,
+            io_config=self._inner.io_config,
+            hive_partitioning=True,
+        )
+
+    def append(self, df: DataFrame, **options: Any) -> None:
+        self._validate_options("Gravitino write", options, self._write_options)
+        raise NotImplementedError("Writing PARQUET format tables is not yet supported")
+
+    def overwrite(self, df: DataFrame, **options: Any) -> None:
+        self._validate_options("Gravitino write", options, self._write_options)
+        raise NotImplementedError("Writing PARQUET format tables is not yet supported")
+
+
+def _open_iceberg_table(storage_location: str, io_config: IOConfig | None) -> PyIcebergTable:
+    """Load a PyIceberg Table from a storage directory via HadoopCatalog."""
+    from pyiceberg.catalog.hadoop import HadoopCatalog
+
+    parent, table_dir = storage_location.rstrip("/").rsplit("/", 1)
+    props: dict[str, str] = {"warehouse": parent}
+    props.update(_io_config_to_pyiceberg_props(io_config))
+    return HadoopCatalog("gravitino_reader", props).load_table(table_dir)
+
+
+def _io_config_to_pyiceberg_props(io_config: IOConfig | None) -> dict[str, str]:
+    """Convert a Daft IOConfig to PyIceberg FileIO properties."""
+    if io_config is None or io_config.s3 is None:
+        return {}
+    s3 = io_config.s3
+    props: dict[str, str] = {}
+    if s3.key_id:
+        props["s3.access-key-id"] = s3.key_id
+    if s3.access_key:
+        props["s3.secret-access-key"] = s3.access_key
+    if s3.endpoint_url:
+        props["s3.endpoint"] = s3.endpoint_url
+    if s3.session_token:
+        props["s3.session-token"] = s3.session_token
+    if s3.region_name:
+        props["s3.region"] = s3.region_name
+    return props
+
+
+def load_gravitino(
+    endpoint: str,
+    metalake_name: str,
+    auth_type: Literal["simple", "oauth2"] = "simple",
+    username: str | None = None,
+    password: str | None = None,
+    token: str | None = None,
+) -> GravitinoCatalog:
+    """Creates a GravitinoCatalog for the given Gravitino metalake.
+
+    Args:
+        endpoint (str): Gravitino server endpoint URL.
+        metalake_name (str): Name of the metalake to connect to.
+        auth_type (str): Authentication type, either ``"simple"`` or ``"oauth2"``. Defaults to ``"simple"``.
+        username (str, optional): Username for simple authentication.
+        password (str, optional): Password for simple authentication.
+        token (str, optional): Bearer token for OAuth2 authentication.
+
+    Returns:
+        GravitinoCatalog: Catalog instance backed by the given Gravitino metalake.
+
+    Examples:
+        >>> from daft.catalog.__gravitino import load_gravitino
+        >>> catalog = load_gravitino(
+        ...     endpoint="http://localhost:8090",
+        ...     metalake_name="my_metalake",
+        ...     username="admin",
+        ... )
+        >>> catalog.list_tables("my_catalog.my_schema")
+    """
+    client = InnerCatalog(
+        endpoint=endpoint,
+        metalake_name=metalake_name,
+        auth_type=auth_type,
+        username=username,
+        password=password,
+        token=token,
+    )
+    return GravitinoCatalog._from_obj(client)

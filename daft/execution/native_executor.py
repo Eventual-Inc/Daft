@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 class NativeExecutor:
     def __init__(self) -> None:
-        self._executor = _NativeExecutor()
+        self._executor = _NativeExecutor(False, "")
 
     def run(
         self,
@@ -36,7 +36,6 @@ class NativeExecutor:
         context: dict[str, str] | None,
     ) -> Generator[LocalMaterializedResult, None, tuple[str, PyExecutionStats]]:
         stats: PyExecutionStats | None = None
-        query_plan: str | None = None
 
         async def stream_results() -> AsyncGenerator[PyMicroPartition | None, None]:
             result_handle = await self._executor.run(
@@ -45,15 +44,14 @@ class NativeExecutor:
                 0,
                 dict(inputs),
                 context,
+                ctx.daft_execution_config.maintain_order,
             )
-            nonlocal query_plan
-            query_plan = await result_handle.query_plan()
             nonlocal stats
             try:
                 async for batch in result_handle:
                     yield batch
             finally:
-                stats = await result_handle.finish()
+                stats = await result_handle.try_finish()
 
         event_loop = get_or_init_event_loop()
         async_exec = stream_results()
@@ -75,8 +73,8 @@ class NativeExecutor:
                 if should_raise_errors_from_close:
                     raise
 
-        assert query_plan is not None and stats is not None
-        return query_plan, stats
+        assert stats is not None
+        return stats.query_plan or "", stats
 
     def pretty_print(
         self,

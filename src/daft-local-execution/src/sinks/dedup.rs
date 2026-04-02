@@ -23,10 +23,11 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 #[derive(Default)]
 pub(crate) struct SinglePartitionDedupState {
@@ -117,7 +118,7 @@ impl BlockingSink for DedupSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let columns = self.columns.clone();
         let num_partitions = self.num_partitions();
         spawner
@@ -158,7 +159,7 @@ impl BlockingSink for DedupSink {
 
                     // Concatenate the results and return
                     let concated = MicroPartition::concat(results)?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![concated]))
+                    Ok(vec![concated])
                 },
                 Span::current(),
             )
@@ -182,7 +183,7 @@ impl BlockingSink for DedupSink {
         display
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         Ok(DedupState::new(self.num_partitions()))
     }
 }

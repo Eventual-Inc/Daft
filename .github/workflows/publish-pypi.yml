@@ -68,7 +68,7 @@ jobs:
     if: ${{ failure() }}
 
     steps:
-    - uses: slackapi/slack-github-action@v2.1.1
+    - uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

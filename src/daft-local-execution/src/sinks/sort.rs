@@ -7,10 +7,11 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) enum SortState {
     Building(Vec<MicroPartition>),
@@ -78,7 +79,7 @@ impl BlockingSink for SortSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.params.clone();
         spawner
             .spawn(
@@ -90,7 +91,7 @@ impl BlockingSink for SortSink {
                     let concated = MicroPartition::concat(parts)?;
                     let sorted =
                         concated.sort(&params.sort_by, &params.descending, &params.nulls_first)?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![sorted]))
+                    Ok(vec![sorted])
                 },
                 Span::current(),
             )
@@ -127,7 +128,7 @@ impl BlockingSink for SortSink {
         lines
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         Ok(SortState::Building(Vec::new()))
     }
 
