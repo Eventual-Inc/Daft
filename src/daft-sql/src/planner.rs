@@ -328,7 +328,9 @@ impl SQLPlanner<'_> {
             .with_tokens_with_locations(tokens);
 
         // currently only allow one statement
-        let statements = parser.parse_statements().map_err(|e| map_parser_error(input, e))?;
+        let statements = parser
+            .parse_statements()
+            .map_err(|e| map_parser_error(input, e))?;
         if statements.len() > 1 {
             unsupported_sql_err!(
                 "Only exactly one SQL statement allowed, found {}",
@@ -2227,7 +2229,9 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
         })
         .with_tokens_with_locations(tokens);
 
-    let expr = parser.parse_select_item().map_err(|e| map_parser_error(sql, e))?;
+    let expr = parser
+        .parse_select_item()
+        .map_err(|e| map_parser_error(sql, e))?;
     let exprs = planner.select_item_to_expr(&expr)?;
     if exprs.len() != 1 {
         invalid_operation_err!("expected a single expression, found {}", exprs.len())
