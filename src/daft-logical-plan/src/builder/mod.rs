@@ -741,6 +741,29 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    pub fn join_asof<Right: Into<LogicalPlanRef>>(
+        &self,
+        right: Right,
+        left_by: Vec<ExprRef>,
+        right_by: Vec<ExprRef>,
+        left_on: ExprRef,
+        right_on: ExprRef,
+    ) -> DaftResult<Self> {
+        let left_plan = self.plan.clone();
+        let right_plan = right.into();
+
+        let expr_resolver = ExprResolver::default();
+        let left_by = expr_resolver.resolve(left_by, left_plan.clone())?;
+        let right_by = expr_resolver.resolve(right_by, right_plan.clone())?;
+        let left_on = expr_resolver.resolve_single(left_on, left_plan.clone())?;
+        let right_on = expr_resolver.resolve_single(right_on, right_plan.clone())?;
+
+        let logical_plan: LogicalPlan =
+            ops::AsofJoin::try_new(left_plan, right_plan, left_by, right_by, left_on, right_on)?
+                .into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     pub fn cross_join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
@@ -1509,6 +1532,26 @@ impl PyLogicalPlanBuilder {
         }
 
         Ok(result.into())
+    }
+
+    pub fn join_asof(
+        &self,
+        right: &Self,
+        left_by: Vec<PyExpr>,
+        right_by: Vec<PyExpr>,
+        left_on: PyExpr,
+        right_on: PyExpr,
+    ) -> PyResult<Self> {
+        Ok(self
+            .builder
+            .join_asof(
+                &right.builder,
+                pyexprs_to_exprs(left_by),
+                pyexprs_to_exprs(right_by),
+                left_on.into(),
+                right_on.into(),
+            )?
+            .into())
     }
 
     pub fn concat(&self, other: &Self) -> DaftResult<Self> {
