@@ -405,9 +405,10 @@ mod tests {
 
     use super::{Optimizer, OptimizerBuilder, OptimizerConfig, RuleBatch, RuleExecutionStrategy};
     use crate::{
-        LogicalPlan,
-        ops::{Filter, Project, UDFProject},
+        LogicalPlan, LogicalPlanBuilder,
+        ops::{Filter, Project, Source, UDFProject},
         optimization::rules::{EnrichWithStats, MaterializeScans, OptimizerRule},
+        source_info::SourceInfo,
         test::{
             dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator,
             dummy_scan_operator_for_aggregation,
@@ -848,13 +849,25 @@ mod tests {
             .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
             .build();
 
-        let expected = dummy_scan_node_with_pushdowns(
-            scan_op,
-            Pushdowns::default().with_columns(Some(Arc::new(vec!["a".to_string()]))),
-        )
-        .select(vec![resolved_col("a")])?
-        .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
-        .build();
+        let source = dummy_scan_node(scan_op).build();
+        let source = match source.as_ref() {
+            LogicalPlan::Source(source) => source,
+            _ => panic!("Expected Source plan"),
+        };
+        let source_info = match source.source_info.as_ref() {
+            SourceInfo::Physical(external_info) => Arc::new(SourceInfo::Physical(
+                external_info.with_pushdowns(
+                    Pushdowns::default().with_columns(Some(Arc::new(vec!["a".to_string()]))),
+                ),
+            )),
+            _ => panic!("Expected physical source"),
+        };
+        let expected_source: Arc<LogicalPlan> =
+            LogicalPlan::Source(Source::new(source.output_schema.clone(), source_info)).into();
+        let expected = LogicalPlanBuilder::from(expected_source)
+            .select(vec![resolved_col("a")])?
+            .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
+            .build();
 
         let scan_materializer_and_stats_enricher = get_scan_materializer_and_stats_enricher();
         let expected = scan_materializer_and_stats_enricher
