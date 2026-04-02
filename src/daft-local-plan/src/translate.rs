@@ -461,6 +461,64 @@ fn translate_helper(
                 ))
             }
         }
+        LogicalPlan::AsofJoin(join) => {
+            let (left_plan, mut left_inputs) = translate_helper(&join.left, source_counter, psets)?;
+            let (right_plan, right_inputs) = translate_helper(&join.right, source_counter, psets)?;
+            left_inputs.extend(right_inputs);
+
+            let (_, left_on, right_on, _) = join.on.split_eq_preds();
+
+            let (remaining_by, left_by, right_by, _) = join.by.split_eq_preds();
+
+            if !remaining_by.is_empty() {
+                return Err(DaftError::not_implemented("Execution of non-equality join"));
+            }
+
+            let (left_on, right_on) =
+                normalize_join_keys(left_on, right_on, join.left.schema(), join.right.schema())?;
+
+            let (left_by, right_by) =
+                normalize_join_keys(left_by, right_by, join.left.schema(), join.right.schema())?;
+
+            let left_on_expr = left_on[0].clone();
+            let right_on_expr = right_on[0].clone();
+            let left_on_dtype = left_on_expr.to_field(&join.left.schema())?.dtype;
+            if !left_on_dtype.is_numeric() && !left_on_dtype.is_temporal() {
+                return Err(DaftError::ValueError(
+                    "asof_join on columns can only be numeric or temporal types".to_string(),
+                ));
+            }
+
+            let left_on = BoundExpr::try_new(left_on_expr, left_plan.schema())?;
+            let right_on = BoundExpr::try_new(right_on_expr, right_plan.schema())?;
+
+            let tolerance = join
+                .tolerance
+                .as_ref()
+                .map(|t| BoundExpr::try_new(t.clone(), left_plan.schema()))
+                .transpose()?;
+
+            let left_by = BoundExpr::bind_all(&left_by, left_plan.schema())?;
+            let right_by = BoundExpr::bind_all(&right_by, right_plan.schema())?;
+
+            Ok((
+                LocalPhysicalPlan::asof_join(
+                    left_plan,
+                    right_plan,
+                    left_on,
+                    right_on,
+                    left_by,
+                    right_by,
+                    join.direction,
+                    join.allow_exact_matches,
+                    tolerance,
+                    join.output_schema.clone(),
+                    join.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                left_inputs,
+            ))
+        }
         LogicalPlan::Distinct(distinct) => {
             let schema = distinct.input.schema();
             let (input_plan, inputs) = translate_helper(&distinct.input, source_counter, psets)?;

@@ -16,14 +16,14 @@ use common_metrics::{
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
-    HashAggregate, HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext,
+    AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
+    GlobScan, HashAggregate, HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext,
     LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
     Sample, Sort, SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot,
     VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
     WindowPartitionOnly,
 };
-use daft_logical_plan::{JoinType, stats::StatsState};
+use daft_logical_plan::{JoinDirection, JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
@@ -41,7 +41,9 @@ use crate::{
         into_batches::IntoBatchesOperator, project::ProjectOperator, udf::UdfOperator,
         unpivot::UnpivotOperator,
     },
-    join::{CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator},
+    join::{
+        AsofJoinOperator, CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator,
+    },
     runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
@@ -1162,6 +1164,62 @@ fn physical_plan_to_pipeline(
                 context,
             )
             .boxed()
+        }
+        LocalPhysicalPlan::AsofJoin(AsofJoin {
+            left,
+            right,
+            left_on,
+            right_on,
+            left_by,
+            right_by,
+            direction,
+            allow_exact_matches,
+            schema,
+            tolerance,
+            stats_state,
+            context,
+            ..
+        }) => {
+            || -> DaftResult<_> {
+                if tolerance.is_some() {
+                    return Err(DaftError::NotImplemented(
+                        "asof_join with tolerance is not yet implemented".to_string(),
+                    ));
+                }
+
+                if direction != &JoinDirection::Backward {
+                    return Err(DaftError::NotImplemented(
+                        "asof_join only supports backward direction, forward and nearest are not yet implemented".to_string(),
+                    ))
+                }
+
+                let left_node = physical_plan_to_pipeline(left, cfg, ctx, input_senders)?;
+                let right_node = physical_plan_to_pipeline(right, cfg, ctx, input_senders)?;
+
+                let asof_join_op = AsofJoinOperator::new(
+                    left_on.clone(),
+                    right_on.clone(),
+                    left_by.clone(),
+                    right_by.clone(),
+                    right.schema().clone(),
+                    schema.clone(),
+                    *direction,
+                    *allow_exact_matches,
+                );
+
+                Ok(JoinNode::new(
+                    Arc::new(asof_join_op),
+                    right_node,
+                    left_node,
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed())
+            }()
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?
         }
         LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
             input,

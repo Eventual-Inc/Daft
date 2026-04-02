@@ -49,6 +49,7 @@ pub enum LogicalPlan {
     Intersect(Intersect),
     Union(Union),
     Join(Join),
+    AsofJoin(AsofJoin),
     Sink(Sink),
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
@@ -171,6 +172,7 @@ impl LogicalPlan {
             Self::Intersect(Intersect { lhs, .. }) => lhs.schema(),
             Self::Union(Union { lhs, .. }) => lhs.schema(),
             Self::Join(Join { output_schema, .. }) => output_schema.clone(),
+            Self::AsofJoin(AsofJoin { output_schema, .. }) => output_schema.clone(),
             Self::Sink(Sink { schema, .. }) => schema.clone(),
             Self::Sample(Sample { input, .. }) => input.schema(),
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. }) => {
@@ -314,6 +316,58 @@ impl LogicalPlan {
                 }
                 RequiredCols::new(left, Some(right))
             }
+            Self::AsofJoin(asof_join) => {
+                let mut left: IndexSet<String> = IndexSet::new();
+                let mut right: IndexSet<String> = IndexSet::new();
+
+                if let Some(pred) = asof_join.on.inner() {
+                    pred.apply(|e| {
+                        match e.as_ref() {
+                            Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
+                                Field { name, .. },
+                                JoinSide::Left,
+                            ))) => {
+                                left.insert(name.to_string());
+                            }
+                            Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
+                                Field { name, .. },
+                                JoinSide::Right,
+                            ))) => {
+                                right.insert(name.to_string());
+                            }
+                            _ => {}
+                        }
+
+                        Ok(TreeNodeRecursion::Continue)
+                    })
+                    .unwrap();
+                }
+
+                if let Some(pred) = asof_join.by.inner() {
+                    pred.apply(|e| {
+                        match e.as_ref() {
+                            Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
+                                Field { name, .. },
+                                JoinSide::Left,
+                            ))) => {
+                                left.insert(name.to_string());
+                            }
+                            Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
+                                Field { name, .. },
+                                JoinSide::Right,
+                            ))) => {
+                                right.insert(name.to_string());
+                            }
+                            _ => {}
+                        }
+
+                        Ok(TreeNodeRecursion::Continue)
+                    })
+                    .unwrap();
+                }
+
+                RequiredCols::new(left, Some(right))
+            }
             Self::Intersect(_) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
             Self::Union(_) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
             Self::Source(_) => todo!(),
@@ -364,6 +418,7 @@ impl LogicalPlan {
             Self::Pivot(..) => "Pivot",
             Self::Concat(..) => "Concat",
             Self::Join(..) => "Join",
+            Self::AsofJoin(..) => "AsofJoin",
             Self::Intersect(..) => "Intersect",
             Self::Union(..) => "Union",
             Self::Sink(..) => "Sink",
@@ -396,6 +451,7 @@ impl LogicalPlan {
             | Self::Pivot(Pivot { stats_state, .. })
             | Self::Concat(Concat { stats_state, .. })
             | Self::Join(Join { stats_state, .. })
+            | Self::AsofJoin(AsofJoin { stats_state, .. })
             | Self::Sink(Sink { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
@@ -437,6 +493,7 @@ impl LogicalPlan {
             Self::Pivot(plan) => Self::Pivot(plan.with_materialized_stats()),
             Self::Concat(plan) => Self::Concat(plan.with_materialized_stats()),
             Self::Join(plan) => Self::Join(plan.with_materialized_stats()),
+            Self::AsofJoin(plan) => Self::AsofJoin(plan.with_materialized_stats()),
             Self::Sink(plan) => Self::Sink(plan.with_materialized_stats()),
             Self::Sample(plan) => Self::Sample(plan.with_materialized_stats()),
             Self::MonotonicallyIncreasingId(plan) => {
@@ -476,6 +533,7 @@ impl LogicalPlan {
             Self::Intersect(inner) => inner.multiline_display(),
             Self::Union(inner) => inner.multiline_display(),
             Self::Join(join) => join.multiline_display(),
+            Self::AsofJoin(asof_join) => asof_join.multiline_display(),
             Self::Sink(sink) => sink.multiline_display(),
             Self::Sample(sample) => sample.multiline_display(),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
@@ -508,6 +566,7 @@ impl LogicalPlan {
             Self::Pivot(Pivot { input, .. }) => vec![input],
             Self::Concat(Concat { input, other, .. }) => vec![input, other],
             Self::Join(Join { left, right, .. }) => vec![left, right],
+            Self::AsofJoin(AsofJoin { left, right, .. }) => vec![left, right],
             Self::Sink(Sink { input, .. }) => vec![input],
             Self::Intersect(Intersect { lhs, rhs, .. }) => vec![lhs, rhs],
             Self::Union(Union { lhs, rhs, .. }) => vec![lhs, rhs],
@@ -709,7 +768,11 @@ impl LogicalPlan {
                     expr.clone(),
                     output_column_name.clone(),
                 )),
-                Self::Concat(_) | Self::Intersect(_) | Self::Union(_) | Self::Join(_) => panic!(
+                Self::Concat(_)
+                | Self::Intersect(_)
+                | Self::Union(_)
+                | Self::Join(_)
+                | Self::AsofJoin(_) => panic!(
                     "{} ops should never have only one input, but got one",
                     input.name()
                 ),
@@ -745,6 +808,25 @@ impl LogicalPlan {
                         on.clone(),
                         *join_type,
                         *join_strategy,
+                    )
+                    .unwrap(),
+                ),
+                Self::AsofJoin(AsofJoin {
+                    on,
+                    by,
+                    direction,
+                    allow_exact_matches,
+                    tolerance,
+                    ..
+                }) => Self::AsofJoin(
+                    AsofJoin::try_new(
+                        input1.clone(),
+                        input2.clone(),
+                        on.clone(),
+                        by.clone(),
+                        *direction,
+                        *allow_exact_matches,
+                        tolerance.clone(),
                     )
                     .unwrap(),
                 ),
@@ -929,6 +1011,7 @@ impl LogicalPlan {
             | Self::Intersect(Intersect { plan_id, .. })
             | Self::Union(Union { plan_id, .. })
             | Self::Join(Join { plan_id, .. })
+            | Self::AsofJoin(AsofJoin { plan_id, .. })
             | Self::Sink(Sink { plan_id, .. })
             | Self::Sample(Sample { plan_id, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { plan_id, .. })
@@ -961,6 +1044,7 @@ impl LogicalPlan {
             | Self::Intersect(Intersect { node_id, .. })
             | Self::Union(Union { node_id, .. })
             | Self::Join(Join { node_id, .. })
+            | Self::AsofJoin(AsofJoin { node_id, .. })
             | Self::Sink(Sink { node_id, .. })
             | Self::Sample(Sample { node_id, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { node_id, .. })
@@ -998,6 +1082,7 @@ impl LogicalPlan {
             Self::Intersect(intersect) => Self::Intersect(intersect.with_plan_id(plan_id)),
             Self::Union(union) => Self::Union(union.with_plan_id(plan_id)),
             Self::Join(join) => Self::Join(join.with_plan_id(plan_id)),
+            Self::AsofJoin(asof_join) => Self::AsofJoin(asof_join.with_plan_id(plan_id)),
             Self::Sink(sink) => Self::Sink(sink.with_plan_id(plan_id)),
             Self::Sample(sample) => Self::Sample(sample.with_plan_id(plan_id)),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
@@ -1039,6 +1124,7 @@ impl LogicalPlan {
             Self::Intersect(intersect) => Self::Intersect(intersect.with_node_id(node_id)),
             Self::Union(union) => Self::Union(union.with_node_id(node_id)),
             Self::Join(join) => Self::Join(join.with_node_id(node_id)),
+            Self::AsofJoin(asof_join) => Self::AsofJoin(asof_join.with_node_id(node_id)),
             Self::Sink(sink) => Self::Sink(sink.with_node_id(node_id)),
             Self::Sample(sample) => Self::Sample(sample.with_node_id(node_id)),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
@@ -1159,3 +1245,4 @@ impl_from_data_struct_for_logical_plan!(Sample);
 impl_from_data_struct_for_logical_plan!(MonotonicallyIncreasingId);
 impl_from_data_struct_for_logical_plan!(Window);
 impl_from_data_struct_for_logical_plan!(TopN);
+impl_from_data_struct_for_logical_plan!(AsofJoin);

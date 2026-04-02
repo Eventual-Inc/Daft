@@ -140,6 +140,16 @@ class ImageFormat(Enum):
         """Create an ImageFormat from its string representation."""
         ...
 
+class JoinDirection(Enum):
+    Backward = 1
+    Forward = 2
+    Nearest = 3
+
+    @staticmethod
+    def from_dir_type_str(dir: str) -> JoinDirection:
+        """Create a JoinDirection from its string representation."""
+        ...
+
 class JoinType(Enum):
     """Type of a join operation."""
 
@@ -1818,6 +1828,17 @@ class PyRecordBatch:
         right_on: list[PyExpr],
         is_sorted: bool,
     ) -> PyRecordBatch: ...
+    def asof_join(
+        self,
+        right: PyRecordBatch,
+        left_on: PyExpr,
+        right_on: PyExpr,
+        left_by: list[PyExpr],
+        right_by: list[PyExpr],
+        direction: JoinDirection,
+        allow_exact_matches: bool,
+        is_sorted: bool,
+    ) -> PyRecordBatch: ...
     def explode(self, to_explode: list[PyExpr], index_column: str | None = None) -> PyRecordBatch: ...
     def head(self, num: int) -> PyRecordBatch: ...
     def sample_by_fraction(self, fraction: float, with_replacement: bool, seed: int | None) -> PyRecordBatch: ...
@@ -2086,6 +2107,19 @@ class LogicalPlanBuilder:
         join_strategy: JoinStrategy | None = None,
         prefix: str | None = None,
         suffix: str | None = None,
+    ) -> LogicalPlanBuilder: ...
+    def asof_join(
+        self,
+        right: LogicalPlanBuilder,
+        left_on: PyExpr,
+        right_on: PyExpr,
+        left_by: list[PyExpr],
+        right_by: list[PyExpr],
+        direction: JoinDirection,
+        prefix: str | None = None,
+        suffix: str | None = None,
+        allow_exact_matches: bool = False,
+        tolerance: PyExpr | None = None,
     ) -> LogicalPlanBuilder: ...
     def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder: ...
     def union(self, other: LogicalPlanBuilder, is_all: bool, is_by_name: bool) -> LogicalPlanBuilder: ...

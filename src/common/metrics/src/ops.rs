@@ -56,6 +56,15 @@ pub enum NodeType {
     OuterHashJoinProbe,
     SortMergeJoinProbe,
 
+    // Point-in-time joins
+    GroupedPitJoin,
+    GroupedPitJoinBuild,
+    UngroupedPitJoin,
+    BroadcastPitJoin,
+    GroupedPitJoinDist,
+    UngroupedRangePitJoin,
+    AsofJoin,
+
     // Specific to distributed only
     DistributedHashJoin,
     BroadcastJoin,

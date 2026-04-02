@@ -124,6 +124,13 @@ pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
         LogicalPlan::VLLMProject(vllm_project) => json!({
             "expr": vllm_project.expr.to_string(),
         }),
+        LogicalPlan::AsofJoin(asof_join) => json!({
+            "on": vec![&asof_join.on.inner().map(|e| e.to_string())],
+            "by": vec![&asof_join.by.inner().map(|e| e.to_string())],
+            "direction": asof_join.direction,
+            "allow_exact_matches": asof_join.allow_exact_matches,
+            "tolerance": asof_join.tolerance.clone().map(|e| e.to_string()),
+        }),
     }
 }
 

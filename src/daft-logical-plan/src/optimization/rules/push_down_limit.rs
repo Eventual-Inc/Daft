@@ -220,7 +220,8 @@ impl PushDownLimit {
                     | LogicalPlan::SubqueryAlias(..)
                     | LogicalPlan::Window(..)
                     | LogicalPlan::Concat(_)
-                    | LogicalPlan::VLLMProject(..) => Ok(Transformed::no(plan)),
+                    | LogicalPlan::VLLMProject(..)
+                    | LogicalPlan::AsofJoin(_) => Ok(Transformed::no(plan)),
                 }
             }
             _ => Ok(Transformed::no(plan)),

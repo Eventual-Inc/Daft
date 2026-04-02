@@ -447,6 +447,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
 
                 self.translate_join(join, left_node, right_node)?
             }
+            LogicalPlan::AsofJoin(_) => todo!("FLOTILLA: Implement AsofJoin"),
             LogicalPlan::Sort(sort) => {
                 let sort_by = BoundExpr::bind_all(&sort.sort_by, &sort.input.schema())?;
 

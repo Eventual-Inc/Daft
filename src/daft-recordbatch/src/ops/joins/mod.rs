@@ -2,7 +2,10 @@ use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::growable::make_growable, join::JoinSide, prelude::*, utils::supertype::try_get_supertype,
+    array::growable::make_growable,
+    join::{JoinDirection, JoinSide},
+    prelude::*,
+    utils::supertype::try_get_supertype,
 };
 use daft_dsl::{
     expr::bound_expr::BoundExpr,
@@ -13,6 +16,7 @@ use hash_join::hash_semi_anti_join;
 use self::hash_join::{hash_inner_join, hash_left_right_join, hash_outer_join};
 use crate::RecordBatch;
 mod hash_join;
+pub(crate) mod merge_asof_join;
 mod merge_join;
 
 fn match_types_for_tables(
@@ -187,6 +191,136 @@ impl RecordBatch {
 
         let num_rows = lidx.len();
         join_series = add_non_join_key_columns(self, right, lidx, ridx, join_series)?;
+
+        Self::new_with_size(join_schema, join_series, num_rows)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn asof_join(
+        &self,
+        right: &Self,
+        left_on: BoundExpr,
+        right_on: BoundExpr,
+        left_by: &[BoundExpr],
+        right_by: &[BoundExpr],
+        direction: JoinDirection,
+        allow_exact_matches: bool,
+        is_sorted: bool,
+    ) -> DaftResult<Self> {
+        if left_by.len() != right_by.len() {
+            return Err(DaftError::ValueError(format!(
+                "Mismatch of by clauses: left: {} vs right: {}",
+                left_by.len(),
+                right_by.len()
+            )));
+        }
+
+        // Sort both sides by (by_keys, on_key) ascending if not already sorted.
+        if !is_sorted {
+            let left_sort_keys: Vec<BoundExpr> = left_by
+                .iter()
+                .chain(std::iter::once(&left_on))
+                .cloned()
+                .collect();
+            let right_sort_keys: Vec<BoundExpr> = right_by
+                .iter()
+                .chain(std::iter::once(&right_on))
+                .cloned()
+                .collect();
+
+            let n = left_sort_keys.len();
+
+            let left_sorted = self.sort(
+                &left_sort_keys,
+                std::iter::repeat_n(false, n).collect::<Vec<_>>().as_slice(),
+                std::iter::repeat_n(false, n).collect::<Vec<_>>().as_slice(),
+            )?;
+            let right_sorted = right.sort(
+                &right_sort_keys,
+                std::iter::repeat_n(false, n).collect::<Vec<_>>().as_slice(),
+                std::iter::repeat_n(false, n).collect::<Vec<_>>().as_slice(),
+            )?;
+
+            return left_sorted.asof_join(
+                &right_sorted,
+                left_on,
+                right_on,
+                left_by,
+                right_by,
+                direction,
+                allow_exact_matches,
+                true,
+            );
+        }
+
+        // Evaluate key columns: by-keys first, on-key last.
+        let left_by_table = if left_by.is_empty() {
+            None
+        } else {
+            Some(self.eval_expression_list(left_by)?)
+        };
+        let right_by_table = if right_by.is_empty() {
+            None
+        } else {
+            Some(right.eval_expression_list(right_by)?)
+        };
+        let left_on_table = self.eval_expression_list(&[left_on])?;
+        let right_on_table = right.eval_expression_list(&[right_on])?;
+
+        // Combine by + on key columns into single tables.
+        let left_keys = match left_by_table {
+            Some(by_table) => by_table.union(&left_on_table)?,
+            None => left_on_table,
+        };
+        let right_keys = match right_by_table {
+            Some(by_table) => by_table.union(&right_on_table)?,
+            None => right_on_table,
+        };
+
+        // Type-match key columns.
+        let (left_keys, right_keys) = match_types_for_tables(&left_keys, &right_keys)?;
+
+        // Run the merge algorithm.
+        let ridx = merge_asof_join::asof_join(
+            &left_keys,
+            &right_keys,
+            left_by.len(),
+            direction,
+            allow_exact_matches,
+        )?;
+
+        drop(left_keys);
+        drop(right_keys);
+
+        // Build output with left-join semantics.
+        let join_schema = infer_join_schema(&self.schema, &right.schema, JoinType::Left)?;
+
+        // Common join columns: use left side values (all left rows are present).
+        let mut join_series: Vec<Series> = get_common_join_cols(&self.schema, &right.schema)
+            .map(|name| get_column_by_name(self, name).cloned())
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        let num_rows = self.len();
+
+        let join_keys = join_series
+            .iter()
+            .map(|s| s.name().to_string())
+            .collect::<HashSet<_>>();
+
+        for field in self.schema.as_ref() {
+            if join_keys.contains(&*field.name) {
+                continue;
+            }
+            join_series.push(get_column_by_name(self, &field.name).cloned()?);
+        }
+
+        for field in right.schema.as_ref() {
+            if join_keys.contains(&*field.name) {
+                continue;
+            }
+
+            join_series.push(get_column_by_name(right, &field.name)?.take(&ridx)?);
+        }
 
         Self::new_with_size(join_schema, join_series, num_rows)
     }

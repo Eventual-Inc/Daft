@@ -8,6 +8,7 @@ from daft.daft import (
     CountMode,
     FileFormat,
     IOConfig,
+    JoinDirection,
     JoinStrategy,
     JoinType,
     PyDaftExecutionConfig,
@@ -302,6 +303,33 @@ class LogicalPlanBuilder:
             strategy,
             prefix,
             suffix,
+        )
+        return LogicalPlanBuilder(builder)
+
+    def asof_join(
+        self,
+        right: LogicalPlanBuilder,
+        left_on: Expression,
+        right_on: Expression,
+        left_by: list[Expression],
+        right_by: list[Expression],
+        direction: JoinDirection,
+        prefix: str | None = None,
+        suffix: str | None = None,
+        allow_exact_matches: bool = False,
+        tolerance: Expression | None = None,
+    ) -> LogicalPlanBuilder:
+        builder = self._builder.asof_join(
+            right._builder,
+            left_on._expr,
+            right_on._expr,
+            [expr._expr for expr in left_by],
+            [expr._expr for expr in right_by],
+            direction,
+            prefix,
+            suffix,
+            allow_exact_matches,
+            tolerance._expr if tolerance is not None else None,
         )
         return LogicalPlanBuilder(builder)
 

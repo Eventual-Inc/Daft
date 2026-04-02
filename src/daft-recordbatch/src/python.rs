@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 use common_metrics::python::PyOperatorMetrics;
 use daft_core::{
-    join::JoinType,
+    join::{JoinDirection, JoinType},
     prelude::*,
     python::{PySchema, series::PySeries},
 };
@@ -203,6 +203,40 @@ impl PyRecordBatch {
                     &right.record_batch,
                     left_exprs.as_slice(),
                     right_exprs.as_slice(),
+                    is_sorted,
+                )?
+                .into())
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn asof_join(
+        &self,
+        py: Python,
+        right: &Self,
+        left_on: PyExpr,
+        right_on: PyExpr,
+        left_by: Vec<PyExpr>,
+        right_by: Vec<PyExpr>,
+        direction: JoinDirection,
+        allow_exact_matches: bool,
+        is_sorted: bool,
+    ) -> PyResult<Self> {
+        let left_expr = BoundExpr::try_new(left_on, &self.record_batch.schema)?;
+        let right_expr = BoundExpr::try_new(right_on, &self.record_batch.schema)?;
+        let left_by = BoundExpr::bind_all(&left_by, &self.record_batch.schema)?;
+        let right_by = BoundExpr::bind_all(&right_by, &self.record_batch.schema)?;
+        py.detach(|| {
+            Ok(self
+                .record_batch
+                .asof_join(
+                    &right.record_batch,
+                    left_expr,
+                    right_expr,
+                    left_by.as_slice(),
+                    right_by.as_slice(),
+                    direction,
+                    allow_exact_matches,
                     is_sorted,
                 )?
                 .into())

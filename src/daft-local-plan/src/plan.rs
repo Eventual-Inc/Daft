@@ -10,7 +10,10 @@ use common_io_config::IOConfig;
 use common_py_serde::{PyObjectWrapper, deserialize_py_object, serialize_py_object};
 use common_resource_request::ResourceRequest;
 use common_treenode::{DynTreeNode, TreeNode, TreeNodeRecursion};
-use daft_core::{join::JoinSide, prelude::*};
+use daft_core::{
+    join::{JoinDirection, JoinSide},
+    prelude::*,
+};
 use daft_dsl::{
     Column, ExprRef, WindowExpr, WindowFrame, WindowSpec,
     expr::{
@@ -114,6 +117,7 @@ pub enum LocalPhysicalPlan {
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
     VLLMProject(VLLMProject),
+    AsofJoin(AsofJoin),
 }
 #[cfg(not(debug_assertions))]
 impl std::fmt::Debug for LocalPhysicalPlan {
@@ -159,6 +163,7 @@ impl LocalPhysicalPlan {
             | Self::HashJoin(HashJoin { stats_state, .. })
             | Self::CrossJoin(CrossJoin { stats_state, .. })
             | Self::SortMergeJoin(SortMergeJoin { stats_state, .. })
+            | Self::AsofJoin(AsofJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::Repartition(Repartition { stats_state, .. })
@@ -223,6 +228,7 @@ impl LocalPhysicalPlan {
             })
             | Self::VLLMProject(VLLMProject { context, .. }) => context,
             Self::WindowOrderByOnly(WindowOrderByOnly { context, .. }) => context,
+            Self::AsofJoin(AsofJoin { context, .. }) => context,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { context, .. })
             | Self::LanceWrite(LanceWrite { context, .. })
@@ -807,7 +813,39 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub(crate) fn concat(
+    #[allow(clippy::too_many_arguments)]
+    pub fn asof_join(
+        left: LocalPhysicalPlanRef,
+        right: LocalPhysicalPlanRef,
+        left_on: BoundExpr,
+        right_on: BoundExpr,
+        left_by: Vec<BoundExpr>,
+        right_by: Vec<BoundExpr>,
+        direction: JoinDirection,
+        allow_exact_matches: bool,
+        tolerance: Option<BoundExpr>,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::AsofJoin(AsofJoin {
+            left,
+            right,
+            left_on,
+            right_on,
+            left_by,
+            right_by,
+            direction,
+            allow_exact_matches,
+            tolerance,
+            schema,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
+    pub fn concat(
         input: LocalPhysicalPlanRef,
         other: LocalPhysicalPlanRef,
         stats_state: StatsState,
@@ -1038,6 +1076,7 @@ impl LocalPhysicalPlan {
             | Self::HashJoin(HashJoin { schema, .. })
             | Self::CrossJoin(CrossJoin { schema, .. })
             | Self::SortMergeJoin(SortMergeJoin { schema, .. })
+            | Self::AsofJoin(AsofJoin { schema, .. })
             | Self::Explode(Explode { schema, .. })
             | Self::Unpivot(Unpivot { schema, .. })
             | Self::Concat(Concat { schema, .. })
@@ -1132,6 +1171,7 @@ impl LocalPhysicalPlan {
             Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
                 vec![left.clone(), right.clone()]
             }
+            Self::AsofJoin(AsofJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { input, .. }) => vec![input.clone()],
             #[cfg(feature = "python")]
@@ -1648,6 +1688,9 @@ impl LocalPhysicalPlan {
                         "LocalPhysicalPlan::with_new_children: SortMergeJoin should have 2 children"
                     )
                 }
+                Self::AsofJoin(_) => {
+                    panic!("LocalPhysicalPlan::with_new_children: AsofJoin should have 2 children")
+                }
                 Self::Concat(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children")
                 }
@@ -1712,6 +1755,32 @@ impl LocalPhysicalPlan {
                     new_left.clone(),
                     new_right.clone(),
                     StatsState::NotMaterialized,
+                    context.clone(),
+                ),
+                Self::AsofJoin(AsofJoin {
+                    left_on,
+                    right_on,
+                    left_by,
+                    right_by,
+                    direction,
+                    allow_exact_matches,
+                    tolerance,
+                    schema,
+                    stats_state,
+                    context,
+                    ..
+                }) => Self::asof_join(
+                    new_left.clone(),
+                    new_right.clone(),
+                    left_on.clone(),
+                    right_on.clone(),
+                    left_by.clone(),
+                    right_by.clone(),
+                    *direction,
+                    *allow_exact_matches,
+                    tolerance.clone(),
+                    schema.clone(),
+                    stats_state.clone(),
                     context.clone(),
                 ),
                 _ => panic!("LocalPhysicalPlan::with_new_children: Wrong number of children"),
@@ -2032,8 +2101,23 @@ pub struct SortMergeJoin {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AsofJoin {
+    pub left: LocalPhysicalPlanRef,
+    pub right: LocalPhysicalPlanRef,
+    pub left_on: BoundExpr,
+    pub right_on: BoundExpr,
+    pub left_by: Vec<BoundExpr>,
+    pub right_by: Vec<BoundExpr>,
+    pub direction: JoinDirection,
+    pub allow_exact_matches: bool,
+    pub tolerance: Option<BoundExpr>,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Concat {
     pub input: LocalPhysicalPlanRef,
     pub other: LocalPhysicalPlanRef,

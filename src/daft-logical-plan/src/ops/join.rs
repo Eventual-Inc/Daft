@@ -6,7 +6,10 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_algebra::boolean::{combine_conjunction, split_conjunction};
-use daft_core::{join::JoinSide, prelude::*};
+use daft_core::{
+    join::{JoinDirection, JoinSide},
+    prelude::*,
+};
 use daft_dsl::{
     Column, Expr, ExprRef, ResolvedColumn, join::infer_join_schema, resolved_col, right_col,
 };
@@ -398,5 +401,217 @@ impl JoinOptions {
     pub fn suffix(mut self, val: impl Into<String>) -> Self {
         self.suffix = Some(val.into());
         self
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct AsofJoin {
+    pub plan_id: Option<usize>,
+    pub node_id: Option<usize>,
+    pub left: Arc<LogicalPlan>,
+    pub right: Arc<LogicalPlan>,
+    pub on: JoinPredicate,
+    pub by: JoinPredicate,
+    pub direction: JoinDirection,
+    pub allow_exact_matches: bool,
+    pub tolerance: Option<ExprRef>,
+    pub output_schema: SchemaRef,
+    pub stats_state: StatsState,
+}
+
+impl AsofJoin {
+    pub(crate) fn try_new(
+        left: Arc<LogicalPlan>,
+        right: Arc<LogicalPlan>,
+        on: JoinPredicate,
+        by: JoinPredicate,
+        direction: JoinDirection,
+        allow_exact_matches: bool,
+        tolerance: Option<ExprRef>,
+    ) -> logical_plan::Result<Self> {
+        let output_schema = infer_join_schema(&left.schema(), &right.schema(), JoinType::Left)?;
+        Ok(Self {
+            plan_id: None,
+            node_id: None,
+            left,
+            right,
+            on,
+            by,
+            direction,
+            allow_exact_matches,
+            tolerance,
+            output_schema,
+            stats_state: StatsState::NotMaterialized,
+        })
+    }
+
+    pub fn with_plan_id(mut self, plan_id: usize) -> Self {
+        self.plan_id = Some(plan_id);
+        self
+    }
+
+    pub fn with_node_id(mut self, node_id: usize) -> Self {
+        self.node_id = Some(node_id);
+        self
+    }
+
+    pub(crate) fn deduplicate_join_columns(
+        left: LogicalPlanRef,
+        right: LogicalPlanRef,
+        on: Option<ExprRef>,
+        using: &[String],
+        by: Option<ExprRef>,
+        using_by: &[String],
+        options: JoinOptions,
+    ) -> DaftResult<(
+        LogicalPlanRef,
+        LogicalPlanRef,
+        Option<ExprRef>,
+        Option<ExprRef>,
+    )> {
+        let merged_names: IndexSet<String> =
+            IndexSet::from_iter(using.iter().chain(using_by.iter()).cloned());
+        let left_names: IndexSet<String> = IndexSet::from_iter(left.schema().names());
+        let right_names: IndexSet<String> = IndexSet::from_iter(right.schema().names());
+
+        let common_names: IndexSet<String> =
+            IndexSet::from_iter(right_names.intersection(&left_names).cloned());
+        if !common_names.is_superset(&merged_names) {
+            let missing_names = merged_names.difference(&common_names).collect::<Vec<_>>();
+            return Err(DaftError::SchemaMismatch(format!(
+                "Expected merged columns in asof_join to exist in both sides of the join, found: {missing_names:?}"
+            )));
+        }
+
+        let mut names_so_far: HashSet<String> =
+            HashSet::from_iter(left_names.union(&right_names).cloned());
+
+        let right_rename_mapping = common_names
+            .difference(&merged_names)
+            .map(|name| {
+                let mut new_name = name.clone();
+                while names_so_far.contains(&new_name) {
+                    new_name = match (&options.prefix, &options.suffix) {
+                        (Some(prefix), Some(suffix)) => {
+                            format!("{}{}{}", prefix, new_name, suffix)
+                        }
+                        (Some(prefix), None) => {
+                            format!("{}{}", prefix, new_name)
+                        }
+                        (None, Some(suffix)) => {
+                            format!("{}{}", new_name, suffix)
+                        }
+                        (None, None) => {
+                            format!("right.{}", new_name)
+                        }
+                    };
+                }
+                names_so_far.insert(new_name.clone());
+
+                (name.clone(), new_name)
+            })
+            .collect::<HashMap<_, _>>();
+
+        if right_rename_mapping.is_empty() {
+            Ok((left, right, on, by))
+        } else {
+            // projection to update the right side with the new column names
+            let new_right_projection: Vec<_> = right_names
+                .iter()
+                .map(|name| {
+                    if let Some(new_name) = right_rename_mapping.get(name) {
+                        resolved_col(name.clone()).alias(new_name.clone())
+                    } else {
+                        resolved_col(name.clone())
+                    }
+                })
+                .collect();
+
+            let new_right: LogicalPlan = Project::try_new(right, new_right_projection)?.into();
+
+            // change any column references in the join predicate to the new column names
+            let new_on = on.map(|pred| {
+                pred.transform(|e| {
+                    if let Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
+                        Field { name, dtype, .. },
+                        JoinSide::Right,
+                    ))) = e.as_ref()
+                        && let Some(new_name) = right_rename_mapping.get(&name.to_string())
+                    {
+                        Ok(Transformed::yes(right_col(Field::new(
+                            new_name.as_str(),
+                            dtype.clone(),
+                        ))))
+                    } else {
+                        Ok(Transformed::no(e))
+                    }
+                })
+                .unwrap()
+                .data
+            });
+
+            let new_by = by.map(|pred| {
+                pred.transform(|e| {
+                    if let Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
+                        Field { name, dtype, .. },
+                        JoinSide::Right,
+                    ))) = e.as_ref()
+                        && let Some(new_name) = right_rename_mapping.get(&name.to_string())
+                    {
+                        Ok(Transformed::yes(right_col(Field::new(
+                            new_name.as_str(),
+                            dtype.clone(),
+                        ))))
+                    } else {
+                        Ok(Transformed::no(e))
+                    }
+                })
+                .unwrap()
+                .data
+            });
+
+            Ok((left, new_right.into(), new_on, new_by))
+        }
+    }
+
+    pub(crate) fn with_materialized_stats(mut self) -> Self {
+        let left_stats = self.left.materialized_stats();
+        let right_stats = self.right.materialized_stats();
+
+        let left_num_rows =
+            left_stats.approx_stats.num_rows as f64 * right_stats.approx_stats.acc_selectivity;
+        let left_size =
+            left_stats.approx_stats.size_bytes as f64 * right_stats.approx_stats.acc_selectivity;
+        let approx_stats = ApproxStats {
+            num_rows: left_num_rows.ceil() as usize,
+            size_bytes: left_size.ceil() as usize,
+            acc_selectivity: left_stats.approx_stats.acc_selectivity
+                * right_stats.approx_stats.acc_selectivity,
+        };
+        self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
+        self
+    }
+
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push("AsofJoin:".to_string());
+        res.push(format!("Direction = {}", self.direction,));
+
+        if let Some(on_expr) = self.on.inner() {
+            res.push(format!("On = {on_expr}",));
+        }
+
+        if let Some(by_expr) = self.by.inner() {
+            res.push(format!("By = {by_expr}",));
+        }
+
+        res.push(format!(
+            "Output schema = {}",
+            self.output_schema.short_string()
+        ));
+        if let StatsState::Materialized(stats) = &self.stats_state {
+            res.push(format!("Stats = {}", stats));
+        }
+        res
     }
 }

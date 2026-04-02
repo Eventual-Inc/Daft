@@ -8,6 +8,7 @@ from daft.daft import (
     CsvConvertOptions,
     CsvParseOptions,
     CsvReadOptions,
+    JoinDirection,
     JoinType,
     JsonConvertOptions,
     JsonParseOptions,
@@ -382,6 +383,42 @@ class RecordBatch:
                 right._recordbatch,
                 left_on=left_exprs,
                 right_on=right_exprs,
+                is_sorted=is_sorted,
+            )
+        )
+
+    def asof_join(
+        self,
+        right: RecordBatch,
+        left_on: Expression,
+        right_on: Expression,
+        left_by: ExpressionsProjection,
+        right_by: ExpressionsProjection,
+        direction: JoinDirection,
+        allow_exact_matches: bool,
+        tolerance: Expression | None,
+        is_sorted: bool,
+    ) -> RecordBatch:
+        if tolerance is not None:
+            raise NotImplementedError("Tolerance is not currently implemented for asof_join")
+
+        if len(left_by) != len(right_by):
+            raise ValueError(
+                f"Mismatch of number of join keys, left_by: {len(left_by)}, right_by: {len(right_by)}\nleft_by {left_by}\nright_by {right_by}"
+            )
+
+        left_by_exprs = [e._expr for e in left_by]
+        right_by_exprs = [e._expr for e in right_by]
+
+        return RecordBatch._from_pyrecordbatch(
+            self._recordbatch.asof_join(
+                right._recordbatch,
+                left_on=left_on._expr,
+                right_on=right_on._expr,
+                left_by=left_by_exprs,
+                right_by=right_by_exprs,
+                direction=direction,
+                allow_exact_matches=allow_exact_matches,
                 is_sorted=is_sorted,
             )
         )

@@ -111,6 +111,9 @@ impl PushDownShard {
                     LogicalPlan::Join(_) => Err(DaftError::ValueError(
                         "Shard cannot exist above join".to_string(),
                     )),
+                    LogicalPlan::AsofJoin(_) => Err(DaftError::ValueError(
+                        "Shard cannot exist above point in time join".to_string(),
+                    )),
                     LogicalPlan::Intersect(_)
                     | LogicalPlan::Union(_)
                     | LogicalPlan::SubqueryAlias(_) => Ok(Transformed::no(plan)),

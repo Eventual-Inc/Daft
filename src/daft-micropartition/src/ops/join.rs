@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use daft_core::{
     array::ops::DaftCompare,
-    join::{JoinSide, JoinType},
+    join::{JoinDirection, JoinSide, JoinType},
 };
 use daft_dsl::{expr::bound_expr::BoundExpr, join::infer_join_schema};
 use daft_recordbatch::RecordBatch;
@@ -115,6 +115,41 @@ impl MicroPartition {
         };
 
         self.join(right, left_on, right_on, how, table_join)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn asof_join(
+        &self,
+        right: &Self,
+        left_on: BoundExpr,
+        right_on: BoundExpr,
+        left_by: &[BoundExpr],
+        right_by: &[BoundExpr],
+        direction: JoinDirection,
+        allow_exact_matches: bool,
+        is_sorted: bool,
+    ) -> DaftResult<Self> {
+        let join_schema = infer_join_schema(&self.schema, &right.schema, JoinType::Left)?;
+
+        let lt = self.concat_or_get()?;
+        let rt = right.concat_or_get()?;
+
+        match (lt, rt) {
+            (None, _) | (_, None) => Ok(Self::empty(Some(join_schema))),
+            (Some(lt), Some(rt)) => {
+                let joined = lt.asof_join(
+                    &rt,
+                    left_on,
+                    right_on,
+                    left_by,
+                    right_by,
+                    direction,
+                    allow_exact_matches,
+                    is_sorted,
+                )?;
+                Ok(Self::new_loaded(join_schema, vec![joined].into(), None))
+            }
+        }
     }
 
     pub fn cross_join(&self, right: &Self, outer_loop_side: JoinSide) -> DaftResult<Self> {

@@ -172,3 +172,64 @@ impl Not for JoinSide {
 }
 
 impl_bincode_py_state_serialization!(JoinSide);
+
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", eq, eq_int, from_py_object)
+)]
+pub enum JoinDirection {
+    #[display("backward")]
+    Backward,
+    #[display("forward")]
+    Forward,
+    #[display("nearest")]
+    Nearest,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl JoinDirection {
+    /// Create a JoinDirection from its string representation.
+    ///
+    /// Args:
+    ///     join_direction: String representation of the join direction, e.g. "backward", "forward", or "nearest".
+    #[staticmethod]
+    pub fn from_dir_type_str(join_direction: &str) -> PyResult<Self> {
+        Self::from_str(join_direction).map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    pub fn __str__(&self) -> PyResult<String> {
+        Ok(self.to_string())
+    }
+}
+
+impl JoinDirection {
+    pub fn iterator() -> std::slice::Iter<'static, Self> {
+        static JOIN_DIRECTIONS: [JoinDirection; 3] = [
+            JoinDirection::Backward,
+            JoinDirection::Forward,
+            JoinDirection::Nearest,
+        ];
+        JOIN_DIRECTIONS.iter()
+    }
+}
+
+impl FromStr for JoinDirection {
+    type Err = DaftError;
+
+    fn from_str(join_direction: &str) -> DaftResult<Self> {
+        match join_direction {
+            "backward" => Ok(Self::Backward),
+            "forward" => Ok(Self::Forward),
+            "nearest" => Ok(Self::Nearest),
+            _ => Err(DaftError::TypeError(format!(
+                "Join direction {} is not supported; only the following strategies are supported: {:?}",
+                join_direction,
+                Self::iterator().as_slice()
+            ))),
+        }
+    }
+}
+
+impl_bincode_py_state_serialization!(JoinDirection);

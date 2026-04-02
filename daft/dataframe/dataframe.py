@@ -24,6 +24,7 @@ from daft.daft import (
     DistributedPhysicalPlan,
     FileFormat,
     IOConfig,
+    JoinDirection,
     JoinStrategy,
     JoinType,
     PyFormatSinkOption,
@@ -3155,6 +3156,147 @@ class DataFrame:
             strategy=join_strategy,
             prefix=prefix,
             suffix=suffix,
+        )
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def asof_join(
+        self,
+        other: "DataFrame",
+        on: ColumnInputType | None = None,
+        left_on: ColumnInputType | None = None,
+        right_on: ColumnInputType | None = None,
+        by: list[ColumnInputType] | ColumnInputType | None = None,
+        left_by: list[ColumnInputType] | ColumnInputType | None = None,
+        right_by: list[ColumnInputType] | ColumnInputType | None = None,
+        direction: Literal["backward", "forward", "nearest"] = "backward",
+        prefix: str | None = None,
+        suffix: str | None = None,
+        allow_exact_matches: bool = False,
+        tolerance: Any = None,
+    ) -> "DataFrame":
+        """Point-in-time (asof) join of this DataFrame with ``other``.
+
+        For each row in the left DataFrame, finds the most recent row in the right DataFrame
+        whose time-key is less than or equal to (or strictly less than, if ``allow_exact_matches=False``)
+        the left row's time-key, optionally within a matching group defined by ``by`` columns.
+
+        This is equivalent to ``pandas.merge_asof`` with ``direction="backward"``.
+
+        If both DataFrames have non-key columns with the same name, the right-side column is
+        renamed with ``prefix`` prepended or ``suffix`` appended (defaulting to ``"right.{name}"``).
+
+        Args:
+            other (DataFrame): The right DataFrame to join against.
+            on (Optional[ColumnInputType]): Single time-ordering column name or expression that exists
+                with the same name on both sides. Use this instead of ``left_on``/``right_on`` when the
+                column name is the same on both sides.
+            left_on (Optional[ColumnInputType]): Time-ordering column on the left DataFrame. Required
+                when ``on`` is ``None`` and the column names differ.
+            right_on (Optional[ColumnInputType]): Time-ordering column on the right DataFrame. Required
+                when ``on`` is ``None`` and the column names differ.
+            by (Optional[Union[List[ColumnInputType], ColumnInputType]]): Group-key column(s) that
+                exist with the same name on both sides. Matching is performed independently within each
+                group. Pass ``by=[]`` or omit all ``by``/``left_by``/``right_by`` arguments for an
+                ungrouped join.
+            left_by (Optional[Union[List[ColumnInputType], ColumnInputType]]): Group-key column(s) on
+                the left DataFrame. Required when ``by`` is ``None`` and group-key names differ.
+            right_by (Optional[Union[List[ColumnInputType], ColumnInputType]]): Group-key column(s) on
+                the right DataFrame. Required when ``by`` is ``None`` and group-key names differ.
+            direction (str): Match direction. Only ``"backward"`` is supported (finds the largest
+                right time-key ≤ left time-key). Defaults to ``"backward"``.
+            prefix (Optional[str]): Prefix to prepend to conflicting right-side column names.
+                Mutually exclusive with ``suffix``. Defaults to ``None``.
+            suffix (Optional[str]): Suffix to append to conflicting right-side column names.
+                Defaults to ``None`` (which uses ``"right."`` as a prefix if neither is set).
+            allow_exact_matches (bool): If ``True``, right time-keys equal to the left time-key are
+                valid matches (``right_on <= left_on``). If ``False``, only strictly earlier right
+                time-keys match (``right_on < left_on``). Defaults to ``False``.
+            tolerance (Any): Not yet implemented. Must be ``None``.
+
+        Returns:
+            DataFrame: Left-outer joined DataFrame. Every left row appears exactly once; right columns
+                are ``null`` when no matching right row exists.
+
+        Raises:
+            NotImplementedError: If ``tolerance`` is not ``None`` or ``direction`` is not ``"backward"``.
+            ValueError: If ``on`` and ``left_on``/``right_on`` are mixed incorrectly, or if
+                ``by`` and ``left_by``/``right_by`` are mixed incorrectly.
+
+        Examples:
+            >>> import daft
+            >>> left = daft.from_pydict({"time": [1, 5, 10], "val": ["a", "b", "c"]})
+            >>> right = daft.from_pydict({"time": [2, 7], "price": [100, 200]})
+            >>> left.asof_join(right, on="time", allow_exact_matches=True).sort("time").collect()
+            ╭───────┬────────┬─────────╮
+            │ time  ┆ val    ┆ price   │
+            │ ---   ┆ ---    ┆ ---     │
+            │ Int64 ┆ String ┆ Int64   │
+            ╞═══════╪════════╪═════════╡
+            │ 1     ┆ a      ┆ None    │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ 5     ┆ b      ┆ 100     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ 10    ┆ c      ┆ 200     │
+            ╰───────┴────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+        """
+        if tolerance is not None:
+            raise NotImplementedError("tolerance is not supported yet for asof_join")
+
+        if on is None:
+            if left_on is None or right_on is None:
+                raise ValueError("If `on` is None then both `left_on` and `right_on` must not be None")
+        else:
+            if left_on is not None or right_on is not None:
+                raise ValueError("If `on` is not None then both `left_on` and `right_on` must be None")
+            left_on = on
+            right_on = on
+
+        if by is None:
+            if left_by is None and right_by is None:
+                # No grouping keys — treat as ungrouped join.
+                left_by = []
+                right_by = []
+            elif left_by is None or right_by is None:
+                raise ValueError(
+                    "If `by` is None then both `left_by` and `right_by` must be provided, "
+                    "or omit all three to perform an ungrouped join"
+                )
+        else:
+            if left_by is not None or right_by is not None:
+                raise ValueError("If `by` is not None then both `left_by` and `right_by` must be None")
+            left_by = by
+            right_by = by
+
+        if isinstance(left_on, list) or isinstance(left_on, tuple):
+            raise ValueError("left_on must be a single column or expression")
+
+        if isinstance(right_on, list) or isinstance(right_on, tuple):
+            raise ValueError("right_on must be a single column or expression")
+
+        join_direction = JoinDirection.from_dir_type_str(direction)
+        if join_direction != JoinDirection.Backward:
+            raise ValueError("Only backward join is supported for now")
+
+        [left_on, right_on] = column_inputs_to_expressions((left_on, right_on))
+        left_by_exprs = column_inputs_to_expressions(tuple(left_by) if isinstance(left_by, list) else (left_by,))
+        right_by_exprs = column_inputs_to_expressions(tuple(right_by) if isinstance(right_by, list) else (right_by,))
+
+        tolerance_expr = lit(tolerance) if tolerance is not None else None
+
+        builder = self._builder.asof_join(
+            other._builder,
+            left_on=left_on,
+            right_on=right_on,
+            left_by=left_by_exprs,
+            right_by=right_by_exprs,
+            direction=join_direction,
+            prefix=prefix,
+            suffix=suffix,
+            allow_exact_matches=allow_exact_matches,
+            tolerance=tolerance_expr,
         )
         return DataFrame(builder)
 

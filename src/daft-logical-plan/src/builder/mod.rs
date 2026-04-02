@@ -15,7 +15,7 @@ use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
 use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
-use daft_core::join::{JoinStrategy, JoinType};
+use daft_core::join::{JoinDirection, JoinStrategy, JoinType};
 use daft_dsl::{
     Column, Expr, ExprRef, UnresolvedColumn, WindowSpec, has_agg, left_col, resolved_col,
     right_col, unresolved_col,
@@ -735,6 +735,96 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn asof_join<Right: Into<LogicalPlanRef>>(
+        &self,
+        right: Right,
+        on: Option<ExprRef>,
+        on_using: Vec<String>,
+        by: Option<ExprRef>,
+        by_using: Vec<String>,
+        direction: JoinDirection,
+        join_options: JoinOptions,
+        allow_exact_matches: bool,
+        tolerance: Option<ExprRef>,
+    ) -> DaftResult<Self> {
+        let left_plan = self.plan.clone();
+        let right_plan = right.into();
+
+        let expr_resolver = ExprResolver::default();
+        let on = on
+            .map(|expr| expr_resolver.resolve_join_on(expr, left_plan.clone(), right_plan.clone()))
+            .transpose()?;
+
+        let by = by
+            .map(|expr| expr_resolver.resolve_join_on(expr, left_plan.clone(), right_plan.clone()))
+            .transpose()?;
+
+        let (left_plan, right_plan, on, by) = ops::join::AsofJoin::deduplicate_join_columns(
+            left_plan,
+            right_plan,
+            on,
+            &on_using,
+            by,
+            &by_using,
+            join_options,
+        )?;
+
+        let left_schema = left_plan.schema();
+        let right_schema = right_plan.schema();
+
+        let by_using_expr = combine_conjunction(
+            by_using
+                .into_iter()
+                .map(|name| {
+                    let left_field = left_schema.get_field(&name)?;
+                    let right_field = right_schema.get_field(&name)?;
+
+                    Ok(left_col(left_field.clone()).eq(right_col(right_field.clone())))
+                })
+                .collect::<DaftResult<Vec<_>>>()?,
+        );
+
+        let on_using_expr = combine_conjunction(
+            on_using
+                .into_iter()
+                .map(|name| {
+                    let left_field = left_schema.get_field(&name)?;
+                    let right_field = right_schema.get_field(&name)?;
+
+                    Ok(left_col(left_field.clone()).eq(right_col(right_field.clone())))
+                })
+                .collect::<DaftResult<Vec<_>>>()?,
+        );
+
+        let combined_by = match (by_using_expr, by) {
+            (Some(u), Some(o)) => Some(u.and(o)),
+            (by_using_expr, by) => by_using_expr.or(by),
+        };
+
+        let combined_by = JoinPredicate::try_new(combined_by)?;
+
+        let combined_on = match (on_using_expr, on) {
+            (Some(u), Some(o)) => Some(u.and(o)),
+            (on_using_expr, on) => on_using_expr.or(on),
+        };
+
+        let combined_on = JoinPredicate::try_new(combined_on)?;
+
+        let logical_plan: LogicalPlan = ops::AsofJoin::try_new(
+            left_plan,
+            right_plan,
+            combined_on,
+            combined_by,
+            direction,
+            allow_exact_matches,
+            tolerance,
+        )?
+        .into();
+
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     pub fn cross_join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
@@ -1432,6 +1522,95 @@ impl PyLogicalPlanBuilder {
                 join_type,
                 join_strategy,
                 JoinOptions { prefix, suffix },
+            )?
+            .into())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        right,
+        left_on,
+        right_on,
+        left_by,
+        right_by,
+        direction,
+        prefix,
+        suffix,
+        allow_exact_matches,
+        tolerance = None
+    ))]
+    pub fn asof_join(
+        &self,
+        right: &Self,
+        left_on: PyExpr,
+        right_on: PyExpr,
+        left_by: Vec<PyExpr>,
+        right_by: Vec<PyExpr>,
+        direction: JoinDirection,
+        prefix: Option<String>,
+        suffix: Option<String>,
+        allow_exact_matches: bool,
+        tolerance: Option<PyExpr>,
+    ) -> PyResult<Self> {
+        let tolerance = tolerance.map(|e| e.expr);
+        let left_by = left_by.into_iter().map(|expr| expr.expr);
+        let right_by = right_by.into_iter().map(|expr| expr.expr);
+
+        let left_expr = left_on.expr;
+        let right_expr = right_on.expr;
+
+        let mut by_exprs = Vec::new();
+        let mut by_using = Vec::new();
+
+        for (l, r) in left_by.zip(right_by) {
+            if let (
+                Expr::Column(Column::Unresolved(UnresolvedColumn { name: l_name, .. })),
+                Expr::Column(Column::Unresolved(UnresolvedColumn { name: r_name, .. })),
+            ) = (l.as_ref(), r.as_ref())
+                && l_name == r_name
+            {
+                by_using.push(l_name.to_string());
+            } else {
+                let l = l.to_left_cols(self.builder.schema())?;
+                let r = r.to_right_cols(right.builder.schema())?;
+
+                by_exprs.push(l.eq(r));
+            }
+        }
+
+        let by = combine_conjunction(by_exprs);
+
+        let mut on_exprs = Vec::new();
+        let mut on_using = Vec::new();
+
+        if let (
+            Expr::Column(Column::Unresolved(UnresolvedColumn { name: l_name, .. })),
+            Expr::Column(Column::Unresolved(UnresolvedColumn { name: r_name, .. })),
+        ) = (left_expr.as_ref(), right_expr.as_ref())
+            && l_name == r_name
+        {
+            on_using.push(l_name.to_string());
+        } else {
+            let l = left_expr.to_left_cols(self.builder.schema())?;
+            let r = right_expr.to_right_cols(right.builder.schema())?;
+
+            on_exprs.push(l.eq(r));
+        }
+
+        let on = combine_conjunction(on_exprs);
+
+        Ok(self
+            .builder
+            .asof_join(
+                &right.builder,
+                on,
+                on_using,
+                by,
+                by_using,
+                direction,
+                JoinOptions { prefix, suffix },
+                allow_exact_matches,
+                tolerance,
             )?
             .into())
     }

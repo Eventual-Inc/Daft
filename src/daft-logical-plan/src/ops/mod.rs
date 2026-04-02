@@ -32,7 +32,7 @@ pub use explode::Explode;
 pub use filter::Filter;
 pub use into_batches::IntoBatches;
 pub use into_partitions::IntoPartitions;
-pub use join::Join;
+pub use join::{AsofJoin, Join};
 pub use limit::Limit;
 pub use monotonically_increasing_id::MonotonicallyIncreasingId;
 pub use offset::Offset;

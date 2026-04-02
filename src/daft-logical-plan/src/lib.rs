@@ -15,7 +15,7 @@ mod test;
 mod treenode;
 
 pub use builder::{LogicalPlanBuilder, PyLogicalPlanBuilder};
-pub use daft_core::join::{JoinStrategy, JoinType};
+pub use daft_core::join::{JoinDirection, JoinStrategy, JoinType};
 #[cfg(feature = "python")]
 use daft_scan::{
     CsvSourceConfig, DatabaseSourceConfig, JsonSourceConfig, ParquetSourceConfig, TextSourceConfig,

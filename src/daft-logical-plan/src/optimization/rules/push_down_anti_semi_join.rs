@@ -281,6 +281,9 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                     }) => {
                         return Ok(Transformed::no(node));
                     }
+                    LogicalPlan::AsofJoin(_) => {
+                        return Ok(Transformed::no(node));
+                    }
                     // Anti/semi join can be trivially pushed down these ops
                     LogicalPlan::Filter(Filter { input, .. })
                     | LogicalPlan::Sort(Sort { input, .. })
