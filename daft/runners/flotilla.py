@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from daft.daft import (
     DistributedPhysicalPlan,
     DistributedPhysicalPlanRunner,
+    FlightShufflePartitionRef,
     Input,
     LocalPhysicalPlan,
     NativeExecutor,
@@ -129,6 +130,7 @@ class RaySwordfishActor:
             resolved_inputs: dict[int, Input | list[PyMicroPartition]] = {}
             list_items = [(source_id, part) for source_id, part in inputs.items() if isinstance(part, list)]
             non_list_items = [(source_id, part) for source_id, part in inputs.items() if not isinstance(part, list)]
+            task_id = int(context.get("task_id", "0")) if context else 0
             if list_items:
                 list_results = await asyncio.gather(*[asyncio.gather(*part) for _, part in list_items])
                 for (source_id, _), mps in zip(list_items, list_results):
@@ -139,13 +141,14 @@ class RaySwordfishActor:
 
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
-            task_id = int(context.get("task_id", "0")) if context else 0
+
             result_handle = await self.native_executor.run(
                 plan,
                 ctx,
                 task_id,
                 resolved_inputs,
                 context,
+                False,
             )
             metas = []
             async for partition in result_handle:
@@ -155,7 +158,7 @@ class RaySwordfishActor:
                 metas.append(PartitionMetadata.from_table(mp))
                 yield mp
 
-            stats = await result_handle.finish()
+            stats = await result_handle.try_finish()
             yield SwordfishTaskMetadata(partition_metadatas=metas, stats=stats.encode())
 
 
@@ -200,6 +203,8 @@ class RaySwordfishTaskHandle:
 
     result_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
+    shuffle_write_info: tuple[str, int, int] | None = None
+    cache_id: int | None = None
     task: asyncio.Task[RayTaskResult] | None = None
 
     async def _get_result(self) -> RayTaskResult:
@@ -209,6 +214,26 @@ class RaySwordfishTaskHandle:
             metadata_ref = results.pop()
 
             task_metadata: SwordfishTaskMetadata = await metadata_ref
+            if self.shuffle_write_info is not None:
+                backend, shuffle_id, _ = self.shuffle_write_info
+                if backend != "flight":
+                    raise NotImplementedError(f"Unsupported shuffle write backend: {backend}")
+                cache_id = self.cache_id if self.cache_id is not None else 0
+                actor_address = await self.actor_handle.get_address.remote()
+                return RayTaskResult.shuffle_success(
+                    [
+                        FlightShufflePartitionRef(
+                            shuffle_id,
+                            partition_idx,
+                            actor_address,
+                            cache_id,
+                            metadata.num_rows,
+                            metadata.size_bytes or 0,
+                        )
+                        for partition_idx, metadata in enumerate(task_metadata.partition_metadatas)
+                    ],
+                    task_metadata.stats,
+                )
             assert len(results) == len(task_metadata.partition_metadatas)
 
             return RayTaskResult.success(
@@ -249,12 +274,13 @@ class RaySwordfishActorHandle:
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
         inputs: dict[str, Input | list[ray.ObjectRef]] = {}
+        plan = task.plan()
         for source_id, py_input in task.inputs().items():
             inputs[str(source_id)] = py_input
         for source_id, refs in task.psets().items():
             inputs[str(source_id)] = [ref.object_ref for ref in refs]
         result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
-            task.plan(),
+            plan,
             task.config(),
             task.context(),
             **inputs,
@@ -262,6 +288,8 @@ class RaySwordfishActorHandle:
         return RaySwordfishTaskHandle(
             result_handle,
             self.actor_handle,
+            plan.shuffle_write_info(),
+            task.id(),
         )
 
     def shutdown(self) -> None:

@@ -4,6 +4,15 @@ SHELL=/bin/bash
 VENV = .venv
 IS_M1 ?= 0
 PYTHON_VERSION ?= python3.11
+# Experimental cross-wheel build knobs for development use only (`make build-whl-cross`).
+# Avoid relying on these for production release workflows.
+BUILD_WHL_TARGET ?=
+BUILD_WHL_USE_ZIG ?= 1
+BUILD_WHL_COMPATIBILITY ?=
+BUILD_WHL_ZIG_FLAG = $(if $(filter 1 true yes,$(BUILD_WHL_USE_ZIG)),--zig,)
+BUILD_WHL_TARGET_FLAG = $(if $(strip $(BUILD_WHL_TARGET)),--target $(BUILD_WHL_TARGET),)
+BUILD_WHL_COMPATIBILITY_FLAG = $(if $(strip $(BUILD_WHL_COMPATIBILITY)),--compatibility $(BUILD_WHL_COMPATIBILITY),)
+BUILD_WHL_FD_LIMIT ?= 65536
 
 # Hypothesis
 HYPOTHESIS_MAX_EXAMPLES ?= 100
@@ -62,6 +71,30 @@ build-release: check-toolchain .venv  ## Compile and install a faster Daft binar
 build-whl: check-toolchain .venv  ## Compile Daft for development, only generate whl file without installation
 	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin build --release
 
+# Experimental target for development-only cross-wheel builds.
+# Do not rely on this target for production release workflows.
+.PHONY: build-whl-cross
+build-whl-cross: check-toolchain .venv  ## Compile Daft wheel with optional --target/--zig flags
+	@SOFT_LIMIT=$$(ulimit -Sn); \
+	HARD_LIMIT=$$(ulimit -Hn); \
+	TARGET_LIMIT=$(BUILD_WHL_FD_LIMIT); \
+	if [ "$$HARD_LIMIT" = "unlimited" ] || [ "$$TARGET_LIMIT" -le "$$HARD_LIMIT" ]; then \
+		NEW_LIMIT=$$TARGET_LIMIT; \
+	else \
+		NEW_LIMIT=$$HARD_LIMIT; \
+	fi; \
+	if [ "$$SOFT_LIMIT" != "unlimited" ] && [ "$$SOFT_LIMIT" -lt "$$NEW_LIMIT" ]; then \
+		ulimit -Sn "$$NEW_LIMIT"; \
+		echo "Raised open files soft limit: $$SOFT_LIMIT -> $$NEW_LIMIT"; \
+	fi; \
+	if [ -n "$(BUILD_WHL_ZIG_FLAG)" ] && ! command -v zig > /dev/null 2>&1; then \
+		echo "Error: zig is required when BUILD_WHL_USE_ZIG=1 for build-whl-cross."; \
+		echo "Install: https://ziglang.org/download/"; \
+		echo "Or disable zig: make build-whl-cross BUILD_WHL_USE_ZIG=0"; \
+		exit 1; \
+	fi; \
+	unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin build --release $(BUILD_WHL_COMPATIBILITY_FLAG) $(BUILD_WHL_TARGET_FLAG) $(BUILD_WHL_ZIG_FLAG)
+
 .PHONY: test
 test: .venv build  ## Run tests
 	# You can set additional run parameters through EXTRA_ARGS, such as running a specific test case file or method:
@@ -109,7 +142,7 @@ lint: check-toolchain .venv  ## Lint Python and Rust code
 
 .PHONY: precommit
 precommit: check-toolchain .venv  ## Run all pre-commit hooks
-	source $(VENV_BIN)/activate && pre-commit run --all-files
+	source $(VENV_BIN)/activate && pre-commit run --all-files --hook-stage pre-commit --hook-stage manual
 
 .PHONY: clean
 clean:

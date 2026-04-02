@@ -22,7 +22,7 @@ use parquet::{
     arrow::{
         ProjectionMask,
         arrow_reader::{
-            ArrowPredicateFn, ArrowReaderMetadata, ArrowReaderOptions,
+            ArrowPredicateFn, ArrowReaderMetadata, ArrowReaderOptions, ParquetRecordBatchReader,
             ParquetRecordBatchReaderBuilder, RowFilter, RowSelection, RowSelector,
         },
         async_reader::{AsyncFileReader, ParquetRecordBatchStreamBuilder},
@@ -823,22 +823,19 @@ pub(crate) fn local_parquet_setup(
     })
 }
 
-/// Decode a single row group from a local parquet file, returning a Daft RecordBatch.
+/// Build an arrow-rs `ParquetRecordBatchReader` for a single row group.
 ///
-/// Opens its own file handle, builds the arrow-rs reader with the given setup state,
-/// decodes, converts to Daft, applies post-read predicate fallback if needed, and
-/// strips predicate-only columns.
-///
-/// `decoder_limit`: passed to `with_limit()` when predicate is pushed down.
-/// For single-RG reads this can be the user's num_rows; for multi-RG it should be None
-/// (limit applied after concatenation).
-pub(crate) fn decode_single_rg(
+/// Opens its own file handle, sets up projection, batch size, offset/limit,
+/// row filter, and delete rows on the reader builder. The caller can then
+/// iterate over batches individually (streaming path) or collect them all
+/// at once (bulk path).
+fn build_rg_reader(
     path: &str,
     setup: &LocalParquetSetup,
     task: &RgTask,
     predicate: Option<&ExprRef>,
     decoder_limit: Option<usize>,
-) -> DaftResult<RecordBatch> {
+) -> DaftResult<ParquetRecordBatchReader> {
     let rg_rows = setup.parquet_metadata.row_group(task.rg_idx).num_rows() as usize;
     let file = std::fs::File::open(path)
         .map_err(|e| parquet_err(format!("Failed to open '{}': {}", path, e)))?;
@@ -860,7 +857,21 @@ pub(crate) fn decode_single_rg(
         }
     }
     builder = apply_rg_filter_and_deletes(builder, setup, task, predicate, rg_rows, decoder_limit)?;
-    let reader = builder.build().map_err(parquet_err)?;
+    builder.build().map_err(parquet_err)
+}
+
+/// Decode a single row group into one concatenated Daft RecordBatch.
+///
+/// Used by the bulk read path where the caller wants a single table per RG.
+/// `decoder_limit`: passed to `with_limit()` when predicate is pushed down.
+pub(crate) fn decode_single_rg(
+    path: &str,
+    setup: &LocalParquetSetup,
+    task: &RgTask,
+    predicate: Option<&ExprRef>,
+    decoder_limit: Option<usize>,
+) -> DaftResult<RecordBatch> {
+    let reader = build_rg_reader(path, setup, task, predicate, decoder_limit)?;
     let arrow_batches: Vec<arrow::array::RecordBatch> =
         reader.collect::<Result<Vec<_>, _>>().map_err(parquet_err)?;
     let daft_batches: Vec<RecordBatch> = arrow_batches
@@ -1029,12 +1040,26 @@ pub async fn local_parquet_stream_arrowrs(
     let compute_runtime = get_compute_runtime();
 
     // 3. Per-RG mpsc channels.
+    // Use enough capacity to hold all sub-batches within a row group without
+    // blocking the decode task. Capped to avoid excessive buffering.
     let num_tasks = setup.rg_tasks.len();
+    let max_batches_per_rg = setup
+        .rg_tasks
+        .iter()
+        .map(|t| {
+            let rg_rows = setup.parquet_metadata.row_group(t.rg_idx).num_rows() as usize;
+            (rg_rows / setup.batch_size) + 1
+        })
+        .max()
+        .unwrap_or(1)
+        .min(16);
     let (output_senders, output_receivers): (Vec<_>, Vec<_>) = (0..num_tasks)
-        .map(|_| tokio::sync::mpsc::channel(1))
+        .map(|_| tokio::sync::mpsc::channel(max_batches_per_rg))
         .unzip();
 
     // 4. Driver task on compute runtime: spawn per-RG decode tasks.
+    //    Each RG yields individual batches (respecting batch_size) to preserve
+    //    morsel-level cache locality for downstream operators.
     let path_owned = path.to_string();
     let inner_runtime = compute_runtime.clone();
     let driver = compute_runtime.spawn(async move {
@@ -1046,8 +1071,8 @@ pub async fn local_parquet_stream_arrowrs(
             let pred = predicate.clone();
 
             let handle = inner_runtime.spawn(async move {
-                let result = tokio::task::block_in_place(|| {
-                    decode_single_rg(
+                let reader = tokio::task::block_in_place(|| {
+                    build_rg_reader(
                         &path,
                         &setup,
                         &setup.rg_tasks[task_idx],
@@ -1055,7 +1080,29 @@ pub async fn local_parquet_stream_arrowrs(
                         None,
                     )
                 });
-                let _ = sender.send(result).await;
+                match reader {
+                    Ok(reader) => {
+                        for arrow_batch in reader {
+                            let batch_result = tokio::task::block_in_place(|| {
+                                let arrow_batch = arrow_batch.map_err(parquet_err)?;
+                                let daft_batch = RecordBatch::try_from(&arrow_batch)?;
+                                finalize_batch(
+                                    daft_batch,
+                                    pred.as_ref(),
+                                    setup.predicate_pushed,
+                                    &setup.read_daft_schema,
+                                    &setup.return_daft_schema,
+                                )
+                            });
+                            if sender.send(batch_result).await.is_err() {
+                                break; // receiver dropped (e.g. limit reached)
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let _ = sender.send(Err(e)).await;
+                    }
+                }
                 drop(permit);
             });
             rg_handles.push(handle);
@@ -1350,7 +1397,7 @@ mod tests {
         let mut writer = ArrowWriter::try_new(&mut buf, schema.clone(), None).unwrap();
 
         let batch = arrow::array::RecordBatch::try_new(
-            schema.clone(),
+            schema,
             vec![
                 Arc::new(Int32Array::from(vec![1, 2, 3, 4, 5])),
                 Arc::new(Int32Array::from(vec![10, 20, 30, 40, 50])),
@@ -1673,7 +1720,7 @@ mod tests {
         .unwrap();
 
         // The MVP parquet file should have some rows and columns.
-        assert!(result.len() > 0, "MVP parquet should have rows");
+        assert!(!result.is_empty(), "MVP parquet should have rows");
         assert!(result.num_columns() > 0, "MVP parquet should have columns");
     }
 
@@ -1690,7 +1737,7 @@ mod tests {
         let vals: Vec<i32> = (0..n).collect();
         let labels: Vec<String> = (0..n).map(|i| format!("row_{i}")).collect();
         let batch = arrow::array::RecordBatch::try_new(
-            schema.clone(),
+            schema,
             vec![
                 Arc::new(Int32Array::from(vals)),
                 Arc::new(arrow::array::StringArray::from(labels)),
@@ -1710,7 +1757,7 @@ mod tests {
     fn extract_val_column(batch: &RecordBatch) -> Vec<i32> {
         let idx = batch.schema.get_index("val").unwrap();
         let series = &batch.columns()[idx];
-        let arr = series.i32().unwrap();
+        let arr = series.as_materialized_series().i32().unwrap();
         (0..arr.len()).map(|i| arr.get(i).unwrap()).collect()
     }
 

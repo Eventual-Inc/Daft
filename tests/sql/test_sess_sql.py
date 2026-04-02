@@ -29,19 +29,21 @@ def _create_catalog(name: str, tmpdir: str):
     catalog.create_table(f"ns_1.tbl_{name}_12", pa.schema([]))
     catalog.create_table(f"ns_2.tbl_{name}_21", pa.schema([]))
     catalog.create_table(f"ns_2.tbl_{name}_22", pa.schema([]))
-    return Catalog.from_iceberg(catalog)
+    return Catalog.from_iceberg(catalog), catalog
 
 
 @pytest.fixture()
 def sess(tmpdir) -> Session:
     # create some tmp catalogs
-    cat_1 = _create_catalog("cat_1", tmpdir)
-    cat_2 = _create_catalog("cat_2", tmpdir)
+    cat_1, raw_cat_1 = _create_catalog("cat_1", tmpdir)
+    cat_2, raw_cat_2 = _create_catalog("cat_2", tmpdir)
     # attach to a new session
     sess = Session()
     sess.attach_catalog(cat_1, alias="cat_1")
     sess.attach_catalog(cat_2, alias="cat_2")
-    return sess
+    yield sess
+    raw_cat_1.engine.dispose()
+    raw_cat_2.engine.dispose()
 
 
 # chore: consider reducing test verbosity

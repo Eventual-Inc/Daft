@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use daft_schema::schema::SchemaRef;
 
 use crate::{
-    ChunkSpec, DataSource, PartitionField, Pushdowns, ScanOperator, ScanTask, ScanTaskRef,
-    storage_config::StorageConfig,
+    ChunkSpec, FileFormatConfig, ParquetSourceConfig, PartitionField, Pushdowns, ScanOperator,
+    ScanSource, ScanSourceKind, ScanTask, ScanTaskRef, SourceConfig, storage_config::StorageConfig,
 };
 #[derive(Debug)]
 pub struct AnonymousScanOperator {
@@ -84,7 +83,7 @@ impl ScanOperator for AnonymousScanOperator {
 
     fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskRef>> {
         let files = self.files.clone();
-        let file_format_config = self.file_format_config.clone();
+        let source_config = Arc::new(SourceConfig::File(self.file_format_config.as_ref().clone()));
         let schema = self.schema.clone();
         let storage_config = self.storage_config.clone();
 
@@ -105,17 +104,19 @@ impl ScanOperator for AnonymousScanOperator {
             .map(|(f, rg)| {
                 let chunk_spec = rg.map(ChunkSpec::Parquet);
                 Arc::new(ScanTask::new(
-                    vec![DataSource::File {
-                        path: f,
-                        chunk_spec,
+                    vec![ScanSource {
                         size_bytes: None,
-                        iceberg_delete_files: None,
                         metadata: None,
-                        partition_spec: None,
                         statistics: None,
-                        parquet_metadata: None,
+                        partition_spec: None,
+                        kind: ScanSourceKind::File {
+                            path: f,
+                            chunk_spec,
+                            iceberg_delete_files: None,
+                            parquet_metadata: None,
+                        },
                     }],
-                    file_format_config.clone(),
+                    source_config.clone(),
                     schema.clone(),
                     storage_config.clone(),
                     pushdowns.clone(),

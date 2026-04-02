@@ -372,6 +372,9 @@ fn exists_skip_list_map<F: FnMut(&ExprRef) -> bool>(expr: &ExprRef, mut f: F) ->
     expr.apply(|n| {
         Ok(if is_list_map(n) {
             TreeNodeRecursion::Stop
+        } else if matches!(n.as_ref(), daft_dsl::Expr::Coalesce(_)) {
+            // Don't split UDFs inside Coalesce expressions to preserve short-circuit behavior
+            TreeNodeRecursion::Stop
         } else if f(n) {
             found = true;
             TreeNodeRecursion::Stop
@@ -1162,7 +1165,7 @@ Project: col(a), col(c)
             Field::new("b", DataType::Boolean),
             Field::new("c", DataType::Int64),
         ]);
-        let scan_node = dummy_scan_node(scan_op.clone());
+        let scan_node = dummy_scan_node(scan_op);
         let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]);
 
         // Select the `udf_results` column, so the UDFProject should apply column pruning to the other columns
@@ -1206,13 +1209,13 @@ Project: col(a), col(c)
             Field::new("b", DataType::Boolean),
             Field::new("c", DataType::Int64),
         ]);
-        let scan_node = dummy_scan_node(scan_op.clone()).build();
+        let scan_node = dummy_scan_node(scan_op).build();
         let mock_udf = create_actor_pool_udf(vec![resolved_col("a")]);
 
         // Select the `udf_results` column, so the UDFProject should apply column pruning to the other columns
         let plan = LogicalPlan::UDFProject(UDFProject::try_new(
             scan_node,
-            mock_udf.clone().alias("udf_results_0"),
+            mock_udf.alias("udf_results_0"),
             vec![resolved_col("a"), resolved_col("b")],
         )?)
         .arced();
@@ -1266,7 +1269,7 @@ Project: col(a), col(c)
             Field::new("c", DataType::Int64),
         ]);
         let mock_udf = create_actor_pool_udf(vec![resolved_col("c")]);
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .with_columns(vec![mock_udf.alias("udf_results")])?
             // Select only col("a"), so the udf is redundant and should be removed
             .select(vec![resolved_col("a")])?
@@ -1295,7 +1298,7 @@ Project: col(a), col(c)
             Field::new("b", DataType::Int64),
             Field::new("c", DataType::Int64),
         ]);
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .with_columns(vec![mock_udf.alias("udf_results")])?
             .select(vec![
                 resolved_col("a"),
@@ -1327,7 +1330,7 @@ Project: col(a), col(c)
     #[test]
     fn test_split_udf_in_filter_top() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
-        let scan_node = dummy_scan_node(scan_op.clone());
+        let scan_node = dummy_scan_node(scan_op);
         let udf = create_filter_udf(vec![resolved_col("a")]);
         let plan = scan_node.filter(udf)?.build();
 
@@ -1360,7 +1363,7 @@ Project: col(a), col(c)
     #[test]
     fn test_split_udf_in_filter_middle() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
-        let scan_node = dummy_scan_node(scan_op.clone());
+        let scan_node = dummy_scan_node(scan_op);
         let condition = create_actor_pool_udf(vec![resolved_col("a")]).not_eq(lit("hello"));
         let plan = scan_node.filter(condition)?.build();
 

@@ -34,7 +34,8 @@ def iceberg_catalog(tmp_path_factory):
         "default.tbl",
         pa.schema([("x", pa.bool_()), ("y", pa.int64()), ("z", pa.string())]),
     )
-    return catalog
+    yield catalog
+    catalog.engine.dispose()
 
 
 @pytest.fixture(scope="session")

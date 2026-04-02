@@ -141,6 +141,14 @@ impl FromArrow for StructArray {
                     .downcast_ref::<arrow::array::StructArray>()
                     .unwrap();
 
+                if fields.is_empty() {
+                    return Ok(Self::new_empty(
+                        field.clone(),
+                        arrow_arr.len(),
+                        arrow_arr.nulls().cloned().map(Into::into),
+                    ));
+                }
+
                 let child_series = fields
                     .iter()
                     .zip(arrow_arr.columns().iter())
@@ -702,7 +710,7 @@ mod tests {
     #[test]
     fn test_arrow_roundtrip_logical_fixed_shape_tensor() -> DaftResult<()> {
         let shape = vec![3u64, 224u64, 224u64];
-        let size: usize = shape.clone().iter().map(|v| *v as usize).product();
+        let size: usize = shape.iter().map(|v| *v as usize).product();
 
         let data = Series::from_literals(vec![Literal::Float32(0.0f32); size])?;
 

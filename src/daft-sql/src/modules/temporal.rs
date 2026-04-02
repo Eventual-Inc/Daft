@@ -5,7 +5,10 @@ use daft_dsl::{
     functions::{BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArg, FunctionArgs},
     lit, null_lit,
 };
-use daft_functions_temporal::truncate::Truncate;
+use daft_functions_temporal::{
+    current::{CurrentDate, CurrentTimestamp, CurrentTimezone},
+    truncate::Truncate,
+};
 use sqlparser::ast;
 
 use super::SQLModule;
@@ -21,6 +24,9 @@ impl SQLModule for SQLModuleTemporal {
     fn register(parent: &mut SQLFunctions) {
         parent.add_fn("date_trunc", SQLDateTrunc);
         parent.add_fn("truncate", SQLDateTrunc);
+        parent.add_fn("current_date", SQLCurrentDate);
+        parent.add_fn("current_timestamp", SQLCurrentTimestamp);
+        parent.add_fn("current_timezone", SQLCurrentTimezone);
     }
 }
 
@@ -97,5 +103,91 @@ impl SQLFunction for SQLDateTrunc {
 
     fn arg_names(&self) -> &'static [&'static str] {
         &["interval", "input", "relative_to"]
+    }
+}
+
+// --- Zero-arg temporal SQL functions ---
+
+pub struct SQLCurrentDate;
+
+impl SQLFunction for SQLCurrentDate {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        _planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if !inputs.is_empty() {
+            invalid_operation_err!("current_date expects 0 arguments, got {}", inputs.len());
+        }
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(CurrentDate)),
+            inputs: FunctionArgs::new_unchecked(vec![]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Returns the current date (UTC).".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[]
+    }
+}
+
+pub struct SQLCurrentTimestamp;
+
+impl SQLFunction for SQLCurrentTimestamp {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        _planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if !inputs.is_empty() {
+            invalid_operation_err!(
+                "current_timestamp expects 0 arguments, got {}",
+                inputs.len()
+            );
+        }
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(CurrentTimestamp)),
+            inputs: FunctionArgs::new_unchecked(vec![]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Returns the current timestamp (UTC) with microsecond precision.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[]
+    }
+}
+
+pub struct SQLCurrentTimezone;
+
+impl SQLFunction for SQLCurrentTimezone {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        _planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if !inputs.is_empty() {
+            invalid_operation_err!("current_timezone expects 0 arguments, got {}", inputs.len());
+        }
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(CurrentTimezone)),
+            inputs: FunctionArgs::new_unchecked(vec![]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Returns the current timezone (always 'UTC' in Daft).".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[]
     }
 }

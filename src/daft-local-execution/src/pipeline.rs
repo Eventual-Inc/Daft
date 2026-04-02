@@ -10,18 +10,19 @@ use common_display::{
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_metrics::{
-    ATTR_QUERY_ID, QueryID,
+    Meter, QueryID,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
+pub use daft_local_plan::InputId;
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
-    HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
-    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Sample, Sort,
-    SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
-    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
-    WindowPartitionOnly,
+    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
+    HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
+    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Sample,
+    ShuffleReadBackend, ShuffleWriteBackend, Sort, SortMergeJoin, SourceId, TopN, UDFProject,
+    UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
+    WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -29,7 +30,6 @@ use daft_scan::ScanTaskRef;
 use daft_shuffles::server::flight_server::ShuffleFlightServer;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
-use opentelemetry::{InstrumentationScope, KeyValue, global, metrics::Meter};
 use snafu::ResultExt;
 
 use crate::{
@@ -44,7 +44,6 @@ use crate::{
         unpivot::UnpivotOperator,
     },
     join::{CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator},
-    runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
@@ -64,9 +63,8 @@ use crate::{
         write::{WriteFormat, WriteSink},
     },
     sources::{
-        empty_scan::EmptyScanSource, flight_shuffle_read::FlightShuffleReadSource,
-        glob_scan::GlobScanSource, in_memory::InMemorySource, scan_task::ScanTaskSource,
-        source::SourceNode,
+        flight_shuffle_read::FlightShuffleReadSource, glob_scan::GlobScanSource,
+        in_memory::InMemorySource, scan_task::ScanTaskSource, source::SourceNode,
     },
     streaming_sink::{
         async_udf::AsyncUdfSink, base::StreamingSinkNode, limit::LimitSink,
@@ -74,6 +72,65 @@ use crate::{
         vllm::VLLMSink,
     },
 };
+
+/// Message that can flow through the pipeline - either data (Morsel) or a flush signal
+#[derive(Debug, Clone)]
+pub enum PipelineMessage {
+    /// Data morsel with input_id and partition
+    Morsel {
+        input_id: InputId,
+        partition: MicroPartition,
+    },
+    /// Flush signal for a specific input_id - indicates that input is finished
+    Flush(InputId),
+}
+
+/// Events yielded by [`next_event`].
+pub(crate) enum PipelineEvent<TaskResult> {
+    TaskCompleted(TaskResult),
+    Morsel {
+        input_id: InputId,
+        partition: MicroPartition,
+    },
+    Flush(InputId),
+    InputClosed,
+}
+
+/// Yield the next event from either the task set or the input receiver.
+/// Returns `Ok(None)` when both the input is closed and no tasks remain.
+pub(crate) async fn next_event<TaskResult: Send + 'static>(
+    task_set: &mut common_runtime::OrderingAwareJoinSet<DaftResult<TaskResult>>,
+    max_concurrency: usize,
+    receiver: &mut crate::channel::Receiver<PipelineMessage>,
+    input_closed: &mut bool,
+) -> DaftResult<Option<PipelineEvent<TaskResult>>> {
+    if *input_closed && task_set.is_empty() {
+        return Ok(None);
+    }
+    tokio::select! {
+        msg = receiver.recv(), if task_set.len() < max_concurrency && !*input_closed => {
+            match msg {
+                Some(PipelineMessage::Morsel { input_id, partition }) => {
+                    Ok(Some(PipelineEvent::Morsel { input_id, partition }))
+                }
+                Some(PipelineMessage::Flush(input_id)) => {
+                    Ok(Some(PipelineEvent::Flush(input_id)))
+                }
+                None => {
+                    *input_closed = true;
+                    Ok(Some(PipelineEvent::InputClosed))
+                }
+            }
+        }
+        Some(task_result) = task_set.join_next(), if !task_set.is_empty() => {
+            match task_result {
+                Ok(Ok(result)) => Ok(Some(PipelineEvent::TaskCompleted(result))),
+                Ok(Err(e)) => Err(e),
+                Err(e) => Err(e.into()),
+            }
+        }
+    }
+}
 
 pub type NodeName = Cow<'static, str>;
 
@@ -165,7 +222,7 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>>;
+    ) -> crate::Result<crate::channel::Receiver<PipelineMessage>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 
@@ -173,8 +230,6 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn node_id(&self) -> usize;
     // General Node Info
     fn node_info(&self) -> Arc<NodeInfo>;
-    // Runtime Stats
-    fn runtime_stats(&self) -> Arc<dyn RuntimeStats>;
 }
 
 impl ConcreteTreeNode for Box<dyn PipelineNode> {
@@ -210,10 +265,7 @@ impl BuilderContext {
         context: HashMap<String, String>,
         shuffle_server: Option<Arc<ShuffleFlightServer>>,
     ) -> Self {
-        let scope = InstrumentationScope::builder("daft.execution.local")
-            .with_attributes(vec![KeyValue::new(ATTR_QUERY_ID, query_id.to_string())])
-            .build();
-        let meter = global::meter_with_scope(scope);
+        let meter = Meter::query_scope(query_id, "daft.execution.local");
 
         Self {
             index_counter: std::cell::RefCell::new(0),
@@ -319,17 +371,9 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::PlaceholderScan(_) => {
             panic!("PlaceholderScan should not be converted to a pipeline node")
         }
-        LocalPhysicalPlan::EmptyScan(EmptyScan {
-            schema,
-            stats_state,
-            context,
-        }) => {
-            let source = EmptyScanSource::new(schema.clone());
-            SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
-        }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan {
             source_id,
-            file_format_config,
+            source_config,
             pushdowns,
             schema,
             stats_state,
@@ -340,7 +384,7 @@ fn physical_plan_to_pipeline(
 
             let scan_task_source = ScanTaskSource::new(
                 rx,
-                file_format_config.clone(),
+                source_config.clone(),
                 pushdowns.clone(),
                 schema.clone(),
                 cfg,
@@ -1388,34 +1432,30 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
-        LocalPhysicalPlan::FlightShuffleWrite(daft_local_plan::FlightShuffleWrite {
+        LocalPhysicalPlan::ShuffleWrite(daft_local_plan::ShuffleWrite {
             input,
             num_partitions,
             partition_by,
-            shuffle_id,
-            shuffle_dirs,
-            compression,
+            backend,
             stats_state,
             context,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            // Get cache_id (task_id) from context
-            let cache_id = ctx
-                .context
-                .get("task_id")
-                .cloned()
-                .expect("task_id must be set in context");
             let shuffle_server = ctx
                 .shuffle_server()
                 .expect("Flight shuffle server must be initialized for FlightShuffleWrite plans when using flight_shuffle algorithm");
+            let ShuffleWriteBackend::Flight {
+                shuffle_id,
+                shuffle_dirs,
+                compression,
+            } = backend;
             let flight_shuffle_write_sink = FlightShuffleWriteSink::try_new(
                 *num_partitions,
                 partition_by.clone(),
                 *shuffle_id,
                 shuffle_dirs.clone(),
                 compression.clone(),
-                cache_id,
                 shuffle_server,
             )
             .with_context(|_| PipelineCreationSnafu {
@@ -1431,22 +1471,29 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
-        LocalPhysicalPlan::FlightShuffleRead(daft_local_plan::FlightShuffleRead {
-            shuffle_id,
-            partition_idx,
-            server_addresses,
-            server_cache_mapping,
+        LocalPhysicalPlan::ShuffleRead(daft_local_plan::ShuffleRead {
+            source_id,
+            backend,
             schema,
             stats_state,
             context,
         }) => {
+            let ShuffleReadBackend::Flight {
+                shuffle_id,
+                server_cache_mapping,
+            } = backend;
+            let shuffle_server = ctx
+                .shuffle_server()
+                .expect("Flight shuffle server must be initialized for FlightShuffleWrite plans when using flight_shuffle algorithm");
+            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
+            input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
             let source = FlightShuffleReadSource::new(
+                rx,
                 *shuffle_id,
-                *partition_idx,
-                server_addresses.clone(),
                 server_cache_mapping.clone(),
-                ctx.shuffle_server().expect("Flight shuffle server must be initialized for FlightShuffleRead plans when using flight_shuffle algorithm"),
+                shuffle_server,
                 schema.clone(),
+                cfg,
             );
             SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
         }

@@ -324,15 +324,23 @@ class TextSourceConfig:
 
     encoding: str
     skip_blank_lines: bool
+    whole_text: bool
     buffer_size: int | None
     chunk_size: int | None
 
-    def __init__(self, encoding: str, skip_blank_lines: bool, buffer_size: int | None, chunk_size: int | None): ...
+    def __init__(
+        self,
+        encoding: str,
+        skip_blank_lines: bool,
+        whole_text: bool,
+        buffer_size: int | None,
+        chunk_size: int | None,
+    ): ...
 
 class FileFormatConfig:
     """Configuration for parsing a particular file format (Parquet, CSV, JSON)."""
 
-    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | DatabaseSourceConfig | WarcSourceConfig
+    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | WarcSourceConfig
 
     @staticmethod
     def from_parquet_config(config: ParquetSourceConfig) -> FileFormatConfig:
@@ -352,11 +360,6 @@ class FileFormatConfig:
     @staticmethod
     def from_warc_config(config: WarcSourceConfig) -> FileFormatConfig:
         """Create a WARC file format config."""
-        ...
-
-    @staticmethod
-    def from_database_config(config: DatabaseSourceConfig) -> FileFormatConfig:
-        """Create a database file format config."""
         ...
 
     @staticmethod
@@ -1086,7 +1089,7 @@ class ScanTask:
     @staticmethod
     def sql_scan_task(
         url: str,
-        file_format: FileFormatConfig,
+        config: DatabaseSourceConfig,
         schema: PySchema,
         storage_config: StorageConfig,
         num_rows: int | None,
@@ -1112,6 +1115,29 @@ class ScanTask:
         """Create a Python factory function Scan Task."""
         ...
 
+class PyDataSource:
+    """A Rust DataSource exposed as a Python object."""
+
+    def name(self) -> str: ...
+    def schema(self) -> PySchema: ...
+
+class PyDataSourceTask:
+    """A Rust DataSourceTask exposed as a Python object."""
+
+    def schema(self) -> PySchema: ...
+    @staticmethod
+    def parquet(
+        path: str,
+        schema: PySchema,
+        *,
+        pushdowns: PyPushdowns | None = None,
+        num_rows: int | None = None,
+        size_bytes: int | None = None,
+        partition_values: PyRecordBatch | None = None,
+        stats: PyRecordBatch | None = None,
+        storage_config: StorageConfig | None = None,
+    ) -> PyDataSourceTask: ...
+
 class ScanOperatorHandle:
     """A handle to a scan operator."""
 
@@ -1135,6 +1161,8 @@ class ScanOperatorHandle:
     ) -> ScanOperatorHandle: ...
     @staticmethod
     def from_python_scan_operator(operator: ScanOperator) -> ScanOperatorHandle: ...
+    @staticmethod
+    def from_data_source(source: Any) -> ScanOperatorHandle: ...
 
 def logical_plan_table_scan(scan_operator: ScanOperatorHandle) -> LogicalPlanBuilder: ...
 
@@ -1569,6 +1597,7 @@ def resolved_col(name: str) -> PyExpr: ...
 def bound_col(index: int, field: PyField) -> PyExpr: ...
 def lit(item: Any) -> PyExpr: ...
 def list_(items: list[PyExpr]) -> PyExpr: ...
+def coalesce(items: list[PyExpr]) -> PyExpr: ...
 def date_lit(item: int) -> PyExpr: ...
 def time_lit(item: int, tu: PyTimeUnit) -> PyExpr: ...
 def timestamp_lit(item: int, tu: PyTimeUnit, tz: str | None) -> PyExpr: ...
@@ -1606,6 +1635,7 @@ def row_wise_udf(
     builtin_name: bool,
     is_async: bool,
     return_dtype: PyDataType,
+    cpus: float | None,
     gpus: float,
     use_process: bool | None,
     max_concurrency: int | None,
@@ -1613,6 +1643,7 @@ def row_wise_udf(
     on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
+    ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
 def batch_udf(
     func_id: str,
@@ -1622,6 +1653,7 @@ def batch_udf(
     builtin_name: bool,
     is_async: bool,
     return_dtype: PyDataType,
+    cpus: float | None,
     gpus: float,
     use_process: bool | None,
     max_concurrency: int | None,
@@ -1630,6 +1662,7 @@ def batch_udf(
     on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
+    ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
 def initialize_udfs(expression: PyExpr) -> PyExpr: ...
 def resolve_expr(expr: PyExpr, schema: PySchema) -> tuple[PyExpr, PyField]: ...
@@ -2054,6 +2087,7 @@ class LogicalPlanBuilder:
         num_partitions: int | None,
     ) -> LogicalPlanBuilder: ...
     def random_shuffle(self, num_partitions: int | None) -> LogicalPlanBuilder: ...
+    def shuffle(self, seed: int | None = ...) -> LogicalPlanBuilder: ...
     def into_partitions(self, num_partitions: int) -> LogicalPlanBuilder: ...
     def into_batches(self, batch_size: int) -> LogicalPlanBuilder: ...
     def coalesce(self, num_partitions: int) -> LogicalPlanBuilder: ...
@@ -2089,6 +2123,7 @@ class LogicalPlanBuilder:
         self,
         root_dir: str,
         write_mode: WriteMode,
+        write_success_file: bool,
         file_format: FileFormat,
         file_format_options: PyFormatSinkOption | None = None,
         partition_cols: list[PyExpr] | None = None,
@@ -2157,6 +2192,24 @@ class RayPartitionRef:
 
     def __init__(self, object_ref: ray.ObjectRef, num_rows: int, size_bytes: int): ...
 
+class FlightShufflePartitionRef:
+    shuffle_id: int
+    partition_idx: int
+    server_address: str
+    cache_id: int
+    num_rows: int
+    size_bytes: int
+
+    def __init__(
+        self,
+        shuffle_id: int,
+        partition_idx: int,
+        server_address: str,
+        cache_id: int,
+        num_rows: int,
+        size_bytes: int,
+    ): ...
+
 class RaySwordfishTask:
     def name(self) -> str: ...
     def id(self) -> int: ...
@@ -2169,6 +2222,8 @@ class RaySwordfishTask:
 class RayTaskResult:
     @staticmethod
     def success(ray_part_refs: list[RayPartitionRef], stats: bytes) -> RayTaskResult: ...
+    @staticmethod
+    def shuffle_success(shuffle_part_refs: list[FlightShufflePartitionRef], stats: bytes) -> RayTaskResult: ...
     @staticmethod
     def worker_died() -> RayTaskResult: ...
     @staticmethod
@@ -2186,14 +2241,17 @@ class RaySwordfishWorker:
     ) -> None: ...
 
 class PyExecutionStats:
+    @property
+    def query_id(self) -> str: ...
+    @property
+    def query_plan(self) -> str | None: ...
     def encode(self) -> bytes: ...
     def to_recordbatch(self) -> PyRecordBatch: ...
 
-class PyExecutionEngineResult:
-    def __aiter__(self) -> PyExecutionEngineResult: ...
+class PyResultReceiver:
+    def __aiter__(self) -> PyResultReceiver: ...
     async def __anext__(self) -> PyMicroPartition | None: ...
-    async def query_plan(self) -> str: ...
-    async def finish(self) -> PyExecutionStats: ...
+    async def try_finish(self) -> PyExecutionStats: ...
 
 class LocalPhysicalPlan:
     @staticmethod
@@ -2201,6 +2259,7 @@ class LocalPhysicalPlan:
         builder: LogicalPlanBuilder,
         psets: dict[str, list[PyMicroPartition]],
     ) -> tuple[LocalPhysicalPlan, dict[int, Input]]: ...
+    def shuffle_write_info(self) -> tuple[str, int, int] | None: ...
 
 class Input:
     """Input for NativeExecutor execution. Holds ScanTasks or GlobPaths."""
@@ -2217,7 +2276,10 @@ class NativeExecutor:
         input_id: int,
         inputs: dict[int, Input | list[PyMicroPartition]],
         context: dict[str, str] | None = None,
-    ) -> PyExecutionEngineResult: ...
+        maintain_order: bool = True,
+    ) -> PyResultReceiver: ...
+    def active_plan_count(self) -> int: ...
+    def cancel_plan(self, fingerprint: int) -> None: ...
     @staticmethod
     def repr_ascii(builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool) -> str: ...
     @staticmethod
@@ -2244,6 +2306,7 @@ class PyDaftExecutionConfig:
         parquet_inflation_factor: float | None = None,
         csv_target_filesize: int | None = None,
         csv_inflation_factor: float | None = None,
+        json_target_filesize: int | None = None,
         json_inflation_factor: float | None = None,
         text_inflation_factor: float | None = None,
         shuffle_aggregation_default_partitions: int | None = None,
@@ -2253,6 +2316,7 @@ class PyDaftExecutionConfig:
         default_morsel_size: int | None = None,
         shuffle_algorithm: str | None = None,
         pre_shuffle_merge_threshold: int | None = None,
+        pre_shuffle_merge_partition_threshold: int | None = None,
         scantask_max_parallel: int | None = None,
         native_parquet_writer: bool | None = None,
         min_cpu_per_task: float | None = None,
@@ -2292,6 +2356,8 @@ class PyDaftExecutionConfig:
     @property
     def csv_inflation_factor(self) -> float: ...
     @property
+    def json_target_filesize(self) -> int: ...
+    @property
     def json_inflation_factor(self) -> float: ...
     @property
     def text_inflation_factor(self) -> float: ...
@@ -2310,6 +2376,8 @@ class PyDaftExecutionConfig:
     @property
     def pre_shuffle_merge_threshold(self) -> int: ...
     @property
+    def pre_shuffle_merge_partition_threshold(self) -> int: ...
+    @property
     def min_cpu_per_task(self) -> float: ...
     @property
     def actor_udf_ready_timeout(self) -> int: ...
@@ -2323,6 +2391,8 @@ class PyDaftExecutionConfig:
     def flight_shuffle_dirs(self) -> list[str]: ...
     @property
     def enable_multi_glob_path_tasks(self) -> bool: ...
+    @property
+    def maintain_order(self) -> bool: ...
 
 class PyDaftPlanningConfig:
     @staticmethod

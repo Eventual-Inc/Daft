@@ -93,7 +93,7 @@ def test_monotonically_increasing_id_from_generator() -> None:
 
     # Test new function matches old behavior
     df2 = read_generator(generators(), schema=table.schema()).with_column("id", monotonically_increasing_id()).collect()
-    assert df.to_pydict() == df2.to_pydict()
+    assert df.sort("id").to_pydict() == df2.sort("id").to_pydict()
 
     if get_tests_daft_runner_name() == "native":
         # On the native runner, there are no partitions, so the ids are just the row numbers.

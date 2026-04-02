@@ -148,6 +148,23 @@ def test_explain_with_cross_join(small_df, large_df):
         assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
 
 
+@pytest.mark.parametrize(
+    "write_fn,kwargs",
+    [
+        ("write_csv", {"write_mode": "overwrite"}),
+        ("write_parquet", {"write_mode": "overwrite"}),
+        ("write_json", {"write_mode": "overwrite"}),
+    ],
+)
+def test_explain_after_write_preserves_upstream_plan(tmp_path, write_fn, kwargs):
+    output_path = str(tmp_path / "written")
+    write_df = getattr(daft.from_pydict({"a": [1, 2, 3]}).filter(col("a") > 1), write_fn)(output_path, **kwargs)
+    explain_text = explain_to_text(write_df)
+    assert "Result is cached and will skip computation" in explain_text
+    assert "However here is the logical plan used to produce this result" in explain_text
+    assert "Filter:" in explain_text
+
+
 def test_explain_with_hash_join(small_df, large_df):
     runner_type = get_or_infer_runner_type()
     if runner_type == "native":
@@ -244,7 +261,7 @@ def test_explain_with_ray_options(input_df_with_uri):
     gen_email_udf = gen_email.override_options(ray_options={"runtime_env": {"conda": "punks"}}).with_concurrency(1)
     df = input_df.with_column("email", gen_email_udf(col("id")))
     text = explain_to_text(df)
-    assert "{'runtime_env': {'conda': 'punks'}}" in text, f"Unexpected Explain result: {text}"
+    assert "'runtime_env': {'conda': 'punks'}" in text, f"Unexpected Explain result: {text}"
 
     # Configure via Conda YAML File
     gen_email_udf = gen_email.override_options(
@@ -252,13 +269,13 @@ def test_explain_with_ray_options(input_df_with_uri):
     ).with_concurrency(1)
     df = input_df.with_column("email", gen_email_udf(col("id")))
     text = explain_to_text(df)
-    assert "{'runtime_env': {'conda': '/tmp/daft/conda_env.yaml'}}" in text, f"Unexpected Explain result: {text}"
+    assert "'runtime_env': {'conda': '/tmp/daft/conda_env.yaml'}" in text, f"Unexpected Explain result: {text}"
 
     # Configure via Conda YAML Config
     gen_email_udf = gen_email.override_options(ray_options={"runtime_env": {}}).with_concurrency(1)
     df = input_df.with_column("email", gen_email_udf(col("id")))
     text = explain_to_text(df)
-    assert "{'runtime_env': {}}" in text, f"Unexpected Explain result: {text}"
+    assert "'runtime_env': {}" in text, f"Unexpected Explain result: {text}"
 
     gen_email_udf = gen_email.override_options(
         ray_options={
@@ -273,7 +290,7 @@ def test_explain_with_ray_options(input_df_with_uri):
 
     df = input_df.with_column("email", gen_email_udf(col("id")))
     text = explain_to_text(df)
-    assert "{'runtime_env': {'conda': {'name': 'simple', 'channels': ['conda-forge']}}}" in text, (
+    assert "'runtime_env': {'conda': {'name': 'simple', 'channels': ['conda-forge']}}" in text, (
         f"Unexpected Explain result: {text}"
     )
 
@@ -284,3 +301,25 @@ def test_explain_with_explode_index_column():
     output = explain_to_text(df)
     assert "Explode" in output
     assert "Index column = idx" in output
+
+
+def test_explain_when_join_with_download():
+    df1 = daft.from_pydict(
+        {
+            "name": ["a", "b"],
+            "url": ["https://www.daft.ai/"] * 2,
+        }
+    ).with_column("bytes", col("url").download())
+
+    df2 = daft.from_pydict(
+        {
+            "name": ["a", "b"],
+            "value": [1, 2],
+        }
+    )
+
+    df = df1.join(df2, on="name", prefix="df2_")
+
+    output = explain_to_text(df, only_physical_plan=True)
+    assert "url_download" in output
+    assert "Join" in output

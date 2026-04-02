@@ -389,6 +389,36 @@ impl Series {
             ))),
         }
     }
+
+    pub fn dt_convert_time_zone(
+        &self,
+        to_timezone: &str,
+        from_timezone: Option<&str>,
+    ) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(..) => {
+                let ts_array = self.timestamp()?;
+                Ok(ts_array
+                    .convert_time_zone(to_timezone, from_timezone)?
+                    .into_series())
+            }
+            ty => Err(DaftError::ComputeError(format!(
+                "Can only run convert_time_zone() operation on timestamp types, got {ty}"
+            ))),
+        }
+    }
+
+    pub fn dt_replace_time_zone(&self, timezone: Option<&str>) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(..) => {
+                let ts_array = self.timestamp()?;
+                Ok(ts_array.replace_time_zone(timezone)?.into_series())
+            }
+            ty => Err(DaftError::ComputeError(format!(
+                "Can only run replace_time_zone() operation on timestamp types, got {ty}"
+            ))),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -441,7 +471,7 @@ mod tests {
     #[test]
     fn strftime_timestamp_microseconds() -> DaftResult<()> {
         // 2023-01-01T12:00:00 in microseconds since epoch
-        let ts_us: Vec<i64> = vec![1672574400_000_000];
+        let ts_us: Vec<i64> = vec![1_672_574_400_000_000];
         let physical = Int64Array::from_slice("ts", &ts_us);
         let ts = TimestampArray::new(
             Field::new("ts", DataType::Timestamp(TimeUnit::Microseconds, None)),

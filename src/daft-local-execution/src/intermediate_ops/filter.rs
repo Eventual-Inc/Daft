@@ -2,19 +2,16 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, DURATION_KEY, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS,
-    UNIT_ROWS,
+    Counter, Gauge, Meter, StatSnapshot,
     ops::{NodeInfo, NodeType},
     snapshot::FilterSnapshot,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
-use opentelemetry::{KeyValue, metrics::Meter};
+use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 pub struct FilterStats {
@@ -26,18 +23,6 @@ pub struct FilterStats {
 }
 
 impl FilterStats {
-    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
-        let node_kv = node_info.to_key_values();
-
-        Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
-            selectivity: Gauge::new(meter, "selectivity", None),
-            node_kv,
-        }
-    }
-
     fn update_selectivity(&self, rows_in: u64, rows_out: u64) {
         let selectivity = if rows_in == 0 {
             100.0
@@ -50,8 +35,16 @@ impl FilterStats {
 }
 
 impl RuntimeStats for FilterStats {
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
-        self
+    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = node_info.to_key_values();
+
+        Self {
+            duration_us: meter.duration_us_metric(),
+            rows_in: meter.rows_in_metric(),
+            rows_out: meter.rows_out_metric(),
+            selectivity: meter.f64_gauge("selectivity"),
+            node_kv,
+        }
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
@@ -78,7 +71,7 @@ impl RuntimeStats for FilterStats {
         self.update_selectivity(self.rows_in.load(Ordering::Relaxed), rows_out);
     }
 
-    fn add_cpu_us(&self, cpu_us: u64) {
+    fn add_duration_us(&self, cpu_us: u64) {
         self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
@@ -95,12 +88,14 @@ impl FilterOperator {
 
 impl IntermediateOperator for FilterOperator {
     type State = ();
+    type Stats = FilterStats;
     type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "FilterOperator::execute")]
     fn execute(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         let predicate = self.predicate.clone();
@@ -108,10 +103,7 @@ impl IntermediateOperator for FilterOperator {
             .spawn(
                 async move {
                     let out = input.filter(&[predicate])?;
-                    Ok((
-                        state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                    ))
+                    Ok((state, out))
                 },
                 Span::current(),
             )
@@ -130,10 +122,6 @@ impl IntermediateOperator for FilterOperator {
         NodeType::Filter
     }
 
-    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
-        Arc::new(FilterStats::new(meter, node_info))
-    }
-
     fn make_state(&self) -> Self::State {}
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
@@ -146,8 +134,7 @@ impl IntermediateOperator for FilterOperator {
 mod tests {
     use std::sync::atomic::Ordering;
 
-    use common_metrics::ops::NodeInfo;
-    use opentelemetry::global;
+    use common_metrics::{Meter, ops::NodeInfo};
 
     use super::FilterStats;
     use crate::runtime_stats::RuntimeStats;
@@ -161,7 +148,7 @@ mod tests {
 
     #[test]
     fn selectivity_updates_after_rows_events() {
-        let stats = FilterStats::new(&global::meter("test_stats"), &node_info_from_id(42));
+        let stats = FilterStats::new(&Meter::test_scope("test_stats"), &node_info_from_id(42));
 
         stats.add_rows_in(200);
         stats.add_rows_out(50);
@@ -177,7 +164,7 @@ mod tests {
 
     #[test]
     fn selectivity_defaults_to_100_percent_on_zero_rows_in() {
-        let stats = FilterStats::new(&global::meter("test_stats"), &node_info_from_id(1));
+        let stats = FilterStats::new(&Meter::test_scope("test_stats"), &node_info_from_id(1));
 
         stats.add_rows_out(10);
 
@@ -191,7 +178,7 @@ mod tests {
 
     #[test]
     fn selectivity_handles_multiple_updates() {
-        let stats = FilterStats::new(&global::meter("test_stats"), &node_info_from_id(99));
+        let stats = FilterStats::new(&Meter::test_scope("test_stats"), &node_info_from_id(99));
 
         stats.add_rows_in(100);
         stats.add_rows_out(40);

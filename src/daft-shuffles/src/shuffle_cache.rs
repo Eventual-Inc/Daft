@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common_error::{DaftError, DaftResult};
 use common_runtime::{RuntimeTask, get_io_runtime};
 use daft_io::{SourceType, parse_url};
@@ -33,21 +31,23 @@ struct WriterTaskResult {
 type WriterTask = RuntimeTask<DaftResult<WriterTaskResult>>;
 
 struct InProgressShuffleCacheState {
-    writer_senders: Option<Vec<async_channel::Sender<Arc<MicroPartition>>>>,
+    writer_senders: Option<Vec<async_channel::Sender<MicroPartition>>>,
     writer_tasks: Vec<WriterTask>,
     error: Option<String>,
 }
 
 pub struct InProgressShuffleCache {
     state: Mutex<InProgressShuffleCacheState>,
-    writer_senders_weak: Vec<async_channel::WeakSender<Arc<MicroPartition>>>,
+    writer_senders_weak: Vec<async_channel::WeakSender<MicroPartition>>,
     shuffle_dirs: Vec<String>,
+    cache_id: String,
 }
 
 impl InProgressShuffleCache {
     pub fn try_new(
         num_partitions: usize,
         dirs: &[String],
+        cache_id: String,
         shuffle_id: u64,
         target_filesize: usize,
         compression: Option<&str>,
@@ -84,14 +84,13 @@ impl InProgressShuffleCache {
         }
 
         // Create the InProgressShuffleCache with the writers
-        Self::try_new_with_writers(writers, shuffle_dirs)
+        Self::try_new_with_writers(writers, shuffle_dirs, cache_id)
     }
 
     fn try_new_with_writers(
-        writers: Vec<
-            Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
-        >,
+        writers: Vec<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>>,
         shuffle_dirs: Vec<String>,
+        cache_id: String,
     ) -> DaftResult<Self> {
         let num_cpus = std::thread::available_parallelism().unwrap().get();
 
@@ -118,6 +117,7 @@ impl InProgressShuffleCache {
             }),
             writer_senders_weak: weak_senders,
             shuffle_dirs,
+            cache_id,
         })
     }
 
@@ -125,7 +125,7 @@ impl InProgressShuffleCache {
     /// The input should be a Vec<Arc<MicroPartition>> where each element corresponds to a writer.
     pub async fn push_partitioned_data(
         &self,
-        partitioned_data: Vec<Arc<MicroPartition>>,
+        partitioned_data: Vec<MicroPartition>,
     ) -> DaftResult<()> {
         // Verify we have the right number of partitions
         if partitioned_data.len() != self.writer_senders_weak.len() {
@@ -213,11 +213,12 @@ impl InProgressShuffleCache {
             rows_per_partition,
             bytes_per_partition,
             self.shuffle_dirs.clone(),
+            self.cache_id.clone(),
         ))
     }
 
     async fn close_internal(
-        writer_senders: Vec<async_channel::Sender<Arc<MicroPartition>>>,
+        writer_senders: Vec<async_channel::Sender<MicroPartition>>,
         writer_tasks: Vec<WriterTask>,
     ) -> DaftResult<Vec<WriterTaskResult>> {
         // Drop the writer senders so that the writer tasks can exit
@@ -234,8 +235,8 @@ impl InProgressShuffleCache {
 
 // Writer task that takes partitions from a writer sender, writes them to a file, and returns the schema and file paths
 async fn writer_task(
-    rx: async_channel::Receiver<Arc<MicroPartition>>,
-    mut writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+    rx: async_channel::Receiver<MicroPartition>,
+    mut writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
 ) -> DaftResult<WriterTaskResult> {
     let io_runtime = get_io_runtime(true);
     let mut schema = None;
@@ -290,6 +291,7 @@ pub struct ShuffleCache {
     rows_per_partition: Vec<usize>,
     bytes_per_partition: Vec<usize>,
     shuffle_dirs: Vec<String>,
+    cache_id: String,
 }
 
 impl ShuffleCache {
@@ -300,6 +302,7 @@ impl ShuffleCache {
         rows_per_partition: Vec<usize>,
         bytes_per_partition: Vec<usize>,
         shuffle_dirs: Vec<String>,
+        cache_id: String,
     ) -> Self {
         Self {
             schema,
@@ -308,7 +311,12 @@ impl ShuffleCache {
             rows_per_partition,
             bytes_per_partition,
             shuffle_dirs,
+            cache_id,
         }
+    }
+
+    pub fn cache_id(&self) -> &str {
+        &self.cache_id
     }
 
     pub fn schema(&self) -> SchemaRef {
@@ -369,7 +377,11 @@ mod tests {
         }
 
         // Create the cache with dummy writers
-        let cache = InProgressShuffleCache::try_new_with_writers(writers, vec![])?;
+        let cache = InProgressShuffleCache::try_new_with_writers(
+            writers,
+            vec![],
+            "test_cache".to_string(),
+        )?;
 
         // Create and push some partitions
         // Since we have 1 partition, all data goes to partition 0
@@ -415,7 +427,11 @@ mod tests {
         }
 
         // Create the cache with dummy writers
-        let cache = InProgressShuffleCache::try_new_with_writers(writers, vec![])?;
+        let cache = InProgressShuffleCache::try_new_with_writers(
+            writers,
+            vec![],
+            "test_cache".to_string(),
+        )?;
 
         // Create and push some partitions
         // For testing, we'll manually distribute data across partitions
@@ -444,7 +460,11 @@ mod tests {
             writers.push(dummy_writer_factory.create_writer(partition_idx, None)?);
         }
 
-        let cache = InProgressShuffleCache::try_new_with_writers(writers, vec![])?;
+        let cache = InProgressShuffleCache::try_new_with_writers(
+            writers,
+            vec![],
+            "test_cache".to_string(),
+        )?;
 
         // 1000 empty partitions, distributed across 5 writers
         for _ in 0..1000 {
@@ -461,7 +481,7 @@ mod tests {
             shuffle_cache
                 .file_paths_per_partition
                 .iter()
-                .all(|paths| paths.len() == 0),
+                .all(|paths| paths.is_empty()),
             "All partitions should have no file paths: {:?}",
             shuffle_cache.file_paths_per_partition
         );
@@ -482,7 +502,11 @@ mod tests {
         writers.push(failing_writer_factory.create_writer(1, None)?);
 
         // Create the cache with writers
-        let cache = InProgressShuffleCache::try_new_with_writers(writers, vec![])?;
+        let cache = InProgressShuffleCache::try_new_with_writers(
+            writers,
+            vec![],
+            "test_cache".to_string(),
+        )?;
 
         let mut found_failure = false;
         // Technically, we can calculate the max number of iterations before failure, based on number of tasks and channel sizes,
@@ -548,7 +572,11 @@ mod tests {
         writers.push(failing_writer_factory.create_writer(1, None)?);
 
         // Create the cache with writers
-        let cache = InProgressShuffleCache::try_new_with_writers(writers, vec![])?;
+        let cache = InProgressShuffleCache::try_new_with_writers(
+            writers,
+            vec![],
+            "test_cache".to_string(),
+        )?;
 
         // Create and push a partition
         let partitions = vec![make_dummy_mp(100), make_dummy_mp(100)];

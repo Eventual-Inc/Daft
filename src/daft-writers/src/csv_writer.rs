@@ -124,8 +124,7 @@ pub(crate) fn create_native_csv_writer(
     partition_values: Option<&RecordBatch>,
     io_config: Option<IOConfig>,
     csv_option: CsvFormatOption,
-) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
-{
+) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
     let (source_type, root_dir) = parse_url(root_dir)?;
     let filename = build_filename(
         &source_type,

@@ -1,11 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_metrics::ops::{NodeCategory, NodeType};
+use common_metrics::{
+    Meter,
+    ops::{NodeCategory, NodeType},
+};
 use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
 use futures::{StreamExt, stream};
-use opentelemetry::metrics::Meter;
 
 use super::{PipelineNodeContext, PipelineNodeImpl, scan_source::SourceStats};
 use crate::{
@@ -55,10 +57,6 @@ impl InMemorySourceNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     fn make_in_memory_source_task(
         self: &Arc<Self>,
         partition_ref: PartitionRef,
@@ -71,7 +69,7 @@ impl InMemorySourceNode {
             LocalNodeContext::new(Some(self.node_id() as usize)),
         );
 
-        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())
+        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref(), self.node_id())
             .with_psets(self.node_id(), vec![partition_ref])
     }
 }
@@ -118,7 +116,7 @@ impl PipelineNodeImpl for InMemorySourceNode {
         TaskBuilderStream::new(stream::iter(builders_iter).boxed())
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(SourceStats::new(meter, self.context()))
     }
 }

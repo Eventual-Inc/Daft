@@ -13,6 +13,7 @@ use crate::{
     series::{IntoSeries, Series},
 };
 
+#[inline(never)]
 fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
     predicate: &BooleanArray,
     name: &str,

@@ -9,7 +9,7 @@ use daft_schema::{
     prelude::{ImageMode, TimeUnit},
     python::{PyDataType, PyTimeUnit},
 };
-use indexmap::{IndexMap, indexmap};
+use indexmap::IndexMap;
 use pyo3::{
     IntoPyObjectExt, PyTypeCheck,
     exceptions::PyValueError,
@@ -79,22 +79,15 @@ impl<'py> IntoPyObject<'py> for Literal {
 
                 match tz {
                     None => naive_dt.into_bound_py_any(py),
-                    Some(tz_str)
-                        if let Ok(fixed_offset) = daft_schema::time_unit::parse_offset(&tz_str) =>
-                    {
-                        fixed_offset
-                            .from_utc_datetime(&naive_dt)
-                            .into_bound_py_any(py)
+                    Some(tz_str) => {
+                        let tz_parsed =
+                            daft_schema::time_unit::parse_timezone(&tz_str).map_err(|_| {
+                                DaftError::ValueError(format!(
+                                    "Failed to parse timezone string: {tz_str}"
+                                ))
+                            })?;
+                        tz_parsed.from_utc_datetime(&naive_dt).into_bound_py_any(py)
                     }
-                    Some(tz_str)
-                        if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(&tz_str) =>
-                    {
-                        tz.from_utc_datetime(&naive_dt).into_bound_py_any(py)
-                    }
-                    Some(tz_str) => Err(DaftError::ValueError(format!(
-                        "Failed to parse timezone string: {tz_str}"
-                    ))
-                    .into()),
                 }
             }
             Self::Date(val) => DateTime::from_timestamp((val as i64) * 24 * 60 * 60, 0)
@@ -177,11 +170,7 @@ impl<'py> IntoPyObject<'py> for Literal {
                 .to_pylist_impl(py, PyMapConversionMode::AssociationList)?
                 .into_any()),
             Self::Python(val) => val.0.as_ref().into_bound_py_any(py),
-            Self::Struct(entries) => entries
-                .into_iter()
-                .filter(|(k, v)| !(k.is_empty() && *v == Self::Null))
-                .collect::<IndexMap<_, _>>()
-                .into_bound_py_any(py),
+            Self::Struct(entries) => entries.into_bound_py_any(py),
             Self::File(f) => {
                 let file_class = match f.media_type {
                     daft_schema::media_type::MediaType::Unknown => intern!(py, "File"),
@@ -277,10 +266,7 @@ impl Literal {
                 .into_any()),
             Self::Struct(entries) => {
                 let dict = PyDict::new(py);
-                for (key, value) in entries
-                    .into_iter()
-                    .filter(|(k, v)| !(k.is_empty() && *v == Self::Null))
-                {
+                for (key, value) in entries {
                     dict.set_item(
                         key,
                         value.into_pyobject_with_map_conversion(py, maps_as_pydicts)?,
@@ -598,11 +584,7 @@ fn pydict_to_struct_lit(dict: &Bound<PyDict>, dtype: Option<&DataType>) -> PyRes
         Ok((field_name, field_value))
     }).collect::<PyResult<IndexMap<_, _>>>()?;
 
-    if field_mapping.is_empty() {
-        Ok(Literal::Struct(indexmap! {String::new() => Literal::Null}))
-    } else {
-        Ok(Literal::Struct(field_mapping))
-    }
+    Ok(Literal::Struct(field_mapping))
 }
 
 fn pydict_to_map_lit(dict: &Bound<PyDict>, dtype: Option<&DataType>) -> PyResult<Literal> {
@@ -649,11 +631,7 @@ fn pytuple_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResul
             .collect::<PyResult<_>>()
     }?;
 
-    if field_mapping.is_empty() {
-        Ok(Literal::Struct(indexmap! {String::new() => Literal::Null}))
-    } else {
-        Ok(Literal::Struct(field_mapping))
-    }
+    Ok(Literal::Struct(field_mapping))
 }
 
 fn pydantic_model_to_struct_lit(ob: &Bound<PyAny>, dtype: Option<&DataType>) -> PyResult<Literal> {

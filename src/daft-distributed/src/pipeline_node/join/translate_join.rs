@@ -1,4 +1,4 @@
-use std::cmp::max;
+use std::{cmp::max, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, is_partition_compatible};
@@ -142,19 +142,22 @@ impl LogicalPlanToPipelineNodeTranslator {
             right
         };
 
-        Ok(HashJoinNode::new(
-            self.get_next_pipeline_node_id(),
-            &self.plan_config,
-            left_on,
-            right_on,
-            Some(null_equals_nulls),
-            join_type,
-            num_partitions,
-            left,
-            right,
-            output_schema,
-        )
-        .into_node())
+        let node_id = self.get_next_pipeline_node_id();
+        Ok(DistributedPipelineNode::new(
+            Arc::new(HashJoinNode::new(
+                node_id,
+                &self.plan_config,
+                left_on,
+                right_on,
+                Some(null_equals_nulls),
+                join_type,
+                num_partitions,
+                left,
+                right,
+                output_schema,
+            )),
+            &self.meter,
+        ))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -194,19 +197,23 @@ impl LogicalPlanToPipelineNodeTranslator {
         };
 
         // Create broadcast join node
-        Ok(BroadcastJoinNode::new(
-            self.get_next_pipeline_node_id(),
-            &self.plan_config,
-            left_on,
-            right_on,
-            Some(null_equals_nulls),
-            join_type,
-            is_swapped,
-            broadcaster,
-            receiver,
-            output_schema,
-        )
-        .into_node())
+        let node_id = self.get_next_pipeline_node_id();
+        Ok(DistributedPipelineNode::new(
+            Arc::new(BroadcastJoinNode::new(
+                node_id,
+                &self.plan_config,
+                left_on,
+                right_on,
+                Some(null_equals_nulls),
+                join_type,
+                is_swapped,
+                broadcaster,
+                receiver,
+                output_schema,
+                &self.meter,
+            )),
+            &self.meter,
+        ))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -225,18 +232,21 @@ impl LogicalPlanToPipelineNodeTranslator {
             max(left_num_partitions, right_num_partitions)
         };
 
-        Ok(SortMergeJoinNode::new(
-            self.get_next_pipeline_node_id(),
-            &self.plan_config,
-            left_on,
-            right_on,
-            join_type,
-            num_partitions,
-            left,
-            right,
-            output_schema,
-        )
-        .into_node())
+        let node_id = self.get_next_pipeline_node_id();
+        Ok(DistributedPipelineNode::new(
+            Arc::new(SortMergeJoinNode::new(
+                node_id,
+                &self.plan_config,
+                left_on,
+                right_on,
+                join_type,
+                num_partitions,
+                left,
+                right,
+                output_schema,
+            )),
+            &self.meter,
+        ))
     }
 
     pub(crate) fn gen_cross_join_node(
@@ -251,15 +261,18 @@ impl LogicalPlanToPipelineNodeTranslator {
             left_num_partitions * right_num_partitions
         };
 
-        Ok(CrossJoinNode::new(
-            self.get_next_pipeline_node_id(),
-            &self.plan_config,
-            num_partitions,
-            left_node,
-            right_node,
-            output_schema,
-        )
-        .into_node())
+        let node_id = self.get_next_pipeline_node_id();
+        Ok(DistributedPipelineNode::new(
+            Arc::new(CrossJoinNode::new(
+                node_id,
+                &self.plan_config,
+                num_partitions,
+                left_node,
+                right_node,
+                output_schema,
+            )),
+            &self.meter,
+        ))
     }
 
     pub(crate) fn translate_join(

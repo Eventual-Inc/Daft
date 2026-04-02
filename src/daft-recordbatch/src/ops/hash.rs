@@ -2,6 +2,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::arrow::comparison::build_multi_array_is_equal,
     datatypes::UInt64Array,
+    series::Series,
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };
 use hashbrown::{HashMap, hash_map::RawEntryMut};
@@ -15,8 +16,9 @@ impl RecordBatch {
                 "Attempting to Hash Table with no columns".to_string(),
             ));
         }
-        let mut hash_so_far = self.columns.first().unwrap().hash(None)?;
-        for c in self.columns.iter().skip(1) {
+        let cols = self.as_materialized_series();
+        let mut hash_so_far = cols.first().unwrap().hash(None)?;
+        for c in cols.iter().skip(1) {
             hash_so_far = c.hash(Some(&hash_so_far))?;
         }
         Ok(hash_so_far)
@@ -28,11 +30,12 @@ impl RecordBatch {
         let hashes = self.hash_rows()?;
 
         const DEFAULT_SIZE: usize = 20;
+        let cols: Vec<Series> = self.as_materialized_series().into_iter().cloned().collect();
         let comparator = build_multi_array_is_equal(
-            self.columns.as_slice(),
-            self.columns.as_slice(),
-            vec![true; self.columns.len()].as_slice(),
-            vec![true; self.columns.len()].as_slice(),
+            cols.as_slice(),
+            cols.as_slice(),
+            vec![true; cols.len()].as_slice(),
+            vec![true; cols.len()].as_slice(),
         )?;
 
         let mut probe_table =
@@ -71,11 +74,12 @@ impl RecordBatch {
         let hashes = self.hash_rows()?;
 
         const DEFAULT_SIZE: usize = 20;
+        let cols: Vec<Series> = self.as_materialized_series().into_iter().cloned().collect();
         let comparator = build_multi_array_is_equal(
-            self.columns.as_slice(),
-            self.columns.as_slice(),
-            vec![true; self.columns.len()].as_slice(),
-            vec![true; self.columns.len()].as_slice(),
+            cols.as_slice(),
+            cols.as_slice(),
+            vec![true; cols.len()].as_slice(),
+            vec![true; cols.len()].as_slice(),
         )?;
 
         let mut idx_hash_table =
@@ -114,11 +118,12 @@ impl RecordBatch {
         let hashes = self.hash_rows()?;
 
         const DEFAULT_SIZE: usize = 20;
+        let cols: Vec<Series> = self.as_materialized_series().into_iter().cloned().collect();
         let comparator = build_multi_array_is_equal(
-            self.columns.as_slice(),
-            self.columns.as_slice(),
-            vec![true; self.columns.len()].as_slice(),
-            vec![true; self.columns.len()].as_slice(),
+            cols.as_slice(),
+            cols.as_slice(),
+            vec![true; cols.len()].as_slice(),
+            vec![true; cols.len()].as_slice(),
         )?;
 
         let mut probe_table =

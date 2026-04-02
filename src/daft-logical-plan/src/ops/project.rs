@@ -525,6 +525,21 @@ fn replace_column_with_semantic_id(
                         |e| e,
                     )
             }
+            Expr::Coalesce(inputs) => {
+                let transforms = inputs
+                    .iter()
+                    .map(|input| {
+                        replace_column_with_semantic_id(input.clone(), subexprs_to_replace, schema)
+                    })
+                    .collect::<Vec<_>>();
+                if transforms.iter().all(|t| !t.transformed) {
+                    Transformed::no(e)
+                } else {
+                    Transformed::yes(
+                        Expr::Coalesce(transforms.iter().map(|t| t.data.clone()).collect()).into(),
+                    )
+                }
+            }
         }
     }
 }
@@ -681,7 +696,7 @@ mod tests {
     /// ->
     /// 1. aaaa+aaaa as x
     /// 2. aa+aa as aaaa
-    /// 3: a+a as aa
+    /// 3. a+a as aa
     #[test]
     fn test_nested_subexpression() -> DaftResult<()> {
         let source = dummy_scan_node(dummy_scan_operator(vec![

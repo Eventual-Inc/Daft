@@ -48,6 +48,15 @@ See also [Apache Hudi](hudi.md) for detailed integration.
 
 See also [Iceberg](iceberg.md) for detailed integration.
 
+## Paimon
+
+| Function                                                    | Description                            |
+|-------------------------------------------------------------|----------------------------------------|
+| [`read_paimon`][daft.io.read_paimon]                        | Read a Paimon table into a DataFrame   |
+| [`write_paimon`][daft.dataframe.DataFrame.write_paimon]     | Write a DataFrame to a Paimon table    |
+
+See also [Apache Paimon](paimon.md) for detailed integration.
+
 
 ## JSON
 
@@ -55,6 +64,18 @@ See also [Iceberg](iceberg.md) for detailed integration.
 |----------------------------------|----------------------------------------------------------|
 | [`read_json`][daft.io.read_json] | Read a JSON file or multiple JSON files into a DataFrame |
 
+
+## Kafka
+
+!!! warning "Experimental"
+
+    This connector is experimental. Currently only bounded batch reads are supported — there is no streaming/unbounded mode and no offset commit management.
+
+| Function                           | Description                                          |
+|------------------------------------|------------------------------------------------------|
+| [`read_kafka`][daft.io.read_kafka] | Read messages from Kafka topic(s) into a DataFrame   |
+
+See also [Kafka](kafka.md) for detailed integration.
 
 ## Lance
 

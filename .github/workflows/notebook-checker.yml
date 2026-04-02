@@ -31,8 +31,8 @@ jobs:
         pip install -U jupyter papermill matplotlib nb-clean
     - name: Install Tesseract
       run: |
-        sudo apt install tesseract-ocr
-        sudo apt install libtesseract-dev
+        sudo apt-get update
+        sudo apt-get install -y tesseract-ocr libtesseract-dev
     - name: Clean all notebook output
       run: find . -name "*.ipynb" -print0 | xargs -0 nb-clean clean
     - name: Run notebooks in docs
@@ -40,7 +40,7 @@ jobs:
     - name: Run notebooks in tutorials
       run: find tutorials -name "*.ipynb" -print0 | xargs -0 -I {} papermill {} /tmp/out.ipynb -p CI True --kernel python3 --no-progress-bar --cwd /tmp/
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
+      uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.ref == 'refs/heads/main') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

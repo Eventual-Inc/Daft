@@ -21,7 +21,7 @@ Whether you're loading data from local files, cloud storage, or the web, Daft's 
     df = daft.from_pydict({
         "urls": [
             "https://www.google.com",
-            "s3://daft-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",
+            "s3://daft-oss-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",
         ],
     })
     df = df.with_column("data", df["urls"].download())
@@ -33,7 +33,7 @@ Whether you're loading data from local files, cloud storage, or the web, Daft's 
     df = daft.from_pydict({
         "urls": [
             "https://www.google.com",
-            "s3://daft-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",
+            "s3://daft-oss-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",
         ],
     })
     df = daft.sql("""
@@ -54,7 +54,7 @@ Whether you're loading data from local files, cloud storage, or the web, Daft's 
 ╞════════════════════════════════╪════════════════════════════════╡
 │ https://www.google.com         ┆ b"<!doctype html><html itemsc… │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ s3://daft-public-data/open-im… ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… │
+│ s3://daft-oss-public-data/open-im… ┆ b"\xff\xd8\xff\xe0\x00\x10JFI… │
 ╰────────────────────────────────┴────────────────────────────────╯
 
 (Showing first 2 of 2 rows)
@@ -78,7 +78,7 @@ from daft.io import IOConfig, S3Config
         {
             "urls": [
                 "https://www.google.com",
-                "s3://daft-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",
+                "s3://daft-oss-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",
             ],
         }
     )
@@ -119,7 +119,7 @@ from daft.io import IOConfig, S3Config
 ╞════════════════════════════════╪═══════════╡
 │ https://www.google.com         ┆ HTML      │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
-│ s3://daft-public-data/open-im… ┆ JPEG      │
+│ s3://daft-oss-public-data/open-im… ┆ JPEG      │
 ╰────────────────────────────────┴───────────╯
 
 (Showing first 2 of 2 rows)

@@ -372,6 +372,22 @@ def test_series_utf8_rstrip(data, expected) -> None:
 @pytest.mark.parametrize(
     ["data", "expected"],
     [
+        (["\ta\t", "\nb\n", "\vc\t", "\td ", "e"], ["a", "b", "c", "d", "e"]),
+        # With at least one null
+        (["\ta\t", None, "\vc\t", "\td ", "e"], ["a", None, "c", "d", "e"]),
+        # With all nulls
+        ([None] * 4, [None] * 4),
+    ],
+)
+def test_series_utf8_strip(data, expected) -> None:
+    s = Series.from_arrow(pa.array(data))
+    result = s.str.strip()
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ["data", "expected"],
+    [
         (["abc", "def", "ghi"], ["cba", "fed", "ihg"]),
         # With at least one null
         (["abc", None, "def", "ghi"], ["cba", None, "fed", "ihg"]),

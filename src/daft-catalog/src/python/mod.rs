@@ -2,7 +2,7 @@
 
 mod wrappers;
 
-use std::{hash::Hasher, sync::Arc};
+use std::hash::Hasher;
 
 use daft_core::{lit::Literal, python::PySchema};
 use daft_logical_plan::PyLogicalPlanBuilder;
@@ -140,22 +140,6 @@ impl PyTable {
     #[staticmethod]
     fn new_memory_table(name: String, schema: PySchema, py: Python) -> PyResult<Py<PyAny>> {
         MemoryTable::new(name, schema.schema)?.to_py(py)
-    }
-}
-
-pub fn pyobj_to_catalog(obj: Bound<PyAny>) -> PyResult<CatalogRef> {
-    if obj.is_instance_of::<PyCatalog>() {
-        Ok(obj.extract::<PyCatalog>()?.0)
-    } else {
-        Ok(Arc::new(PyCatalogWrapper(obj.unbind())))
-    }
-}
-
-pub fn pyobj_to_table(obj: Bound<PyAny>) -> PyResult<TableRef> {
-    if obj.is_instance_of::<PyTable>() {
-        Ok(obj.extract::<PyTable>()?.0)
-    } else {
-        Ok(Arc::new(PyTableWrapper(obj.unbind())))
     }
 }
 

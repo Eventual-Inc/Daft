@@ -277,6 +277,7 @@ impl PushDownProjection {
             | LogicalPlan::TopN(..)
             | LogicalPlan::Filter(..)
             | LogicalPlan::Sample(..)
+            | LogicalPlan::Shuffle(..)
             | LogicalPlan::Explode(..) => {
                 // Get required columns from projection and upstream.
                 let combined_dependencies = plan
@@ -908,7 +909,7 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Int64),
         ]);
-        let plan = dummy_scan_node(scan_op.clone())
+        let plan = dummy_scan_node(scan_op)
             .add_monotonically_increasing_id(Some("id"), None)?
             .select(vec![unresolved_col("id")])?
             .build();
@@ -930,7 +931,7 @@ mod tests {
 
         let plan = LogicalPlan::Unpivot(
             Unpivot::try_new(
-                scan_node.clone(),
+                scan_node,
                 vec![resolved_col("year")],
                 vec![resolved_col("Jan"), resolved_col("Feb")],
                 "month".to_string(),
@@ -944,7 +945,7 @@ mod tests {
         )
         .into();
         let expected_scan = dummy_scan_node_with_pushdowns(
-            scan_op.clone(),
+            scan_op,
             Pushdowns {
                 limit: None,
                 partition_filters: None,

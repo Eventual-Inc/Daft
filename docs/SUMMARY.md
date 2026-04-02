@@ -38,6 +38,7 @@
         * [Apache Gravitino](connectors/gravitino.md)
         * [Apache Hudi](connectors/hudi.md)
         * [Apache Iceberg](connectors/iceberg.md)
+        * [Apache Kafka](connectors/kafka.md)
         * [Azure Blob Store](connectors/azure.md)
         * [Delta Lake](connectors/delta_lake.md)
         * [Lance](connectors/lance.md)
@@ -80,6 +81,7 @@
     * [Generate Images from Text with Stable Diffusion](examples/image-generation.md)
     * [Querying Image Data](examples/querying-images.md)
     * [MNIST Digit Classification](examples/mnist.md)
+    * [UDF Patterns](examples/udf-patterns.md)
     * [Window Functions](examples/window-functions.md)
     * [Working with Common Crawl Data](examples/common-crawl-daft-tutorial.md)
 * Python API
@@ -116,7 +118,7 @@
     * [Overview](contributing/overview.md)
     * [Development Guide](contributing/development.md)
     * [Contributing AI Functions](contributing/contributing-ai-functions.md)
-* [Daft Cloud](https://www.daft.ai/cloud)
+* [Daft Skills](skills.md)
 
 <!--
 TODO
