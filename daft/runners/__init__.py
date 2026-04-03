@@ -65,7 +65,6 @@ def set_runner_native(num_threads: int | None = None) -> Runner[PartitionT]:
 def set_runner_ray(
     address: str | None = None,
     noop_if_initialized: bool = False,
-    max_task_backlog: int | None = None,
     force_client_mode: bool = False,
 ) -> Runner[PartitionT]:
     """Configure Daft to execute dataframes using the Ray distributed computing framework.
@@ -73,7 +72,6 @@ def set_runner_ray(
     Args:
         address: Ray cluster address to connect to. If None, connects to or starts a local Ray instance.
         noop_if_initialized: If True, skip initialization if Ray is already running.
-        max_task_backlog: Maximum number of tasks that can be queued. None means Daft will automatically determine a good default.
         force_client_mode: If True, forces Ray to run in client mode.
 
     Returns:
@@ -85,6 +83,5 @@ def set_runner_ray(
     return _set_runner_ray(
         address=address,
         noop_if_initialized=noop_if_initialized,
-        max_task_backlog=max_task_backlog,
         force_client_mode=force_client_mode,
     )
