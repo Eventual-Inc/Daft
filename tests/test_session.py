@@ -238,6 +238,12 @@ def test_exception_surfacing():
         def _list_tables(self, pattern=None):
             raise NotImplementedError
 
+        def _create_function(self, ident, function):
+            raise NotImplementedError
+
+        def _get_function(self, ident):
+            raise NotFoundError(f"Function '{ident}' not found")
+
         def _has_namespace(self, ident):
             raise NotImplementedError
 
@@ -338,3 +344,108 @@ def test_current_session_drop_table():
 
     daft.drop_namespace("ns")
     assert not cata.has_namespace("ns")
+
+
+###
+# CATALOG FUNCTION FALLBACK
+###
+
+
+from daft.catalog.__internal import MemoryCatalog
+
+_function_catalog = MemoryCatalog._new("func_catalog")
+
+
+def test_session_catalog_function_fallback():
+    """Test that catalog _get_function is used during SQL plan resolution."""
+    from tests.udf.my_funcs import catalog_udf
+
+    _function_catalog.create_function("my_catalog_udf", catalog_udf)
+
+    sess = Session()
+    sess.attach_catalog(_function_catalog)
+
+    # Verify the catalog itself returns the function
+    assert _function_catalog.get_function("my_catalog_udf")(1) is not None
+
+    # Verify the function is accessible via SQL plan resolution.
+    # The UDF registered in the catalog should be found during SQL planning.
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    sess.attach_table(Table.from_df("t", df), alias="t")
+    daft.set_session(sess)
+    result = sess.sql("SELECT my_catalog_udf(x) FROM t")
+    assert result is not None
+
+
+def test_session_catalog_function_fallback_raises():
+    """Test that catalog get_function raises DaftCoreException when function is not found."""
+    from daft.exceptions import DaftCoreException
+
+    # Catalog itself should raise DaftCoreException for nonexistent functions
+    with pytest.raises(DaftCoreException, match="function with name nonexistent_function not found"):
+        _function_catalog.get_function("nonexistent_function")
+
+
+def test_session_function_priority_over_catalog():
+    """Test that session-scoped functions take priority over catalog functions."""
+    from tests.udf.my_funcs import catalog_udf
+
+    _function_catalog.create_function("shared_fn", catalog_udf)
+
+    @daft.func(return_dtype=daft.DataType.int64())
+    def session_udf(x):
+        return x + 1
+
+    sess = Session()
+    sess.attach_catalog(_function_catalog)
+    sess.attach_function(session_udf, alias="shared_fn")
+
+    # Both catalog and session have "shared_fn", but session should take priority.
+    # Verify via SQL that the function resolves (session-scoped wins).
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    sess.attach_table(Table.from_df("t", df), alias="t")
+    daft.set_session(sess)
+    result = sess.sql("SELECT shared_fn(x) FROM t").to_pydict()
+    assert result == {"x": [2, 3, 4]}
+
+
+def test_dataframe_select_with_catalog_get_function():
+    """Test that dataframe.select can use a UDF retrieved via catalog.get_function."""
+    from tests.udf.my_funcs import double_value
+
+    _function_catalog.create_function("double_value", double_value)
+
+    sess = Session()
+    sess.attach_catalog(_function_catalog)
+    daft.set_session(sess)
+
+    # Retrieve the UDF from the catalog and use it directly in dataframe.select
+    udf_fn = _function_catalog.get_function("double_value")
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    result = df.select(udf_fn(df["x"]))
+
+    assert result.to_pydict() == {"x": [2, 4, 6]}
+
+
+def test_catalog_register_cls_udf_from_external_module():
+    """Test that a @daft.cls UDF can be loaded from an external module via register_function."""
+    from tests.udf.my_funcs import MockModelPredictor
+
+    _function_catalog.create_function("mock_predictor", MockModelPredictor)
+
+    predictor_fn = _function_catalog.get_function("mock_predictor")
+    assert predictor_fn is not None
+
+    predictor = predictor_fn("bert-base")
+    df = daft.from_pydict({"text": ["hello", "world", "daft"]})
+    result = df.select(predictor(df["text"])).to_pydict()
+
+    expected = {
+        "text": [
+            "model bert-base predict hello",
+            "model bert-base predict world",
+            "model bert-base predict daft",
+        ]
+    }
+    assert result == expected

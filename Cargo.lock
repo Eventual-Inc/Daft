@@ -2326,6 +2326,7 @@ dependencies = [
  "common-pattern",
  "daft-context",
  "daft-core",
+ "daft-dsl",
  "daft-logical-plan",
  "daft-micropartition",
  "daft-runners",

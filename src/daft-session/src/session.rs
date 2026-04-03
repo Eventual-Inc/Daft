@@ -245,9 +245,67 @@ impl Session {
         }
     }
 
-    /// Returns the function or none if it does not exist.
-    pub fn get_function(&self, name: &str) -> CatalogResult<Option<ScalarFunction>> {
-        self.state().get_function(name)
+    /// Returns the function or an object not found error.
+    ///
+    /// Resolution rules
+    ///   Rule 0: check session-scoped functions by the unqualified name.
+    ///   Rule 1: try to resolve using the current catalog and current namespace.
+    ///   Rule 2: try to resolve as namespace-qualified using the current catalog.
+    ///   Rule 3: try to resolve as catalog-qualified (first part of the identifier).
+    pub fn get_function(&self, ident: &Identifier) -> CatalogResult<ScalarFunction> {
+        use daft_catalog::error::CatalogError;
+
+        // Rule 0: check session-scoped functions by the unqualified name.
+        if !ident.has_qualifier()
+            && let Some(func) = self.state().get_function(ident.name())?
+        {
+            return Ok(func);
+        }
+
+        // Use session state, but error if there's no catalog and the function was not session-scoped.
+        let curr_catalog = match self.current_catalog()? {
+            Some(catalog) => catalog,
+            None => obj_not_found_err!("Function", ident),
+        };
+        let curr_namespace = self.current_namespace()?;
+
+        // Helper: try a catalog lookup, returning Ok(None) on not-found/unsupported errors.
+        let try_get = |catalog: &dyn daft_catalog::Catalog,
+                       ident: &daft_catalog::Identifier|
+         -> CatalogResult<Option<daft_catalog::FunctionRef>> {
+            match catalog.get_function(ident) {
+                Ok(func) => Ok(Some(func)),
+                Err(CatalogError::ObjectNotFound { .. } | CatalogError::Unsupported { .. }) => {
+                    Ok(None)
+                }
+                Err(e) => Err(e),
+            }
+        };
+
+        // Rule 1: try to resolve using the current catalog and current namespace.
+        if let Some(qualifier) = curr_namespace {
+            let qualified_ident = ident.qualify(qualifier);
+            if let Some(func_ref) = try_get(curr_catalog.as_ref(), &qualified_ident)? {
+                return Ok(ScalarFunction::from_function_ref(&func_ref));
+            }
+        }
+
+        // Rule 2: try to resolve as namespace-qualified using the current catalog.
+        if let Some(func_ref) = try_get(curr_catalog.as_ref(), ident)? {
+            return Ok(ScalarFunction::from_function_ref(&func_ref));
+        }
+
+        // Rule 3: try to resolve as catalog-qualified.
+        if ident.has_qualifier()
+            && let Ok(catalog) = self.get_catalog(ident.get(0))
+        {
+            let ident = ident.drop(1);
+            if let Some(func_ref) = try_get(catalog.as_ref(), &ident)? {
+                return Ok(ScalarFunction::from_function_ref(&func_ref));
+            }
+        }
+
+        obj_not_found_err!("Function", ident)
     }
 
     /// Returns the provider or an object not found error.
@@ -567,11 +625,12 @@ mod tests {
         session_a.attach_function("my_ext_fn", mock_factory("my_ext_fn"));
 
         // Session A can see it; session B cannot.
+        let ident = daft_catalog::Identifier::simple("my_ext_fn");
         assert!(matches!(
-            session_a.get_function("my_ext_fn").unwrap(),
-            Some(ScalarFunction::Native(_))
+            session_a.get_function(&ident),
+            Ok(ScalarFunction::Native(_))
         ));
-        assert!(session_b.get_function("my_ext_fn").unwrap().is_none());
+        assert!(session_b.get_function(&ident).is_err());
     }
 
     #[test]
@@ -579,8 +638,9 @@ mod tests {
         let sess = Session::empty();
         sess.attach_function("temp_fn", mock_factory("temp_fn"));
 
-        assert!(sess.get_function("temp_fn").unwrap().is_some());
+        let ident = daft_catalog::Identifier::simple("temp_fn");
+        assert!(sess.get_function(&ident).is_ok());
         sess.detach_function("temp_fn").unwrap();
-        assert!(sess.get_function("temp_fn").unwrap().is_none());
+        assert!(sess.get_function(&ident).is_err());
     }
 }

@@ -426,15 +426,27 @@ impl SQLPlanner<'_> {
             SQL_FUNCTIONS.get(name).cloned()
         }
 
+        fn session_func_to_sql(func: SessionFunction) -> Arc<dyn SQLFunction> {
+            match func {
+                SessionFunction::Python(udf) => Arc::new(udf),
+                SessionFunction::Native(factory) => Arc::new(factory),
+            }
+        }
+
         fn get_func_from_session(
             session: &Session,
             name: impl AsRef<str>,
         ) -> SQLPlannerResult<Option<Arc<dyn SQLFunction>>> {
             let name = name.as_ref();
-            match session.get_function(name)? {
-                Some(SessionFunction::Python(udf)) => Ok(Some(Arc::new(udf))),
-                Some(SessionFunction::Native(factory)) => Ok(Some(Arc::new(factory))),
-                None => Ok(None),
+            // Parse the dot-separated name into an Identifier and delegate all
+            // resolution rules (session-scoped → catalog+namespace → catalog-qualified)
+            // to session.get_function.
+            let parts: Vec<String> = name.split('.').map(str::to_string).collect();
+            let ident = daft_catalog::Identifier::new(parts);
+            match session.get_function(&ident) {
+                Ok(func) => Ok(Some(session_func_to_sql(func))),
+                Err(daft_catalog::error::CatalogError::ObjectNotFound { .. }) => Ok(None),
+                Err(other) => Err(other.into()),
             }
         }
 
