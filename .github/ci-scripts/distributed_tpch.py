@@ -18,7 +18,18 @@ SF_TO_S3_PATH = {
 }
 
 
-def run_benchmark():
+def _daft_uv_runtime_env() -> dict:
+    """Build the uv runtime_env config, pinning the exact Daft version if available."""
+    daft_version = os.getenv("DAFT_VERSION")
+    daft_index_url = os.getenv("DAFT_INDEX_URL")
+    daft_pkg = f"daft[aws]=={daft_version}" if daft_version else "daft[aws]"
+    uv_env: dict = {"packages": [daft_pkg]}
+    if daft_index_url:
+        uv_env["uv_pip_install_options"] = ["--extra-index-url", daft_index_url]
+    return uv_env
+
+
+def run_benchmark(up_to_query: int = 22):
     results = {}
 
     scale_factor = int(os.getenv("TPCH_SCALE_FACTOR"))
@@ -28,16 +39,24 @@ def run_benchmark():
         )
     parquet_path = SF_TO_S3_PATH[scale_factor]
 
-    client = JobSubmissionClient(address="http://localhost:8265")
+    ray_address = os.getenv("RAY_ADDRESS", "http://localhost:8265")
+    client = JobSubmissionClient(address=ray_address)
 
-    for q in range(1, 23):
+    for q in range(1, up_to_query + 1):
         print(f"Running TPC-H Q{q}... ", end="", flush=True)
 
         start: float = time.perf_counter()
 
         submission_id = client.submit_job(
-            entrypoint=f"DAFT_RUNNER=ray DAFT_PROGRESS_BAR=0 python answers_sql.py {parquet_path} {q}",
-            runtime_env={"working_dir": "./benchmarking/tpch"},
+            entrypoint=f"DAFT_RUNNER=ray python answers_sql.py {parquet_path} {q}",
+            runtime_env={
+                "working_dir": "./benchmarking/tpch",
+                "uv": _daft_uv_runtime_env(),
+                "env_vars": {
+                    "DAFT_PROGRESS_BAR": "0",
+                    "DAFT_SHUFFLE_ALGORITHM": os.getenv("DAFT_SHUFFLE_ALGORITHM", "auto"),
+                },
+            },
         )
 
         job_details = asyncio.run(tail_logs(client, submission_id))

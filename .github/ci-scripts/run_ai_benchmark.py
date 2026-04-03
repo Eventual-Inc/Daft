@@ -8,6 +8,7 @@ similar to how the TPC-H benchmark works.
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 import time
 
@@ -17,17 +18,32 @@ import daft
 from tools.ci_bench_utils import get_run_metadata, tail_logs, upload_to_google_sheets
 
 
+def _daft_uv_runtime_env() -> dict:
+    """Build the uv runtime_env config, pinning the exact Daft version if available."""
+    daft_version = os.getenv("DAFT_VERSION")
+    daft_index_url = os.getenv("DAFT_INDEX_URL")
+    daft_pkg = f"daft[aws]=={daft_version}" if daft_version else "daft[aws]"
+    uv_env: dict = {"packages": [daft_pkg]}
+    if daft_index_url:
+        uv_env["uv_pip_install_options"] = ["--extra-index-url", daft_index_url]
+    return uv_env
+
+
 def run_benchmark(benchmark_name: str):
     """Run a single AI benchmark and return the execution time."""
     print(f"Running {benchmark_name} benchmark... ", end="", flush=True)
 
-    client = JobSubmissionClient(address="http://localhost:8265")
+    ray_address = os.getenv("RAY_ADDRESS", "http://localhost:8265")
+    client = JobSubmissionClient(address=ray_address)
 
     start: float = time.perf_counter()
 
     submission_id = client.submit_job(
         entrypoint="DAFT_RUNNER=ray DAFT_PROGRESS_BAR=0 python daft_main.py",
-        runtime_env={"working_dir": f"./benchmarking/ai/{benchmark_name}"},
+        runtime_env={
+            "working_dir": f"./benchmarking/ai/{benchmark_name}",
+            "uv": _daft_uv_runtime_env(),
+        },
     )
 
     job_details = asyncio.run(tail_logs(client, submission_id))
