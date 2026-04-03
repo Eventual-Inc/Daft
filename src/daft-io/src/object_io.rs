@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use common_error::DaftError;
 use futures::{
-    StreamExt,
+    StreamExt, TryStreamExt,
     stream::{BoxStream, Stream},
 };
 use tokio::sync::OwnedSemaphorePermit;
@@ -358,7 +358,6 @@ pub trait ObjectSource: Sync + Send {
         prefix: &str,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<()> {
-        use futures::TryStreamExt;
         let source = self.clone();
         let mut stream = source
             .iter_dir(prefix, false, None, io_stats.clone())
