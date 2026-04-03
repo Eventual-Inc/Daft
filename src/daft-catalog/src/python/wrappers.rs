@@ -7,7 +7,8 @@ use pyo3::{intern, prelude::*, types::PyList};
 
 use super::PyIdentifier;
 use crate::{
-    Catalog, Function, FunctionRef, Identifier, Table, TableRef, error::CatalogResult,
+    Catalog, Function, FunctionRef, Identifier, Table, TableRef,
+    error::{CatalogError, CatalogResult},
     function::PyFunctionWrapper,
 };
 
@@ -155,8 +156,22 @@ impl Catalog for PyCatalogWrapper {
         Python::attach(|py| {
             let catalog = self.0.bind(py);
             let ident_py = PyIdentifier(ident.clone()).to_pyobj(py)?;
-            let result = catalog.call_method1(intern!(py, "_get_function"), (ident_py,))?;
-            Ok(Arc::new(PyFunctionWrapper::new(result.unbind())) as Arc<dyn Function>)
+            match catalog.call_method1(intern!(py, "_get_function"), (ident_py,)) {
+                Ok(result) => {
+                    Ok(Arc::new(PyFunctionWrapper::new(result.unbind())) as Arc<dyn Function>)
+                }
+                Err(err) => {
+                    let not_found_type = py
+                        .import(intern!(py, "daft.catalog"))
+                        .and_then(|m| m.getattr(intern!(py, "NotFoundError")));
+                    if let Ok(not_found_type) = not_found_type {
+                        if err.is_instance(py, &not_found_type) {
+                            return Err(CatalogError::obj_not_found("Function", ident));
+                        }
+                    }
+                    Err(err.into())
+                }
+            }
         })
     }
 }
