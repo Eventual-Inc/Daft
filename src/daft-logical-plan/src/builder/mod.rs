@@ -13,7 +13,7 @@ use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
-use common_treenode::TreeNode;
+use common_treenode::{Transformed, TreeNode};
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
@@ -741,6 +741,7 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn join_asof<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
@@ -748,9 +749,60 @@ impl LogicalPlanBuilder {
         right_by: Vec<ExprRef>,
         left_on: ExprRef,
         right_on: ExprRef,
+        options: JoinOptions,
     ) -> DaftResult<Self> {
         let left_plan = self.plan.clone();
         let right_plan = right.into();
+
+        // Compute "merged" column names: same-name join keys that should remain as one column.
+        let mut merged: Vec<String> = Vec::new();
+        for (l, r) in left_by.iter().zip(right_by.iter()) {
+            if l.name() == r.name() {
+                merged.push(l.name().to_string());
+            }
+        }
+        if left_on.name() == right_on.name() {
+            merged.push(left_on.name().to_string());
+        }
+
+        // Snapshot right schema names before dedup so we can detect renames.
+        let old_right_names: Vec<String> = right_plan.schema().names();
+
+        // Deduplicate right columns that clash with left columns (same as regular join).
+        let (left_plan, right_plan, _) = ops::join::Join::deduplicate_join_columns(
+            left_plan,
+            right_plan,
+            None,
+            &merged,
+            JoinType::Left,
+            options,
+        )?;
+
+        // Derive the rename mapping by diffing old vs new right schema names.
+        let right_rename_mapping: HashMap<String, String> = old_right_names
+            .iter()
+            .zip(right_plan.schema().names().iter())
+            .filter(|(old, new)| old != new)
+            .map(|(old, new)| (old.clone(), new.clone()))
+            .collect();
+
+        // Rewrite column references in right expressions that were renamed by dedup.
+        let rewrite_expr = |e: ExprRef| -> ExprRef {
+            e.transform(|node| {
+                if let Expr::Column(Column::Unresolved(UnresolvedColumn { name, .. })) =
+                    node.as_ref()
+                    && let Some(new_name) = right_rename_mapping.get(&**name)
+                {
+                    Ok(Transformed::yes(unresolved_col(new_name.clone())))
+                } else {
+                    Ok(Transformed::no(node))
+                }
+            })
+            .unwrap()
+            .data
+        };
+        let right_by = right_by.into_iter().map(&rewrite_expr).collect();
+        let right_on = rewrite_expr(right_on);
 
         let expr_resolver = ExprResolver::default();
         let left_by = expr_resolver.resolve(left_by, left_plan.clone())?;
@@ -1533,7 +1585,8 @@ impl PyLogicalPlanBuilder {
 
         Ok(result.into())
     }
-
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (right, left_by, right_by, left_on, right_on, prefix, suffix))]
     pub fn join_asof(
         &self,
         right: &Self,
@@ -1541,6 +1594,8 @@ impl PyLogicalPlanBuilder {
         right_by: Vec<PyExpr>,
         left_on: PyExpr,
         right_on: PyExpr,
+        prefix: Option<String>,
+        suffix: Option<String>,
     ) -> PyResult<Self> {
         Ok(self
             .builder
@@ -1550,6 +1605,7 @@ impl PyLogicalPlanBuilder {
                 pyexprs_to_exprs(right_by),
                 left_on.into(),
                 right_on.into(),
+                JoinOptions { prefix, suffix },
             )?
             .into())
     }

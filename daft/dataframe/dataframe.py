@@ -3426,6 +3426,8 @@ class DataFrame:
         by: list[ColumnInputType] | ColumnInputType | None = None,
         left_by: list[ColumnInputType] | ColumnInputType | None = None,
         right_by: list[ColumnInputType] | ColumnInputType | None = None,
+        prefix: str | None = None,
+        suffix: str | None = None,
     ) -> "DataFrame":
         """Point-in-time (asof) join: each left row matches the latest right row at or before the asof key within each group.
 
@@ -3516,6 +3518,8 @@ class DataFrame:
             right_by=right_by_exprs,
             left_on=left_on_expr,
             right_on=right_on_expr,
+            prefix=prefix,
+            suffix=suffix,
         )
         return DataFrame(builder)
 
