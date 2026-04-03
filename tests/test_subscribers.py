@@ -9,10 +9,20 @@ from typing import Any
 import pytest
 
 import daft
-from daft.daft import PyMicroPartition, PyQueryMetadata, PyQueryResult, QueryEndState
-from daft.recordbatch import MicroPartition
+from daft.daft import PyQueryMetadata, QueryEndState
 from daft.subscribers import Subscriber
-from daft.subscribers.events import Event, OperatorFinished, OperatorStarted, Stats
+from daft.subscribers.events import (
+    Event,
+    ExecutionFinished,
+    ExecutionStarted,
+    OperatorFinished,
+    OperatorStarted,
+    OptimizationCompleted,
+    QueryFinished,
+    QueryStarted,
+    ResultProduced,
+    Stats,
+)
 from tests.conftest import get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
@@ -25,7 +35,6 @@ class MockSubscriber(Subscriber):
     query_optimized_plan: dict[str, str]
     query_physical_plan: dict[str, str]
     query_node_stats: defaultdict[str, defaultdict[int, dict[str, Any]]]
-    query_results: defaultdict[str, list[PyMicroPartition]]
     end_states: dict[str, QueryEndState]
     end_messages: dict[str, str]
     query_ids: list[str]
@@ -35,30 +44,26 @@ class MockSubscriber(Subscriber):
         self.query_optimized_plan = {}
         self.query_physical_plan = {}
         self.query_node_stats = defaultdict(lambda: defaultdict(dict))
-        self.query_results = defaultdict(list)
         self.end_states = {}
         self.end_messages = {}
         self.query_ids = []
 
-    def on_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
-        self.query_ids.append(query_id)
-        self.query_metadata[query_id] = metadata
+    def on_query_started(self, event: QueryStarted) -> None:
+        self.query_ids.append(event.query_id)
+        self.query_metadata[event.query_id] = event.metadata
 
-    def on_query_end(self, query_id: str, result: PyQueryResult) -> None:
-        self.end_states[query_id] = result.end_state
-        self.end_messages[query_id] = result.error_message
+    def on_query_finished(self, event: QueryFinished) -> None:
+        self.end_states[event.query_id] = event.result.end_state
+        self.end_messages[event.query_id] = event.result.error_message
 
-    def on_result_out(self, query_id: str, result: PyMicroPartition) -> None:
-        self.query_results[query_id].append(result)
-
-    def on_optimization_start(self, query_id: str) -> None:
+    def on_result_produced(self, event: ResultProduced) -> None:
         pass
 
-    def on_optimization_end(self, query_id: str, optimized_plan: str) -> None:
-        self.query_optimized_plan[query_id] = optimized_plan
+    def on_optimization_completed(self, event: OptimizationCompleted) -> None:
+        self.query_optimized_plan[event.query_id] = event.optimized_plan
 
-    def on_exec_start(self, query_id: str, physical_plan: str) -> None:
-        self.query_physical_plan[query_id] = physical_plan
+    def on_execution_started(self, event: ExecutionStarted) -> None:
+        self.query_physical_plan[event.query_id] = event.physical_plan
 
     def on_operator_start(self, event: OperatorStarted) -> None:
         pass
@@ -71,7 +76,7 @@ class MockSubscriber(Subscriber):
     def on_operator_end(self, event: OperatorFinished) -> None:
         pass
 
-    def on_exec_end(self, query_id: str) -> None:
+    def on_execution_finished(self, event: ExecutionFinished) -> None:
         pass
 
 
@@ -193,10 +198,6 @@ def test_subscriber_template():
     assert subscriber.query_metadata[query_id].output_schema == output_schema._schema
     # Optimized plan should be different from unoptimized plan
     assert subscriber.query_optimized_plan[query_id] != unoptimized_plan_json
-
-    # Test output
-    mps = [MicroPartition._from_pymicropartition(mp) for mp in subscriber.query_results[query_id]]
-    assert daft.DataFrame._from_micropartitions(*mps).to_pydict() == df.to_pydict()
 
     # Test stats
     for _, stats in subscriber.query_node_stats[query_id].items():

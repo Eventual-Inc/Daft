@@ -5,7 +5,7 @@ mod values;
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 use common_error::DaftResult;
@@ -15,13 +15,16 @@ use common_metrics::{
 use common_runtime::RuntimeTask;
 use daft_context::{
     Subscriber,
-    subscribers::events::{
-        Event, EventHeader, OperatorEndEvent, OperatorMeta, OperatorStartEvent, StatsEvent,
+    subscribers::{
+        event_header,
+        events::{
+            Event, ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorMeta,
+            OperatorStartEvent, ProcessStatsEvent, StatsEvent,
+        },
     },
 };
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_local_plan::{ExecutionStats, InputId};
-use futures::future;
 use progress_bar::{ProgressBar, make_progress_bar_manager};
 use tokio::{
     runtime::Handle,
@@ -38,13 +41,6 @@ pub enum StatsManagerMessage {
     NodeEvent(usize, bool),
     RegisterRuntimeStats(NodeID, InputId, Arc<dyn RuntimeStats>),
     TakeInputSnapshot(InputId, oneshot::Sender<ExecutionStats>),
-}
-
-fn now_epoch_secs() -> f64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock is before UNIX_EPOCH")
-        .as_secs_f64()
 }
 
 fn should_enable_process_monitor() -> bool {
@@ -170,7 +166,7 @@ impl std::fmt::Debug for RuntimeStatsManager {
 }
 
 impl RuntimeStatsManager {
-    async fn flush_and_finalize_node(
+    fn flush_and_finalize_node(
         query_id: &QueryID,
         node_id: NodeID,
         input_stats: &HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
@@ -194,53 +190,22 @@ impl RuntimeStatsManager {
 
         if let Some(snapshot) = snapshot {
             let stats_event = Event::Stats(Arc::new(StatsEvent {
-                header: EventHeader {
-                    query_id: query_id.clone(),
-                    timestamp_epoch_secs: now_epoch_secs(),
-                },
+                header: event_header(query_id.clone()),
                 stats: Arc::new(vec![(node_id, snapshot.to_stats())]),
             }));
+            dispatch_event(subscribers, &stats_event, "flush node final stats");
 
             let end_event = Event::OperatorEnd(Arc::new(OperatorEndEvent {
-                header: EventHeader {
-                    query_id: query_id.clone(),
-                    timestamp_epoch_secs: now_epoch_secs(),
-                },
+                header: event_header(query_id.clone()),
                 operator: operator_meta.clone(),
             }));
-            for res in future::join_all(subscribers.iter().map(|subscriber| {
-                let stats_event = stats_event.clone();
-                let end_event = end_event.clone();
-                async move {
-                    subscriber.on_event(stats_event).await?;
-                    subscriber.on_event(end_event).await
-                }
-            }))
-            .await
-            {
-                if let Err(e) = res {
-                    log::error!("Failed to {}: {}", err_context, e);
-                }
-            }
+            dispatch_event(subscribers, &end_event, "flush node operator end");
         } else {
             let end_event = Event::OperatorEnd(Arc::new(OperatorEndEvent {
-                header: EventHeader {
-                    query_id: query_id.clone(),
-                    timestamp_epoch_secs: now_epoch_secs(),
-                },
+                header: event_header(query_id.clone()),
                 operator: operator_meta.clone(),
             }));
-            for res in future::join_all(
-                subscribers
-                    .iter()
-                    .map(|subscriber| subscriber.on_event(end_event.clone())),
-            )
-            .await
-            {
-                if let Err(e) = res {
-                    log::error!("Failed to {}: {}", err_context, e);
-                }
-            }
+            dispatch_event(subscribers, &end_event, "flush node operator end");
         }
     }
 
@@ -269,9 +234,12 @@ impl RuntimeStatsManager {
         let serialized_plan: Arc<str> = serde_json::to_string(&query_plan)
             .expect("Failed to serialize physical plan")
             .into();
-        for subscriber in &subscribers {
-            subscriber.on_exec_start(query_id.clone(), serialized_plan.clone())?;
-        }
+
+        let exec_start_event = Event::ExecStart(Arc::new(ExecStartEvent {
+            header: event_header(query_id.clone()),
+            physical_plan: serialized_plan,
+        }));
+        dispatch_event(&subscribers, &exec_start_event, "notify execution start");
 
         let progress_bar = match progress_bar_mode(is_flotilla_worker) {
             ProgressBarMode::Disabled => None,
@@ -348,31 +316,20 @@ impl RuntimeStatsManager {
                                     };
 
                                     let event = Event::OperatorStart(Arc::new(OperatorStartEvent {
-                                        header: EventHeader {
-                                            query_id: query_id.clone(),
-                                            timestamp_epoch_secs: now_epoch_secs(),
-                                        },
+                                        header: event_header(query_id.clone()),
                                         operator: operator_meta.clone(),
                                     }));
-
-                                    for res in future::join_all(subscribers.iter().map(|subscriber| {
-                                        subscriber.on_event(event.clone())
-                                    })).await {
-                                        if let Err(e) = res {
-                                            log::error!("Failed to initialize node: {}", e);
-                                        }
-                                    }
+                                    dispatch_event(&subscribers, &event, "notify operator start");
                                 } else if !is_initialize && active_nodes.remove(&node_id) {
                                     Self::flush_and_finalize_node(
                                         &query_id,
                                         node_id,
                                         &input_stats,
                                         progress_bar.as_deref(),
-                                        &subscribers,
-                                        "finalize node",
-                                        &operators,
-                                    )
-                                    .await;
+                                    &subscribers,
+                                    "finalize node",
+                                    &operators,
+                                    );
                                 }
                             }
                             StatsManagerMessage::RegisterRuntimeStats(node_id, input_id, stats) => {
@@ -404,8 +361,7 @@ impl RuntimeStatsManager {
                                 &subscribers,
                                 "finalize node during shutdown",
                                 &operators,
-                            )
-                            .await;
+                            );
                         }
                         break;
                     }
@@ -413,13 +369,12 @@ impl RuntimeStatsManager {
                     _ = interval.tick() => {
                         if let Some(ps) = &mut process_stats {
                             let ps_stats = ps.sample();
-                            for res in future::join_all(subscribers.iter().map(|subscriber| {
-                                subscriber.on_process_stats(query_id.clone(), ps_stats.clone())
-                            })).await {
-                                if let Err(e) = res {
-                                    log::error!("Failed to emit process stats: {}", e);
-                                }
-                            }
+                            let event = Event::ProcessStats(Arc::new(
+                                ProcessStatsEvent {
+                                    header: event_header(query_id.clone()),
+                                    stats: ps_stats,
+                                }));
+                            dispatch_event(&subscribers, &event, "notify process stats");
                         }
 
                         if active_nodes.is_empty() {
@@ -437,20 +392,11 @@ impl RuntimeStatsManager {
 
                         if !snapshot_container.is_empty() {
                             let snapshot_container = Arc::new(std::mem::take(&mut snapshot_container));
-                            let event = Arc::new(StatsEvent {
-                                header: EventHeader {
-                                    query_id: query_id.clone(),
-                                    timestamp_epoch_secs: now_epoch_secs(),
-                                },
+                            let event = Event::Stats(Arc::new(StatsEvent {
+                                header: event_header(query_id.clone()),
                                 stats: snapshot_container.clone(),
-                            });
-                            for res in future::join_all(subscribers.iter().map(|subscriber| {
-                                subscriber.on_stats(event.clone())
-                            })).await {
-                                if let Err(e) = res {
-                                    log::error!("Failed to handle event: {}", e);
-                                }
-                            }
+                            }));
+                            dispatch_event(&subscribers, &event, "notify runtime stats");
                         }
                     }
                 }
@@ -492,11 +438,11 @@ impl RuntimeStatsManager {
                 .lock()
                 .expect("finished_snapshots lock poisoned") = Some(finished);
 
-            for subscriber in subscribers {
-                if let Err(e) = subscriber.on_exec_end(query_id.clone()).await {
-                    log::error!("Failed to flush subscriber: {}", e);
-                }
-            }
+            let exec_end_event = Event::ExecEnd(Arc::new(ExecEndEvent {
+                header: event_header(query_id.clone()),
+                duration_ms: None,
+            }));
+            dispatch_event(&subscribers, &exec_end_event, "notify execution end");
         };
 
         let task_handle = RuntimeTask::new(handle, event_loop);
@@ -521,6 +467,14 @@ impl RuntimeStatsManager {
         self.stats_manager_task
             .await
             .expect("The stats_manager_task panicked");
+    }
+}
+
+fn dispatch_event(subscribers: &[Arc<dyn Subscriber>], event: &Event, err_context: &'static str) {
+    for subscriber in subscribers {
+        if let Err(e) = subscriber.on_event(event.clone()) {
+            log::error!("Failed to {}: {}", err_context, e);
+        }
     }
 }
 
@@ -549,13 +503,11 @@ mod tests {
         sync::{Arc, Mutex, atomic::AtomicU64},
     };
 
-    use async_trait::async_trait;
     use common_error::DaftResult;
     use common_metrics::{
-        DURATION_KEY, Meter, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, Stats,
+        DURATION_KEY, Meter, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, Stats,
     };
-    use daft_context::{QueryMetadata, QueryResult, Subscriber};
-    use daft_micropartition::MicroPartitionRef;
+    use daft_context::Subscriber;
     use tokio::time::{Duration, sleep};
 
     use super::*;
@@ -624,48 +576,8 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl Subscriber for MockSubscriber {
-        fn on_query_start(&self, _: QueryID, _: Arc<QueryMetadata>) -> DaftResult<()> {
-            Ok(())
-        }
-        fn on_query_end(&self, _: QueryID, _: QueryResult) -> DaftResult<()> {
-            Ok(())
-        }
-        fn on_result_out(&self, _: QueryID, _: MicroPartitionRef) -> DaftResult<()> {
-            Ok(())
-        }
-        fn on_optimization_start(&self, _: QueryID) -> DaftResult<()> {
-            Ok(())
-        }
-        fn on_optimization_end(&self, _: QueryID, _: QueryPlan) -> DaftResult<()> {
-            Ok(())
-        }
-        fn on_exec_start(&self, _: QueryID, _: QueryPlan) -> DaftResult<()> {
-            Ok(())
-        }
-
-        async fn on_exec_end(&self, _: QueryID) -> DaftResult<()> {
-            Ok(())
-        }
-        async fn on_operator_start(&self, _: Arc<OperatorStartEvent>) -> DaftResult<()> {
-            Ok(())
-        }
-        async fn on_operator_end(&self, _: Arc<OperatorEndEvent>) -> DaftResult<()> {
-            Ok(())
-        }
-
-        async fn on_stats(&self, event: Arc<StatsEvent>) -> DaftResult<()> {
-            self.state
-                .total_calls
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            for (_, snapshot) in event.stats.iter() {
-                *self.state.event.lock().unwrap() = Some(snapshot.clone());
-            }
-            Ok(())
-        }
-
-        async fn on_event(&self, event: Event) -> DaftResult<()> {
+        fn on_event(&self, event: Event) -> DaftResult<()> {
             if let Event::Stats(e) = event {
                 self.state
                     .total_calls
@@ -775,44 +687,8 @@ mod tests {
         #[derive(Debug)]
         struct FailingSubscriber;
 
-        #[async_trait]
         impl Subscriber for FailingSubscriber {
-            fn on_query_start(&self, _: QueryID, _: Arc<QueryMetadata>) -> DaftResult<()> {
-                Ok(())
-            }
-            fn on_query_end(&self, _: QueryID, _: QueryResult) -> DaftResult<()> {
-                Ok(())
-            }
-            fn on_result_out(&self, _: QueryID, _: MicroPartitionRef) -> DaftResult<()> {
-                Ok(())
-            }
-            fn on_optimization_start(&self, _: QueryID) -> DaftResult<()> {
-                Ok(())
-            }
-            fn on_optimization_end(&self, _: QueryID, _: QueryPlan) -> DaftResult<()> {
-                Ok(())
-            }
-            fn on_exec_start(&self, _: QueryID, _: QueryPlan) -> DaftResult<()> {
-                Ok(())
-            }
-
-            async fn on_exec_end(&self, _: QueryID) -> DaftResult<()> {
-                Ok(())
-            }
-            async fn on_operator_start(&self, _: Arc<OperatorStartEvent>) -> DaftResult<()> {
-                Ok(())
-            }
-            async fn on_operator_end(&self, _: Arc<OperatorEndEvent>) -> DaftResult<()> {
-                Ok(())
-            }
-
-            async fn on_stats(&self, _: Arc<StatsEvent>) -> DaftResult<()> {
-                Err(common_error::DaftError::InternalError(
-                    "Test error".to_string(),
-                ))
-            }
-
-            async fn on_event(&self, event: Event) -> DaftResult<()> {
+            fn on_event(&self, event: Event) -> DaftResult<()> {
                 if let Event::Stats(_) = event {
                     return Err(common_error::DaftError::InternalError(
                         "Test error".to_string(),
@@ -979,42 +855,16 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl Subscriber for ProcessStatsMockSubscriber {
-        fn on_query_start(&self, _: QueryID, _: Arc<QueryMetadata>) -> DaftResult<()> {
-            Ok(())
-        }
-        fn on_query_end(&self, _: QueryID, _: QueryResult) -> DaftResult<()> {
-            Ok(())
-        }
-        fn on_result_out(&self, _: QueryID, _: MicroPartitionRef) -> DaftResult<()> {
-            Ok(())
-        }
-        fn on_optimization_start(&self, _: QueryID) -> DaftResult<()> {
-            Ok(())
-        }
-        fn on_optimization_end(&self, _: QueryID, _: QueryPlan) -> DaftResult<()> {
-            Ok(())
-        }
-        fn on_exec_start(&self, _: QueryID, _: QueryPlan) -> DaftResult<()> {
-            Ok(())
-        }
-        async fn on_exec_end(&self, _: QueryID) -> DaftResult<()> {
-            Ok(())
-        }
-        async fn on_operator_start(&self, _: Arc<OperatorStartEvent>) -> DaftResult<()> {
-            Ok(())
-        }
-        async fn on_operator_end(&self, _: Arc<OperatorEndEvent>) -> DaftResult<()> {
-            Ok(())
-        }
-        async fn on_stats(&self, _: Arc<StatsEvent>) -> DaftResult<()> {
-            Ok(())
-        }
-        async fn on_process_stats(&self, _: QueryID, _: Stats) -> DaftResult<()> {
-            self.process_stats_calls
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Ok(())
+        fn on_event(&self, event: Event) -> DaftResult<()> {
+            match event {
+                Event::ProcessStats(_) => {
+                    self.process_stats_calls
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    Ok(())
+                }
+                _ => Ok(()),
+            }
         }
     }
 
