@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import io
+import pathlib
+from typing import TYPE_CHECKING, Any, TypedDict
 
+from daft.daft import io_put
 from daft.datatype import MediaType
 from daft.dependencies import librosa, np, sf
 from daft.file import File
@@ -10,6 +13,16 @@ from daft.file.typing import AudioMetadata
 if TYPE_CHECKING:
     from daft.daft import PyFileReference
     from daft.io import IOConfig
+
+_CLOUD_SCHEMES = ("s3://", "gs://", "gcs://", "az://", "abfs://", "hf://", "http://", "https://")
+
+
+class WriteAudioMetadata(TypedDict):
+    sample_rate: int
+    channels: int
+    frames: float
+    format: str
+    subtype: str | None
 
 
 class AudioFile(File):
@@ -92,3 +105,66 @@ class AudioFile(File):
                 return resampled_data
             else:
                 return data
+
+    def write(
+        self,
+        destination: str,
+        sample_rate: int | None = None,
+        format: str | None = None,
+        subtype: str | None = None,
+    ) -> WriteAudioMetadata:
+        """Write this audio file to a destination path."""
+        return write_audio(self, destination, sample_rate=sample_rate, format=format, subtype=subtype)
+
+
+def write_audio(
+    audio: AudioFile | Any,
+    destination: str,
+    sample_rate: int | None = None,
+    format: str | None = None,
+    subtype: str | None = None,
+) -> WriteAudioMetadata:
+    """Write audio data from an AudioFile or array-like object to a destination path."""
+    if isinstance(audio, AudioFile):
+        meta = audio.metadata()
+        data = audio.to_numpy()
+        if sample_rate is None:
+            sample_rate = meta["sample_rate"]
+    else:
+        data = np.asarray(audio)
+        if sample_rate is None:
+            raise ValueError(
+                "sample_rate is required when writing tensor/array data. "
+                "Pass sample_rate to write_audio() or use an AudioFile input."
+            )
+
+    # Normalize channel layout: channel-first -> channel-last for soundfile.
+    if data.ndim == 2 and data.shape[0] < data.shape[1]:
+        data = data.T
+
+    data = np.clip(data.astype(np.float32), -1.0, 1.0)
+
+    ext = pathlib.PurePosixPath(destination).suffix.lstrip(".")
+    inferred_format = ext.upper() if ext else None
+    write_format = format or inferred_format
+
+    is_cloud = any(destination.startswith(scheme) for scheme in _CLOUD_SCHEMES)
+    if is_cloud:
+        if write_format is None:
+            raise ValueError("Cannot infer audio format from destination path. Please specify the 'format' parameter.")
+        buf = io.BytesIO()
+        sf.write(buf, data, samplerate=sample_rate, format=write_format, subtype=subtype)
+        io_put(destination, buf.getvalue())
+    else:
+        pathlib.Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        sf.write(destination, data, samplerate=sample_rate, format=write_format, subtype=subtype)
+
+    channels = data.shape[1] if data.ndim == 2 else 1
+    frames = float(data.shape[0])
+    return WriteAudioMetadata(
+        sample_rate=sample_rate,
+        channels=channels,
+        frames=frames,
+        format=write_format or "",
+        subtype=subtype,
+    )
