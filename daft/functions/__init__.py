@@ -85,7 +85,6 @@ from .image import (
     convert_image,
     image_to_tensor,
     image_attribute,
-    image_hash,
     image_width,
     image_height,
     image_channel,
