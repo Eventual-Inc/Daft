@@ -9,10 +9,7 @@ use arrow_ipc::writer::IpcWriteOptions;
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
 use futures::{Stream, StreamExt, TryStreamExt};
-use tokio::{
-    io::BufReader,
-    sync::{Mutex, OnceCell},
-};
+use tokio::{io::BufReader, sync::Mutex};
 use tonic::{Request, Response, Status, transport::Server};
 
 use super::stream::FlightDataStreamReader;
@@ -64,28 +61,18 @@ impl ParsedTicket {
     }
 }
 
-#[derive(Clone)]
-struct ShuffleFlightServer {
+#[derive(Clone, Default)]
+pub struct ShuffleFlightServer {
     shuffle_caches: Arc<Mutex<HashMap<u64, Vec<Arc<ShuffleCache>>>>>,
 }
 
-static GLOBAL_FLIGHT_SERVER: OnceCell<Arc<ShuffleFlightServer>> = OnceCell::const_new();
-
 impl ShuffleFlightServer {
-    fn new() -> Self {
-        Self {
-            shuffle_caches: Arc::new(Mutex::new(HashMap::new())),
-        }
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    async fn get_or_create_global() -> Arc<Self> {
-        GLOBAL_FLIGHT_SERVER
-            .get_or_init(|| async { Arc::new(Self::new()) })
-            .await
-            .clone()
-    }
-
-    async fn register_shuffle_cache(
+    pub async fn register_shuffle_cache(
         &self,
         shuffle_id: u64,
         cache: Arc<ShuffleCache>,
@@ -278,18 +265,10 @@ impl FlightServerConnectionHandle {
     }
 }
 
-pub async fn register_shuffle_cache(
-    shuffle_id: u64,
-    shuffle_cache: Arc<ShuffleCache>,
-) -> DaftResult<()> {
-    let server = ShuffleFlightServer::get_or_create_global().await;
-    server
-        .register_shuffle_cache(shuffle_id, shuffle_cache)
-        .await
-}
-
-#[allow(clippy::result_large_err)]
-pub fn start_flight_server(ip: &str) -> FlightServerConnectionHandle {
+pub fn start_server_loop(
+    ip: &str,
+    server: Arc<ShuffleFlightServer>,
+) -> FlightServerConnectionHandle {
     let io_runtime = common_runtime::get_io_runtime(true);
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     let (port_tx, port_rx) = tokio::sync::oneshot::channel();
@@ -311,9 +290,9 @@ pub fn start_flight_server(ip: &str) -> FlightServerConnectionHandle {
             .with_nodelay(Some(true))
             .with_keepalive(None);
 
-        let flight_server = ShuffleFlightServer::get_or_create_global().await;
+        let flight_server = server;
         Server::builder()
-            .add_service(FlightServiceServer::new((*flight_server).clone()))
+            .add_service(FlightServiceServer::from_arc(flight_server))
             .serve_with_incoming_shutdown(incoming, async move {
                 let _ = shutdown_rx.await;
             })

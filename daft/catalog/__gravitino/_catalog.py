@@ -5,13 +5,15 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Literal
 
-from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
+from daft.catalog import Catalog, Function, Identifier, NotFoundError, Properties, Schema, Table
 from daft.catalog.__gravitino._client import GravitinoClient as InnerCatalog
 from daft.catalog.__gravitino._client import GravitinoTable as InnerTable
 from daft.io._parquet import read_parquet
 from daft.io.iceberg._iceberg import read_iceberg
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pyiceberg.table import Table as PyIcebergTable
 
     from daft.dataframe import DataFrame
@@ -42,6 +44,9 @@ class GravitinoCatalog(Catalog):
     # create_*
     ###
 
+    def _create_function(self, ident: Identifier, function: Function | Callable[..., Any]) -> None:
+        raise NotImplementedError("Gravitino does not support function registration.")
+
     def _create_namespace(self, identifier: Identifier) -> None:
         raise NotImplementedError("Gravitino create_namespace not yet supported.")
 
@@ -67,6 +72,9 @@ class GravitinoCatalog(Catalog):
     ###
     # get_*
     ###
+
+    def _get_function(self, ident: Identifier) -> Function:
+        raise NotFoundError(f"Function '{ident}' not found in catalog '{self.name}'")
 
     def _get_table(self, ident: Identifier) -> GravitinoTable:
         try:

@@ -14,6 +14,9 @@ use daft_context::{DaftContext, Subscriber};
 use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
+use daft_shuffles::server::flight_server::{
+    FlightServerConnectionHandle, ShuffleFlightServer, start_server_loop,
+};
 use futures::{FutureExt, future::BoxFuture};
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
@@ -24,7 +27,9 @@ use {
     daft_local_plan::python::PyExecutionStats,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    pyo3::{Bound, PyAny, PyRef, PyResult, Python, pyclass, pymethods, sync::MutexExt},
+    pyo3::{
+        Bound, IntoPyObject, PyAny, PyRef, PyResult, Python, pyclass, pymethods, sync::MutexExt,
+    },
 };
 
 use crate::{
@@ -36,7 +41,13 @@ use crate::{
     },
     resource_manager::get_or_init_memory_manager,
     runtime_stats::{RuntimeStatsManager, RuntimeStatsManagerHandle},
+    shuffle_metadata::ShuffleMetadata,
 };
+
+enum ExecutionEngineResultItem {
+    Partition(MicroPartition),
+    ShuffleMetadata(ShuffleMetadata),
+}
 
 /// Global tokio runtime shared by all NativeExecutor instances
 static GLOBAL_RUNTIME: OnceLock<Handle> = OnceLock::new();
@@ -61,19 +72,18 @@ fn get_global_runtime() -> &'static Handle {
 }
 
 /// Message sent to the execution task to enqueue inputs
-#[derive(Clone)]
 pub(crate) struct EnqueueInputMessage {
     /// The input_id for this enqueue operation
     input_id: InputId,
     /// Plan inputs grouped by source_id
     inputs: HashMap<SourceId, Input>,
     /// Sender for results of this input_id
-    result_sender: UnboundedSender<MicroPartition>,
+    result_sender: UnboundedSender<ExecutionEngineResultItem>,
 }
 
 /// Routes pipeline messages to per-input_id channels.
 struct MessageRouter {
-    output_senders: HashMap<InputId, UnboundedSender<MicroPartition>>,
+    output_senders: HashMap<InputId, UnboundedSender<ExecutionEngineResultItem>>,
     /// Wall-clock start instant when each `input_id` was enqueued to the pipeline.
     input_start_times: HashMap<InputId, Instant>,
 }
@@ -98,13 +108,22 @@ impl MessageRouter {
                 partition,
             } => {
                 if let Some(sender) = self.output_senders.get(&input_id) {
-                    let _ = sender.send(partition);
+                    let _ = sender.send(ExecutionEngineResultItem::Partition(partition));
+                }
+            }
+            PipelineMessage::ShuffleMetadata { input_id, metadata } => {
+                if let Some(sender) = self.output_senders.get(&input_id) {
+                    let _ = sender.send(ExecutionEngineResultItem::ShuffleMetadata(metadata));
                 }
             }
         }
     }
 
-    fn insert_output_sender(&mut self, input_id: InputId, sender: UnboundedSender<MicroPartition>) {
+    fn insert_output_sender(
+        &mut self,
+        input_id: InputId,
+        sender: UnboundedSender<ExecutionEngineResultItem>,
+    ) {
         self.input_start_times.insert(input_id, Instant::now());
         self.output_senders.insert(input_id, sender);
     }
@@ -135,12 +154,13 @@ struct PlanState {
 )]
 pub struct PyNativeExecutor {
     executor: Arc<Mutex<NativeExecutor>>,
+    port: u16,
 }
 
 #[cfg(feature = "python")]
 impl Default for PyNativeExecutor {
     fn default() -> Self {
-        Self::new()
+        Self::new(false, "")
     }
 }
 
@@ -148,10 +168,17 @@ impl Default for PyNativeExecutor {
 #[pymethods]
 impl PyNativeExecutor {
     #[new]
-    pub fn new() -> Self {
+    pub fn new(is_flotilla_worker: bool, ip: &str) -> Self {
+        let executor = NativeExecutor::new(is_flotilla_worker, ip);
+        let port = executor.shuffle_port();
         Self {
-            executor: Arc::new(Mutex::new(NativeExecutor::new())),
+            executor: Arc::new(Mutex::new(executor)),
+            port,
         }
+    }
+
+    pub fn shuffle_port(&self) -> u16 {
+        self.port
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -329,15 +356,42 @@ async fn run_execution_loop(
 
 pub(crate) struct NativeExecutor {
     cancel: CancellationToken,
+    is_flotilla_worker: bool,
+    shuffle_server: Option<Arc<ShuffleFlightServer>>,
+    shuffle_server_connection: Option<FlightServerConnectionHandle>,
     plans: HashMap<u64, PlanState>,
 }
 
 impl NativeExecutor {
-    pub fn new() -> Self {
-        Self {
-            cancel: CancellationToken::new(),
-            plans: HashMap::new(),
+    pub fn new(is_flotilla_worker: bool, ip: &str) -> Self {
+        // Determine if we are running in a flotilla worker.
+        if is_flotilla_worker {
+            let shuffle_server = Arc::new(ShuffleFlightServer::new());
+            let shuffle_server_connection = Some(start_server_loop(ip, shuffle_server.clone()));
+
+            Self {
+                cancel: CancellationToken::new(),
+                is_flotilla_worker: true,
+                shuffle_server: Some(shuffle_server),
+                shuffle_server_connection,
+                plans: HashMap::new(),
+            }
+        } else {
+            Self {
+                cancel: CancellationToken::new(),
+                is_flotilla_worker: false,
+                shuffle_server: None,
+                shuffle_server_connection: None,
+                plans: HashMap::new(),
+            }
         }
+    }
+
+    pub fn shuffle_port(&self) -> u16 {
+        self.shuffle_server_connection
+            .as_ref()
+            .map(|conn| conn.port())
+            .unwrap_or(0)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -356,13 +410,22 @@ impl NativeExecutor {
         if !self.plans.contains_key(&fingerprint) {
             let cancel = self.cancel.clone();
             let additional_context = additional_context.unwrap_or_default();
-            let ctx = BuilderContext::new_with_context(query_id.clone(), additional_context);
+            let ctx = BuilderContext::new_with_context(
+                query_id.clone(),
+                additional_context,
+                self.shuffle_server.clone(),
+            );
             let (pipeline, input_senders) =
                 translate_physical_plan_to_pipeline(local_physical_plan, &exec_cfg, &ctx)?;
 
             let handle = get_global_runtime();
-            let stats_manager =
-                RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
+            let stats_manager = RuntimeStatsManager::try_new(
+                handle,
+                &pipeline,
+                subscribers,
+                query_id,
+                self.is_flotilla_worker,
+            )?;
             let stats_handle = stats_manager.handle();
 
             let (enqueue_input_tx, enqueue_input_rx) = create_channel::<EnqueueInputMessage>(1);
@@ -409,6 +472,7 @@ impl NativeExecutor {
                 }
                 Ok(ExecutionEngineResult {
                     receiver: result_rx,
+                    shuffle_metadata: None,
                 })
             }
             .boxed(),
@@ -504,16 +568,37 @@ impl NativeExecutor {
 impl Drop for NativeExecutor {
     fn drop(&mut self) {
         self.cancel.cancel();
+        if let Some(conn) = &mut self.shuffle_server_connection {
+            let _ = conn.shutdown();
+        }
     }
 }
 
 pub struct ExecutionEngineResult {
-    receiver: crate::channel::UnboundedReceiver<MicroPartition>,
+    receiver: crate::channel::UnboundedReceiver<ExecutionEngineResultItem>,
+    shuffle_metadata: Option<ShuffleMetadata>,
 }
 
 impl ExecutionEngineResult {
     async fn next(&mut self) -> Option<MicroPartition> {
-        self.receiver.recv().await
+        while let Some(item) = self.receiver.recv().await {
+            match item {
+                ExecutionEngineResultItem::Partition(partition) => return Some(partition),
+                ExecutionEngineResultItem::ShuffleMetadata(metadata) => {
+                    self.shuffle_metadata = Some(metadata);
+                }
+            }
+        }
+        None
+    }
+
+    async fn into_shuffle_metadata(mut self) -> Option<ShuffleMetadata> {
+        while let Some(item) = self.receiver.recv().await {
+            if let ExecutionEngineResultItem::ShuffleMetadata(metadata) = item {
+                self.shuffle_metadata = Some(metadata);
+            }
+        }
+        self.shuffle_metadata
     }
 }
 
@@ -565,6 +650,36 @@ impl PyResultReceiver {
             let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
             let stats = finish_future.await?;
             Ok(PyExecutionStats::from(stats))
+        })
+    }
+
+    fn try_finish_with_shuffle_metadata<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let result = self.result.clone();
+        let executor = self.executor.clone();
+        let fingerprint = self.fingerprint;
+        let input_id = self.input_id;
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut result_guard = result.lock().await;
+            let execution_result = result_guard
+                .take()
+                .expect("PyResultReceiver.try_finish_with_shuffle_metadata() should not be called more than once.");
+            drop(result_guard);
+
+            let shuffle_metadata = execution_result.into_shuffle_metadata().await;
+            let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
+            let stats = finish_future.await?;
+            Python::attach(|py| {
+                let py_metadata = shuffle_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.to_pyobject(py))
+                    .transpose()?;
+                Ok((PyExecutionStats::from(stats), py_metadata)
+                    .into_pyobject(py)?
+                    .unbind())
+            })
         })
     }
 }

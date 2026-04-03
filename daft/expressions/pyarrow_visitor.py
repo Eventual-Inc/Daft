@@ -116,6 +116,21 @@ class _PyArrowExpressionVisitor(PredicateVisitor[pc.Expression]):
             pc_args = [self.visit(arg) for arg in args]
             return pc_func(*pc_args)
 
+    def visit_coalesce(self, args: list[Expression]) -> pc.Expression:
+        """Convert coalesce as a special form to pyarrow's if_else chain."""
+        if not args:
+            raise ValueError("coalesce requires at least one argument")
+
+        # Start with the last argument as the default
+        result = self.visit(args[-1])
+
+        # Work backwards, wrapping each in if_else
+        for arg in reversed(args[:-1]):
+            pc_arg = self.visit(arg)
+            result = pc.if_else(~pc_arg.is_null(), pc_arg, result)
+
+        return result
+
     def _get_pc_func(self, name: str) -> Any:
         """Resolve the pyarrow.compute function from the module, otherwise error."""
         try:

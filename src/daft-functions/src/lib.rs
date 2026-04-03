@@ -3,6 +3,7 @@
     reason = "moving over all scalarUDFs to new pattern. Remove once completed!"
 )]
 pub mod coalesce;
+pub mod concat_ws;
 pub mod distance;
 pub mod float;
 pub mod hash;
@@ -30,7 +31,7 @@ use snafu::Snafu;
 use to_struct::ToStructFunction;
 use uuid::Uuid;
 
-use crate::slice::Slice;
+use crate::{concat_ws::ConcatWs, slice::Slice};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -63,6 +64,7 @@ pub struct MiscFunctions;
 
 impl FunctionModule for MiscFunctions {
     fn register(parent: &mut FunctionRegistry) {
+        parent.add_fn(ConcatWs);
         parent.add_fn(HashFunction);
         parent.add_fn(MinHashFunction);
         parent.add_fn(Length);

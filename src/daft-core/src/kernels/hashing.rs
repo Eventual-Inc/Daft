@@ -13,9 +13,7 @@ use arrow::{
 };
 use common_error::{DaftError, DaftResult};
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
-use xxhash_rust::{
-    const_xxh3, const_xxh32, const_xxh64, xxh3::xxh3_64_with_seed, xxh32::xxh32, xxh64::xxh64,
-};
+use xxhash_rust::{xxh3::xxh3_64_with_seed, xxh32::xxh32, xxh64::xxh64};
 
 /// Helper trait to convert primitive types to bytes for hashing without heap allocation
 trait ToLeBytes {
@@ -51,8 +49,208 @@ impl_to_le_bytes!(f64, 8);
 /// This is the fastest path: no null tracking, cache-line aligned, zero-copy into the final array.
 #[inline(always)]
 fn finish_buffer(buffer: MutableBuffer) -> PrimitiveArray<UInt64Type> {
+    // SAFETY: `buffer` is filled exclusively with pushed `u64` values, so converting it into a
+    // `ScalarBuffer<u64>` preserves the correct element width and alignment invariants.
     let sb = unsafe { ScalarBuffer::new_unchecked(buffer.into()) };
     UInt64Array::new(sb, None)
+}
+
+trait HashImpl {
+    const SEEDED_NULL_USES_DEFAULT: bool;
+
+    fn hash_seeded(bytes: &[u8], seed: u64) -> u64;
+    fn hash_default(bytes: &[u8]) -> u64;
+
+    fn default_null_hash() -> u64 {
+        Self::hash_default(b"")
+    }
+
+    fn scalar_null_hash(seed: u64) -> u64 {
+        if Self::SEEDED_NULL_USES_DEFAULT {
+            Self::default_null_hash()
+        } else {
+            Self::hash_seeded(b"", seed)
+        }
+    }
+}
+
+struct MurmurHashImpl;
+struct Sha1HashImpl;
+struct Xxh32HashImpl;
+struct Xxh64HashImpl;
+struct Xxh3_64HashImpl;
+
+macro_rules! with_hash_impl {
+    ($hash_function:expr, |$H:ident| $body:block) => {{
+        match $hash_function {
+            HashFunctionKind::MurmurHash3 => {
+                type $H = MurmurHashImpl;
+                $body
+            }
+            HashFunctionKind::Sha1 => {
+                type $H = Sha1HashImpl;
+                $body
+            }
+            HashFunctionKind::XxHash32 => {
+                type $H = Xxh32HashImpl;
+                $body
+            }
+            HashFunctionKind::XxHash64 => {
+                type $H = Xxh64HashImpl;
+                $body
+            }
+            HashFunctionKind::XxHash3_64 => {
+                type $H = Xxh3_64HashImpl;
+                $body
+            }
+        }
+    }};
+}
+
+const DEFAULT_MURMUR_SEED: u32 = 42;
+
+fn hash_bytes_murmur_seeded(bytes: &[u8], seed: u64) -> u64 {
+    let hasher = MurBuildHasher::new(seed as u32);
+    let mut hasher = hasher.build_hasher();
+    hasher.write(bytes);
+    hasher.finish()
+}
+
+fn hash_bytes_murmur_default(bytes: &[u8]) -> u64 {
+    let hasher = MurBuildHasher::new(DEFAULT_MURMUR_SEED);
+    let mut hasher = hasher.build_hasher();
+    hasher.write(bytes);
+    hasher.finish()
+}
+
+fn hash_bytes_sha1_seeded(bytes: &[u8], seed: u64) -> u64 {
+    let mut hasher = Sha1Hasher::default();
+    hasher.write(&seed.to_le_bytes());
+    hasher.write(bytes);
+    hasher.finish()
+}
+
+fn hash_bytes_sha1_default(bytes: &[u8]) -> u64 {
+    let mut hasher = Sha1Hasher::default();
+    hasher.write(bytes);
+    hasher.finish()
+}
+
+fn hash_bytes_xxh32_seeded(bytes: &[u8], seed: u64) -> u64 {
+    xxh32(bytes, seed as u32) as u64
+}
+
+fn hash_bytes_xxh32_default(bytes: &[u8]) -> u64 {
+    hash_bytes_xxh32_seeded(bytes, 0)
+}
+
+fn hash_bytes_xxh64_seeded(bytes: &[u8], seed: u64) -> u64 {
+    xxh64(bytes, seed)
+}
+
+fn hash_bytes_xxh64_default(bytes: &[u8]) -> u64 {
+    hash_bytes_xxh64_seeded(bytes, 0)
+}
+
+fn hash_bytes_xxh3_64_seeded(bytes: &[u8], seed: u64) -> u64 {
+    xxh3_64_with_seed(bytes, seed)
+}
+
+fn hash_bytes_xxh3_64_default(bytes: &[u8]) -> u64 {
+    hash_bytes_xxh3_64_seeded(bytes, 0)
+}
+
+impl HashImpl for MurmurHashImpl {
+    const SEEDED_NULL_USES_DEFAULT: bool = false;
+
+    fn hash_seeded(bytes: &[u8], seed: u64) -> u64 {
+        hash_bytes_murmur_seeded(bytes, seed)
+    }
+
+    fn hash_default(bytes: &[u8]) -> u64 {
+        hash_bytes_murmur_default(bytes)
+    }
+}
+
+impl HashImpl for Sha1HashImpl {
+    const SEEDED_NULL_USES_DEFAULT: bool = false;
+
+    fn hash_seeded(bytes: &[u8], seed: u64) -> u64 {
+        hash_bytes_sha1_seeded(bytes, seed)
+    }
+
+    fn hash_default(bytes: &[u8]) -> u64 {
+        hash_bytes_sha1_default(bytes)
+    }
+}
+
+impl HashImpl for Xxh32HashImpl {
+    const SEEDED_NULL_USES_DEFAULT: bool = true;
+
+    fn hash_seeded(bytes: &[u8], seed: u64) -> u64 {
+        hash_bytes_xxh32_seeded(bytes, seed)
+    }
+
+    fn hash_default(bytes: &[u8]) -> u64 {
+        hash_bytes_xxh32_default(bytes)
+    }
+}
+
+impl HashImpl for Xxh64HashImpl {
+    const SEEDED_NULL_USES_DEFAULT: bool = true;
+
+    fn hash_seeded(bytes: &[u8], seed: u64) -> u64 {
+        hash_bytes_xxh64_seeded(bytes, seed)
+    }
+
+    fn hash_default(bytes: &[u8]) -> u64 {
+        hash_bytes_xxh64_default(bytes)
+    }
+}
+
+impl HashImpl for Xxh3_64HashImpl {
+    const SEEDED_NULL_USES_DEFAULT: bool = true;
+
+    fn hash_seeded(bytes: &[u8], seed: u64) -> u64 {
+        hash_bytes_xxh3_64_seeded(bytes, seed)
+    }
+
+    fn hash_default(bytes: &[u8]) -> u64 {
+        hash_bytes_xxh3_64_default(bytes)
+    }
+}
+
+#[inline(never)]
+fn hash_bytes_iter_inner<'a, H, I>(
+    len: usize,
+    values: I,
+    seed: Option<&PrimitiveArray<UInt64Type>>,
+) -> PrimitiveArray<UInt64Type>
+where
+    H: HashImpl,
+    I: IntoIterator<Item = &'a [u8]>,
+{
+    let mut buffer = MutableBuffer::new(len * std::mem::size_of::<u64>());
+
+    if let Some(seed) = seed {
+        for (bytes, seed_val) in values.into_iter().zip(seed.values()) {
+            buffer.push(H::hash_seeded(bytes, *seed_val));
+        }
+    } else {
+        for bytes in values {
+            buffer.push(H::hash_default(bytes));
+        }
+    }
+
+    finish_buffer(buffer)
+}
+
+macro_rules! hash_bytes_iter {
+    ($hash_function:expr, $len:expr, $values:expr, $seed:expr) => {
+        with_hash_impl!($hash_function, |H| {
+            hash_bytes_iter_inner::<H, _>($len, $values, $seed)
+        })
+    };
 }
 
 macro_rules! with_match_hashing_primitive_type {(
@@ -235,6 +433,7 @@ pub fn hash(
     })
 }
 
+#[inline(never)]
 fn hash_primitive<T: ArrowPrimitiveType>(
     array: &PrimitiveArray<T>,
     seed: Option<&PrimitiveArray<UInt64Type>>,
@@ -243,160 +442,51 @@ fn hash_primitive<T: ArrowPrimitiveType>(
 where
     T::Native: ToLeBytes,
 {
-    fn xxhash<const NULL_HASH: u64, T: ArrowPrimitiveType, F: Fn(&[u8], u64) -> u64>(
-        array: &PrimitiveArray<T>,
-        seed: Option<&PrimitiveArray<UInt64Type>>,
-        f: F,
-    ) -> PrimitiveArray<UInt64Type>
-    where
-        T::Native: ToLeBytes,
-    {
-        let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
+    with_hash_impl!(hash_function, |H| {
+        hash_primitive_inner::<T, H>(array, seed)
+    })
+}
 
-        if array.null_count() == 0 {
-            if let Some(seed) = seed {
-                for (v, s) in array.values().iter().zip(seed.values()) {
-                    buffer.push(f(v.to_le_bytes_arr().as_ref(), *s));
-                }
-            } else {
-                for v in array.values() {
-                    buffer.push(f(v.to_le_bytes_arr().as_ref(), 0));
-                }
-            }
-        } else if let Some(seed) = seed {
-            for (v, s) in array.iter().zip(seed.values()) {
-                let hash = match v {
-                    Some(v) => f(v.to_le_bytes_arr().as_ref(), *s),
-                    None => NULL_HASH,
-                };
-                buffer.push(hash);
+#[inline(never)]
+fn hash_primitive_inner<T: ArrowPrimitiveType, H: HashImpl>(
+    array: &PrimitiveArray<T>,
+    seed: Option<&PrimitiveArray<UInt64Type>>,
+) -> PrimitiveArray<UInt64Type>
+where
+    T::Native: ToLeBytes,
+{
+    let default_null_hash = H::default_null_hash();
+    let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
+
+    if array.null_count() == 0 {
+        if let Some(seed) = seed {
+            for (value, seed_val) in array.values().iter().zip(seed.values()) {
+                buffer.push(H::hash_seeded(value.to_le_bytes_arr().as_ref(), *seed_val));
             }
         } else {
-            for v in array {
-                let hash = match v {
-                    Some(v) => f(v.to_le_bytes_arr().as_ref(), 0),
-                    None => NULL_HASH,
-                };
-                buffer.push(hash);
+            for value in array.values() {
+                buffer.push(H::hash_default(value.to_le_bytes_arr().as_ref()));
             }
         }
-        finish_buffer(buffer)
+    } else if let Some(seed) = seed {
+        for (value, seed_val) in array.iter().zip(seed.values()) {
+            let hash = match value {
+                Some(value) => H::hash_seeded(value.to_le_bytes_arr().as_ref(), *seed_val),
+                None => H::scalar_null_hash(*seed_val),
+            };
+            buffer.push(hash);
+        }
+    } else {
+        for value in array {
+            let hash = match value {
+                Some(value) => H::hash_default(value.to_le_bytes_arr().as_ref()),
+                None => default_null_hash,
+            };
+            buffer.push(hash);
+        }
     }
 
-    match hash_function {
-        HashFunctionKind::MurmurHash3 => {
-            let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-            if array.null_count() == 0 {
-                if let Some(seed) = seed {
-                    for (v, s) in array.values().iter().zip(seed.values().iter()) {
-                        let hasher = MurBuildHasher::new(*s as u32);
-                        let mut hasher = hasher.build_hasher();
-                        hasher.write(v.to_le_bytes_arr().as_ref());
-                        buffer.push(hasher.finish());
-                    }
-                } else {
-                    let hasher = MurBuildHasher::new(42);
-                    for v in array.values() {
-                        let mut hasher = hasher.build_hasher();
-                        hasher.write(v.to_le_bytes_arr().as_ref());
-                        buffer.push(hasher.finish());
-                    }
-                }
-            } else if let Some(seed) = seed {
-                for (v, s) in array.iter().zip(seed.values().iter()) {
-                    let hasher = MurBuildHasher::new(*s as u32);
-                    let mut hasher = hasher.build_hasher();
-                    match v {
-                        Some(v) => {
-                            hasher.write(v.to_le_bytes_arr().as_ref());
-                            buffer.push(hasher.finish());
-                        }
-                        None => {
-                            hasher.write(b"");
-                            buffer.push(hasher.finish());
-                        }
-                    }
-                }
-            } else {
-                let hasher = MurBuildHasher::new(42);
-                for v in array {
-                    let mut hasher = hasher.build_hasher();
-                    match v {
-                        Some(v) => {
-                            hasher.write(v.to_le_bytes_arr().as_ref());
-                            buffer.push(hasher.finish());
-                        }
-                        None => {
-                            hasher.write(b"");
-                            buffer.push(hasher.finish());
-                        }
-                    }
-                }
-            }
-            finish_buffer(buffer)
-        }
-        HashFunctionKind::Sha1 => {
-            let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-            if array.null_count() == 0 {
-                if let Some(seed) = seed {
-                    for (v, s) in array.values().iter().zip(seed.values().iter()) {
-                        let mut hasher = Sha1Hasher::default();
-                        hasher.write(&s.to_le_bytes());
-                        hasher.write(v.to_le_bytes_arr().as_ref());
-                        buffer.push(hasher.finish());
-                    }
-                } else {
-                    for v in array.values() {
-                        let mut hasher = Sha1Hasher::default();
-                        hasher.write(v.to_le_bytes_arr().as_ref());
-                        buffer.push(hasher.finish());
-                    }
-                }
-            } else if let Some(seed) = seed {
-                for (v, s) in array.iter().zip(seed.values().iter()) {
-                    let mut hasher = Sha1Hasher::default();
-                    hasher.write(&s.to_le_bytes());
-                    match v {
-                        Some(v) => {
-                            hasher.write(v.to_le_bytes_arr().as_ref());
-                            buffer.push(hasher.finish());
-                        }
-                        None => {
-                            hasher.write(b"");
-                            buffer.push(hasher.finish());
-                        }
-                    }
-                }
-            } else {
-                for v in array {
-                    let mut hasher = Sha1Hasher::default();
-                    match v {
-                        Some(v) => {
-                            hasher.write(v.to_le_bytes_arr().as_ref());
-                            buffer.push(hasher.finish());
-                        }
-                        None => {
-                            hasher.write(b"");
-                            buffer.push(hasher.finish());
-                        }
-                    }
-                }
-            }
-            finish_buffer(buffer)
-        }
-        HashFunctionKind::XxHash32 => {
-            const NULL_HASH: u64 = const_xxh32::xxh32(b"", 0) as u64;
-            xxhash::<NULL_HASH, _, _>(array, seed, |v, s| xxh32(v, s as u32) as u64)
-        }
-        HashFunctionKind::XxHash64 => {
-            const NULL_HASH: u64 = const_xxh64::xxh64(b"", 0);
-            xxhash::<NULL_HASH, _, _>(array, seed, xxh64)
-        }
-        HashFunctionKind::XxHash3_64 => {
-            const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
-            xxhash::<NULL_HASH, _, _>(array, seed, xxh3_64_with_seed)
-        }
-    }
+    finish_buffer(buffer)
 }
 
 fn hash_boolean(
@@ -404,156 +494,50 @@ fn hash_boolean(
     seed: Option<&PrimitiveArray<UInt64Type>>,
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<UInt64Type> {
-    fn xxhash<
-        const NULL_HASH: u64,
-        const TRUE_HASH: u64,
-        const FALSE_HASH: u64,
-        F: Fn(&[u8], u64) -> u64,
-    >(
-        array: &BooleanArray,
-        seed: Option<&PrimitiveArray<UInt64Type>>,
-        f: F,
-    ) -> PrimitiveArray<UInt64Type> {
-        let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
+    with_hash_impl!(hash_function, |H| { hash_boolean_inner::<H>(array, seed) })
+}
 
-        if array.null_count() == 0 {
-            if let Some(seed) = seed {
-                for (v, s) in array.values().iter().zip(seed.values()) {
-                    buffer.push(if v { f(b"1", *s) } else { f(b"0", *s) });
-                }
-            } else {
-                for v in array.values() {
-                    buffer.push(if v { TRUE_HASH } else { FALSE_HASH });
-                }
-            }
-        } else if let Some(seed) = seed {
-            for (v, s) in array.iter().zip(seed.values()) {
-                let hash = match v {
-                    Some(true) => f(b"1", *s),
-                    Some(false) => f(b"0", *s),
-                    _ => NULL_HASH,
-                };
-                buffer.push(hash);
+#[inline(never)]
+fn hash_boolean_inner<H: HashImpl>(
+    array: &BooleanArray,
+    seed: Option<&PrimitiveArray<UInt64Type>>,
+) -> PrimitiveArray<UInt64Type> {
+    let true_hash = H::hash_default(b"1");
+    let false_hash = H::hash_default(b"0");
+    let default_null_hash = H::default_null_hash();
+    let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
+
+    if array.null_count() == 0 {
+        if let Some(seed) = seed {
+            for (value, seed_val) in array.values().iter().zip(seed.values()) {
+                buffer.push(H::hash_seeded(if value { b"1" } else { b"0" }, *seed_val));
             }
         } else {
-            for value in array {
-                let hash = match value {
-                    Some(true) => TRUE_HASH,
-                    Some(false) => FALSE_HASH,
-                    None => NULL_HASH,
-                };
-                buffer.push(hash);
+            for value in array.values() {
+                buffer.push(if value { true_hash } else { false_hash });
             }
         }
-        finish_buffer(buffer)
+    } else if let Some(seed) = seed {
+        for (value, seed_val) in array.iter().zip(seed.values()) {
+            let hash = match value {
+                Some(true) => H::hash_seeded(b"1", *seed_val),
+                Some(false) => H::hash_seeded(b"0", *seed_val),
+                None => H::scalar_null_hash(*seed_val),
+            };
+            buffer.push(hash);
+        }
+    } else {
+        for value in array {
+            let hash = match value {
+                Some(true) => true_hash,
+                Some(false) => false_hash,
+                None => default_null_hash,
+            };
+            buffer.push(hash);
+        }
     }
 
-    match hash_function {
-        HashFunctionKind::MurmurHash3 => {
-            let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-            if array.null_count() == 0 {
-                if let Some(seed) = seed {
-                    for (v, seed_val) in array.values().iter().zip(seed.values()) {
-                        let hasher = MurBuildHasher::new(*seed_val as u32);
-                        let mut hasher = hasher.build_hasher();
-                        hasher.write(if v { b"1" } else { b"0" });
-                        buffer.push(hasher.finish());
-                    }
-                } else {
-                    let hasher = MurBuildHasher::new(42);
-                    for v in array.values() {
-                        let mut hasher = hasher.build_hasher();
-                        hasher.write(if v { b"1" } else { b"0" });
-                        buffer.push(hasher.finish());
-                    }
-                }
-            } else if let Some(seed) = seed {
-                for (v, seed_val) in array.iter().zip(seed.values()) {
-                    let hasher = MurBuildHasher::new(*seed_val as u32);
-                    let mut hasher = hasher.build_hasher();
-                    match v {
-                        Some(true) => hasher.write(b"1"),
-                        Some(false) => hasher.write(b"0"),
-                        None => hasher.write(b""),
-                    }
-                    buffer.push(hasher.finish());
-                }
-            } else {
-                let hasher = MurBuildHasher::new(42);
-                for v in array {
-                    let mut hasher = hasher.build_hasher();
-                    match v {
-                        Some(true) => hasher.write(b"1"),
-                        Some(false) => hasher.write(b"0"),
-                        None => hasher.write(b""),
-                    }
-                    buffer.push(hasher.finish());
-                }
-            }
-            finish_buffer(buffer)
-        }
-        HashFunctionKind::Sha1 => {
-            let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-            if array.null_count() == 0 {
-                if let Some(seed) = seed {
-                    for (v, s) in array.values().iter().zip(seed.values()) {
-                        let mut hasher = Sha1Hasher::default();
-                        hasher.write(&s.to_le_bytes());
-                        hasher.write(if v { b"1" } else { b"0" });
-                        buffer.push(hasher.finish());
-                    }
-                } else {
-                    for v in array.values() {
-                        let mut hasher = Sha1Hasher::default();
-                        hasher.write(if v { b"1" } else { b"0" });
-                        buffer.push(hasher.finish());
-                    }
-                }
-            } else if let Some(seed) = seed {
-                for (v, s) in array.iter().zip(seed.values()) {
-                    let mut hasher = Sha1Hasher::default();
-                    hasher.write(&s.to_le_bytes());
-                    match v {
-                        Some(true) => hasher.write(b"1"),
-                        Some(false) => hasher.write(b"0"),
-                        None => hasher.write(b""),
-                    }
-                    buffer.push(hasher.finish());
-                }
-            } else {
-                for v in array {
-                    let mut hasher = Sha1Hasher::default();
-                    match v {
-                        Some(true) => hasher.write(b"1"),
-                        Some(false) => hasher.write(b"0"),
-                        None => hasher.write(b""),
-                    }
-                    buffer.push(hasher.finish());
-                }
-            }
-            finish_buffer(buffer)
-        }
-        HashFunctionKind::XxHash32 => {
-            const NULL_HASH: u64 = const_xxh32::xxh32(b"", 0) as u64;
-            const FALSE_HASH: u64 = const_xxh32::xxh32(b"0", 0) as u64;
-            const TRUE_HASH: u64 = const_xxh32::xxh32(b"1", 0) as u64;
-            xxhash::<NULL_HASH, TRUE_HASH, FALSE_HASH, _>(array, seed, |v, s| {
-                xxh32(v, s as u32) as u64
-            })
-        }
-        HashFunctionKind::XxHash64 => {
-            const NULL_HASH: u64 = const_xxh64::xxh64(b"", 0);
-            const FALSE_HASH: u64 = const_xxh64::xxh64(b"0", 0);
-            const TRUE_HASH: u64 = const_xxh64::xxh64(b"1", 0);
-            xxhash::<NULL_HASH, TRUE_HASH, FALSE_HASH, _>(array, seed, xxh64)
-        }
-        HashFunctionKind::XxHash3_64 => {
-            const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
-            const FALSE_HASH: u64 = const_xxh3::xxh3_64(b"0");
-            const TRUE_HASH: u64 = const_xxh3::xxh3_64(b"1");
-            xxhash::<NULL_HASH, TRUE_HASH, FALSE_HASH, _>(array, seed, xxh3_64_with_seed)
-        }
-    }
+    finish_buffer(buffer)
 }
 
 fn hash_null(
@@ -561,76 +545,12 @@ fn hash_null(
     seed: Option<&PrimitiveArray<UInt64Type>>,
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<UInt64Type> {
-    fn xxhash<const NULL_HASH: u64, F: Fn(&[u8], u64) -> u64>(
-        len: usize,
-        seed: Option<&PrimitiveArray<UInt64Type>>,
-        f: F,
-    ) -> PrimitiveArray<UInt64Type> {
-        let mut buffer = MutableBuffer::new(len * std::mem::size_of::<u64>());
-
-        if let Some(seed) = seed {
-            for s in seed.values() {
-                buffer.push(f(b"", *s));
-            }
-        } else {
-            for _ in 0..len {
-                buffer.push(NULL_HASH);
-            }
-        }
-        finish_buffer(buffer)
-    }
-
-    match hash_function {
-        HashFunctionKind::MurmurHash3 => {
-            let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-            if let Some(seed) = seed {
-                for s in seed.values() {
-                    let hasher = MurBuildHasher::new(*s as u32);
-                    let mut hasher = hasher.build_hasher();
-                    hasher.write(b"");
-                    buffer.push(hasher.finish());
-                }
-            } else {
-                let hasher = MurBuildHasher::new(42);
-                for _ in 0..array.len() {
-                    let mut hasher = hasher.build_hasher();
-                    hasher.write(b"");
-                    buffer.push(hasher.finish());
-                }
-            }
-            finish_buffer(buffer)
-        }
-        HashFunctionKind::Sha1 => {
-            let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-            if let Some(seed) = seed {
-                for s in seed.values() {
-                    let mut hasher = Sha1Hasher::default();
-                    hasher.write(&s.to_le_bytes());
-                    hasher.write(b"");
-                    buffer.push(hasher.finish());
-                }
-            } else {
-                for _ in 0..array.len() {
-                    let mut hasher = Sha1Hasher::default();
-                    hasher.write(b"");
-                    buffer.push(hasher.finish());
-                }
-            }
-            finish_buffer(buffer)
-        }
-        HashFunctionKind::XxHash32 => {
-            const NULL_HASH: u64 = const_xxh32::xxh32(b"", 0) as u64;
-            xxhash::<NULL_HASH, _>(array.len(), seed, |v, s| xxh32(v, s as u32) as u64)
-        }
-        HashFunctionKind::XxHash64 => {
-            const NULL_HASH: u64 = const_xxh64::xxh64(b"", 0);
-            xxhash::<NULL_HASH, _>(array.len(), seed, xxh64)
-        }
-        HashFunctionKind::XxHash3_64 => {
-            const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
-            xxhash::<NULL_HASH, _>(array.len(), seed, xxh3_64_with_seed)
-        }
-    }
+    hash_bytes_iter!(
+        hash_function,
+        array.len(),
+        std::iter::repeat_n(b"".as_slice(), array.len()),
+        seed
+    )
 }
 
 fn hash_large_binary(
@@ -638,68 +558,12 @@ fn hash_large_binary(
     seed: Option<&PrimitiveArray<UInt64Type>>,
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<UInt64Type> {
-    fn xxhash<F: Fn(&[u8], u64) -> u64>(
-        array: &LargeBinaryArray,
-        seed: Option<&PrimitiveArray<UInt64Type>>,
-        f: F,
-    ) -> PrimitiveArray<UInt64Type> {
-        let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-
-        if let Some(seed) = seed {
-            for (v, s) in array.iter().zip(seed.values()) {
-                buffer.push(f(v.unwrap_or(b""), *s));
-            }
-        } else {
-            for v in array {
-                buffer.push(f(v.unwrap_or(b""), 0));
-            }
-        }
-        finish_buffer(buffer)
-    }
-
-    match hash_function {
-        HashFunctionKind::XxHash32 => xxhash(array, seed, |v, s| xxh32(v, s as u32) as u64),
-        HashFunctionKind::XxHash64 => xxhash(array, seed, xxh64),
-        HashFunctionKind::XxHash3_64 => xxhash(array, seed, xxh3_64_with_seed),
-        HashFunctionKind::MurmurHash3 => {
-            let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-            if let Some(seed) = seed {
-                for (v, s) in array.iter().zip(seed.values()) {
-                    let hasher = MurBuildHasher::new(*s as u32);
-                    let mut hasher = hasher.build_hasher();
-                    hasher.write(v.unwrap_or(b""));
-                    buffer.push(hasher.finish());
-                }
-            } else {
-                let hasher = MurBuildHasher::new(42);
-                for v in array {
-                    let mut hasher = hasher.build_hasher();
-                    hasher.write(v.unwrap_or(b""));
-                    buffer.push(hasher.finish());
-                }
-            }
-            finish_buffer(buffer)
-        }
-        HashFunctionKind::Sha1 => {
-            let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-
-            if let Some(seed) = seed {
-                for (v, s) in array.iter().zip(seed.values()) {
-                    let mut hasher = Sha1Hasher::default();
-                    hasher.write(&s.to_le_bytes());
-                    hasher.write(v.unwrap_or(b""));
-                    buffer.push(hasher.finish());
-                }
-            } else {
-                for v in array {
-                    let mut hasher = Sha1Hasher::default();
-                    hasher.write(v.unwrap_or(b""));
-                    buffer.push(hasher.finish());
-                }
-            }
-            finish_buffer(buffer)
-        }
-    }
+    hash_bytes_iter!(
+        hash_function,
+        array.len(),
+        array.iter().map(|value| value.unwrap_or(b"")),
+        seed
+    )
 }
 
 fn hash_fixed_size_binary(
@@ -715,69 +579,12 @@ fn hash_fixed_size_binary(
     };
     let zero_buffer = vec![0u8; size];
 
-    fn xxhash<F: Fn(&[u8], u64) -> u64>(
-        array: &FixedSizeBinaryArray,
-        seed: Option<&PrimitiveArray<UInt64Type>>,
-        zero_buffer: &[u8],
-        f: F,
-    ) -> PrimitiveArray<UInt64Type> {
-        let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-        if let Some(seed) = seed {
-            for (v, s) in array.iter().zip(seed.values()) {
-                buffer.push(f(v.unwrap_or(zero_buffer), *s));
-            }
-        } else {
-            for v in array {
-                buffer.push(f(v.unwrap_or(zero_buffer), 0));
-            }
-        }
-        finish_buffer(buffer)
-    }
-
-    match hash_function {
-        HashFunctionKind::XxHash32 => {
-            xxhash(array, seed, &zero_buffer, |v, s| xxh32(v, s as u32) as u64)
-        }
-        HashFunctionKind::XxHash64 => xxhash(array, seed, &zero_buffer, xxh64),
-        HashFunctionKind::XxHash3_64 => xxhash(array, seed, &zero_buffer, xxh3_64_with_seed),
-        HashFunctionKind::MurmurHash3 => {
-            let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-            if let Some(seed) = seed {
-                for (v, s) in array.iter().zip(seed.values()) {
-                    let hasher = MurBuildHasher::new(*s as u32);
-                    let mut hasher = hasher.build_hasher();
-                    hasher.write(v.unwrap_or(&zero_buffer));
-                    buffer.push(hasher.finish());
-                }
-            } else {
-                let hasher = MurBuildHasher::new(42);
-                for v in array {
-                    let mut hasher = hasher.build_hasher();
-                    hasher.write(v.unwrap_or(&zero_buffer));
-                    buffer.push(hasher.finish());
-                }
-            }
-            finish_buffer(buffer)
-        }
-        HashFunctionKind::Sha1 => {
-            let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-            if let Some(seed) = seed {
-                for (v, s) in array.iter().zip(seed.values()) {
-                    let mut hasher = Sha1Hasher::default();
-                    hasher.write(&s.to_le_bytes());
-                    hasher.write(v.unwrap_or(&zero_buffer));
-                    buffer.push(hasher.finish());
-                }
-            } else {
-                for v in array {
-                    let mut hasher = Sha1Hasher::default();
-                    hasher.write(v.unwrap_or(&zero_buffer));
-                    buffer.push(hasher.finish());
-                }
-            }
-            finish_buffer(buffer)
-        }
-    }
+    hash_bytes_iter!(
+        hash_function,
+        array.len(),
+        array.iter().map(|value| value.unwrap_or(&zero_buffer)),
+        seed
+    )
 }
 
 fn hash_large_string(
@@ -785,67 +592,12 @@ fn hash_large_string(
     seed: Option<&PrimitiveArray<UInt64Type>>,
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<UInt64Type> {
-    fn xxhash<F: Fn(&[u8], u64) -> u64>(
-        array: &LargeStringArray,
-        seed: Option<&PrimitiveArray<UInt64Type>>,
-        f: F,
-    ) -> PrimitiveArray<UInt64Type> {
-        let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-
-        if let Some(seed) = seed {
-            for (v, s) in array.iter().zip(seed.values()) {
-                buffer.push(f(v.unwrap_or("").as_bytes(), *s));
-            }
-        } else {
-            for v in array {
-                buffer.push(f(v.unwrap_or("").as_bytes(), 0));
-            }
-        }
-        finish_buffer(buffer)
-    }
-
-    match hash_function {
-        HashFunctionKind::XxHash32 => xxhash(array, seed, |v, s| xxh32(v, s as u32) as u64),
-        HashFunctionKind::XxHash64 => xxhash(array, seed, xxh64),
-        HashFunctionKind::XxHash3_64 => xxhash(array, seed, xxh3_64_with_seed),
-        HashFunctionKind::MurmurHash3 => {
-            let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-            if let Some(seed) = seed {
-                for (v, s) in array.iter().zip(seed.values()) {
-                    let hasher = MurBuildHasher::new(*s as u32);
-                    let mut hasher = hasher.build_hasher();
-                    hasher.write(v.unwrap_or("").as_bytes());
-                    buffer.push(hasher.finish());
-                }
-            } else {
-                let hasher = MurBuildHasher::new(42);
-                for v in array {
-                    let mut hasher = hasher.build_hasher();
-                    hasher.write(v.unwrap_or("").as_bytes());
-                    buffer.push(hasher.finish());
-                }
-            }
-            finish_buffer(buffer)
-        }
-        HashFunctionKind::Sha1 => {
-            let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-            if let Some(seed) = seed {
-                for (v, s) in array.iter().zip(seed.values()) {
-                    let mut hasher = Sha1Hasher::default();
-                    hasher.write(&s.to_le_bytes());
-                    hasher.write(v.unwrap_or("").as_bytes());
-                    buffer.push(hasher.finish());
-                }
-            } else {
-                for v in array {
-                    let mut hasher = Sha1Hasher::default();
-                    hasher.write(v.unwrap_or("").as_bytes());
-                    buffer.push(hasher.finish());
-                }
-            }
-            finish_buffer(buffer)
-        }
-    }
+    hash_bytes_iter!(
+        hash_function,
+        array.len(),
+        array.iter().map(|value| value.unwrap_or("").as_bytes()),
+        seed
+    )
 }
 
 fn hash_timestamp_with_timezone(
@@ -854,176 +606,69 @@ fn hash_timestamp_with_timezone(
     seed: Option<&PrimitiveArray<UInt64Type>>,
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<UInt64Type> {
-    fn xxhash<const NULL_HASH: u64, F: Fn(&[u8], u64) -> u64>(
-        array: &PrimitiveArray<Int64Type>,
-        timezone: &str,
-        seed: Option<&PrimitiveArray<UInt64Type>>,
-        f: F,
-    ) -> PrimitiveArray<UInt64Type> {
-        let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-        let tz_bytes = timezone.as_bytes();
-        let mut combined = Vec::with_capacity(8 + tz_bytes.len());
-
-        if array.null_count() == 0 {
-            if let Some(seed) = seed {
-                for (v, s) in array.values().iter().zip(seed.values()) {
-                    combined.clear();
-                    combined.extend_from_slice(&v.to_le_bytes());
-                    combined.extend_from_slice(tz_bytes);
-                    buffer.push(f(&combined, *s));
-                }
-            } else {
-                for v in array.values() {
-                    combined.clear();
-                    combined.extend_from_slice(&v.to_le_bytes());
-                    combined.extend_from_slice(tz_bytes);
-                    buffer.push(f(&combined, 0));
-                }
-            }
-        } else if let Some(seed) = seed {
-            for (v, s) in array.iter().zip(seed.values()) {
-                let hash = match v {
-                    Some(v) => {
-                        combined.clear();
-                        combined.extend_from_slice(&v.to_le_bytes());
-                        combined.extend_from_slice(tz_bytes);
-                        f(&combined, *s)
-                    }
-                    None => NULL_HASH,
-                };
-                buffer.push(hash);
-            }
-        } else {
-            for v in array {
-                let hash = match v {
-                    Some(v) => {
-                        combined.clear();
-                        combined.extend_from_slice(&v.to_le_bytes());
-                        combined.extend_from_slice(tz_bytes);
-                        f(&combined, 0)
-                    }
-                    None => NULL_HASH,
-                };
-                buffer.push(hash);
-            }
-        }
-        finish_buffer(buffer)
-    }
-
     // For timestamps with timezone, we combine the timestamp value with the timezone string
     // to ensure that the same instant in different timezones produces different hashes
-    match hash_function {
-        HashFunctionKind::XxHash32 => {
-            const NULL_HASH: u64 = const_xxh32::xxh32(b"", 0) as u64;
-            xxhash::<NULL_HASH, _>(array, timezone, seed, |v, s| xxh32(v, s as u32) as u64)
-        }
-        HashFunctionKind::XxHash64 => {
-            const NULL_HASH: u64 = const_xxh64::xxh64(b"", 0);
-            xxhash::<NULL_HASH, _>(array, timezone, seed, xxh64)
-        }
-        HashFunctionKind::XxHash3_64 => {
-            const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
-            xxhash::<NULL_HASH, _>(array, timezone, seed, xxh3_64_with_seed)
-        }
-        HashFunctionKind::MurmurHash3 => {
-            let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-            let tz = timezone.as_bytes();
-            if array.null_count() == 0 {
-                if let Some(seed) = seed {
-                    for (v, s) in array.values().iter().zip(seed.values()) {
-                        let hasher = MurBuildHasher::new(*s as u32);
-                        let mut hasher = hasher.build_hasher();
-                        hasher.write(&v.to_le_bytes());
-                        hasher.write(tz);
-                        buffer.push(hasher.finish());
-                    }
-                } else {
-                    let hasher = MurBuildHasher::new(42);
-                    for v in array.values() {
-                        let mut hasher = hasher.build_hasher();
-                        hasher.write(&v.to_le_bytes());
-                        hasher.write(tz);
-                        buffer.push(hasher.finish());
-                    }
-                }
-            } else if let Some(seed) = seed {
-                for (v, s) in array.iter().zip(seed.values()) {
-                    let hasher = MurBuildHasher::new(*s as u32);
-                    let mut hasher = hasher.build_hasher();
-                    match v {
-                        Some(v) => {
-                            hasher.write(&v.to_le_bytes());
-                            hasher.write(tz);
-                        }
-                        None => hasher.write(b""),
-                    }
-                    buffer.push(hasher.finish());
-                }
-            } else {
-                let hasher = MurBuildHasher::new(42);
-                for v in array {
-                    let mut hasher = hasher.build_hasher();
-                    match v {
-                        Some(v) => {
-                            hasher.write(&v.to_le_bytes());
-                            hasher.write(tz);
-                        }
-                        None => hasher.write(b""),
-                    }
-                    buffer.push(hasher.finish());
-                }
+    with_hash_impl!(hash_function, |H| {
+        hash_timestamp_with_timezone_inner::<H>(array, timezone, seed)
+    })
+}
+
+#[inline(never)]
+fn hash_timestamp_with_timezone_inner<H: HashImpl>(
+    array: &PrimitiveArray<Int64Type>,
+    timezone: &str,
+    seed: Option<&PrimitiveArray<UInt64Type>>,
+) -> PrimitiveArray<UInt64Type> {
+    let default_null_hash = H::default_null_hash();
+    let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
+    let tz_bytes = timezone.as_bytes();
+    let mut combined = Vec::with_capacity(8 + tz_bytes.len());
+
+    if array.null_count() == 0 {
+        if let Some(seed) = seed {
+            for (value, seed_val) in array.values().iter().zip(seed.values()) {
+                combined.clear();
+                combined.extend_from_slice(&value.to_le_bytes());
+                combined.extend_from_slice(tz_bytes);
+                buffer.push(H::hash_seeded(&combined, *seed_val));
             }
-            finish_buffer(buffer)
-        }
-        HashFunctionKind::Sha1 => {
-            let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-            let tz = timezone.as_bytes();
-            if array.null_count() == 0 {
-                if let Some(seed) = seed {
-                    for (v, s) in array.values().iter().zip(seed.values()) {
-                        let mut hasher = Sha1Hasher::default();
-                        hasher.write(&s.to_le_bytes());
-                        hasher.write(&v.to_le_bytes());
-                        hasher.write(tz);
-                        buffer.push(hasher.finish());
-                    }
-                } else {
-                    for v in array.values() {
-                        let mut hasher = Sha1Hasher::default();
-                        hasher.write(&v.to_le_bytes());
-                        hasher.write(tz);
-                        buffer.push(hasher.finish());
-                    }
-                }
-            } else if let Some(seed) = seed {
-                for (v, s) in array.iter().zip(seed.values()) {
-                    let mut hasher = Sha1Hasher::default();
-                    hasher.write(&s.to_le_bytes());
-                    match v {
-                        Some(v) => {
-                            hasher.write(&v.to_le_bytes());
-                            hasher.write(tz);
-                        }
-                        None => hasher.write(b""),
-                    }
-                    buffer.push(hasher.finish());
-                }
-            } else {
-                for v in array {
-                    let mut hasher = Sha1Hasher::default();
-                    match v {
-                        Some(v) => {
-                            hasher.write(&v.to_le_bytes());
-                            hasher.write(tz);
-                        }
-                        None => hasher.write(b""),
-                    }
-                    buffer.push(hasher.finish());
-                }
+        } else {
+            for value in array.values() {
+                combined.clear();
+                combined.extend_from_slice(&value.to_le_bytes());
+                combined.extend_from_slice(tz_bytes);
+                buffer.push(H::hash_default(&combined));
             }
-            finish_buffer(buffer)
+        }
+    } else if let Some(seed) = seed {
+        for (value, seed_val) in array.iter().zip(seed.values()) {
+            let hash = match value {
+                Some(value) => {
+                    combined.clear();
+                    combined.extend_from_slice(&value.to_le_bytes());
+                    combined.extend_from_slice(tz_bytes);
+                    H::hash_seeded(&combined, *seed_val)
+                }
+                None => H::scalar_null_hash(*seed_val),
+            };
+            buffer.push(hash);
+        }
+    } else {
+        for value in array {
+            let hash = match value {
+                Some(value) => {
+                    combined.clear();
+                    combined.extend_from_slice(&value.to_le_bytes());
+                    combined.extend_from_slice(tz_bytes);
+                    H::hash_default(&combined)
+                }
+                None => default_null_hash,
+            };
+            buffer.push(hash);
         }
     }
+
+    finish_buffer(buffer)
 }
 
 fn hash_decimal(
@@ -1032,12 +677,19 @@ fn hash_decimal(
     hash_function: HashFunctionKind,
     scale: usize,
 ) -> PrimitiveArray<UInt64Type> {
-    // For decimal hashing, we preserve the exact representation including scale
-    // Different scales should produce different hashes (123, 123.0, 123.00 are different)
-    // We convert to string representation that preserves the scale information
+    with_hash_impl!(hash_function, |H| {
+        hash_decimal_inner::<H>(array, seed, scale)
+    })
+}
+
+#[inline(never)]
+fn hash_decimal_inner<H: HashImpl>(
+    array: &PrimitiveArray<Decimal128Type>,
+    seed: Option<&PrimitiveArray<UInt64Type>>,
+    scale: usize,
+) -> PrimitiveArray<UInt64Type> {
     fn format_decimal(value: i128, scale: usize) -> Vec<u8> {
         if value == 0 {
-            // For zero, return "0.000..." with the appropriate number of decimal places
             let mut result = String::from("0");
             if scale > 0 {
                 result.push('.');
@@ -1046,14 +698,12 @@ fn hash_decimal(
             return result.into_bytes();
         }
 
-        // Handle negative values
         let (is_negative, abs_value) = if value < 0 {
             (true, (-value) as u128)
         } else {
             (false, value as u128)
         };
 
-        // Convert to string with proper decimal placement
         let value_str = abs_value.to_string();
         let mut result = String::new();
 
@@ -1062,17 +712,13 @@ fn hash_decimal(
         }
 
         if scale == 0 {
-            // No decimal places
             result.push_str(&value_str);
         } else if value_str.len() <= scale {
-            // Value is smaller than scale, so it's 0.00...value
             result.push('0');
             result.push('.');
-            // Add leading zeros
             result.push_str(&"0".repeat(scale - value_str.len()));
             result.push_str(&value_str);
         } else {
-            // Value has both integer and fractional parts
             let integer_part = &value_str[..value_str.len() - scale];
             let fractional_part = &value_str[value_str.len() - scale..];
             result.push_str(integer_part);
@@ -1083,162 +729,46 @@ fn hash_decimal(
         result.into_bytes()
     }
 
-    fn xxhash<const NULL_HASH: u64, F: Fn(&[u8], u64) -> u64>(
-        array: &PrimitiveArray<Decimal128Type>,
-        seed: Option<&PrimitiveArray<UInt64Type>>,
-        f: F,
-        scale: usize,
-    ) -> PrimitiveArray<UInt64Type> {
-        let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
+    let default_null_hash = H::default_null_hash();
+    let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
 
-        if array.null_count() == 0 {
-            if let Some(seed) = seed {
-                for (v, s) in array.values().iter().zip(seed.values()) {
-                    let formatted = format_decimal(*v, scale);
-                    buffer.push(f(&formatted, *s));
-                }
-            } else {
-                for v in array.values() {
-                    let formatted = format_decimal(*v, scale);
-                    buffer.push(f(&formatted, 0));
-                }
-            }
-        } else if let Some(seed) = seed {
-            for (v, s) in array.iter().zip(seed.values()) {
-                let hash = match v {
-                    Some(v) => {
-                        let formatted = format_decimal(v, scale);
-                        f(&formatted, *s)
-                    }
-                    None => NULL_HASH,
-                };
-                buffer.push(hash);
+    if array.null_count() == 0 {
+        if let Some(seed) = seed {
+            for (value, seed_val) in array.values().iter().zip(seed.values()) {
+                let formatted = format_decimal(*value, scale);
+                buffer.push(H::hash_seeded(&formatted, *seed_val));
             }
         } else {
-            for v in array {
-                let hash = match v {
-                    Some(v) => {
-                        let formatted = format_decimal(v, scale);
-                        f(&formatted, 0)
-                    }
-                    None => NULL_HASH,
-                };
-                buffer.push(hash);
+            for value in array.values() {
+                let formatted = format_decimal(*value, scale);
+                buffer.push(H::hash_default(&formatted));
             }
         }
-        finish_buffer(buffer)
+    } else if let Some(seed) = seed {
+        for (value, seed_val) in array.iter().zip(seed.values()) {
+            let hash = match value {
+                Some(value) => {
+                    let formatted = format_decimal(value, scale);
+                    H::hash_seeded(&formatted, *seed_val)
+                }
+                None => H::scalar_null_hash(*seed_val),
+            };
+            buffer.push(hash);
+        }
+    } else {
+        for value in array {
+            let hash = match value {
+                Some(value) => {
+                    let formatted = format_decimal(value, scale);
+                    H::hash_default(&formatted)
+                }
+                None => default_null_hash,
+            };
+            buffer.push(hash);
+        }
     }
 
-    match hash_function {
-        HashFunctionKind::XxHash32 => {
-            const NULL_HASH: u64 = const_xxh32::xxh32(b"", 0) as u64;
-            xxhash::<NULL_HASH, _>(array, seed, |v, s| xxh32(v, s as u32) as u64, scale)
-        }
-        HashFunctionKind::XxHash64 => {
-            const NULL_HASH: u64 = const_xxh64::xxh64(b"", 0);
-            xxhash::<NULL_HASH, _>(array, seed, xxh64, scale)
-        }
-        HashFunctionKind::XxHash3_64 => {
-            const NULL_HASH: u64 = const_xxh3::xxh3_64(b"");
-            xxhash::<NULL_HASH, _>(array, seed, xxh3_64_with_seed, scale)
-        }
-        HashFunctionKind::MurmurHash3 => {
-            let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-            if array.null_count() == 0 {
-                if let Some(seed) = seed {
-                    for (v, s) in array.values().iter().zip(seed.values()) {
-                        let hasher = MurBuildHasher::new(*s as u32);
-                        let mut hasher = hasher.build_hasher();
-                        let formatted = format_decimal(*v, scale);
-                        hasher.write(&formatted);
-                        buffer.push(hasher.finish());
-                    }
-                } else {
-                    let hasher = MurBuildHasher::new(42);
-                    for v in array.values() {
-                        let mut hasher = hasher.build_hasher();
-                        let formatted = format_decimal(*v, scale);
-                        hasher.write(&formatted);
-                        buffer.push(hasher.finish());
-                    }
-                }
-            } else if let Some(seed) = seed {
-                for (v, s) in array.iter().zip(seed.values()) {
-                    let hasher = MurBuildHasher::new(*s as u32);
-                    let mut hasher = hasher.build_hasher();
-                    match v {
-                        Some(v) => {
-                            let formatted = format_decimal(v, scale);
-                            hasher.write(&formatted);
-                        }
-                        None => hasher.write(b""),
-                    }
-                    buffer.push(hasher.finish());
-                }
-            } else {
-                let hasher = MurBuildHasher::new(42);
-                for v in array {
-                    let mut hasher = hasher.build_hasher();
-                    match v {
-                        Some(v) => {
-                            let formatted = format_decimal(v, scale);
-                            hasher.write(&formatted);
-                        }
-                        None => hasher.write(b""),
-                    }
-                    buffer.push(hasher.finish());
-                }
-            }
-            finish_buffer(buffer)
-        }
-        HashFunctionKind::Sha1 => {
-            let mut buffer = MutableBuffer::new(array.len() * std::mem::size_of::<u64>());
-            if array.null_count() == 0 {
-                if let Some(seed) = seed {
-                    for (v, s) in array.values().iter().zip(seed.values()) {
-                        let mut hasher = Sha1Hasher::default();
-                        hasher.write(&s.to_le_bytes());
-                        let formatted = format_decimal(*v, scale);
-                        hasher.write(&formatted);
-                        buffer.push(hasher.finish());
-                    }
-                } else {
-                    for v in array.values() {
-                        let mut hasher = Sha1Hasher::default();
-                        let formatted = format_decimal(*v, scale);
-                        hasher.write(&formatted);
-                        buffer.push(hasher.finish());
-                    }
-                }
-            } else if let Some(seed) = seed {
-                for (v, s) in array.iter().zip(seed.values()) {
-                    let mut hasher = Sha1Hasher::default();
-                    hasher.write(&s.to_le_bytes());
-                    match v {
-                        Some(v) => {
-                            let formatted = format_decimal(v, scale);
-                            hasher.write(&formatted);
-                        }
-                        None => hasher.write(b""),
-                    }
-                    buffer.push(hasher.finish());
-                }
-            } else {
-                for v in array {
-                    let mut hasher = Sha1Hasher::default();
-                    match v {
-                        Some(v) => {
-                            let formatted = format_decimal(v, scale);
-                            hasher.write(&formatted);
-                        }
-                        None => hasher.write(b""),
-                    }
-                    buffer.push(hasher.finish());
-                }
-            }
-            finish_buffer(buffer)
-        }
-    }
+    finish_buffer(buffer)
 }
 
 #[cfg(test)]

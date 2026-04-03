@@ -39,7 +39,8 @@ pub fn requires_computation(e: &Expr) -> bool {
         | Expr::Exists(..)
         | Expr::Over(..)
         | Expr::WindowFunction(..)
-        | Expr::VLLM(..) => true,
+        | Expr::VLLM(..)
+        | Expr::Coalesce(..) => true,
     }
 }
 

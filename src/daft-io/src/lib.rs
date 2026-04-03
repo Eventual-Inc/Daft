@@ -381,8 +381,28 @@ impl IOClient {
             });
         }
 
-        let get_result = source
-            .get(path.as_ref(), range.clone(), io_stats.clone())
+        let path: Arc<str> = Arc::from(path.as_ref());
+        let get_result = crate::retry::ExponentialBackoff::default()
+            .retry(|| {
+                let source = source.clone();
+                let path = path.clone();
+                let range = range.clone();
+                let io_stats = io_stats.clone();
+                async move {
+                    source
+                        .get(&path, range, io_stats)
+                        .await
+                        .map_err(|e| match &e {
+                            Error::MiscTransient { .. }
+                            | Error::SocketError { .. }
+                            | Error::ConnectTimeout { .. } => {
+                                log::warn!("Transient error during GET, will retry: {}", &e);
+                                crate::retry::RetryError::Transient(e)
+                            }
+                            _ => crate::retry::RetryError::Permanent(e),
+                        })
+                }
+            })
             .await?;
         Ok(get_result.with_retry(StreamingRetryParams::new(source, input, range, io_stats)))
     }

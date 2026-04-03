@@ -79,6 +79,8 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.register::<SQLModuleWindow>();
     functions.add_fn("concat", SQLConcat);
     functions.add_fn("element", SQLElement);
+    functions.add_fn("coalesce", SQLCoalesce);
+
     for (name, function_factory) in FUNCTION_REGISTRY.read().unwrap().entries() {
         // Auto-register all functions from the registry as generic SQL
         // passthroughs, but skip names that already have a custom SQLFunction
@@ -95,6 +97,29 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     }
     functions
 });
+
+pub struct SQLCoalesce;
+
+impl SQLFunction for SQLCoalesce {
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        if inputs.is_empty() {
+            return Err(PlannerError::invalid_operation(
+                "COALESCE requires at least one argument",
+            ));
+        }
+        let inputs = inputs
+            .iter()
+            .map(|input| planner.plan_function_arg(input))
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
+        let inputs = daft_dsl::functions::FunctionArgs::try_new(inputs)?;
+        let inputs = inputs.into_inner();
+        Ok(daft_dsl::Expr::Coalesce(inputs).arced())
+    }
+
+    fn docstrings(&self, _: &str) -> String {
+        "Returns the first non-null value in a list of expressions".to_string()
+    }
+}
 
 impl SQLFunction for Arc<dyn ScalarUDF> {
     fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
@@ -401,15 +426,27 @@ impl SQLPlanner<'_> {
             SQL_FUNCTIONS.get(name).cloned()
         }
 
+        fn session_func_to_sql(func: SessionFunction) -> Arc<dyn SQLFunction> {
+            match func {
+                SessionFunction::Python(udf) => Arc::new(udf),
+                SessionFunction::Native(factory) => Arc::new(factory),
+            }
+        }
+
         fn get_func_from_session(
             session: &Session,
             name: impl AsRef<str>,
         ) -> SQLPlannerResult<Option<Arc<dyn SQLFunction>>> {
             let name = name.as_ref();
-            match session.get_function(name)? {
-                Some(SessionFunction::Python(udf)) => Ok(Some(Arc::new(udf))),
-                Some(SessionFunction::Native(factory)) => Ok(Some(Arc::new(factory))),
-                None => Ok(None),
+            // Parse the dot-separated name into an Identifier and delegate all
+            // resolution rules (session-scoped → catalog+namespace → catalog-qualified)
+            // to session.get_function.
+            let parts: Vec<String> = name.split('.').map(str::to_string).collect();
+            let ident = daft_catalog::Identifier::new(parts);
+            match session.get_function(&ident) {
+                Ok(func) => Ok(Some(session_func_to_sql(func))),
+                Err(daft_catalog::error::CatalogError::ObjectNotFound { .. }) => Ok(None),
+                Err(other) => Err(other.into()),
             }
         }
 

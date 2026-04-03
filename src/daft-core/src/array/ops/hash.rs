@@ -21,6 +21,18 @@ use crate::{
     kernels,
 };
 
+fn hash_array(
+    name: &str,
+    array: &dyn arrow::array::Array,
+    seed: Option<&UInt64Array>,
+    hash_function: HashFunctionKind,
+) -> DaftResult<UInt64Array> {
+    let seed_arr = seed.map(|values| values.as_arrow()).transpose()?;
+    let result = kernels::hashing::hash(array, seed_arr, hash_function)?;
+    let field = Arc::new(Field::new(name, DataType::UInt64));
+    UInt64Array::from_arrow(field, Arc::new(result))
+}
+
 impl<T> DataArray<T>
 where
     T: DaftPrimitiveType,
@@ -35,10 +47,7 @@ where
         hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow()?;
-        let seed_arr = seed.map(|v| v.as_arrow()).transpose()?;
-        let result = kernels::hashing::hash(&as_arrowed, seed_arr, hash_function)?;
-        let field = Arc::new(Field::new(self.name(), DataType::UInt64));
-        UInt64Array::from_arrow(field, Arc::new(result))
+        hash_array(self.name(), as_arrowed, seed, hash_function)
     }
 }
 
@@ -53,10 +62,7 @@ impl Utf8Array {
         hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow()?;
-        let seed_arr = seed.map(|v| v.as_arrow()).transpose()?;
-        let result = kernels::hashing::hash(&as_arrowed, seed_arr, hash_function)?;
-        let field = Arc::new(Field::new(self.name(), DataType::UInt64));
-        UInt64Array::from_arrow(field, Arc::new(result))
+        hash_array(self.name(), as_arrowed, seed, hash_function)
     }
 
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
@@ -87,10 +93,7 @@ impl BinaryArray {
         hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow()?;
-        let seed_arr = seed.map(|v| v.as_arrow()).transpose()?;
-        let result = kernels::hashing::hash(&as_arrowed, seed_arr, hash_function)?;
-        let field = Arc::new(Field::new(self.name(), DataType::UInt64));
-        UInt64Array::from_arrow(field, Arc::new(result))
+        hash_array(self.name(), as_arrowed, seed, hash_function)
     }
 
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
@@ -115,10 +118,7 @@ impl FixedSizeBinaryArray {
         hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow()?;
-        let seed_arr = seed.map(|v| v.as_arrow()).transpose()?;
-        let result = kernels::hashing::hash(&as_arrowed, seed_arr, hash_function)?;
-        let field = Arc::new(Field::new(self.name(), DataType::UInt64));
-        UInt64Array::from_arrow(field, Arc::new(result))
+        hash_array(self.name(), as_arrowed, seed, hash_function)
     }
 
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
@@ -143,10 +143,7 @@ impl BooleanArray {
         hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow()?;
-        let seed_arr = seed.map(|v| v.as_arrow()).transpose()?;
-        let result = kernels::hashing::hash(&as_arrowed, seed_arr, hash_function)?;
-        let field = Arc::new(Field::new(self.name(), DataType::UInt64));
-        UInt64Array::from_arrow(field, Arc::new(result))
+        hash_array(self.name(), as_arrowed, seed, hash_function)
     }
 }
 
@@ -160,10 +157,7 @@ impl NullArray {
         hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.as_arrow()?;
-        let seed_arr = seed.map(|v| v.as_arrow()).transpose()?;
-        let result = kernels::hashing::hash(&as_arrowed, seed_arr, hash_function)?;
-        let field = Arc::new(Field::new(self.name(), DataType::UInt64));
-        UInt64Array::from_arrow(field, Arc::new(result))
+        hash_array(self.name(), as_arrowed, seed, hash_function)
     }
 }
 
