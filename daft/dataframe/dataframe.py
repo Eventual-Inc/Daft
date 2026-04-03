@@ -4020,6 +4020,36 @@ class DataFrame:
         return self._apply_agg_fn(lambda expr: Expression.stddev(expr, ddof), cols)
 
     @DataframePublicAPI
+    def var(self, *cols: ColumnInputType, ddof: int = 1) -> "DataFrame":
+        """Performs a global variance on the DataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to compute variance for
+            ddof (int): Delta degrees of freedom used in the denominator `N - ddof`.
+                Defaults to 1 (sample variance).
+
+        Returns:
+            DataFrame: Globally aggregated variance. Should be a single row.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [0, 1, 2]})
+            >>> df = df.var("col_a")
+            >>> df.show()
+            ╭─────────╮
+            │ col_a   │
+            │ ---     │
+            │ Float64 │
+            ╞═════════╡
+            │ 1       │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        """
+        return self._apply_agg_fn(lambda expr: Expression.var(expr, ddof), cols)
+
+    @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global min on the DataFrame.
 
@@ -5408,6 +5438,38 @@ class GroupedDataFrame:
 
         """
         return self.df._apply_agg_fn(lambda expr: Expression.stddev(expr, ddof), cols, self.group_by)
+
+    def var(self, *cols: ColumnInputType, ddof: int = 1) -> DataFrame:
+        """Performs grouped variance on this GroupedDataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to compute variance for
+            ddof (int): Delta degrees of freedom used in the denominator `N - ddof`.
+                Defaults to 1 (sample variance).
+
+        Returns:
+            DataFrame: DataFrame with grouped variance.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b"], "col_a": [0, 1, 2, 100]})
+            >>> df = df.groupby("keys").var()
+            >>> df = df.sort("keys")
+            >>> df.show()
+            ╭────────┬─────────╮
+            │ keys   ┆ col_a   │
+            │ ---    ┆ ---     │
+            │ String ┆ Float64 │
+            ╞════════╪═════════╡
+            │ a      ┆ 1       │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ b      ┆ None    │
+            ╰────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        """
+        return self.df._apply_agg_fn(lambda expr: Expression.var(expr, ddof), cols, self.group_by)
 
     def min(self, *cols: ColumnInputType) -> DataFrame:
         """Perform grouped min on this GroupedDataFrame.
