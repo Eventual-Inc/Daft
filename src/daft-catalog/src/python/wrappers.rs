@@ -164,10 +164,10 @@ impl Catalog for PyCatalogWrapper {
                     let not_found_type = py
                         .import(intern!(py, "daft.catalog"))
                         .and_then(|m| m.getattr(intern!(py, "NotFoundError")));
-                    if let Ok(not_found_type) = not_found_type {
-                        if err.is_instance(py, &not_found_type) {
-                            return Err(CatalogError::obj_not_found("Function", ident));
-                        }
+                    if let Ok(not_found_type) = not_found_type
+                        && err.is_instance(py, &not_found_type)
+                    {
+                        return Err(CatalogError::obj_not_found("Function", ident));
                     }
                     Err(err.into())
                 }
