@@ -60,7 +60,7 @@ impl UnionArray {
             self.len()
         );
 
-        let type_id = self.ids[idx];
+        let type_id = self.ids()[idx];
         let value_offset = if let Some(offsets) = self.offsets() {
             offsets[idx] as usize
         } else {

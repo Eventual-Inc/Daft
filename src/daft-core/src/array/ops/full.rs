@@ -182,14 +182,13 @@ impl FullNull for UnionArray {
                     .collect::<Vec<_>>();
 
                 let offsets = if mode.is_dense() {
-                    let offsets: arrow::buffer::ScalarBuffer<i32> = vec![0; length].into();
-                    Some(offsets)
+                    Some(vec![0i32; length])
                 } else {
                     None
                 };
 
                 let null_id = type_ids[0];
-                let types: arrow::buffer::ScalarBuffer<i8> = vec![null_id; length].into();
+                let types = vec![null_id; length];
 
                 Self::new(field, types, empty_children, offsets)
             }
@@ -206,15 +205,9 @@ impl FullNull for UnionArray {
                     .map(|f| Series::empty(f.name.as_ref(), &f.dtype))
                     .collect::<Vec<_>>();
 
-                let offsets = if mode.is_dense() {
-                    Some(arrow::buffer::ScalarBuffer::<i32>::default())
-                } else {
-                    None
-                };
+                let offsets = if mode.is_dense() { Some(vec![]) } else { None };
 
-                let types: arrow::buffer::ScalarBuffer<i8> = Vec::new().into();
-
-                Self::new(field, types, empty_children, offsets)
+                Self::new(field, vec![], empty_children, offsets)
             }
             _ => panic!("Cannot create empty UnionArray with dtype: {}", dtype),
         }

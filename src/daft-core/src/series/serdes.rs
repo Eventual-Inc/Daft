@@ -188,7 +188,7 @@ impl<'d> serde::Deserialize<'d> for Series {
 
                         let offsets = if let Some(offsets) = offsets_series {
                             let offsets_array = offsets.i32().unwrap();
-                            Some(offsets_array.values())
+                            Some(offsets_array.values().to_vec())
                         } else {
                             None
                         };
@@ -200,7 +200,7 @@ impl<'d> serde::Deserialize<'d> for Series {
 
                         let ids_array = ids.i8().unwrap();
 
-                        let ids = ids_array.values();
+                        let ids = ids_array.values().to_vec();
 
                         let children = all_series
                             .into_iter()

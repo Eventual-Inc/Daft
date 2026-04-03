@@ -1777,7 +1777,11 @@ impl UnionArray {
         if dtype == self.data_type() {
             return Ok(self.clone().into_series());
         }
-        unimplemented!("Union casting not implemented for dtype: {}", dtype)
+
+        Err(DaftError::TypeError(format!(
+            "Union casting not implemented for dtype: {}",
+            dtype
+        )))
     }
 }
 

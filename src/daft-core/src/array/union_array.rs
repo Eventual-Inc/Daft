@@ -15,10 +15,10 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct UnionArray {
     pub field: Arc<Field>,
-    pub ids: ScalarBuffer<i8>,
     pub children: Vec<Series>,
-    pub offsets: Option<ScalarBuffer<i32>>,
-    pub id_map: [usize; 128],
+    ids: ScalarBuffer<i8>,
+    offsets: Option<ScalarBuffer<i32>>,
+    id_map: [usize; 128],
 }
 
 impl DaftArrayType for UnionArray {
@@ -30,11 +30,13 @@ impl DaftArrayType for UnionArray {
 impl UnionArray {
     pub fn new<F: Into<Arc<Field>>>(
         field: F,
-        ids: ScalarBuffer<i8>,
+        ids: Vec<i8>,
         children: Vec<Series>,
-        offsets: Option<ScalarBuffer<i32>>,
+        offsets: Option<Vec<i32>>,
     ) -> Self {
         let field: Arc<Field> = field.into();
+        let ids: ScalarBuffer<i8> = ScalarBuffer::from(ids);
+        let offsets: Option<ScalarBuffer<i32>> = offsets.map(ScalarBuffer::from);
         match &field.as_ref().dtype {
             DataType::Union(fields, type_ids, mode) => {
                 assert!(
@@ -86,8 +88,8 @@ impl UnionArray {
 
                 Self {
                     field,
-                    ids,
                     children,
+                    ids,
                     offsets,
                     id_map,
                 }
@@ -204,9 +206,9 @@ impl UnionArray {
 
         Ok(Self::new(
             self.field.clone(),
-            self.ids.slice(start, end - start),
+            self.ids.slice(start, end - start).to_vec(),
             children,
-            offsets,
+            offsets.map(|o| o.to_vec()),
         ))
     }
 
@@ -239,9 +241,214 @@ impl UnionArray {
     pub fn with_nulls(&self, _nulls: Option<arrow::buffer::NullBuffer>) -> DaftResult<Self> {
         Ok(Self::new(
             self.field.clone(),
-            self.ids.clone(),
+            self.ids.to_vec(),
             self.children.clone(),
-            self.offsets.clone(),
+            self.offsets.as_ref().map(|o| o.to_vec()),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+    use daft_schema::union_mode::UnionMode;
+
+    use super::*;
+    use crate::{
+        array::{ListArray, StructArray, ops::from_arrow::FromArrow},
+        datatypes::{DataType, Field, Float64Array, Int32Array},
+        series::IntoSeries,
+    };
+
+    fn make_sparse_union() -> UnionArray {
+        // Two children: Int32 ("a") and Float64 ("b"), type IDs [0, 1]
+        // ids buffer selects alternating children across 4 rows
+        let child_a = Int32Array::from_vec("a", vec![1, 2, 3, 4]).into_series();
+        let child_b = Float64Array::from_vec("b", vec![10.0, 20.0, 30.0, 40.0]).into_series();
+
+        let dtype = DataType::Union(
+            vec![
+                Field::new("a", DataType::Int32),
+                Field::new("b", DataType::Float64),
+            ],
+            vec![0, 1],
+            UnionMode::Sparse,
+        );
+        UnionArray::new(
+            Field::new("test", dtype),
+            vec![0i8, 1, 0, 1],
+            vec![child_a, child_b],
+            None,
+        )
+    }
+
+    fn make_dense_union() -> UnionArray {
+        // Two children: Int32 ("a") and Float64 ("b"), type IDs [0, 1]
+        // Dense: each child only holds its own values; offsets index into child arrays
+        let child_a = Int32Array::from_vec("a", vec![1, 2]).into_series();
+        let child_b = Float64Array::from_vec("b", vec![10.0, 20.0]).into_series();
+
+        let dtype = DataType::Union(
+            vec![
+                Field::new("a", DataType::Int32),
+                Field::new("b", DataType::Float64),
+            ],
+            vec![0, 1],
+            UnionMode::Dense,
+        );
+        UnionArray::new(
+            Field::new("test", dtype),
+            vec![0i8, 1, 0, 1],
+            vec![child_a, child_b],
+            Some(vec![0i32, 0, 1, 1]),
+        )
+    }
+
+    #[test]
+    fn test_arrow_roundtrip_sparse_union() -> DaftResult<()> {
+        let arr = make_sparse_union();
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr = UnionArray::from_arrow(arr.field().clone(), arrow_arr)?;
+
+        assert_eq!(arr.field(), new_arr.field());
+        assert_eq!(arr.ids(), new_arr.ids());
+        assert_eq!(arr.offsets(), new_arr.offsets());
+        assert_eq!(arr.children, new_arr.children);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_roundtrip_dense_union() -> DaftResult<()> {
+        let arr = make_dense_union();
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr = UnionArray::from_arrow(arr.field().clone(), arrow_arr)?;
+
+        assert_eq!(arr.field(), new_arr.field());
+        assert_eq!(arr.ids(), new_arr.ids());
+        assert_eq!(arr.offsets(), new_arr.offsets());
+        assert_eq!(arr.children, new_arr.children);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_roundtrip_sparse_union_empty() -> DaftResult<()> {
+        let dtype = DataType::Union(
+            vec![
+                Field::new("a", DataType::Int32),
+                Field::new("b", DataType::Float64),
+            ],
+            vec![0, 1],
+            UnionMode::Sparse,
+        );
+        let arr = UnionArray::new(
+            Field::new("test", dtype),
+            vec![],
+            vec![
+                Int32Array::from_vec("a", vec![]).into_series(),
+                Float64Array::from_vec("b", vec![]).into_series(),
+            ],
+            None,
+        );
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr = UnionArray::from_arrow(arr.field().clone(), arrow_arr)?;
+
+        assert_eq!(arr.field(), new_arr.field());
+        assert_eq!(arr.ids(), new_arr.ids());
+        assert_eq!(arr.offsets(), new_arr.offsets());
+        assert!(new_arr.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_roundtrip_union_with_list_child() -> DaftResult<()> {
+        // Child "a" is List(Int32), child "b" is Float64
+        let list_child = ListArray::from_series(
+            "a",
+            vec![
+                Some(Int32Array::from_vec("a", vec![1, 2]).into_series()),
+                Some(Int32Array::from_vec("a", vec![3]).into_series()),
+                Some(Int32Array::from_vec("a", vec![4, 5]).into_series()),
+                Some(Int32Array::from_vec("a", vec![6]).into_series()),
+            ],
+        )?
+        .into_series();
+        let scalar_child = Float64Array::from_vec("b", vec![10.0, 20.0, 30.0, 40.0]).into_series();
+
+        let dtype = DataType::Union(
+            vec![
+                Field::new("a", DataType::List(Box::new(DataType::Int32))),
+                Field::new("b", DataType::Float64),
+            ],
+            vec![0, 1],
+            UnionMode::Sparse,
+        );
+        let arr = UnionArray::new(
+            Field::new("test", dtype),
+            vec![0i8, 1, 0, 1],
+            vec![list_child, scalar_child],
+            None,
+        );
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr = UnionArray::from_arrow(arr.field().clone(), arrow_arr)?;
+
+        assert_eq!(arr.field(), new_arr.field());
+        assert_eq!(arr.ids(), new_arr.ids());
+        assert_eq!(arr.offsets(), new_arr.offsets());
+        assert_eq!(arr.children, new_arr.children);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_roundtrip_union_with_struct_child() -> DaftResult<()> {
+        // Child "a" is Struct({x: Int32, y: Float64}), child "b" is Int32
+        // Dense union: type_ids = [0, 1, 0, 1], offsets = [0, 0, 1, 1]
+        // so "a" child has 2 rows, "b" child has 2 rows
+        let struct_dtype = DataType::Struct(vec![
+            Field::new("x", DataType::Int32),
+            Field::new("y", DataType::Float64),
+        ]);
+        let struct_child = StructArray::new(
+            Field::new("a", struct_dtype.clone()),
+            vec![
+                Int32Array::from_vec("x", vec![1, 3]).into_series(),
+                Float64Array::from_vec("y", vec![1.0, 3.0]).into_series(),
+            ],
+            None,
+        )
+        .into_series();
+        let scalar_child = Int32Array::from_vec("b", vec![10, 30]).into_series();
+
+        let dtype = DataType::Union(
+            vec![
+                Field::new("a", struct_dtype),
+                Field::new("b", DataType::Int32),
+            ],
+            vec![0, 1],
+            UnionMode::Dense,
+        );
+        let arr = UnionArray::new(
+            Field::new("test", dtype),
+            vec![0i8, 1, 0, 1],
+            vec![struct_child, scalar_child],
+            Some(vec![0i32, 0, 1, 1]),
+        );
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr = UnionArray::from_arrow(arr.field().clone(), arrow_arr)?;
+
+        assert_eq!(arr.field(), new_arr.field());
+        assert_eq!(arr.ids(), new_arr.ids());
+        assert_eq!(arr.offsets(), new_arr.offsets());
+        assert_eq!(arr.children, new_arr.children);
+
+        Ok(())
     }
 }

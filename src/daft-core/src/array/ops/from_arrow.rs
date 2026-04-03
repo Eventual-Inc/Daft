@@ -240,8 +240,8 @@ impl FromArrow for UnionArray {
                     })
                     .collect::<DaftResult<Vec<Series>>>()?;
 
-                let ids = arrow_arr.type_ids().clone();
-                let offsets = arrow_arr.offsets().cloned();
+                let ids = arrow_arr.type_ids().to_vec();
+                let offsets = arrow_arr.offsets().map(|o| o.to_vec());
 
                 Ok(Self::new(field, ids, child_series, offsets))
             }

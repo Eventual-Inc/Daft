@@ -163,7 +163,7 @@ impl serde::Serialize for UnionArray {
         let mut values = Vec::with_capacity(self.children.len() + 2);
         values.extend(self.children.iter().map(Some));
 
-        let ids = Int8Array::from_slice("ids", &self.ids).into_series();
+        let ids = Int8Array::from_slice("ids", self.ids()).into_series();
         values.push(Some(&ids));
 
         let offsets = if let Some(offsets) = self.offsets() {

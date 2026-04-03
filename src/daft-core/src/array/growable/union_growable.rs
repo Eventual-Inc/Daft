@@ -1,4 +1,3 @@
-use arrow::buffer::ScalarBuffer;
 use common_error::DaftResult;
 
 use super::Growable;
@@ -128,19 +127,11 @@ impl Growable for UnionGrowable<'_> {
         let ids = std::mem::take(&mut self.ids);
         let offsets = std::mem::take(&mut self.offsets);
 
-        let ids_buffer = ScalarBuffer::from(ids);
-        let offsets_buffer = if let Some(offsets) = offsets {
-            let offsets_buffer = ScalarBuffer::from(offsets);
-            Some(offsets_buffer)
-        } else {
-            None
-        };
-
         Ok(UnionArray::new(
             Field::new(self.name.clone(), self.dtype.clone()),
-            ids_buffer,
+            ids,
             build_children,
-            offsets_buffer,
+            offsets,
         )
         .into_series())
     }
