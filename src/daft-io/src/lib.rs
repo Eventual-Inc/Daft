@@ -467,7 +467,7 @@ impl IOClient {
     /// Other backends fall back to listing + single-object deletes.
     ///
     /// Returns `Ok(())` if the directory does not exist.
-    pub async fn rm_dir(&self, prefix: &str, io_stats: Option<IOStatsRef>) -> Result<()> {
+    pub async fn delete_dir(&self, prefix: &str, io_stats: Option<IOStatsRef>) -> Result<()> {
         let resolved = resolve_url_alias(prefix, &self.config);
         let source = self.get_source(&resolved).await?;
         source.delete_dir(&resolved, io_stats).await

@@ -165,7 +165,7 @@ impl S3CheckpointStore {
             .clear();
 
         self.io_client()?
-            .rm_dir(&self.prefix, None)
+            .delete_dir(&self.prefix, None)
             .await
             .map_err(|e| CheckpointError::Internal {
                 message: format!("cleanup of prefix {} failed: {e}", self.prefix),
