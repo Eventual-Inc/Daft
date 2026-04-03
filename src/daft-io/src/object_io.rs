@@ -346,6 +346,31 @@ pub trait ObjectSource: Sync + Send {
         })
     }
 
+    /// Delete a directory and all objects within it.
+    ///
+    /// The default implementation lists objects via [`iter_dir`](Self::iter_dir) and
+    /// deletes them one at a time. Backends that support batch deletion (e.g. S3's
+    /// `DeleteObjects` API) should override this for efficiency.
+    ///
+    /// Returns `Ok(())` if the directory does not exist.
+    async fn delete_dir(
+        self: Arc<Self>,
+        prefix: &str,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<()> {
+        use futures::TryStreamExt;
+        let source = self.clone();
+        let mut stream = source
+            .iter_dir(prefix, false, None, io_stats.clone())
+            .await?;
+        while let Some(meta) = stream.try_next().await? {
+            if meta.filetype == FileType::File {
+                self.delete(&meta.filepath, io_stats.clone()).await?;
+            }
+        }
+        Ok(())
+    }
+
     async fn iter_dir(
         &self,
         uri: &str,

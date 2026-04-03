@@ -460,6 +460,19 @@ impl IOClient {
         }
     }
 
+    /// Delete a directory and all objects within it.
+    ///
+    /// For S3 this uses the batch `DeleteObjects` API (up to 1 000 keys per
+    /// request). For the local filesystem this removes the entire directory tree.
+    /// Other backends fall back to listing + single-object deletes.
+    ///
+    /// Returns `Ok(())` if the directory does not exist.
+    pub async fn rm_dir(&self, prefix: &str, io_stats: Option<IOStatsRef>) -> Result<()> {
+        let resolved = resolve_url_alias(prefix, &self.config);
+        let source = self.get_source(&resolved).await?;
+        source.delete_dir(&resolved, io_stats).await
+    }
+
     pub async fn single_url_upload(
         &self,
         dest: String,

@@ -2342,11 +2342,18 @@ name = "daft-checkpoint"
 version = "0.3.0-dev0"
 dependencies = [
  "async-trait",
+ "bytes",
+ "chrono",
  "common-error",
  "daft-checkpoint",
  "daft-core",
+ "daft-io",
+ "daft-recordbatch",
  "futures",
+ "serde",
+ "serde_json",
  "snafu",
+ "tempfile",
  "tokio",
  "uuid",
 ]
