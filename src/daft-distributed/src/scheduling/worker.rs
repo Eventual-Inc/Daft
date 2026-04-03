@@ -22,6 +22,7 @@ pub(crate) trait Worker: Send + Sync + Debug + 'static {
     fn active_num_cpus(&self) -> f64;
     #[allow(dead_code)]
     fn active_num_gpus(&self) -> f64;
+    fn active_memory_bytes(&self) -> usize;
     #[allow(dead_code)]
     fn available_num_cpus(&self) -> f64 {
         self.total_num_cpus() - self.active_num_cpus()
@@ -220,6 +221,15 @@ pub(super) mod tests {
                 .expect("Failed to lock active_task_details")
                 .values()
                 .map(|details| details.num_gpus())
+                .sum()
+        }
+
+        fn active_memory_bytes(&self) -> usize {
+            self.active_task_details
+                .lock()
+                .expect("Failed to lock active_task_details")
+                .values()
+                .map(|details| details.memory_bytes())
                 .sum()
         }
 
