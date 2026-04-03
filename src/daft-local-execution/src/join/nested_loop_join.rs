@@ -22,11 +22,13 @@ pub(crate) struct NestedLoopJoinBuildState {
 }
 
 pub(crate) struct NestedLoopJoinProbeState {
-    collect_tables: Vec<RecordBatch>,
+    collect_tables: RecordBatch,
+    stream_idx: usize,
 }
 
 pub struct NestedLoopJoinOperator {
     predicate: Vec<BoundExpr>,
+    build_schema: SchemaRef,
     output_schema: SchemaRef,
     /// Which side is the streaming (probe) side. Used to correctly order left/right
     /// when calling `nested_loop_join` so the output schema column order is preserved.
@@ -34,9 +36,15 @@ pub struct NestedLoopJoinOperator {
 }
 
 impl NestedLoopJoinOperator {
-    pub fn new(predicate: Vec<BoundExpr>, output_schema: SchemaRef, stream_side: JoinSide) -> Self {
+    pub fn new(
+        predicate: Vec<BoundExpr>,
+        build_schema: SchemaRef,
+        output_schema: SchemaRef,
+        stream_side: JoinSide,
+    ) -> Self {
         Self {
             predicate,
+            build_schema,
             output_schema,
             stream_side,
         }
@@ -45,7 +53,7 @@ impl NestedLoopJoinOperator {
 
 impl JoinOperator for NestedLoopJoinOperator {
     type BuildState = NestedLoopJoinBuildState;
-    type FinalizedBuildState = Vec<RecordBatch>;
+    type FinalizedBuildState = RecordBatch;
     type ProbeState = NestedLoopJoinProbeState;
 
     fn build(
@@ -61,7 +69,7 @@ impl JoinOperator for NestedLoopJoinOperator {
     }
 
     fn finalize_build(&self, state: Self::BuildState) -> FinalizeBuildResult<Self> {
-        Ok(state.tables).into()
+        RecordBatch::concat_or_empty(&state.tables, Some(self.build_schema.clone()))
     }
 
     fn make_build_state(&self) -> DaftResult<Self::BuildState> {
@@ -74,16 +82,24 @@ impl JoinOperator for NestedLoopJoinOperator {
     ) -> Self::ProbeState {
         NestedLoopJoinProbeState {
             collect_tables: finalized_build_state,
+            stream_idx: 0,
         }
     }
 
     fn probe(
         &self,
         input: MicroPartition,
-        state: Self::ProbeState,
+        mut state: Self::ProbeState,
         spawner: &ExecutionTaskSpawner,
     ) -> ProbeResult<Self> {
         if input.is_empty() || state.collect_tables.is_empty() {
+            let empty = MicroPartition::empty(Some(self.output_schema.clone()));
+            return Ok((state, ProbeOutput::NeedMoreInput(Some(empty)))).into();
+        }
+
+        if state.stream_idx >= input.record_batches().len() {
+            // Finished processing all stream tables, move to next input
+            state.stream_idx = 0;
             let empty = MicroPartition::empty(Some(self.output_schema.clone()));
             return Ok((state, ProbeOutput::NeedMoreInput(Some(empty)))).into();
         }
@@ -95,24 +111,32 @@ impl JoinOperator for NestedLoopJoinOperator {
         spawner
             .spawn(
                 async move {
-                    let mut results = Vec::new();
-                    for stream_tbl in input.record_batches() {
-                        for collect_tbl in &state.collect_tables {
-                            // Ensure left/right order matches the logical schema so the output
-                            // column order is correct regardless of which side is streaming.
-                            let (left_tbl, right_tbl) = match stream_side {
-                                JoinSide::Left => (stream_tbl, collect_tbl),
-                                JoinSide::Right => (collect_tbl, stream_tbl),
-                            };
-                            let output_tbl = left_tbl.nested_loop_join(right_tbl, &predicate)?;
-                            if !output_tbl.is_empty() {
-                                results.push(output_tbl);
-                            }
-                        }
-                    }
+                    let stream_tables = input.record_batches();
+                    let stream_tbl = &stream_tables[state.stream_idx];
+                    let collect_tbl = &state.collect_tables;
+
+                    let (left_tbl, right_tbl) = match stream_side {
+                        JoinSide::Left => (stream_tbl, collect_tbl),
+                        JoinSide::Right => (collect_tbl, stream_tbl),
+                    };
+
+                    let output_tbl = left_tbl.nested_loop_join(right_tbl, &predicate)?;
+
                     let output_morsel =
-                        MicroPartition::new_loaded(output_schema, Arc::new(results), None);
-                    Ok((state, ProbeOutput::NeedMoreInput(Some(output_morsel))))
+                        MicroPartition::new_loaded(output_schema, Arc::new(vec![output_tbl]), None);
+
+                    state.stream_idx += 1;
+
+                    let result = if state.stream_idx >= stream_tables.len() {
+                        ProbeOutput::NeedMoreInput(Some(output_morsel))
+                    } else {
+                        ProbeOutput::HasMoreOutput {
+                            input,
+                            output: output_morsel,
+                        }
+                    };
+
+                    Ok((state, result))
                 },
                 Span::current(),
             )

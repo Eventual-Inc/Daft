@@ -1243,11 +1243,16 @@ fn physical_plan_to_pipeline(
                 JoinSide::Right => (left, right),
             };
 
+            let build_schema = build_child.schema().clone();
             let build_child_node = physical_plan_to_pipeline(build_child, cfg, ctx, input_senders)?;
             let probe_child_node = physical_plan_to_pipeline(probe_child, cfg, ctx, input_senders)?;
 
-            let nested_loop_join_op =
-                NestedLoopJoinOperator::new(predicate.clone(), schema.clone(), stream_side);
+            let nested_loop_join_op = NestedLoopJoinOperator::new(
+                predicate.clone(),
+                build_schema,
+                schema.clone(),
+                stream_side,
+            );
 
             JoinNode::new(
                 Arc::new(nested_loop_join_op),
