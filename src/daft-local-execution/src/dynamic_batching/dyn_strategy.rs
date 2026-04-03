@@ -3,15 +3,23 @@ use std::{
     time::Duration,
 };
 
+use common_error::DaftResult;
+use daft_micropartition::MicroPartition;
+
 use crate::{
+    buffer::RowBasedBuffer,
     dynamic_batching::{BatchingState, BatchingStrategy},
     pipeline::MorselSizeRequirement,
     runtime_stats::RuntimeStats,
 };
+
+#[allow(clippy::type_complexity)]
+#[allow(clippy::struct_field_names)]
 pub struct DynBatchingState {
-    #[allow(clippy::type_complexity)]
     record_fn: Box<dyn FnMut(&dyn RuntimeStats, usize, Duration) + Send + Sync>,
     update_fn: Box<dyn FnMut() -> MorselSizeRequirement + Send + Sync>,
+    next_batch_fn:
+        Box<dyn FnMut(&mut RowBasedBuffer) -> DaftResult<Option<MicroPartition>> + Send + Sync>,
 }
 
 impl BatchingState for DynBatchingState {
@@ -54,11 +62,12 @@ impl DynBatchingStrategy {
             make_state_fn: Box::new(move || {
                 let state = strategy.make_state();
                 let strategy_clone = strategy.clone();
+                let strategy_for_next = strategy.clone();
 
-                // Use Arc<Mutex<>> to share state between closures
                 let shared_state = Arc::new(Mutex::new(state));
                 let state_for_record = shared_state.clone();
-                let state_for_update = shared_state;
+                let state_for_update = shared_state.clone();
+                let state_for_next = shared_state;
 
                 DynBatchingState {
                     record_fn: Box::new(move |stats, batch_size, duration| {
@@ -70,6 +79,10 @@ impl DynBatchingStrategy {
                     update_fn: Box::new(move || {
                         let mut state_guard = state_for_update.lock().unwrap();
                         strategy_clone.calculate_new_requirements(&mut *state_guard)
+                    }),
+                    next_batch_fn: Box::new(move |buffer| {
+                        let mut state_guard = state_for_next.lock().unwrap();
+                        strategy_for_next.next_batch(&mut *state_guard, buffer)
                     }),
                 }
             }),
@@ -98,6 +111,14 @@ impl BatchingStrategy for DynBatchingStrategy {
 
     fn initial_requirements(&self) -> MorselSizeRequirement {
         self.initial_req
+    }
+
+    fn next_batch(
+        &self,
+        state: &mut Self::State,
+        buffer: &mut RowBasedBuffer,
+    ) -> DaftResult<Option<MicroPartition>> {
+        (state.next_batch_fn)(buffer)
     }
 }
 #[cfg(test)]
