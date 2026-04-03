@@ -115,10 +115,6 @@ impl FilterNode {
             child,
         }
     }
-
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
 }
 
 impl PipelineNodeImpl for FilterNode {
@@ -138,7 +134,7 @@ impl PipelineNodeImpl for FilterNode {
         vec![format!("Filter: {}", self.predicate)]
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(FilterStats::new(meter, self.context()))
     }
 

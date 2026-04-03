@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from daft.arrow_utils import ensure_table
 from daft.daft import (
     CsvConvertOptions,
     CsvParseOptions,
@@ -106,7 +105,6 @@ class RecordBatch:
             return RecordBatch.from_pydict(dict(zip(arrow_table.column_names, arrow_table.columns)))
         else:
             # Otherwise, go through record batch happy path.
-            arrow_table = ensure_table(arrow_table)
             pyt = _PyRecordBatch.from_arrow_record_batches(arrow_table.to_batches(), schema._schema)
             return RecordBatch._from_pyrecordbatch(pyt)
 

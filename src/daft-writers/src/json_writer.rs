@@ -91,8 +91,7 @@ pub(crate) fn create_native_json_writer(
     partition_values: Option<&RecordBatch>,
     io_config: Option<IOConfig>,
     json_option: JsonFormatOption,
-) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
-{
+) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
     // Parse the root directory and add partition values if present.
     let (source_type, root_dir) = parse_url(root_dir)?;
     let filename = build_filename(

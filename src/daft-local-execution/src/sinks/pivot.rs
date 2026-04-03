@@ -8,17 +8,20 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
+};
 
 pub(crate) enum PivotState {
-    Accumulating(Vec<Arc<MicroPartition>>),
+    Accumulating(Vec<MicroPartition>),
     Done,
 }
 
 impl PivotState {
-    fn push(&mut self, part: Arc<MicroPartition>) {
+    fn push(&mut self, part: MicroPartition) {
         if let Self::Accumulating(parts) = self {
             parts.push(part);
         } else {
@@ -26,7 +29,7 @@ impl PivotState {
         }
     }
 
-    fn finalize(&mut self) -> Vec<Arc<MicroPartition>> {
+    fn finalize(&mut self) -> Vec<MicroPartition> {
         let res = if let Self::Accumulating(parts) = self {
             std::mem::take(parts)
         } else {
@@ -78,8 +81,9 @@ impl BlockingSink for PivotSink {
     #[instrument(skip_all, name = "PivotSink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         state.push(input);
@@ -91,12 +95,15 @@ impl BlockingSink for PivotSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let pivot_params = self.pivot_params.clone();
         spawner
             .spawn(
                 async move {
-                    let all_parts = states.into_iter().flat_map(|mut state| state.finalize());
+                    let all_parts: Vec<_> = states
+                        .into_iter()
+                        .flat_map(|mut state| state.finalize())
+                        .collect();
                     let concated = MicroPartition::concat(all_parts)?;
 
                     let agged = if pivot_params.pre_agg {
@@ -114,13 +121,13 @@ impl BlockingSink for PivotSink {
                         concated
                     };
 
-                    let pivoted = Arc::new(agged.pivot(
+                    let pivoted = agged.pivot(
                         &pivot_params.group_by,
                         pivot_params.pivot_column.clone(),
                         pivot_params.value_column.clone(),
                         pivot_params.names.clone(),
-                    )?);
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![pivoted]))
+                    )?;
+                    Ok(BlockingSinkOutput::Partitions(vec![pivoted]))
                 },
                 Span::current(),
             )
@@ -155,7 +162,7 @@ impl BlockingSink for PivotSink {
         display
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         Ok(PivotState::Accumulating(vec![]))
     }
 }

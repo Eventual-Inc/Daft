@@ -17,6 +17,7 @@ common-version = {path = "src/common/version", default-features = false}
 daft-ai = {path = "src/daft-ai", default-features = false}
 daft-algebra = {path = "src/daft-algebra", default-features = false}
 daft-catalog = {path = "src/daft-catalog", default-features = false}
+daft-checkpoint = {path = "src/daft-checkpoint", default-features = false}
 daft-cli = {path = "src/daft-cli", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-context = {path = "src/daft-context", default-features = false}
@@ -100,7 +101,6 @@ python = [
   "daft-scan/python",
   "daft-sql/python",
   "daft-session/python",
-  "daft-shuffles/python",
   "daft-stats/python",
   "daft-recordbatch/python",
   "daft-writers/python"
@@ -184,14 +184,13 @@ members = [
   "src/daft-ai",
   "src/daft-algebra",
   "src/daft-catalog",
+  "src/daft-checkpoint",
   "src/daft-context",
   "src/daft-core",
   "src/daft-csv",
   "src/daft-dashboard",
   "src/daft-dsl",
   "src/daft-ext",
-  "src/daft-ext-abi",
-  "src/daft-ext-core",
   "src/daft-ext-internal",
   "src/daft-ext-macros",
   "src/daft-file",
@@ -271,11 +270,9 @@ daft-catalog = {path = "src/daft-catalog"}
 daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
-daft-ext-abi = {path = "src/daft-ext-abi"}
-daft-ext-core = {path = "src/daft-ext-core"}
 daft-ext-internal = {path = "src/daft-ext-internal"}
-daft-ext-macros = {path = "src/daft-ext-macros"}
-daft-ext = {path = "src/daft-ext"}
+daft-ext-macros = {path = "src/daft-ext-macros", version = "0.1.1"}
+daft-ext = {path = "src/daft-ext", version = "0.1.1"}
 daft-file = {path = "src/daft-file"}
 daft-functions = {path = "src/daft-functions"}
 daft-functions-binary = {path = "src/daft-functions-binary"}
@@ -360,12 +357,13 @@ tokio-util = "0.7.17"
 tonic = "0.14.2"
 tonic-build = "0.14.2"
 tracing = {version = "0.1", features = ["log"]}
-tracing-subscriber = {version = "0.3.22", default-features = false, features = ["std", "fmt", "ansi", "env-filter"]}
+tracing-subscriber = {version = "0.3.22", default-features = false, features = ["std", "fmt", "ansi", "env-filter", "json"]}
 typetag = "0.2.21"
 url = "2.4.0"
 uuid = {version = "1.19.0", features = ["v4"]}
 xxhash-rust = {version = "0.8.15", features = ["const_xxh3", "const_xxh64", "const_xxh32", "xxh64", "xxh3", "xxh32"]}
 libc = {version = "^0.2.150", default-features = false}
+hex = "0.4.3"
 
 [workspace.dependencies.bincode]
 version = "2.0.1"

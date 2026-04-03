@@ -11,12 +11,14 @@ use tracing::{Span, instrument};
 
 use super::{
     blocking_sink::{
-        BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult,
-        BlockingSinkSinkResult,
+        BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
     },
     window_base::{WindowBaseState, WindowSinkParams},
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
+};
 
 struct WindowPartitionOnlyParams {
     agg_exprs: Vec<BoundAggExpr>,
@@ -71,8 +73,9 @@ impl BlockingSink for WindowPartitionOnlySink {
     #[instrument(skip_all, name = "WindowPartitionOnlySink::sink")]
     fn sink(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::State,
+        _runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.window_partition_only_params.clone();
@@ -93,7 +96,7 @@ impl BlockingSink for WindowPartitionOnlySink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.window_partition_only_params.clone();
         let num_partitions = self.num_partitions();
 
@@ -147,9 +150,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                     if results.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                            empty_result,
-                        )]));
+                        return Ok(BlockingSinkOutput::Partitions(vec![empty_result]));
                     }
 
                     let final_result = MicroPartition::new_loaded(
@@ -158,9 +159,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                         None,
                     );
 
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        final_result,
-                    )]))
+                    Ok(BlockingSinkOutput::Partitions(vec![final_result]))
                 },
                 Span::current(),
             )
@@ -196,7 +195,7 @@ impl BlockingSink for WindowPartitionOnlySink {
         display
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         WindowBaseState::make_base_state(self.num_partitions())
     }
 }

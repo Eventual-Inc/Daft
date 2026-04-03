@@ -304,6 +304,7 @@ impl PushDownFilter {
                 }
             }
             LogicalPlan::Sort(_)
+            | LogicalPlan::Shuffle(_)
             | LogicalPlan::Repartition(_)
             | LogicalPlan::IntoBatches(_)
             | LogicalPlan::IntoPartitions(_) => {

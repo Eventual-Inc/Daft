@@ -29,6 +29,48 @@ use crate::{
     series::Series,
 };
 
+type CompareKernel = fn(&dyn Datum, &dyn Datum) -> Result<arrow::array::BooleanArray, ArrowError>;
+
+#[inline(never)]
+fn compare_arrays(
+    lhs_name: &str,
+    lhs_len: usize,
+    lhs: ArrayRef,
+    rhs_name: &str,
+    rhs_len: usize,
+    rhs: ArrayRef,
+    op: CompareKernel,
+) -> DaftResult<BooleanArray> {
+    let arrow_arr = match (lhs_len, rhs_len) {
+        (1, 1) => op(
+            &arrow::array::Scalar::new(lhs.clone()),
+            &arrow::array::Scalar::new(rhs.clone()),
+        )?,
+        (1, _) => op(&arrow::array::Scalar::new(lhs), &rhs)?,
+        (_, 1) => op(&lhs, &arrow::array::Scalar::new(rhs))?,
+        (l, r) if l == r => op(&lhs, &rhs)?,
+        (l, r) => {
+            return Err(DaftError::ValueError(format!(
+                "trying to compare different length arrays: {lhs_name}: {l} vs {rhs_name}: {r}"
+            )));
+        }
+    };
+
+    BooleanArray::from_arrow(Field::new(lhs_name, DataType::Boolean), Arc::new(arrow_arr))
+}
+
+#[inline(never)]
+fn compare_array_to_scalar(
+    name: &str,
+    lhs: &dyn Datum,
+    rhs: &dyn Datum,
+    op: CompareKernel,
+) -> DaftResult<BooleanArray> {
+    let arrow_arr = op(lhs, rhs)?;
+
+    BooleanArray::from_arrow(Field::new(name, DataType::Boolean), Arc::new(arrow_arr))
+}
+
 fn compare_op_matches_ordering(op: Operator, ordering: Ordering) -> bool {
     match op {
         Operator::Eq | Operator::EqNullSafe => ordering == Ordering::Equal,
@@ -478,31 +520,16 @@ where
 }
 
 impl<T> DataArray<T> {
-    fn compare_op(
-        &self,
-        rhs: &Self,
-        op: impl Fn(&dyn Datum, &dyn Datum) -> Result<arrow::array::BooleanArray, ArrowError>,
-    ) -> DaftResult<BooleanArray> {
-        let arrow_arr = match (self.len(), rhs.len()) {
-            (1, 1) => op(
-                &arrow::array::Scalar::new(self.to_arrow()),
-                &arrow::array::Scalar::new(rhs.to_arrow()),
-            )?,
-            (1, _) => op(&arrow::array::Scalar::new(self.to_arrow()), &rhs.to_arrow())?,
-            (_, 1) => op(&self.to_arrow(), &arrow::array::Scalar::new(rhs.to_arrow()))?,
-            (l, r) if l == r => op(&self.to_arrow(), &rhs.to_arrow())?,
-            (l, r) => {
-                return Err(DaftError::ValueError(format!(
-                    "trying to compare different length arrays: {}: {l} vs {}: {r}",
-                    self.name(),
-                    rhs.name()
-                )));
-            }
-        };
-
-        BooleanArray::from_arrow(
-            Field::new(self.name(), DataType::Boolean),
-            Arc::new(arrow_arr),
+    #[inline(never)]
+    fn compare_op(&self, rhs: &Self, op: CompareKernel) -> DaftResult<BooleanArray> {
+        compare_arrays(
+            self.name(),
+            self.len(),
+            self.to_arrow(),
+            rhs.name(),
+            rhs.len(),
+            rhs.to_arrow(),
+            op,
         )
     }
 }
@@ -514,6 +541,7 @@ impl<T> DaftCompare<&Self> for DataArray<T> {
         self.compare_op(rhs, cmp::eq)
     }
 
+    #[inline(never)]
     fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
         if self.data_type().is_null() {
             let len = match (self.len(), rhs.len()) {
@@ -624,18 +652,13 @@ where
     fn compare_to_scalar(
         &self,
         rhs: impl ToPrimitive,
-        op: impl Fn(&dyn Datum, &dyn Datum) -> Result<arrow::array::BooleanArray, ArrowError>,
+        op: CompareKernel,
     ) -> DaftResult<BooleanArray> {
         let rhs: <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native =
             NumCast::from(rhs).expect("could not cast to underlying DataArray type");
         let rhs = PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::new_scalar(rhs);
 
-        let arrow_arr = op(&self.to_arrow(), &rhs)?;
-
-        BooleanArray::from_arrow(
-            Field::new(self.name(), DataType::Boolean),
-            Arc::new(arrow_arr),
-        )
+        compare_array_to_scalar(self.name(), &self.to_arrow(), &rhs, op)
     }
 }
 
@@ -931,15 +954,10 @@ macro_rules! impl_scalar_compare {
             fn compare_to_scalar(
                 &self,
                 rhs: $scalar_type,
-                op: impl Fn(&dyn Datum, &dyn Datum) -> Result<arrow::array::BooleanArray, ArrowError>,
+                op: CompareKernel,
             ) -> DaftResult<BooleanArray> {
                 let rhs = <$arrow_scalar>::new_scalar(rhs);
-                let arrow_arr = op(&self.to_arrow(), &rhs)?;
-
-                BooleanArray::from_arrow(
-                    Field::new(self.name(), DataType::Boolean),
-                    Arc::new(arrow_arr),
-                )
+                compare_array_to_scalar(self.name(), &self.to_arrow(), &rhs, op)
             }
         }
 

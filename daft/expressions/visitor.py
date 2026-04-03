@@ -83,6 +83,11 @@ class ExpressionVisitor(ABC, Generic[R]):
         """Visit a function call expression."""
         ...
 
+    @abstractmethod
+    def visit_coalesce(self, args: list[Expression]) -> R:
+        """Visit a coalesce expression."""
+        ...
+
 
 class PredicateVisitor(ExpressionVisitor[R]):
     """PredicateVisitor is an ExpressionVisitor with helper methods for predicates."""
@@ -169,4 +174,7 @@ class _ColumnVisitor(ExpressionVisitor[set[str]]):
         return self.visit(expr)
 
     def visit_function(self, name: str, args: list[Expression]) -> set[str]:
+        return set().union(*(self.visit(arg) for arg in args))
+
+    def visit_coalesce(self, args: list[Expression]) -> set[str]:
         return set().union(*(self.visit(arg) for arg in args))

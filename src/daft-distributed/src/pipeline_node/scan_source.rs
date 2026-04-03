@@ -106,10 +106,6 @@ impl ScanSourceNode {
         }
     }
 
-    pub fn into_node(self) -> DistributedPipelineNode {
-        DistributedPipelineNode::new(Arc::new(self))
-    }
-
     fn make_source_task(self: &Arc<Self>, scan_task: ScanTaskRef) -> SwordfishTaskBuilder {
         let physical_scan = LocalPhysicalPlan::physical_scan(
             self.node_id(),
@@ -120,7 +116,7 @@ impl ScanSourceNode {
             LocalNodeContext::new(Some(self.node_id() as usize)),
         );
 
-        SwordfishTaskBuilder::new(physical_scan, self.as_ref())
+        SwordfishTaskBuilder::new(physical_scan, self.as_ref(), self.node_id())
             .with_scan_tasks(self.node_id(), vec![scan_task])
     }
 }
@@ -212,7 +208,7 @@ impl PipelineNodeImpl for ScanSourceNode {
         res
     }
 
-    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
         Arc::new(SourceStats::new(meter, self.context()))
     }
 
@@ -230,8 +226,9 @@ impl PipelineNodeImpl for ScanSourceNode {
                 LocalNodeContext::new(Some(self.node_id() as usize)),
             );
 
-            let empty_scan_task = SwordfishTaskBuilder::new(physical_scan, self.as_ref())
-                .with_scan_tasks(self.node_id(), vec![]);
+            let empty_scan_task =
+                SwordfishTaskBuilder::new(physical_scan, self.as_ref(), self.node_id())
+                    .with_scan_tasks(self.node_id(), vec![]);
             TaskBuilderStream::new(stream::iter(std::iter::once(empty_scan_task)).boxed())
         } else {
             let slf = self.clone();

@@ -36,7 +36,6 @@ def _row_to_pydict(row: ray.data.row.TableRow | dict) -> dict:
     return row.as_pydict()
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_ray_dataset_all_arrow(n_partitions: int):
     df = daft.from_pydict(DATA).repartition(n_partitions)
@@ -60,7 +59,6 @@ def test_to_ray_dataset_all_arrow(n_partitions: int):
     )
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.skipif(
     RAY_VERSION >= (2, 5, 0), reason="Ray Datasets versions >= 2.5.0 no longer support Python objects as rows"
 )
@@ -87,7 +85,6 @@ def test_to_ray_dataset_with_py(n_partitions: int):
     )
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_ray_dataset_with_numpy(n_partitions: int):
     df = daft.from_pydict(DATA).repartition(n_partitions)
@@ -119,7 +116,6 @@ def test_to_ray_dataset_with_numpy(n_partitions: int):
     )
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Needs to run on Ray runner")
 @pytest.mark.skipif(RAY_VERSION < (2, 2, 0), reason="Variable-shaped tensor columns not supported in Ray < 2.1.0")
 @pytest.mark.parametrize("n_partitions", [1, 2])
 def test_to_ray_dataset_with_numpy_variable_shaped(n_partitions: int):
@@ -217,7 +213,7 @@ def test_from_ray_dataset_tensor(n_partitions: int):
     out_sorted = {"int": int_col, "np": np_col}
     expected = {
         "int": list(range(8)),
-        "np": [np.ones((3, 3)) for i in range(8)],
+        "np": [np.ones((3, 3)) for _ in range(8)],
     }
     np.testing.assert_equal(out_sorted, expected)
 

@@ -6,7 +6,10 @@ use daft_local_plan::{ExecutionStats, PyLocalPhysicalPlan, SourceId, python::PyI
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
-    pipeline_node::MaterializedOutput,
+    pipeline_node::{
+        FlightShufflePartitionRef as RustFlightShufflePartitionRef, MaterializedOutput,
+        ShufflePartitionRef, ShuffleWriteOutput, TaskOutput,
+    },
     scheduling::{
         task::{SwordfishTask, Task, TaskContext, TaskResultHandle, TaskStatus},
         worker::WorkerId,
@@ -17,6 +20,8 @@ use crate::{
 #[derive(Clone)]
 pub(crate) enum RayTaskResult {
     Success(Vec<RayPartitionRef>, Vec<u8>),
+    RayShuffleSuccess(Vec<RayPartitionRef>, Vec<u8>),
+    FlightShuffleSuccess(Vec<FlightShufflePartitionRef>, Vec<u8>),
     WorkerDied(),
     WorkerUnavailable(),
 }
@@ -26,6 +31,22 @@ impl RayTaskResult {
     #[staticmethod]
     fn success(ray_part_refs: Vec<RayPartitionRef>, stats_serialized: Vec<u8>) -> Self {
         Self::Success(ray_part_refs, stats_serialized)
+    }
+
+    #[staticmethod]
+    fn ray_shuffle_success(
+        shuffle_part_refs: Vec<RayPartitionRef>,
+        stats_serialized: Vec<u8>,
+    ) -> Self {
+        Self::RayShuffleSuccess(shuffle_part_refs, stats_serialized)
+    }
+
+    #[staticmethod]
+    fn flight_shuffle_success(
+        shuffle_part_refs: Vec<FlightShufflePartitionRef>,
+        stats_serialized: Vec<u8>,
+    ) -> Self {
+        Self::FlightShuffleSuccess(shuffle_part_refs, stats_serialized)
     }
 
     #[staticmethod]
@@ -105,7 +126,41 @@ impl TaskResultHandle for RayTaskResultHandle {
                     );
 
                     TaskStatus::Success {
-                        result: materialized_output,
+                        result: TaskOutput::Materialized(materialized_output),
+                        stats,
+                    }
+                }
+                Ok(RayTaskResult::RayShuffleSuccess(ray_part_refs, stats_serialized)) => {
+                    let stats: ExecutionStats = ExecutionStats::decode(&stats_serialized);
+                    let shuffle_output = ShuffleWriteOutput::new(
+                        ray_part_refs
+                            .into_iter()
+                            .map(|ray_part_ref| {
+                                ShufflePartitionRef::Ray(Arc::new(ray_part_ref) as PartitionRef)
+                            })
+                            .collect(),
+                        worker_id.clone(),
+                        task_id,
+                    );
+
+                    TaskStatus::Success {
+                        result: TaskOutput::ShuffleWrite(shuffle_output),
+                        stats,
+                    }
+                }
+                Ok(RayTaskResult::FlightShuffleSuccess(shuffle_part_refs, stats_serialized)) => {
+                    let stats: ExecutionStats = ExecutionStats::decode(&stats_serialized);
+                    let shuffle_output = ShuffleWriteOutput::new(
+                        shuffle_part_refs
+                            .into_iter()
+                            .map(ShufflePartitionRef::from)
+                            .collect(),
+                        worker_id.clone(),
+                        task_id,
+                    );
+
+                    TaskStatus::Success {
+                        result: TaskOutput::ShuffleWrite(shuffle_output),
                         stats,
                     }
                 }
@@ -169,6 +224,57 @@ impl Partition for RayPartitionRef {
     }
     fn num_rows(&self) -> usize {
         self.num_rows
+    }
+}
+
+#[pyclass(
+    module = "daft.daft",
+    name = "FlightShufflePartitionRef",
+    frozen,
+    from_py_object
+)]
+#[derive(Debug, Clone)]
+pub(crate) struct FlightShufflePartitionRef {
+    pub shuffle_id: u64,
+    pub partition_idx: usize,
+    pub server_address: String,
+    pub cache_id: u32,
+    pub num_rows: usize,
+    pub size_bytes: usize,
+}
+
+#[pymethods]
+impl FlightShufflePartitionRef {
+    #[new]
+    pub fn new(
+        shuffle_id: u64,
+        partition_idx: usize,
+        server_address: String,
+        cache_id: u32,
+        num_rows: usize,
+        size_bytes: usize,
+    ) -> Self {
+        Self {
+            shuffle_id,
+            partition_idx,
+            server_address,
+            cache_id,
+            num_rows,
+            size_bytes,
+        }
+    }
+}
+
+impl From<FlightShufflePartitionRef> for ShufflePartitionRef {
+    fn from(py_ref: FlightShufflePartitionRef) -> Self {
+        Self::Flight(RustFlightShufflePartitionRef {
+            shuffle_id: py_ref.shuffle_id,
+            partition_idx: py_ref.partition_idx,
+            server_address: py_ref.server_address,
+            cache_id: py_ref.cache_id,
+            num_rows: py_ref.num_rows,
+            size_bytes: py_ref.size_bytes,
+        })
     }
 }
 

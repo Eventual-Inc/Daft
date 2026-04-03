@@ -1,3 +1,4 @@
+pub mod current;
 mod time;
 mod to_string;
 mod total;
@@ -5,6 +6,7 @@ pub mod truncate;
 mod unix_timestamp;
 
 use common_error::{DaftResult, ensure};
+use current::{CurrentDate, CurrentTimestamp, CurrentTimezone};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
@@ -14,7 +16,7 @@ use daft_dsl::{
     functions::{FunctionArgs, FunctionModule, FunctionRegistry, ScalarUDF, UnaryArg},
 };
 use serde::{Deserialize, Serialize};
-use time::Time;
+use time::{ConvertTimeZone, ReplaceTimeZone, Time};
 use truncate::Truncate;
 use unix_timestamp::UnixTimestamp;
 
@@ -97,6 +99,8 @@ impl FunctionModule for TemporalFunctions {
         parent.add_fn(Second);
         parent.add_fn(Time);
         parent.add_fn(to_string::ToString);
+        parent.add_fn(ConvertTimeZone);
+        parent.add_fn(ReplaceTimeZone);
         parent.add_fn(Truncate);
         parent.add_fn(TotalDays);
         parent.add_fn(TotalHours);
@@ -109,5 +113,8 @@ impl FunctionModule for TemporalFunctions {
         parent.add_fn(WeekOfYear);
         parent.add_fn(Year);
         parent.add_fn(UnixTimestamp);
+        parent.add_fn(CurrentDate);
+        parent.add_fn(CurrentTimestamp);
+        parent.add_fn(CurrentTimezone);
     }
 }

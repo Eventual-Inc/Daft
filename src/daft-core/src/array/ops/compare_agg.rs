@@ -11,9 +11,10 @@ use crate::{
     datatypes::*,
 };
 
+#[inline(never)]
 fn grouped_cmp_native<T, F>(
     array: &DataArray<T>,
-    mut op: F,
+    op: F,
     groups: &GroupIndices,
 ) -> DaftResult<DataArray<T>>
 where
@@ -41,7 +42,7 @@ where
             groups.iter().map(|g| {
                 g.iter()
                     .map(|i| array.get(*i as usize).unwrap())
-                    .reduce(&mut op)
+                    .reduce(&op)
                     .unwrap()
             }),
         )
@@ -123,7 +124,7 @@ where
             groups.iter().map(|g| {
                 g.iter()
                     .map(|i| data_array.get(*i as usize).unwrap())
-                    .reduce(|l, r| op(l, r))
+                    .reduce(&op)
                     .unwrap()
             }),
         ))
@@ -182,7 +183,7 @@ where
             groups.iter().map(|g| {
                 g.iter()
                     .map(|i| data_array.get(*i as usize).unwrap())
-                    .reduce(|l, r| op(l, r))
+                    .reduce(&op)
                     .unwrap()
             }),
         ))
@@ -248,7 +249,7 @@ where
             arrow::array::FixedSizeBinaryArray::try_from_iter(groups.iter().map(|g| {
                 g.iter()
                     .map(|i| data_array.get(*i as usize).unwrap())
-                    .reduce(|l, r| op(l, r))
+                    .reduce(&op)
                     .unwrap()
             }))?;
         FixedSizeBinaryArray::from_arrow(data_array.field.clone(), Arc::new(arrow_result))
@@ -287,9 +288,11 @@ impl DaftCompareAggable for DataArray<FixedSizeBinaryType> {
     }
 }
 
-fn grouped_cmp_bool(
+/// Helper for getting the min/max of a boolean array grouped by a group indices.
+/// When `FIND_VAL` is true (aka max), we are trying to find a true value per group.
+/// When `FIND_VAL` is false (aka min), we are trying to find a false value per group.
+fn grouped_cmp_bool<const FIND_VAL: bool>(
     data_array: &BooleanArray,
-    val_to_find: bool,
     groups: &GroupIndices,
 ) -> DaftResult<BooleanArray> {
     if data_array.null_count() > 0 {
@@ -301,7 +304,7 @@ fn grouped_cmp_bool(
                     (None, None) => None,
                     (None, Some(r)) => Some(r),
                     (Some(l), None) => Some(l),
-                    (Some(l), Some(r)) => Some((l | r) ^ val_to_find),
+                    (Some(l), Some(r)) => Some(if FIND_VAL { l | r } else { l & r }),
                 });
             reduced_val.unwrap_or_default()
         });
@@ -313,9 +316,9 @@ fn grouped_cmp_bool(
                 let reduced_val = g
                     .iter()
                     .map(|i| data_array.get(*i as usize).unwrap())
-                    .find(|v| *v == val_to_find);
+                    .find(|v| *v == FIND_VAL);
                 match reduced_val {
-                    None => !val_to_find,
+                    None => !FIND_VAL,
                     Some(v) => v,
                 }
             }),
@@ -339,11 +342,11 @@ impl DaftCompareAggable for DataArray<BooleanType> {
     }
 
     fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
-        grouped_cmp_bool(self, false, groups)
+        grouped_cmp_bool::<false>(self, groups)
     }
 
     fn grouped_max(&self, groups: &GroupIndices) -> Self::Output {
-        grouped_cmp_bool(self, true, groups)
+        grouped_cmp_bool::<true>(self, groups)
     }
 }
 

@@ -8,8 +8,8 @@ use url::Url;
 use urlencoding::decode;
 
 use crate::{
-    ChunkSpec, FileFormatConfig, JsonSourceConfig, ScanSource, ScanTask, ScanTaskRef, SourceConfig,
-    StorageConfig,
+    ChunkSpec, FileFormatConfig, JsonSourceConfig, ScanSourceKind, ScanTask, ScanTaskRef,
+    SourceConfig, StorageConfig,
 };
 
 type BoxScanTaskIter<'a> = Box<dyn Iterator<Item = DaftResult<ScanTaskRef>> + 'a>;
@@ -32,7 +32,7 @@ pub fn split_by_jsonl_ranges<'a>(
                 ) = (
                     t.source_config.as_ref(),
                     &t.sources[..],
-                    t.sources.first().map(ScanSource::get_chunk_spec),
+                    t.sources.first().map(|s| s.get_chunk_spec()),
                 ) {
                     let path = source.get_path();
                     if !supports_split(path) {
@@ -41,7 +41,7 @@ pub fn split_by_jsonl_ranges<'a>(
 
                     // Determine file size; prefer cached size, else fetch.
                     let size_bytes =
-                        resolve_source_size(path, source.get_size_bytes(), &t.storage_config)?;
+                        resolve_source_size(path, source.size_bytes, &t.storage_config)?;
 
                     if size_bytes <= cfg.scan_tasks_max_size_bytes {
                         return Ok(Box::new(std::iter::once(Ok(t))));
@@ -109,9 +109,12 @@ pub fn split_by_jsonl_ranges<'a>(
                         let end = w[1];
                         assert!(end > start, "Invalid chunk range: start={start}, end={end}");
                         let mut new_source = source.clone();
-                        if let ScanSource::File { chunk_spec, .. } = &mut new_source {
+                        if let ScanSourceKind::File { chunk_spec, .. } = &mut new_source.kind {
                             *chunk_spec = Some(ChunkSpec::Bytes { start, end });
                         }
+                        new_source.size_bytes = Some((end - start) as u64);
+                        new_source.metadata = None;
+                        new_source.statistics = None;
                         let new_task = ScanTask::new(
                             vec![new_source],
                             t.source_config.clone(),
@@ -232,19 +235,21 @@ mod tests {
     };
 
     use super::*;
-    use crate::{JsonSourceConfig, ScanTask, StorageConfig};
+    use crate::{JsonSourceConfig, ScanSource, ScanTask, StorageConfig};
 
     fn make_scan_task(path: &str, size_bytes: u64) -> ScanTask {
         ScanTask::new(
-            vec![ScanSource::File {
-                path: path.to_string(),
-                chunk_spec: None,
+            vec![ScanSource {
                 size_bytes: Some(size_bytes),
-                iceberg_delete_files: None,
                 metadata: None,
-                partition_spec: None,
                 statistics: None,
-                parquet_metadata: None,
+                partition_spec: None,
+                kind: ScanSourceKind::File {
+                    path: path.to_string(),
+                    chunk_spec: None,
+                    iceberg_delete_files: None,
+                    parquet_metadata: None,
+                },
             }],
             Arc::new(SourceConfig::File(FileFormatConfig::Json(
                 JsonSourceConfig::default(),
@@ -320,10 +325,10 @@ mod tests {
         for t in tasks {
             let t = t.unwrap();
             let src = &t.sources[0];
-            if let crate::ScanSource::File {
+            if let crate::ScanSourceKind::File {
                 chunk_spec: Some(crate::ChunkSpec::Bytes { start, end }),
                 ..
-            } = src
+            } = &src.kind
             {
                 assert!(
                     end > start,

@@ -123,6 +123,11 @@ pub const ROWS_IN_KEY: &str = "rows.in";
 pub const ROWS_OUT_KEY: &str = "rows.out";
 pub const ROWS_WRITTEN_KEY: &str = "rows.written";
 
+// Join metrics
+pub const JOIN_BUILD_ROWS_INSERTED_KEY: &str = "rows.join.build_inserted";
+pub const JOIN_PROBE_ROWS_IN_KEY: &str = "rows.join.probe_in";
+pub const JOIN_PROBE_ROWS_OUT_KEY: &str = "rows.join.probe_out";
+
 // Task metrics
 pub const TASK_ACTIVE_KEY: &str = "task.active";
 pub const TASK_COMPLETED_KEY: &str = "task.completed";

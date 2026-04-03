@@ -123,6 +123,11 @@ impl RecordBatch {
             groupby_table.take(&indices_as_arr)?
         };
 
-        Self::from_nonempty_columns([&group_keys_table.columns[..], &pivoted_cols[..]].concat())
+        let group_keys_series: Vec<Series> = group_keys_table
+            .columns
+            .iter()
+            .map(|c| c.as_materialized_series().clone())
+            .collect();
+        Self::from_nonempty_columns([group_keys_series.as_slice(), &pivoted_cols[..]].concat())
     }
 }

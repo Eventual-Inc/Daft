@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    hash::{Hash, Hasher},
     sync::{Arc, LockResult},
 };
 
@@ -109,10 +108,9 @@ pub enum LocalPhysicalPlan {
     WindowOrderByOnly(WindowOrderByOnly),
 
     // Flotilla Only Nodes
-    Repartition(Repartition),
     IntoPartitions(IntoPartitions),
-    FlightShuffleWrite(FlightShuffleWrite),
-    FlightShuffleRead(FlightShuffleRead),
+    RepartitionWrite(RepartitionWrite),
+    ShuffleRead(ShuffleRead),
     SortMergeJoin(SortMergeJoin),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
@@ -166,10 +164,9 @@ impl LocalPhysicalPlan {
             | Self::AsofJoin(AsofJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::CommitWrite(CommitWrite { stats_state, .. })
-            | Self::Repartition(Repartition { stats_state, .. })
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
-            | Self::FlightShuffleWrite(FlightShuffleWrite { stats_state, .. })
-            | Self::FlightShuffleRead(FlightShuffleRead { stats_state, .. })
+            | Self::RepartitionWrite(RepartitionWrite { stats_state, .. })
+            | Self::ShuffleRead(ShuffleRead { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -216,10 +213,9 @@ impl LocalPhysicalPlan {
             | Self::SortMergeJoin(SortMergeJoin { context, .. })
             | Self::PhysicalWrite(PhysicalWrite { context, .. })
             | Self::CommitWrite(CommitWrite { context, .. })
-            | Self::Repartition(Repartition { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
-            | Self::FlightShuffleWrite(FlightShuffleWrite { context, .. })
-            | Self::FlightShuffleRead(FlightShuffleRead { context, .. })
+            | Self::RepartitionWrite(RepartitionWrite { context, .. })
+            | Self::ShuffleRead(ShuffleRead { context, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { context, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { context, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -958,25 +954,6 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn repartition(
-        input: LocalPhysicalPlanRef,
-        repartition_spec: RepartitionSpec,
-        num_partitions: usize,
-        schema: SchemaRef,
-        stats_state: StatsState,
-        context: LocalNodeContext,
-    ) -> LocalPhysicalPlanRef {
-        Self::Repartition(Repartition {
-            input,
-            repartition_spec,
-            num_partitions,
-            schema,
-            stats_state,
-            context,
-        })
-        .arced()
-    }
-
     pub fn into_partitions(
         input: LocalPhysicalPlanRef,
         num_partitions: usize,
@@ -1016,40 +993,38 @@ impl LocalPhysicalPlan {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn flight_shuffle_write(
+    pub fn repartition_write(
         input: LocalPhysicalPlanRef,
-        partition_by: Option<Vec<ExprRef>>,
         num_partitions: usize,
         schema: SchemaRef,
-        shuffle_id: u64,
-        shuffle_dirs: Vec<String>,
-        compression: Option<String>,
+        backend: RepartitionWriteBackend,
+        repartition_spec: RepartitionSpec,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
-        Self::FlightShuffleWrite(FlightShuffleWrite {
+        Self::RepartitionWrite(RepartitionWrite {
             input,
             num_partitions,
-            partition_by,
             schema,
-            shuffle_id,
-            shuffle_dirs,
-            compression,
+            backend,
+            repartition_spec,
             stats_state,
             context,
         })
         .arced()
     }
 
-    pub fn flight_shuffle_read(
+    pub fn shuffle_read(
         source_id: SourceId,
         schema: SchemaRef,
+        backend: ShuffleReadBackend,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
-        Self::FlightShuffleRead(FlightShuffleRead {
+        Self::ShuffleRead(ShuffleRead {
             source_id,
             schema,
+            backend,
             stats_state,
             context,
         })
@@ -1098,10 +1073,9 @@ impl LocalPhysicalPlan {
             Self::DataSink(DataSink { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
             Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
-            Self::Repartition(Repartition { schema, .. }) => schema,
             Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
-            Self::FlightShuffleWrite(FlightShuffleWrite { schema, .. }) => schema,
-            Self::FlightShuffleRead(FlightShuffleRead { schema, .. }) => schema,
+            Self::RepartitionWrite(RepartitionWrite { schema, .. }) => schema,
+            Self::ShuffleRead(ShuffleRead { schema, .. }) => schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
             Self::VLLMProject(VLLMProject { schema, .. }) => schema,
@@ -1182,10 +1156,9 @@ impl LocalPhysicalPlan {
             Self::DistributedActorPoolProject(DistributedActorPoolProject { input, .. }) => {
                 vec![input.clone()]
             }
-            Self::Repartition(Repartition { input, .. }) => vec![input.clone()],
             Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
-            Self::FlightShuffleWrite(FlightShuffleWrite { input, .. }) => vec![input.clone()],
-            Self::FlightShuffleRead(FlightShuffleRead { .. }) => vec![], // No input children
+            Self::RepartitionWrite(RepartitionWrite { input, .. }) => vec![input.clone()],
+            Self::ShuffleRead(ShuffleRead { .. }) => vec![], // No input children
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
             Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
             Self::VLLMProject(VLLMProject { input, .. }) => vec![input.clone()],
@@ -1195,7 +1168,7 @@ impl LocalPhysicalPlan {
     pub fn with_new_children(&self, children: &[Arc<Self>]) -> Arc<Self> {
         match children {
             [] => panic!(
-                "LocalPhysicalPlan::with_new_children: Empty children not handled for FlightShuffleRead"
+                "LocalPhysicalPlan::with_new_children: Empty children not handled for ShuffleRead"
             ),
             [new_child] => match self {
                 Self::PhysicalScan(_) | Self::PlaceholderScan(_) | Self::InMemoryScan(_) => {
@@ -1613,20 +1586,6 @@ impl LocalPhysicalPlan {
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
-                Self::Repartition(Repartition {
-                    repartition_spec,
-                    num_partitions,
-                    schema,
-                    context,
-                    ..
-                }) => Self::repartition(
-                    new_child.clone(),
-                    repartition_spec.clone(),
-                    *num_partitions,
-                    schema.clone(),
-                    StatsState::NotMaterialized,
-                    context.clone(),
-                ),
                 Self::IntoPartitions(IntoPartitions {
                     num_partitions,
                     context,
@@ -1654,28 +1613,24 @@ impl LocalPhysicalPlan {
                     stats_state.clone(),
                     context.clone(),
                 ),
-                Self::FlightShuffleWrite(FlightShuffleWrite {
+                Self::RepartitionWrite(RepartitionWrite {
                     num_partitions,
-                    partition_by,
                     schema,
-                    shuffle_id,
-                    shuffle_dirs,
-                    compression,
+                    backend,
+                    repartition_spec,
                     context,
                     ..
-                }) => Self::flight_shuffle_write(
+                }) => Self::repartition_write(
                     new_child.clone(),
-                    partition_by.clone(),
                     *num_partitions,
                     schema.clone(),
-                    *shuffle_id,
-                    shuffle_dirs.clone(),
-                    compression.clone(),
+                    backend.clone(),
+                    repartition_spec.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
-                Self::FlightShuffleRead(_) => panic!(
-                    "LocalPhysicalPlan::with_new_children: FlightShuffleRead should have 0 children"
+                Self::ShuffleRead(_) => panic!(
+                    "LocalPhysicalPlan::with_new_children: ShuffleRead should have 0 children"
                 ),
                 Self::HashJoin(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: HashJoin should have 2 children")
@@ -2243,17 +2198,6 @@ pub struct WindowOrderByOnly {
 
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
-pub struct Repartition {
-    pub input: LocalPhysicalPlanRef,
-    pub repartition_spec: RepartitionSpec,
-    pub num_partitions: usize,
-    pub schema: SchemaRef,
-    pub stats_state: StatsState,
-    pub context: LocalNodeContext,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct IntoPartitions {
     pub input: LocalPhysicalPlanRef,
     pub num_partitions: usize,
@@ -2274,30 +2218,46 @@ pub struct VLLMProject {
     pub context: LocalNodeContext,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum RepartitionWriteBackend {
+    Ray,
+    Flight {
+        shuffle_id: u64,
+        shuffle_dirs: Vec<String>,
+        compression: Option<String>,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ShuffleReadBackend {
+    Ray,
+    Flight {
+        shuffle_id: u64,
+        server_cache_mapping: HashMap<String, Vec<u32>>,
+    },
+}
+
 #[derive(Debug, Serialize, Deserialize)]
-pub struct FlightShuffleWrite {
+pub struct RepartitionWrite {
     pub input: LocalPhysicalPlanRef,
     pub num_partitions: usize,
-    pub partition_by: Option<Vec<ExprRef>>,
     pub schema: SchemaRef,
-    pub shuffle_id: u64,
-    pub shuffle_dirs: Vec<String>,
-    pub compression: Option<String>,
+    pub backend: RepartitionWriteBackend,
+    pub repartition_spec: RepartitionSpec,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct FlightShuffleRead {
+pub struct ShuffleRead {
     pub source_id: SourceId,
     pub schema: SchemaRef,
+    pub backend: ShuffleReadBackend,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlightShuffleReadInput {
-    pub shuffle_id: u64,
     pub partition_idx: usize,
-    pub server_cache_mapping: HashMap<String, Vec<u32>>,
 }

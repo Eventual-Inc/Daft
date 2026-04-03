@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import daft.daft as native
-from daft.arrow_utils import ensure_array, ensure_chunked_array
 from daft.daft import CountMode, ImageFormat, ImageMode, PyRecordBatch, PySeries, PySeriesIterator
 from daft.datatype import DataType, TimeUnit, _ensure_registered_super_ext_type
 from daft.dependencies import np, pa, pd
@@ -53,7 +52,6 @@ class Series:
             # If the Arrow type is not natively supported, go through the Python list path.
             return Series.from_pylist(array.to_pylist(), name=name, pyobj="force")
         if isinstance(array, pa.Array):
-            array = ensure_array(array)
             if isinstance(array.type, pa.FixedShapeTensorType):
                 series = Series.from_arrow(array.storage, name=name)
                 return series.cast(dtype or DataType.from_arrow_type(array.type))
@@ -61,7 +59,6 @@ class Series:
                 pys = PySeries.from_arrow(name, array, dtype=dtype._dtype if dtype else None)
                 return Series._from_pyseries(pys)
         elif isinstance(array, pa.ChunkedArray):
-            array = ensure_chunked_array(array)
             arr_type = array.type
             if isinstance(arr_type, pa.BaseExtensionType):
                 combined_storage_array = array.cast(arr_type.storage_type).combine_chunks()
@@ -927,6 +924,9 @@ class SeriesStringNamespace(SeriesNamespace):
     def rstrip(self) -> Series:
         return self._eval_expressions("rstrip")
 
+    def strip(self) -> Series:
+        return self._eval_expressions("strip")
+
     def reverse(self) -> Series:
         return self._eval_expressions("reverse")
 
@@ -1079,6 +1079,12 @@ class SeriesDateNamespace(SeriesNamespace):
     def strftime(self, fmt: str | None = None) -> Series:
         return self._eval_expressions("strftime", format=fmt)
 
+    def convert_time_zone(self, to_timezone: str, from_timezone: str | None = None) -> Series:
+        return self._eval_expressions("convert_time_zone", to_timezone, from_timezone)
+
+    def replace_time_zone(self, timezone: str | None = None) -> Series:
+        return self._eval_expressions("replace_time_zone", timezone)
+
     def total_seconds(self) -> Series:
         return self._eval_expressions("total_seconds")
 
@@ -1163,3 +1169,9 @@ class SeriesImageNamespace(SeriesNamespace):
 
     def to_tensor(self) -> Series:
         return self._eval_expressions("to_tensor")
+
+    def hash(self, algorithm: str = "difference") -> Series:
+        return self._eval_expressions("image_hash", algorithm=algorithm)
+
+    def crop_resistant_hash(self) -> Series:
+        return self._eval_expressions("image_hash", algorithm="crop_resistant")

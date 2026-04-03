@@ -1,3 +1,5 @@
+#![feature(associated_type_defaults)]
+
 mod buffer;
 mod channel;
 mod concat;
@@ -9,6 +11,7 @@ mod pipeline;
 mod resource_manager;
 mod run;
 mod runtime_stats;
+mod shuffle_metadata;
 mod sinks;
 mod sources;
 mod streaming_sink;
@@ -25,26 +28,9 @@ use common_runtime::{JoinSet, RuntimeRef, RuntimeTask};
 use console::style;
 use resource_manager::MemoryManager;
 pub use run::ExecutionEngineResult;
-use runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle, TimedFuture};
+use runtime_stats::RuntimeStatsManagerHandle;
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};
 use tracing::Instrument;
-
-/// Control flow indicator for processing loops.
-/// Used to signal whether processing should continue or break out of a loop.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OperatorControlFlow {
-    /// Continue processing - caller should proceed with the next iteration
-    Continue,
-    /// Break processing - caller should exit the loop immediately
-    Break,
-}
-
-impl OperatorControlFlow {
-    /// Returns true if processing should continue
-    pub(crate) fn should_continue(&self) -> bool {
-        matches!(self, Self::Continue)
-    }
-}
 
 /// The `OperatorOutput` enum represents the output of an operator.
 /// It can be either `Ready` or `Pending`.
@@ -121,6 +107,15 @@ impl ExecutionRuntimeContext {
             .spawn(task.with_context(|_| PipelineExecutionSnafu { node_name }));
     }
 
+    pub async fn join_next(&mut self) -> Option<DaftResult<()>> {
+        match self.worker_set.join_next().await {
+            Some(Ok(Ok(()))) => Some(Ok(())),
+            Some(Ok(Err(e))) => Some(Err(e.into())),
+            Some(Err(e)) => Some(Err(e)),
+            None => None,
+        }
+    }
+
     pub async fn shutdown(&mut self) -> DaftResult<()> {
         self.worker_set.abort_all();
         while let Some(result) = self.worker_set.join_next().await {
@@ -157,7 +152,6 @@ impl ExecutionRuntimeContext {
 pub(crate) struct ExecutionTaskSpawner {
     runtime_ref: RuntimeRef,
     memory_manager: Arc<MemoryManager>,
-    runtime_stats: Arc<dyn RuntimeStats>,
     outer_span: tracing::Span,
 }
 
@@ -165,13 +159,11 @@ impl ExecutionTaskSpawner {
     pub fn new(
         runtime_ref: RuntimeRef,
         memory_manager: Arc<MemoryManager>,
-        runtime_stats: Arc<dyn RuntimeStats>,
         span: tracing::Span,
     ) -> Self {
         Self {
             runtime_ref,
             memory_manager,
-            runtime_stats,
             outer_span: span,
         }
     }
@@ -186,16 +178,11 @@ impl ExecutionTaskSpawner {
         F: Future<Output = DaftResult<O>> + Send + 'static,
         O: Send + 'static,
     {
-        let instrumented = future.instrument(span);
-        let timed_fut = TimedFuture::new(
-            instrumented,
-            self.runtime_stats.clone(),
-            self.outer_span.clone(),
-        );
+        let outer_span = self.outer_span.clone();
         let memory_manager = self.memory_manager.clone();
         self.runtime_ref.spawn(async move {
             let _permit = memory_manager.request_bytes(memory_request).await?;
-            timed_fut.await
+            future.instrument(span).instrument(outer_span).await
         })
     }
 
@@ -204,13 +191,11 @@ impl ExecutionTaskSpawner {
         F: Future<Output = DaftResult<O>> + Send + 'static,
         O: Send + 'static,
     {
-        let instrumented = future.instrument(inner_span);
-        let timed_fut = TimedFuture::new(
-            instrumented,
-            self.runtime_stats.clone(),
-            self.outer_span.clone(),
-        );
-        self.runtime_ref.spawn(timed_fut)
+        self.runtime_ref.spawn(
+            future
+                .instrument(inner_span)
+                .instrument(self.outer_span.clone()),
+        )
     }
 }
 

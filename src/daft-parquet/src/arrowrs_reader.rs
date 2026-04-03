@@ -13,7 +13,13 @@ use std::{
 use common_error::DaftResult;
 use common_runtime::{combine_stream, get_compute_runtime};
 use daft_core::prelude::*;
-use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, optimization::get_required_columns};
+use daft_dsl::{
+    Expr, ExprRef,
+    common_treenode::{Transformed, TreeNode},
+    expr::{Column, ResolvedColumn, UnresolvedColumn, bound_expr::BoundExpr},
+    null_lit,
+    optimization::get_required_columns,
+};
 use daft_io::{IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use daft_stats::TruthValue;
@@ -22,7 +28,7 @@ use parquet::{
     arrow::{
         ProjectionMask,
         arrow_reader::{
-            ArrowPredicateFn, ArrowReaderMetadata, ArrowReaderOptions,
+            ArrowPredicateFn, ArrowReaderMetadata, ArrowReaderOptions, ParquetRecordBatchReader,
             ParquetRecordBatchReaderBuilder, RowFilter, RowSelection, RowSelector,
         },
         async_reader::{AsyncFileReader, ParquetRecordBatchStreamBuilder},
@@ -155,6 +161,32 @@ fn build_row_filter(
     ))
 }
 
+/// Rewrite a predicate for a specific Parquet file's schema by replacing any column reference
+/// that is absent from `schema` with `null_lit()`.
+///
+/// This implements Iceberg schema evolution: columns added after a file was written don't exist
+/// in that file. Substituting null makes the predicate evaluate to null (unknown) for those
+/// columns, which propagates conservatively — row groups are never falsely pruned, and rows
+/// are never falsely excluded.
+fn substitute_missing_cols(predicate: &ExprRef, schema: &Schema) -> DaftResult<ExprRef> {
+    Ok(predicate
+        .clone()
+        .transform(|e| {
+            if let Expr::Column(col) = e.as_ref() {
+                let name = match col {
+                    Column::Unresolved(UnresolvedColumn { name, .. })
+                    | Column::Resolved(ResolvedColumn::Basic(name)) => name,
+                    _ => return Ok(Transformed::no(e)),
+                };
+                if schema.get_field(name).is_err() {
+                    return Ok(Transformed::yes(null_lit()));
+                }
+            }
+            Ok(Transformed::no(e))
+        })?
+        .data)
+}
+
 /// Build a `RowSelection` that skips the first `offset` rows.
 ///
 /// This is used to implement file-level offset when a RowFilter (predicate pushdown)
@@ -281,8 +313,11 @@ fn finalize_batch(
     if let Some(pred) = predicate
         && !predicate_pushed
     {
-        let bound = BoundExpr::try_new(pred.clone(), &table.schema)?;
-        table = table.filter(&[bound])?;
+        let pred = substitute_missing_cols(pred, &table.schema)?;
+        let bound = BoundExpr::try_new(pred, &table.schema)?;
+        let mask = table.eval_expression(&bound)?;
+        // mask_filter treats null Boolean values as false (SQL WHERE semantics).
+        table = table.mask_filter(&mask)?;
     }
 
     if read_schema.len() != return_schema.len() {
@@ -823,22 +858,19 @@ pub(crate) fn local_parquet_setup(
     })
 }
 
-/// Decode a single row group from a local parquet file, returning a Daft RecordBatch.
+/// Build an arrow-rs `ParquetRecordBatchReader` for a single row group.
 ///
-/// Opens its own file handle, builds the arrow-rs reader with the given setup state,
-/// decodes, converts to Daft, applies post-read predicate fallback if needed, and
-/// strips predicate-only columns.
-///
-/// `decoder_limit`: passed to `with_limit()` when predicate is pushed down.
-/// For single-RG reads this can be the user's num_rows; for multi-RG it should be None
-/// (limit applied after concatenation).
-pub(crate) fn decode_single_rg(
+/// Opens its own file handle, sets up projection, batch size, offset/limit,
+/// row filter, and delete rows on the reader builder. The caller can then
+/// iterate over batches individually (streaming path) or collect them all
+/// at once (bulk path).
+fn build_rg_reader(
     path: &str,
     setup: &LocalParquetSetup,
     task: &RgTask,
     predicate: Option<&ExprRef>,
     decoder_limit: Option<usize>,
-) -> DaftResult<RecordBatch> {
+) -> DaftResult<ParquetRecordBatchReader> {
     let rg_rows = setup.parquet_metadata.row_group(task.rg_idx).num_rows() as usize;
     let file = std::fs::File::open(path)
         .map_err(|e| parquet_err(format!("Failed to open '{}': {}", path, e)))?;
@@ -860,7 +892,21 @@ pub(crate) fn decode_single_rg(
         }
     }
     builder = apply_rg_filter_and_deletes(builder, setup, task, predicate, rg_rows, decoder_limit)?;
-    let reader = builder.build().map_err(parquet_err)?;
+    builder.build().map_err(parquet_err)
+}
+
+/// Decode a single row group into one concatenated Daft RecordBatch.
+///
+/// Used by the bulk read path where the caller wants a single table per RG.
+/// `decoder_limit`: passed to `with_limit()` when predicate is pushed down.
+pub(crate) fn decode_single_rg(
+    path: &str,
+    setup: &LocalParquetSetup,
+    task: &RgTask,
+    predicate: Option<&ExprRef>,
+    decoder_limit: Option<usize>,
+) -> DaftResult<RecordBatch> {
+    let reader = build_rg_reader(path, setup, task, predicate, decoder_limit)?;
     let arrow_batches: Vec<arrow::array::RecordBatch> =
         reader.collect::<Result<Vec<_>, _>>().map_err(parquet_err)?;
     let daft_batches: Vec<RecordBatch> = arrow_batches
@@ -1029,12 +1075,26 @@ pub async fn local_parquet_stream_arrowrs(
     let compute_runtime = get_compute_runtime();
 
     // 3. Per-RG mpsc channels.
+    // Use enough capacity to hold all sub-batches within a row group without
+    // blocking the decode task. Capped to avoid excessive buffering.
     let num_tasks = setup.rg_tasks.len();
+    let max_batches_per_rg = setup
+        .rg_tasks
+        .iter()
+        .map(|t| {
+            let rg_rows = setup.parquet_metadata.row_group(t.rg_idx).num_rows() as usize;
+            (rg_rows / setup.batch_size) + 1
+        })
+        .max()
+        .unwrap_or(1)
+        .min(16);
     let (output_senders, output_receivers): (Vec<_>, Vec<_>) = (0..num_tasks)
-        .map(|_| tokio::sync::mpsc::channel(1))
+        .map(|_| tokio::sync::mpsc::channel(max_batches_per_rg))
         .unzip();
 
     // 4. Driver task on compute runtime: spawn per-RG decode tasks.
+    //    Each RG yields individual batches (respecting batch_size) to preserve
+    //    morsel-level cache locality for downstream operators.
     let path_owned = path.to_string();
     let inner_runtime = compute_runtime.clone();
     let driver = compute_runtime.spawn(async move {
@@ -1046,8 +1106,8 @@ pub async fn local_parquet_stream_arrowrs(
             let pred = predicate.clone();
 
             let handle = inner_runtime.spawn(async move {
-                let result = tokio::task::block_in_place(|| {
-                    decode_single_rg(
+                let reader = tokio::task::block_in_place(|| {
+                    build_rg_reader(
                         &path,
                         &setup,
                         &setup.rg_tasks[task_idx],
@@ -1055,7 +1115,29 @@ pub async fn local_parquet_stream_arrowrs(
                         None,
                     )
                 });
-                let _ = sender.send(result).await;
+                match reader {
+                    Ok(reader) => {
+                        for arrow_batch in reader {
+                            let batch_result = tokio::task::block_in_place(|| {
+                                let arrow_batch = arrow_batch.map_err(parquet_err)?;
+                                let daft_batch = RecordBatch::try_from(&arrow_batch)?;
+                                finalize_batch(
+                                    daft_batch,
+                                    pred.as_ref(),
+                                    setup.predicate_pushed,
+                                    &setup.read_daft_schema,
+                                    &setup.return_daft_schema,
+                                )
+                            });
+                            if sender.send(batch_result).await.is_err() {
+                                break; // receiver dropped (e.g. limit reached)
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let _ = sender.send(Err(e)).await;
+                    }
+                }
                 drop(permit);
             });
             rg_handles.push(handle);
@@ -1297,8 +1379,10 @@ fn prune_row_groups(
         None => return Ok(candidates),
     };
 
-    // Bind the predicate expression to the schema.
-    let bound_pred = BoundExpr::try_new((*predicate).clone(), schema).map_err(|e| {
+    let predicate = substitute_missing_cols(predicate, schema)?;
+
+    // Bind the predicate to the schema.
+    let bound_pred = BoundExpr::try_new(predicate, schema).map_err(|e| {
         common_error::DaftError::ValueError(format!(
             "Failed to bind predicate for row group pruning on '{}': {}",
             uri, e
@@ -1405,6 +1489,118 @@ mod tests {
         // Request out-of-bounds row group.
         let result = prune_row_groups(&metadata, Some(&[999]), None, &schema, "test.parquet");
         assert!(result.is_err());
+    }
+
+    // The parquet file used by create_test_parquet_metadata() has:
+    //   a: [1,2,3,4,5]  (min=1, max=5)
+    //   b: [10,20,30,40,50]
+    // All tests below use schema = {a: Int32, b: Int32} — "c" is always absent (schema evolution).
+
+    #[test]
+    fn test_prune_row_groups_missing_column_predicate_does_not_error() {
+        // WHERE c = 1  — "c" not in file schema (schema evolution).
+        // Must not error; all row groups returned conservatively.
+        use daft_dsl::{lit, resolved_col};
+        let metadata = create_test_parquet_metadata();
+        let schema = Schema::new(vec![
+            Field::new("a", DataType::Int32),
+            Field::new("b", DataType::Int32),
+        ]);
+        let pred: ExprRef = resolved_col("c").eq(lit(1i32));
+        let result =
+            prune_row_groups(&metadata, None, Some(&pred), &schema, "test.parquet").unwrap();
+        assert_eq!(result.len(), metadata.num_row_groups());
+    }
+
+    #[test]
+    fn test_prune_row_groups_present_column_can_still_prune_when_other_column_missing() {
+        // WHERE a < 0 AND c = 1
+        // "a < 0" is definitively false (min=1, so a < 0 never holds) → row group pruned
+        // even though "c" is missing. False AND Unknown = False.
+        use daft_dsl::{lit, resolved_col};
+        let metadata = create_test_parquet_metadata();
+        let schema = Schema::new(vec![
+            Field::new("a", DataType::Int32),
+            Field::new("b", DataType::Int32),
+        ]);
+        let pred: ExprRef = resolved_col("a")
+            .lt(lit(0i32))
+            .and(resolved_col("c").eq(lit(1i32)));
+        let result =
+            prune_row_groups(&metadata, None, Some(&pred), &schema, "test.parquet").unwrap();
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_prune_row_groups_or_with_missing_column_is_conservative() {
+        // WHERE a < 0 OR c = 1
+        // "a < 0" is False, "c = 1" is Unknown → False OR Unknown = Unknown → keep row group.
+        use daft_dsl::{lit, resolved_col};
+        let metadata = create_test_parquet_metadata();
+        let schema = Schema::new(vec![
+            Field::new("a", DataType::Int32),
+            Field::new("b", DataType::Int32),
+        ]);
+        let pred: ExprRef = resolved_col("a")
+            .lt(lit(0i32))
+            .or(resolved_col("c").eq(lit(1i32)));
+        let result =
+            prune_row_groups(&metadata, None, Some(&pred), &schema, "test.parquet").unwrap();
+        assert_eq!(result.len(), metadata.num_row_groups());
+    }
+
+    #[test]
+    fn test_prune_row_groups_complex_nested_predicate_with_missing_column() {
+        // WHERE (a > 0 AND b > 0) AND (c = 'y')
+        // a, b both have values > 0 → first sub-expr is not False.
+        // c is missing → Unknown. (not-False AND Unknown) = Unknown → keep row group.
+        use daft_dsl::{lit, resolved_col};
+        let metadata = create_test_parquet_metadata();
+        let schema = Schema::new(vec![
+            Field::new("a", DataType::Int32),
+            Field::new("b", DataType::Int32),
+        ]);
+        let ab = resolved_col("a")
+            .gt(lit(0i32))
+            .and(resolved_col("b").gt(lit(0i32)));
+        let pred: ExprRef = ab.and(resolved_col("c").eq(lit("y")));
+        let result =
+            prune_row_groups(&metadata, None, Some(&pred), &schema, "test.parquet").unwrap();
+        assert_eq!(result.len(), metadata.num_row_groups());
+    }
+
+    #[test]
+    fn test_prune_row_groups_is_null_on_missing_column_keeps_all_row_groups() {
+        // WHERE c IS NULL — "c" not in file schema.
+        // null IS NULL = true → TruthValue::True ≠ False → all row groups kept.
+        use daft_dsl::resolved_col;
+        let metadata = create_test_parquet_metadata();
+        let schema = Schema::new(vec![
+            Field::new("a", DataType::Int32),
+            Field::new("b", DataType::Int32),
+        ]);
+        let pred: ExprRef = resolved_col("c").is_null();
+        let result =
+            prune_row_groups(&metadata, None, Some(&pred), &schema, "test.parquet").unwrap();
+        assert_eq!(result.len(), metadata.num_row_groups());
+    }
+
+    #[test]
+    fn test_prune_row_groups_is_null_on_missing_column_with_false_present_column_prunes() {
+        // WHERE a < 0 AND c IS NULL
+        // a < 0 is False (min=1), c IS NULL is True (null IS NULL) → False AND True = False → pruned.
+        use daft_dsl::{lit, resolved_col};
+        let metadata = create_test_parquet_metadata();
+        let schema = Schema::new(vec![
+            Field::new("a", DataType::Int32),
+            Field::new("b", DataType::Int32),
+        ]);
+        let pred: ExprRef = resolved_col("a")
+            .lt(lit(0i32))
+            .and(resolved_col("c").is_null());
+        let result =
+            prune_row_groups(&metadata, None, Some(&pred), &schema, "test.parquet").unwrap();
+        assert_eq!(result.len(), 0);
     }
 
     #[tokio::test]
@@ -1710,7 +1906,7 @@ mod tests {
     fn extract_val_column(batch: &RecordBatch) -> Vec<i32> {
         let idx = batch.schema.get_index("val").unwrap();
         let series = &batch.columns()[idx];
-        let arr = series.i32().unwrap();
+        let arr = series.as_materialized_series().i32().unwrap();
         (0..arr.len()).map(|i| arr.get(i).unwrap()).collect()
     }
 

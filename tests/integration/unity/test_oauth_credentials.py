@@ -5,7 +5,8 @@ import os
 import pytest
 
 from daft.catalog import Catalog
-from daft.unity_catalog import OAuth2Credentials, UnityCatalog
+from daft.catalog.__unity._auth import OAuth2Credentials
+from daft.catalog.__unity._client import UnityCatalogClient as UnityCatalog
 
 
 @pytest.fixture(scope="module", autouse=True)

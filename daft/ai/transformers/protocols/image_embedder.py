@@ -62,7 +62,6 @@ class TransformersImageEmbedder(ImageEmbedder):
         self.model = AutoModel.from_pretrained(
             model_name_or_path,
             trust_remote_code=True,
-            use_safetensors=True,
         ).to(self.device)
         self.processor = AutoProcessor.from_pretrained(model_name_or_path, trust_remote_code=True, use_fast=True)
         self.embed_options: EmbedImageOptions = embed_options

@@ -9,7 +9,7 @@ use daft_schema::field::Field;
 use super::OptimizerRule;
 use crate::{
     LogicalPlan, LogicalPlanRef,
-    ops::{Distinct, Filter, Join, Project, Sort, join::JoinPredicate},
+    ops::{Distinct, Filter, Join, Project, Shuffle, Sort, join::JoinPredicate},
 };
 
 /// Optimizer rule to push anti and semi joins down a plan tree.
@@ -287,6 +287,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                     // Anti/semi join can be trivially pushed down these ops
                     LogicalPlan::Filter(Filter { input, .. })
                     | LogicalPlan::Sort(Sort { input, .. })
+                    | LogicalPlan::Shuffle(Shuffle { input, .. })
                     | LogicalPlan::Distinct(Distinct { input, .. }) => {
                         let new_child = Join::try_new(
                             input.clone(),

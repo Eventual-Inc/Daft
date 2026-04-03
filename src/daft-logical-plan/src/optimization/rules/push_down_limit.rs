@@ -207,6 +207,7 @@ impl PushDownLimit {
                     | LogicalPlan::Offset(_)
                     | LogicalPlan::TopN(..)
                     | LogicalPlan::Sample(..)
+                    | LogicalPlan::Shuffle(..)
                     | LogicalPlan::Explode(..)
                     | LogicalPlan::Shard(..)
                     | LogicalPlan::UDFProject(..)

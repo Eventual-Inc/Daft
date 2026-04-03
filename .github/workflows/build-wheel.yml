@@ -39,7 +39,7 @@ defaults:
 
 jobs:
   build:
-    runs-on: ${{ inputs.os == 'ubuntu' && 'buildjet-16vcpu-ubuntu-2204' || format('{0}-latest', inputs.os) }}
+    runs-on: ${{ inputs.os == 'ubuntu' && 'blacksmith-16vcpu-ubuntu-2204' || format('{0}-latest', inputs.os) }}
 
     steps:
     - uses: actions/checkout@v6
@@ -178,7 +178,7 @@ jobs:
         python -m venv venv
         echo "$GITHUB_WORKSPACE/venv/bin" >> $GITHUB_PATH
     - name: Install wheel and test dependencies
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 10
         max_attempts: 3

@@ -96,6 +96,7 @@ dev = [
   "Pillow==12.1.1",
   "reportlab==4.4.10",
   "opencv-python==4.10.0.84",
+  "imagehash==4.3.1",
   "tiktoken==0.12.0",
   "duckdb==1.4.4",
   "datasets==4.5.0",
@@ -248,6 +249,43 @@ minversion = "6.0"
 testpaths = [
   "tests"
 ]
+filterwarnings = [
+  # Expected warnings from repartition without columns (tests intentionally exercise this)
+  "ignore:No columns specified for repartition:UserWarning",
+  # Expected warnings from aggregation without columns (tests intentionally exercise this)
+  "ignore:No columns specified; performing aggregation:UserWarning",
+  # Expected warnings from datatype inference (tests exercise edge cases)
+  "ignore:Cannot derive inner type from:UserWarning",
+  "ignore:numpy.datetime64 may be converted:UserWarning",
+  # Deprecated APIs being tested (llm_generate, @daft.udf)
+  "ignore:This method is deprecated and will be removed in v0.8.0:DeprecationWarning",
+  "ignore:The `@daft.udf` decorator is deprecated:DeprecationWarning",
+  "ignore:daft.io.lance.merge_columns is deprecated:DeprecationWarning",
+  "ignore:FragmentHandler is deprecated:DeprecationWarning",
+  # Third-party deprecation warnings we can't fix
+  "ignore:datetime.datetime.utcnow\\(\\) is deprecated:DeprecationWarning:botocore",
+  "ignore:`use_push_based_shuffle` is deprecated:DeprecationWarning:ray",
+  "ignore:`use_polars` is deprecated:DeprecationWarning:ray",
+  "ignore:`free` is a deprecated API:DeprecationWarning:ray",
+  # Custom UDF metrics warning (expected outside UDF context)
+  "ignore:Custom UDF metrics will only be recorded:RuntimeWarning",
+  # pandas FutureWarning for assert_frame_equal with None/nan
+  "ignore:Mismatched null-like values:FutureWarning",
+  # pandas FutureWarning for incompatible dtype assignment in tests
+  "ignore:Setting an item of incompatible dtype is deprecated:FutureWarning",
+  # pandas FutureWarning for groupby.apply on grouping columns
+  "ignore:DataFrameGroupBy.apply operated on the grouping columns:FutureWarning",
+  # pandas arctanh/arccosh RuntimeWarnings (expected math edge cases)
+  "ignore:divide by zero encountered in arctanh:RuntimeWarning",
+  "ignore:invalid value encountered in arctanh:RuntimeWarning",
+  "ignore:invalid value encountered in arccosh:RuntimeWarning"
+]
+
+[tool.uv]
+# Supply-chain hardening: prevent uv from resolving any package version
+# published in the last 7 days. This gives the community time to detect
+# and yank malicious releases before they land in our lockfile.
+exclude-newer = "7 days"
 
 [tool.uv.sources.daft_dashboard]
 workspace = true

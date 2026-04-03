@@ -13,34 +13,28 @@ from .test_utils import api_request, delete_catalog, delete_schema, ensure_metal
 
 
 @pytest.mark.integration()
-def test_catalog_from_gravitino(local_gravitino_client, gravitino_metalake):
-    catalog = Catalog.from_gravitino(local_gravitino_client)
+def test_catalog_from_gravitino(local_gravitino_client, gravitino_endpoint, gravitino_metalake):
+    catalog = Catalog.from_gravitino(gravitino_endpoint, gravitino_metalake)
 
     assert catalog is not None
     assert catalog.name == f"gravitino_{gravitino_metalake}"
 
 
 @pytest.mark.integration()
-def test_catalog_has_table_false(local_gravitino_client):
-    catalog = Catalog.from_gravitino(local_gravitino_client)
-
-    assert catalog.has_table("nonexistent.schema.table") is False
+def test_catalog_has_table_false(gravitino_catalog):
+    assert gravitino_catalog.has_table("nonexistent.schema.table") is False
 
 
 @pytest.mark.integration()
-def test_catalog_list_tables_returns_identifiers(local_gravitino_client):
-    catalog = Catalog.from_gravitino(local_gravitino_client)
-
-    tables = catalog.list_tables()
+def test_catalog_list_tables_returns_identifiers(gravitino_catalog):
+    tables = gravitino_catalog.list_tables()
     assert isinstance(tables, list)
 
 
 @pytest.mark.integration()
-def test_catalog_get_table_not_found(local_gravitino_client):
-    catalog = Catalog.from_gravitino(local_gravitino_client)
-
+def test_catalog_get_table_not_found(gravitino_catalog):
     with pytest.raises(NotFoundError):
-        catalog.get_table("nonexistent.schema.table")
+        gravitino_catalog.get_table("nonexistent.schema.table")
 
 
 def _wait_for_mysql(host: str = "127.0.0.1", port: int = 3306, timeout_secs: int = 60) -> None:
@@ -195,9 +189,9 @@ def mysql_gravitino_catalog(local_gravitino_client, gravitino_metalake):
 
 
 @pytest.mark.integration()
-def test_gravitino_mysql_integration(local_gravitino_client, mysql_gravitino_catalog):
+def test_gravitino_mysql_integration(gravitino_catalog, mysql_gravitino_catalog):
     """Test listing MySQL catalogs, schemas, and tables through Daft's Catalog API."""
-    catalog = Catalog.from_gravitino(local_gravitino_client)
+    catalog = gravitino_catalog
 
     # List all tables - should include our MySQL tables
     all_tables = catalog.list_tables()

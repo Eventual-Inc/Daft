@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use daft_core::{join::JoinDirection, prelude::SchemaRef};
@@ -17,11 +15,11 @@ use crate::{
 };
 
 pub(crate) struct AsofJoinBuildState {
-    tables: Vec<Arc<MicroPartition>>,
+    tables: Vec<MicroPartition>,
 }
 
 pub(crate) struct AsofJoinProbeState {
-    sorted_build: Arc<MicroPartition>,
+    sorted_build: MicroPartition,
 }
 
 pub struct AsofJoinOperator {
@@ -62,12 +60,12 @@ impl AsofJoinOperator {
 
 impl JoinOperator for AsofJoinOperator {
     type BuildState = AsofJoinBuildState;
-    type FinalizedBuildState = Arc<MicroPartition>;
+    type FinalizedBuildState = MicroPartition;
     type ProbeState = AsofJoinProbeState;
 
     fn build(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         mut state: Self::BuildState,
         _spawner: &ExecutionTaskSpawner,
     ) -> BuildStateResult<Self> {
@@ -83,9 +81,9 @@ impl JoinOperator for AsofJoinOperator {
         let right_on = self.right_on.clone();
 
         // Concat all build batches and sort by (by_keys, on_key) ascending.
-        let combined = MicroPartition::concat_or_empty(&state.tables, right_schema)?;
+        let combined = MicroPartition::concat_or_empty(state.tables, right_schema)?;
         if combined.is_empty() {
-            return Ok(Arc::new(combined));
+            return Ok(combined);
         }
 
         let sort_keys: Vec<BoundExpr> = right_by
@@ -97,7 +95,7 @@ impl JoinOperator for AsofJoinOperator {
         let descending = vec![false; n];
         let nulls_first = vec![false; n];
         let sorted = combined.sort(&sort_keys, &descending, &nulls_first)?;
-        Ok(Arc::new(sorted))
+        Ok(sorted)
     }
 
     fn make_build_state(&self) -> DaftResult<Self::BuildState> {
@@ -115,12 +113,12 @@ impl JoinOperator for AsofJoinOperator {
 
     fn probe(
         &self,
-        input: Arc<MicroPartition>,
+        input: MicroPartition,
         state: Self::ProbeState,
         spawner: &ExecutionTaskSpawner,
     ) -> ProbeResult<Self> {
         if input.is_empty() {
-            let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
+            let empty = MicroPartition::empty(Some(self.output_schema.clone()));
             return Ok((state, ProbeOutput::NeedMoreInput(Some(empty)))).into();
         }
 
@@ -161,7 +159,7 @@ impl JoinOperator for AsofJoinOperator {
                     };
                     Ok((
                         AsofJoinProbeState { sorted_build },
-                        ProbeOutput::NeedMoreInput(Some(Arc::new(output))),
+                        ProbeOutput::NeedMoreInput(Some(output)),
                     ))
                 },
                 Span::current(),

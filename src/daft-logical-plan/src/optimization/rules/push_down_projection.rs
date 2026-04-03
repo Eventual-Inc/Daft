@@ -277,6 +277,7 @@ impl PushDownProjection {
             | LogicalPlan::TopN(..)
             | LogicalPlan::Filter(..)
             | LogicalPlan::Sample(..)
+            | LogicalPlan::Shuffle(..)
             | LogicalPlan::Explode(..) => {
                 // Get required columns from projection and upstream.
                 let combined_dependencies = plan
