@@ -25,8 +25,8 @@ impl PyCatalog {
         self.0.name()
     }
 
-    fn create_function(&self, ident: PyIdentifier, function: Py<PyAny>) -> PyResult<()> {
-        let func_ref = crate::function_from_py(function)?;
+    fn create_function(&self, ident: PyIdentifier, function: Bound<'_, PyAny>) -> PyResult<()> {
+        let func_ref = crate::pyobj_to_function(function)?;
         Ok(self.0.create_function(&ident.0, func_ref)?)
     }
 

@@ -4,8 +4,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from daft.catalog import Catalog, Function, Identifier, InMemoryFunction, NotFoundError, Properties, Table
+from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Table
 from daft.dataframe import DataFrame
+from daft.exceptions import DaftCoreException
 from daft.logical.schema import DataType as dt
 from daft.logical.schema import Schema
 
@@ -172,6 +173,12 @@ class MockCatalog(Catalog):
     def _list_tables(self, prefix: Identifier | None = None) -> list[Identifier]:
         raise NotImplementedError
 
+    def _create_function(self, ident, function):
+        raise NotImplementedError
+
+    def _get_function(self, ident):
+        raise NotFoundError(f"Function '{ident}' not found")
+
     def _has_namespace(self, ident):
         raise NotImplementedError
 
@@ -242,90 +249,44 @@ def test_session_create_table_with_properties():
 ###
 
 
-class MockCatalogWithFunctions(Catalog):
-    """A mock catalog that supports function lookup via _get_function."""
-
-    _functions: dict[str, object]
-
-    def __init__(self):
-        self._functions = {}
-
-    def _create_function(self, ident, function):
-        self._functions[str(ident)] = function
-
-    @property
-    def name(self) -> str:
-        return "test_with_functions"
-
-    def _create_namespace(self, ident: Identifier):
-        raise NotImplementedError
-
-    def _create_table(self, ident, schema, properties=None, partition_fields=None) -> Table:
-        raise NotImplementedError
-
-    def _drop_namespace(self, ident):
-        raise NotImplementedError
-
-    def _drop_table(self, ident):
-        raise NotImplementedError
-
-    def _get_table(self, ident) -> Table:
-        raise NotImplementedError
-
-    def _list_namespaces(self, pattern=None):
-        raise NotImplementedError
-
-    def _list_tables(self, pattern=None):
-        raise NotImplementedError
-
-    def _has_namespace(self, ident):
-        raise NotImplementedError
-
-    def _has_table(self, ident):
-        raise NotImplementedError
-
-    def _get_function(self, ident: Identifier) -> Function:
-        func = self._functions.get(str(ident))
-        if func is None:
-            raise NotFoundError(f"Function '{ident}' not found")
-        return func
-
-
 def test_catalog_get_function_default_raises():
     """Test that the default _get_function raises NotFoundError."""
     catalog = MockCatalog()
     with pytest.raises(NotFoundError):
-        catalog.get_function(Identifier("any_function"))
+        catalog.get_function("any_function")
+
+
+from daft.catalog.__internal import MemoryCatalog
+
+_function_catalog = MemoryCatalog._new("test_with_functions")
 
 
 def test_catalog_get_function_with_override():
     """Test that a catalog with _get_function override returns the function."""
     from tests.udf.my_funcs import catalog_udf
 
-    catalog = MockCatalogWithFunctions()
-    catalog.create_function(Identifier("my_func"), InMemoryFunction(Identifier("my_func"), catalog_udf))
+    _function_catalog.create_function("my_func", catalog_udf)
 
     # found
-    assert catalog.get_function(Identifier("my_func")) is not None
+    assert _function_catalog.get_function("my_func") is not None
 
     # not found
-    with pytest.raises(NotFoundError):
-        catalog.get_function(Identifier("nonexistent"))
+    with pytest.raises(DaftCoreException, match="function with name nonexistent not found"):
+        _function_catalog.get_function("nonexistent")
 
 
 def test_catalog_get_function_from_pydict_raises():
     """Test that the built-in from_pydict catalog raises NotFoundError for get_function (default behavior)."""
     catalog = Catalog.from_pydict({"t": {"x": [1, 2, 3]}})
-    with pytest.raises(NotFoundError):
-        catalog.get_function(Identifier("anything"))
+    with pytest.raises(DaftCoreException, match="function with name anything not found"):
+        catalog.get_function("anything")
 
 
 def test_catalog_create_and_get_function():
     """Test that create_function stores a function and get_function retrieves it."""
     from tests.udf.my_funcs import double_value
 
-    catalog = MockCatalogWithFunctions()
-    catalog.create_function(Identifier("double_fn"), InMemoryFunction(Identifier("double_fn"), double_value))
+    _function_catalog.create_function("double_fn", double_value)
 
-    func = catalog.get_function(Identifier("double_fn"))
+    func = _function_catalog.get_function("double_fn")
     assert func is not None

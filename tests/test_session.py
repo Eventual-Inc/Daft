@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import daft
-from daft.catalog import Catalog, Identifier, InMemoryFunction, NotFoundError, Table
+from daft.catalog import Catalog, Identifier, NotFoundError, Table
 from daft.session import Session
 
 ###
@@ -238,6 +238,12 @@ def test_exception_surfacing():
         def _list_tables(self, pattern=None):
             raise NotImplementedError
 
+        def _create_function(self, ident, function):
+            raise NotImplementedError
+
+        def _get_function(self, ident):
+            raise NotFoundError(f"Function '{ident}' not found")
+
         def _has_namespace(self, ident):
             raise NotImplementedError
 
@@ -345,68 +351,22 @@ def test_current_session_drop_table():
 ###
 
 
-class _FunctionCatalog(Catalog):
-    """A minimal catalog that supports _get_function for testing."""
+from daft.catalog.__internal import MemoryCatalog
 
-    _functions: dict
-
-    def __init__(self):
-        self._functions = {}
-
-    def _create_function(self, ident, function):
-        self._functions[str(ident)] = function
-
-    @property
-    def name(self):
-        return "func_catalog"
-
-    def _create_namespace(self, ident):
-        raise NotImplementedError
-
-    def _create_table(self, ident, schema, properties=None, partition_fields=None):
-        raise NotImplementedError
-
-    def _drop_namespace(self, ident):
-        raise NotImplementedError
-
-    def _drop_table(self, ident):
-        raise NotImplementedError
-
-    def _get_table(self, ident):
-        raise NotFoundError(f"Table {ident} not found")
-
-    def _list_namespaces(self, pattern=None):
-        return []
-
-    def _list_tables(self, pattern=None):
-        return []
-
-    def _has_namespace(self, ident):
-        return False
-
-    def _has_table(self, ident):
-        return False
-
-    def _get_function(self, ident):
-        # ident is an Identifier; the last part is the function name
-        func = self._functions.get(str(ident))
-        if func is None:
-            raise NotFoundError(f"Function '{ident}' not found")
-        return func
+_function_catalog = MemoryCatalog._new("func_catalog")
 
 
 def test_session_catalog_function_fallback():
     """Test that catalog _get_function is used during SQL plan resolution."""
     from tests.udf.my_funcs import catalog_udf
 
-    catalog = _FunctionCatalog()
-    catalog.create_function(Identifier("my_catalog_udf"), InMemoryFunction(Identifier("my_catalog_udf"), catalog_udf))
+    _function_catalog.create_function("my_catalog_udf", catalog_udf)
 
     sess = Session()
-    sess.attach_catalog(catalog)
+    sess.attach_catalog(_function_catalog)
 
     # Verify the catalog itself returns the function
-    assert catalog.get_function(Identifier("my_catalog_udf"))(1) is not None
+    assert _function_catalog.get_function("my_catalog_udf")(1) is not None
 
     # Verify the function is accessible via SQL plan resolution.
     # The UDF registered in the catalog should be found during SQL planning.
@@ -418,27 +378,26 @@ def test_session_catalog_function_fallback():
 
 
 def test_session_catalog_function_fallback_raises():
-    """Test that catalog get_function raises NotFoundError when function is not found."""
-    catalog = _FunctionCatalog()
+    """Test that catalog get_function raises DaftCoreException when function is not found."""
+    from daft.exceptions import DaftCoreException
 
-    # Catalog itself should raise NotFoundError for nonexistent functions
-    with pytest.raises(NotFoundError):
-        catalog.get_function("nonexistent_function")
+    # Catalog itself should raise DaftCoreException for nonexistent functions
+    with pytest.raises(DaftCoreException, match="function with name nonexistent_function not found"):
+        _function_catalog.get_function("nonexistent_function")
 
 
 def test_session_function_priority_over_catalog():
     """Test that session-scoped functions take priority over catalog functions."""
     from tests.udf.my_funcs import catalog_udf
 
-    catalog = _FunctionCatalog()
-    catalog.create_function(Identifier("shared_fn"), InMemoryFunction(Identifier("shared_fn"), catalog_udf))
+    _function_catalog.create_function("shared_fn", catalog_udf)
 
     @daft.func(return_dtype=daft.DataType.int64())
     def session_udf(x):
         return x + 1
 
     sess = Session()
-    sess.attach_catalog(catalog)
+    sess.attach_catalog(_function_catalog)
     sess.attach_function(session_udf, alias="shared_fn")
 
     # Both catalog and session have "shared_fn", but session should take priority.
@@ -454,15 +413,14 @@ def test_dataframe_select_with_catalog_get_function():
     """Test that dataframe.select can use a UDF retrieved via catalog.get_function."""
     from tests.udf.my_funcs import double_value
 
-    catalog = _FunctionCatalog()
-    catalog.create_function(Identifier("double_value"), InMemoryFunction(Identifier("double_value"), double_value))
+    _function_catalog.create_function("double_value", double_value)
 
     sess = Session()
-    sess.attach_catalog(catalog)
+    sess.attach_catalog(_function_catalog)
     daft.set_session(sess)
 
     # Retrieve the UDF from the catalog and use it directly in dataframe.select
-    udf_fn = catalog.get_function(Identifier("double_value"))
+    udf_fn = _function_catalog.get_function("double_value")
 
     df = daft.from_pydict({"x": [1, 2, 3]})
     result = df.select(udf_fn(df["x"]))
@@ -474,12 +432,9 @@ def test_catalog_register_cls_udf_from_external_module():
     """Test that a @daft.cls UDF can be loaded from an external module via register_function."""
     from tests.udf.my_funcs import MockModelPredictor
 
-    catalog = _FunctionCatalog()
-    catalog.create_function(
-        Identifier("mock_predictor"), InMemoryFunction(Identifier("mock_predictor"), MockModelPredictor)
-    )
+    _function_catalog.create_function("mock_predictor", MockModelPredictor)
 
-    predictor_fn = catalog.get_function(Identifier("mock_predictor"))
+    predictor_fn = _function_catalog.get_function("mock_predictor")
     assert predictor_fn is not None
 
     predictor = predictor_fn("bert-base")

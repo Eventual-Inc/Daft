@@ -33,6 +33,16 @@ impl Catalog for PyCatalogWrapper {
         Ok(self.0.clone_ref(py))
     }
 
+    fn create_function(&self, ident: &Identifier, function: FunctionRef) -> CatalogResult<()> {
+        Python::attach(|py| {
+            let catalog = self.0.bind(py);
+            let ident_py = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            let func_py = function.to_py(py)?;
+            catalog.call_method1(intern!(py, "_create_function"), (ident_py, func_py))?;
+            Ok(())
+        })
+    }
+
     fn create_namespace(&self, ident: &Identifier) -> CatalogResult<()> {
         Python::attach(|py| {
             let catalog = self.0.bind(py);

@@ -245,41 +245,29 @@ impl Session {
         }
     }
 
-    /// Returns the function or none if it does not exist.
+    /// Returns the function or an object not found error.
     ///
     /// Resolution rules
     ///   Rule 0: check session-scoped functions by the unqualified name.
     ///   Rule 1: try to resolve using the current catalog and current namespace.
     ///   Rule 2: try to resolve as namespace-qualified using the current catalog.
     ///   Rule 3: try to resolve as catalog-qualified (first part of the identifier).
-    #[cfg(feature = "python")]
-    pub fn get_function(&self, ident: &Identifier) -> CatalogResult<Option<ScalarFunction>> {
+    pub fn get_function(&self, ident: &Identifier) -> CatalogResult<ScalarFunction> {
         use daft_catalog::error::CatalogError;
-        use daft_dsl::functions::python::WrappedUDFClass;
 
         // Rule 0: check session-scoped functions by the unqualified name.
         if !ident.has_qualifier()
             && let Some(func) = self.state().get_function(ident.name())?
         {
-            return Ok(Some(func));
+            return Ok(func);
         }
 
-        // Use session state, but return None if there's no catalog.
+        // Use session state, but error if there's no catalog and the function was not session-scoped.
         let curr_catalog = match self.current_catalog()? {
             Some(catalog) => catalog,
-            None => return Ok(None),
+            None => obj_not_found_err!("Function", ident),
         };
         let curr_namespace = self.current_namespace()?;
-
-        let wrap = |py_func: daft_catalog::FunctionRef| {
-            pyo3::Python::attach(|py| {
-                let callable = py_func.to_py(py)?;
-                pyo3::PyResult::Ok(ScalarFunction::Python(WrappedUDFClass {
-                    inner: std::sync::Arc::new(callable),
-                }))
-            })
-            .expect("wrap Function failed")
-        };
 
         // Helper: try a catalog lookup, returning Ok(None) on not-found/unsupported errors.
         let try_get = |catalog: &dyn daft_catalog::Catalog,
@@ -296,15 +284,15 @@ impl Session {
 
         // Rule 1: try to resolve using the current catalog and current namespace.
         if let Some(qualifier) = curr_namespace {
-            let ident = ident.qualify(qualifier);
-            if let Some(py_func) = try_get(curr_catalog.as_ref(), &ident)? {
-                return Ok(Some(wrap(py_func)));
+            let qualified_ident = ident.qualify(qualifier);
+            if let Some(func_ref) = try_get(curr_catalog.as_ref(), &qualified_ident)? {
+                return Ok(ScalarFunction::from_function_ref(&func_ref));
             }
         }
 
         // Rule 2: try to resolve as namespace-qualified using the current catalog.
-        if let Some(py_func) = try_get(curr_catalog.as_ref(), ident)? {
-            return Ok(Some(wrap(py_func)));
+        if let Some(func_ref) = try_get(curr_catalog.as_ref(), ident)? {
+            return Ok(ScalarFunction::from_function_ref(&func_ref));
         }
 
         // Rule 3: try to resolve as catalog-qualified.
@@ -312,21 +300,12 @@ impl Session {
             && let Ok(catalog) = self.get_catalog(ident.get(0))
         {
             let ident = ident.drop(1);
-            if let Some(py_func) = try_get(catalog.as_ref(), &ident)? {
-                return Ok(Some(wrap(py_func)));
+            if let Some(func_ref) = try_get(catalog.as_ref(), &ident)? {
+                return Ok(ScalarFunction::from_function_ref(&func_ref));
             }
         }
 
-        Ok(None)
-    }
-
-    /// Returns the function or none if it does not exist.
-    #[cfg(not(feature = "python"))]
-    pub fn get_function(&self, name: &Identifier) -> CatalogResult<Option<ScalarFunction>> {
-        if !name.has_qualifier() {
-            return self.state().get_function(name.name());
-        }
-        Ok(None)
+        obj_not_found_err!("Function", ident)
     }
 
     /// Returns the provider or an object not found error.
@@ -648,10 +627,10 @@ mod tests {
         // Session A can see it; session B cannot.
         let ident = daft_catalog::Identifier::simple("my_ext_fn");
         assert!(matches!(
-            session_a.get_function(&ident).unwrap(),
-            Some(ScalarFunction::Native(_))
+            session_a.get_function(&ident),
+            Ok(ScalarFunction::Native(_))
         ));
-        assert!(session_b.get_function(&ident).unwrap().is_none());
+        assert!(session_b.get_function(&ident).is_err());
     }
 
     #[test]
@@ -660,8 +639,8 @@ mod tests {
         sess.attach_function("temp_fn", mock_factory("temp_fn"));
 
         let ident = daft_catalog::Identifier::simple("temp_fn");
-        assert!(sess.get_function(&ident).unwrap().is_some());
+        assert!(sess.get_function(&ident).is_ok());
         sess.detach_function("temp_fn").unwrap();
-        assert!(sess.get_function(&ident).unwrap().is_none());
+        assert!(sess.get_function(&ident).is_err());
     }
 }

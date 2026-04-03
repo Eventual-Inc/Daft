@@ -63,7 +63,6 @@ __all__ = [
     "Catalog",
     "Function",
     "Identifier",
-    "InMemoryFunction",
     "NotFoundError",
     "Properties",
     "Schema",
@@ -100,16 +99,14 @@ class Catalog(ABC):
     def name(self) -> str:
         """Returns the catalog's name."""
 
-    def _create_function(self, ident: Identifier, function: Function) -> None:
+    @abstractmethod
+    def _create_function(self, ident: Identifier, function: Function | Callable[..., Any]) -> None:
         """Register a function in the catalog.
-
-        Subclasses can override this to provide catalog-scoped function registration.
 
         Args:
             ident: the function identifier.
-            function: the function to register.
+            function: the function to register. Can be a Function instance or a plain callable.
         """
-        raise NotImplementedError
 
     @abstractmethod
     def _create_namespace(self, ident: Identifier) -> None:
@@ -133,12 +130,9 @@ class Catalog(ABC):
     def _drop_table(self, ident: Identifier) -> None:
         """Remove a table from the catalog, erroring if the table did not exist."""
 
+    @abstractmethod
     def _get_function(self, ident: Identifier) -> Function:
         """Get a function from the catalog by identifier.
-
-        Returns the function object if found, or raises NotFoundError if the function
-        does not exist. Subclasses can override this to provide catalog-scoped
-        function resolution.
 
         Args:
             ident: the function identifier to look up.
@@ -149,7 +143,6 @@ class Catalog(ABC):
         Raises:
             NotFoundError: if the function does not exist.
         """
-        raise NotFoundError(f"Function '{ident}' not found in catalog '{self.name}'")
 
     @abstractmethod
     def _get_table(self, ident: Identifier) -> Table:
@@ -479,12 +472,12 @@ class Catalog(ABC):
     # create_*
     ###
 
-    def create_function(self, identifier: Identifier | str, function: Function) -> None:
+    def create_function(self, identifier: Identifier | str, function: Function | Callable[..., Any]) -> None:
         """Registers a function in this catalog.
 
         Args:
             identifier (Identifier | str): function identifier
-            function (Function): the function to register.
+            function (Function | Callable): the function to register.
         """
         if isinstance(identifier, str):
             identifier = Identifier.from_str(identifier)
@@ -868,59 +861,6 @@ class Function(ABC):
 
     def __repr__(self) -> str:
         return f"Function(identifier={self._identifier!r})"
-
-    def __str__(self) -> str:
-        return str(self._identifier)
-
-
-class InMemoryFunction(Function):
-    """A Function backed by a Python callable.
-
-    An InMemoryFunction holds a direct reference to a callable (typically a
-    ``@daft.func`` decorated function) and delegates ``__call__`` to it.
-
-    Attributes:
-        identifier (Identifier): The full catalog identifier for this function.
-        name (str): The last part of the identifier (the function's local name).
-        namespace (Identifier): The namespace portion of the identifier (all parts except the last).
-        udf (Callable): The underlying callable udf.
-
-    """
-
-    def __init__(self, identifier: Identifier, udf: Callable[..., Any]) -> None:
-        """Creates a new InMemoryFunction.
-
-        Args:
-            identifier (Identifier): The full catalog identifier for this function.
-            udf (Callable[..., Any]): The underlying callable.
-        """
-        super().__init__(identifier)
-        if not callable(udf):
-            raise TypeError(f"udf must be callable, got {type(udf).__name__!r}")
-        self._udf = udf
-
-    def __call__(self, *args: Any, **kwargs: Any) -> Expression:
-        """Call the underlying function.
-
-        Args:
-            *args: Positional arguments passed to the underlying function.
-            **kwargs: Keyword arguments passed to the underlying function.
-
-        Returns:
-            Expression: a Daft Expression produced by the underlying callable.
-        """
-        return self._udf(*args, **kwargs)
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, InMemoryFunction):
-            return False
-        return self._identifier == other._identifier and self._udf is other._udf
-
-    def __hash__(self) -> int:
-        return hash((self._identifier, id(self._udf)))
-
-    def __repr__(self) -> str:
-        return f"InMemoryFunction(identifier={self._identifier!r}, udf={self._udf!r})"
 
     def __str__(self) -> str:
         return str(self._identifier)

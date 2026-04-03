@@ -401,10 +401,10 @@ impl SQLPlanner<'_> {
             SQL_FUNCTIONS.get(name).cloned()
         }
 
-        fn session_func_to_sql(func: Option<SessionFunction>) -> Option<Arc<dyn SQLFunction>> {
-            match func? {
-                SessionFunction::Python(udf) => Some(Arc::new(udf)),
-                SessionFunction::Native(factory) => Some(Arc::new(factory)),
+        fn session_func_to_sql(func: SessionFunction) -> Arc<dyn SQLFunction> {
+            match func {
+                SessionFunction::Python(udf) => Arc::new(udf),
+                SessionFunction::Native(factory) => Arc::new(factory),
             }
         }
 
@@ -418,7 +418,11 @@ impl SQLPlanner<'_> {
             // to session.get_function.
             let parts: Vec<String> = name.split('.').map(str::to_string).collect();
             let ident = daft_catalog::Identifier::new(parts);
-            Ok(session_func_to_sql(session.get_function(&ident)?))
+            match session.get_function(&ident) {
+                Ok(func) => Ok(Some(session_func_to_sql(func))),
+                Err(daft_catalog::error::CatalogError::ObjectNotFound { .. }) => Ok(None),
+                Err(other) => Err(other.into()),
+            }
         }
 
         // lookup function variant(s) by name
