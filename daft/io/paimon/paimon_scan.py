@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import daft
 from daft.dependencies import pa
 from daft.expressions import ExpressionsProjection
+from daft.io.partitioning import PartitionField
 from daft.io.source import DataSource, DataSourceTask
 from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
@@ -18,7 +19,6 @@ if TYPE_CHECKING:
     from pypaimon.table.file_store_table import FileStoreTable
 
     from daft.daft import StorageConfig
-    from daft.io.partitioning import PartitionField
     from daft.io.pushdowns import Pushdowns
 
 logger = logging.getLogger(__name__)
@@ -102,8 +102,6 @@ class PaimonDataSource(DataSource):
         return self._schema
 
     def get_partition_fields(self) -> list[PartitionField]:
-        from daft.io.partitioning import PartitionField
-
         partition_key_names = set(self._table.partition_keys)
         return [PartitionField.create(f) for f in self._schema if f.name in partition_key_names]
 
