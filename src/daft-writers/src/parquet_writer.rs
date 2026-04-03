@@ -177,7 +177,8 @@ fn create_gravitino_parquet_writer(
 
     let (target_dir, target_config) = match tokio::runtime::Handle::try_current() {
         Ok(_handle) => std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
+            let rt = tokio::runtime::Runtime::new()
+                .map_err(|e| common_error::DaftError::External(e.into()))?;
             rt.block_on(async {
                 crate::storage_backend::parse_gravitino_url_and_config(&root_dir_owned, io_config)
                     .await
