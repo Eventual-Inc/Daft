@@ -236,8 +236,10 @@ impl<'a> IntoIterator for &'a TableStatistics {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use daft_core::prelude::*;
-    use daft_dsl::{expr::bound_expr::BoundExpr, lit, resolved_col};
+    use daft_dsl::{Expr, expr::bound_expr::BoundExpr, lit, null_lit, resolved_col};
     use daft_recordbatch::RecordBatch;
     use snafu::ResultExt;
 
@@ -275,6 +277,68 @@ mod test {
             .context(DaftCoreComputeSnafu)?;
         let result = table_stats.eval_expression(&expr)?;
         assert_eq!(result.to_truth_value(), TruthValue::True);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_not_null_literal_is_maybe() -> crate::Result<()> {
+        // NOT null_lit() simulates a predicate on a column absent from a Parquet file
+        // (schema evolution). The stats evaluator must conservatively return Maybe so
+        // the row group is never incorrectly pruned.
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_slice("a", &[1, 2, 3]).into_series(),
+        ])
+        .unwrap();
+        let table_stats = TableStatistics::from_table(&table);
+
+        let not_null = Arc::new(Expr::Not(null_lit()));
+        let bound = BoundExpr::try_new(not_null, &table.schema).context(DaftCoreComputeSnafu)?;
+        let result = table_stats.eval_expression(&bound)?;
+        assert_eq!(result.to_truth_value(), TruthValue::Maybe);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_missing_string_col_eq_is_maybe() -> crate::Result<()> {
+        // WHERE missing_str_col = 'foo' — non-boolean column absent from file.
+        // null_lit() = lit("foo") must be Maybe (not an error, not False).
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_slice("a", &[1, 2, 3]).into_series(),
+        ])
+        .unwrap();
+        let table_stats = TableStatistics::from_table(&table);
+
+        let pred = Arc::new(Expr::BinaryOp {
+            op: daft_core::prelude::Operator::Eq,
+            left: null_lit(),
+            right: lit("foo"),
+        });
+        let bound = BoundExpr::try_new(pred, &table.schema).context(DaftCoreComputeSnafu)?;
+        let result = table_stats.eval_expression(&bound)?;
+        assert_eq!(result.to_truth_value(), TruthValue::Maybe);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_missing_int_col_eq_is_maybe() -> crate::Result<()> {
+        // WHERE missing_int_col = 42 — numeric column absent from file.
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Utf8Array::from_slice("name", &["x"]).into_series(),
+        ])
+        .unwrap();
+        let table_stats = TableStatistics::from_table(&table);
+
+        let pred = Arc::new(Expr::BinaryOp {
+            op: daft_core::prelude::Operator::Eq,
+            left: null_lit(),
+            right: lit(42i64),
+        });
+        let bound = BoundExpr::try_new(pred, &table.schema).context(DaftCoreComputeSnafu)?;
+        let result = table_stats.eval_expression(&bound)?;
+        assert_eq!(result.to_truth_value(), TruthValue::Maybe);
 
         Ok(())
     }

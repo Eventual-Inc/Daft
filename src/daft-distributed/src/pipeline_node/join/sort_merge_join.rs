@@ -5,8 +5,9 @@ use common_metrics::{
     Meter,
     ops::{NodeCategory, NodeType},
 };
+use common_partitioning::PartitionRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend};
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
@@ -16,6 +17,7 @@ use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, TaskOutput,
+        shuffles::partition_groups::ray_partition_groups_from_outputs,
         sort::{
             create_range_repartition_tasks, create_sample_tasks,
             get_partition_boundaries_from_samples,
@@ -27,10 +29,7 @@ use crate::{
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
     statistics::stats::RuntimeStatsRef,
-    utils::{
-        channel::{Sender, create_channel},
-        transpose::transpose_materialized_outputs_from_vec,
-    },
+    utils::channel::{Sender, create_channel},
 };
 
 pub(crate) struct SortMergeJoinNode {
@@ -108,28 +107,30 @@ impl SortMergeJoinNode {
     /// Creates and submits a sort-merge join task for a pair of partition groups.
     async fn create_and_submit_join_task(
         self: &Arc<Self>,
-        left_partition_group: Vec<MaterializedOutput>,
-        right_partition_group: Vec<MaterializedOutput>,
+        left_partition_group: Vec<PartitionRef>,
+        right_partition_group: Vec<PartitionRef>,
         result_tx: &Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
-        let (left_in_memory_source_plan, left_psets) =
-            MaterializedOutput::into_in_memory_scan_with_psets(
-                left_partition_group,
-                self.left.config().schema.clone(),
-                self.left.node_id(),
-            );
+        let left_shuffle_read_plan = LocalPhysicalPlan::shuffle_read(
+            self.left.node_id(),
+            self.left.config().schema.clone(),
+            ShuffleReadBackend::Ray,
+            StatsState::NotMaterialized,
+            LocalNodeContext::new(Some(self.left.node_id() as usize)),
+        );
 
-        let (right_in_memory_source_plan, right_psets) =
-            MaterializedOutput::into_in_memory_scan_with_psets(
-                right_partition_group,
-                self.right.config().schema.clone(),
-                self.right.node_id(),
-            );
+        let right_shuffle_read_plan = LocalPhysicalPlan::shuffle_read(
+            self.right.node_id(),
+            self.right.config().schema.clone(),
+            ShuffleReadBackend::Ray,
+            StatsState::NotMaterialized,
+            LocalNodeContext::new(Some(self.right.node_id() as usize)),
+        );
 
         // Build the join plan
         let plan = LocalPhysicalPlan::sort_merge_join(
-            left_in_memory_source_plan,
-            right_in_memory_source_plan,
+            left_shuffle_read_plan,
+            right_shuffle_read_plan,
             self.left_on.clone(),
             self.right_on.clone(),
             self.join_type,
@@ -140,8 +141,8 @@ impl SortMergeJoinNode {
 
         // Create the task
         let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
-            .with_psets(self.left.node_id(), left_psets)
-            .with_psets(self.right.node_id(), right_psets);
+            .with_psets(self.left.node_id(), left_partition_group)
+            .with_psets(self.right.node_id(), right_partition_group);
 
         result_tx.send(builder).await.ok();
         Ok(())
@@ -170,6 +171,7 @@ impl SortMergeJoinNode {
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
+            Some(0),
         )?;
 
         let left_boundary_key_names = self
@@ -197,6 +199,7 @@ impl SortMergeJoinNode {
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
+            Some(1),
         )?;
 
         // Collect all samples
@@ -233,6 +236,7 @@ impl SortMergeJoinNode {
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
+            Some(0),
         )?;
 
         let right_boundary_names = self
@@ -266,6 +270,7 @@ impl SortMergeJoinNode {
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
+            Some(1),
         )?;
 
         // Wait for both sides to be partitioned
@@ -277,20 +282,17 @@ impl SortMergeJoinNode {
         let left_partitioned_outputs = left_partitioned_outputs
             .into_iter()
             .flatten()
-            .map(TaskOutput::into_materialized)
-            .collect::<DaftResult<Vec<_>>>()?;
+            .collect::<Vec<_>>();
 
         let right_partitioned_outputs = right_partitioned_outputs
             .into_iter()
             .flatten()
-            .map(TaskOutput::into_materialized)
-            .collect::<DaftResult<Vec<_>>>()?;
+            .collect::<Vec<_>>();
 
-        // Transpose outputs to group by partition index
         let left_transposed_outputs =
-            transpose_materialized_outputs_from_vec(left_partitioned_outputs, num_partitions);
+            ray_partition_groups_from_outputs(left_partitioned_outputs, num_partitions)?;
         let right_transposed_outputs =
-            transpose_materialized_outputs_from_vec(right_partitioned_outputs, num_partitions);
+            ray_partition_groups_from_outputs(right_partitioned_outputs, num_partitions)?;
 
         // Emit sort-merge join tasks for each partition pair
         for (left_partition_group, right_partition_group) in left_transposed_outputs
@@ -343,8 +345,20 @@ impl SortMergeJoinNode {
 
         // Special case: if both sides have only 1 partition, just do a direct join
         if left_materialized.len() == 1 && right_materialized.len() == 1 {
-            self.create_and_submit_join_task(left_materialized, right_materialized, &result_tx)
-                .await
+            let left_partition_group = left_materialized
+                .into_iter()
+                .flat_map(|output| output.into_inner().0)
+                .collect::<Vec<_>>();
+            let right_partition_group = right_materialized
+                .into_iter()
+                .flat_map(|output| output.into_inner().0)
+                .collect::<Vec<_>>();
+            self.create_and_submit_join_task(
+                left_partition_group,
+                right_partition_group,
+                &result_tx,
+            )
+            .await
         } else {
             // Multi-partition join case: sample, repartition, and join
             self.range_shuffle_and_join(

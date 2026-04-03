@@ -15,6 +15,20 @@ pub fn idx_sort<F>(
 where
     F: Fn(&u64, &u64) -> std::cmp::Ordering,
 {
+    idx_sort_dyn(nulls, &cmp, length, descending, nulls_first)
+}
+
+/// Non-generic inner function to avoid monomorphizing the sort for every closure type.
+/// The heavy `sort_unstable_by` call (which pulls in `small_sort_network`) is only
+/// compiled once regardless of how many different comparators are used.
+#[inline(never)]
+fn idx_sort_dyn(
+    nulls: Option<&NullBuffer>,
+    cmp: &dyn Fn(&u64, &u64) -> std::cmp::Ordering,
+    length: usize,
+    descending: bool,
+    nulls_first: bool,
+) -> PrimitiveArray<UInt64Type> {
     let (mut indices, start_idx, end_idx) = generate_initial_indices(nulls, length, nulls_first);
     let indices_slice = &mut indices.as_mut_slice()[start_idx..end_idx];
 
@@ -36,6 +50,23 @@ pub fn multi_column_idx_sort<F>(
 where
     F: Fn(&u64, &u64) -> std::cmp::Ordering,
 {
+    multi_column_idx_sort_dyn(
+        first_col_nulls,
+        &overall_cmp,
+        others_cmp,
+        length,
+        first_col_nulls_first,
+    )
+}
+
+#[inline(never)]
+fn multi_column_idx_sort_dyn(
+    first_col_nulls: Option<&NullBuffer>,
+    overall_cmp: &dyn Fn(&u64, &u64) -> std::cmp::Ordering,
+    others_cmp: &DynComparator,
+    length: usize,
+    first_col_nulls_first: bool,
+) -> PrimitiveArray<UInt64Type> {
     let (mut indices, start_idx, end_idx) =
         generate_initial_indices(first_col_nulls, length, first_col_nulls_first);
     let indices_slice = &mut indices.as_mut_slice()[start_idx..end_idx];

@@ -97,9 +97,7 @@ def test_batch_udf_with_batch_size():
     df = daft.from_pydict({"x": [1, 2, 3, 4], "y": [5, 6, 7, 8]})
     actual = df.select(my_sum(col("x"), col("y"))).to_pydict()
 
-    expected = {"x": [6, 8, 10, 12]}
-
-    assert actual == expected
+    assert sorted(actual["x"]) == [6, 8, 10, 12]
 
 
 def test_batch_udf_returns_list():

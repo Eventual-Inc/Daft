@@ -250,6 +250,10 @@ class LogicalPlanBuilder:
         builder = self._builder.random_shuffle(num_partitions)
         return LogicalPlanBuilder(builder)
 
+    def shuffle(self, seed: int | None = None) -> LogicalPlanBuilder:
+        builder = self._builder.shuffle(seed)
+        return LogicalPlanBuilder(builder)
+
     def into_partitions(self, num_partitions: int) -> LogicalPlanBuilder:
         builder = self._builder.into_partitions(num_partitions)
         return LogicalPlanBuilder(builder)
@@ -354,6 +358,7 @@ class LogicalPlanBuilder:
         write_mode: WriteMode,
         file_format: FileFormat,
         io_config: IOConfig,
+        write_success_file: bool = False,
         file_format_option: PyFormatSinkOption | None = None,
         partition_cols: list[Expression] | None = None,
         compression: str | None = None,
@@ -362,6 +367,7 @@ class LogicalPlanBuilder:
         builder = self._builder.table_write(
             str(root_dir),
             write_mode,
+            write_success_file,
             file_format,
             file_format_option,
             part_cols_pyexprs,

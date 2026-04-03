@@ -917,6 +917,7 @@ class DataFrame:
         root_dir: str | pathlib.Path,
         compression: str = "snappy",
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
+        write_success_file: bool = False,
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
     ) -> "DataFrame":
@@ -928,6 +929,7 @@ class DataFrame:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
             write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
+            write_success_file (bool, optional): Whether to write a `_SUCCESS` file upon successful completion. Defaults to False.
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
@@ -963,6 +965,7 @@ class DataFrame:
             root_dir=root_dir,
             partition_cols=cols,
             write_mode=WriteMode.from_str(write_mode),
+            write_success_file=write_success_file,
             file_format=FileFormat.Parquet,
             compression=compression,
             io_config=io_config,
@@ -973,7 +976,10 @@ class DataFrame:
         assert write_df._result is not None
 
         # Populate and return a new disconnected DataFrame
-        result_df = DataFrame(write_df._builder)
+        # Keep the original logical plan so explain() can still show upstream operators
+        # (e.g. filters/projections before the write), instead of collapsing to an
+        # in-memory source after collect() caches the result.
+        result_df = DataFrame(write_df._get_current_builder())
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
         result_df._metadata = write_df._metadata
@@ -1086,7 +1092,10 @@ class DataFrame:
         assert write_df._result is not None
 
         # Populate and return a new disconnected DataFrame
-        result_df = DataFrame(write_df._builder)
+        # Keep the original logical plan so explain() can still show upstream operators
+        # (e.g. filters/projections before the write), instead of collapsing to an
+        # in-memory source after collect() caches the result.
+        result_df = DataFrame(write_df._get_current_builder())
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
         result_df._metadata = write_df._metadata
@@ -1184,7 +1193,10 @@ class DataFrame:
         assert write_df._result is not None
 
         # Populate and return a new disconnected DataFrame
-        result_df = DataFrame(write_df._builder)
+        # Keep the original logical plan so explain() can still show upstream operators
+        # (e.g. filters/projections before the write), instead of collapsing to an
+        # in-memory source after collect() caches the result.
+        result_df = DataFrame(write_df._get_current_builder())
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
         result_df._metadata = write_df._metadata
@@ -3063,6 +3075,26 @@ class DataFrame:
             builder = self._builder.random_shuffle(num)
         else:
             builder = self._builder.hash_repartition(num, column_inputs_to_expressions(partition_by))
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def shuffle(self, seed: int | None = None) -> "DataFrame":
+        """Randomly reorders rows of the DataFrame.
+
+        This is analogous to ``shuffle`` operation in the Hugging Face ``datasets`` library.
+
+        Note:
+            This performs a global sort and is expensive. For randomly redistributing rows across
+            partitions see :meth:`DataFrame.repartition` with no ``partition_by`` (random partition shuffle).
+
+        Args:
+            seed: Optional RNG seed passed to ``random_int`` for best-effort reproducibility
+                on a fixed partition layout; not guaranteed across runners or plan changes.
+
+        Returns:
+            DataFrame: A new DataFrame with rows in random order.
+        """
+        builder = self._builder.shuffle(seed)
         return DataFrame(builder)
 
     @DataframePublicAPI

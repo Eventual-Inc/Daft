@@ -1,6 +1,6 @@
 # Telemetry
 
-To help core developers improve Daft, we collect non-identifiable statistics on Daft usage in order to better understand how Daft is used, common bugs and performance bottlenecks. Data is collected from [Scarf](https://scarf.sh).
+To help core developers improve Daft, we collect non-identifiable statistics on Daft usage in order to better understand how Daft is used, common bugs and performance bottlenecks. Data is collected via [Scarf](https://scarf.sh) and [osstelemetry.io](https://osstelemetry.io).
 
 We take the privacy of our users extremely seriously, and telemetry in Daft is built to be:
 

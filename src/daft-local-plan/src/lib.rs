@@ -13,13 +13,13 @@ pub use plan::{
     CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
     HashAggregate, HashJoin, InMemoryScan, IntoBatches, IntoPartitions, Limit, LocalNodeContext,
     LocalPhysicalPlan, LocalPhysicalPlanRef, MonotonicallyIncreasingId, NestedLoopJoin,
-    PhysicalScan, PhysicalWrite, Pivot, PlaceholderScan, Project, Repartition, Sample,
-    SamplingMethod, ShuffleRead, ShuffleReadBackend, ShuffleWrite, ShuffleWriteBackend, Sort,
+    PhysicalScan, PhysicalWrite, Pivot, PlaceholderScan, Project, RepartitionWrite,
+    RepartitionWriteBackend, Sample, SamplingMethod, ShuffleRead, ShuffleReadBackend, Sort,
     SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 #[cfg(feature = "python")]
-pub use python::{PyLocalPhysicalPlan, register_modules};
+pub use python::{PyLocalPhysicalPlan, PyShuffleWriteInfo, register_modules};
 pub use results::ExecutionStats;
 use serde::{Deserialize, Serialize};
 pub use translate::translate;
