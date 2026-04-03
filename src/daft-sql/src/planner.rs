@@ -44,15 +44,53 @@ use crate::{
 
 /// Map a sqlparser ParserError to PlannerError with caret-formatted message.
 ///
-/// This strips the "sql parser error: " prefix from the Display output and
-/// extracts location information to format with source context and caret pointer.
+/// This extracts the structured location from the ParserError and includes it
+/// directly in the error type rather than relying on string parsing.
 fn map_parser_error(sql: &str, e: sqlparser::parser::ParserError) -> PlannerError {
     let error_str = e.to_string();
-    // Strip the "sql parser error: " prefix that ParserError::Display adds
     let raw_msg = error_str
         .strip_prefix("sql parser error: ")
         .unwrap_or(&error_str);
-    PlannerError::caret_error(format_sql_error_from_message(sql, raw_msg))
+
+    // Try to extract location from the error string
+    // sqlparser embeds location as ` at Line: X, Column: Y` at the end
+    let (line, column, reason) =
+        if let Some((reason, line, column)) = extract_location_from_message(raw_msg) {
+            (line, column, reason.to_string())
+        } else {
+            // For EOF errors, compute position from the SQL text
+            let (eof_line, eof_col) = eof_position(sql);
+            (eof_line, eof_col, raw_msg.to_string())
+        };
+
+    PlannerError::caret_error(reason, sql, line, column)
+}
+
+/// Try to extract ` at Line: X, Column: Y` from the end of an error message.
+/// Returns (reason_without_suffix, line, column) if found.
+fn extract_location_from_message(msg: &str) -> Option<(&str, u64, u64)> {
+    let marker = " at Line: ";
+    let marker_pos = msg.rfind(marker)?;
+    let rest = &msg[marker_pos + marker.len()..];
+    let comma_pos = rest.find(", Column: ")?;
+    let line: u64 = rest[..comma_pos].parse().ok()?;
+    let column: u64 = rest[comma_pos + ", Column: ".len()..].parse().ok()?;
+    if line == 0 {
+        return None;
+    }
+    let reason = &msg[..marker_pos];
+    Some((reason, line, column))
+}
+
+/// Compute the 1-indexed line and column of the position just past the end of the SQL text.
+fn eof_position(sql: &str) -> (u64, u64) {
+    let lines: Vec<&str> = sql.lines().collect();
+    if lines.is_empty() {
+        return (0, 0);
+    }
+    let last_line = lines.len();
+    let last_col = lines[last_line - 1].len() + 1;
+    (last_line as u64, last_col as u64)
 }
 
 /// Bindings are used to lookup in-scope tables, views, and columns (targets T).
@@ -279,12 +317,12 @@ impl SQLPlanner<'_> {
         let tokens: Vec<TokenWithSpan> = Tokenizer::new(&GenericDialect {}, input)
             .tokenize_with_location()
             .map_err(|e| {
-                PlannerError::caret_error(format_sql_error_with_caret(
+                PlannerError::caret_error(
+                    e.message.clone(),
                     input,
-                    &e.message,
                     e.location.line,
                     e.location.column,
-                ))
+                )
             })?;
 
         let from_positions: Vec<usize> = tokens
@@ -2214,12 +2252,7 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> SQLPlannerResult<ExprRef> {
     let tokens = Tokenizer::new(&GenericDialect {}, sql)
         .tokenize_with_location()
         .map_err(|e| {
-            PlannerError::caret_error(format_sql_error_with_caret(
-                sql,
-                &e.message,
-                e.location.line,
-                e.location.column,
-            ))
+            PlannerError::caret_error(e.message.clone(), sql, e.location.line, e.location.column)
         })?;
 
     let mut parser = Parser::new(&GenericDialect {})

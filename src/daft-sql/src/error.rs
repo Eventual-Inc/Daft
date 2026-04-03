@@ -24,8 +24,16 @@ pub enum PlannerError {
     },
     #[snafu(display("Unsupported SQL: '{message}'"))]
     UnsupportedSQL { message: String },
-    #[snafu(display("{message}"))]
-    CaretError { message: String },
+    #[snafu(display(
+        "SQL error at Line: {line}, Column: {column}\nLINE {line}: {line_content}\n{caret_padding}^\nREASON: {reason}"
+    ))]
+    CaretError {
+        line: u64,
+        column: u64,
+        line_content: String,
+        reason: String,
+        caret_padding: String,
+    },
     #[snafu(display("Daft error: {source}"))]
     DaftError { source: DaftError },
 }
@@ -92,75 +100,38 @@ impl PlannerError {
         }
     }
 
-    pub fn caret_error(message: String) -> Self {
-        Self::CaretError { message }
-    }
-}
+    pub fn caret_error(reason: String, sql: &str, line: u64, column: u64) -> Self {
+        let lines: Vec<&str> = sql.lines().collect();
+        let line_idx = if line == 0 {
+            0
+        } else {
+            (line as usize).saturating_sub(1)
+        };
+        let line_content = if line_idx < lines.len() {
+            lines[line_idx].to_string()
+        } else {
+            String::new()
+        };
+        let col = if column == 0 {
+            0usize
+        } else {
+            (column as usize - 1).min(line_content.len())
+        };
+        let prefix_len = if line == 0 {
+            0
+        } else {
+            format!("LINE {}: ", line).len()
+        };
+        let caret_padding = " ".repeat(prefix_len + col);
 
-/// Format a SQL error message with source context and a caret (^) pointer.
-pub fn format_sql_error_with_caret(sql: &str, reason: &str, line: u64, column: u64) -> String {
-    if line == 0 {
-        return reason.to_string();
+        Self::CaretError {
+            line,
+            column,
+            line_content,
+            reason,
+            caret_padding,
+        }
     }
-    let lines: Vec<&str> = sql.lines().collect();
-    let line_idx = (line as usize).saturating_sub(1);
-    if line_idx >= lines.len() {
-        return reason.to_string();
-    }
-    let offending_line = lines[line_idx];
-    let prefix = format!("LINE {}: ", line);
-    let col = if column == 0 {
-        0usize
-    } else {
-        (column as usize - 1).min(offending_line.len())
-    };
-    let caret_padding = " ".repeat(prefix.len() + col);
-    format!(
-        "SQL error at Line: {line}, Column: {column}\n{prefix}{offending_line}\n{caret_padding}^\nREASON: {reason}"
-    )
-}
-
-/// Extract line/column from a sqlparser error message string and format with caret.
-///
-/// sqlparser embeds location as ` at Line: X, Column: Y` at the end of its error strings.
-/// This function parses that suffix, strips it to get the reason, then calls `format_sql_error_with_caret`.
-/// If no location is found (e.g. EOF errors), computes the position from the SQL text.
-pub fn format_sql_error_from_message(sql: &str, error_msg: &str) -> String {
-    if let Some((reason, line, column)) = extract_location_from_message(error_msg) {
-        format_sql_error_with_caret(sql, reason, line, column)
-    } else {
-        // For EOF errors, sqlparser uses Span::empty() (line=0, col=0) so no location
-        // suffix is appended. Compute the EOF position from the SQL text itself.
-        let (eof_line, eof_col) = eof_position(sql);
-        format_sql_error_with_caret(sql, error_msg, eof_line, eof_col)
-    }
-}
-
-/// Compute the 1-indexed line and column of the position just past the end of the SQL text.
-fn eof_position(sql: &str) -> (u64, u64) {
-    let lines: Vec<&str> = sql.lines().collect();
-    if lines.is_empty() {
-        return (0, 0);
-    }
-    let last_line = lines.len();
-    let last_col = lines[last_line - 1].len() + 1;
-    (last_line as u64, last_col as u64)
-}
-
-/// Try to extract ` at Line: X, Column: Y` from the end of an error message.
-/// Returns (reason_without_suffix, line, column) if found.
-fn extract_location_from_message(msg: &str) -> Option<(&str, u64, u64)> {
-    let marker = " at Line: ";
-    let marker_pos = msg.rfind(marker)?;
-    let rest = &msg[marker_pos + marker.len()..];
-    let comma_pos = rest.find(", Column: ")?;
-    let line: u64 = rest[..comma_pos].parse().ok()?;
-    let column: u64 = rest[comma_pos + ", Column: ".len()..].parse().ok()?;
-    if line == 0 {
-        return None;
-    }
-    let reason = &msg[..marker_pos];
-    Some((reason, line, column))
 }
 
 #[macro_export]
