@@ -21,11 +21,12 @@ impl FunctionEvaluator for HllCardinalityEvaluator {
             [input] => {
                 let input_field = input.to_field(schema)?;
                 match input_field.dtype {
-                    DataType::FixedSizeBinary(_) => {
+                    dt if dt == daft_core::array::ops::HLL_SKETCH_DTYPE => {
                         Ok(Field::new(input_field.name, DataType::UInt64))
                     }
                     other => Err(DaftError::TypeError(format!(
-                        "Expected FixedSizeBinary input for hll_cardinality, got: {}",
+                        "Expected {} input for hll_cardinality, got: {}",
+                        daft_core::array::ops::HLL_SKETCH_DTYPE,
                         other
                     ))),
                 }
