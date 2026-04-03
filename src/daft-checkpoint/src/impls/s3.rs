@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 use daft_core::series::Series;
 use daft_io::{IOConfig, get_io_client};
 use daft_recordbatch::RecordBatch;
-use futures::{StreamExt, stream::BoxStream};
+use futures::{StreamExt, future::try_join_all, stream::BoxStream};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -128,27 +128,16 @@ impl Default for CleanupPolicy {
 pub struct S3CheckpointStore {
     prefix: String,
     io_config: Arc<IOConfig>,
-    cleanup_policy: CleanupPolicy,
     /// Never held across `.await` points.
     staged: RwLock<HashMap<CheckpointId, StagedEntry>>,
 }
 
 impl S3CheckpointStore {
     /// Create a new checkpoint store rooted at `prefix` (trailing slashes stripped).
-    /// Uses [`CleanupPolicy::Manual`] by default.
     pub fn new(prefix: impl Into<String>, io_config: Arc<IOConfig>) -> Self {
-        Self::with_cleanup_policy(prefix, io_config, CleanupPolicy::default())
-    }
-
-    pub fn with_cleanup_policy(
-        prefix: impl Into<String>,
-        io_config: Arc<IOConfig>,
-        cleanup_policy: CleanupPolicy,
-    ) -> Self {
         Self {
             prefix: prefix.into().trim_end_matches('/').to_string(),
             io_config,
-            cleanup_policy,
             staged: RwLock::new(HashMap::new()),
         }
     }
@@ -232,7 +221,8 @@ impl S3CheckpointStore {
         })
     }
 
-    /// Returns empty vec if the prefix doesn't exist yet (rather than propagating the error).
+    /// Returns empty vec if the prefix doesn't exist yet. Propagates other errors
+    /// (permission failures, network errors, malformed URLs).
     async fn glob_paths(&self, pattern: &str) -> CheckpointResult<Vec<String>> {
         let client = self.io_client()?;
         match client
@@ -244,7 +234,10 @@ impl S3CheckpointStore {
                 .map(|fm| fm.filepath)
                 .collect()
                 .await),
-            Err(_) => Ok(Vec::new()),
+            Err(daft_io::Error::NotFound { .. }) => Ok(Vec::new()),
+            Err(e) => Err(CheckpointError::Internal {
+                message: format!("glob {pattern} failed: {e}"),
+            }),
         }
     }
 
@@ -305,9 +298,9 @@ impl S3CheckpointStore {
 
     async fn committed_set(&self) -> CheckpointResult<HashSet<CheckpointId>> {
         let paths = self.glob_paths(&self.committed_log_glob()).await?;
+        let raw_bytes = try_join_all(paths.iter().map(|path| self.get_bytes(path))).await?;
         let mut set = HashSet::new();
-        for path in &paths {
-            let raw = self.get_bytes(path).await?;
+        for (path, raw) in paths.iter().zip(raw_bytes) {
             let entry: CommittedLogEntry =
                 serde_json::from_slice(&raw).map_err(|e| CheckpointError::Internal {
                     message: format!("failed to parse committed_log entry at {path}: {e}"),
@@ -397,37 +390,66 @@ impl CheckpointStore for S3CheckpointStore {
             return Ok(());
         }
 
-        let entry = {
-            let mut staged = self.staged.write().map_err(|e| CheckpointError::Internal {
+        // Serialize while holding the read lock (no `.await` in this block).
+        // The entry stays in `staged` until manifest.json is durably written —
+        // a failed upload leaves the staged data intact so the caller can retry.
+        let (num_key_files, num_file_files, key_ipcs, file_bins, created_at) = {
+            let staged = self.staged.read().map_err(|e| CheckpointError::Internal {
                 message: format!("staged lock poisoned: {e}"),
             })?;
-            staged
-                .remove(&id)
-                .ok_or(CheckpointError::CheckpointNotFound { id })?
+            let entry = staged
+                .get(&id)
+                .ok_or(CheckpointError::CheckpointNotFound { id })?;
+            let key_ipcs: CheckpointResult<Vec<Vec<u8>>> =
+                entry.keys.iter().map(Self::series_to_ipc).collect();
+            let file_bins: CheckpointResult<Vec<Vec<u8>>> =
+                entry.files.iter().map(Self::encode_file_metadata).collect();
+            (
+                entry.keys.len(),
+                entry.files.len(),
+                key_ipcs?,
+                file_bins?,
+                entry.created_at,
+            )
         };
 
-        let num_key_files = entry.keys.len();
-        let num_file_files = entry.files.len();
-
-        for (i, series) in entry.keys.iter().enumerate() {
-            let ipc = Self::series_to_ipc(series)?;
-            self.put_bytes(&self.key_path(id, i), ipc).await?;
-        }
-
-        for (i, file_meta) in entry.files.iter().enumerate() {
-            let encoded = Self::encode_file_metadata(file_meta)?;
-            self.put_bytes(&self.file_path(id, i), encoded).await?;
-        }
+        // Upload keys and files concurrently, all before manifest.json.
+        let key_paths: Vec<String> = (0..num_key_files).map(|i| self.key_path(id, i)).collect();
+        let file_paths: Vec<String> = (0..num_file_files).map(|i| self.file_path(id, i)).collect();
+        try_join_all(
+            key_paths
+                .iter()
+                .zip(key_ipcs)
+                .map(|(path, ipc)| self.put_bytes(path, ipc)),
+        )
+        .await?;
+        try_join_all(
+            file_paths
+                .iter()
+                .zip(file_bins)
+                .map(|(path, bin)| self.put_bytes(path, bin)),
+        )
+        .await?;
 
         // manifest.json is written last — its presence is the atomic seal.
         let manifest = Manifest {
             checkpoint_id: id.as_uuid().to_string(),
-            created_at: rfc3339_from(entry.created_at),
+            created_at: rfc3339_from(created_at),
             sealed_at: rfc3339_now(),
             num_key_files,
             num_file_files,
         };
-        self.write_manifest(id, &manifest).await
+        self.write_manifest(id, &manifest).await?;
+
+        // Remove from staged only after manifest is durably written.
+        self.staged
+            .write()
+            .map_err(|e| CheckpointError::Internal {
+                message: format!("staged lock poisoned: {e}"),
+            })?
+            .remove(&id);
+
+        Ok(())
     }
 
     async fn get_checkpointed_keys(
@@ -448,14 +470,10 @@ impl CheckpointStore for S3CheckpointStore {
             }
         }
 
-        let io_config = self.io_config.clone();
+        let client = self.io_client()?;
         let stream = futures::stream::iter(key_paths).then(move |path| {
-            let io_config = io_config.clone();
+            let client = client.clone();
             async move {
-                let client =
-                    get_io_client(true, io_config).map_err(|e| CheckpointError::Internal {
-                        message: format!("IO client: {e}"),
-                    })?;
                 let result = client
                     .single_url_get(path.clone(), None, None)
                     .await
@@ -495,14 +513,10 @@ impl CheckpointStore for S3CheckpointStore {
             }
         }
 
-        let io_config = self.io_config.clone();
+        let client = self.io_client()?;
         let stream = futures::stream::iter(file_paths).then(move |path| {
-            let io_config = io_config.clone();
+            let client = client.clone();
             async move {
-                let client =
-                    get_io_client(true, io_config).map_err(|e| CheckpointError::Internal {
-                        message: format!("IO client: {e}"),
-                    })?;
                 let result = client
                     .single_url_get(path.clone(), None, None)
                     .await
@@ -652,10 +666,6 @@ impl CheckpointStore for S3CheckpointStore {
         })?;
         self.put_bytes(&self.new_committed_log_path(), raw).await?;
 
-        if matches!(self.cleanup_policy, CleanupPolicy::DeleteAfterSuccess) {
-            self.cleanup().await?;
-        }
-
         Ok(())
     }
 }
@@ -799,18 +809,5 @@ mod tests {
     #[test]
     fn test_default_cleanup_policy_is_manual() {
         assert!(matches!(CleanupPolicy::default(), CleanupPolicy::Manual));
-    }
-
-    #[test]
-    fn test_cleanup_policy_delete_after_success_stored() {
-        let store = S3CheckpointStore::with_cleanup_policy(
-            "s3://my-bucket/my-job",
-            Arc::new(IOConfig::default()),
-            CleanupPolicy::DeleteAfterSuccess,
-        );
-        assert!(matches!(
-            store.cleanup_policy,
-            CleanupPolicy::DeleteAfterSuccess
-        ));
     }
 }

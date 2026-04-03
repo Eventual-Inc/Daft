@@ -1604,10 +1604,31 @@ impl ObjectSource for S3LikeSource {
                 if self.s3_config.requester_pays {
                     del_req = del_req.request_payer(s3::types::RequestPayer::Requester);
                 }
-                del_req.send().await.map_err(|e| super::Error::Generic {
+                let del_resp = del_req.send().await.map_err(|e| super::Error::Generic {
                     store: crate::SourceType::S3,
                     source: e.into(),
                 })?;
+
+                // S3 returns HTTP 200 even on partial failure; per-object errors
+                // are in the response body and must be checked explicitly.
+                let failed = del_resp.errors();
+                if !failed.is_empty() {
+                    let msgs: Vec<String> = failed
+                        .iter()
+                        .map(|e| {
+                            format!(
+                                "{}: {}",
+                                e.key().unwrap_or("?"),
+                                e.message().unwrap_or("unknown")
+                            )
+                        })
+                        .collect();
+                    return Err(super::Error::Generic {
+                        store: crate::SourceType::S3,
+                        source: format!("DeleteObjects partial failure: {}", msgs.join("; "))
+                            .into(),
+                    });
+                }
 
                 if let Some(is) = io_stats.as_ref() {
                     is.mark_delete_requests(n);
