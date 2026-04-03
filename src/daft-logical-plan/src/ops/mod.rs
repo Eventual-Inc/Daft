@@ -6,6 +6,7 @@ mod filter;
 mod into_batches;
 mod into_partitions;
 pub mod join;
+pub mod key_filtering;
 mod limit;
 mod monotonically_increasing_id;
 mod offset;
@@ -34,6 +35,9 @@ pub use filter::Filter;
 pub use into_batches::IntoBatches;
 pub use into_partitions::IntoPartitions;
 pub use join::Join;
+pub use key_filtering::KeyFilteringConfig;
+#[cfg(feature = "python")]
+pub use key_filtering::PyKeyFilteringConfig;
 pub use limit::Limit;
 pub use monotonically_increasing_id::MonotonicallyIncreasingId;
 pub use offset::Offset;
