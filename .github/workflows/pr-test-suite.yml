@@ -323,16 +323,27 @@ jobs:
         npm ci
         npm run build
 
+    - name: Check compiler/linker versions
+      run: |
+        rustc -Z unstable-options --print target-spec-json --target $(rustc -vV | grep host | cut -d' ' -f2)
       # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
       run: |
         source .venv/bin/activate
-        maturin build --release --compatibility linux --out dist
+        maturin build --release --compatibility linux --out dist --timings=html -Z unstable-options
+        ls -alh
+        ls -alh target/
+        ls -alh target/generated/
     - name: Upload wheels
       uses: actions/upload-artifact@v7
       with:
         name: wheels-${{ matrix.python-version }}
         path: dist
+    - name: Upload timings
+      uses: actions/upload-artifact@v7
+      with:
+        name: timings-${{ matrix.python-version }}
+        path: target/cargo-timings/
 
   integration-test-tpch:
     runs-on: ubuntu-latest
