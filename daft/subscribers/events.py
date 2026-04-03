@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from daft.daft import PyMicroPartition, PyQueryMetadata, PyQueryResult, StatType
+    from daft.daft import PyQueryMetadata, PyQueryResult, StatType
 
 
 class Event(ABC):
@@ -78,4 +78,3 @@ class ProcessStats(Event):
 class ResultProduced(Event):
     query_id: str
     num_rows: int
-    data: PyMicroPartition | None = None

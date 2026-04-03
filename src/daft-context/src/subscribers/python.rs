@@ -2,7 +2,6 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::{NodeID, Stats};
-use daft_micropartition::python::PyMicroPartition;
 use pyo3::{
     Bound, IntoPyObject, Py, PyAny, PyResult, Python, intern,
     types::{PyAnyMethods, PyModule},
@@ -155,15 +154,8 @@ fn build_process_stats(py: Python<'_>, event: Arc<ProcessStatsEvent>) -> PyResul
 }
 
 fn build_result_produced(py: Python<'_>, event: Arc<ResultOutEvent>) -> PyResult<Py<PyAny>> {
-    let data = event
-        .data
-        .clone()
-        .map(PyMicroPartition::from)
-        .map(|partition| partition.into_pyobject(py).map(|obj| obj.into_any()))
-        .transpose()?;
-
     event_class(py, "ResultProduced")?
-        .call1((event.header.query_id.to_string(), event.num_rows, data))
+        .call1((event.header.query_id.to_string(), event.num_rows))
         .map(Into::into)
 }
 

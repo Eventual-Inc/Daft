@@ -46,6 +46,7 @@ class MockSubscriber(Subscriber):
         self.query_node_stats = defaultdict(lambda: defaultdict(dict))
         self.end_states = {}
         self.end_messages = {}
+        self.query_result_rows: defaultdict[str, int] = defaultdict(int)
         self.query_ids = []
 
     def on_query_started(self, event: QueryStarted) -> None:
@@ -57,7 +58,7 @@ class MockSubscriber(Subscriber):
         self.end_messages[event.query_id] = event.result.error_message
 
     def on_result_produced(self, event: ResultProduced) -> None:
-        pass
+        self.query_result_rows[event.query_id] += event.num_rows
 
     def on_optimization_completed(self, event: OptimizationCompleted) -> None:
         self.query_optimized_plan[event.query_id] = event.optimized_plan
@@ -198,6 +199,9 @@ def test_subscriber_template():
     assert subscriber.query_metadata[query_id].output_schema == output_schema._schema
     # Optimized plan should be different from unoptimized plan
     assert subscriber.query_optimized_plan[query_id] != unoptimized_plan_json
+
+    # Verify ResultProduced events delivered the expected row count
+    assert subscriber.query_result_rows[query_id] == 3
 
     # Test stats
     for _, stats in subscriber.query_node_stats[query_id].items():

@@ -123,6 +123,7 @@ def test_on_query_end_clears_stale_timing_state_for_failed_query(tmp_path):
         metadata = _make_query_metadata()
 
         subscriber.on_query_start(query_id, metadata)
+        subscriber.on_event(OptimizationStarted(query_id=query_id))
         subscriber.on_event(OptimizationCompleted(query_id=query_id, optimized_plan='{"nodes":{}}'))
         subscriber.on_event(ExecutionStarted(query_id=query_id, physical_plan='{"nodes":{}}'))
         subscriber.on_event(OperatorStarted(query_id=query_id, node_id=1, name="op1"))
@@ -137,6 +138,7 @@ def test_on_query_end_clears_stale_timing_state_for_failed_query(tmp_path):
         )
 
         assert query_id not in subscriber._query_starts
+        assert query_id not in subscriber._optimization_starts
         assert query_id not in subscriber._exec_starts
         assert all(qid != query_id for qid, _ in subscriber._operator_starts)
     finally:
@@ -152,11 +154,13 @@ def test_on_query_end_only_clears_ended_query_state(tmp_path):
         metadata = _make_query_metadata()
 
         subscriber.on_query_start(ended_query_id, metadata)
+        subscriber.on_event(OptimizationStarted(query_id=ended_query_id))
         subscriber.on_event(OptimizationCompleted(query_id=ended_query_id, optimized_plan='{"nodes":{}}'))
         subscriber.on_event(ExecutionStarted(query_id=ended_query_id, physical_plan='{"nodes":{}}'))
         subscriber.on_event(OperatorStarted(query_id=ended_query_id, node_id=1, name="op1"))
 
         subscriber.on_query_start(live_query_id, metadata)
+        subscriber.on_event(OptimizationStarted(query_id=live_query_id))
         subscriber.on_event(OptimizationCompleted(query_id=live_query_id, optimized_plan='{"nodes":{}}'))
         subscriber.on_event(ExecutionStarted(query_id=live_query_id, physical_plan='{"nodes":{}}'))
         subscriber.on_event(OperatorStarted(query_id=live_query_id, node_id=9, name="op9"))
@@ -170,10 +174,12 @@ def test_on_query_end_only_clears_ended_query_state(tmp_path):
         )
 
         assert ended_query_id not in subscriber._query_starts
+        assert ended_query_id not in subscriber._optimization_starts
         assert ended_query_id not in subscriber._exec_starts
         assert all(qid != ended_query_id for qid, _ in subscriber._operator_starts)
 
         assert live_query_id in subscriber._query_starts
+        assert live_query_id not in subscriber._optimization_starts  # consumed by OptimizationCompleted
         assert live_query_id in subscriber._exec_starts
         assert (live_query_id, 9) in subscriber._operator_starts
     finally:

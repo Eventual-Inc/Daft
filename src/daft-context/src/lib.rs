@@ -172,7 +172,6 @@ impl DaftContext {
     }
 
     pub fn notify_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
-        // TODO track this for a complete event and remove the start event
         let event = Event::OptimizationStart(Arc::new(OptimizationStartEvent {
             header: event_header(query_id),
         }));
@@ -192,7 +191,6 @@ impl DaftContext {
     }
 
     pub fn notify_exec_start(&self, query_id: QueryID, physical_plan: String) -> DaftResult<()> {
-        // TODO get operator info
         let event = Event::ExecStart(Arc::new(ExecStartEvent {
             header: event_header(query_id),
             physical_plan: physical_plan.into(),
