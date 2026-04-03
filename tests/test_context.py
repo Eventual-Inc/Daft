@@ -335,10 +335,10 @@ def test_set_scantask_max_parallelism_greater_than_partition_num():
         assert "Num Parallel Scan Tasks = 17" in str_io.getvalue().strip()
 
 
-def test_set_ray_worker_actor_startup_timeout():
-    original_timeout = daft.context.get_context().daft_execution_config.ray_worker_actor_startup_timeout
+def test_set_worker_startup_timeout():
+    original_timeout = daft.context.get_context().daft_execution_config.worker_startup_timeout
 
-    with daft.execution_config_ctx(ray_worker_actor_startup_timeout=321):
-        assert daft.context.get_context().daft_execution_config.ray_worker_actor_startup_timeout == 321
+    with daft.execution_config_ctx(worker_startup_timeout=321):
+        assert daft.context.get_context().daft_execution_config.worker_startup_timeout == 321
 
-    assert daft.context.get_context().daft_execution_config.ray_worker_actor_startup_timeout == original_timeout
+    assert daft.context.get_context().daft_execution_config.worker_startup_timeout == original_timeout

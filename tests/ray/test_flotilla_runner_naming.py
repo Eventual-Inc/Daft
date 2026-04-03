@@ -30,7 +30,7 @@ def test_flotilla_runner_actor_name_is_namespaced(monkeypatch):
     assert flotilla.get_flotilla_runner_actor_name() == name
 
 
-def test_start_ray_workers_uses_configured_actor_startup_timeout(monkeypatch):
+def test_start_ray_workers_uses_configured_worker_startup_timeout(monkeypatch):
     captured: dict[str, object] = {}
     node_id = "1" * 56
 
@@ -82,7 +82,7 @@ def test_start_ray_workers_uses_configured_actor_startup_timeout(monkeypatch):
         },
     )
 
-    with execution_config_ctx(ray_worker_actor_startup_timeout=321):
+    with execution_config_ctx(worker_startup_timeout=321):
         workers = flotilla.start_ray_workers(existing_worker_ids=[])
 
     assert captured["timeout"] == 321

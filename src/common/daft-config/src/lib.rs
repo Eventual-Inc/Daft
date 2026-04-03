@@ -136,7 +136,7 @@ pub struct DaftExecutionConfig {
     pub native_parquet_writer: bool,
     pub min_cpu_per_task: f64,
     pub actor_udf_ready_timeout: usize,
-    pub ray_worker_actor_startup_timeout: usize,
+    pub worker_startup_timeout: usize,
     pub maintain_order: bool,
     pub enable_dynamic_batching: bool,
     pub dynamic_batching_strategy: String,
@@ -183,7 +183,7 @@ impl Default for DaftExecutionConfig {
             native_parquet_writer: true,
             min_cpu_per_task: 0.5,
             actor_udf_ready_timeout: 120,
-            ray_worker_actor_startup_timeout: 120,
+            worker_startup_timeout: 120,
             maintain_order: true,
             enable_dynamic_batching: false,
             dynamic_batching_strategy: "auto".to_string(),
@@ -199,8 +199,7 @@ impl DaftExecutionConfig {
     const ENV_DAFT_NATIVE_PARQUET_WRITER: &'static str = "DAFT_NATIVE_PARQUET_WRITER";
     const ENV_DAFT_MIN_CPU_PER_TASK: &'static str = "DAFT_MIN_CPU_PER_TASK";
     const ENV_DAFT_ACTOR_UDF_READY_TIMEOUT: &'static str = "DAFT_ACTOR_UDF_READY_TIMEOUT";
-    const ENV_DAFT_RAY_WORKER_ACTOR_STARTUP_TIMEOUT: &'static str =
-        "DAFT_RAY_WORKER_ACTOR_STARTUP_TIMEOUT";
+    const ENV_DAFT_WORKER_STARTUP_TIMEOUT: &'static str = "DAFT_WORKER_STARTUP_TIMEOUT";
     const ENV_PARQUET_INFLATION_FACTOR: &'static str = "DAFT_PARQUET_INFLATION_FACTOR";
     const ENV_CSV_INFLATION_FACTOR: &'static str = "DAFT_CSV_INFLATION_FACTOR";
     const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
@@ -243,10 +242,10 @@ impl DaftExecutionConfig {
         }
 
         if let Some(val) = parse_number_from_env(
-            Self::ENV_DAFT_RAY_WORKER_ACTOR_STARTUP_TIMEOUT,
-            cfg.ray_worker_actor_startup_timeout,
+            Self::ENV_DAFT_WORKER_STARTUP_TIMEOUT,
+            cfg.worker_startup_timeout,
         ) {
-            cfg.ray_worker_actor_startup_timeout = val;
+            cfg.worker_startup_timeout = val;
         }
 
         if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_MAINTAIN_ORDER) {
@@ -495,33 +494,28 @@ mod tests {
             }
         }
 
-        // ENV_DAFT_RAY_WORKER_ACTOR_STARTUP_TIMEOUT
+        // ENV_DAFT_WORKER_STARTUP_TIMEOUT
         {
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.ray_worker_actor_startup_timeout, 120);
+            assert_eq!(cfg.worker_startup_timeout, 120);
 
             unsafe {
-                std::env::set_var(
-                    DaftExecutionConfig::ENV_DAFT_RAY_WORKER_ACTOR_STARTUP_TIMEOUT,
-                    "300",
-                );
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_WORKER_STARTUP_TIMEOUT, "300");
             }
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.ray_worker_actor_startup_timeout, 300);
+            assert_eq!(cfg.worker_startup_timeout, 300);
 
             unsafe {
                 std::env::set_var(
-                    DaftExecutionConfig::ENV_DAFT_RAY_WORKER_ACTOR_STARTUP_TIMEOUT,
+                    DaftExecutionConfig::ENV_DAFT_WORKER_STARTUP_TIMEOUT,
                     "invalid",
                 );
             }
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.ray_worker_actor_startup_timeout, 120);
+            assert_eq!(cfg.worker_startup_timeout, 120);
 
             unsafe {
-                std::env::remove_var(
-                    DaftExecutionConfig::ENV_DAFT_RAY_WORKER_ACTOR_STARTUP_TIMEOUT,
-                );
+                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_WORKER_STARTUP_TIMEOUT);
             }
         }
 

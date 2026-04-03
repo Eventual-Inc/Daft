@@ -384,8 +384,8 @@ class RaySwordfishActorHandle:
         ray.kill(self.actor_handle)
 
 
-def _get_ray_worker_actor_startup_timeout() -> int:
-    return get_context().daft_execution_config.ray_worker_actor_startup_timeout
+def _get_worker_startup_timeout() -> int:
+    return get_context().daft_execution_config.worker_startup_timeout
 
 
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
@@ -411,7 +411,7 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             actors.append((node, actor))
 
     # Batch all IP address retrievals into a single ray.get call
-    actor_startup_timeout = _get_ray_worker_actor_startup_timeout()
+    actor_startup_timeout = _get_worker_startup_timeout()
     try:
         ip_addresses = ray.get(
             [actor.get_address.remote() for _, actor in actors],

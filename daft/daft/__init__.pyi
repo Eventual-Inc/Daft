@@ -2334,7 +2334,7 @@ class PyDaftExecutionConfig:
         native_parquet_writer: bool | None = None,
         min_cpu_per_task: float | None = None,
         actor_udf_ready_timeout: int | None = None,
-        ray_worker_actor_startup_timeout: int | None = None,
+        worker_startup_timeout: int | None = None,
         maintain_order: bool | None = None,
         enable_dynamic_batching: bool | None = None,
         dynamic_batching_strategy: str | None = None,
@@ -2396,7 +2396,7 @@ class PyDaftExecutionConfig:
     @property
     def actor_udf_ready_timeout(self) -> int: ...
     @property
-    def ray_worker_actor_startup_timeout(self) -> int: ...
+    def worker_startup_timeout(self) -> int: ...
     @property
     def scantask_max_parallel(self) -> int: ...
     @property
