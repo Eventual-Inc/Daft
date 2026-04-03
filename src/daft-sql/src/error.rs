@@ -24,6 +24,16 @@ pub enum PlannerError {
     },
     #[snafu(display("Unsupported SQL: '{message}'"))]
     UnsupportedSQL { message: String },
+    #[snafu(display(
+        "SQL error at Line: {line}, Column: {column}\nLINE {line}: {line_content}\n{caret_padding}^\nREASON: {reason}"
+    ))]
+    CaretError {
+        line: u64,
+        column: u64,
+        line_content: String,
+        reason: String,
+        caret_padding: String,
+    },
     #[snafu(display("Daft error: {source}"))]
     DaftError { source: DaftError },
 }
@@ -87,6 +97,39 @@ impl PlannerError {
         Self::InvalidFunctionArgument {
             message: arg.into(),
             function: function.into(),
+        }
+    }
+
+    pub fn caret_error(reason: String, sql: &str, line: u64, column: u64) -> Self {
+        let lines: Vec<&str> = sql.lines().collect();
+        let line_idx = if line == 0 {
+            0
+        } else {
+            (line as usize).saturating_sub(1)
+        };
+        let line_content = if line_idx < lines.len() {
+            lines[line_idx].to_string()
+        } else {
+            String::new()
+        };
+        let col = if column == 0 {
+            0usize
+        } else {
+            (column as usize - 1).min(line_content.len())
+        };
+        let prefix_len = if line == 0 {
+            0
+        } else {
+            format!("LINE {}: ", line).len()
+        };
+        let caret_padding = " ".repeat(prefix_len + col);
+
+        Self::CaretError {
+            line,
+            column,
+            line_content,
+            reason,
+            caret_padding,
         }
     }
 }
