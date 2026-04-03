@@ -1,0 +1,83 @@
+name: Issue Component Labeler
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+
+jobs:
+  apply-component-labels:
+    if: contains(github.event.issue.body, '### Component(s)')
+    runs-on: ubuntu-latest
+    steps:
+    - name: Apply mapped labels from Component(s)
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const issue = context.payload.issue;
+          const body = issue.body || "";
+          const sectionMatch = body.match(/### Component\(s\)\s*([\s\S]*?)(?:\n### |\n## |$)/);
+
+          if (!sectionMatch) {
+            core.info("Component(s) section not found; skipping.");
+            return;
+          }
+
+          const selectedComponents = sectionMatch[1]
+            .split("\n")
+            .map((line) => line.trim())
+            .filter((line) => line.startsWith("- "))
+            .map((line) => line.replace(/^- /, "").trim())
+            .filter(Boolean);
+
+          if (selectedComponents.length === 0) {
+            core.info("No selected components found in section; skipping.");
+            return;
+          }
+
+          const componentToLabels = {
+            "Built-in Functions": ["expression"],
+            "UDFs (User Defined Functions)": ["expression", "python"],
+            "Data Sources & Sinks": ["data-catalogs"],
+            "Native Runner (swordfish)": ["rust"],
+            "Distributed Runner (flotilla)": ["rust"],
+            "Cloud Storage (S3/GCS/Azure)": ["data-catalogs"],
+            "Multimodal Operations (files/images/etc.)": ["python"],
+            "Memory Management/OOM's": ["rust"],
+            "Lance Integration": ["rust"],
+          };
+
+          const mappedLabels = [
+            ...new Set(
+              selectedComponents.flatMap((component) => componentToLabels[component] || [])
+            ),
+          ];
+
+          if (mappedLabels.length === 0) {
+            core.info("No label mappings found for selected components; skipping.");
+            return;
+          }
+
+          const existingLabels = await github.paginate(github.rest.issues.listLabelsOnIssue, {
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: issue.number,
+          });
+          const existingLabelNames = new Set(existingLabels.map((label) => label.name));
+          const labelsToAdd = mappedLabels.filter((name) => !existingLabelNames.has(name));
+
+          if (labelsToAdd.length === 0) {
+            core.info("All mapped labels already present.");
+            return;
+          }
+
+          await github.rest.issues.addLabels({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: issue.number,
+            labels: labelsToAdd,
+          });
+
+          core.info(`Added labels: ${labelsToAdd.join(", ")}`);
