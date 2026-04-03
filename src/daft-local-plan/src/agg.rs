@@ -162,6 +162,19 @@ pub fn populate_aggregation_stages_bound_with_schema(
 
                 final_stage(merge_mean(global_sum_col, global_count_col));
             }
+            AggExpr::Percentile(expr, percentage) => {
+                let percentile_input = match expr.to_field(schema)?.dtype {
+                    DataType::List(inner_dtype) | DataType::FixedSizeList(inner_dtype, _)
+                        if inner_dtype.is_numeric() =>
+                    {
+                        first_stage!(AggExpr::Concat(expr.clone(), None))
+                    }
+                    _ => first_stage!(AggExpr::List(expr.clone())),
+                };
+                let global_percentile_col =
+                    second_stage!(AggExpr::Percentile(percentile_input, percentage.clone()));
+                final_stage(global_percentile_col);
+            }
             AggExpr::Stddev(expr, ddof) => {
                 // The stddev calculation we're performing here is:
                 // stddev(X, ddof) = sqrt((E(X^2) - E(X)^2) * n / (n - ddof))
