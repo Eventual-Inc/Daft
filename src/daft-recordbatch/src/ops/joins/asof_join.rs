@@ -112,6 +112,13 @@ pub fn asof_join_backward(
             best_match = None;
         }
 
+        // If the left "on" key is null, no valid comparison can be made, so
+        // the row carries no right-side match
+        if !left_on.is_valid(left_idx) {
+            right_indices.push(None);
+            continue;
+        }
+
         while right_idx < right.len() {
             match cmp_by(left_idx, right_idx) {
                 Some(Ordering::Greater) | None => {
