@@ -75,7 +75,7 @@ from daft.convert import (
     from_pylist,
     from_ray_dataset,
 )
-from daft.daft import ImageFormat, ImageMode, ImageProperty, ResourceRequest
+from daft.daft import ImageFormat, ImageMode, UnionMode, ImageProperty, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit, MediaType
@@ -190,6 +190,7 @@ __all__ = [
     "Session",
     "Table",
     "TimeUnit",
+    "UnionMode",
     "VideoFile",
     "Window",
     "attach",

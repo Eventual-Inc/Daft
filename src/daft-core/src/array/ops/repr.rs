@@ -4,7 +4,7 @@ use common_error::DaftResult;
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftNumericType, DataType, Decimal128Array, ExtensionArray,
         FileArray, FixedSizeBinaryArray, IntervalArray, IntervalValue, NullArray, UInt64Array,
@@ -472,6 +472,13 @@ impl StructArray {
         }
     }
 }
+
+impl UnionArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        Ok(self.get_lit(idx).to_string())
+    }
+}
+
 impl<T> FileArray<T>
 where
     T: DaftMediaType,
@@ -547,6 +554,7 @@ impl_array_html_value!(DurationArray);
 impl_array_html_value!(IntervalArray);
 impl_array_html_value!(TimestampArray);
 impl_array_html_value!(EmbeddingArray);
+impl_array_html_value!(UnionArray);
 
 #[cfg(feature = "python")]
 impl PythonArray {

@@ -88,4 +88,8 @@ impl Growable for FixedSizeListGrowable<'_> {
         )
         .into_series())
     }
+
+    fn len(&self) -> usize {
+        self.child_growable.len() / self.element_fixed_len
+    }
 }
