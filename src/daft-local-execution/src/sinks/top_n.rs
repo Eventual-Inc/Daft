@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
+use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
@@ -24,6 +25,8 @@ struct TopNParams {
     // Limit Parameters
     limit: usize,
     offset: Option<usize>,
+    // Output Schema
+    schema: SchemaRef,
 }
 
 /// Current status of the TopN operation
@@ -68,6 +71,7 @@ impl TopNSink {
         nulls_first: Vec<bool>,
         limit: usize,
         offset: Option<usize>,
+        schema: SchemaRef,
     ) -> Self {
         Self {
             params: Arc::new(TopNParams {
@@ -76,6 +80,7 @@ impl TopNSink {
                 nulls_first,
                 limit,
                 offset,
+                schema,
             }),
         }
     }
@@ -131,7 +136,8 @@ impl BlockingSink for TopNSink {
                         let params = params.clone();
                         joinset.spawn(async move {
                             let parts = state.finalize();
-                            let concated = MicroPartition::concat(parts)?;
+                            let concated =
+                                MicroPartition::concat_or_empty(parts, params.schema.clone())?;
                             let final_output = concated.top_n(
                                 &params.sort_by,
                                 &params.descending,

@@ -938,6 +938,7 @@ fn physical_plan_to_pipeline(
             limit,
             stats_state,
             context,
+            schema,
             ..
         }) => {
             let sink = TopNSink::new(
@@ -946,6 +947,7 @@ fn physical_plan_to_pipeline(
                 nulls_first.clone(),
                 *limit as usize,
                 offset.map(|x| x as usize),
+                schema.clone(),
             );
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             BlockingSinkNode::new(
