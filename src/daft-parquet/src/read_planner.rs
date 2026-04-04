@@ -209,6 +209,10 @@ impl RangesContainer {
     /// Resolves all underlying cache entries that overlap the requested range
     /// and returns fully materialized `Bytes` (used by `AsyncFileReader::get_byte_ranges`).
     pub async fn get_range_bytes(self: &Arc<Self>, range: Range<usize>) -> DaftResult<Bytes> {
+        if range.start == range.end {
+            return Ok(Bytes::new());
+        }
+
         let mut current_pos = range.start;
         let mut curr_index;
         let start_point = self.ranges.binary_search_by_key(&current_pos, |e| e.start);
@@ -232,9 +236,11 @@ impl RangesContainer {
             Err(index) => {
                 assert!(
                     index > 0,
-                    "range: {range:?}, start: {}, end: {}",
-                    &self.ranges[index].start,
-                    &self.ranges[index].end
+                    "range: {range:?}, no cached range covers the start position; available ranges: {:?}",
+                    self.ranges
+                        .iter()
+                        .map(|r| r.start..r.end)
+                        .collect::<Vec<_>>()
                 );
                 let index = index - 1;
                 let entry = self.ranges[index].clone();
