@@ -1,15 +1,26 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_metrics::{
-    NodeID, QueryID, Stats,
+    NodeID, QueryID, QueryPlan, Stats,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
+use daft_micropartition::MicroPartitionRef;
+
+use super::{QueryMetadata, QueryResult};
 
 #[derive(Debug, Clone)]
 pub enum Event {
+    QueryStart(Arc<QueryStartEvent>),
+    QueryEnd(Arc<QueryEndEvent>),
+    OptimizationStart(Arc<OptimizationStartEvent>),
+    OptimizationComplete(Arc<OptimizationCompleteEvent>),
+    ExecStart(Arc<ExecStartEvent>),
+    ExecEnd(Arc<ExecEndEvent>),
     OperatorStart(Arc<OperatorStartEvent>),
     OperatorEnd(Arc<OperatorEndEvent>),
     Stats(Arc<StatsEvent>),
+    ProcessStats(Arc<ProcessStatsEvent>),
+    ResultOut(Arc<ResultOutEvent>),
 }
 
 #[derive(Debug, Clone)]
@@ -27,6 +38,22 @@ pub struct OperatorMeta {
     pub origin_node_id: NodeID,
     pub node_phase: Option<String>,
     pub context: HashMap<String, String>,
+}
+
+impl OperatorMeta {
+    // Placeholder until we can get more data from distributed
+    // on_operator_start and on_operator_end calls
+    pub fn from_id(node_id: NodeID) -> Self {
+        Self {
+            node_id,
+            name: Arc::from("unknown"),
+            node_type: NodeType::default(),
+            node_category: NodeCategory::default(),
+            origin_node_id: node_id,
+            node_phase: None,
+            context: HashMap::new(),
+        }
+    }
 }
 
 impl From<&NodeInfo> for OperatorMeta {
@@ -59,4 +86,54 @@ pub struct OperatorEndEvent {
 pub struct StatsEvent {
     pub header: EventHeader,
     pub stats: Arc<Vec<(NodeID, Stats)>>,
+}
+
+#[derive(Debug)]
+pub struct ProcessStatsEvent {
+    pub header: EventHeader,
+    pub stats: Stats,
+}
+
+#[derive(Debug)]
+pub struct QueryStartEvent {
+    pub header: EventHeader,
+    pub metadata: Arc<QueryMetadata>,
+}
+
+#[derive(Debug)]
+pub struct QueryEndEvent {
+    pub header: EventHeader,
+    pub result: QueryResult,
+    pub duration_ms: Option<f64>,
+}
+
+#[derive(Debug)]
+pub struct OptimizationStartEvent {
+    pub header: EventHeader,
+}
+
+#[derive(Debug)]
+pub struct OptimizationCompleteEvent {
+    pub header: EventHeader,
+    pub optimized_plan: QueryPlan,
+}
+
+#[derive(Debug)]
+pub struct ExecStartEvent {
+    pub header: EventHeader,
+    pub physical_plan: QueryPlan,
+}
+
+#[derive(Debug)]
+pub struct ExecEndEvent {
+    pub header: EventHeader,
+    pub duration_ms: Option<f64>,
+}
+
+#[derive(Debug)]
+pub struct ResultOutEvent {
+    pub header: EventHeader,
+    pub num_rows: u64,
+    // needed by the dashboard subscriber
+    pub data: Option<MicroPartitionRef>,
 }

@@ -8,13 +8,24 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from io import TextIOWrapper
 
-    from daft.subscribers.events import OperatorFinished, OperatorStarted, Stats
+    from daft.subscribers.events import (
+        ExecutionFinished,
+        ExecutionStarted,
+        OperatorFinished,
+        OperatorStarted,
+        OptimizationCompleted,
+        OptimizationStarted,
+        ProcessStats,
+        QueryFinished,
+        QueryStarted,
+        ResultProduced,
+        Stats,
+    )
 
 from daft.context import get_context
-from daft.daft import PyMicroPartition, PyQueryMetadata, PyQueryResult, QueryEndState, StatType
+from daft.daft import QueryEndState
 from daft.subscribers.abc import Subscriber
 
 _EVENT_LOG_ALIAS = "_daft_event_log"
@@ -51,8 +62,7 @@ class EventLogSubscriber(Subscriber):
         self._closed = False
         self._query_files: dict[str, TextIOWrapper] = {}
 
-        # Track start times for duration computation (monotonic ms).
-        # TODO update the framework to pass this information
+        # Track start times locally for events that do not carry durations.
         self._query_starts: dict[str, float] = {}
         self._optimization_starts: dict[str, float] = {}
         self._exec_starts: dict[str, float] = {}
@@ -60,9 +70,9 @@ class EventLogSubscriber(Subscriber):
 
     def _clear_query_state(self, query_id: str) -> None:
         """Remove any leftover timing state for the given query."""
+        self._query_starts.pop(query_id, None)
         self._optimization_starts.pop(query_id, None)
         self._exec_starts.pop(query_id, None)
-
         stale_operator_keys = [key for key in self._operator_starts if key[0] == query_id]
         for key in stale_operator_keys:
             self._operator_starts.pop(key, None)
@@ -132,68 +142,74 @@ class EventLogSubscriber(Subscriber):
 
     # Query lifecycle
 
-    def on_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
-        self._query_starts[query_id] = _mono_ms()
-        self._write_event(query_id, "query_started", {})
-        self._write_event(query_id, "plan_unoptimized", {"plan": metadata.unoptimized_plan})
+    def on_query_started(self, event: QueryStarted) -> None:
+        self._query_starts[event.query_id] = _mono_ms()
+        self._write_event(event.query_id, "query_started", {})
+        self._write_event(
+            event.query_id,
+            "plan_unoptimized",
+            {"plan": event.metadata.unoptimized_plan},
+        )
 
-    def on_query_end(self, query_id: str, result: PyQueryResult) -> None:
-        start = self._query_starts.pop(query_id, None)
-        duration_ms = round(_mono_ms() - start) if start is not None else None
+    def on_query_finished(self, event: QueryFinished) -> None:
+        duration_ms = event.duration_ms
+        if duration_ms is None:
+            start = self._query_starts.pop(event.query_id, None)
+            duration_ms = _mono_ms() - start if start is not None else None
 
         payload: dict[str, Any] = {}
         if duration_ms is not None:
-            payload["duration_ms"] = duration_ms
+            payload["duration_ms"] = round(duration_ms)
 
-        if result.end_state == QueryEndState.Finished:
+        if event.result.end_state == QueryEndState.Finished:
             payload["status"] = "ok"
-        elif result.end_state == QueryEndState.Failed:
+        elif event.result.end_state == QueryEndState.Failed:
             payload["status"] = "failed"
-            if result.error_message:
-                payload["error_message"] = result.error_message
-        elif result.end_state == QueryEndState.Canceled:
+            if event.result.error_message:
+                payload["error_message"] = event.result.error_message
+        elif event.result.end_state == QueryEndState.Canceled:
             payload["status"] = "canceled"
         else:
             payload["status"] = "dead"
 
-        self._write_event(query_id, "query_ended", payload)
-        self._clear_query_state(query_id)
-        self._close_query_file(query_id)
+        self._write_event(event.query_id, "query_ended", payload)
+        self._clear_query_state(event.query_id)
+        self._close_query_file(event.query_id)
 
     # Result
 
-    def on_result_out(self, query_id: str, result: PyMicroPartition) -> None:
+    def on_result_produced(self, event: ResultProduced) -> None:
         self._write_event(
-            query_id,
+            event.query_id,
             "result_out",
             {
-                "rows": len(result),
+                "rows": event.num_rows,
             },
         )
 
     # Optimization
 
-    def on_optimization_start(self, query_id: str) -> None:
-        self._optimization_starts[query_id] = _mono_ms()
-        self._write_event(query_id, "optimization_started", {})
+    def on_optimization_started(self, event: OptimizationStarted) -> None:
+        self._optimization_starts[event.query_id] = _mono_ms()
+        self._write_event(event.query_id, "optimization_started", {})
 
-    def on_optimization_end(self, query_id: str, optimized_plan: str) -> None:
-        start = self._optimization_starts.pop(query_id, None)
+    def on_optimization_completed(self, event: OptimizationCompleted) -> None:
+        start = self._optimization_starts.pop(event.query_id, None)
         duration_ms = round(_mono_ms() - start) if start is not None else None
 
         payload: dict[str, Any] = {}
         if duration_ms is not None:
             payload["duration_ms"] = duration_ms
 
-        self._write_event(query_id, "optimization_ended", payload)
-        self._write_event(query_id, "plan_optimized", {"plan": optimized_plan})
+        self._write_event(event.query_id, "optimization_ended", payload)
+        self._write_event(event.query_id, "plan_optimized", {"plan": event.optimized_plan})
 
     # Execution
 
-    def on_exec_start(self, query_id: str, physical_plan: str) -> None:
-        self._exec_starts[query_id] = _mono_ms()
-        self._write_event(query_id, "execution_started", {})
-        self._write_event(query_id, "plan_physical", {"plan": physical_plan})
+    def on_execution_started(self, event: ExecutionStarted) -> None:
+        self._exec_starts[event.query_id] = _mono_ms()
+        self._write_event(event.query_id, "execution_started", {})
+        self._write_event(event.query_id, "plan_physical", {"plan": event.physical_plan})
 
     def on_operator_start(self, event: OperatorStarted) -> None:
         query_id = event.query_id
@@ -222,11 +238,11 @@ class EventLogSubscriber(Subscriber):
                 },
             )
 
-    def on_process_stats(self, query_id: str, stats: Mapping[str, tuple[StatType, Any]]) -> None:
+    def on_process_stats(self, event: ProcessStats) -> None:
         metrics: dict[str, Any] = {}
-        for name, (_stat_type, value) in stats.items():
+        for name, (_stat_type, value) in event.stats.items():
             metrics[name] = value
-        self._write_event(query_id, "process_stats", {"metrics": metrics})
+        self._write_event(event.query_id, "process_stats", {"metrics": metrics})
 
     def on_operator_end(self, event: OperatorFinished) -> None:
         query_id = event.query_id
@@ -240,15 +256,17 @@ class EventLogSubscriber(Subscriber):
 
         self._write_event(query_id, "operator_finished", payload)
 
-    def on_exec_end(self, query_id: str) -> None:
-        start = self._exec_starts.pop(query_id, None)
-        duration_ms = round(_mono_ms() - start) if start is not None else None
+    def on_execution_finished(self, event: ExecutionFinished) -> None:
+        duration_ms = event.duration_ms
+        if duration_ms is None:
+            start = self._exec_starts.pop(event.query_id, None)
+            duration_ms = _mono_ms() - start if start is not None else None
 
         payload: dict[str, Any] = {}
         if duration_ms is not None:
-            payload["duration_ms"] = duration_ms
+            payload["duration_ms"] = round(duration_ms)
 
-        self._write_event(query_id, "execution_ended", payload)
+        self._write_event(event.query_id, "execution_ended", payload)
 
 
 _EVENT_LOG_SUBSCRIBER: EventLogSubscriber | None = None
