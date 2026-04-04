@@ -6,7 +6,7 @@ requires = ["maturin>=1.5.0,<2.0.0"]
 authors = [{name = "Eventual Inc", email = "daft@eventualcomputing.com"}]
 dependencies = [
   "pyarrow >= 15.0.0,<24.0.0",
-  "fsspec<2026.4.0",
+  "fsspec<2026.3.0",
   "tqdm<4.68.0",
   "typing-extensions >= 4.0.0; python_version < '3.11'",
   "packaging"
@@ -131,15 +131,15 @@ dev = [
   "sqlglot==30.1.0",
   "pyodbc==5.3.0",
   # AWS
-  "s3fs==2026.2.0",
-  "boto3==1.42.70",
-  "boto3-stubs[essential,glue,s3,s3tables]==1.42.70",
+  "s3fs==2024.9.0",
+  "boto3==1.36.2",
+  "boto3-stubs[essential,glue,s3,s3tables]==1.38.46",
   "moto[glue,s3,server]==5.1.22",
   # Azure
-  "adlfs==2026.2.0",
-  "azure-storage-blob==12.28.0",
+  "adlfs==2024.7.0",
+  "azure-storage-blob==12.27.1",
   # GCS
-  "gcsfs==2026.2.0",
+  "gcsfs==2024.9.0.post1",
   # Hugging Face
   "huggingface-hub==1.8.0",
   # AI
