@@ -126,10 +126,28 @@ impl BlockingSink for TopNSink {
         spawner
             .spawn(
                 async move {
-                    let parts: Vec<MicroPartition> = states
+                    let mut joinset = tokio::task::JoinSet::new();
+                    for mut state in states {
+                        let params = params.clone();
+                        joinset.spawn(async move {
+                            let parts = state.finalize();
+                            let concated = MicroPartition::concat(parts)?;
+                            let final_output = concated.top_n(
+                                &params.sort_by,
+                                &params.descending,
+                                &params.nulls_first,
+                                params.limit,
+                                Some(0),
+                            )?;
+                            Ok(final_output)
+                        });
+                    }
+
+                    let parts = joinset
+                        .join_all()
+                        .await
                         .into_iter()
-                        .flat_map(|mut state| state.finalize())
-                        .collect();
+                        .collect::<DaftResult<Vec<_>>>()?;
                     let concated = MicroPartition::concat(parts)?;
                     let final_output = concated.top_n(
                         &params.sort_by,
