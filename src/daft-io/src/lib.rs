@@ -3,7 +3,7 @@ mod azure_blob;
 mod counting_reader;
 mod google_cloud;
 #[cfg(feature = "python")]
-mod gravitino;
+pub mod gravitino;
 mod http;
 mod huggingface;
 mod local;
@@ -27,7 +27,7 @@ use common_file_formats::FileFormat;
 pub use counting_reader::CountingReader;
 use google_cloud::GCSSource;
 #[cfg(feature = "python")]
-use gravitino::GravitinoSource;
+pub use gravitino::GravitinoSource;
 use huggingface::HFSource;
 use opendal_source::OpenDALSource;
 use tos::TosSource;
@@ -224,6 +224,10 @@ impl IOClient {
             source_type_to_store: tokio::sync::RwLock::new(HashMap::new()),
             config,
         })
+    }
+
+    pub fn get_config(&self) -> &IOConfig {
+        &self.config
     }
 
     pub fn support_suffix_range(&self) -> bool {

@@ -24,6 +24,45 @@ pub(crate) trait StorageBackend: Send + Sync + 'static {
     async fn finalize(&mut self) -> DaftResult<()>;
 }
 
+#[cfg(feature = "python")]
+pub(crate) async fn parse_gravitino_url_and_config(
+    root_dir: &str,
+    io_config: IOConfig,
+) -> DaftResult<(String, Option<IOConfig>)> {
+    let io_client = get_io_client(true, Arc::new(io_config))?;
+    let source = io_client.get_source(root_dir).await?;
+    let any = source.as_any_arc();
+
+    if let Ok(gravitino_source) = any.downcast::<daft_io::gravitino::GravitinoSource>() {
+        let (client, source_path): (_, String) = gravitino_source
+            .fileset_path_to_client_and_url(root_dir)
+            .await?;
+        let (_, target_root_dir) = daft_io::parse_url(&source_path)?;
+        let target_url = url::Url::parse(target_root_dir.as_ref()).map_err(|_| {
+            DaftError::InternalError(format!("Invalid target path: {}", target_root_dir.as_ref()))
+        })?;
+        let scheme = target_url.scheme();
+
+        if scheme == "gvfs" {
+            // Prevent circular nesting of gvfs protocol
+            Err(DaftError::InternalError(format!(
+                "Resolved target path '{}' still uses the gvfs:// scheme, which would cause circular nesting",
+                target_root_dir.as_ref()
+            )))
+        } else {
+            Ok((
+                target_root_dir.to_string(),
+                Some(client.get_io_client().get_config().clone()),
+            ))
+        }
+    } else {
+        Err(DaftError::InternalError(format!(
+            "The source {} does not support gvfs",
+            root_dir
+        )))
+    }
+}
+
 pub(crate) struct FileStorageBackend {}
 
 impl FileStorageBackend {

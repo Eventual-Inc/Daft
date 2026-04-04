@@ -3360,6 +3360,7 @@ dependencies = [
  "parquet",
  "pyo3",
  "tokio",
+ "url",
  "urlencoding",
  "uuid",
 ]

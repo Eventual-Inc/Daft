@@ -143,6 +143,19 @@ pub(crate) fn create_native_csv_writer(
                 csv_option,
             )))
         }
+        #[cfg(feature = "python")]
+        SourceType::Gravitino => {
+            let io_config = io_config.ok_or_else(|| {
+                DaftError::InternalError("IO config is required for Gravitino writes".to_string())
+            })?;
+            create_gravitino_csv_writer(
+                root_dir.as_ref(),
+                file_idx,
+                partition_values,
+                io_config,
+                csv_option,
+            )
+        }
         source if source.supports_native_writer() => {
             let ObjectPath { scheme, .. } = daft_io::utils::parse_object_url(root_dir.as_ref())?;
             let io_config = io_config.ok_or_else(|| {
@@ -163,6 +176,45 @@ pub(crate) fn create_native_csv_writer(
             source_type
         ))),
     }
+}
+
+#[cfg(feature = "python")]
+fn create_gravitino_csv_writer(
+    root_dir: &str,
+    file_idx: usize,
+    partition_values: Option<&RecordBatch>,
+    io_config: IOConfig,
+    csv_option: CsvFormatOption,
+) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
+    let root_dir_owned = root_dir.to_string();
+
+    let (target_dir, target_config) = match tokio::runtime::Handle::try_current() {
+        Ok(_handle) => std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new()
+                .map_err(|e| common_error::DaftError::External(e.into()))?;
+            rt.block_on(async {
+                crate::storage_backend::parse_gravitino_url_and_config(&root_dir_owned, io_config)
+                    .await
+            })
+        })
+        .join()
+        .map_err(|_| common_error::DaftError::External("Thread join failed".into()))?,
+        Err(_) => {
+            let runtime_handle = common_runtime::get_io_runtime(true);
+            runtime_handle.block_on_current_thread(async {
+                crate::storage_backend::parse_gravitino_url_and_config(&root_dir_owned, io_config)
+                    .await
+            })
+        }
+    }?;
+
+    create_native_csv_writer(
+        target_dir.as_ref(),
+        file_idx,
+        partition_values,
+        target_config,
+        csv_option,
+    )
 }
 
 fn make_csv_writer<B: StorageBackend + Send + Sync>(
