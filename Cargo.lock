@@ -3115,6 +3115,7 @@ dependencies = [
  "daft-dsl",
  "daft-functions-list",
  "daft-image",
+ "fnv",
  "futures",
  "hashbrown 0.16.1",
  "html-escape",
