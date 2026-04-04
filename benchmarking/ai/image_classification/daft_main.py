@@ -57,7 +57,7 @@ class ResNetModel:
             return predicted_labels
 
 
-daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.from_env()))
+daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.from_env(requester_pays=True)))
 
 start_time = time.time()
 
