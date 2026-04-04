@@ -836,7 +836,7 @@ impl AggExpr {
                             )));
                         }
                     }
-                    SketchType::HyperLogLog => DataType::UInt64,
+                    SketchType::HyperLogLog => daft_core::array::ops::HLL_SKETCH_DTYPE,
                 };
                 Ok(Field::new(field.name, dtype))
             }
@@ -1149,6 +1149,14 @@ impl Expr {
                 percentiles: HashableVecPercentiles(percentiles.to_vec()),
                 force_list_output,
             }),
+            inputs: vec![self],
+        }
+        .into()
+    }
+
+    pub fn hll_cardinality(self: ExprRef) -> ExprRef {
+        Self::Function {
+            func: FunctionExpr::Sketch(SketchExpr::HllCardinality),
             inputs: vec![self],
         }
         .into()

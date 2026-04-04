@@ -2,12 +2,9 @@ use std::{cmp::min, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
-use daft_dsl::{
-    AggExpr,
-    expr::{
-        bound_col,
-        bound_expr::{BoundAggExpr, BoundExpr},
-    },
+use daft_dsl::expr::{
+    bound_col,
+    bound_expr::{BoundAggExpr, BoundExpr},
 };
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{
@@ -387,12 +384,6 @@ impl LogicalPlanToPipelineNodeTranslator {
         )?;
 
         if split_details.first_stage_aggs.is_empty()
-        // Special case for ApproxCountDistinct
-        // Right now, we can't do a pre-aggregation because we can't recursively merge HLL sketches
-        // TODO: Look for alternative approaches for this
-            || aggregations
-                .iter()
-                .any(|agg| matches!(agg.as_ref(), AggExpr::ApproxCountDistinct(_)))
             // Special case for Decimal128
             // Right now, we can't do a pre-aggregation because decimal dtype will change in swordfish's own two stage aggregation
             || split_details

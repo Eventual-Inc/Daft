@@ -17,6 +17,7 @@ pub mod filter;
 pub mod floor;
 pub mod groups;
 pub mod hash;
+pub mod hll_cardinality;
 pub mod if_else;
 pub mod is_in;
 pub mod len;

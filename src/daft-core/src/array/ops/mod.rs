@@ -29,6 +29,7 @@ mod get;
 mod get_lit;
 pub(crate) mod groups;
 mod hash;
+mod hll_cardinality;
 mod hll_merge;
 mod hll_sketch;
 mod if_else;
