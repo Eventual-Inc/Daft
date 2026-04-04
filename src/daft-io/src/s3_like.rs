@@ -1542,6 +1542,109 @@ impl ObjectSource for S3LikeSource {
             Err(err) => Err(UnableToDeleteFileSnafu { path: uri }.into_error(err).into()),
         }
     }
+
+    /// Delete a directory and all objects within it using S3's batch `DeleteObjects` API.
+    ///
+    /// Issues paginated `ListObjectsV2` requests followed by `DeleteObjects` calls
+    /// (up to 1 000 keys per call), which is significantly more efficient than
+    /// deleting objects one at a time.
+    async fn delete_dir(
+        self: Arc<Self>,
+        prefix: &str,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<()> {
+        let ObjectPath {
+            scheme,
+            bucket,
+            key,
+            ..
+        } = parse_object_url(prefix)?;
+
+        let client = self.get_s3_client(&self.default_region).await?;
+
+        let mut continuation_token: Option<String> = None;
+        loop {
+            let mut req = client.list_objects_v2().bucket(&bucket).prefix(&key);
+            if let Some(token) = &continuation_token {
+                req = req.continuation_token(token);
+            }
+            if self.s3_config.requester_pays {
+                req = req.request_payer(s3::types::RequestPayer::Requester);
+            }
+
+            let resp = req.send().await.map_err(|e| super::Error::Generic {
+                store: crate::SourceType::S3,
+                source: e.into(),
+            })?;
+            if let Some(is) = io_stats.as_ref() {
+                is.mark_list_requests(1);
+            }
+
+            let objects = resp.contents.unwrap_or_default();
+            if !objects.is_empty() {
+                let identifiers: Vec<s3::types::ObjectIdentifier> = objects
+                    .iter()
+                    .filter_map(|o| {
+                        o.key().and_then(|k| {
+                            s3::types::ObjectIdentifier::builder().key(k).build().ok()
+                        })
+                    })
+                    .collect();
+
+                let n = identifiers.len();
+                let delete = s3::types::Delete::builder()
+                    .set_objects(Some(identifiers))
+                    .build()
+                    .map_err(|e| super::Error::Generic {
+                        store: crate::SourceType::S3,
+                        source: e.into(),
+                    })?;
+
+                let mut del_req = client.delete_objects().bucket(&bucket).delete(delete);
+                if self.s3_config.requester_pays {
+                    del_req = del_req.request_payer(s3::types::RequestPayer::Requester);
+                }
+                let del_resp = del_req.send().await.map_err(|e| super::Error::Generic {
+                    store: crate::SourceType::S3,
+                    source: e.into(),
+                })?;
+
+                // S3 returns HTTP 200 even on partial failure; per-object errors
+                // are in the response body and must be checked explicitly.
+                let failed = del_resp.errors();
+                if !failed.is_empty() {
+                    let msgs: Vec<String> = failed
+                        .iter()
+                        .map(|e| {
+                            format!(
+                                "{}: {}",
+                                e.key().unwrap_or("?"),
+                                e.message().unwrap_or("unknown")
+                            )
+                        })
+                        .collect();
+                    return Err(super::Error::Generic {
+                        store: crate::SourceType::S3,
+                        source: format!("DeleteObjects partial failure: {}", msgs.join("; "))
+                            .into(),
+                    });
+                }
+
+                if let Some(is) = io_stats.as_ref() {
+                    is.mark_delete_requests(n);
+                }
+                let _ = scheme; // used for ObjectPath destructuring
+            }
+
+            if resp.is_truncated.unwrap_or(false) {
+                continuation_token = resp.next_continuation_token;
+            } else {
+                break;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// S3MultipartWriter is responsible for managing multipart uploads to S3.
