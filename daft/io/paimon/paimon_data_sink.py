@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import pyarrow as pa  # noqa: TID253
-
 from daft.datatype import DataType
 from daft.io.sink import DataSink, WriteResult
 from daft.recordbatch.micropartition import MicroPartition
@@ -12,6 +10,7 @@ from daft.schema import Schema
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    import pyarrow as pa
     from pypaimon.table.file_store_table import FileStoreTable
 
 
@@ -30,6 +29,11 @@ class PaimonDataSink(DataSink[list[Any]]):
             raise ValueError(f"Only 'append' or 'overwrite' mode is supported for write_paimon, got: {mode!r}")
         self._table = table
         self._mode = mode
+
+        # Apply pypaimon patch for complex type stats
+        from daft.io.paimon.paimon_write import _patch_pypaimon_stats_for_complex_types
+
+        _patch_pypaimon_stats_for_complex_types()
 
         from pypaimon.schema.data_types import PyarrowFieldParser
 
@@ -52,6 +56,8 @@ class PaimonDataSink(DataSink[list[Any]]):
         )
 
     def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[list[Any]]]:
+        import pyarrow as pa
+
         table_write = self._write_builder.new_write()
 
         # Lazily compute which fields need type casting on the first batch.
@@ -88,6 +94,8 @@ class PaimonDataSink(DataSink[list[Any]]):
         )
 
     def finalize(self, write_results: list[WriteResult[list[Any]]]) -> MicroPartition:
+        import pyarrow as pa
+
         all_commit_messages = [msg for wr in write_results for msg in wr.result]
 
         table_commit = self._write_builder.new_commit()

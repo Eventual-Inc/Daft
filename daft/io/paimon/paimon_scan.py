@@ -8,6 +8,7 @@ import daft
 from daft.daft import (
     FileFormatConfig,
     ParquetSourceConfig,
+    PyExpr,
     PyPartitionField,
     PyPushdowns,
     ScanTask,
@@ -18,11 +19,15 @@ from daft.io.scan import ScanOperator
 from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
 
+from ..pushdowns import SupportsPushdownFilters
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from pypaimon.common.predicate import Predicate
     from pypaimon.read.split import Split
     from pypaimon.table.file_store_table import FileStoreTable
+
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +56,7 @@ def _paimon_read_split(
         yield RecordBatch.from_arrow_record_batches([batch], reader.schema)._recordbatch
 
 
-class PaimonScanOperator(ScanOperator):
+class PaimonScanOperator(ScanOperator, SupportsPushdownFilters):
     """Scan operator for Apache Paimon tables.
 
     Uses pypaimon for catalog metadata and scan planning (file listing,
@@ -96,6 +101,11 @@ class PaimonScanOperator(ScanOperator):
             PyPartitionField(f._field) for f in self._schema if f.name in partition_key_names
         ]
 
+        # Filter pushdown state
+        self._pushed_filters: list[PyExpr] | None = None
+        self._remaining_filters: list[PyExpr] | None = None
+        self._paimon_predicate: Predicate | None = None
+
     def schema(self) -> Schema:
         return self._schema
 
@@ -118,7 +128,8 @@ class PaimonScanOperator(ScanOperator):
         ]
 
     def can_absorb_filter(self) -> bool:
-        return False
+        """Paimon supports filter pushdown via SupportsPushdownFilters."""
+        return isinstance(self, SupportsPushdownFilters)
 
     def can_absorb_limit(self) -> bool:
         return False
@@ -126,19 +137,53 @@ class PaimonScanOperator(ScanOperator):
     def can_absorb_select(self) -> bool:
         return True
 
+    def as_pushdown_filter(self) -> SupportsPushdownFilters | None:
+        """Returns this scan operator as a SupportsPushdownFilters for filter pushdown."""
+        return self
+
+    def push_filters(self, filters: list[PyExpr]) -> tuple[list[PyExpr], list[PyExpr]]:
+        """Push filters down to Paimon scan.
+
+        Converts Daft expressions to Paimon predicates where possible.
+        Returns (pushed_filters, remaining_filters) where:
+        - pushed_filters: filters that were converted to Paimon predicates
+        - remaining_filters: filters that need post-scan evaluation
+        """
+        from daft.io.paimon._predicate_visitor import convert_filters_to_paimon
+
+        pushed_filters, remaining_filters, paimon_predicate = convert_filters_to_paimon(self._table, filters)
+
+        self._pushed_filters = pushed_filters if pushed_filters else None
+        self._remaining_filters = remaining_filters if remaining_filters else None
+        self._paimon_predicate = paimon_predicate
+
+        if pushed_filters:
+            logger.debug(
+                "Paimon filter pushdown: %d filters pushed, %d remaining",
+                len(pushed_filters),
+                len(remaining_filters),
+            )
+
+        return pushed_filters, remaining_filters
+
     def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         read_builder = self._table.new_read_builder()
 
         if pushdowns.columns is not None:
-            columns = list(pushdowns.columns)
-            partition_keys = self._table.partition_keys
-            projected = list(dict.fromkeys(columns + partition_keys))
-            read_builder = read_builder.with_projection(projected)
+            read_builder = read_builder.with_projection(list(pushdowns.columns))
 
         if pushdowns.limit is not None:
             read_builder = read_builder.with_limit(pushdowns.limit)
 
-        if len(self._partition_keys) > 0 and pushdowns.partition_filters is None:
+        # Apply filter pushdown using pre-converted predicate from push_filters()
+        if self._paimon_predicate is not None:
+            read_builder = read_builder.with_filter(self._paimon_predicate)
+            logger.debug(
+                "Applied Paimon filter pushdown predicate: %s",
+                self._paimon_predicate,
+            )
+
+        if self._partition_keys and pushdowns.partition_filters is None:
             logger.warning(
                 "%s has partition keys %s but no partition filter was specified. "
                 "This will result in a full table scan.",
