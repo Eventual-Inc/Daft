@@ -395,6 +395,10 @@ pub enum AggExpr {
     #[display("count({_0}, {_1})")]
     Count(ExprRef, CountMode),
 
+    /// Row count only (`COUNT(*)`), no input column. The inner field is the output column name.
+    #[display("count_rows()")]
+    CountRows,
+
     #[display("count_distinct({_0})")]
     CountDistinct(ExprRef),
 
@@ -533,10 +537,14 @@ pub fn binary_op(op: Operator, left: ExprRef, right: ExprRef) -> ExprRef {
     Expr::BinaryOp { op, left, right }.into()
 }
 
+/// Default output field name for [`AggExpr::CountRows`].
+pub const COUNT_ROWS_DEFAULT_FIELD_NAME: &str = "count_rows";
+
 impl AggExpr {
     pub fn agg_name(&self) -> &'static str {
         match self {
             Self::Count(_, _) => "Count",
+            Self::CountRows => "Count Rows",
             Self::CountDistinct(_) => "Count Distinct",
             Self::Sum(_) => "Sum",
             Self::Product(_) => "Product",
@@ -562,6 +570,7 @@ impl AggExpr {
 
     pub fn name(&self) -> &str {
         match self {
+            Self::CountRows => COUNT_ROWS_DEFAULT_FIELD_NAME,
             Self::Count(expr, ..)
             | Self::CountDistinct(expr)
             | Self::Sum(expr)
@@ -588,6 +597,7 @@ impl AggExpr {
 
     pub fn semantic_id(&self, schema: &Schema) -> FieldID {
         match self {
+            Self::CountRows => FieldID::new("local_count_rows()"),
             Self::Count(expr, mode) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_count({mode})"))
@@ -687,6 +697,7 @@ impl AggExpr {
 
     pub fn children(&self) -> Vec<ExprRef> {
         match self {
+            Self::CountRows => vec![],
             Self::Count(expr, ..)
             | Self::CountDistinct(expr)
             | Self::Sum(expr)
@@ -714,11 +725,15 @@ impl AggExpr {
     pub fn with_new_children(&self, mut children: Vec<ExprRef>) -> Self {
         if let Self::MapGroups { func: _, inputs } = &self {
             assert_eq!(children.len(), inputs.len());
+        } else if matches!(self, Self::CountRows) {
+            assert!(children.is_empty());
+            return self.clone();
         } else {
             assert_eq!(children.len(), 1);
         }
         let mut first_child = || children.pop().unwrap();
         match self {
+            Self::CountRows => self.clone(),
             &Self::Count(_, count_mode) => Self::Count(first_child(), count_mode),
             Self::CountDistinct(_) => Self::CountDistinct(first_child()),
             Self::Sum(_) => Self::Sum(first_child()),
@@ -756,6 +771,7 @@ impl AggExpr {
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         match self {
+            Self::CountRows => Ok(Field::new(COUNT_ROWS_DEFAULT_FIELD_NAME, DataType::UInt64)),
             Self::Count(expr, ..) | Self::CountDistinct(expr) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_ref(), DataType::UInt64))
@@ -1108,6 +1124,11 @@ impl Expr {
 
     pub fn count(self: ExprRef, mode: CountMode) -> ExprRef {
         Self::Agg(AggExpr::Count(self, mode)).into()
+    }
+
+    /// `COUNT(*)`-style aggregation
+    pub fn count_rows() -> ExprRef {
+        Self::Agg(AggExpr::CountRows).into()
     }
 
     pub fn count_distinct(self: ExprRef) -> ExprRef {

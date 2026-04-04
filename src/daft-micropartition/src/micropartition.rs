@@ -714,7 +714,9 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     };
 
     // Handle count pushdown aggregation optimization.
-    if let Some(Expr::Agg(AggExpr::Count(_, _))) = aggregation_pushdown {
+    if let Some(Expr::Agg(agg)) = aggregation_pushdown
+        && matches!(agg, AggExpr::Count(..) | AggExpr::CountRows)
+    {
         let count: usize = metadata.iter().map(|m| m.num_rows()).sum();
         let count_field = daft_core::datatypes::Field::new(
             aggregation_pushdown.unwrap().name(),

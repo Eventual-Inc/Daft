@@ -3,6 +3,7 @@ from __future__ import annotations
 from .ai import classify_image, classify_text, embed_text, embed_image, prompt
 from .agg import (
     count,
+    count_rows,
     count_distinct,
     sum,
     approx_count_distinct,
@@ -291,6 +292,7 @@ __all__ = [
     "count",
     "count_distinct",
     "count_matches",
+    "count_rows",
     "crop",
     "csc",
     "current_date",

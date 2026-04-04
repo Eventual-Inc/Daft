@@ -11,6 +11,7 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 AggExpr::Count(e, count_mode) => {
                     AggExpr::Count(Expr::Alias(e, name.clone()).into(), count_mode)
                 }
+                AggExpr::CountRows => AggExpr::CountRows,
                 AggExpr::CountDistinct(e) => {
                     AggExpr::CountDistinct(Expr::Alias(e, name.clone()).into())
                 }

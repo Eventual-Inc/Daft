@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Literal
 
 from daft.daft import CountMode
+from daft.daft import count_rows as count_rows_fn
 from daft.expressions.expressions import Expression, col
 
 
@@ -25,6 +26,11 @@ def count(
             raise ValueError("count() without an expression only supports mode='all'.")
         expr = col("*")
     return Expression._from_pyexpr(expr._expr.count(mode))
+
+
+def count_rows() -> Expression:
+    """Counts rows (``COUNT(*)``) without referencing a column."""
+    return Expression._from_pyexpr(count_rows_fn())
 
 
 def count_distinct(expr: Expression) -> Expression:

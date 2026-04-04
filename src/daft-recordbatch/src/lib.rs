@@ -19,7 +19,8 @@ use daft_core::{
     prelude::*,
 };
 use daft_dsl::{
-    AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, SketchType,
+    AggExpr, ApproxPercentileParams, COUNT_ROWS_DEFAULT_FIELD_NAME, Column, Expr, ExprRef,
+    SketchType,
     expr::{
         BoundColumn,
         bound_expr::{BoundAggExpr, BoundExpr},
@@ -654,6 +655,16 @@ impl RecordBatch {
         groups: Option<&GroupIndices>,
     ) -> DaftResult<Series> {
         match agg_expr.as_ref() {
+            AggExpr::CountRows => {
+                let counts = match groups {
+                    None => {
+                        let count = self.len() as u64;
+                        vec![count]
+                    }
+                    Some(groups) => groups.iter().map(|g| g.len() as u64).collect(),
+                };
+                Ok(UInt64Array::from_vec(COUNT_ROWS_DEFAULT_FIELD_NAME, counts).into_series())
+            }
             &AggExpr::Count(ref expr, mode) => self.eval_agg_child(expr)?.count(groups, mode),
             AggExpr::CountDistinct(expr) => self.eval_agg_child(expr)?.count_distinct(groups),
             AggExpr::Sum(expr) => self.eval_agg_child(expr)?.sum(groups),
