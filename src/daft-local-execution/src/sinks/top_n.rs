@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
@@ -149,12 +149,19 @@ impl BlockingSink for TopNSink {
                         });
                     }
 
+                    let start = Instant::now();
                     let parts = joinset
                         .join_all()
                         .await
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
+                    let sub_time = start.elapsed();
+                    eprintln!("sub_time: {:?}", sub_time);
+                    let start = Instant::now();
                     let concated = MicroPartition::concat(parts)?;
+                    let concat_time = start.elapsed();
+                    eprintln!("concat_time: {:?}", concat_time);
+                    let start = Instant::now();
                     let final_output = concated.top_n(
                         &params.sort_by,
                         &params.descending,
@@ -162,6 +169,8 @@ impl BlockingSink for TopNSink {
                         params.limit,
                         params.offset,
                     )?;
+                    let final_time = start.elapsed();
+                    eprintln!("final_time: {:?}", final_time);
                     Ok(BlockingSinkOutput::Partitions(vec![final_output]))
                 },
                 Span::current(),
