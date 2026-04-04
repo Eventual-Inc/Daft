@@ -102,6 +102,7 @@ impl BlockingSink for TopNSink {
         spawner
             .spawn(
                 async move {
+                    let start = Instant::now();
                     // Find the top N values in the input micro-partition
                     let limit = params.limit + params.offset.unwrap_or(0);
                     let top_input_rows = input.top_n(
@@ -114,6 +115,8 @@ impl BlockingSink for TopNSink {
 
                     // Append to the collection of existing top N values
                     state.append(top_input_rows);
+                    let time = start.elapsed();
+                    eprintln!("time: {:?}", time);
                     Ok(state)
                 },
                 Span::current(),
@@ -131,6 +134,7 @@ impl BlockingSink for TopNSink {
         spawner
             .spawn(
                 async move {
+                    let start = Instant::now();
                     let mut joinset = tokio::task::JoinSet::new();
                     for mut state in states {
                         let params = params.clone();
@@ -149,19 +153,12 @@ impl BlockingSink for TopNSink {
                         });
                     }
 
-                    let start = Instant::now();
                     let parts = joinset
                         .join_all()
                         .await
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
-                    let sub_time = start.elapsed();
-                    eprintln!("sub_time: {:?}", sub_time);
-                    let start = Instant::now();
                     let concated = MicroPartition::concat(parts)?;
-                    let concat_time = start.elapsed();
-                    eprintln!("concat_time: {:?}", concat_time);
-                    let start = Instant::now();
                     let final_output = concated.top_n(
                         &params.sort_by,
                         &params.descending,
