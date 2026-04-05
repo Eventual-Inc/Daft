@@ -254,8 +254,16 @@ define_minmax_accum!(MinAccumU8, UInt8Type, u8, std::cmp::min);
 define_minmax_accum!(MinAccumU16, UInt16Type, u16, std::cmp::min);
 define_minmax_accum!(MinAccumU32, UInt32Type, u32, std::cmp::min);
 define_minmax_accum!(MinAccumU64, UInt64Type, u64, std::cmp::min);
-define_minmax_accum!(MinAccumF32, Float32Type, f32, |a, b| if a.lt(&b) { a } else { b });
-define_minmax_accum!(MinAccumF64, Float64Type, f64, |a, b| if a.lt(&b) { a } else { b });
+define_minmax_accum!(MinAccumF32, Float32Type, f32, |a, b| if a.lt(&b) {
+    a
+} else {
+    b
+});
+define_minmax_accum!(MinAccumF64, Float64Type, f64, |a, b| if a.lt(&b) {
+    a
+} else {
+    b
+});
 define_minmax_accum!(MaxAccumI8, Int8Type, i8, std::cmp::max);
 define_minmax_accum!(MaxAccumI16, Int16Type, i16, std::cmp::max);
 define_minmax_accum!(MaxAccumI32, Int32Type, i32, std::cmp::max);
@@ -264,8 +272,16 @@ define_minmax_accum!(MaxAccumU8, UInt8Type, u8, std::cmp::max);
 define_minmax_accum!(MaxAccumU16, UInt16Type, u16, std::cmp::max);
 define_minmax_accum!(MaxAccumU32, UInt32Type, u32, std::cmp::max);
 define_minmax_accum!(MaxAccumU64, UInt64Type, u64, std::cmp::max);
-define_minmax_accum!(MaxAccumF32, Float32Type, f32, |a, b| if a.gt(&b) { a } else { b });
-define_minmax_accum!(MaxAccumF64, Float64Type, f64, |a, b| if a.gt(&b) { a } else { b });
+define_minmax_accum!(MaxAccumF32, Float32Type, f32, |a, b| if a.gt(&b) {
+    a
+} else {
+    b
+});
+define_minmax_accum!(MaxAccumF64, Float64Type, f64, |a, b| if a.gt(&b) {
+    a
+} else {
+    b
+});
 
 // ---------------------------------------------------------------------------
 // AggAccumulator enum — eliminates vtable dispatch in the hot loop
@@ -465,43 +481,73 @@ fn try_create_accumulator(
             match evaluated.data_type() {
                 DataType::Int8 => {
                     let arr = evaluated.downcast::<Int8Array>()?;
-                    Ok(Some((AggAccumulator::MinI8(MinAccumI8::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MinI8(MinAccumI8::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::Int16 => {
                     let arr = evaluated.downcast::<Int16Array>()?;
-                    Ok(Some((AggAccumulator::MinI16(MinAccumI16::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MinI16(MinAccumI16::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::Int32 => {
                     let arr = evaluated.downcast::<Int32Array>()?;
-                    Ok(Some((AggAccumulator::MinI32(MinAccumI32::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MinI32(MinAccumI32::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::Int64 => {
                     let arr = evaluated.downcast::<Int64Array>()?;
-                    Ok(Some((AggAccumulator::MinI64(MinAccumI64::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MinI64(MinAccumI64::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::UInt8 => {
                     let arr = evaluated.downcast::<UInt8Array>()?;
-                    Ok(Some((AggAccumulator::MinU8(MinAccumU8::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MinU8(MinAccumU8::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::UInt16 => {
                     let arr = evaluated.downcast::<UInt16Array>()?;
-                    Ok(Some((AggAccumulator::MinU16(MinAccumU16::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MinU16(MinAccumU16::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::UInt32 => {
                     let arr = evaluated.downcast::<UInt32Array>()?;
-                    Ok(Some((AggAccumulator::MinU32(MinAccumU32::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MinU32(MinAccumU32::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::UInt64 => {
                     let arr = evaluated.downcast::<UInt64Array>()?;
-                    Ok(Some((AggAccumulator::MinU64(MinAccumU64::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MinU64(MinAccumU64::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::Float32 => {
                     let arr = evaluated.downcast::<Float32Array>()?;
-                    Ok(Some((AggAccumulator::MinF32(MinAccumF32::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MinF32(MinAccumF32::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::Float64 => {
                     let arr = evaluated.downcast::<Float64Array>()?;
-                    Ok(Some((AggAccumulator::MinF64(MinAccumF64::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MinF64(MinAccumF64::new(arr.clone())),
+                        name,
+                    )))
                 }
                 _ => Ok(None),
             }
@@ -512,43 +558,73 @@ fn try_create_accumulator(
             match evaluated.data_type() {
                 DataType::Int8 => {
                     let arr = evaluated.downcast::<Int8Array>()?;
-                    Ok(Some((AggAccumulator::MaxI8(MaxAccumI8::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MaxI8(MaxAccumI8::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::Int16 => {
                     let arr = evaluated.downcast::<Int16Array>()?;
-                    Ok(Some((AggAccumulator::MaxI16(MaxAccumI16::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MaxI16(MaxAccumI16::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::Int32 => {
                     let arr = evaluated.downcast::<Int32Array>()?;
-                    Ok(Some((AggAccumulator::MaxI32(MaxAccumI32::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MaxI32(MaxAccumI32::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::Int64 => {
                     let arr = evaluated.downcast::<Int64Array>()?;
-                    Ok(Some((AggAccumulator::MaxI64(MaxAccumI64::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MaxI64(MaxAccumI64::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::UInt8 => {
                     let arr = evaluated.downcast::<UInt8Array>()?;
-                    Ok(Some((AggAccumulator::MaxU8(MaxAccumU8::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MaxU8(MaxAccumU8::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::UInt16 => {
                     let arr = evaluated.downcast::<UInt16Array>()?;
-                    Ok(Some((AggAccumulator::MaxU16(MaxAccumU16::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MaxU16(MaxAccumU16::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::UInt32 => {
                     let arr = evaluated.downcast::<UInt32Array>()?;
-                    Ok(Some((AggAccumulator::MaxU32(MaxAccumU32::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MaxU32(MaxAccumU32::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::UInt64 => {
                     let arr = evaluated.downcast::<UInt64Array>()?;
-                    Ok(Some((AggAccumulator::MaxU64(MaxAccumU64::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MaxU64(MaxAccumU64::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::Float32 => {
                     let arr = evaluated.downcast::<Float32Array>()?;
-                    Ok(Some((AggAccumulator::MaxF32(MaxAccumF32::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MaxF32(MaxAccumF32::new(arr.clone())),
+                        name,
+                    )))
                 }
                 DataType::Float64 => {
                     let arr = evaluated.downcast::<Float64Array>()?;
-                    Ok(Some((AggAccumulator::MaxF64(MaxAccumF64::new(arr.clone())), name)))
+                    Ok(Some((
+                        AggAccumulator::MaxF64(MaxAccumF64::new(arr.clone())),
+                        name,
+                    )))
                 }
                 _ => Ok(None),
             }
