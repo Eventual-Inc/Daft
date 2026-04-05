@@ -62,6 +62,52 @@ pub fn infer_join_schema(
     }
 }
 
+/// Infer the output schema for an asof join.
+///
+/// Column order: left by-keys, left on-key, remaining left columns,
+/// then right columns excluding right key columns (right_by + right_on).
+pub fn infer_asof_join_schema(
+    left_schema: &SchemaRef,
+    right_schema: &SchemaRef,
+    left_by: &[ExprRef],
+    right_by: &[ExprRef],
+    left_on: &ExprRef,
+    right_on: &ExprRef,
+) -> DaftResult<SchemaRef> {
+    let left_by_names = left_by
+        .iter()
+        .map(|e| Ok(e.to_field(left_schema)?.name.to_string()))
+        .collect::<DaftResult<IndexSet<_>>>()?;
+    let right_by_names = right_by
+        .iter()
+        .map(|e| Ok(e.to_field(right_schema)?.name.to_string()))
+        .collect::<DaftResult<IndexSet<_>>>()?;
+    let left_on_name = left_on.to_field(left_schema)?.name.to_string();
+    let right_on_name = right_on.to_field(right_schema)?.name.to_string();
+
+    let mut fields = Vec::new();
+
+    for name in &left_by_names {
+        fields.push(left_schema.get_field(name)?.clone());
+    }
+    fields.push(left_schema.get_field(&left_on_name)?.clone());
+
+    for field in left_schema.into_iter() {
+        let name = field.name.as_ref();
+        if name != left_on_name && !left_by_names.contains(name) {
+            fields.push(field.clone());
+        }
+    }
+    for field in right_schema.into_iter() {
+        let name = field.name.as_ref();
+        if name != right_on_name && !right_by_names.contains(name) {
+            fields.push(field.clone());
+        }
+    }
+
+    Ok(Schema::new(fields).into())
+}
+
 /// Casts join keys to the same types and make their names unique.
 pub fn normalize_join_keys(
     left_on: Vec<ExprRef>,

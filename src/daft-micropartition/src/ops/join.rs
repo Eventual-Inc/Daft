@@ -3,7 +3,10 @@ use daft_core::{
     array::ops::DaftCompare,
     join::{JoinSide, JoinType},
 };
-use daft_dsl::{expr::bound_expr::BoundExpr, join::infer_join_schema};
+use daft_dsl::{
+    expr::bound_expr::BoundExpr,
+    join::{infer_asof_join_schema, infer_join_schema},
+};
 use daft_recordbatch::RecordBatch;
 use daft_stats::TruthValue;
 
@@ -125,7 +128,16 @@ impl MicroPartition {
         left_on: &BoundExpr,
         right_on: &BoundExpr,
     ) -> DaftResult<Self> {
-        let join_schema = infer_join_schema(&self.schema, &right.schema, JoinType::Left)?;
+        let left_by_exprs: Vec<_> = left_by.iter().map(|e| e.inner().clone()).collect();
+        let right_by_exprs: Vec<_> = right_by.iter().map(|e| e.inner().clone()).collect();
+        let join_schema = infer_asof_join_schema(
+            &self.schema,
+            &right.schema,
+            &left_by_exprs,
+            &right_by_exprs,
+            left_on.inner(),
+            right_on.inner(),
+        )?;
         if self.is_empty() {
             return Ok(Self::empty(Some(join_schema)));
         }

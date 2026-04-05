@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use daft_core::join::JoinType;
-use daft_dsl::{ExprRef, join::infer_join_schema};
+use daft_dsl::{ExprRef, join::infer_asof_join_schema};
 use daft_schema::schema::SchemaRef;
 use serde::{Deserialize, Serialize};
 
@@ -35,7 +34,14 @@ impl AsofJoin {
         left_on: ExprRef,
         right_on: ExprRef,
     ) -> logical_plan::Result<Self> {
-        let output_schema = infer_join_schema(&left.schema(), &right.schema(), JoinType::Left)?;
+        let output_schema = infer_asof_join_schema(
+            &left.schema(),
+            &right.schema(),
+            &left_by,
+            &right_by,
+            &left_on,
+            &right_on,
+        )?;
 
         Ok(Self {
             plan_id: None,
