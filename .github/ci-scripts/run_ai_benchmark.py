@@ -25,7 +25,7 @@ def _daft_uv_runtime_env() -> dict:
     daft_pkg = f"daft[aws]=={daft_version}" if daft_version else "daft[aws]"
     uv_env: dict = {"packages": [daft_pkg]}
     if daft_index_url:
-        uv_env["uv_pip_install_options"] = ["--extra-index-url", daft_index_url]
+        uv_env["uv_pip_install_options"] = ["--index-url", daft_index_url, "--extra-index-url", "https://pypi.org/simple/"]
     return uv_env
 
 
