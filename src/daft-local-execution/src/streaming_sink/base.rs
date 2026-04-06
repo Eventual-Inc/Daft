@@ -226,6 +226,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 );
                 if let Some(mp) = mp {
                     runtime_stats.add_rows_out(mp.len() as u64);
+                    runtime_stats.add_bytes_out(mp.size_bytes() as u64);
                     let _ = output_tx
                         .send(PipelineMessage::Morsel {
                             input_id,
@@ -249,6 +250,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                     } => {
                         if let Some(mp) = output {
                             runtime_stats.add_rows_out(mp.len() as u64);
+                            runtime_stats.add_bytes_out(mp.size_bytes() as u64);
                             let _ = output_tx
                                 .send(PipelineMessage::Morsel {
                                     input_id,
@@ -261,6 +263,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                     StreamingSinkFinalizeOutput::Finished(output) => {
                         if let Some(mp) = output {
                             runtime_stats.add_rows_out(mp.len() as u64);
+                            runtime_stats.add_bytes_out(mp.size_bytes() as u64);
                             let _ = output_tx
                                 .send(PipelineMessage::Morsel {
                                     input_id,
@@ -341,6 +344,9 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                     );
                     if let Some(mp) = mp {
                         per_input.runtime_stats.add_rows_out(mp.len() as u64);
+                        per_input
+                            .runtime_stats
+                            .add_bytes_out(mp.size_bytes() as u64);
                         let _ = output_tx
                             .send(PipelineMessage::Morsel {
                                 input_id,
@@ -399,6 +405,9 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                         }
                     };
                     per_input.runtime_stats.add_rows_in(partition.len() as u64);
+                    per_input
+                        .runtime_stats
+                        .add_bytes_in(partition.size_bytes() as u64);
                     per_input.buffer.push(partition);
                     per_input.spawn_ready_batches(&mut tasks, &op, &task_spawner, input_id)?;
                 }

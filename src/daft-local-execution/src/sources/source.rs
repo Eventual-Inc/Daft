@@ -33,6 +33,7 @@ pub type SourceStream<'a> = BoxStream<'a, DaftResult<PipelineMessage>>;
 pub(crate) struct SourceStats {
     duration_us: Counter,
     rows_out: Counter,
+    bytes_out: Counter,
     io_stats: IOStatsRef,
 
     node_kv: Vec<KeyValue>,
@@ -43,6 +44,7 @@ impl SourceStats {
         Self {
             duration_us: meter.duration_us_metric(),
             rows_out: meter.rows_out_metric(),
+            bytes_out: meter.bytes_out_metric(),
             io_stats,
             node_kv: node_info.to_key_values(),
         }
@@ -62,6 +64,7 @@ impl RuntimeStats for SourceStats {
             cpu_us,
             rows_out,
             bytes_read,
+            bytes_out: self.bytes_out.load(ordering),
         })
     }
 
@@ -75,6 +78,14 @@ impl RuntimeStats for SourceStats {
 
     fn add_duration_us(&self, cpu_us: u64) {
         self.duration_us.add(cpu_us, self.node_kv.as_slice());
+    }
+
+    fn add_bytes_in(&self, _: u64) {
+        unreachable!("Source Nodes shouldn't receive bytes")
+    }
+
+    fn add_bytes_out(&self, bytes: u64) {
+        self.bytes_out.add(bytes, self.node_kv.as_slice());
     }
 }
 
@@ -242,6 +253,7 @@ impl PipelineNode for SourceNode {
                                 node_id,
                             );
                             stats.add_rows_out(partition.len() as u64);
+                            stats.add_bytes_out(partition.size_bytes() as u64);
                         }
                         PipelineMessage::Flush(input_id) => {
                             per_input_stats.remove(input_id);

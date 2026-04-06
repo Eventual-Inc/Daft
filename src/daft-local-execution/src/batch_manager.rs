@@ -228,6 +228,9 @@ mod tests {
         fn add_duration_us(&self, _cpu_us: u64) {
             unimplemented!()
         }
+
+        fn add_bytes_in(&self, _bytes: u64) {}
+        fn add_bytes_out(&self, _bytes: u64) {}
     }
 
     struct MockBatchingState {

@@ -118,6 +118,8 @@ impl IntoIterator for Stats {
 // Common statistic names
 pub const BYTES_READ_KEY: &str = "bytes.read";
 pub const BYTES_WRITTEN_KEY: &str = "bytes.written";
+pub const BYTES_IN_KEY: &str = "bytes.in";
+pub const BYTES_OUT_KEY: &str = "bytes.out";
 pub const DURATION_KEY: &str = "duration";
 pub const ROWS_IN_KEY: &str = "rows.in";
 pub const ROWS_OUT_KEY: &str = "rows.out";
@@ -125,8 +127,11 @@ pub const ROWS_WRITTEN_KEY: &str = "rows.written";
 
 // Join metrics
 pub const JOIN_BUILD_ROWS_INSERTED_KEY: &str = "rows.join.build_inserted";
+pub const JOIN_BUILD_BYTES_INSERTED_KEY: &str = "bytes.join.build_inserted";
 pub const JOIN_PROBE_ROWS_IN_KEY: &str = "rows.join.probe_in";
 pub const JOIN_PROBE_ROWS_OUT_KEY: &str = "rows.join.probe_out";
+pub const JOIN_PROBE_BYTES_IN_KEY: &str = "bytes.join.probe_in";
+pub const JOIN_PROBE_BYTES_OUT_KEY: &str = "bytes.join.probe_out";
 
 // Task metrics
 pub const TASK_ACTIVE_KEY: &str = "task.active";
