@@ -5,8 +5,9 @@ use daft_core::{
     array::growable::make_growable, join::JoinSide, prelude::*, utils::supertype::try_get_supertype,
 };
 use daft_dsl::{
+    Expr,
     expr::bound_expr::BoundExpr,
-    join::{get_common_join_cols, infer_asof_join_schema, infer_join_schema},
+    join::{get_asof_key_cols, get_common_join_cols, infer_asof_join_schema, infer_join_schema},
 };
 use hash_join::hash_semi_anti_join;
 
@@ -127,49 +128,30 @@ impl RecordBatch {
             match_types_for_tables(&left_key_table, &right_key_table)?;
         let (lidx, ridx) = asof_join::asof_join_backward(&left_key_table, &right_key_table)?;
 
-        let left_by_exprs: Vec<_> = left_by.iter().map(|e| e.inner().clone()).collect();
-        let right_by_exprs: Vec<_> = right_by.iter().map(|e| e.inner().clone()).collect();
-        let left_on_name = left_on.inner().to_field(&left.schema)?.name.to_string();
-        let right_on_name = right_on.inner().to_field(&right.schema)?.name.to_string();
-
-        let join_schema = infer_asof_join_schema(
-            &left.schema,
-            &right.schema,
-            &left_by_exprs,
-            &right_by_exprs,
-            left_on.inner(),
-            right_on.inner(),
-        )?;
-
-        let left_by_names: Vec<String> = left_by
-            .iter()
-            .map(|e| Ok(e.inner().to_field(&left.schema)?.name.to_string()))
-            .collect::<DaftResult<_>>()?;
-        let right_by_names: Vec<String> = right_by
-            .iter()
-            .map(|e| Ok(e.inner().to_field(&right.schema)?.name.to_string()))
-            .collect::<DaftResult<_>>()?;
+        let (left_key_cols, right_key_cols) =
+            get_asof_key_cols(left_by, right_by, left_on, right_on, |e| {
+                match e.inner().unwrap_alias().0.as_ref() {
+                    Expr::Column(_) => Some(e.inner().unwrap_alias().0.name().to_string()),
+                    _ => None,
+                }
+            });
+        let join_schema =
+            infer_asof_join_schema(&left.schema, &right.schema, &left_key_cols, &right_key_cols)?;
 
         let num_rows = lidx.len();
         let mut join_series = Vec::with_capacity(join_schema.len());
 
-        for name in &left_by_names {
+        for name in &left_key_cols {
             join_series.push(get_column_by_name(&left, name)?.take(&lidx)?);
         }
-
-        join_series.push(get_column_by_name(&left, &left_on_name)?.take(&lidx)?);
-
         for field in left.schema.as_ref() {
-            let name = field.name.as_ref();
-            if name != left_on_name && !left_by_names.iter().any(|n| n == name) {
-                join_series.push(get_column_by_name(&left, name)?.take(&lidx)?);
+            if !left_key_cols.contains(field.name.as_ref()) {
+                join_series.push(get_column_by_name(&left, &field.name)?.take(&lidx)?);
             }
         }
-
         for field in right.schema.as_ref() {
-            let name = field.name.as_ref();
-            if name != right_on_name && !right_by_names.iter().any(|n| n == name) {
-                join_series.push(get_column_by_name(&right, name)?.take(&ridx)?);
+            if !right_key_cols.contains(field.name.as_ref()) {
+                join_series.push(get_column_by_name(&right, &field.name)?.take(&ridx)?);
             }
         }
 

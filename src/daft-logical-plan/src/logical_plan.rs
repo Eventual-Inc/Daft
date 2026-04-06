@@ -823,17 +823,33 @@ impl LogicalPlan {
                     left_on,
                     right_on,
                     ..
-                }) => Self::AsofJoin(
-                    AsofJoin::try_new(
-                        input1.clone(),
-                        input2.clone(),
-                        left_by.clone(),
-                        right_by.clone(),
-                        left_on.clone(),
-                        right_on.clone(),
+                }) => {
+                    use daft_dsl::{Column, Expr, ResolvedColumn, join::get_asof_key_cols};
+
+                    let (left_key_cols, right_key_cols) =
+                        get_asof_key_cols(left_by, right_by, left_on, right_on, |e| {
+                            match e.unwrap_alias().0.as_ref() {
+                                Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
+                                    Some(name.to_string())
+                                }
+                                _ => None,
+                            }
+                        });
+
+                    Self::AsofJoin(
+                        AsofJoin::try_new(
+                            input1.clone(),
+                            input2.clone(),
+                            left_by.clone(),
+                            right_by.clone(),
+                            left_on.clone(),
+                            right_on.clone(),
+                            left_key_cols,
+                            right_key_cols,
+                        )
+                        .unwrap(),
                     )
-                    .unwrap(),
-                ),
+                }
                 _ => panic!("Logical op {} has one input, but got two", self),
             },
             _ => panic!(

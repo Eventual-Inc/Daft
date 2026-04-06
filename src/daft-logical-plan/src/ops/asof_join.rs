@@ -1,12 +1,22 @@
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
-use daft_dsl::{ExprRef, join::infer_asof_join_schema};
+use common_error::DaftResult;
+use common_treenode::{Transformed, TreeNode};
+use daft_dsl::{
+    Column, Expr, ExprRef, UnresolvedColumn, join::infer_asof_join_schema, resolved_col,
+    unresolved_col,
+};
 use daft_schema::schema::SchemaRef;
+use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     LogicalPlan, LogicalPlanRef,
     logical_plan::{self},
+    ops::Project,
     stats::{ApproxStats, PlanStats, StatsState},
 };
 
@@ -26,6 +36,7 @@ pub struct AsofJoin {
 }
 
 impl AsofJoin {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn try_new(
         left: LogicalPlanRef,
         right: LogicalPlanRef,
@@ -33,14 +44,14 @@ impl AsofJoin {
         right_by: Vec<ExprRef>,
         left_on: ExprRef,
         right_on: ExprRef,
+        left_key_cols: IndexSet<String>,
+        right_key_cols: HashSet<String>,
     ) -> logical_plan::Result<Self> {
         let output_schema = infer_asof_join_schema(
             &left.schema(),
             &right.schema(),
-            &left_by,
-            &right_by,
-            &left_on,
-            &right_on,
+            &left_key_cols,
+            &right_key_cols,
         )?;
 
         Ok(Self {
@@ -86,6 +97,87 @@ impl AsofJoin {
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self
+    }
+
+    /// Rename right-side columns that clash with left-side columns, excluding right key columns
+    /// (which are dropped from the output and don't need renaming). Also rewrites any column
+    /// references in `right_by` and `right_on` that point to renamed columns.
+    ///
+    /// Returns:
+    /// - updated right plan (with a Project applied if any renames were needed)
+    /// - updated right_by
+    /// - updated right_on
+    pub(crate) fn deduplicate_asof_join_columns(
+        left: LogicalPlanRef,
+        right: LogicalPlanRef,
+        right_by: Vec<ExprRef>,
+        right_on: ExprRef,
+        right_key_cols: &HashSet<String>,
+        options: &super::join::JoinOptions,
+    ) -> DaftResult<(LogicalPlanRef, Vec<ExprRef>, ExprRef)> {
+        let left_names: HashSet<String> = HashSet::from_iter(left.schema().names());
+        let right_names: Vec<String> = right.schema().names();
+
+        let clashing: Vec<String> = right_names
+            .iter()
+            .filter(|n| !right_key_cols.contains(n.as_str()) && left_names.contains(n.as_str()))
+            .cloned()
+            .collect();
+
+        if clashing.is_empty() {
+            return Ok((right, right_by, right_on));
+        }
+
+        let mut names_so_far: HashSet<String> =
+            HashSet::from_iter(left_names.iter().chain(right_names.iter()).cloned());
+
+        let right_rename_mapping: HashMap<String, String> = clashing
+            .into_iter()
+            .map(|name| {
+                let mut new_name = name.clone();
+                while names_so_far.contains(&new_name) {
+                    new_name = match (&options.prefix, &options.suffix) {
+                        (Some(prefix), Some(suffix)) => format!("{prefix}{new_name}{suffix}"),
+                        (Some(prefix), None) => format!("{prefix}{new_name}"),
+                        (None, Some(suffix)) => format!("{new_name}{suffix}"),
+                        (None, None) => format!("right.{new_name}"),
+                    };
+                }
+                names_so_far.insert(new_name.clone());
+                (name, new_name)
+            })
+            .collect();
+
+        let new_right_projection: Vec<ExprRef> = right_names
+            .iter()
+            .map(|name| {
+                if let Some(new_name) = right_rename_mapping.get(name) {
+                    resolved_col(name.clone()).alias(new_name.clone())
+                } else {
+                    resolved_col(name.clone())
+                }
+            })
+            .collect();
+
+        let new_right: LogicalPlan = Project::try_new(right, new_right_projection)?.into();
+
+        let rewrite_expr = |expr: ExprRef| -> ExprRef {
+            expr.transform(|e| {
+                if let Expr::Column(Column::Unresolved(UnresolvedColumn { name, .. })) = e.as_ref()
+                    && let Some(new_name) = right_rename_mapping.get(name.as_ref())
+                {
+                    return Ok(Transformed::yes(unresolved_col(new_name.as_str())));
+                }
+                Ok(Transformed::no(e))
+            })
+            .unwrap()
+            .data
+        };
+
+        let new_right_by: Vec<ExprRef> = right_by.into_iter().map(&rewrite_expr).collect();
+        let new_right_on: ExprRef = rewrite_expr(right_on);
+
+        Ok((new_right.into(), new_right_by, new_right_on))
     }
 
     pub fn multiline_display(&self) -> Vec<String> {

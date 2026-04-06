@@ -13,12 +13,12 @@ use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
-use common_treenode::{Transformed, TreeNode};
+use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
-    Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg, left_col,
-    resolved_col, right_col, unresolved_col,
+    Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg,
+    join::get_asof_key_cols, left_col, resolved_col, right_col, unresolved_col,
 };
 use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use daft_schema::schema::{Schema, SchemaRef};
@@ -754,55 +754,24 @@ impl LogicalPlanBuilder {
         let left_plan = self.plan.clone();
         let right_plan = right.into();
 
-        // Compute "merged" column names: same-name join keys that should remain as one column.
-        let mut merged: Vec<String> = Vec::new();
-        for (l, r) in left_by.iter().zip(right_by.iter()) {
-            if l.name() == r.name() {
-                merged.push(l.name().to_string());
-            }
-        }
-        if left_on.name() == right_on.name() {
-            merged.push(left_on.name().to_string());
-        }
-
-        // Snapshot right schema names before dedup so we can detect renames.
-        let old_right_names: Vec<String> = right_plan.schema().names();
-
-        // Deduplicate right columns that clash with left columns (same as regular join).
-        let (left_plan, right_plan, _) = ops::join::Join::deduplicate_join_columns(
-            left_plan,
-            right_plan,
-            None,
-            &merged,
-            JoinType::Left,
-            options,
-        )?;
-
-        // Derive the rename mapping by diffing old vs new right schema names.
-        let right_rename_mapping: HashMap<String, String> = old_right_names
-            .iter()
-            .zip(right_plan.schema().names().iter())
-            .filter(|(old, new)| old != new)
-            .map(|(old, new)| (old.clone(), new.clone()))
-            .collect();
-
-        // Rewrite column references in right expressions that were renamed by dedup.
-        let rewrite_expr = |e: ExprRef| -> ExprRef {
-            e.transform(|node| {
-                if let Expr::Column(Column::Unresolved(UnresolvedColumn { name, .. })) =
-                    node.as_ref()
-                    && let Some(new_name) = right_rename_mapping.get(&**name)
-                {
-                    Ok(Transformed::yes(unresolved_col(new_name.clone())))
-                } else {
-                    Ok(Transformed::no(node))
+        let (left_key_cols, right_key_cols) =
+            get_asof_key_cols(&left_by, &right_by, &left_on, &right_on, |e| {
+                match e.unwrap_alias().0.as_ref() {
+                    Expr::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => {
+                        Some(name.to_string())
+                    }
+                    _ => None,
                 }
-            })
-            .unwrap()
-            .data
-        };
-        let right_by = right_by.into_iter().map(&rewrite_expr).collect();
-        let right_on = rewrite_expr(right_on);
+            });
+
+        let (right_plan, right_by, right_on) = ops::AsofJoin::deduplicate_asof_join_columns(
+            left_plan.clone(),
+            right_plan,
+            right_by,
+            right_on,
+            &right_key_cols,
+            &options,
+        )?;
 
         let expr_resolver = ExprResolver::default();
         let left_by = expr_resolver.resolve(left_by, left_plan.clone())?;
@@ -810,9 +779,17 @@ impl LogicalPlanBuilder {
         let left_on = expr_resolver.resolve_single(left_on, left_plan.clone())?;
         let right_on = expr_resolver.resolve_single(right_on, right_plan.clone())?;
 
-        let logical_plan: LogicalPlan =
-            ops::AsofJoin::try_new(left_plan, right_plan, left_by, right_by, left_on, right_on)?
-                .into();
+        let logical_plan: LogicalPlan = ops::AsofJoin::try_new(
+            left_plan,
+            right_plan,
+            left_by,
+            right_by,
+            left_on,
+            right_on,
+            left_key_cols,
+            right_key_cols,
+        )?
+        .into();
         Ok(self.with_new_plan(logical_plan))
     }
 
