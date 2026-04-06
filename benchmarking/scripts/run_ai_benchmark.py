@@ -15,7 +15,7 @@ import time
 from ray.job_submission import JobStatus, JobSubmissionClient
 
 import daft
-from benchmarking.scripts.bench_utils import daft_uv_runtime_env, get_run_metadata, tail_logs, upload_to_google_sheets
+from benchmarking.utils import daft_uv_runtime_env, get_run_metadata, tail_logs, upload_to_google_sheets
 
 
 def run_benchmark(benchmark_name: str):

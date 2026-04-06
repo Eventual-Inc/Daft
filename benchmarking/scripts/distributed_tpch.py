@@ -10,7 +10,7 @@ import time
 from ray.job_submission import JobStatus, JobSubmissionClient
 
 import daft
-from benchmarking.scripts.bench_utils import daft_uv_runtime_env, get_run_metadata, tail_logs, upload_to_google_sheets
+from benchmarking.utils import daft_uv_runtime_env, get_run_metadata, tail_logs, upload_to_google_sheets
 
 SF_TO_S3_PATH = {
     100: "s3://eventual-dev-benchmarking-fixtures/uncompressed/tpch-dbgen/100_0/32/parquet/",
