@@ -65,6 +65,10 @@ pub struct DaftPlanningConfig {
     pub default_io_config: IOConfig,
     pub disable_join_reordering: bool,
     pub enable_strict_filter_pushdown: bool,
+    /// Enable the DP-ccp join ordering algorithm (experimental).
+    /// When true, uses DP-ccp instead of brute force and raises the
+    /// max relations limit from 7 to 12.
+    pub enable_dp_ccp_join_ordering: bool,
 }
 
 #[cfg(not(debug_assertions))]
@@ -78,6 +82,8 @@ impl DaftPlanningConfig {
     const ENV_DAFT_DEV_DISABLE_JOIN_REORDERING: &'static str = "DAFT_DEV_DISABLE_JOIN_REORDERING";
     const ENV_DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN: &'static str =
         "DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN";
+    const ENV_DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING: &'static str =
+        "DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING";
 
     #[must_use]
     pub fn from_env() -> Self {
@@ -89,6 +95,10 @@ impl DaftPlanningConfig {
 
         if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN) {
             cfg.enable_strict_filter_pushdown = val;
+        }
+
+        if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING) {
+            cfg.enable_dp_ccp_join_ordering = val;
         }
 
         cfg
@@ -350,6 +360,25 @@ mod tests {
                 std::env::remove_var(
                     DaftPlanningConfig::ENV_DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN,
                 );
+            }
+        }
+
+        // ENV_DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING
+        {
+            let cfg = DaftPlanningConfig::from_env();
+            assert!(!cfg.enable_dp_ccp_join_ordering);
+
+            unsafe {
+                std::env::set_var(
+                    DaftPlanningConfig::ENV_DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING,
+                    "1",
+                );
+            }
+            let cfg = DaftPlanningConfig::from_env();
+            assert!(cfg.enable_dp_ccp_join_ordering);
+
+            unsafe {
+                std::env::remove_var(DaftPlanningConfig::ENV_DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING);
             }
         }
     }

@@ -962,7 +962,12 @@ impl LogicalPlanBuilder {
                 .when(
                     !cfg.as_ref()
                         .is_some_and(|conf| conf.disable_join_reordering),
-                    |builder| builder.reorder_joins(Some(execution_config.clone())),
+                    |builder| {
+                        let use_dp_ccp = cfg
+                            .as_ref()
+                            .is_some_and(|conf| conf.enable_dp_ccp_join_ordering);
+                        builder.reorder_joins(Some(execution_config.clone()), use_dp_ccp)
+                    },
                 )
                 .simplify_expressions()
                 .split_granular_projections()
@@ -1032,7 +1037,12 @@ impl LogicalPlanBuilder {
             .when(
                 !cfg.as_ref()
                     .is_some_and(|conf| conf.disable_join_reordering),
-                |builder| builder.reorder_joins(Some(execution_config.clone())),
+                |builder| {
+                    let use_dp_ccp = cfg
+                        .as_ref()
+                        .is_some_and(|conf| conf.enable_dp_ccp_join_ordering);
+                    builder.reorder_joins(Some(execution_config.clone()), use_dp_ccp)
+                },
             )
             .simplify_expressions()
             .split_granular_projections()
