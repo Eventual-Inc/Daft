@@ -407,7 +407,7 @@ impl DaftNumericType for Float64Type {
 
 pub trait DaftIntegerType: DaftNumericType
 where
-    Self::Native: Ord,
+    Self::Native: Ord + std::hash::Hash,
 {
 }
 
