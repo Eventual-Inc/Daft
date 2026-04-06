@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from pyiceberg.table import TableProperties as IcebergTableProperties
 
     from daft.ai import Provider
-    from daft.catalog import Catalog, Table
+    from daft.catalog import Catalog, Function, Table
     from daft.expressions.visitor import ExpressionVisitor
     from daft.runners.runner import Runner
     from daft.subscribers import Subscriber
@@ -167,6 +167,8 @@ class JoinStrategy(Enum):
     Hash = 1
     SortMerge = 2
     Broadcast = 3
+    Cross = 4
+    KeyFiltering = 5
 
     @staticmethod
     def from_join_strategy_str(join_strategy: str) -> JoinStrategy:
@@ -2038,6 +2040,23 @@ class PyFormatSinkOption:
     @classmethod
     def parquet(cls) -> PyFormatSinkOption: ...
 
+class KeyFilteringConfig:
+    left_key_columns: list[str]
+    right_key_columns: list[str]
+    num_workers: int | None
+    cpus_per_worker: float | None
+    keys_load_batch_size: int | None
+    max_concurrency_per_worker: int | None
+    filter_batch_size: int | None
+    def __init__(
+        self,
+        num_workers: int | None = None,
+        cpus_per_worker: float | None = None,
+        keys_load_batch_size: int | None = None,
+        max_concurrency_per_worker: int | None = None,
+        filter_batch_size: int | None = None,
+    ) -> None: ...
+
 class LogicalPlanBuilder:
     """A logical plan builder, which simplifies constructing logical plans via a fluent interface.
 
@@ -2113,6 +2132,7 @@ class LogicalPlanBuilder:
         join_strategy: JoinStrategy | None = None,
         prefix: str | None = None,
         suffix: str | None = None,
+        key_filtering_config: KeyFilteringConfig | None = None,
     ) -> LogicalPlanBuilder: ...
     def join_where(
         self,
@@ -2341,6 +2361,7 @@ class PyDaftExecutionConfig:
         native_parquet_writer: bool | None = None,
         min_cpu_per_task: float | None = None,
         actor_udf_ready_timeout: int | None = None,
+        worker_startup_timeout: int | None = None,
         maintain_order: bool | None = None,
         enable_dynamic_batching: bool | None = None,
         dynamic_batching_strategy: str | None = None,
@@ -2401,6 +2422,8 @@ class PyDaftExecutionConfig:
     def min_cpu_per_task(self) -> float: ...
     @property
     def actor_udf_ready_timeout(self) -> int: ...
+    @property
+    def worker_startup_timeout(self) -> int: ...
     @property
     def scantask_max_parallel(self) -> int: ...
     @property
@@ -2491,7 +2514,6 @@ class PyDaftContext:
 def set_runner_ray(
     address: str | None = None,
     noop_if_initialized: bool = False,
-    max_task_backlog: int | None = None,
     force_client_mode: bool = False,
 ) -> Runner[PartitionT]: ...
 def set_runner_native(num_threads: int | None = None) -> Runner[PartitionT]: ...
@@ -2533,13 +2555,15 @@ class SystemInfo:
 
 class PyCatalog:
     def name(self) -> str: ...
+    def create_function(self, ident: PyIdentifier, function: Function | Callable[..., Any]) -> None: ...
     def create_namespace(self, ident: PyIdentifier) -> None: ...
     def create_table(self, ident: PyIdentifier, schema: PySchema) -> Table: ...
     def drop_namespace(self, ident: PyIdentifier) -> None: ...
     def drop_table(self, ident: PyIdentifier) -> None: ...
+    def get_function(self, ident: PyIdentifier) -> Function: ...
     def get_table(self, ident: PyIdentifier) -> Table: ...
-    def has_table(self, ident: PyIdentifier) -> bool: ...
     def has_namespace(self, ident: PyIdentifier) -> bool: ...
+    def has_table(self, ident: PyIdentifier) -> bool: ...
     def list_namespaces(self, pattern: str | None = None) -> list[PyIdentifier]: ...
     def list_tables(self, pattern: str | None = None) -> list[PyIdentifier]: ...
     @staticmethod

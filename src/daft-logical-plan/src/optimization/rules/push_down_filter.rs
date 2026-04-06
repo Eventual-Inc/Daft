@@ -330,6 +330,7 @@ impl PushDownFilter {
                 join_type,
                 on,
                 join_strategy,
+                key_filtering_config,
                 ..
             }) => {
                 // TODO(Kevin): add more filter pushdowns for joins
@@ -426,13 +427,10 @@ impl PushDownFilter {
                         },
                     );
 
-                    let new_join = Arc::new(LogicalPlan::Join(Join::try_new(
-                        new_left,
-                        new_right,
-                        on.clone(),
-                        *join_type,
-                        *join_strategy,
-                    )?));
+                    let new_join = Arc::new(LogicalPlan::Join(
+                        Join::try_new(new_left, new_right, on.clone(), *join_type, *join_strategy)?
+                            .with_key_filtering_config(key_filtering_config.clone()),
+                    ));
 
                     if let Some(kept_predicates) = kept_predicates {
                         Filter::try_new(new_join, kept_predicates).unwrap().into()

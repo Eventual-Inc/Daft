@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     LogicalPlan, LogicalPlanRef,
     logical_plan::{self},
-    ops::Project,
+    ops::{KeyFilteringConfig, Project},
     stats::{ApproxStats, PlanStats, StatsState},
 };
 
@@ -185,6 +185,9 @@ pub struct Join {
     pub join_strategy: Option<JoinStrategy>,
     pub output_schema: SchemaRef,
     pub stats_state: StatsState,
+    /// Only set when join_strategy == Some(KeyFiltering) and join_type == Anti.
+    /// Carries the execution configuration for a key-filtering anti-join.
+    pub key_filtering_config: Option<KeyFilteringConfig>,
 }
 
 impl Join {
@@ -211,7 +214,13 @@ impl Join {
             join_strategy,
             output_schema,
             stats_state: StatsState::NotMaterialized,
+            key_filtering_config: None,
         })
+    }
+
+    pub fn with_key_filtering_config(mut self, config: Option<KeyFilteringConfig>) -> Self {
+        self.key_filtering_config = config;
+        self
     }
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
@@ -369,6 +378,23 @@ impl Join {
 
         if let Some(on_expr) = self.on.inner() {
             res.push(format!("On = {on_expr}",));
+        }
+
+        if let Some(config) = &self.key_filtering_config {
+            let left_key_display = if config.left_key_columns.len() == 1 {
+                config.left_key_columns[0].as_str().to_string()
+            } else {
+                format!("{:?}", config.left_key_columns)
+            };
+            let right_key_display = if config.right_key_columns.len() == 1 {
+                config.right_key_columns[0].as_str().to_string()
+            } else {
+                format!("{:?}", config.right_key_columns)
+            };
+            res.push(format!(
+                "KeyFiltering: left_on = {}, right_on = {}",
+                left_key_display, right_key_display
+            ));
         }
 
         res.push(format!(

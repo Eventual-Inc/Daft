@@ -8,6 +8,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NamedTuple, TypeAlias
 
+from daft.context import get_context
 from daft.daft import (
     DistributedPhysicalPlan,
     DistributedPhysicalPlanRunner,
@@ -383,8 +384,8 @@ class RaySwordfishActorHandle:
         ray.kill(self.actor_handle)
 
 
-# TODO: Consider making configurable depending on real-world behavior
-ACTOR_STARTUP_TIMEOUT = 120
+def _get_worker_startup_timeout() -> int:
+    return get_context().daft_execution_config.worker_startup_timeout
 
 
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
@@ -410,10 +411,14 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             actors.append((node, actor))
 
     # Batch all IP address retrievals into a single ray.get call
+    actor_startup_timeout = _get_worker_startup_timeout()
     try:
-        ip_addresses = ray.get([actor.get_address.remote() for _, actor in actors], timeout=ACTOR_STARTUP_TIMEOUT)
+        ip_addresses = ray.get(
+            [actor.get_address.remote() for _, actor in actors],
+            timeout=actor_startup_timeout,
+        )
     except ray.exceptions.GetTimeoutError:
-        raise RuntimeError(f"Failed to get IP addresses for actors within {ACTOR_STARTUP_TIMEOUT} seconds")
+        raise RuntimeError(f"Failed to get IP addresses for actors within {actor_startup_timeout} seconds")
 
     handles = []
     for (node, actor), ip_address in zip(actors, ip_addresses):

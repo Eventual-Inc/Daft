@@ -24,10 +24,12 @@ from pyiceberg.transforms import (
     YearTransform,
 )
 
-from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
+from daft.catalog import Catalog, Function, Identifier, NotFoundError, Properties, Schema, Table
 from daft.io.iceberg._iceberg import read_iceberg
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from daft.dataframe import DataFrame
     from daft.io.partitioning import PartitionField
 
@@ -139,6 +141,12 @@ class IcebergCatalog(Catalog):
     ###
     # create_*
     ###
+
+    def _create_function(self, ident: Identifier, function: Function | Callable[..., Any]) -> None:
+        raise NotImplementedError("Iceberg does not support function registration.")
+
+    def _get_function(self, ident: Identifier) -> Function:
+        raise NotFoundError(f"Function '{ident}' not found in catalog '{self.name}'")
 
     def _create_namespace(self, identifier: Identifier) -> None:
         ident = _to_pyiceberg_ident(identifier)

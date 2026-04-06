@@ -2780,6 +2780,31 @@ class Expression:
 
         return image_mode(self)
 
+    def image_hash(
+        self,
+        *,
+        method: Literal[
+            "phash",
+            "phash_simple",
+            "dhash",
+            "dhash_vertical",
+            "ahash",
+            "whash",
+            "crop_resistant",
+            "colorhash",
+        ] = "phash",
+        hash_size: int = 8,
+        binbits: int = 3,
+    ) -> Expression:
+        """Computes a perceptual hash of an image.
+
+        Tip: See Also
+            [`daft.functions.image_hash`](https://docs.daft.ai/en/stable/api/functions/image_hash/)
+        """
+        from daft.functions import image_hash
+
+        return image_hash(self, method=method, hash_size=hash_size, binbits=binbits)
+
     def file_size(self) -> Expression:
         """Gets the size of a file in bytes.
 
