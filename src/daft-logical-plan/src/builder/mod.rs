@@ -18,7 +18,8 @@ use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
     Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg,
-    join::get_asof_key_cols, left_col, resolved_col, right_col, unresolved_col,
+    join::get_right_cols_to_drop, left_col, resolved_col, right_col,
+    unresolved_col,
 };
 use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use daft_schema::schema::{Schema, SchemaRef};
@@ -754,8 +755,8 @@ impl LogicalPlanBuilder {
         let left_plan = self.plan.clone();
         let right_plan = right.into();
 
-        let (left_key_cols, right_key_cols) =
-            get_asof_key_cols(&left_by, &right_by, &left_on, &right_on, |e| {
+        let right_cols_to_drop =
+            get_right_cols_to_drop(&right_by, &left_on, &right_on, |e| {
                 match e.unwrap_alias().0.as_ref() {
                     Expr::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => {
                         Some(name.to_string())
@@ -769,7 +770,7 @@ impl LogicalPlanBuilder {
             right_plan,
             right_by,
             right_on,
-            &right_key_cols,
+            &right_cols_to_drop,
             &options,
         )?;
 
@@ -786,8 +787,7 @@ impl LogicalPlanBuilder {
             right_by,
             left_on,
             right_on,
-            left_key_cols,
-            right_key_cols,
+            right_cols_to_drop,
         )?
         .into();
         Ok(self.with_new_plan(logical_plan))

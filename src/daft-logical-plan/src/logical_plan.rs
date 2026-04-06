@@ -824,10 +824,10 @@ impl LogicalPlan {
                     right_on,
                     ..
                 }) => {
-                    use daft_dsl::{Column, Expr, ResolvedColumn, join::get_asof_key_cols};
+                    use daft_dsl::{Column, Expr, ResolvedColumn, join::get_right_cols_to_drop};
 
-                    let (left_key_cols, right_key_cols) =
-                        get_asof_key_cols(left_by, right_by, left_on, right_on, |e| {
+                    let right_cols_to_drop =
+                        get_right_cols_to_drop(right_by, left_on, right_on, |e| {
                             match e.unwrap_alias().0.as_ref() {
                                 Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
                                     Some(name.to_string())
@@ -844,8 +844,7 @@ impl LogicalPlan {
                             right_by.clone(),
                             left_on.clone(),
                             right_on.clone(),
-                            left_key_cols,
-                            right_key_cols,
+                            right_cols_to_drop,
                         )
                         .unwrap(),
                     )

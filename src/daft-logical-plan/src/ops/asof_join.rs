@@ -10,7 +10,6 @@ use daft_dsl::{
     unresolved_col,
 };
 use daft_schema::schema::SchemaRef;
-use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -44,15 +43,10 @@ impl AsofJoin {
         right_by: Vec<ExprRef>,
         left_on: ExprRef,
         right_on: ExprRef,
-        left_key_cols: IndexSet<String>,
-        right_key_cols: HashSet<String>,
+        right_cols_to_drop: HashSet<String>,
     ) -> logical_plan::Result<Self> {
-        let output_schema = infer_asof_join_schema(
-            &left.schema(),
-            &right.schema(),
-            &left_key_cols,
-            &right_key_cols,
-        )?;
+        let output_schema =
+            infer_asof_join_schema(&left.schema(), &right.schema(), &right_cols_to_drop)?;
 
         Ok(Self {
             plan_id: None,
@@ -112,7 +106,7 @@ impl AsofJoin {
         right: LogicalPlanRef,
         right_by: Vec<ExprRef>,
         right_on: ExprRef,
-        right_key_cols: &HashSet<String>,
+        right_cols_to_drop: &HashSet<String>,
         options: &super::join::JoinOptions,
     ) -> DaftResult<(LogicalPlanRef, Vec<ExprRef>, ExprRef)> {
         let left_names: HashSet<String> = HashSet::from_iter(left.schema().names());
@@ -120,7 +114,7 @@ impl AsofJoin {
 
         let clashing: Vec<String> = right_names
             .iter()
-            .filter(|n| !right_key_cols.contains(n.as_str()) && left_names.contains(n.as_str()))
+            .filter(|n| !right_cols_to_drop.contains(n.as_str()) && left_names.contains(n.as_str()))
             .cloned()
             .collect();
 

@@ -7,7 +7,9 @@ use daft_core::{
 use daft_dsl::{
     Expr,
     expr::bound_expr::BoundExpr,
-    join::{get_asof_key_cols, get_common_join_cols, infer_asof_join_schema, infer_join_schema},
+    join::{
+        get_common_join_cols, get_right_cols_to_drop, infer_asof_join_schema, infer_join_schema,
+    },
 };
 use hash_join::hash_semi_anti_join;
 
@@ -128,29 +130,22 @@ impl RecordBatch {
             match_types_for_tables(&left_key_table, &right_key_table)?;
         let (lidx, ridx) = asof_join::asof_join_backward(&left_key_table, &right_key_table)?;
 
-        let (left_key_cols, right_key_cols) =
-            get_asof_key_cols(left_by, right_by, left_on, right_on, |e| {
-                match e.inner().unwrap_alias().0.as_ref() {
-                    Expr::Column(_) => Some(e.inner().unwrap_alias().0.name().to_string()),
-                    _ => None,
-                }
-            });
-        let join_schema =
-            infer_asof_join_schema(&left.schema, &right.schema, &left_key_cols, &right_key_cols)?;
+        let right_cols_to_drop = get_right_cols_to_drop(right_by, left_on, right_on, |e| {
+            match e.inner().unwrap_alias().0.as_ref() {
+                Expr::Column(_) => Some(e.inner().unwrap_alias().0.name().to_string()),
+                _ => None,
+            }
+        });
+        let join_schema = infer_asof_join_schema(&left.schema, &right.schema, &right_cols_to_drop)?;
 
         let num_rows = lidx.len();
         let mut join_series = Vec::with_capacity(join_schema.len());
 
-        for name in &left_key_cols {
-            join_series.push(get_column_by_name(&left, name)?.take(&lidx)?);
-        }
         for field in left.schema.as_ref() {
-            if !left_key_cols.contains(field.name.as_ref()) {
-                join_series.push(get_column_by_name(&left, &field.name)?.take(&lidx)?);
-            }
+            join_series.push(get_column_by_name(&left, &field.name)?.take(&lidx)?);
         }
         for field in right.schema.as_ref() {
-            if !right_key_cols.contains(field.name.as_ref()) {
+            if !right_cols_to_drop.contains(field.name.as_ref()) {
                 join_series.push(get_column_by_name(&right, &field.name)?.take(&ridx)?);
             }
         }

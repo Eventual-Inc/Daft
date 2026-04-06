@@ -6,7 +6,7 @@ use daft_core::{
 use daft_dsl::{
     Expr,
     expr::bound_expr::BoundExpr,
-    join::{get_asof_key_cols, infer_asof_join_schema, infer_join_schema},
+    join::{get_right_cols_to_drop, infer_asof_join_schema, infer_join_schema},
 };
 use daft_recordbatch::RecordBatch;
 use daft_stats::TruthValue;
@@ -129,15 +129,13 @@ impl MicroPartition {
         left_on: &BoundExpr,
         right_on: &BoundExpr,
     ) -> DaftResult<Self> {
-        let (left_key_cols, right_key_cols) =
-            get_asof_key_cols(left_by, right_by, left_on, right_on, |e| {
-                match e.inner().unwrap_alias().0.as_ref() {
-                    Expr::Column(_) => Some(e.inner().unwrap_alias().0.name().to_string()),
-                    _ => None,
-                }
-            });
-        let join_schema =
-            infer_asof_join_schema(&self.schema, &right.schema, &left_key_cols, &right_key_cols)?;
+        let right_cols_to_drop = get_right_cols_to_drop(right_by, left_on, right_on, |e| {
+            match e.inner().unwrap_alias().0.as_ref() {
+                Expr::Column(_) => Some(e.inner().unwrap_alias().0.name().to_string()),
+                _ => None,
+            }
+        });
+        let join_schema = infer_asof_join_schema(&self.schema, &right.schema, &right_cols_to_drop)?;
         if self.is_empty() {
             return Ok(Self::empty(Some(join_schema)));
         }

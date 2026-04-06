@@ -66,34 +66,25 @@ pub fn infer_join_schema(
 
 /// Infer the output schema for an asof join.
 ///
-/// `left_key_cols`: ordered set of left column names that are plain-col keys
-///   (by-keys first, then on-key). These appear first in the output and are
-///   excluded from the "remaining left" section.
+/// `right_cols_to_drop`: set of right column names that are plain-col keys
+///   with the same name as a left key. These are excluded from the output
+///   (coalesced into the left side).
 ///
-/// `right_key_cols`: set of right column names that are plain-col keys.
-///   These are excluded from the output entirely.
-///
-/// Column order: left key columns (in `left_key_cols` order), remaining left
-/// columns, then remaining right columns (post-dedup, excluding `right_key_cols`).
+/// Column order: all left columns in their original schema order, then
+/// right columns not in `right_cols_to_drop` in their original schema order.
 pub fn infer_asof_join_schema(
     left_schema: &SchemaRef,
     right_schema: &SchemaRef,
-    left_key_cols: &IndexSet<String>,
-    right_key_cols: &HashSet<String>,
+    right_cols_to_drop: &HashSet<String>,
 ) -> DaftResult<SchemaRef> {
     let mut fields = Vec::new();
-    for name in left_key_cols {
-        fields.push(left_schema.get_field(name)?.clone());
-    }
 
     for field in left_schema.into_iter() {
-        if !left_key_cols.contains(field.name.as_ref()) {
-            fields.push(field.clone());
-        }
+        fields.push(field.clone());
     }
 
     for field in right_schema.into_iter() {
-        if !right_key_cols.contains(field.name.as_ref()) {
+        if !right_cols_to_drop.contains(field.name.as_ref()) {
             fields.push(field.clone());
         }
     }
@@ -101,37 +92,37 @@ pub fn infer_asof_join_schema(
     Ok(Schema::new(fields).into())
 }
 
-/// Compute the left and right key column names for an asof join.
+/// Compute the right key column names to exclude from the asof join output.
 ///
-/// Iterates over `left_by`/`left_on` and `right_by`/`right_on`, applying
-/// `extract_name` to each expression. Plain-column expressions return a name
-/// and are collected; non-plain expressions (e.g. casts, arithmetic) are
-/// skipped.
-pub fn get_asof_key_cols<E, F>(
-    left_by: &[E],
+/// For by-keys: if both left and right are plain columns with the same name,
+/// the right column is excluded (coalesced). For on-keys: only excluded when
+/// the left_on and right_on column names are identical.
+///
+/// Returns the set of right column names to drop from the output.
+pub fn get_right_cols_to_drop<E, F>(
     right_by: &[E],
     left_on: &E,
     right_on: &E,
     extract_name: F,
-) -> (IndexSet<String>, HashSet<String>)
+) -> HashSet<String>
 where
     F: Fn(&E) -> Option<String>,
 {
-    let mut left_key_cols = IndexSet::new();
-    for e in left_by.iter().chain(std::iter::once(left_on)) {
-        if let Some(name) = extract_name(e) {
-            left_key_cols.insert(name);
+    let mut right_cols_to_drop = HashSet::new();
+
+    for r in right_by {
+        if let Some(right_name) = extract_name(r) {
+            right_cols_to_drop.insert(right_name);
         }
     }
 
-    let mut right_key_cols = HashSet::new();
-    for e in right_by.iter().chain(std::iter::once(right_on)) {
-        if let Some(name) = extract_name(e) {
-            right_key_cols.insert(name);
-        }
+    if let (Some(left_name), Some(right_name)) = (extract_name(left_on), extract_name(right_on))
+        && left_name == right_name
+    {
+        right_cols_to_drop.insert(right_name);
     }
 
-    (left_key_cols, right_key_cols)
+    right_cols_to_drop
 }
 
 /// Casts join keys to the same types and make their names unique.
