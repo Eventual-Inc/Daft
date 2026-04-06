@@ -1,15 +1,14 @@
 use std::hash::Hash;
 
-use arrow::{array::Array, datatypes::ArrowPrimitiveType};
+use arrow::array::Array;
 use common_error::DaftResult;
 use daft_core::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray, ops::as_arrow::AsArrow},
     datatypes::{
-        BinaryArray, BooleanArray, DaftNumericType, FixedSizeBinaryArray, Float32Array,
-        Float64Array, Int8Type, Int16Type, Int32Type, Int64Type, NullArray, NumericNative,
-        UInt8Type, UInt16Type, UInt32Type, UInt64Type, Utf8Array,
+        BinaryArray, BooleanArray, Decimal128Type, FixedSizeBinaryArray, Float32Array,
+        Float64Array, Int8Type, Int16Type, Int32Type, Int64Type, NullArray, UInt8Type, UInt16Type,
+        UInt32Type, UInt64Type, Utf8Array,
     },
-    prelude::Decimal128Array,
 };
 use hashbrown::{DefaultHashBuilder, HashMap, hash_map::Entry};
 
@@ -112,15 +111,9 @@ where
 // Primitive integers: per-type impls avoid overlapping-blanket coherence errors with
 // `DataArray` type aliases defined in `daft-core` (e.g. `Float32Array`).
 
-macro_rules! impl_into_groups_integer_array {
-    ($($T:ty),* $(,)?) => {
-        $(
-        impl IntoGroups for DataArray<$T>
-        where
-            <$T as DaftNumericType>::Native: Ord + Hash + Eq,
-            <<$T as DaftNumericType>::Native as NumericNative>::ARROWTYPE:
-                ArrowPrimitiveType<Native = <$T as DaftNumericType>::Native>,
-        {
+macro_rules! impl_into_groups_primitive_array {
+    ($T:ty) => {
+        impl IntoGroups for DataArray<$T> {
             fn make_groups(&self) -> DaftResult<crate::GroupIndicesPair> {
                 if self.null_count() > 0 {
                     make_groups(self.into_iter())
@@ -130,12 +123,7 @@ macro_rules! impl_into_groups_integer_array {
             }
         }
 
-        impl IntoUniqueIdxs for DataArray<$T>
-        where
-            <$T as DaftNumericType>::Native: Ord + Hash + Eq,
-            <<$T as DaftNumericType>::Native as NumericNative>::ARROWTYPE:
-                ArrowPrimitiveType<Native = <$T as DaftNumericType>::Native>,
-        {
+        impl IntoUniqueIdxs for DataArray<$T> {
             fn make_unique_idxs(&self) -> DaftResult<crate::VecIndices> {
                 if self.null_count() > 0 {
                     make_unique_idxs(self.into_iter())
@@ -144,33 +132,18 @@ macro_rules! impl_into_groups_integer_array {
                 }
             }
         }
-        )*
     };
 }
 
-impl_into_groups_integer_array!(
-    Int8Type, Int16Type, Int32Type, Int64Type, UInt8Type, UInt16Type, UInt32Type, UInt64Type,
-);
-
-impl IntoGroups for Decimal128Array {
-    fn make_groups(&self) -> DaftResult<crate::GroupIndicesPair> {
-        if self.null_count() > 0 {
-            make_groups(self.into_iter())
-        } else {
-            make_groups(self.values().iter())
-        }
-    }
-}
-
-impl IntoUniqueIdxs for Decimal128Array {
-    fn make_unique_idxs(&self) -> DaftResult<crate::VecIndices> {
-        if self.null_count() > 0 {
-            make_unique_idxs(self.into_iter())
-        } else {
-            make_unique_idxs(self.values().iter())
-        }
-    }
-}
+impl_into_groups_primitive_array!(Int8Type);
+impl_into_groups_primitive_array!(Int16Type);
+impl_into_groups_primitive_array!(Int32Type);
+impl_into_groups_primitive_array!(Int64Type);
+impl_into_groups_primitive_array!(UInt8Type);
+impl_into_groups_primitive_array!(UInt16Type);
+impl_into_groups_primitive_array!(UInt32Type);
+impl_into_groups_primitive_array!(UInt64Type);
+impl_into_groups_primitive_array!(Decimal128Type);
 
 // Floats (canonicalize NaN)
 // Canonicalize all NaN payloads so every NaN hashes/equates into one group.
