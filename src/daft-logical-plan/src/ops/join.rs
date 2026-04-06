@@ -578,12 +578,10 @@ impl AsofJoin {
         let left_stats = self.left.materialized_stats();
         let right_stats = self.right.materialized_stats();
 
-        let left_num_rows =
-            left_stats.approx_stats.num_rows as f64 * right_stats.approx_stats.acc_selectivity;
         let left_size =
             left_stats.approx_stats.size_bytes as f64 * right_stats.approx_stats.acc_selectivity;
         let approx_stats = ApproxStats {
-            num_rows: left_num_rows.ceil() as usize,
+            num_rows: left_stats.approx_stats.num_rows,
             size_bytes: left_size.ceil() as usize,
             acc_selectivity: left_stats.approx_stats.acc_selectivity
                 * right_stats.approx_stats.acc_selectivity,

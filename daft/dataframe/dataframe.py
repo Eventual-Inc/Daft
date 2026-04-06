@@ -3354,10 +3354,10 @@ class DataFrame:
             left_by = by
             right_by = by
 
-        if isinstance(left_on, list) or isinstance(left_on, tuple):
+        if not isinstance(left_on, str) and not isinstance(left_on, Expression):
             raise ValueError("left_on must be a single column or expression")
 
-        if isinstance(right_on, list) or isinstance(right_on, tuple):
+        if not isinstance(right_on, str) and not isinstance(right_on, Expression):
             raise ValueError("right_on must be a single column or expression")
 
         join_direction = JoinDirection.from_dir_type_str(direction)

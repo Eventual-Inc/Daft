@@ -128,7 +128,6 @@ impl JoinOperator for AsofJoinOperator {
         let right_by = self.right_by.clone();
         let direction = self.direction;
         let allow_exact_matches = self.allow_exact_matches;
-        let sorted_build = state.sorted_build.clone();
 
         spawner
             .spawn(
@@ -157,10 +156,7 @@ impl JoinOperator for AsofJoinOperator {
                             true,
                         )?
                     };
-                    Ok((
-                        AsofJoinProbeState { sorted_build },
-                        ProbeOutput::NeedMoreInput(Some(output)),
-                    ))
+                    Ok((state, ProbeOutput::NeedMoreInput(Some(output))))
                 },
                 Span::current(),
             )
