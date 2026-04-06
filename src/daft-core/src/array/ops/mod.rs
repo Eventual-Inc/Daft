@@ -27,7 +27,6 @@ pub mod from_arrow;
 pub mod full;
 mod get;
 mod get_lit;
-pub(crate) mod groups;
 mod hash;
 mod hll_merge;
 mod hll_sketch;
@@ -68,7 +67,6 @@ mod variance;
 
 use std::hash::BuildHasher;
 
-use common_error::DaftResult;
 pub use hll_sketch::HLL_SKETCH_DTYPE;
 pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
 
@@ -166,14 +164,6 @@ pub trait DaftMinHash {
 pub type VecIndices = Vec<u64>;
 pub type GroupIndices = Vec<VecIndices>;
 pub type GroupIndicesPair = (VecIndices, GroupIndices);
-
-pub trait IntoGroups {
-    fn make_groups(&self) -> DaftResult<GroupIndicesPair>;
-}
-
-pub trait IntoUniqueIdxs {
-    fn make_unique_idxs(&self) -> DaftResult<VecIndices>;
-}
 
 pub trait DaftCountAggable {
     type Output;

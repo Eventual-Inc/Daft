@@ -1,12 +1,10 @@
 use common_error::DaftResult;
 use daft_core::{
-    array::ops::{
-        GroupIndicesPair, IntoGroups, IntoUniqueIdxs, VecIndices,
-        arrow::comparison::build_multi_array_is_equal,
-    },
+    array::ops::{GroupIndicesPair, VecIndices, arrow::comparison::build_multi_array_is_equal},
     datatypes::UInt64Array,
     series::Series,
 };
+use daft_groupby::{IntoGroups, IntoUniqueIdxs};
 
 use crate::RecordBatch;
 

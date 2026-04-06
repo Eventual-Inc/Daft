@@ -2422,7 +2422,7 @@ dependencies = [
  "daft-sketch",
  "derive_more",
  "fastrand 2.3.0",
- "fnv",
+ "hashbrown 0.16.1",
  "html-escape",
  "hyperloglog",
  "image",
@@ -2783,6 +2783,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-groupby"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow",
+ "common-error",
+ "daft-core",
+ "hashbrown 0.16.1",
+]
+
+[[package]]
 name = "daft-hash"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2920,6 +2930,7 @@ dependencies = [
  "daft-dsl",
  "daft-functions-list",
  "daft-functions-uri",
+ "daft-groupby",
  "daft-io",
  "daft-json",
  "daft-local-plan",
@@ -3116,6 +3127,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions-list",
+ "daft-groupby",
  "daft-image",
  "futures",
  "hashbrown 0.16.1",

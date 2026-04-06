@@ -1,8 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    array::ops::{IntoGroups, IntoUniqueIdxs},
-    prelude::*,
-};
+use daft_core::prelude::*;
 use daft_dsl::{
     AggExpr,
     expr::{
@@ -12,6 +9,7 @@ use daft_dsl::{
     operator_metrics::NoopMetricsCollector,
     python_udf::PyScalarFn,
 };
+use daft_groupby::{IntoGroups, IntoUniqueIdxs};
 
 use crate::RecordBatch;
 

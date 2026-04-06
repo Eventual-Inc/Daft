@@ -1,6 +1,7 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{array::ops::IntoGroups, prelude::*};
+use daft_core::prelude::*;
 use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_groupby::IntoGroups;
 
 use crate::RecordBatch;
 

@@ -1,0 +1,13 @@
+[dependencies]
+arrow = {workspace = true}
+common-error = {workspace = true}
+daft-core = {path = "../daft-core", default-features = false}
+hashbrown = {workspace = true}
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-groupby"
+version = {workspace = true}

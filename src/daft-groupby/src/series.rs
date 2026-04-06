@@ -1,10 +1,11 @@
 use common_error::DaftResult;
-
-use crate::{
-    array::ops::{GroupIndicesPair, IntoGroups, IntoUniqueIdxs, VecIndices},
+use daft_core::{
+    array::ops::{GroupIndicesPair, VecIndices},
     series::Series,
     with_match_hashable_daft_types,
 };
+
+use crate::{IntoGroups, IntoUniqueIdxs};
 
 impl IntoGroups for Series {
     fn make_groups(&self) -> DaftResult<GroupIndicesPair> {
