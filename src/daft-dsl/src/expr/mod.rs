@@ -453,6 +453,9 @@ pub enum AggExpr {
     #[display("concat({_0}, delimiter={_1:?})")]
     Concat(ExprRef, Option<String>),
 
+    #[display("median({_0})")]
+    Median(ExprRef),
+
     #[display("skew({_0}")]
     Skew(ExprRef),
 
@@ -560,6 +563,7 @@ impl AggExpr {
             Self::List(_) => "List",
             Self::Set(_) => "Set",
             Self::Concat(_, _) => "Concat",
+            Self::Median(_) => "Median",
             Self::Skew(_) => "Skew",
             Self::MapGroups { .. } => "Map Groups",
         }
@@ -587,6 +591,7 @@ impl AggExpr {
             | Self::List(expr)
             | Self::Set(expr)
             | Self::Concat(expr, _)
+            | Self::Median(expr)
             | Self::Skew(expr) => expr.name(),
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
         }
@@ -690,6 +695,10 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_concat(delimiter={delimiter:?})"))
             }
+            Self::Median(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_median()"))
+            }
             Self::Skew(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_skew()"))
@@ -720,6 +729,7 @@ impl AggExpr {
             | Self::List(expr)
             | Self::Set(expr)
             | Self::Concat(expr, _)
+            | Self::Median(expr)
             | Self::Skew(expr) => vec![expr.clone()],
             Self::MapGroups { func: _, inputs } => inputs.clone(),
         }
@@ -749,6 +759,7 @@ impl AggExpr {
             Self::List(_) => Self::List(first_child()),
             Self::Set(_expr) => Self::Set(first_child()),
             Self::Concat(_, delimiter) => Self::Concat(first_child(), delimiter.clone()),
+            Self::Median(_) => Self::Median(first_child()),
             Self::Skew(_) => Self::Skew(first_child()),
             Self::MapGroups { func, inputs: _ } => Self::MapGroups {
                 func: func.with_new_children(children.clone()),
@@ -916,6 +927,14 @@ impl AggExpr {
                         field.dtype, field.name
                     ))),
                 }
+            }
+
+            Self::Median(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name.as_ref(),
+                    try_percentile_aggregation_supertype(&field.dtype)?,
+                ))
             }
 
             Self::Skew(expr) => {
@@ -1178,6 +1197,10 @@ impl Expr {
 
     pub fn mean(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::Mean(self)).into()
+    }
+
+    pub fn median(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::Median(self)).into()
     }
 
     pub fn percentile(self: ExprRef, percentage: f64) -> ExprRef {

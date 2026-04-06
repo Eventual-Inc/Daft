@@ -510,7 +510,7 @@ impl PyExpr {
     }
 
     pub fn median(&self) -> PyResult<Self> {
-        Ok(self.expr.clone().percentile(0.5).into())
+        Ok(self.expr.clone().median().into())
     }
 
     pub fn stddev(&self, ddof: usize) -> PyResult<Self> {
