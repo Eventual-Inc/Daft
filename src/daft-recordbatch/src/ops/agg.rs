@@ -50,7 +50,7 @@ impl RecordBatch {
             );
         }
 
-        // Fast path: inline aggregation for supported agg types (count, sum).
+        // Fast path: inline aggregation for supported agg types (count, sum, min, max).
         if can_inline_agg(to_agg, self) {
             return self.agg_groupby_inline(to_agg, group_by);
         }

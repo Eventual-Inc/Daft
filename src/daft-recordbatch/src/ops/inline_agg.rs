@@ -185,16 +185,136 @@ define_sum_accum!(SumAccumU64, UInt64Type, u64);
 define_sum_accum!(SumAccumF32, Float32Type, f32);
 define_sum_accum!(SumAccumF64, Float64Type, f64);
 
+macro_rules! define_minmax_accum {
+    ($name:ident, $daft_type:ty, $native:ty, $cmp_fn:expr) => {
+        struct $name {
+            accumulators: Vec<Option<$native>>,
+            source: DataArray<$daft_type>,
+        }
+
+        impl $name {
+            fn new(source: DataArray<$daft_type>) -> Self {
+                Self {
+                    accumulators: Vec::new(),
+                    source,
+                }
+            }
+
+            fn update_batch(&mut self, group_ids: &[u32]) {
+                let accs = &mut self.accumulators;
+                let cmp_fn: fn($native, $native) -> $native = $cmp_fn;
+                if self.source.null_count() == 0 {
+                    for (&gid, &val) in group_ids.iter().zip(self.source.values().iter()) {
+                        let acc = &mut accs[gid as usize];
+                        *acc = Some(match *acc {
+                            Some(a) => cmp_fn(a, val),
+                            None => val,
+                        });
+                    }
+                } else {
+                    for (row_idx, &gid) in group_ids.iter().enumerate() {
+                        if let Some(val) = self.source.get(row_idx) {
+                            let acc = &mut accs[gid as usize];
+                            *acc = Some(match *acc {
+                                Some(a) => cmp_fn(a, val),
+                                None => val,
+                            });
+                        }
+                    }
+                }
+            }
+
+            fn finalize(self, name: &str) -> DaftResult<Series> {
+                let has_nulls = self.accumulators.iter().any(|a| a.is_none());
+                if has_nulls {
+                    Ok(DataArray::<$daft_type>::from_iter(
+                        self.source.field.clone(),
+                        self.accumulators.into_iter(),
+                    )
+                    .rename(name)
+                    .into_series())
+                } else {
+                    Ok(DataArray::<$daft_type>::from_field_and_values(
+                        self.source.field.clone(),
+                        self.accumulators.into_iter().map(|opt| opt.unwrap()),
+                    )
+                    .rename(name)
+                    .into_series())
+                }
+            }
+        }
+    };
+}
+
+define_minmax_accum!(MinAccumI8, Int8Type, i8, std::cmp::min);
+define_minmax_accum!(MinAccumI16, Int16Type, i16, std::cmp::min);
+define_minmax_accum!(MinAccumI32, Int32Type, i32, std::cmp::min);
+define_minmax_accum!(MinAccumI64, Int64Type, i64, std::cmp::min);
+define_minmax_accum!(MinAccumU8, UInt8Type, u8, std::cmp::min);
+define_minmax_accum!(MinAccumU16, UInt16Type, u16, std::cmp::min);
+define_minmax_accum!(MinAccumU32, UInt32Type, u32, std::cmp::min);
+define_minmax_accum!(MinAccumU64, UInt64Type, u64, std::cmp::min);
+define_minmax_accum!(MinAccumF32, Float32Type, f32, |a, b| if a.lt(&b) {
+    a
+} else {
+    b
+});
+define_minmax_accum!(MinAccumF64, Float64Type, f64, |a, b| if a.lt(&b) {
+    a
+} else {
+    b
+});
+define_minmax_accum!(MaxAccumI8, Int8Type, i8, std::cmp::max);
+define_minmax_accum!(MaxAccumI16, Int16Type, i16, std::cmp::max);
+define_minmax_accum!(MaxAccumI32, Int32Type, i32, std::cmp::max);
+define_minmax_accum!(MaxAccumI64, Int64Type, i64, std::cmp::max);
+define_minmax_accum!(MaxAccumU8, UInt8Type, u8, std::cmp::max);
+define_minmax_accum!(MaxAccumU16, UInt16Type, u16, std::cmp::max);
+define_minmax_accum!(MaxAccumU32, UInt32Type, u32, std::cmp::max);
+define_minmax_accum!(MaxAccumU64, UInt64Type, u64, std::cmp::max);
+define_minmax_accum!(MaxAccumF32, Float32Type, f32, |a, b| if a.gt(&b) {
+    a
+} else {
+    b
+});
+define_minmax_accum!(MaxAccumF64, Float64Type, f64, |a, b| if a.gt(&b) {
+    a
+} else {
+    b
+});
+
 // ---------------------------------------------------------------------------
 // AggAccumulator enum — eliminates vtable dispatch in the hot loop
 // ---------------------------------------------------------------------------
 
+// Sum widens small integers (e.g. Int8 → Int64) so only 4 variants are needed.
+// Min/Max preserve the original dtype, so each numeric type needs its own variant.
 enum AggAccumulator {
     Count(CountAccum),
     SumI64(SumAccumI64),
     SumU64(SumAccumU64),
     SumF32(SumAccumF32),
     SumF64(SumAccumF64),
+    MinI8(MinAccumI8),
+    MinI16(MinAccumI16),
+    MinI32(MinAccumI32),
+    MinI64(MinAccumI64),
+    MinU8(MinAccumU8),
+    MinU16(MinAccumU16),
+    MinU32(MinAccumU32),
+    MinU64(MinAccumU64),
+    MinF32(MinAccumF32),
+    MinF64(MinAccumF64),
+    MaxI8(MaxAccumI8),
+    MaxI16(MaxAccumI16),
+    MaxI32(MaxAccumI32),
+    MaxI64(MaxAccumI64),
+    MaxU8(MaxAccumU8),
+    MaxU16(MaxAccumU16),
+    MaxU32(MaxAccumU32),
+    MaxU64(MaxAccumU64),
+    MaxF32(MaxAccumF32),
+    MaxF64(MaxAccumF64),
 }
 
 impl AggAccumulator {
@@ -207,6 +327,26 @@ impl AggAccumulator {
             Self::SumU64(s) => s.accumulators.resize(n, None),
             Self::SumF32(s) => s.accumulators.resize(n, None),
             Self::SumF64(s) => s.accumulators.resize(n, None),
+            Self::MinI8(s) => s.accumulators.resize(n, None),
+            Self::MinI16(s) => s.accumulators.resize(n, None),
+            Self::MinI32(s) => s.accumulators.resize(n, None),
+            Self::MinI64(s) => s.accumulators.resize(n, None),
+            Self::MinU8(s) => s.accumulators.resize(n, None),
+            Self::MinU16(s) => s.accumulators.resize(n, None),
+            Self::MinU32(s) => s.accumulators.resize(n, None),
+            Self::MinU64(s) => s.accumulators.resize(n, None),
+            Self::MinF32(s) => s.accumulators.resize(n, None),
+            Self::MinF64(s) => s.accumulators.resize(n, None),
+            Self::MaxI8(s) => s.accumulators.resize(n, None),
+            Self::MaxI16(s) => s.accumulators.resize(n, None),
+            Self::MaxI32(s) => s.accumulators.resize(n, None),
+            Self::MaxI64(s) => s.accumulators.resize(n, None),
+            Self::MaxU8(s) => s.accumulators.resize(n, None),
+            Self::MaxU16(s) => s.accumulators.resize(n, None),
+            Self::MaxU32(s) => s.accumulators.resize(n, None),
+            Self::MaxU64(s) => s.accumulators.resize(n, None),
+            Self::MaxF32(s) => s.accumulators.resize(n, None),
+            Self::MaxF64(s) => s.accumulators.resize(n, None),
         }
     }
 
@@ -227,6 +367,26 @@ impl AggAccumulator {
             Self::SumU64(s) => s.update_batch(group_ids),
             Self::SumF32(s) => s.update_batch(group_ids),
             Self::SumF64(s) => s.update_batch(group_ids),
+            Self::MinI8(s) => s.update_batch(group_ids),
+            Self::MinI16(s) => s.update_batch(group_ids),
+            Self::MinI32(s) => s.update_batch(group_ids),
+            Self::MinI64(s) => s.update_batch(group_ids),
+            Self::MinU8(s) => s.update_batch(group_ids),
+            Self::MinU16(s) => s.update_batch(group_ids),
+            Self::MinU32(s) => s.update_batch(group_ids),
+            Self::MinU64(s) => s.update_batch(group_ids),
+            Self::MinF32(s) => s.update_batch(group_ids),
+            Self::MinF64(s) => s.update_batch(group_ids),
+            Self::MaxI8(s) => s.update_batch(group_ids),
+            Self::MaxI16(s) => s.update_batch(group_ids),
+            Self::MaxI32(s) => s.update_batch(group_ids),
+            Self::MaxI64(s) => s.update_batch(group_ids),
+            Self::MaxU8(s) => s.update_batch(group_ids),
+            Self::MaxU16(s) => s.update_batch(group_ids),
+            Self::MaxU32(s) => s.update_batch(group_ids),
+            Self::MaxU64(s) => s.update_batch(group_ids),
+            Self::MaxF32(s) => s.update_batch(group_ids),
+            Self::MaxF64(s) => s.update_batch(group_ids),
         }
     }
 
@@ -237,6 +397,26 @@ impl AggAccumulator {
             Self::SumU64(s) => s.finalize(name),
             Self::SumF32(s) => s.finalize(name),
             Self::SumF64(s) => s.finalize(name),
+            Self::MinI8(s) => s.finalize(name),
+            Self::MinI16(s) => s.finalize(name),
+            Self::MinI32(s) => s.finalize(name),
+            Self::MinI64(s) => s.finalize(name),
+            Self::MinU8(s) => s.finalize(name),
+            Self::MinU16(s) => s.finalize(name),
+            Self::MinU32(s) => s.finalize(name),
+            Self::MinU64(s) => s.finalize(name),
+            Self::MinF32(s) => s.finalize(name),
+            Self::MinF64(s) => s.finalize(name),
+            Self::MaxI8(s) => s.finalize(name),
+            Self::MaxI16(s) => s.finalize(name),
+            Self::MaxI32(s) => s.finalize(name),
+            Self::MaxI64(s) => s.finalize(name),
+            Self::MaxU8(s) => s.finalize(name),
+            Self::MaxU16(s) => s.finalize(name),
+            Self::MaxU32(s) => s.finalize(name),
+            Self::MaxU64(s) => s.finalize(name),
+            Self::MaxF32(s) => s.finalize(name),
+            Self::MaxF64(s) => s.finalize(name),
         }
     }
 }
@@ -295,6 +475,160 @@ fn try_create_accumulator(
                 _ => Ok(None),
             }
         }
+        AggExpr::Min(expr) => {
+            let evaluated = source.eval_agg_child(expr)?;
+            let name = evaluated.name().to_string();
+            match evaluated.data_type() {
+                DataType::Int8 => {
+                    let arr = evaluated.downcast::<Int8Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MinI8(MinAccumI8::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::Int16 => {
+                    let arr = evaluated.downcast::<Int16Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MinI16(MinAccumI16::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::Int32 => {
+                    let arr = evaluated.downcast::<Int32Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MinI32(MinAccumI32::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::Int64 => {
+                    let arr = evaluated.downcast::<Int64Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MinI64(MinAccumI64::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::UInt8 => {
+                    let arr = evaluated.downcast::<UInt8Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MinU8(MinAccumU8::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::UInt16 => {
+                    let arr = evaluated.downcast::<UInt16Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MinU16(MinAccumU16::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::UInt32 => {
+                    let arr = evaluated.downcast::<UInt32Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MinU32(MinAccumU32::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::UInt64 => {
+                    let arr = evaluated.downcast::<UInt64Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MinU64(MinAccumU64::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::Float32 => {
+                    let arr = evaluated.downcast::<Float32Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MinF32(MinAccumF32::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::Float64 => {
+                    let arr = evaluated.downcast::<Float64Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MinF64(MinAccumF64::new(arr.clone())),
+                        name,
+                    )))
+                }
+                _ => Ok(None),
+            }
+        }
+        AggExpr::Max(expr) => {
+            let evaluated = source.eval_agg_child(expr)?;
+            let name = evaluated.name().to_string();
+            match evaluated.data_type() {
+                DataType::Int8 => {
+                    let arr = evaluated.downcast::<Int8Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MaxI8(MaxAccumI8::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::Int16 => {
+                    let arr = evaluated.downcast::<Int16Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MaxI16(MaxAccumI16::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::Int32 => {
+                    let arr = evaluated.downcast::<Int32Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MaxI32(MaxAccumI32::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::Int64 => {
+                    let arr = evaluated.downcast::<Int64Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MaxI64(MaxAccumI64::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::UInt8 => {
+                    let arr = evaluated.downcast::<UInt8Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MaxU8(MaxAccumU8::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::UInt16 => {
+                    let arr = evaluated.downcast::<UInt16Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MaxU16(MaxAccumU16::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::UInt32 => {
+                    let arr = evaluated.downcast::<UInt32Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MaxU32(MaxAccumU32::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::UInt64 => {
+                    let arr = evaluated.downcast::<UInt64Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MaxU64(MaxAccumU64::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::Float32 => {
+                    let arr = evaluated.downcast::<Float32Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MaxF32(MaxAccumF32::new(arr.clone())),
+                        name,
+                    )))
+                }
+                DataType::Float64 => {
+                    let arr = evaluated.downcast::<Float64Array>()?;
+                    Ok(Some((
+                        AggAccumulator::MaxF64(MaxAccumF64::new(arr.clone())),
+                        name,
+                    )))
+                }
+                _ => Ok(None),
+            }
+        }
         _ => Ok(None),
     }
 }
@@ -306,23 +640,25 @@ fn try_create_accumulator(
 /// Returns true if all agg expressions can be handled by the inline path.
 ///
 /// Requirements:
-/// 1. All agg expressions are Count or Sum (the only supported accumulator types).
-/// 2. For Sum, the value column dtype must be a supported numeric type.
+/// 1. All agg expressions are Count, Sum, Min, or Max.
+/// 2. For Sum/Min/Max, the value column dtype must be a supported numeric type.
 ///
 /// Uses schema-level type inference (`to_field`) instead of expression evaluation
 /// to avoid materializing computed columns just for a dtype check.
 pub(super) fn can_inline_agg(to_agg: &[BoundAggExpr], source: &RecordBatch) -> bool {
-    // Quick check: bail immediately if any agg type isn't Count or Sum.
-    if !to_agg
-        .iter()
-        .all(|e| matches!(e.as_ref(), AggExpr::Count(..) | AggExpr::Sum(..)))
-    {
+    // Quick check: bail immediately if any agg type isn't supported.
+    if !to_agg.iter().all(|e| {
+        matches!(
+            e.as_ref(),
+            AggExpr::Count(..) | AggExpr::Sum(..) | AggExpr::Min(..) | AggExpr::Max(..)
+        )
+    }) {
         return false;
     }
-    // Check Sum value column dtypes via schema type inference (no data materialized).
+    // Check value column dtypes via schema type inference (no data materialized).
     to_agg.iter().all(|e| match e.as_ref() {
         AggExpr::Count(..) => true,
-        AggExpr::Sum(expr) => {
+        AggExpr::Sum(expr) | AggExpr::Min(expr) | AggExpr::Max(expr) => {
             if let Ok(field) = expr.to_field(&source.schema) {
                 matches!(
                     field.dtype,
@@ -341,7 +677,7 @@ pub(super) fn can_inline_agg(to_agg: &[BoundAggExpr], source: &RecordBatch) -> b
                 false
             }
         }
-        _ => unreachable!("pre-check ensures only Count/Sum reach here"),
+        _ => unreachable!("pre-check ensures only supported types reach here"),
     })
 }
 
@@ -896,6 +1232,173 @@ mod tests {
         let (rb, group_by, schema) = make_int_key_with_nulls_test_batch();
         let bound_agg =
             vec![BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    // --- Min/Max tests (string-key, exercises generic hash path) ---
+
+    #[test]
+    fn test_inline_min_matches_fallback() {
+        let (rb, group_by, schema) = make_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Min(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_max_matches_fallback() {
+        let (rb, group_by, schema) = make_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_mixed_count_sum_min_max() {
+        let (rb, group_by, schema) = make_test_batch();
+        let bound_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
+                .unwrap(),
+            BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap(),
+            BoundAggExpr::try_new(AggExpr::Min(resolved_col("val")), &schema).unwrap(),
+            BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap(),
+        ];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    // --- Min/Max tests (integer-key, exercises FNV fast path) ---
+
+    #[test]
+    fn test_inline_int_key_min_matches_fallback() {
+        let (rb, group_by, schema) = make_int_key_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Min(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_int_key_max_matches_fallback() {
+        let (rb, group_by, schema) = make_int_key_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    // --- Min/Max tests (nullable integer-key, exercises FNV nullable path) ---
+
+    #[test]
+    fn test_inline_int_key_with_nulls_min_matches_fallback() {
+        let (rb, group_by, schema) = make_int_key_with_nulls_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Min(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_int_key_with_nulls_max_matches_fallback() {
+        let (rb, group_by, schema) = make_int_key_with_nulls_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    // --- Float64 with NaN tests (validates f64::min/f64::max NaN handling) ---
+
+    /// Helper for float-keyed groupby tests with NaN values.
+    fn make_float_with_nan_test_batch() -> (RecordBatch, Vec<BoundExpr>, Schema) {
+        let keys = Int64Array::from_iter(
+            Field::new("key", DataType::Int64),
+            vec![Some(1), Some(1), Some(2), Some(2), Some(1)],
+        )
+        .into_series();
+        let vals = Float64Array::from_iter(
+            Field::new("val", DataType::Float64),
+            vec![Some(1.0), Some(f64::NAN), Some(3.0), Some(2.0), None],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key", DataType::Int64),
+            Field::new("val", DataType::Float64),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![keys, vals]).unwrap();
+        let group_by = vec![BoundExpr::try_new(resolved_col("key"), &schema).unwrap()];
+        (rb, group_by, schema)
+    }
+
+    #[test]
+    fn test_inline_float_nan_min_matches_fallback() {
+        let (rb, group_by, schema) = make_float_with_nan_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Min(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_float_nan_max_matches_fallback() {
+        let (rb, group_by, schema) = make_float_with_nan_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    // --- Small integer type tests (validates per-type accumulators like MinAccumI8) ---
+
+    /// Helper for Int8-valued groupby tests.
+    fn make_i8_val_test_batch() -> (RecordBatch, Vec<BoundExpr>, Schema) {
+        let keys = Int64Array::from_iter(
+            Field::new("key", DataType::Int64),
+            vec![Some(1), Some(2), Some(1), Some(2), Some(1)],
+        )
+        .into_series();
+        let vals = Int8Array::from_iter(
+            Field::new("val", DataType::Int8),
+            vec![Some(10), Some(20), None, Some(-5), Some(3)],
+        )
+        .into_series();
+        let schema = Schema::new(vec![
+            Field::new("key", DataType::Int64),
+            Field::new("val", DataType::Int8),
+        ]);
+        let rb = RecordBatch::from_nonempty_columns(vec![keys, vals]).unwrap();
+        let group_by = vec![BoundExpr::try_new(resolved_col("key"), &schema).unwrap()];
+        (rb, group_by, schema)
+    }
+
+    #[test]
+    fn test_inline_i8_min_matches_fallback() {
+        let (rb, group_by, schema) = make_i8_val_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Min(resolved_col("val")), &schema).unwrap()];
+        let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+        let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
+        assert_batches_equal(&inline_result, &fallback_result);
+    }
+
+    #[test]
+    fn test_inline_i8_max_matches_fallback() {
+        let (rb, group_by, schema) = make_i8_val_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap()];
         let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
         let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
         assert_batches_equal(&inline_result, &fallback_result);

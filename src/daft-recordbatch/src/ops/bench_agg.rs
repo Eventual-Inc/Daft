@@ -62,6 +62,10 @@ mod bench {
         ];
         let sum_agg =
             vec![BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap()];
+        let min_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Min(resolved_col("val")), &schema).unwrap()];
+        let max_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap()];
         let count_sum_agg = vec![
             BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
                 .unwrap(),
@@ -78,6 +82,8 @@ mod bench {
         for (label, agg) in [
             ("count", &count_agg),
             ("sum", &sum_agg),
+            ("min", &min_agg),
+            ("max", &max_agg),
             ("count+sum", &count_sum_agg),
         ] {
             let inline_ms = bench_fn(label, WARMUP, ITERS, || {
