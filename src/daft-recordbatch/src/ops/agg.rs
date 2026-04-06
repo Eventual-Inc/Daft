@@ -133,7 +133,7 @@ impl RecordBatch {
                             let evaluated_grouped_col = {
                                 // Convert group indices to Series
                                 let indices_as_arr =
-                                    UInt64Array::from_vec("", groupval_indices.clone());
+                                    UInt64Array::from_vec("", groupval_indices.to_vec());
 
                                 // Take each input Series by the group indices
                                 let input_groups = evaluated_inputs
@@ -220,7 +220,7 @@ impl RecordBatch {
                         .map(|(groupkey_index, groupval_indices)| {
                             // Convert group indices to Series
                             let indices_as_arr =
-                                UInt64Array::from_vec("", groupval_indices.clone());
+                                UInt64Array::from_vec("", groupval_indices.to_vec());
 
                             // Take each input Series by the group indices
                             let input_groups = evaluated_inputs

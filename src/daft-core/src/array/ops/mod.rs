@@ -161,9 +161,8 @@ pub trait DaftMinHash {
     ) -> Self::Output;
 }
 
-pub type VecIndices = Vec<u64>;
+pub type VecIndices = smallvec::SmallVec<[u64; 2]>;
 pub type GroupIndices = Vec<VecIndices>;
-pub type GroupIndicesPair = (VecIndices, GroupIndices);
 
 pub trait DaftCountAggable {
     type Output;

@@ -21,6 +21,7 @@ daft-sketch = {path = "../daft-sketch", default-features = false}
 derive_more = {workspace = true}
 fastrand = "2.1.0"
 hashbrown = {workspace = true}
+smallvec = {workspace = true}
 html-escape = {workspace = true}
 hyperloglog = {path = "../hyperloglog"}
 image = {workspace = true, features = [

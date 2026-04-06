@@ -1,7 +1,7 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_groupby::IntoGroups;
+use daft_groupby::{IntoGroups, VecIndices};
 
 use crate::RecordBatch;
 
@@ -33,8 +33,8 @@ fn map_name_to_pivot_key_idx<'a>(
 }
 
 fn map_pivot_key_idx_to_values_indices(
-    group_vals_indices: &[Vec<u64>],
-    pivot_vals_indices: &[Vec<u64>],
+    group_vals_indices: &[VecIndices],
+    pivot_vals_indices: &[VecIndices],
     pivot_keys_indices: &[u64],
 ) -> DaftResult<std::collections::HashMap<u64, Vec<Option<u64>>>> {
     let group_vals_indices_hashsets = group_vals_indices

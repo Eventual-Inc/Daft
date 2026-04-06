@@ -1,10 +1,10 @@
 use common_error::DaftResult;
 use daft_core::{
-    array::ops::{GroupIndicesPair, VecIndices, arrow::comparison::build_multi_array_is_equal},
+    array::ops::{VecIndices, arrow::comparison::build_multi_array_is_equal},
     datatypes::UInt64Array,
     series::Series,
 };
-use daft_groupby::{IntoGroups, IntoUniqueIdxs};
+use daft_groupby::{GroupIndicesPair, Indices, IntoGroups, IntoUniqueIdxs};
 
 use crate::RecordBatch;
 
@@ -33,7 +33,7 @@ impl RecordBatch {
 
         let probe_table = self.to_probe_hash_table()?;
         let mut key_indices: Vec<u64> = Vec::with_capacity(probe_table.len());
-        let mut values_indices: Vec<Vec<u64>> = Vec::with_capacity(probe_table.len());
+        let mut values_indices: Vec<VecIndices> = Vec::with_capacity(probe_table.len());
 
         for (idx_hash, val_idx) in probe_table {
             key_indices.push(idx_hash.idx);
@@ -120,7 +120,7 @@ impl IntoGroups for RecordBatch {
 }
 
 impl IntoUniqueIdxs for RecordBatch {
-    fn make_unique_idxs(&self) -> DaftResult<VecIndices> {
+    fn make_unique_idxs(&self) -> DaftResult<Indices> {
         // Returns the indices of the first occurrence of each unique row.
         //
         // e.g. given a table [B, B, A, B, C, C]

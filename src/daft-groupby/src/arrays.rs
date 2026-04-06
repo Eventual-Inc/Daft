@@ -3,7 +3,10 @@ use std::hash::Hash;
 use arrow::array::Array;
 use common_error::DaftResult;
 use daft_core::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray, ops::as_arrow::AsArrow},
+    array::{
+        DataArray, FixedSizeListArray, ListArray, StructArray,
+        ops::{VecIndices, as_arrow::AsArrow},
+    },
     datatypes::{
         BinaryArray, BooleanArray, Decimal128Type, FixedSizeBinaryArray, Float32Array,
         Float64Array, Int8Type, Int16Type, Int32Type, Int64Type, NullArray, UInt8Type, UInt16Type,
@@ -11,6 +14,7 @@ use daft_core::{
     },
 };
 use hashbrown::{DefaultHashBuilder, HashMap, hash_map::Entry};
+use smallvec::smallvec;
 
 use crate::{IntoGroups, IntoUniqueIdxs};
 
@@ -35,11 +39,10 @@ use crate::{IntoGroups, IntoUniqueIdxs};
 #[inline(never)]
 fn make_groups<T>(iter: impl Iterator<Item = T>) -> DaftResult<crate::GroupIndicesPair>
 where
-    T: Hash,
-    T: Eq,
+    T: Hash + Eq,
 {
     const DEFAULT_SIZE: usize = 1024;
-    let mut tbl = HashMap::<T, (u64, Vec<u64>)>::with_capacity_and_hasher(
+    let mut tbl = HashMap::<T, VecIndices>::with_capacity_and_hasher(
         DEFAULT_SIZE,
         DefaultHashBuilder::default(),
     );
@@ -48,18 +51,18 @@ where
         let e = tbl.entry(val);
         match e {
             Entry::Vacant(e) => {
-                e.insert((idx, vec![idx]));
+                e.insert(smallvec![idx]);
             }
             Entry::Occupied(mut e) => {
-                e.get_mut().1.push(idx);
+                e.get_mut().push(idx);
             }
         }
     }
     let mut sample_indices = Vec::with_capacity(tbl.len());
     let mut group_indices = Vec::with_capacity(tbl.len());
 
-    for (sample_index, group_index) in tbl.into_values() {
-        sample_indices.push(sample_index);
+    for group_index in tbl.into_values() {
+        sample_indices.push(unsafe { *group_index.get_unchecked(0) });
         group_indices.push(group_index);
     }
 
@@ -83,7 +86,7 @@ where
 /// Calling `make_unique_idxs` on the above list would return `vec![0, 1, 3]`
 /// since those are the first indices where each unique value (`a`, `b`, `c`) appears.
 #[inline(never)]
-fn make_unique_idxs<T>(iter: impl Iterator<Item = T>) -> DaftResult<crate::VecIndices>
+fn make_unique_idxs<T>(iter: impl Iterator<Item = T>) -> DaftResult<crate::Indices>
 where
     T: Hash,
     T: Eq,
@@ -124,7 +127,7 @@ macro_rules! impl_into_groups_primitive_array {
         }
 
         impl IntoUniqueIdxs for DataArray<$T> {
-            fn make_unique_idxs(&self) -> DaftResult<crate::VecIndices> {
+            fn make_unique_idxs(&self) -> DaftResult<crate::Indices> {
                 if self.null_count() > 0 {
                     make_unique_idxs(self.into_iter())
                 } else {
@@ -173,7 +176,7 @@ impl IntoGroups for Float32Array {
 }
 
 impl IntoUniqueIdxs for Float32Array {
-    fn make_unique_idxs(&self) -> DaftResult<crate::VecIndices> {
+    fn make_unique_idxs(&self) -> DaftResult<crate::Indices> {
         if self.null_count() > 0 {
             make_unique_idxs(self.into_iter().map(|f| {
                 f.map(|v| {
@@ -221,7 +224,7 @@ impl IntoGroups for Float64Array {
 }
 
 impl IntoUniqueIdxs for Float64Array {
-    fn make_unique_idxs(&self) -> DaftResult<crate::VecIndices> {
+    fn make_unique_idxs(&self) -> DaftResult<crate::Indices> {
         if self.null_count() > 0 {
             make_unique_idxs(self.into_iter().map(|f| {
                 f.map(|v| {
@@ -257,7 +260,7 @@ impl IntoGroups for Utf8Array {
 }
 
 impl IntoUniqueIdxs for Utf8Array {
-    fn make_unique_idxs(&self) -> DaftResult<crate::VecIndices> {
+    fn make_unique_idxs(&self) -> DaftResult<crate::Indices> {
         if self.null_count() == 0 {
             make_unique_idxs(self.values()?)
         } else {
@@ -277,7 +280,7 @@ impl IntoGroups for BinaryArray {
 }
 
 impl IntoUniqueIdxs for BinaryArray {
-    fn make_unique_idxs(&self) -> DaftResult<crate::VecIndices> {
+    fn make_unique_idxs(&self) -> DaftResult<crate::Indices> {
         if self.null_count() == 0 {
             make_unique_idxs(self.values()?)
         } else {
@@ -313,7 +316,7 @@ impl IntoGroups for FixedSizeBinaryArray {
 }
 
 impl IntoUniqueIdxs for FixedSizeBinaryArray {
-    fn make_unique_idxs(&self) -> DaftResult<crate::VecIndices> {
+    fn make_unique_idxs(&self) -> DaftResult<crate::Indices> {
         let array = self.as_arrow()?;
         let width = array.value_length() as usize;
 
@@ -344,7 +347,7 @@ impl IntoGroups for BooleanArray {
 }
 
 impl IntoUniqueIdxs for BooleanArray {
-    fn make_unique_idxs(&self) -> DaftResult<crate::VecIndices> {
+    fn make_unique_idxs(&self) -> DaftResult<crate::Indices> {
         if self.null_count() > 0 {
             make_unique_idxs(self.into_iter())
         } else {
@@ -360,13 +363,13 @@ impl IntoGroups for NullArray {
         if l == 0 {
             return Ok((vec![], vec![]));
         }
-        let v = (0u64..l).collect::<Vec<u64>>();
+        let v = (0u64..l).collect::<VecIndices>();
         Ok((vec![0], vec![v]))
     }
 }
 
 impl IntoUniqueIdxs for NullArray {
-    fn make_unique_idxs(&self) -> DaftResult<crate::VecIndices> {
+    fn make_unique_idxs(&self) -> DaftResult<crate::Indices> {
         let l = self.len() as u64;
         if l == 0 {
             return Ok(vec![]);
@@ -382,7 +385,7 @@ impl IntoGroups for ListArray {
 }
 
 impl IntoUniqueIdxs for ListArray {
-    fn make_unique_idxs(&self) -> DaftResult<crate::VecIndices> {
+    fn make_unique_idxs(&self) -> DaftResult<crate::Indices> {
         self.hash(None)?.make_unique_idxs()
     }
 }
@@ -394,7 +397,7 @@ impl IntoGroups for FixedSizeListArray {
 }
 
 impl IntoUniqueIdxs for FixedSizeListArray {
-    fn make_unique_idxs(&self) -> DaftResult<crate::VecIndices> {
+    fn make_unique_idxs(&self) -> DaftResult<crate::Indices> {
         self.hash(None)?.make_unique_idxs()
     }
 }
@@ -406,7 +409,7 @@ impl IntoGroups for StructArray {
 }
 
 impl IntoUniqueIdxs for StructArray {
-    fn make_unique_idxs(&self) -> DaftResult<crate::VecIndices> {
+    fn make_unique_idxs(&self) -> DaftResult<crate::Indices> {
         self.hash(None)?.make_unique_idxs()
     }
 }
@@ -417,16 +420,17 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::{
-        array::ops::full::FullNull,
+        array::ops::{VecIndices, full::FullNull},
         datatypes::{DataType, Field, FixedSizeBinaryArray, Float64Array, Int64Array, NullArray},
     };
+    use smallvec::smallvec;
 
     use crate::{IntoGroups, IntoUniqueIdxs};
 
     fn grouped_by_sample(
         sample_indices: Vec<u64>,
-        group_indices: Vec<Vec<u64>>,
-    ) -> BTreeMap<u64, Vec<u64>> {
+        group_indices: Vec<VecIndices>,
+    ) -> BTreeMap<u64, VecIndices> {
         sample_indices
             .into_iter()
             .zip(group_indices)
@@ -446,9 +450,9 @@ mod tests {
         assert_eq!(
             grouped,
             BTreeMap::from([
-                (0u64, vec![0u64, 2u64]),
-                (1u64, vec![1u64, 3u64]),
-                (4u64, vec![4u64]),
+                (0u64, smallvec![0u64, 2u64]),
+                (1u64, smallvec![1u64, 3u64]),
+                (4u64, smallvec![4u64]),
             ])
         );
 
@@ -469,7 +473,7 @@ mod tests {
 
         assert_eq!(
             grouped,
-            BTreeMap::from([(0u64, vec![0u64, 2u64]), (1u64, vec![1u64, 3u64])])
+            BTreeMap::from([(0u64, smallvec![0u64, 2u64]), (1u64, smallvec![1u64, 3u64])])
         );
 
         let mut unique_idxs = arr.make_unique_idxs()?;
@@ -481,7 +485,7 @@ mod tests {
     #[test]
     fn test_null_array_groups_and_unique_idxs() -> DaftResult<()> {
         let arr = NullArray::full_null("a", &DataType::Null, 4);
-        assert_eq!(arr.make_groups()?, (vec![0], vec![vec![0, 1, 2, 3]]));
+        assert_eq!(arr.make_groups()?, (vec![0], vec![smallvec![0, 1, 2, 3]]));
         assert_eq!(arr.make_unique_idxs()?, vec![0]);
 
         let empty = NullArray::full_null("a", &DataType::Null, 0);
@@ -501,7 +505,7 @@ mod tests {
         let grouped = grouped_by_sample(sample_indices, group_indices);
         assert_eq!(
             grouped,
-            BTreeMap::from([(0u64, vec![0u64, 1u64]), (2u64, vec![2u64])])
+            BTreeMap::from([(0u64, smallvec![0u64, 1u64]), (2u64, smallvec![2u64])])
         );
 
         let mut unique_idxs = array.make_unique_idxs()?;

@@ -4,14 +4,15 @@ use common_error::DaftResult;
 use daft_core::array::ops::GroupIndices;
 pub use daft_core::array::ops::VecIndices;
 
-pub type GroupIndicesPair = (VecIndices, GroupIndices);
+pub type Indices = Vec<u64>;
+pub type GroupIndicesPair = (Indices, GroupIndices);
 
 pub trait IntoGroups {
     fn make_groups(&self) -> DaftResult<GroupIndicesPair>;
 }
 
 pub trait IntoUniqueIdxs {
-    fn make_unique_idxs(&self) -> DaftResult<VecIndices>;
+    fn make_unique_idxs(&self) -> DaftResult<Indices>;
 }
 
 mod arrays;

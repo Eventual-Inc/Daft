@@ -2435,6 +2435,7 @@ dependencies = [
  "rstest",
  "serde",
  "sketches-ddsketch",
+ "smallvec",
  "xxhash-rust",
 ]
 
@@ -2790,6 +2791,7 @@ dependencies = [
  "common-error",
  "daft-core",
  "hashbrown 0.16.1",
+ "smallvec",
 ]
 
 [[package]]
@@ -3138,6 +3140,7 @@ dependencies = [
  "rand 0.9.2",
  "serde",
  "serde_json",
+ "smallvec",
 ]
 
 [[package]]

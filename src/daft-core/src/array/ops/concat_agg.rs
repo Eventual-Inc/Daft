@@ -168,6 +168,7 @@ mod test {
 
     use arrow::buffer::OffsetBuffer;
     use common_error::DaftResult;
+    use smallvec::smallvec;
 
     use crate::{
         array::{ListArray, ops::DaftConcatAggable},
@@ -266,8 +267,12 @@ mod test {
             ])),
         );
 
-        let concatted =
-            list_array.grouped_concat(&vec![vec![0, 1], vec![2, 3], vec![4, 5], vec![6, 7]])?;
+        let concatted = list_array.grouped_concat(&vec![
+            smallvec![0, 1],
+            smallvec![2, 3],
+            smallvec![4, 5],
+            smallvec![6, 7],
+        ])?;
 
         // Expected: [[0, 0, 0], [1, None, None], [2, None], None]
         assert_eq!(concatted.len(), 4);

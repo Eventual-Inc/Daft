@@ -111,7 +111,7 @@ impl RecordBatch {
         let output_tables = group_idx
             .into_iter()
             .map(|gidx| {
-                let gidx = UInt64Array::from_vec("idx", gidx);
+                let gidx = UInt64Array::from_vec("idx", gidx.into_vec());
                 self.take(&gidx)
             })
             .collect::<DaftResult<Vec<_>>>()?;
