@@ -10,7 +10,7 @@ import time
 from ray.job_submission import JobStatus, JobSubmissionClient
 
 import daft
-from tools.ci_bench_utils import get_run_metadata, tail_logs, upload_to_google_sheets
+from benchmarking.utils import daft_uv_runtime_env, get_run_metadata, tail_logs, upload_to_google_sheets
 
 SF_TO_S3_PATH = {
     100: "s3://eventual-dev-benchmarking-fixtures/uncompressed/tpch-dbgen/100_0/32/parquet/",
@@ -28,7 +28,8 @@ def run_benchmark(up_to_query: int = 22):
         )
     parquet_path = SF_TO_S3_PATH[scale_factor]
 
-    client = JobSubmissionClient(address="http://localhost:8265")
+    ray_address = os.getenv("RAY_ADDRESS", "http://localhost:8265")
+    client = JobSubmissionClient(address=ray_address)
 
     for q in range(1, up_to_query + 1):
         print(f"Running TPC-H Q{q}... ", end="", flush=True)
@@ -39,6 +40,7 @@ def run_benchmark(up_to_query: int = 22):
             entrypoint=f"DAFT_RUNNER=ray python answers_sql.py {parquet_path} {q}",
             runtime_env={
                 "working_dir": "./benchmarking/tpch",
+                "uv": daft_uv_runtime_env(),
                 "env_vars": {
                     "DAFT_PROGRESS_BAR": "0",
                     "DAFT_SHUFFLE_ALGORITHM": os.getenv("DAFT_SHUFFLE_ALGORITHM", "auto"),

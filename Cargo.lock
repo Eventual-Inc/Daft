@@ -3130,6 +3130,7 @@ dependencies = [
  "daft-functions-list",
  "daft-groupby",
  "daft-image",
+ "fnv",
  "futures",
  "hashbrown 0.16.1",
  "html-escape",
