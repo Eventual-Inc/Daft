@@ -17,8 +17,8 @@ use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
-    Column, Expr, ExprRef, UnresolvedColumn, WindowSpec, has_agg, left_col, resolved_col,
-    right_col, unresolved_col,
+    Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg, left_col,
+    resolved_col, right_col, unresolved_col,
 };
 use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use daft_schema::schema::{Schema, SchemaRef};
@@ -1398,7 +1398,8 @@ impl PyLogicalPlanBuilder {
         join_type,
         join_strategy,
         prefix,
-        suffix
+        suffix,
+        key_filtering_config=None,
     ))]
     pub fn join(
         &self,
@@ -1409,7 +1410,56 @@ impl PyLogicalPlanBuilder {
         join_strategy: Option<JoinStrategy>,
         prefix: Option<String>,
         suffix: Option<String>,
+        key_filtering_config: Option<ops::PyKeyFilteringConfig>,
     ) -> PyResult<Self> {
+        let key_filtering_config = match (join_strategy, key_filtering_config) {
+            (Some(JoinStrategy::KeyFiltering), Some(config)) => {
+                if join_type != JoinType::Anti {
+                    return Err(DaftError::ValueError(
+                        "key_filtering_config may only be used with JoinType::Anti".to_string(),
+                    )
+                    .into());
+                }
+
+                let extract_key_columns = |exprs: &[PyExpr],
+                                           side: &str|
+                 -> DaftResult<Vec<String>> {
+                    exprs.iter()
+                        .map(|expr| match expr.expr.as_ref() {
+                            Expr::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => {
+                                Ok(name.to_string())
+                            }
+                            Expr::Column(Column::Resolved(ResolvedColumn::Basic(field))) => {
+                                Ok(field.to_string())
+                            }
+                            _ => Err(DaftError::ValueError(format!(
+                                "KeyFiltering join requires {side}_on to contain simple column references"
+                            ))),
+                        })
+                        .collect::<DaftResult<Vec<_>>>()
+                };
+
+                Some(config.config.with_key_columns(
+                    extract_key_columns(&left_on, "left")?,
+                    extract_key_columns(&right_on, "right")?,
+                )?)
+            }
+            (Some(JoinStrategy::KeyFiltering), None) => {
+                return Err(DaftError::ValueError(
+                    "JoinStrategy::KeyFiltering requires key_filtering_config".to_string(),
+                )
+                .into());
+            }
+            (_, Some(_)) => {
+                return Err(DaftError::ValueError(
+                    "key_filtering_config may only be used with JoinStrategy::KeyFiltering"
+                        .to_string(),
+                )
+                .into());
+            }
+            (_, None) => None,
+        };
+
         let left_on = left_on.into_iter().map(|expr| expr.expr);
         let right_on = right_on.into_iter().map(|expr| expr.expr);
 
@@ -1436,17 +1486,29 @@ impl PyLogicalPlanBuilder {
 
         let on = combine_conjunction(on_exprs);
 
-        Ok(self
-            .builder
-            .join(
-                &right.builder,
-                on,
-                using,
-                join_type,
-                join_strategy,
-                JoinOptions { prefix, suffix },
-            )?
-            .into())
+        let mut result = self.builder.join(
+            &right.builder,
+            on,
+            using,
+            join_type,
+            join_strategy,
+            JoinOptions { prefix, suffix },
+        )?;
+
+        if let Some(key_filtering_config) = key_filtering_config {
+            result = match result.plan.as_ref() {
+                LogicalPlan::Join(join) => {
+                    let new_join = join
+                        .clone()
+                        .with_key_filtering_config(Some(key_filtering_config));
+                    let logical_plan: LogicalPlan = new_join.into();
+                    result.with_new_plan(logical_plan)
+                }
+                _ => unreachable!("join() must return a Join node"),
+            };
+        }
+
+        Ok(result.into())
     }
 
     pub fn concat(&self, other: &Self) -> DaftResult<Self> {

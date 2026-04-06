@@ -30,7 +30,7 @@ You can take the IP address and port and pass it to Daft with [`set_runner_ray`]
 ```python
 >>> import daft
 >>> daft.set_runner_ray("ray://127.0.0.1:10001")
-DaftContext(_daft_execution_config=<daft.daft.PyDaftExecutionConfig object at 0x100fbd1f0>, _daft_planning_config=<daft.daft.PyDaftPlanningConfig object at 0x100fbd270>, _runner_config=_RayRunnerConfig(address='127.0.0.1:10001', max_task_backlog=None), _disallow_set_runner=True, _runner=None)
+DaftContext(_daft_execution_config=<daft.daft.PyDaftExecutionConfig object at 0x100fbd1f0>, _daft_planning_config=<daft.daft.PyDaftPlanningConfig object at 0x100fbd270>, _runner_config=_RayRunnerConfig(address='127.0.0.1:10001'), _disallow_set_runner=True, _runner=None)
 
 >>> df = daft.from_pydict({
 ...   'text': ['hello', 'world']

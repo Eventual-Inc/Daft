@@ -3,7 +3,9 @@ use std::{future, sync::Arc};
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, SamplingMethod};
+use daft_local_plan::{
+    LocalNodeContext, LocalPhysicalPlan, RepartitionWriteBackend, SamplingMethod,
+};
 use daft_logical_plan::{
     partitioning::{RangeRepartitionConfig, RepartitionSpec},
     stats::StatsState,
@@ -17,16 +19,14 @@ use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, TaskOutput,
+        shuffles::partition_groups::ray_partition_groups_from_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::{SchedulerHandle, SubmittedTask},
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
-    utils::{
-        channel::{Sender, create_channel},
-        transpose::transpose_materialized_outputs_from_vec,
-    },
+    utils::channel::{Sender, create_channel},
 };
 
 /// Computes partition boundaries from sampled data for range partitioning.
@@ -188,16 +188,17 @@ pub(crate) fn create_range_repartition_tasks(
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(node_id as usize)),
             );
-            let plan = LocalPhysicalPlan::repartition(
+            let plan = LocalPhysicalPlan::repartition_write(
                 in_memory_source_plan,
+                num_partitions,
+                input_schema.clone(),
+                RepartitionWriteBackend::Ray,
                 RepartitionSpec::Range(RangeRepartitionConfig::new(
                     Some(num_partitions),
                     boundaries.clone(),
                     partition_by.clone(),
                     descending.clone(),
                 )),
-                num_partitions,
-                input_schema.clone(),
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(node_id as usize)),
             );
@@ -349,17 +350,21 @@ impl SortNode {
             .await?
             .into_iter()
             .flatten()
-            .map(TaskOutput::into_materialized)
-            .collect::<DaftResult<Vec<_>>>()?;
+            .collect::<Vec<_>>();
+        let partition_groups =
+            ray_partition_groups_from_outputs(partitioned_outputs, num_partitions)?;
 
-        let transposed_outputs =
-            transpose_materialized_outputs_from_vec(partitioned_outputs, num_partitions);
-
-        for partition_group in transposed_outputs {
-            let (in_memory_source_plan, psets) = MaterializedOutput::into_in_memory_scan_with_psets(
-                partition_group,
-                self.config.schema.clone(),
+        for partition_group in partition_groups {
+            let total_size_bytes = partition_group
+                .iter()
+                .map(|partition| partition.size_bytes())
+                .sum();
+            let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
                 self.node_id(),
+                self.config.schema.clone(),
+                total_size_bytes,
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(self.node_id() as usize)),
             );
             let plan = LocalPhysicalPlan::sort(
                 in_memory_source_plan,
@@ -370,7 +375,7 @@ impl SortNode {
                 LocalNodeContext::new(Some(self.node_id() as usize)),
             );
             let task = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
-                .with_psets(self.node_id(), psets);
+                .with_psets(self.node_id(), partition_group);
             let _ = result_tx.send(task).await;
         }
         Ok(())

@@ -13,7 +13,13 @@ use std::{
 use common_error::DaftResult;
 use common_runtime::{combine_stream, get_compute_runtime};
 use daft_core::prelude::*;
-use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, optimization::get_required_columns};
+use daft_dsl::{
+    Expr, ExprRef,
+    common_treenode::{Transformed, TreeNode},
+    expr::{Column, ResolvedColumn, UnresolvedColumn, bound_expr::BoundExpr},
+    null_lit,
+    optimization::get_required_columns,
+};
 use daft_io::{IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use daft_stats::TruthValue;
@@ -155,6 +161,32 @@ fn build_row_filter(
     ))
 }
 
+/// Rewrite a predicate for a specific Parquet file's schema by replacing any column reference
+/// that is absent from `schema` with `null_lit()`.
+///
+/// This implements Iceberg schema evolution: columns added after a file was written don't exist
+/// in that file. Substituting null makes the predicate evaluate to null (unknown) for those
+/// columns, which propagates conservatively — row groups are never falsely pruned, and rows
+/// are never falsely excluded.
+fn substitute_missing_cols(predicate: &ExprRef, schema: &Schema) -> DaftResult<ExprRef> {
+    Ok(predicate
+        .clone()
+        .transform(|e| {
+            if let Expr::Column(col) = e.as_ref() {
+                let name = match col {
+                    Column::Unresolved(UnresolvedColumn { name, .. })
+                    | Column::Resolved(ResolvedColumn::Basic(name)) => name,
+                    _ => return Ok(Transformed::no(e)),
+                };
+                if schema.get_field(name).is_err() {
+                    return Ok(Transformed::yes(null_lit()));
+                }
+            }
+            Ok(Transformed::no(e))
+        })?
+        .data)
+}
+
 /// Build a `RowSelection` that skips the first `offset` rows.
 ///
 /// This is used to implement file-level offset when a RowFilter (predicate pushdown)
@@ -281,8 +313,11 @@ fn finalize_batch(
     if let Some(pred) = predicate
         && !predicate_pushed
     {
-        let bound = BoundExpr::try_new(pred.clone(), &table.schema)?;
-        table = table.filter(&[bound])?;
+        let pred = substitute_missing_cols(pred, &table.schema)?;
+        let bound = BoundExpr::try_new(pred, &table.schema)?;
+        let mask = table.eval_expression(&bound)?;
+        // mask_filter treats null Boolean values as false (SQL WHERE semantics).
+        table = table.mask_filter(&mask)?;
     }
 
     if read_schema.len() != return_schema.len() {
@@ -1344,8 +1379,10 @@ fn prune_row_groups(
         None => return Ok(candidates),
     };
 
-    // Bind the predicate expression to the schema.
-    let bound_pred = BoundExpr::try_new((*predicate).clone(), schema).map_err(|e| {
+    let predicate = substitute_missing_cols(predicate, schema)?;
+
+    // Bind the predicate to the schema.
+    let bound_pred = BoundExpr::try_new(predicate, schema).map_err(|e| {
         common_error::DaftError::ValueError(format!(
             "Failed to bind predicate for row group pruning on '{}': {}",
             uri, e
@@ -1452,6 +1489,118 @@ mod tests {
         // Request out-of-bounds row group.
         let result = prune_row_groups(&metadata, Some(&[999]), None, &schema, "test.parquet");
         assert!(result.is_err());
+    }
+
+    // The parquet file used by create_test_parquet_metadata() has:
+    //   a: [1,2,3,4,5]  (min=1, max=5)
+    //   b: [10,20,30,40,50]
+    // All tests below use schema = {a: Int32, b: Int32} — "c" is always absent (schema evolution).
+
+    #[test]
+    fn test_prune_row_groups_missing_column_predicate_does_not_error() {
+        // WHERE c = 1  — "c" not in file schema (schema evolution).
+        // Must not error; all row groups returned conservatively.
+        use daft_dsl::{lit, resolved_col};
+        let metadata = create_test_parquet_metadata();
+        let schema = Schema::new(vec![
+            Field::new("a", DataType::Int32),
+            Field::new("b", DataType::Int32),
+        ]);
+        let pred: ExprRef = resolved_col("c").eq(lit(1i32));
+        let result =
+            prune_row_groups(&metadata, None, Some(&pred), &schema, "test.parquet").unwrap();
+        assert_eq!(result.len(), metadata.num_row_groups());
+    }
+
+    #[test]
+    fn test_prune_row_groups_present_column_can_still_prune_when_other_column_missing() {
+        // WHERE a < 0 AND c = 1
+        // "a < 0" is definitively false (min=1, so a < 0 never holds) → row group pruned
+        // even though "c" is missing. False AND Unknown = False.
+        use daft_dsl::{lit, resolved_col};
+        let metadata = create_test_parquet_metadata();
+        let schema = Schema::new(vec![
+            Field::new("a", DataType::Int32),
+            Field::new("b", DataType::Int32),
+        ]);
+        let pred: ExprRef = resolved_col("a")
+            .lt(lit(0i32))
+            .and(resolved_col("c").eq(lit(1i32)));
+        let result =
+            prune_row_groups(&metadata, None, Some(&pred), &schema, "test.parquet").unwrap();
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_prune_row_groups_or_with_missing_column_is_conservative() {
+        // WHERE a < 0 OR c = 1
+        // "a < 0" is False, "c = 1" is Unknown → False OR Unknown = Unknown → keep row group.
+        use daft_dsl::{lit, resolved_col};
+        let metadata = create_test_parquet_metadata();
+        let schema = Schema::new(vec![
+            Field::new("a", DataType::Int32),
+            Field::new("b", DataType::Int32),
+        ]);
+        let pred: ExprRef = resolved_col("a")
+            .lt(lit(0i32))
+            .or(resolved_col("c").eq(lit(1i32)));
+        let result =
+            prune_row_groups(&metadata, None, Some(&pred), &schema, "test.parquet").unwrap();
+        assert_eq!(result.len(), metadata.num_row_groups());
+    }
+
+    #[test]
+    fn test_prune_row_groups_complex_nested_predicate_with_missing_column() {
+        // WHERE (a > 0 AND b > 0) AND (c = 'y')
+        // a, b both have values > 0 → first sub-expr is not False.
+        // c is missing → Unknown. (not-False AND Unknown) = Unknown → keep row group.
+        use daft_dsl::{lit, resolved_col};
+        let metadata = create_test_parquet_metadata();
+        let schema = Schema::new(vec![
+            Field::new("a", DataType::Int32),
+            Field::new("b", DataType::Int32),
+        ]);
+        let ab = resolved_col("a")
+            .gt(lit(0i32))
+            .and(resolved_col("b").gt(lit(0i32)));
+        let pred: ExprRef = ab.and(resolved_col("c").eq(lit("y")));
+        let result =
+            prune_row_groups(&metadata, None, Some(&pred), &schema, "test.parquet").unwrap();
+        assert_eq!(result.len(), metadata.num_row_groups());
+    }
+
+    #[test]
+    fn test_prune_row_groups_is_null_on_missing_column_keeps_all_row_groups() {
+        // WHERE c IS NULL — "c" not in file schema.
+        // null IS NULL = true → TruthValue::True ≠ False → all row groups kept.
+        use daft_dsl::resolved_col;
+        let metadata = create_test_parquet_metadata();
+        let schema = Schema::new(vec![
+            Field::new("a", DataType::Int32),
+            Field::new("b", DataType::Int32),
+        ]);
+        let pred: ExprRef = resolved_col("c").is_null();
+        let result =
+            prune_row_groups(&metadata, None, Some(&pred), &schema, "test.parquet").unwrap();
+        assert_eq!(result.len(), metadata.num_row_groups());
+    }
+
+    #[test]
+    fn test_prune_row_groups_is_null_on_missing_column_with_false_present_column_prunes() {
+        // WHERE a < 0 AND c IS NULL
+        // a < 0 is False (min=1), c IS NULL is True (null IS NULL) → False AND True = False → pruned.
+        use daft_dsl::{lit, resolved_col};
+        let metadata = create_test_parquet_metadata();
+        let schema = Schema::new(vec![
+            Field::new("a", DataType::Int32),
+            Field::new("b", DataType::Int32),
+        ]);
+        let pred: ExprRef = resolved_col("a")
+            .lt(lit(0i32))
+            .and(resolved_col("c").is_null());
+        let result =
+            prune_row_groups(&metadata, None, Some(&pred), &schema, "test.parquet").unwrap();
+        assert_eq!(result.len(), 0);
     }
 
     #[tokio::test]

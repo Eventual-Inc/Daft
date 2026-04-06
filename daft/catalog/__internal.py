@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from daft.catalog import Catalog, Identifier, Properties, Table
+from daft.catalog import Catalog, Function, Identifier, Properties, Table
 from daft.daft import PyCatalog as _PyCatalog
 from daft.daft import PyTable as _PyTable
 from daft.dataframe import DataFrame
@@ -10,6 +10,8 @@ from daft.logical.builder import LogicalPlanBuilder
 from daft.schema import Schema
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from daft.io.partitioning import PartitionField
 
 
@@ -38,11 +40,17 @@ class _RustCatalog(Catalog):
     ) -> Table:
         return self.inner.create_table(ident._ident, schema._schema)
 
+    def _create_function(self, ident: Identifier, function: Function | Callable[..., Any]) -> None:
+        self.inner.create_function(ident._ident, function)
+
     def _drop_namespace(self, ident: Identifier) -> None:
         self.inner.drop_namespace(ident._ident)
 
     def _drop_table(self, ident: Identifier) -> None:
         self.inner.drop_table(ident._ident)
+
+    def _get_function(self, ident: Identifier) -> Function:
+        return self.inner.get_function(ident._ident)
 
     def _get_table(self, ident: Identifier) -> Table:
         return self.inner.get_table(ident._ident)

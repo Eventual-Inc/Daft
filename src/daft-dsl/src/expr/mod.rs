@@ -1866,6 +1866,8 @@ impl Expr {
                 let child_field = expr.to_field(schema)?;
                 match child_field.dtype {
                     DataType::Boolean => Ok(Field::new(expr.name(), DataType::Boolean)),
+                    // NOT of a null-typed expression produces a null boolean (SQL-1999 6.30.2: NOT (unknown) = unknown).
+                    DataType::Null => Ok(Field::new(expr.name(), DataType::Boolean)),
                     _ => Err(DaftError::TypeError(format!(
                         "Expected argument to be a Boolean expression, but received {child_field}",
                     ))),

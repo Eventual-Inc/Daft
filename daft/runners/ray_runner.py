@@ -523,7 +523,6 @@ class RayRunner(Runner[ray.ObjectRef]):
     def __init__(
         self,
         address: str | None,
-        max_task_backlog: int | None,
         force_client_mode: bool = False,
     ) -> None:
         super().__init__()

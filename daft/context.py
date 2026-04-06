@@ -186,6 +186,7 @@ def set_execution_config(
     native_parquet_writer: bool | None = None,
     min_cpu_per_task: float | None = None,
     actor_udf_ready_timeout: int | None = None,
+    worker_startup_timeout: int | None = None,
     maintain_order: bool | None = None,
     enable_dynamic_batching: bool | None = None,
     dynamic_batching_strategy: str | None = None,
@@ -234,6 +235,7 @@ def set_execution_config(
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
         min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
         actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 120 seconds.
+        worker_startup_timeout: Timeout for worker actors to report their addresses during startup. Defaults to 120 seconds.
         maintain_order: Whether to maintain order during execution. Defaults to True. Some blocking sink operators (e.g. write_parquet) won't respect this flag and will always keep maintain_order as false, and propagate to child operators. It's useful to set this to False for running df.collect() when no ordering is required.
         enable_dynamic_batching: Whether to enable dynamic batching. Defaults to False.
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
@@ -275,6 +277,7 @@ def set_execution_config(
             native_parquet_writer=native_parquet_writer,
             min_cpu_per_task=min_cpu_per_task,
             actor_udf_ready_timeout=actor_udf_ready_timeout,
+            worker_startup_timeout=worker_startup_timeout,
             maintain_order=maintain_order,
             enable_dynamic_batching=enable_dynamic_batching,
             dynamic_batching_strategy=dynamic_batching_strategy,
