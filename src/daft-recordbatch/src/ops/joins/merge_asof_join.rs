@@ -11,16 +11,6 @@ use daft_core::{
 
 use crate::RecordBatch;
 
-/// Sort-merge two-pointer PIT (point-in-time / asof) join.
-///
-/// Both `left` and `right` must be sorted ascending by all columns
-/// (by-keys first, on-key last). The first `num_by_keys` columns are
-/// equality/grouping keys; the last column (index `num_by_keys`) is
-/// the asof/ordering key.
-///
-/// Returns `(left_indices, right_indices)` where:
-/// - `left_indices` is non-nullable: every left row appears in the output.
-/// - `right_indices` is nullable: unmatched left rows have null.
 pub fn asof_join(
     left: &RecordBatch,
     right: &RecordBatch,
@@ -39,7 +29,6 @@ pub fn asof_join(
         )));
     }
 
-    // Early termination: left empty — return empty index arrays (nothing to match).
     if left.is_empty() {
         return Ok(UInt64Array::empty("right_indices", &DataType::UInt64));
     }
@@ -116,19 +105,6 @@ fn build_combined_comparator(
     ))
 }
 
-/// Backward PIT join: for each left row, find the largest right_on <= left_on
-/// (or < if !allow_exact_matches) within the same by-group.
-///
-/// Both sides must be sorted ascending by (by_keys, on_key).
-/// Runs in O(N + M) time.
-///
-/// Tracks two candidates per by-group:
-/// - `best_strict`: best right row where right_on < left_on
-/// - `last_equal`: best right row where right_on == some previous left_on
-///
-/// When left_on increases, `last_equal` is promoted to `best_strict` by
-/// checking `on_comparator(left_idx, last_equal)`, reusing the existing
-/// left-vs-right comparator instead of building a separate left-vs-left one.
 fn asof_backward(
     left: &RecordBatch,
     right: &RecordBatch,
