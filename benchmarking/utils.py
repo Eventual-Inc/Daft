@@ -33,6 +33,7 @@ def upload_to_google_sheets(worksheet, data):
     try:
         ws = sh.worksheet(worksheet)
     except gspread.exceptions.WorksheetNotFound:
+        # Create the worksheet if it doesn't exist
         ws = sh.add_worksheet(title=worksheet, rows=100, cols=20)
 
     ws.append_row(data)
