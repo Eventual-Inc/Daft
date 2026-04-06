@@ -194,10 +194,8 @@ impl BlockingSink for WriteSink {
                     for mut state in states {
                         results.extend(state.writer.close().await?);
                         if let Some(stats) = &state.runtime_stats {
-                            let bytes_delta = state
-                                .writer
-                                .bytes_written()
-                                .saturating_sub(state.reported_bytes);
+                            let total_bytes: usize = state.writer.bytes_per_file().iter().sum();
+                            let bytes_delta = total_bytes.saturating_sub(state.reported_bytes);
                             let rows_delta =
                                 state.total_rows_input.saturating_sub(state.reported_rows);
                             if bytes_delta > 0 || rows_delta > 0 {

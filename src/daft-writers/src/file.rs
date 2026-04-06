@@ -170,9 +170,8 @@ impl AsyncFileWriter for TargetFileSizeWriter {
             && let Some(result) = self.current_writer.close().await?
         {
             self.results.push(result);
-            let file_bytes = self.current_writer.bytes_written();
-            self.total_physical_bytes_written += file_bytes;
-            self.bytes_per_file.push(file_bytes);
+            self.bytes_per_file
+                .push(self.current_writer.bytes_written());
         }
         self.is_closed = true;
         Ok(std::mem::take(&mut self.results))
