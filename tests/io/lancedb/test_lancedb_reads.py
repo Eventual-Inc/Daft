@@ -149,36 +149,19 @@ def test_lancedb_read_parallelism_fragment_merging(large_lance_dataset_path):
 
 def test_lancedb_read_filter_passthrough(tmp_path):
     """Test passing raw SQL filter string to Lance via default_scan_options."""
-    pytest.importorskip("shapely")
     import lance
-    from shapely.geometry import Point
 
-    # Create dataset with points
-    # Point 0: (0, 0)
-    # Point 1: (10, 10)
-    # Point 2: (20, 20)
-    points_list = [Point(i * 10, i * 10).wkb for i in range(3)]
+    table = pa.Table.from_pydict({"id": list(range(3))}, schema=pa.schema([pa.field("id", pa.int32())]))
 
-    schema = pa.schema([pa.field("point", pa.binary()), pa.field("id", pa.int32())])
-
-    table = pa.Table.from_pydict({"point": points_list, "id": list(range(3))}, schema=schema)
-
-    dataset_path = str(tmp_path / "test_geo_filter_passthrough.lance")
+    dataset_path = str(tmp_path / "test_filter_passthrough.lance")
     lance.write_dataset(table, dataset_path)
 
-    # Test: Pass a raw SQL filter string to Lance via default_scan_options
-    # We use a simple filter first to verify the mechanism works
-    filter_str = "id >= 1"
-
-    df = daft.read_lance(dataset_path, default_scan_options={"filter": filter_str})
+    df = daft.read_lance(dataset_path, default_scan_options={"filter": "id >= 1"})
 
     res = df.to_pydict()
 
     assert len(res["id"]) == 2
     assert sorted(res["id"]) == [1, 2]
-    assert 0 not in res["id"]
-    assert 1 in res["id"]
-    assert 2 in res["id"]
 
 
 def test_lancedb_geo_projection_and_filter(tmp_path):
@@ -255,19 +238,11 @@ def test_lancedb_geo_projection_and_filter(tmp_path):
         },
     )
 
-    # Verify schema has 'distance'
-    print(f"Daft Schema: {df.schema()}")
-
-    # Execute
     res = df.to_pydict()
 
-    # We don't know exactly how many rows will match random data, but we can check structure
     assert "distance" in res
     assert "point" not in res  # Should be projected out
     assert "linestring" not in res  # Should be projected out
-
-    # Check if we got any rows (might be 0 if random data doesn't intersect)
-    print(f"Result rows: {len(res['distance'])}")
 
     # We forced exactly one intersection (Row 0)
     # All other rows are shifted far away

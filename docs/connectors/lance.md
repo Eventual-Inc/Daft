@@ -472,26 +472,3 @@ This example compacts a dataset with multiple fragments into a single, larger fr
     # The final row count is 800, and the final fragment count is 2
     print(f"Final row count: {dataset.count_rows()}, and final fragment count: {len(dataset.get_fragments())}")
     ```
-
-### Filtering with Custom SQL Expressions
-
-Daft supports pushing down standard filters to Lance. However, if you need to use Lance-specific SQL functions (e.g., Geo functions like `st_distance`) that are not yet natively supported by Daft's expression engine, you can pass a raw SQL filter string directly to the Lance scanner via `default_scan_options`.
-
-=== "🐍 Python"
-
-    ```python
-    import daft
-
-    # Read a Lance dataset and apply a custom SQL filter
-    # This filter is passed directly to the underlying Lance scanner
-    df = daft.read_lance(
-        "/path/to/dataset.lance",
-        default_scan_options={
-            "filter": "st_distance(point, st_point(0, 0)) < 10"
-        }
-    )
-
-    df.show()
-    ```
-
-### Compaction
