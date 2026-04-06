@@ -15,18 +15,7 @@ import time
 from ray.job_submission import JobStatus, JobSubmissionClient
 
 import daft
-from tools.ci_bench_utils import get_run_metadata, tail_logs, upload_to_google_sheets
-
-
-def _daft_uv_runtime_env() -> dict:
-    """Build the uv runtime_env config, pinning the exact Daft version if available."""
-    daft_version = os.getenv("DAFT_VERSION")
-    daft_index_url = os.getenv("DAFT_INDEX_URL")
-    daft_pkg = f"daft[aws]=={daft_version}" if daft_version else "daft[aws]"
-    uv_env: dict = {"packages": [daft_pkg]}
-    if daft_index_url:
-        uv_env["uv_pip_install_options"] = ["--index-url", daft_index_url, "--extra-index-url", "https://pypi.org/simple/"]
-    return uv_env
+from benchmarking.scripts.bench_utils import daft_uv_runtime_env, get_run_metadata, tail_logs, upload_to_google_sheets
 
 
 def run_benchmark(benchmark_name: str):
@@ -42,7 +31,7 @@ def run_benchmark(benchmark_name: str):
         entrypoint="DAFT_RUNNER=ray DAFT_PROGRESS_BAR=0 python daft_main.py",
         runtime_env={
             "working_dir": f"./benchmarking/ai/{benchmark_name}",
-            "uv": _daft_uv_runtime_env(),
+            "uv": daft_uv_runtime_env(),
         },
     )
 

@@ -10,23 +10,12 @@ import time
 from ray.job_submission import JobStatus, JobSubmissionClient
 
 import daft
-from tools.ci_bench_utils import get_run_metadata, tail_logs, upload_to_google_sheets
+from benchmarking.scripts.bench_utils import daft_uv_runtime_env, get_run_metadata, tail_logs, upload_to_google_sheets
 
 SF_TO_S3_PATH = {
     100: "s3://eventual-dev-benchmarking-fixtures/uncompressed/tpch-dbgen/100_0/32/parquet/",
     1000: "s3://eventual-dev-benchmarking-fixtures/uncompressed/tpch-dbgen/1000_0/512/parquet/",
 }
-
-
-def _daft_uv_runtime_env() -> dict:
-    """Build the uv runtime_env config, pinning the exact Daft version if available."""
-    daft_version = os.getenv("DAFT_VERSION")
-    daft_index_url = os.getenv("DAFT_INDEX_URL")
-    daft_pkg = f"daft[aws]=={daft_version}" if daft_version else "daft[aws]"
-    uv_env: dict = {"packages": [daft_pkg]}
-    if daft_index_url:
-        uv_env["uv_pip_install_options"] = ["--index-url", daft_index_url, "--extra-index-url", "https://pypi.org/simple/"]
-    return uv_env
 
 
 def run_benchmark(up_to_query: int = 22):
@@ -51,7 +40,7 @@ def run_benchmark(up_to_query: int = 22):
             entrypoint=f"DAFT_RUNNER=ray python answers_sql.py {parquet_path} {q}",
             runtime_env={
                 "working_dir": "./benchmarking/tpch",
-                "uv": _daft_uv_runtime_env(),
+                "uv": daft_uv_runtime_env(),
                 "env_vars": {
                     "DAFT_PROGRESS_BAR": "0",
                     "DAFT_SHUFFLE_ALGORITHM": os.getenv("DAFT_SHUFFLE_ALGORITHM", "auto"),
