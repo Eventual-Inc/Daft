@@ -39,6 +39,7 @@ mod list_agg;
 mod log;
 mod map;
 mod mean;
+mod median;
 mod merge_sketch;
 mod minhash;
 mod null;
@@ -216,6 +217,12 @@ pub trait DaftMeanAggable {
     type Output;
     fn mean(&self) -> Self::Output;
     fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftMedianAggable {
+    type Output;
+    fn median(&self) -> Self::Output;
+    fn grouped_median(&self, groups: &GroupIndices) -> Self::Output;
 }
 
 pub trait DaftPercentileAggable {

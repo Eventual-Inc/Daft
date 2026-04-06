@@ -60,6 +60,33 @@ pub fn exact_percentile(values: &Float64Array, percentage: f64) -> DaftResult<Op
     }
 }
 
+pub fn exact_median(values: &Float64Array) -> DaftResult<Option<f64>> {
+    let mut valid_values: Vec<f64> = values.into_iter().flatten().collect();
+
+    if valid_values.is_empty() {
+        return Ok(None);
+    }
+
+    let len = valid_values.len();
+    let mid = len / 2;
+
+    let (lower_partition, median, _) = valid_values.select_nth_unstable_by(mid, f64::total_cmp);
+
+    if len % 2 == 1 {
+        Ok(Some(*median))
+    } else {
+        // For even length, the median is the average of elements at mid-1 and mid.
+        // The lower partition contains all elements <= elements[mid] but is unsorted,
+        // so we need a linear scan to find its max.
+        let lower = lower_partition
+            .iter()
+            .copied()
+            .max_by(f64::total_cmp)
+            .unwrap();
+        Ok(Some(f64::midpoint(lower, *median)))
+    }
+}
+
 pub fn is_valid_percentile_percentage(percentage: f64) -> bool {
     (0.0..=1.0).contains(&percentage)
 }
