@@ -371,6 +371,9 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
                     self.try_complete_input(input_id)?;
                     ControlFlow::Continue(())
                 }
+                PipelineEvent::ShuffleMetadata => {
+                    unreachable!("StreamingSinkNode should not receive shuffle metadata")
+                }
                 PipelineEvent::InputClosed => {
                     self.batch_manager.set_all_pending_flush();
                     let input_ids: Vec<_> = self.inputs.keys().copied().collect();

@@ -183,6 +183,11 @@ pub fn list_(items: Vec<PyExpr>) -> PyExpr {
     Expr::List(items.into_iter().map(|item| item.into()).collect()).into()
 }
 
+#[pyfunction]
+pub fn coalesce(items: Vec<PyExpr>) -> PyExpr {
+    Expr::Coalesce(items.into_iter().map(|item| item.into()).collect()).into()
+}
+
 #[allow(clippy::too_many_arguments)]
 #[pyfunction(signature = (
     name,

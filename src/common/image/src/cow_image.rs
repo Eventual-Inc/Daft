@@ -11,7 +11,7 @@ use image::{ColorType, DynamicImage, ImageBuffer, Luma, LumaA, Rgb, Rgba};
 use crate::BBox;
 
 #[allow(clippy::upper_case_acronyms, dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CowImage<'a> {
     L(ImageBuffer<Luma<u8>, Cow<'a, [u8]>>),
     LA(ImageBuffer<LumaA<u8>, Cow<'a, [u8]>>),

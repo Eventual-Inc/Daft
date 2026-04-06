@@ -248,7 +248,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         let shuffle = if partition_by.is_empty() {
             self.gen_gather_node(input_node)
         } else {
-            self.gen_shuffle_node(
+            self.gen_repartition_node(
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     None,
                     partition_by.into_iter().map(|e| e.into()).collect(),
@@ -304,7 +304,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         let shuffle = if split_details.partition_by.is_empty() {
             self.gen_gather_node(initial_agg)
         } else {
-            self.gen_shuffle_node(
+            self.gen_repartition_node(
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     Some(num_partitions),
                     split_details

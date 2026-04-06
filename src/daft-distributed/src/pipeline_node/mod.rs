@@ -211,25 +211,24 @@ pub(crate) struct FlightShufflePartitionRef {
     pub size_bytes: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub(crate) enum ShufflePartitionRef {
+    Ray(PartitionRef),
     Flight(FlightShufflePartitionRef),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub(crate) struct ShuffleWriteOutput {
     pub partitions: Vec<ShufflePartitionRef>,
-    worker_id: WorkerId,
-    task_id: TaskID,
 }
 
 impl ShuffleWriteOutput {
-    pub fn new(partitions: Vec<ShufflePartitionRef>, worker_id: WorkerId, task_id: TaskID) -> Self {
-        Self {
-            partitions,
-            worker_id,
-            task_id,
-        }
+    pub fn new(
+        partitions: Vec<ShufflePartitionRef>,
+        _worker_id: WorkerId,
+        _task_id: TaskID,
+    ) -> Self {
+        Self { partitions }
     }
 }
 
