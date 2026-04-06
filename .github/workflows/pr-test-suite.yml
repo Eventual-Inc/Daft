@@ -103,7 +103,7 @@ jobs:
     steps:
     - name: Free Disk Space (Ubuntu)
       if: ${{ (runner.os == 'Linux') }}
-      uses: jlumbroso/free-disk-space@main
+      uses: jlumbroso/free-disk-space@v1.3.1
       with:
         tool-cache: false
         android: true
@@ -124,7 +124,6 @@ jobs:
     - uses: actions/checkout@v6
       with:
         fetch-depth: 0
-    - uses: ./.github/actions/restore-mtime
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -134,6 +133,7 @@ jobs:
         cache-all-crates: "true"
         cache-workspace-crates: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
     - name: Install cargo-llvm-cov
       if: matrix.coverage != false
       uses: taiki-e/install-action@cargo-llvm-cov
@@ -167,13 +167,19 @@ jobs:
         fi
 
     - name: Install dependencies
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 15
         max_attempts: 3
         retry_wait_seconds: 10
         command: |
           uv sync --no-install-project --all-extras --all-groups
+
+    - name: Install imagehash compatibility test dependency
+      if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10' && matrix.daft-runner == 'native' && matrix.pyarrow-version == '22.0.0' && matrix.coverage != false }}
+      run: |
+        source .venv/bin/activate
+        uv pip install imagehash==4.3.2
 
     - name: Override pyarrow and pyiceberg
       run: |
@@ -243,7 +249,7 @@ jobs:
         path: ./report-output
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
+      uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -290,7 +296,6 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: ./.github/actions/restore-mtime
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -312,6 +317,7 @@ jobs:
         cache-all-crates: "true"
         cache-workspace-crates: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
     - uses: actions/setup-node@v6
       with:
         node-version: "22"
@@ -363,7 +369,7 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 15
         max_attempts: 3
@@ -398,7 +404,7 @@ jobs:
         DAFT_RUNNER: ray
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
+      uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -432,7 +438,7 @@ jobs:
         daft-runner: [ray, native]
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@main
+      uses: jlumbroso/free-disk-space@v1.3.1
       with:
         tool-cache: false
         android: true
@@ -469,7 +475,7 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 15
         max_attempts: 3
@@ -498,7 +504,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
+      uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -541,7 +547,7 @@ jobs:
   #     contents: read
   #   steps:
   #   - name: Free Disk Space (Ubuntu)
-  #     uses: jlumbroso/free-disk-space@main
+  #     uses: jlumbroso/free-disk-space@v1.3.1
   #     with:
   #       tool-cache: false
   #       android: true
@@ -578,7 +584,7 @@ jobs:
   #       uv venv --seed .venv
   #       echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
   #   - name: Install Daft and dev dependencies
-  #     uses: nick-fields/retry@v3
+  #     uses: nick-fields/retry@v4
   #     with:
   #       timeout_minutes: 15
   #       max_attempts: 3
@@ -621,7 +627,7 @@ jobs:
   #       DAFT_RUNNER: ${{ matrix.daft-runner }}
   #       HF_TOKEN: ${{ secrets.ACTIONS_HF_TOKEN }}
   #   - name: Send Slack notification on failure
-  #     uses: slackapi/slack-github-action@v2.1.1
+  #     uses: slackapi/slack-github-action@v3.0.1
   #     if: ${{ failure() }}
   #     with:
   #       payload: |
@@ -648,7 +654,7 @@ jobs:
       package-name: daft
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@main
+      uses: jlumbroso/free-disk-space@v1.3.1
       with:
         tool-cache: false
         android: true
@@ -685,7 +691,7 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 15
         max_attempts: 3
@@ -725,7 +731,7 @@ jobs:
         DAFT_RUNNER: ray
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
+      uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -754,7 +760,7 @@ jobs:
       package-name: daft
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@main
+      uses: jlumbroso/free-disk-space@v1.3.1
       with:
         tool-cache: false
         android: true
@@ -804,7 +810,7 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 15
         max_attempts: 3
@@ -815,8 +821,8 @@ jobs:
           uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
       # Iceberg test setup
-    - uses: docker/setup-buildx-action@v3
-    - uses: docker/build-push-action@v6
+    - uses: docker/setup-buildx-action@v4
+    - uses: docker/build-push-action@v7
       with:
         context: ./tests/integration/iceberg/docker-compose/
         file: ./tests/integration/iceberg/docker-compose/Dockerfile
@@ -949,7 +955,7 @@ jobs:
         popd
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
+      uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -983,7 +989,7 @@ jobs:
         daft-runner: [ray, native]
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@main
+      uses: jlumbroso/free-disk-space@v1.3.1
       with:
         tool-cache: false
         android: true
@@ -1020,7 +1026,7 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 10
         max_attempts: 3
@@ -1039,7 +1045,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
+      uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -1096,7 +1102,7 @@ jobs:
   #       uv venv --seed .venv
   #       echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
   #   - name: Install Daft and dev dependencies
-  #     uses: nick-fields/retry@v3
+  #     uses: nick-fields/retry@v4
   #     with:
   #       timeout_minutes: 10
   #       max_attempts: 3
@@ -1116,7 +1122,7 @@ jobs:
   #       DAFT_RUNNER: ${{ matrix.daft-runner }}
   #       OPENAI_API_KEY: ${{ secrets.ACTIONS_OPENAI_API_KEY }}
   #   - name: Send Slack notification on failure
-  #     uses: slackapi/slack-github-action@v2.1.1
+  #     uses: slackapi/slack-github-action@v3.0.1
   #     if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
   #     env:
   #       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -1165,7 +1171,7 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install Daft and dev dependencies
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 10
         max_attempts: 3
@@ -1191,7 +1197,7 @@ jobs:
         DAFT_RUNNER: ray
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
+      uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -1243,7 +1249,6 @@ jobs:
     - uses: actions/checkout@v6
       with:
         fetch-depth: 0
-    - uses: ./.github/actions/restore-mtime
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1254,6 +1259,7 @@ jobs:
         cache-workspace-crates: "true"
         cache-provider: github
         save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1265,7 +1271,7 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install dependencies
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 15
         max_attempts: 3
@@ -1291,7 +1297,7 @@ jobs:
       env:
         DAFT_RUNNER: native
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
+      uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -1331,8 +1337,6 @@ jobs:
     - uses: actions/checkout@v6
       with:
         fetch-depth: 0
-    - uses: ./.github/actions/restore-mtime
-      if: ${{ matrix.os != 'Windows' }}
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1346,9 +1350,11 @@ jobs:
         cache-all-crates: "true"
         cache-workspace-crates: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
+      if: ${{ matrix.os != 'Windows' }}
     - name: Free Disk Space (Ubuntu)
       if: ${{ matrix.os == 'ubuntu' }}
-      uses: jlumbroso/free-disk-space@main
+      uses: jlumbroso/free-disk-space@v1.3.1
       with:
         tool-cache: false
         android: true
@@ -1373,7 +1379,7 @@ jobs:
         name: coverage-reports-rust-tests-${{ runner.os }}
         path: ./report-output
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
+      uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -1426,7 +1432,7 @@ jobs:
       python-version: "3.10"
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@main
+      uses: jlumbroso/free-disk-space@v1.3.1
       with:
         tool-cache: false
         android: true
@@ -1445,7 +1451,6 @@ jobs:
     - uses: actions/checkout@v6
       with:
         fetch-depth: 0
-    - uses: ./.github/actions/restore-mtime
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1455,6 +1460,7 @@ jobs:
         cache-all-crates: "true"
         cache-workspace-crates: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1466,7 +1472,7 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
     - name: Install dependencies
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4
       with:
         timeout_minutes: 15
         max_attempts: 3
@@ -1495,13 +1501,13 @@ jobs:
         path: ./report-output
     - name: Upload coverage reports to Codecov with GitHub Action
       if: ${{ env.CODECOV_TOKEN }}
-      uses: codecov/codecov-action@v5
+      uses: codecov/codecov-action@v6
       with:
         directory: ./report-output
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
+      uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -1541,8 +1547,6 @@ jobs:
     - uses: actions/checkout@v6
       with:
         fetch-depth: 0
-    - uses: ./.github/actions/restore-mtime
-      if: ${{ runner.os != 'Windows' }}
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1552,6 +1556,8 @@ jobs:
         cache-all-crates: "true"
         cache-workspace-crates: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
+      if: ${{ runner.os != 'Windows' }}
 
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
@@ -1599,7 +1605,7 @@ jobs:
         python -c 'import daft; from daft import *'
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
+      uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -1641,7 +1647,6 @@ jobs:
     - uses: actions/checkout@v6
       with:
         fetch-depth: 0
-    - uses: ./.github/actions/restore-mtime
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1661,6 +1666,7 @@ jobs:
         cache-all-crates: "true"
         cache-workspace-crates: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
 
     - uses: actions/cache@v5
       id: pre-commit-cache
@@ -1673,7 +1679,7 @@ jobs:
         pre-commit run --all-files -v --hook-stage pre-commit --hook-stage manual
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
+      uses: slackapi/slack-github-action@v3.0.1
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

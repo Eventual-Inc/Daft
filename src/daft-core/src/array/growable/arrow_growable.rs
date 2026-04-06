@@ -207,6 +207,7 @@ where
         self.len += additional;
     }
 
+    #[inline(never)]
     fn build(&mut self) -> DaftResult<Series> {
         let null_buffer = self.validity.as_mut().and_then(|v| v.finish());
 

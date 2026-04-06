@@ -4,16 +4,17 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{
-    DURATION_KEY, QueryID, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, Stats, snapshot::StatSnapshotImpl,
-};
+use common_metrics::{QueryID, snapshot::StatSnapshotImpl};
 use daft_context::get_context;
 
-use crate::statistics::{StatisticsSubscriber, TaskEvent};
+use crate::{
+    pipeline_node::NodeID,
+    statistics::{StatisticsSubscriber, TaskEvent, stats::RuntimeNodeManager},
+};
 
 pub struct DashboardStatisticsSubscriber {
     query_id: QueryID,
-    operator_stats: Mutex<HashMap<usize, HashMap<Arc<str>, Stat>>>,
+    runtime_node_managers: Option<Arc<HashMap<NodeID, RuntimeNodeManager>>>,
     started_operators: Mutex<HashSet<usize>>,
     initialized_subscriber: Mutex<bool>,
 }
@@ -22,7 +23,7 @@ impl DashboardStatisticsSubscriber {
     pub fn new(query_id: QueryID) -> Self {
         Self {
             query_id,
-            operator_stats: Mutex::new(HashMap::new()),
+            runtime_node_managers: None,
             started_operators: Mutex::new(HashSet::new()),
             initialized_subscriber: Mutex::new(false),
         }
@@ -30,6 +31,10 @@ impl DashboardStatisticsSubscriber {
 }
 
 impl StatisticsSubscriber for DashboardStatisticsSubscriber {
+    fn set_runtime_node_managers(&mut self, managers: Arc<HashMap<NodeID, RuntimeNodeManager>>) {
+        self.runtime_node_managers = Some(managers);
+    }
+
     fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()> {
         // Skip all dashboard functionality when RAY_DISABLE_DASHBOARD=1
         if std::env::var("RAY_DISABLE_DASHBOARD").as_deref() == Ok("1") {
@@ -40,61 +45,6 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
         let should_notify = std::env::var("DAFT_DASHBOARD_URL").is_ok();
         if !should_notify {
             return Ok(());
-        }
-
-        // Accumulate statistics first
-        match event {
-            TaskEvent::Submitted {
-                context: task_ctx, ..
-            } => {
-                let mut started = self.started_operators.lock().unwrap();
-                for node_id in &task_ctx.node_ids {
-                    let node_id = *node_id as usize;
-                    if !started.contains(&node_id) {
-                        started.insert(node_id);
-                    }
-                }
-            }
-            TaskEvent::Completed { stats, .. } => {
-                let mut accumulated = self.operator_stats.lock().unwrap();
-                let mut started = self.started_operators.lock().unwrap();
-
-                for (node_info, task_stats) in &stats.nodes {
-                    let node_id = node_info.id;
-                    if !started.contains(&node_id) {
-                        started.insert(node_id);
-                    }
-
-                    let entry = accumulated.entry(node_id).or_default();
-                    let task_stats = task_stats.to_stats();
-                    for (key, stat) in &task_stats.0 {
-                        let mapped_key = match key.as_ref() {
-                            "rows_in" => ROWS_IN_KEY,
-                            "rows_out" => ROWS_OUT_KEY,
-                            "duration_us" => DURATION_KEY,
-                            _ => key.as_ref(),
-                        };
-                        let arc_key: Arc<str> = Arc::from(mapped_key);
-                        match entry.entry(arc_key) {
-                            std::collections::hash_map::Entry::Occupied(mut e) => {
-                                let current_stat = e.get_mut();
-                                match (current_stat, stat) {
-                                    (Stat::Count(c1), Stat::Count(c2)) => *c1 += *c2,
-                                    (Stat::Bytes(b1), Stat::Bytes(b2)) => *b1 += *b2,
-                                    (Stat::Duration(d1), Stat::Duration(d2)) => *d1 += *d2,
-                                    _ => {}
-                                }
-                            }
-                            std::collections::hash_map::Entry::Vacant(e) => {
-                                e.insert(stat.clone());
-                            }
-                        }
-                    }
-                }
-            }
-            _ => {
-                // Only process submitted and completed events for now
-            }
         }
 
         // Initialize dashboard subscriber if needed
@@ -124,54 +74,49 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
             TaskEvent::Submitted {
                 context: task_ctx, ..
             } => {
-                // Notify about newly started operators
-                let node_ids_to_notify = {
-                    let started = self.started_operators.lock().unwrap();
-                    task_ctx
-                        .node_ids
-                        .iter()
-                        .map(|id| *id as usize)
-                        .filter(|id| started.contains(id))
-                        .collect::<Vec<_>>()
-                };
+                // Notify about newly started operators, avoiding duplicate notifications
+                let mut started = self.started_operators.lock().unwrap();
 
-                for node_id in node_ids_to_notify {
-                    // Handle notifications non-blockingly
-                    if let Err(e) =
-                        context.notify_exec_operator_start(self.query_id.clone(), node_id)
+                for node_id in &task_ctx.node_ids {
+                    let node_id = *node_id as usize;
+                    if started.insert(node_id)
+                        // if insert returned false, short-circuit will skip notify
+                        && let Err(e) =
+                            context.notify_exec_operator_start(self.query_id.clone(), node_id)
                     {
                         tracing::error!("Failed to notify exec operator start: {}", e);
                     }
                 }
             }
-            TaskEvent::Completed { .. } => {
-                // Send accumulated statistics to dashboard
-                let all_stats = {
-                    let accumulated = self.operator_stats.lock().unwrap();
-                    accumulated
-                        .iter()
-                        .map(|(node_id, stats)| {
-                            let snapshot = Stats(
-                                stats
-                                    .iter()
-                                    .map(|(k, v)| (k.clone(), v.clone()))
-                                    .collect::<smallvec::SmallVec<[(Arc<str>, Stat); 3]>>(),
-                            );
-                            (*node_id, snapshot)
+            TaskEvent::Completed {
+                context: task_ctx,
+                stats: _,
+            } => {
+                // Read smart-aggregated stats from RuntimeNodeManagers
+                // (already updated by StatisticsManager before this subscriber runs)
+                if let Some(managers) = &self.runtime_node_managers {
+                    // managers give us stats for all operators, but just notify for the
+                    // ones that did something according to this TaskCompleted event
+                    let relevant_stats = managers
+                        .values()
+                        .map(|mgr| {
+                            let (info, snapshot) = mgr.export_snapshot();
+                            (info.node_origin_id, snapshot.to_stats())
                         })
-                        .collect::<Vec<(usize, Stats)>>()
-                };
+                        .filter(|(node_origin_id, _)| {
+                            task_ctx.node_ids.contains(&(*node_origin_id as u32))
+                        })
+                        .collect::<Vec<_>>();
 
-                // Send the stats notification
-                if !all_stats.is_empty()
-                    && let Err(e) = context.notify_exec_emit_stats(self.query_id.clone(), all_stats)
-                {
-                    tracing::error!("Failed to notify exec emit stats: {}", e);
+                    if !relevant_stats.is_empty()
+                        && let Err(e) =
+                            context.notify_exec_emit_stats(self.query_id.clone(), relevant_stats)
+                    {
+                        tracing::error!("Failed to notify exec emit stats: {}", e);
+                    }
                 }
             }
-            _ => {
-                // For now, we only emit notifications for submitted and completed events
-            }
+            _ => {}
         }
         Ok(())
     }

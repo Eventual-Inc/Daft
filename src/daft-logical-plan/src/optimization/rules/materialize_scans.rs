@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
+use daft_scan::ScanState;
 
 use super::OptimizerRule;
 use crate::{LogicalPlan, SourceInfo};
@@ -29,16 +30,19 @@ impl MaterializeScans {
     ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         match &*plan {
             LogicalPlan::Source(source) => match &*source.source_info {
-                SourceInfo::Physical(_) => {
-                    let source_plan = Arc::unwrap_or_clone(plan);
-                    if let LogicalPlan::Source(source) = source_plan {
-                        Ok(Transformed::yes(
-                            source.build_materialized_scan_source()?.into(),
-                        ))
-                    } else {
-                        unreachable!("This logical plan was already matched as a Source node")
+                SourceInfo::Physical(physical_scan_info) => match &physical_scan_info.scan_state {
+                    ScanState::Operator(_) => {
+                        let source_plan = Arc::unwrap_or_clone(plan);
+                        if let LogicalPlan::Source(source) = source_plan {
+                            Ok(Transformed::yes(
+                                source.build_materialized_scan_source()?.into(),
+                            ))
+                        } else {
+                            unreachable!("This logical plan was already matched as a Source node")
+                        }
                     }
-                }
+                    ScanState::Tasks(_) => Ok(Transformed::no(plan)),
+                },
                 _ => Ok(Transformed::no(plan)),
             },
             _ => Ok(Transformed::no(plan)),

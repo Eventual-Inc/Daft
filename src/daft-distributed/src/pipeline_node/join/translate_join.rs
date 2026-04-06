@@ -1,6 +1,6 @@
 use std::{cmp::max, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, is_partition_compatible};
 use daft_logical_plan::{
     ClusteringSpec, JoinStrategy, JoinType,
@@ -10,6 +10,8 @@ use daft_logical_plan::{
 };
 use daft_schema::schema::SchemaRef;
 
+#[cfg(feature = "python")]
+use crate::pipeline_node::join::KeyFilteringJoinNode;
 use crate::pipeline_node::{
     DistributedPipelineNode,
     join::{BroadcastJoinNode, CrossJoinNode, HashJoinNode, SortMergeJoinNode},
@@ -115,7 +117,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         let left = if num_left_partitions != num_partitions
             || (num_partitions > 1 && !is_left_hash_partitioned)
         {
-            self.gen_shuffle_node(
+            self.gen_repartition_node(
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     Some(num_partitions),
                     left_on.iter().map(|e| e.clone().into()).collect(),
@@ -130,7 +132,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         let right = if num_right_partitions != num_partitions
             || (num_partitions > 1 && !is_right_hash_partitioned)
         {
-            self.gen_shuffle_node(
+            self.gen_repartition_node(
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     Some(num_partitions),
                     right_on.iter().map(|e| e.clone().into()).collect(),
@@ -343,6 +345,32 @@ impl LogicalPlanToPipelineNodeTranslator {
             ),
             JoinStrategy::Cross => {
                 self.gen_cross_join_node(left_node, right_node, join.output_schema.clone())
+            }
+            JoinStrategy::KeyFiltering => {
+                #[cfg(feature = "python")]
+                {
+                    let key_filtering_config =
+                        join.key_filtering_config.clone().ok_or_else(|| {
+                            DaftError::InternalError(
+                                "KeyFiltering join must have key_filtering_config".to_string(),
+                            )
+                        })?;
+                    Ok(KeyFilteringJoinNode::new(
+                        self.get_next_pipeline_node_id(),
+                        &self.plan_config,
+                        key_filtering_config,
+                        join.output_schema.clone(),
+                        left_node,
+                        right_node,
+                    )
+                    .into_node(&self.meter))
+                }
+                #[cfg(not(feature = "python"))]
+                {
+                    Err(DaftError::InternalError(
+                        "KeyFiltering join requires Python feature".to_string(),
+                    ))
+                }
             }
         }
     }

@@ -29,6 +29,8 @@ pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 serde_json = {workspace = true, optional = true}
 snafu = {workspace = true}
+tokio = {workspace = true, optional = true}
+tokio-stream = {workspace = true, optional = true}
 url = {workspace = true}
 urlencoding = "2.1.3"
 
@@ -39,6 +41,8 @@ tokio = {workspace = true, features = ["full"]}
 python = [
   "dep:pyo3",
   "dep:serde_json",
+  "dep:tokio",
+  "dep:tokio-stream",
   "common-error/python",
   "common-py-serde/python",
   "daft-core/python",
