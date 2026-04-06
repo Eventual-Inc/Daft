@@ -17,7 +17,7 @@ use daft_scan::{PredicateGroups, ScanState, rewrite_predicate_for_partitioning};
 use super::OptimizerRule;
 use crate::{
     LogicalPlan,
-    ops::{AsofJoin, Concat, Filter, Join, Project, Source},
+    ops::{Concat, Filter, Join, Project, Source},
     source_info::SourceInfo,
 };
 
@@ -441,90 +441,6 @@ impl PushDownFilter {
                     return Ok(Transformed::no(plan));
                 }
             }
-            LogicalPlan::AsofJoin(AsofJoin {
-                left,
-                right,
-                on,
-                by,
-                direction,
-                allow_exact_matches,
-                tolerance,
-                ..
-            }) => {
-                let mut left_pushdowns = vec![];
-                let mut right_pushdowns = vec![];
-                let mut kept_predicates = vec![];
-
-                let left_cols = HashSet::<_>::from_iter(left.schema().names());
-                let right_cols = HashSet::<_>::from_iter(right.schema().names());
-
-                for predicate in split_conjunction(&to_cnf(filter.predicate.clone())) {
-                    let pred_cols = HashSet::<_>::from_iter(get_required_columns(&predicate));
-
-                    match (
-                        pred_cols.is_subset(&left_cols),
-                        pred_cols.is_subset(&right_cols),
-                    ) {
-                        (true, true) => {
-                            left_pushdowns.push(predicate.clone());
-                            right_pushdowns.push(predicate);
-                        }
-                        (false, false) => {
-                            // predicate depends on unique columns on both left and right sides, so we can't push it down
-                            kept_predicates.push(predicate);
-                        }
-                        (true, false) => {
-                            left_pushdowns.push(predicate);
-                        }
-                        (false, true) => {
-                            kept_predicates.push(predicate);
-                        }
-                    }
-                }
-
-                let left_pushdowns = combine_conjunction(left_pushdowns);
-                let right_pushdowns = combine_conjunction(right_pushdowns);
-
-                if left_pushdowns.is_some() || right_pushdowns.is_some() {
-                    let kept_predicates = combine_conjunction(kept_predicates);
-
-                    let new_left = left_pushdowns.map_or_else(
-                        || left.clone(),
-                        |left_pushdowns| {
-                            Filter::try_new(left.clone(), left_pushdowns)
-                                .unwrap()
-                                .into()
-                        },
-                    );
-
-                    let new_right = right_pushdowns.map_or_else(
-                        || right.clone(),
-                        |right_pushdowns| {
-                            Filter::try_new(right.clone(), right_pushdowns)
-                                .unwrap()
-                                .into()
-                        },
-                    );
-
-                    let new_join = Arc::new(LogicalPlan::AsofJoin(AsofJoin::try_new(
-                        new_left,
-                        new_right,
-                        on.clone(),
-                        by.clone(),
-                        *direction,
-                        *allow_exact_matches,
-                        tolerance.clone(),
-                    )?));
-
-                    if let Some(kept_predicates) = kept_predicates {
-                        Filter::try_new(new_join, kept_predicates).unwrap().into()
-                    } else {
-                        new_join
-                    }
-                } else {
-                    return Ok(Transformed::no(plan));
-                }
-            }
             LogicalPlan::Limit(_)
             | LogicalPlan::Offset(_)
             | LogicalPlan::TopN(..)
@@ -542,7 +458,8 @@ impl PushDownFilter {
             | LogicalPlan::SubqueryAlias(..)
             | LogicalPlan::Window(..)
             | LogicalPlan::Distinct(..)
-            | LogicalPlan::VLLMProject(..) => {
+            | LogicalPlan::VLLMProject(..)
+            | LogicalPlan::AsofJoin(..) => {
                 return Ok(Transformed::no(plan));
             }
         };

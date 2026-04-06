@@ -456,72 +456,6 @@ impl PushDownProjection {
                     Ok(new_plan)
                 }
             }
-            LogicalPlan::AsofJoin(join) => {
-                let projection_dependencies = plan.required_columns().single();
-                let (left_dependencies, right_dependencies) =
-                    upstream_plan.required_columns().double();
-
-                /// For one side of the join, see if a non-vacuous pushdown is possible.
-                fn maybe_project_upstream_input(
-                    side: &LogicalPlanRef,
-                    side_dependencies: &IndexSet<String>,
-                    projection_dependencies: &IndexSet<String>,
-                ) -> DaftResult<Transformed<LogicalPlanRef>> {
-                    let schema = side.schema();
-                    let upstream_names: IndexSet<String> =
-                        schema.field_names().map(ToString::to_string).collect();
-
-                    let combined_dependencies: IndexSet<_> = side_dependencies
-                        .union(
-                            &upstream_names
-                                .intersection(projection_dependencies)
-                                .cloned()
-                                .collect::<IndexSet<_>>(),
-                        )
-                        .cloned()
-                        .collect();
-
-                    if combined_dependencies.len() < upstream_names.len() {
-                        let pushdown_column_exprs: Vec<ExprRef> = combined_dependencies
-                            .into_iter()
-                            .map(resolved_col)
-                            .collect();
-                        let new_project: LogicalPlan =
-                            Project::try_new(side.clone(), pushdown_column_exprs)?.into();
-                        Ok(Transformed::yes(new_project.into()))
-                    } else {
-                        Ok(Transformed::no(side.clone()))
-                    }
-                }
-
-                let new_left_upstream = maybe_project_upstream_input(
-                    &join.left,
-                    &left_dependencies,
-                    &projection_dependencies,
-                )?;
-                let new_right_upstream = maybe_project_upstream_input(
-                    &join.right,
-                    &right_dependencies,
-                    &projection_dependencies,
-                )?;
-
-                if !new_left_upstream.transformed && !new_right_upstream.transformed {
-                    Ok(Transformed::no(plan))
-                } else {
-                    // If either pushdown is possible, create a new Join node.
-                    let new_join = upstream_plan
-                        .with_new_children(&[new_left_upstream.data, new_right_upstream.data]);
-
-                    let new_plan = Arc::new(plan.with_new_children(&[new_join.into()]));
-
-                    // Retry optimization now that the upstream node is different.
-                    let new_plan = self
-                        .try_optimize_node(new_plan.clone())?
-                        .or(Transformed::yes(new_plan));
-
-                    Ok(new_plan)
-                }
-            }
             LogicalPlan::Distinct(distinct) => {
                 if distinct.columns.is_none() {
                     // Cannot push down past a Distinct if the distinct is on all columns
@@ -561,6 +495,7 @@ impl PushDownProjection {
                 // Cannot push down past a Window because it changes the window calculation results
                 Ok(Transformed::no(plan))
             }
+            LogicalPlan::AsofJoin(_) => Ok(Transformed::no(plan)),
             LogicalPlan::Sink(_) => {
                 panic!("Bad projection due to upstream sink node: {:?}", projection)
             }
