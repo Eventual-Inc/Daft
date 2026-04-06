@@ -12,7 +12,7 @@ use indexmap::IndexSet;
 use super::OptimizerRule;
 use crate::{
     LogicalPlan, LogicalPlanRef,
-    ops::{Aggregate, Join, Pivot, Project, Source, UDFProject},
+    ops::{Aggregate, IterativeJoin, Join, Pivot, Project, Source, UDFProject},
     source_info::SourceInfo,
 };
 
@@ -456,6 +456,78 @@ impl PushDownProjection {
                     Ok(new_plan)
                 }
             }
+            LogicalPlan::IterativeJoin(fp) => {
+                let projection_dependencies = plan.required_columns().single();
+                let (left_dependencies, right_dependencies) =
+                    upstream_plan.required_columns().double();
+
+                fn maybe_project_upstream_input(
+                    side: &LogicalPlanRef,
+                    side_dependencies: &IndexSet<String>,
+                    projection_dependencies: &IndexSet<String>,
+                ) -> DaftResult<Transformed<LogicalPlanRef>> {
+                    let schema = side.schema();
+                    let upstream_names: IndexSet<String> =
+                        schema.field_names().map(ToString::to_string).collect();
+
+                    let combined_dependencies: IndexSet<_> = side_dependencies
+                        .union(
+                            &upstream_names
+                                .intersection(projection_dependencies)
+                                .cloned()
+                                .collect::<IndexSet<_>>(),
+                        )
+                        .cloned()
+                        .collect();
+
+                    if combined_dependencies.len() < upstream_names.len() {
+                        let pushdown_column_exprs: Vec<ExprRef> = combined_dependencies
+                            .into_iter()
+                            .map(resolved_col)
+                            .collect();
+                        let new_project: LogicalPlan =
+                            Project::try_new(side.clone(), pushdown_column_exprs)?.into();
+                        Ok(Transformed::yes(new_project.into()))
+                    } else {
+                        Ok(Transformed::no(side.clone()))
+                    }
+                }
+
+                let new_left_upstream = maybe_project_upstream_input(
+                    &fp.left,
+                    &left_dependencies,
+                    &projection_dependencies,
+                )?;
+                let new_right_upstream = maybe_project_upstream_input(
+                    &fp.right,
+                    &right_dependencies,
+                    &projection_dependencies,
+                )?;
+
+                if !new_left_upstream.transformed && !new_right_upstream.transformed {
+                    Ok(Transformed::no(plan))
+                } else {
+                    let mut new_fp = IterativeJoin::try_new(
+                        new_left_upstream.data,
+                        new_right_upstream.data,
+                        fp.on.clone(),
+                        fp.join_type,
+                        fp.signature.clone(),
+                        fp.max_iterations,
+                    )?;
+                    new_fp.plan_id = fp.plan_id;
+                    new_fp.node_id = fp.node_id;
+                    new_fp.stats_state = fp.stats_state.clone();
+
+                    let new_plan = Arc::new(plan.with_new_children(&[new_fp.into()]));
+
+                    let new_plan = self
+                        .try_optimize_node(new_plan.clone())?
+                        .or(Transformed::yes(new_plan));
+
+                    Ok(new_plan)
+                }
+            }
             LogicalPlan::Distinct(distinct) => {
                 if distinct.columns.is_none() {
                     // Cannot push down past a Distinct if the distinct is on all columns
@@ -605,6 +677,49 @@ impl PushDownProjection {
         }
     }
 
+    fn try_optimize_fixed_point_hash_join(
+        &self,
+        fp: &IterativeJoin,
+        plan: Arc<LogicalPlan>,
+    ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        if matches!(fp.join_type, JoinType::Anti | JoinType::Semi) {
+            let (_, right_required_cols) = plan.required_columns().double();
+            let right_schema = fp.right.schema();
+
+            if right_required_cols.len() < right_schema.len() {
+                let new_subprojection: LogicalPlan = {
+                    let pushdown_column_exprs = right_required_cols
+                        .iter()
+                        .map(|s| resolved_col(s.as_str()))
+                        .collect::<Vec<_>>();
+
+                    Project::try_new(fp.right.clone(), pushdown_column_exprs)?.into()
+                };
+
+                let mut new_fp = IterativeJoin::try_new(
+                    fp.left.clone(),
+                    new_subprojection.into(),
+                    fp.on.clone(),
+                    fp.join_type,
+                    fp.signature.clone(),
+                    fp.max_iterations,
+                )?;
+                new_fp.plan_id = fp.plan_id;
+                new_fp.node_id = fp.node_id;
+                new_fp.stats_state = fp.stats_state.clone();
+                let new_join = Arc::new(LogicalPlan::IterativeJoin(new_fp));
+
+                Ok(self
+                    .try_optimize_node(new_join.clone())?
+                    .or(Transformed::yes(new_join)))
+            } else {
+                Ok(Transformed::no(plan))
+            }
+        } else {
+            Ok(Transformed::no(plan))
+        }
+    }
+
     fn try_optimize_pivot(
         &self,
         pivot: &Pivot,
@@ -649,6 +764,9 @@ impl PushDownProjection {
             }
             // Joins also do column projection
             LogicalPlan::Join(join) => self.try_optimize_join(join, plan.clone()),
+            LogicalPlan::IterativeJoin(fp) => {
+                self.try_optimize_fixed_point_hash_join(fp, plan.clone())
+            }
             // Pivots also do column projection
             LogicalPlan::Pivot(pivot) => self.try_optimize_pivot(pivot, plan.clone()),
             _ => Ok(Transformed::no(plan)),

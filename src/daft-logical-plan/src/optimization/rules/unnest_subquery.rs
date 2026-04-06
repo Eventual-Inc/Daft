@@ -544,6 +544,7 @@ fn pull_up_correlated_cols(
         | LogicalPlan::Pivot(..)
         | LogicalPlan::Concat(..)
         | LogicalPlan::Join(..)
+        | LogicalPlan::IterativeJoin(..)
         | LogicalPlan::Sink(..)
         | LogicalPlan::Window(..)
         | LogicalPlan::VLLMProject(..) => {

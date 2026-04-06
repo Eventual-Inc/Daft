@@ -109,9 +109,9 @@ impl PushDownShard {
                     LogicalPlan::Shard(_) => Err(DaftError::ValueError(
                         "Shards cannot be folded together".to_string(),
                     )),
-                    LogicalPlan::Join(_) => Err(DaftError::ValueError(
-                        "Shard cannot exist above join".to_string(),
-                    )),
+                    LogicalPlan::Join(_) | LogicalPlan::IterativeJoin(_) => Err(
+                        DaftError::ValueError("Shard cannot exist above join".to_string()),
+                    ),
                     LogicalPlan::Intersect(_)
                     | LogicalPlan::Union(_)
                     | LogicalPlan::SubqueryAlias(_) => Ok(Transformed::no(plan)),
