@@ -12,9 +12,11 @@ from pypaimon.catalog.catalog_exception import (
 )
 from pypaimon.table.table import Table as InnerTable
 
-from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
+from daft.catalog import Catalog, Function, Identifier, NotFoundError, Properties, Schema, Table
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from daft.dataframe import DataFrame
     from daft.io.partitioning import PartitionField
 
@@ -55,6 +57,9 @@ class PaimonCatalog(Catalog):
     ###
     # create_*
     ###
+
+    def _create_function(self, ident: Identifier, function: Function | Callable[..., Any]) -> None:
+        raise NotImplementedError("Paimon does not support function registration.")
 
     def _create_namespace(self, ident: Identifier) -> None:
         db_name = _to_paimon_db_name(ident)
@@ -135,6 +140,9 @@ class PaimonCatalog(Catalog):
     ###
     # get_*
     ###
+
+    def _get_function(self, ident: Identifier) -> Function:
+        raise NotFoundError(f"Function '{ident}' not found in catalog '{self.name}'")
 
     def _get_table(self, ident: Identifier) -> PaimonTable:
         paimon_ident = _to_paimon_ident_str(ident)

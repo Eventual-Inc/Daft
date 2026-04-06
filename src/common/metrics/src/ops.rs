@@ -57,6 +57,7 @@ pub enum NodeType {
     CrossJoin,
     // Specific to distributed only
     BroadcastJoin,
+    KeyFilteringJoin,
 }
 
 impl Display for NodeType {

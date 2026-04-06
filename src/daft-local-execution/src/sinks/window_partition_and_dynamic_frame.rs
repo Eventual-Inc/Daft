@@ -13,7 +13,9 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::{
-    blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult},
+    blocking_sink::{
+        BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+    },
     window_base::{WindowBaseState, WindowSinkParams},
 };
 use crate::{
@@ -214,7 +216,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                     if results.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(vec![empty_result]);
+                        return Ok(BlockingSinkOutput::Partitions(vec![empty_result]));
                     }
 
                     let final_result = MicroPartition::new_loaded(
@@ -222,7 +224,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                         results.into(),
                         None,
                     );
-                    Ok(vec![final_result])
+                    Ok(BlockingSinkOutput::Partitions(vec![final_result]))
                 },
                 Span::current(),
             )

@@ -7,7 +7,9 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
@@ -125,7 +127,7 @@ impl BlockingSink for PivotSink {
                         pivot_params.value_column.clone(),
                         pivot_params.names.clone(),
                     )?;
-                    Ok(vec![pivoted])
+                    Ok(BlockingSinkOutput::Partitions(vec![pivoted]))
                 },
                 Span::current(),
             )

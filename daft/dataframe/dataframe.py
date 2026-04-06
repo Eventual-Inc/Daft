@@ -6,6 +6,7 @@
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
 import io
+import logging
 import multiprocessing
 import os
 import pathlib
@@ -71,6 +72,8 @@ if TYPE_CHECKING:
     from daft.io.sink import WriteResultType
 
 from daft.schema import Schema
+
+logger = logging.getLogger(__name__)
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 T = TypeVar("T")
@@ -976,7 +979,10 @@ class DataFrame:
         assert write_df._result is not None
 
         # Populate and return a new disconnected DataFrame
-        result_df = DataFrame(write_df._builder)
+        # Keep the original logical plan so explain() can still show upstream operators
+        # (e.g. filters/projections before the write), instead of collapsing to an
+        # in-memory source after collect() caches the result.
+        result_df = DataFrame(write_df._get_current_builder())
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
         result_df._metadata = write_df._metadata
@@ -1089,7 +1095,10 @@ class DataFrame:
         assert write_df._result is not None
 
         # Populate and return a new disconnected DataFrame
-        result_df = DataFrame(write_df._builder)
+        # Keep the original logical plan so explain() can still show upstream operators
+        # (e.g. filters/projections before the write), instead of collapsing to an
+        # in-memory source after collect() caches the result.
+        result_df = DataFrame(write_df._get_current_builder())
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
         result_df._metadata = write_df._metadata
@@ -1187,7 +1196,10 @@ class DataFrame:
         assert write_df._result is not None
 
         # Populate and return a new disconnected DataFrame
-        result_df = DataFrame(write_df._builder)
+        # Keep the original logical plan so explain() can still show upstream operators
+        # (e.g. filters/projections before the write), instead of collapsing to an
+        # in-memory source after collect() caches the result.
+        result_df = DataFrame(write_df._get_current_builder())
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
         result_df._metadata = write_df._metadata
@@ -2674,6 +2686,177 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def skip_existing(
+        self,
+        existing_path: str | pathlib.Path | list[str | pathlib.Path],
+        key_column: str | list[str],
+        file_format: str | FileFormat,
+        io_config: IOConfig | None = None,
+        num_workers: int = 4,
+        cpus_per_worker: float = 0.5,
+        keys_load_batch_size: int = 100000,
+        max_concurrency_per_worker: int = 1,
+        filter_batch_size: int = 10000,
+        **reader_args: Any,
+    ) -> "DataFrame":
+        """Filter out rows whose key(s) already exist in existing data (i.e., already processed rows).
+
+        This method reads existing data from the given path(s), builds a Ray actor-backed
+        distributed key filter from the existing key columns, and filters the current
+        DataFrame to only include rows whose key(s) are not present in the existing data.
+        This is useful for incremental data processing pipelines where you want to avoid
+        re-processing data that has already been written.
+
+        Missing paths are treated permissively:
+        if none of the provided paths exist, the current DataFrame is returned unchanged;
+        if only some paths exist, Daft logs a warning and continues with the existing subset.
+
+        Args:
+            existing_path: Path or list of paths to the existing data directory/file(s).
+            key_column: Column name(s) to use as the key for matching. Can be a single column name
+                or a list of column names for composite keys.
+            file_format: Format of the existing data files. Supported formats are Parquet, CSV,
+                and JSON/JSONL/NDJSON.
+            io_config: IO configuration for reading the existing data.
+            num_workers: Number of Ray actors to spawn for key filtering. Each actor holds a
+                shard of existing keys and filters incoming partitions in parallel. Higher values
+                increase parallelism and typically reduce per-actor memory usage.
+            cpus_per_worker: Number of CPUs to allocate per Ray actor.
+            keys_load_batch_size: Batch size when loading keys from existing data into actors.
+            max_concurrency_per_worker: Maximum concurrency for per-actor operations.
+            filter_batch_size: Batch size for the key filter operation. Controls how many rows
+                are sent to the key filter actors per RPC call. Larger values reduce RPC
+                overhead but increase memory usage proportionally across all concurrent tasks
+                (total memory ≈ num_tasks × filter_batch_size × avg_key_size). For lightweight
+                keys (int, short string), 10000-50000 works well. For large keys (URLs, long
+                strings), keep this lower to avoid excessive memory usage. Defaults to 10000.
+            **reader_args: Additional keyword arguments forwarded to the underlying reader for
+                `file_format` when scanning `existing_path`.
+
+        Returns:
+            DataFrame: A new DataFrame with rows filtered to exclude those whose keys exist
+                in the existing data.
+
+        Raises:
+            ValueError: If key columns are invalid, paths are empty, or parameters are out of range.
+            RuntimeError: If the existing data cannot be read during execution or key filter
+                resources cannot be allocated.
+
+        Examples:
+            >>> import daft
+            >>> import tempfile
+            >>> from pathlib import Path
+            >>> import pyarrow as pa
+            >>> import pyarrow.parquet as pq
+            >>> df = daft.from_pydict({"id": [1, 2, 3, 4], "value": ["a", "b", "c", "d"]})
+            >>> # Filter out rows where 'id' already exists in local Parquet data
+            >>> daft.set_runner_ray()  # doctest: +SKIP
+            >>> with tempfile.TemporaryDirectory() as tmpdir:  # doctest: +SKIP
+            ...     pq.write_table(pa.table({"id": [1, 3]}), Path(tmpdir) / "part-0.parquet")
+            ...     filtered_df = df.skip_existing(
+            ...         existing_path=tmpdir,
+            ...         key_column="id",
+            ...         file_format="parquet",
+            ...     ).collect()
+            ...     filtered_df.select("id").to_pydict()["id"]
+            [2, 4]
+        """
+        if isinstance(file_format, str):
+            fmt = file_format.strip().lower()
+            if fmt == "parquet":
+                file_format = FileFormat.Parquet
+            elif fmt == "csv":
+                file_format = FileFormat.Csv
+            elif fmt in ("json", "jsonl", "ndjson"):
+                file_format = FileFormat.Json
+            else:
+                raise ValueError(f"[skip_existing] Unsupported format: {file_format}")
+
+        if file_format not in (FileFormat.Parquet, FileFormat.Csv, FileFormat.Json):
+            raise ValueError(f"[skip_existing] Unsupported format: {file_format}")
+
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        existing_path_strs: list[str]
+        if isinstance(existing_path, list):
+            existing_path_strs = [str(p) for p in existing_path]
+        else:
+            existing_path_strs = [str(existing_path)]
+        if not existing_path_strs or any(path == "" for path in existing_path_strs):
+            raise ValueError("[skip_existing] existing_path must be a non-empty list of non-empty paths")
+
+        if not isinstance(key_column, list):
+            key_column = [key_column]
+        if not key_column or any(not isinstance(key, str) or key == "" for key in key_column):
+            raise ValueError("[skip_existing] key_column must be a non-empty list of non-empty column names")
+
+        from pyarrow.fs import FileType
+
+        from daft.filesystem import _resolve_paths_and_filesystem
+
+        resolved_paths, fs = _resolve_paths_and_filesystem(existing_path_strs, io_config=io_config)
+        infos = fs.get_file_info(resolved_paths)
+
+        original_existing_path_strs = existing_path_strs
+        existing_path_strs = [
+            path for path, info in zip(original_existing_path_strs, infos) if info.type != FileType.NotFound
+        ]
+        missing_path_strs = [
+            path for path, info in zip(original_existing_path_strs, infos) if info.type == FileType.NotFound
+        ]
+
+        if missing_path_strs:
+            if not existing_path_strs:
+                logger.warning(
+                    "[skip_existing] No existing data found at %s, processing all rows.",
+                    original_existing_path_strs,
+                )
+                return self
+
+            logger.warning(
+                "[skip_existing] Some existing data paths were not found at %s; continuing with existing paths %s.",
+                missing_path_strs,
+                existing_path_strs,
+            )
+
+        from daft.daft import KeyFilteringConfig
+
+        read_fn: Callable[..., DataFrame]
+        if file_format == FileFormat.Parquet:
+            from daft.io._parquet import read_parquet
+
+            read_fn = read_parquet
+        elif file_format == FileFormat.Csv:
+            from daft.io._csv import read_csv
+
+            read_fn = read_csv
+        else:
+            from daft.io._json import read_json
+
+            read_fn = read_json
+
+        key_exprs = column_inputs_to_expressions(tuple(key_column))
+        key_filtering_config = KeyFilteringConfig(
+            num_workers=num_workers,
+            cpus_per_worker=cpus_per_worker,
+            keys_load_batch_size=keys_load_batch_size,
+            max_concurrency_per_worker=max_concurrency_per_worker,
+            filter_batch_size=filter_batch_size,
+        )
+        read_kwargs = dict(reader_args)
+        right_df = read_fn(path=existing_path_strs, io_config=io_config, **read_kwargs)
+
+        builder = self._builder.join(
+            right=right_df._builder,
+            left_on=key_exprs,
+            right_on=key_exprs,
+            how=JoinType.Anti,
+            strategy=JoinStrategy.KeyFiltering,
+            key_filtering_config=key_filtering_config,
+        )
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def with_column(
         self,
         column_name: str,
@@ -3835,6 +4018,36 @@ class DataFrame:
 
         """
         return self._apply_agg_fn(lambda expr: Expression.stddev(expr, ddof), cols)
+
+    @DataframePublicAPI
+    def var(self, *cols: ColumnInputType, ddof: int = 1) -> "DataFrame":
+        """Performs a global variance on the DataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to compute variance for
+            ddof (int): Delta degrees of freedom used in the denominator `N - ddof`.
+                Defaults to 1 (sample variance).
+
+        Returns:
+            DataFrame: Globally aggregated variance. Should be a single row.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [0, 1, 2]})
+            >>> df = df.var("col_a")
+            >>> df.show()
+            ╭─────────╮
+            │ col_a   │
+            │ ---     │
+            │ Float64 │
+            ╞═════════╡
+            │ 1       │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        """
+        return self._apply_agg_fn(lambda expr: Expression.var(expr, ddof), cols)
 
     @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
@@ -5225,6 +5438,38 @@ class GroupedDataFrame:
 
         """
         return self.df._apply_agg_fn(lambda expr: Expression.stddev(expr, ddof), cols, self.group_by)
+
+    def var(self, *cols: ColumnInputType, ddof: int = 1) -> DataFrame:
+        """Performs grouped variance on this GroupedDataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to compute variance for
+            ddof (int): Delta degrees of freedom used in the denominator `N - ddof`.
+                Defaults to 1 (sample variance).
+
+        Returns:
+            DataFrame: DataFrame with grouped variance.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b"], "col_a": [0, 1, 2, 100]})
+            >>> df = df.groupby("keys").var()
+            >>> df = df.sort("keys")
+            >>> df.show()
+            ╭────────┬─────────╮
+            │ keys   ┆ col_a   │
+            │ ---    ┆ ---     │
+            │ String ┆ Float64 │
+            ╞════════╪═════════╡
+            │ a      ┆ 1       │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ b      ┆ None    │
+            ╰────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        """
+        return self.df._apply_agg_fn(lambda expr: Expression.var(expr, ddof), cols, self.group_by)
 
     def min(self, *cols: ColumnInputType) -> DataFrame:
         """Perform grouped min on this GroupedDataFrame.

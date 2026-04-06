@@ -96,6 +96,9 @@ impl ConcatNode {
                     );
                     break;
                 }
+                PipelineMessage::ShuffleMetadata { .. } => {
+                    unreachable!("ConcatNode should not receive shuffle metadata")
+                }
             }
         }
 
