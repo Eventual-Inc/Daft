@@ -1,9 +1,24 @@
+"""Shared utilities for benchmark scripts."""
+
+from __future__ import annotations
+
 import os
 from datetime import datetime, timezone
 
 from ray.job_submission import JobDetails, JobSubmissionClient
 
 import daft
+
+
+def daft_uv_runtime_env() -> dict:
+    """Build the uv runtime_env config, pinning the exact Daft version if available."""
+    daft_version = os.getenv("DAFT_VERSION")
+    daft_index_url = os.getenv("DAFT_INDEX_URL")
+    daft_pkg = f"daft[aws]=={daft_version}" if daft_version else "daft[aws]"
+    uv_env: dict = {"packages": [daft_pkg]}
+    if daft_index_url:
+        uv_env["uv_pip_install_options"] = ["--index-url", daft_index_url, "--extra-index-url", "https://pypi.org/simple/"]
+    return uv_env
 
 
 def upload_to_google_sheets(worksheet, data):
