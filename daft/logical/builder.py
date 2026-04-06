@@ -298,6 +298,7 @@ class LogicalPlanBuilder:
         strategy: JoinStrategy | None = None,
         prefix: str | None = None,
         suffix: str | None = None,
+        key_filtering_config: Any = None,
     ) -> LogicalPlanBuilder:
         builder = self._builder.join(
             right._builder,
@@ -307,6 +308,7 @@ class LogicalPlanBuilder:
             strategy,
             prefix,
             suffix,
+            key_filtering_config,
         )
         return LogicalPlanBuilder(builder)
 

@@ -55,6 +55,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<CsvSourceConfig>()?;
     parent.add_class::<DatabaseSourceConfig>()?;
     parent.add_class::<JoinOptions>()?;
+    parent.add_class::<ops::PyKeyFilteringConfig>()?;
     parent.add_function(wrap_pyfunction!(logical_plan_table_scan, parent)?)?;
 
     Ok(())

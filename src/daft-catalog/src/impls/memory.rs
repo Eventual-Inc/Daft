@@ -10,12 +10,13 @@ use daft_micropartition::{
 use indexmap::IndexMap;
 
 use crate::{
-    Catalog, Identifier, Table, TableRef,
+    Catalog, FunctionRef, Identifier, Table, TableRef,
     error::{CatalogError, CatalogResult},
     pattern::{match_pattern, parse_qualified_pattern},
 };
 
 type NamespaceTableMap = IndexMap<Option<String>, IndexMap<String, Arc<MemoryTable>>>;
+type FunctionMap = IndexMap<String, FunctionRef>;
 
 /// A catalog entirely stored in-memory.
 ///
@@ -26,6 +27,8 @@ pub struct MemoryCatalog {
     name: String,
     /// map of optional namespace -> table name -> table
     tables: Arc<RwLock<NamespaceTableMap>>,
+    /// map of function name -> function
+    functions: Arc<RwLock<FunctionMap>>,
 }
 
 impl MemoryCatalog {
@@ -37,6 +40,7 @@ impl MemoryCatalog {
         Self {
             name,
             tables: Arc::new(RwLock::new(tables)),
+            functions: Arc::new(RwLock::new(IndexMap::new())),
         }
     }
 
@@ -87,6 +91,18 @@ impl MemoryTable {
 impl Catalog for MemoryCatalog {
     fn name(&self) -> String {
         self.name.clone()
+    }
+
+    fn create_function(&self, ident: &Identifier, function: FunctionRef) -> CatalogResult<()> {
+        let name = ident.name().to_string();
+
+        if self.functions.read().unwrap().contains_key(&name) {
+            return Err(CatalogError::obj_already_exists("function", ident));
+        }
+
+        self.functions.write().unwrap().insert(name, function);
+
+        Ok(())
     }
 
     fn create_namespace(&self, ident: &Identifier) -> CatalogResult<()> {
@@ -165,6 +181,17 @@ impl Catalog for MemoryCatalog {
             Some(_) => Ok(()),
             None => Err(CatalogError::obj_not_found("table", ident)),
         }
+    }
+
+    fn get_function(&self, ident: &Identifier) -> CatalogResult<FunctionRef> {
+        let name = ident.name();
+
+        self.functions
+            .read()
+            .unwrap()
+            .get(name)
+            .cloned()
+            .ok_or_else(|| CatalogError::obj_not_found("function", ident))
     }
 
     fn get_table(&self, ident: &Identifier) -> CatalogResult<TableRef> {

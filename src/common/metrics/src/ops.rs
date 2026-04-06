@@ -58,6 +58,7 @@ pub enum NodeType {
     // Specific to distributed only
     BroadcastJoin,
     AsofJoin,
+    KeyFilteringJoin,
 }
 
 impl Display for NodeType {

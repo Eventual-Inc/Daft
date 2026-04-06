@@ -28,6 +28,9 @@ use crate::stats::{PlanStats, StatsState};
 /// Logical plan for a Daft query.
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
+// Allow large enum variant (Join) since boxing it would require changes across 20+ files
+// for marginal benefit — LogicalPlan nodes are always Arc-wrapped in practice.
+#[allow(clippy::large_enum_variant)]
 pub enum LogicalPlan {
     Source(Source),
     Shard(Shard),
@@ -811,6 +814,7 @@ impl LogicalPlan {
                     on,
                     join_type,
                     join_strategy,
+                    key_filtering_config,
                     ..
                 }) => Self::Join(
                     Join::try_new(
@@ -820,7 +824,8 @@ impl LogicalPlan {
                         *join_type,
                         *join_strategy,
                     )
-                    .unwrap(),
+                    .unwrap()
+                    .with_key_filtering_config(key_filtering_config.clone()),
                 ),
                 Self::AsofJoin(AsofJoin {
                     on,
