@@ -2422,7 +2422,6 @@ dependencies = [
  "daft-sketch",
  "derive_more",
  "fastrand 2.3.0",
- "hashbrown 0.16.1",
  "html-escape",
  "hyperloglog",
  "image",
