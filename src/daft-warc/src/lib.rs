@@ -2,7 +2,9 @@ use std::{num::NonZeroUsize, sync::Arc};
 
 use arrow_array::{
     ArrayRef,
-    builder::{ArrayBuilder, FixedSizeBinaryBuilder, Int64Builder, LargeBinaryBuilder, LargeStringBuilder},
+    builder::{
+        ArrayBuilder, FixedSizeBinaryBuilder, Int64Builder, LargeBinaryBuilder, LargeStringBuilder,
+    },
 };
 use chrono::{DateTime, Utc};
 use common_error::{DaftError, DaftResult};
@@ -142,10 +144,7 @@ impl WarcRecordBatchBuilder {
         Self {
             chunk_size,
             schema,
-            record_id_array: FixedSizeBinaryBuilder::with_capacity(
-                chunk_size,
-                16,
-            ),
+            record_id_array: FixedSizeBinaryBuilder::with_capacity(chunk_size, 16),
             warc_target_uri_array: LargeStringBuilder::with_capacity(
                 chunk_size,
                 Self::DEFAULT_STRING_LENGTH * chunk_size,
@@ -188,7 +187,9 @@ impl WarcRecordBatchBuilder {
         header: Option<&str>,
     ) {
         if let Some(record_id) = record_id {
-            self.record_id_array.append_value(record_id).expect("Expected to be able to append a UUID to a FixedSizeBinaryBuilder[16]");
+            self.record_id_array
+                .append_value(record_id)
+                .expect("Expected to be able to append a UUID to a FixedSizeBinaryBuilder[16]");
         } else {
             self.record_id_array.append_null();
         }
