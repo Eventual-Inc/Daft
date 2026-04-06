@@ -10,7 +10,7 @@ use common_error::DaftResult;
 use super::{DaftConcatAggable, as_arrow::AsArrow};
 use crate::{
     array::{DataArray, ListArray},
-    prelude::Utf8Type,
+    prelude::{UInt64Array, Utf8Type},
     series::Series,
 };
 
@@ -70,7 +70,7 @@ impl DaftConcatAggable for ListArray {
         let all_valid = self.null_count() == 0;
 
         // Collect all child slices for each group
-        let mut all_slices: Vec<Series> = vec![];
+        let mut child_idxs: Vec<u64> = vec![];
         let mut group_lens: Vec<usize> = vec![];
         let mut group_valids: Vec<bool> = vec![];
 
@@ -83,7 +83,7 @@ impl DaftConcatAggable for ListArray {
                     let end = self.offsets()[*idx as usize + 1] as usize;
                     let len = end - start;
                     if len > 0 {
-                        all_slices.push(self.flat_child.slice(start, end)?);
+                        child_idxs.extend(start as u64..end as u64);
                     }
                     group_len += len;
                     group_valid = true;
@@ -93,10 +93,11 @@ impl DaftConcatAggable for ListArray {
             group_lens.push(if group_valid { group_len } else { 0 });
         }
 
-        let new_child = if all_slices.is_empty() {
+        let new_child = if child_idxs.is_empty() {
             self.flat_child.slice(0, 0)?
         } else {
-            Series::concat(&all_slices.iter().collect::<Vec<_>>())?
+            self.flat_child
+                .take(&UInt64Array::from_vec("", child_idxs))?
         };
 
         let new_offsets = OffsetBuffer::from_lengths(group_lens.iter().copied());
