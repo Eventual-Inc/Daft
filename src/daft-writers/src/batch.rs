@@ -204,8 +204,10 @@ impl AsyncFileWriter for TargetBatchWriter {
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
+        let remaining_size = self.buffer.size_bytes;
         if let Some(leftovers) = self.buffer.pop_all()? {
-            self.writer.write(leftovers).await?;
+            self.write_and_update_inflation_factor(leftovers, remaining_size)
+                .await?;
         }
         self.is_closed = true;
         self.writer.close().await
