@@ -122,8 +122,8 @@ def with_subscriber(alias: str, subscriber: Subscriber) -> Generator[None, None,
         ...     df.collect()
     """
     ctx = get_context()
+    ctx.attach_subscriber(alias, subscriber)
     try:
-        ctx.attach_subscriber(alias, subscriber)
         yield
     finally:
         ctx.detach_subscriber(alias)
