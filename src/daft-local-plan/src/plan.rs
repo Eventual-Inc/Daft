@@ -2215,10 +2215,16 @@ pub enum RepartitionWriteBackend {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ShuffleReadBackend {
     Ray,
-    Flight {
-        shuffle_id: u64,
-        server_cache_mapping: HashMap<String, Vec<u32>>,
-    },
+    Flight { shuffle_id: u64 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FlightShufflePartitionRef {
+    pub shuffle_id: u64,
+    pub server_address: String,
+    pub partition_ref_id: u64,
+    pub num_rows: usize,
+    pub size_bytes: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2243,5 +2249,5 @@ pub struct ShuffleRead {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlightShuffleReadInput {
-    pub partition_idx: usize,
+    pub refs: Vec<FlightShufflePartitionRef>,
 }

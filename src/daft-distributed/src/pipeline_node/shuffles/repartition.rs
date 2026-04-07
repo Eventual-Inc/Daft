@@ -17,7 +17,7 @@ use crate::{
                 ShuffleBackendWriteConfig,
             },
             partition_groups::{
-                flight_server_cache_mapping_from_outputs, ray_partition_groups_from_outputs,
+                flight_partition_groups_from_outputs, ray_partition_groups_from_outputs,
             },
         },
     },
@@ -99,7 +99,10 @@ impl RepartitionNode {
                 )?,
             },
             DistributedShuffleBackend::Flight(_) => ShuffleBackendReadSpec::Flight {
-                server_cache_mapping: flight_server_cache_mapping_from_outputs(outputs)?,
+                partition_groups: flight_partition_groups_from_outputs(
+                    outputs,
+                    self.shuffle_backend.num_partitions(),
+                )?,
             },
         };
 

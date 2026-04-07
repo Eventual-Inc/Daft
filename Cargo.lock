@@ -3249,10 +3249,12 @@ dependencies = [
 name = "daft-shuffles"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "arrow-flight",
  "arrow-ipc",
  "arrow-schema 57.3.0",
  "async-channel 2.5.0",
+ "async-stream",
  "common-error",
  "common-runtime",
  "daft-core",
@@ -3261,6 +3263,7 @@ dependencies = [
  "daft-recordbatch",
  "daft-schema",
  "daft-writers",
+ "flatbuffers",
  "futures",
  "itertools 0.14.0",
  "tokio",

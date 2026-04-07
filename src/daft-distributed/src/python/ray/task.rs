@@ -2,14 +2,14 @@ use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_partitioning::{Partition, PartitionRef};
-use daft_local_plan::{ExecutionStats, PyLocalPhysicalPlan, SourceId, python::PyInput};
+use daft_local_plan::{
+    ExecutionStats, FlightShufflePartitionRef as RustFlightShufflePartitionRef,
+    PyLocalPhysicalPlan, SourceId, python::PyInput,
+};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
-    pipeline_node::{
-        FlightShufflePartitionRef as RustFlightShufflePartitionRef, MaterializedOutput,
-        ShufflePartitionRef, ShuffleWriteOutput, TaskOutput,
-    },
+    pipeline_node::{MaterializedOutput, ShufflePartitionRef, ShuffleWriteOutput, TaskOutput},
     scheduling::{
         task::{SwordfishTask, Task, TaskContext, TaskResultHandle, TaskStatus},
         worker::WorkerId,
@@ -236,9 +236,8 @@ impl Partition for RayPartitionRef {
 #[derive(Debug, Clone)]
 pub(crate) struct FlightShufflePartitionRef {
     pub shuffle_id: u64,
-    pub partition_idx: usize,
     pub server_address: String,
-    pub cache_id: u32,
+    pub partition_ref_id: u64,
     pub num_rows: usize,
     pub size_bytes: usize,
 }
@@ -248,17 +247,15 @@ impl FlightShufflePartitionRef {
     #[new]
     pub fn new(
         shuffle_id: u64,
-        partition_idx: usize,
         server_address: String,
-        cache_id: u32,
+        partition_ref_id: u64,
         num_rows: usize,
         size_bytes: usize,
     ) -> Self {
         Self {
             shuffle_id,
-            partition_idx,
             server_address,
-            cache_id,
+            partition_ref_id,
             num_rows,
             size_bytes,
         }
@@ -269,9 +266,8 @@ impl From<FlightShufflePartitionRef> for ShufflePartitionRef {
     fn from(py_ref: FlightShufflePartitionRef) -> Self {
         Self::Flight(RustFlightShufflePartitionRef {
             shuffle_id: py_ref.shuffle_id,
-            partition_idx: py_ref.partition_idx,
             server_address: py_ref.server_address,
-            cache_id: py_ref.cache_id,
+            partition_ref_id: py_ref.partition_ref_id,
             num_rows: py_ref.num_rows,
             size_bytes: py_ref.size_bytes,
         })

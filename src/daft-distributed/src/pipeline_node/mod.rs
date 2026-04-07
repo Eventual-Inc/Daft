@@ -19,12 +19,13 @@ use common_metrics::{
 };
 use common_partitioning::PartitionRef;
 use common_treenode::ConcreteTreeNode;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::{
+    FlightShufflePartitionRef, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,
+};
 use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, stream::BoxStream};
 use materialize::{materialize_all_pipeline_outputs, task_outputs_from_pipeline};
-use serde::{Deserialize, Serialize};
 
 use crate::{
     plan::{PlanExecutionContext, QueryIdx, TaskIDCounter},
@@ -199,16 +200,6 @@ impl MaterializedOutput {
 
         (in_memory_scan, partition_refs)
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct FlightShufflePartitionRef {
-    pub shuffle_id: u64,
-    pub partition_idx: usize,
-    pub server_address: String,
-    pub cache_id: u32,
-    pub num_rows: usize,
-    pub size_bytes: usize,
 }
 
 #[derive(Clone, Debug)]

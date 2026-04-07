@@ -10,10 +10,10 @@ use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
-use daft_local_plan::{FlightShuffleReadInput, InputId};
+use daft_local_plan::{FlightShufflePartitionRef, FlightShuffleReadInput, InputId};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use daft_shuffles::{client::FlightClientManager, server::flight_server::ShuffleFlightServer};
+use daft_shuffles::client::FlightClientManager;
 use futures::{FutureExt, StreamExt, stream::BoxStream};
 use tracing::instrument;
 
@@ -26,23 +26,17 @@ use crate::{
 pub struct ShuffleReadSource {
     receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
     shuffle_id: u64,
-    local_cache_ids: Option<Vec<u32>>,
-    remote_cache_mapping: HashMap<String, Vec<u32>>,
-    local_server: Arc<ShuffleFlightServer>,
     schema: SchemaRef,
     num_parallel_tasks: usize,
 }
 
 impl ShuffleReadSource {
-    pub fn try_new(
+    pub fn new(
         receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
         shuffle_id: u64,
-        server_cache_mapping: HashMap<String, Vec<u32>>,
-        local_server: Arc<ShuffleFlightServer>,
-        local_address: String,
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
-    ) -> DaftResult<Self> {
+    ) -> Self {
         let num_cpus = get_compute_pool_num_threads();
         let num_parallel_tasks = if cfg.scantask_max_parallel > 0 {
             cfg.scantask_max_parallel
@@ -50,77 +44,11 @@ impl ShuffleReadSource {
             num_cpus
         };
 
-        let (local_cache_ids, remote_cache_mapping) =
-            if server_cache_mapping.contains_key(&local_address) {
-                (
-                    server_cache_mapping.get(&local_address).cloned(),
-                    server_cache_mapping
-                        .into_iter()
-                        .filter(|(addr, _)| addr.as_str() != local_address)
-                        .collect(),
-                )
-            } else {
-                (None, server_cache_mapping)
-            };
-
-        if local_cache_ids.is_none() && remote_cache_mapping.is_empty() {
-            return Err(DaftError::ValueError(
-                "No local or remote flight shuffle partition streams found".to_string(),
-            ));
-        }
-
-        Ok(Self {
+        Self {
             receiver,
             shuffle_id,
-            local_cache_ids,
-            remote_cache_mapping,
-            local_server,
             schema,
             num_parallel_tasks,
-        })
-    }
-
-    async fn get_partition_stream(
-        client_manager: &mut FlightClientManager,
-        local_server: &ShuffleFlightServer,
-        local_cache_ids: Option<&[u32]>,
-        remote_cache_mapping: &HashMap<String, Vec<u32>>,
-        shuffle_id: u64,
-        partition_idx: usize,
-        schema: SchemaRef,
-    ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-        let local_stream = if let Some(local_cache_ids) = local_cache_ids {
-            Some(
-                local_server
-                    .get_partition_local(shuffle_id, partition_idx, local_cache_ids)
-                    .await?,
-            )
-        } else {
-            None
-        };
-
-        let remote_stream = if remote_cache_mapping.is_empty() {
-            None
-        } else {
-            Some(
-                client_manager
-                    .fetch_partition(
-                        shuffle_id,
-                        partition_idx,
-                        remote_cache_mapping,
-                        schema.clone(),
-                    )
-                    .await?,
-            )
-        };
-
-        match (local_stream, remote_stream) {
-            (None, None) => Ok(futures::stream::empty().boxed()),
-            (Some(local_stream), None) => Ok(local_stream.boxed()),
-            (None, Some(remote_stream)) => Ok(remote_stream.boxed()),
-            (Some(local_stream), Some(remote_stream)) => {
-                Ok(futures::stream::select(local_stream, remote_stream).boxed())
-            }
         }
     }
 
@@ -130,15 +58,10 @@ impl ShuffleReadSource {
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let mut receiver = self.receiver;
         let num_parallel_tasks = self.num_parallel_tasks;
-        let shuffle_id = self.shuffle_id;
-        let schema = self.schema.clone();
-
-        let local_cache_ids = self.local_cache_ids;
-        let remote_cache_mapping = self.remote_cache_mapping;
 
         let io_runtime = get_io_runtime(true);
         io_runtime.spawn(async move {
-            let mut client_manager = FlightClientManager::new();
+            let client_manager = FlightClientManager::new();
             let mut task_set = JoinSet::new();
             let mut pending_tasks: VecDeque<(InputId, FlightShuffleReadInput)> = VecDeque::new();
             let mut input_id_pending_counts: HashMap<InputId, usize> = HashMap::new();
@@ -146,18 +69,10 @@ impl ShuffleReadSource {
 
             while !receiver_exhausted || !pending_tasks.is_empty() || !task_set.is_empty() {
                 while task_set.len() < num_parallel_tasks && let Some((input_id, input)) = pending_tasks.pop_front() {
-                    let stream = Self::get_partition_stream(
-                        &mut client_manager,
-                        &self.local_server,
-                        local_cache_ids.as_deref(),
-                        &remote_cache_mapping,
-                        shuffle_id,
-                        input.partition_idx,
-                        schema.clone(),
-                    ).await?;
-                    task_set.spawn(forward_partition_stream(
-                        stream,
-                        schema.clone(),
+                    task_set.spawn(forward_partition_refs(
+                        client_manager.clone(),
+                        input.refs,
+                        self.schema.clone(),
                         output_sender.clone(),
                         input_id,
                     ));
@@ -167,7 +82,7 @@ impl ShuffleReadSource {
                     recv_result = receiver.recv(), if !receiver_exhausted => {
                         match recv_result {
                             Some((input_id, inputs)) if inputs.is_empty() => {
-                                let empty = MicroPartition::empty(Some(schema.clone()));
+                                let empty = MicroPartition::empty(Some(self.schema.clone()));
                                 if output_sender.send(PipelineMessage::Morsel {
                                     input_id,
                                     partition: empty,
@@ -214,25 +129,95 @@ impl ShuffleReadSource {
     }
 }
 
-async fn forward_partition_stream(
-    mut stream: BoxStream<'static, DaftResult<daft_recordbatch::RecordBatch>>,
+async fn fetch_partition_refs(
+    client_manager: FlightClientManager,
+    refs: &[FlightShufflePartitionRef],
+    schema: SchemaRef,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let refs = refs
+        .iter()
+        .filter(|partition_ref| partition_ref.num_rows > 0 && partition_ref.size_bytes > 0)
+        .collect::<Vec<_>>();
+
+    if refs.is_empty() {
+        return Ok(futures::stream::empty().boxed());
+    }
+
+    let mut refs_by_server: HashMap<&str, Vec<&FlightShufflePartitionRef>> = HashMap::new();
+    for partition_ref in refs {
+        refs_by_server
+            .entry(partition_ref.server_address.as_str())
+            .or_default()
+            .push(partition_ref);
+    }
+    let fetches = refs_by_server
+        .into_iter()
+        .map(|(server_address, server_refs)| {
+            let client_manager = client_manager.clone();
+            let schema = schema.clone();
+            let partition_ref_ids = server_refs
+                .iter()
+                .map(|partition_ref| partition_ref.partition_ref_id)
+                .collect::<Vec<_>>();
+            let shuffle_id = server_refs
+                .first()
+                .expect("expected at least one partition ref")
+                .shuffle_id;
+            let server_address = server_address.to_string();
+            async move {
+                client_manager
+                    .fetch_record_batches(shuffle_id, &server_address, &partition_ref_ids, schema)
+                    .await
+            }
+        })
+        .collect::<Vec<_>>();
+    let streams = futures::future::try_join_all(fetches).await?;
+
+    Ok(futures::stream::select_all(streams).boxed())
+}
+
+async fn forward_partition_refs(
+    client_manager: FlightClientManager,
+    refs: Vec<FlightShufflePartitionRef>,
     schema: SchemaRef,
     sender: Sender<PipelineMessage>,
     input_id: InputId,
 ) -> DaftResult<InputId> {
-    while let Some(batch) = stream.next().await {
-        let mp = MicroPartition::new_loaded(schema.clone(), vec![batch?].into(), None);
+    let nonempty_ref_count = refs
+        .iter()
+        .filter(|partition_ref| partition_ref.num_rows > 0 && partition_ref.size_bytes > 0)
+        .count();
+    if nonempty_ref_count == 0 {
         if sender
             .send(PipelineMessage::Morsel {
                 input_id,
-                partition: mp,
+                partition: MicroPartition::empty(Some(schema)),
             })
             .await
             .is_err()
         {
-            break;
+            return Ok(input_id);
+        }
+        return Ok(input_id);
+    }
+
+    let mut batches = fetch_partition_refs(client_manager, &refs, schema.clone()).await?;
+
+    while let Some(batch) = batches.next().await {
+        let batch = batch?;
+        let partition = MicroPartition::new_loaded(schema.clone(), Arc::new(vec![batch]), None);
+        if sender
+            .send(PipelineMessage::Morsel {
+                input_id,
+                partition,
+            })
+            .await
+            .is_err()
+        {
+            return Ok(input_id);
         }
     }
+
     Ok(input_id)
 }
 
@@ -268,5 +253,69 @@ impl Source for ShuffleReadSource {
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
 
         Ok(Box::pin(combined_stream))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_error::DaftResult;
+    use daft_core::prelude::{DataType, Field, Schema};
+
+    use super::*;
+    use crate::{channel::create_channel, pipeline::PipelineMessage};
+
+    fn make_schema() -> SchemaRef {
+        Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)]))
+    }
+
+    #[tokio::test]
+    async fn forward_partition_refs_emits_single_empty_morsel_when_all_refs_are_empty()
+    -> DaftResult<()> {
+        let schema = make_schema();
+        let refs = vec![
+            FlightShufflePartitionRef {
+                shuffle_id: 11,
+                server_address: "grpc://worker-a:1234".to_string(),
+                partition_ref_id: 101,
+                num_rows: 0,
+                size_bytes: 100,
+            },
+            FlightShufflePartitionRef {
+                shuffle_id: 11,
+                server_address: "grpc://worker-b:1234".to_string(),
+                partition_ref_id: 102,
+                num_rows: 4,
+                size_bytes: 0,
+            },
+        ];
+        let (sender, mut receiver) = create_channel(4);
+
+        let completed_input_id = forward_partition_refs(
+            FlightClientManager::new(),
+            refs,
+            schema.clone(),
+            sender.clone(),
+            7,
+        )
+        .await?;
+        drop(sender);
+
+        assert_eq!(completed_input_id, 7);
+
+        let Some(PipelineMessage::Morsel {
+            input_id,
+            partition,
+        }) = receiver.recv().await
+        else {
+            panic!("expected empty morsel");
+        };
+        assert_eq!(input_id, 7);
+        assert_eq!(partition.len(), 0);
+        assert_eq!(partition.schema(), schema);
+        assert!(receiver.recv().await.is_none());
+
+        Ok(())
     }
 }

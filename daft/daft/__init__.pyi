@@ -2242,18 +2242,16 @@ class RayPartitionRef:
 
 class FlightShufflePartitionRef:
     shuffle_id: int
-    partition_idx: int
     server_address: str
-    cache_id: int
+    partition_ref_id: int
     num_rows: int
     size_bytes: int
 
     def __init__(
         self,
         shuffle_id: int,
-        partition_idx: int,
         server_address: str,
-        cache_id: int,
+        partition_ref_id: int,
         num_rows: int,
         size_bytes: int,
     ): ...
@@ -2304,7 +2302,7 @@ class PyResultReceiver:
     async def try_finish(self) -> PyExecutionStats: ...
     async def try_finish_with_shuffle_metadata(
         self,
-    ) -> tuple[PyExecutionStats, list[tuple[object | None, int, int]] | None]: ...
+    ) -> tuple[PyExecutionStats, list[tuple[object | None, int | None, int, int]] | None]: ...
 
 class ShuffleWriteInfo:
     @property
@@ -2330,6 +2328,7 @@ class Input:
 class NativeExecutor:
     def __init__(self, is_flotilla_worker: bool, ip: str) -> None: ...
     def shuffle_address(self) -> str | None: ...
+    def clear_flight_shuffles(self, shuffle_ids: list[int]) -> int: ...
     async def run(
         self,
         plan: LocalPhysicalPlan,

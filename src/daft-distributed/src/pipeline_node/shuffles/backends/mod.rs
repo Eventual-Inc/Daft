@@ -121,16 +121,13 @@ impl ShuffleBackend {
             }
             (
                 DistributedShuffleBackend::Flight(backend),
-                ShuffleBackendReadSpec::Flight {
-                    server_cache_mapping,
-                },
+                ShuffleBackendReadSpec::Flight { partition_groups },
             ) => {
                 let read_spec: FlightShuffleReadSpec =
-                    flight::read_spec_from_server_cache_mapping(backend, server_cache_mapping);
+                    flight::read_spec_from_partition_groups(backend, partition_groups);
                 flight::emit_read_tasks(
                     self.node_id,
                     self.schema.clone(),
-                    self.num_partitions,
                     read_spec,
                     node,
                     result_tx,
@@ -156,6 +153,6 @@ pub(crate) enum ShuffleBackendReadSpec {
         partition_groups: Vec<Vec<common_partitioning::PartitionRef>>,
     },
     Flight {
-        server_cache_mapping: std::collections::HashMap<String, Vec<u32>>,
+        partition_groups: Vec<Vec<daft_local_plan::FlightShufflePartitionRef>>,
     },
 }

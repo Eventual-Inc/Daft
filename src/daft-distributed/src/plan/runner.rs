@@ -51,6 +51,7 @@ pub(crate) struct PlanExecutionContext {
     joinset: JoinSet<DaftResult<()>>,
     task_id_counter: TaskIDCounter,
     shuffle_dirs: Vec<String>,
+    flight_shuffle_ids: Vec<u64>,
 }
 
 impl PlanExecutionContext {
@@ -62,6 +63,7 @@ impl PlanExecutionContext {
             joinset,
             task_id_counter: TaskIDCounter::new(),
             shuffle_dirs: Vec::new(),
+            flight_shuffle_ids: Vec::new(),
         }
     }
 
@@ -80,6 +82,10 @@ impl PlanExecutionContext {
     /// Register shuffle directories for cleanup when the plan completes
     pub fn register_shuffle_dirs(&mut self, dirs: Vec<String>) {
         self.shuffle_dirs.extend(dirs);
+    }
+
+    pub fn register_flight_shuffle_id(&mut self, shuffle_id: u64) {
+        self.flight_shuffle_ids.push(shuffle_id);
     }
 }
 
@@ -183,6 +189,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
 
         let running_node = pipeline_node.produce_tasks(&mut plan_context);
         let shuffle_dirs = std::mem::take(&mut plan_context.shuffle_dirs);
+        let flight_shuffle_ids = std::mem::take(&mut plan_context.flight_shuffle_ids);
         let running_stage = RunningPlan::new(running_node, plan_context);
 
         let mut materialized_result_stream = running_stage.materialize(scheduler_handle);
@@ -192,14 +199,55 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
             }
         }
 
-        // Clean up shuffle directories via Ray remote functions
-        #[cfg(feature = "python")]
-        if !shuffle_dirs.is_empty()
-            && let Err(e) = crate::python::ray::clear_shuffle_dirs_on_all_nodes(shuffle_dirs).await
-        {
-            tracing::warn!("Failed to clear flight shuffle directories: {}", e);
-        }
+        cleanup_plan_shuffle_state(
+            self.worker_manager.as_ref(),
+            shuffle_dirs,
+            flight_shuffle_ids,
+        )
+        .await;
 
         Ok(())
+    }
+}
+
+async fn cleanup_plan_shuffle_state<WM: WorkerManager + ?Sized>(
+    worker_manager: &WM,
+    shuffle_dirs: Vec<String>,
+    flight_shuffle_ids: Vec<u64>,
+) {
+    #[cfg(feature = "python")]
+    if !shuffle_dirs.is_empty()
+        && let Err(e) = crate::python::ray::clear_shuffle_dirs_on_all_nodes(shuffle_dirs).await
+    {
+        tracing::warn!("Failed to clear flight shuffle directories: {}", e);
+    }
+
+    #[cfg(not(feature = "python"))]
+    let _ = shuffle_dirs;
+
+    if !flight_shuffle_ids.is_empty()
+        && let Err(e) = worker_manager.clear_flight_shuffles(&flight_shuffle_ids)
+    {
+        tracing::warn!("Failed to clear in-memory flight shuffle state: {}", e);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::cleanup_plan_shuffle_state;
+    use crate::scheduling::worker::tests::MockWorkerManager;
+
+    #[tokio::test]
+    async fn cleanup_plan_shuffle_state_clears_registered_flight_shuffle_ids() {
+        let worker_manager = MockWorkerManager::new(HashMap::new());
+
+        cleanup_plan_shuffle_state(&worker_manager, vec![], vec![11, 12]).await;
+
+        assert_eq!(
+            worker_manager.clear_flight_shuffle_calls(),
+            vec![vec![11, 12]]
+        );
     }
 }

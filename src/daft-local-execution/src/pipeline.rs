@@ -1491,6 +1491,7 @@ fn physical_plan_to_pipeline(
                         *num_partitions,
                         *shuffle_id,
                         repartition_spec.clone(),
+                        schema.clone(),
                         shuffle_dirs.clone(),
                         compression.clone(),
                         shuffle_server,
@@ -1530,27 +1531,11 @@ fn physical_plan_to_pipeline(
                 )
                 .boxed()
             }
-            ShuffleReadBackend::Flight {
-                shuffle_id,
-                server_cache_mapping,
-            } => {
-                let (shuffle_server, shuffle_address) = ctx
-                    .shuffle_server()
-                    .expect("Flight shuffle server must be initialized for FlightShuffleWrite plans when using flight_shuffle algorithm");
+            ShuffleReadBackend::Flight { shuffle_id } => {
                 let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
                 input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
-                let source = ShuffleReadSource::try_new(
-                    rx,
-                    *shuffle_id,
-                    server_cache_mapping.clone(),
-                    shuffle_server,
-                    shuffle_address,
-                    schema.clone(),
-                    cfg,
-                )
-                .with_context(|_| PipelineCreationSnafu {
-                    plan_name: physical_plan.name(),
-                })?;
+                let source =
+                    ShuffleReadSource::new(rx, *shuffle_id, schema.clone(), cfg);
                 SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
             }
         },

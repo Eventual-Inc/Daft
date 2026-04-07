@@ -54,7 +54,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-ShufflePlanMetadata = list[tuple[object | None, int, int]]
+ShufflePlanMetadata = list[tuple[object | None, int | None, int, int]]
 ShufflePlanResult = tuple[str, ShufflePlanMetadata, bytes]
 ShuffleWriteInfoLike: TypeAlias = "ShuffleWriteInfo | tuple[str, int, int]"
 
@@ -115,6 +115,15 @@ async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str]) -> Non
     )
 
 
+async def clear_flight_shuffle_state_on_workers(workers: list[RaySwordfishActorHandle], shuffle_ids: list[int]) -> None:
+    if not shuffle_ids:
+        return
+
+    await asyncio.gather(
+        *[worker.actor_handle.clear_flight_shuffles.remote(shuffle_ids) for worker in workers],
+    )
+
+
 @ray.remote
 class RaySwordfishActor:
     """RaySwordfishActor is a ray actor that runs local physical plans on swordfish.
@@ -151,6 +160,9 @@ class RaySwordfishActor:
         if address is None:
             raise RuntimeError("Flotilla worker should have started a Flight shuffle server")
         return address
+
+    def clear_flight_shuffles(self, shuffle_ids: list[int]) -> int:
+        return self.native_executor.clear_flight_shuffles(shuffle_ids)
 
     async def _resolve_inputs(
         self,
@@ -243,7 +255,15 @@ class RaySwordfishActor:
 
             return (
                 backend,
-                [(object_ref, int(num_rows), int(size_bytes)) for object_ref, num_rows, size_bytes in shuffle_metadata],
+                [
+                    (
+                        object_ref,
+                        None if partition_ref_id is None else int(partition_ref_id),
+                        int(num_rows),
+                        int(size_bytes),
+                    )
+                    for object_ref, partition_ref_id, num_rows, size_bytes in shuffle_metadata
+                ],
                 stats.encode(),
             )
 
@@ -290,7 +310,6 @@ class RaySwordfishTaskHandle:
     result_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
     shuffle_write_info: ShuffleWriteInfoLike | None = None
-    cache_id: int | None = None
     task: asyncio.Task[RayTaskResult] | None = None
 
     async def _get_result(self) -> RayTaskResult:
@@ -299,9 +318,11 @@ class RaySwordfishTaskHandle:
                 backend, refs, stats = await self.result_handle
                 if backend == "ray":
                     ray_refs: list[RayPartitionRef] = []
-                    for object_ref, num_rows, size_bytes in refs:
+                    for object_ref, partition_ref_id, num_rows, size_bytes in refs:
                         if object_ref is None:
                             raise ValueError("Expected Ray shuffle metadata to include object refs")
+                        if partition_ref_id is not None:
+                            raise ValueError("Expected Ray shuffle metadata to not include partition ref ids")
                         ray_refs.append(RayPartitionRef(object_ref, num_rows, size_bytes))
                     return RayTaskResult.ray_shuffle_success(
                         ray_refs,
@@ -310,17 +331,17 @@ class RaySwordfishTaskHandle:
                 if backend == "flight":
                     shuffle_id = _shuffle_write_id(self.shuffle_write_info)
                     actor_address = await self.actor_handle.get_address.remote()
-                    cache_id = self.cache_id if self.cache_id is not None else 0
                     flight_refs: list[FlightShufflePartitionRef] = []
-                    for partition_idx, (object_ref, num_rows, size_bytes) in enumerate(refs):
+                    for object_ref, partition_ref_id, num_rows, size_bytes in refs:
                         if object_ref is not None:
                             raise ValueError("Expected Flight shuffle metadata to not include object refs")
+                        if partition_ref_id is None:
+                            raise ValueError("Expected Flight shuffle metadata to include partition ref ids")
                         flight_refs.append(
                             FlightShufflePartitionRef(
                                 shuffle_id,
-                                partition_idx,
                                 actor_address,
-                                cache_id,
+                                partition_ref_id,
                                 num_rows,
                                 size_bytes,
                             )
@@ -399,11 +420,13 @@ class RaySwordfishActorHandle:
             result_handle,
             self.actor_handle,
             shuffle_write_info,
-            task.id(),
         )
 
     def shutdown(self) -> None:
         ray.kill(self.actor_handle)
+
+    def clear_flight_shuffles(self, shuffle_ids: list[int]) -> int:
+        return ray.get(self.actor_handle.clear_flight_shuffles.remote(shuffle_ids))
 
 
 def _get_worker_startup_timeout() -> int:

@@ -233,6 +233,14 @@ impl PyNativeExecutor {
         Ok(())
     }
 
+    pub fn clear_flight_shuffles(&self, py: Python<'_>, shuffle_ids: Vec<u64>) -> PyResult<usize> {
+        Ok(self
+            .executor
+            .lock_py_attached(py)
+            .unwrap()
+            .clear_flight_shuffles(&shuffle_ids))
+    }
+
     #[staticmethod]
     pub fn repr_ascii(
         logical_plan_builder: &PyLogicalPlanBuilder,
@@ -391,6 +399,14 @@ impl NativeExecutor {
         self.shuffle_server_connection
             .as_ref()
             .map(|conn| conn.shuffle_address())
+    }
+
+    pub fn clear_flight_shuffles(&self, shuffle_ids: &[u64]) -> usize {
+        let Some(shuffle_server) = &self.shuffle_server else {
+            return 0;
+        };
+        common_runtime::get_io_runtime(true)
+            .block_on_current_thread(shuffle_server.clear_shuffles(shuffle_ids))
     }
 
     #[allow(clippy::too_many_arguments)]
