@@ -1,5 +1,4 @@
 use common_image::Image;
-use uuid;
 
 use crate::{
     array::ops::image::AsImageObj, datatypes::FileArray, file::DaftMediaType, lit::Literal,

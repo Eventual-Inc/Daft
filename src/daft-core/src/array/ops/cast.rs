@@ -11,7 +11,6 @@ use common_error::{DaftError, DaftResult};
 use indexmap::IndexMap;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-use uuid;
 
 #[cfg(feature = "python")]
 use crate::lit::Literal;

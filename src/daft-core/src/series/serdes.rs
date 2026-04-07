@@ -16,6 +16,7 @@ use crate::{
         },
         *,
     },
+    prelude::UuidArray,
     series::{IntoSeries, Series},
     with_match_daft_types,
 };
@@ -260,7 +261,14 @@ impl<'d> serde::Deserialize<'d> for Series {
                             .map(|opt| opt.map(|v| IntervalMonthDayNano::new(v.0, v.1, v.2))),
                     )
                     .into_series()),
-
+                    DataType::Uuid => {
+                        type PType = <<UuidType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(
+                            UuidArray::new(field, physical.downcast::<PType>().unwrap().clone())
+                                .into_series(),
+                        )
+                    }
                     DataType::Embedding(..) => {
                         type PType = <<EmbeddingType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;
@@ -330,9 +338,6 @@ impl<'d> serde::Deserialize<'d> for Series {
                         Ok(PythonArray::from_iter_pickled(&field.name, pickled)
                             .unwrap()
                             .into_series())
-                    }
-                    DataType::Uuid => {
-                        panic!("Unable to deserialize Uuid DataType");
                     }
                     DataType::Unknown => {
                         panic!("Unable to deserialize Unknown DataType");

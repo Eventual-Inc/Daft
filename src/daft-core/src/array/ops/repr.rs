@@ -1,6 +1,5 @@
 use common_display::table_display::StrValue;
 use common_error::DaftResult;
-use uuid;
 
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;

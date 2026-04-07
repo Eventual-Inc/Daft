@@ -57,7 +57,7 @@ def uuid() -> Expression:
     (e.g. two separate columns) are independent and will produce different values.
 
     Returns:
-        Expression (String Expression): An expression that generates UUID strings.
+        Expression (UUID Expression): An expression that generates UUID values.
 
     Examples:
         >>> import daft

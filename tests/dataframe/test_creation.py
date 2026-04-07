@@ -18,7 +18,7 @@ import daft
 from daft.api_annotations import APITypeError
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
-from tests.conftest import UuidType
+from tests.conftest import DaftUuidType
 
 
 class MyObj:
@@ -213,7 +213,7 @@ def test_create_dataframe_arrow_tensor_canonical(valid_data: list[dict[str, floa
     assert df.to_arrow() == expected
 
 
-def test_create_dataframe_arrow_extension_type(valid_data: list[dict[str, float]], uuid_ext_type: UuidType) -> None:
+def test_create_dataframe_arrow_extension_type(valid_data: list[dict[str, float]], uuid_ext_type: DaftUuidType) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     storage = pa.array([f"{i}".encode() for i in range(len(valid_data))])
     pydict["obj"] = pa.ExtensionArray.from_storage(uuid_ext_type, storage)
