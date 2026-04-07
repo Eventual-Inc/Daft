@@ -124,7 +124,7 @@ class TimeUnit:
 class _DataTypeProperty:
     """Descriptor that allows DataType factory methods to be accessed as properties or called as methods."""
 
-    def __init__(self, factory_func: Callable[..., Any] | classmethod, name: str):
+    def __init__(self, factory_func: Callable[..., Any] | Any, name: str):
         # Extract underlying function if a classmethod was passed
         if isinstance(factory_func, classmethod):
             factory_func = factory_func.__func__
