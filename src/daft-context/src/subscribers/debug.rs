@@ -184,17 +184,17 @@ impl DebugSubscriber {
 impl Subscriber for DebugSubscriber {
     fn on_event(&self, event: Event) -> DaftResult<()> {
         match event {
-            Event::QueryStart(e) => self.handle_query_start(e.as_ref())?,
-            Event::QueryEnd(e) => self.handle_query_end(e.as_ref())?,
-            Event::OptimizationStart(e) => self.handle_optimization_start(e.as_ref())?,
-            Event::OptimizationComplete(e) => self.handle_optimization_complete(e.as_ref())?,
-            Event::ExecStart(e) => self.handle_exec_start(e.as_ref())?,
-            Event::ExecEnd(e) => self.handle_exec_end(e.as_ref())?,
-            Event::OperatorStart(e) => self.handle_operator_start(e.as_ref())?,
-            Event::OperatorEnd(e) => self.handle_operator_end(e.as_ref())?,
-            Event::Stats(e) => self.handle_stats(e.as_ref())?,
-            Event::ProcessStats(e) => self.handle_process_stats(e.as_ref())?,
-            Event::ResultOut(e) => self.handle_result_out(e.as_ref())?,
+            Event::QueryStart(e) => self.handle_query_start(&e)?,
+            Event::QueryEnd(e) => self.handle_query_end(&e)?,
+            Event::OptimizationStart(e) => self.handle_optimization_start(&e)?,
+            Event::OptimizationComplete(e) => self.handle_optimization_complete(&e)?,
+            Event::ExecStart(e) => self.handle_exec_start(&e)?,
+            Event::ExecEnd(e) => self.handle_exec_end(&e)?,
+            Event::OperatorStart(e) => self.handle_operator_start(&e)?,
+            Event::OperatorEnd(e) => self.handle_operator_end(&e)?,
+            Event::Stats(e) => self.handle_stats(&e)?,
+            Event::ProcessStats(e) => self.handle_process_stats(&e)?,
+            Event::ResultOut(e) => self.handle_result_out(&e)?,
         }
         Ok(())
     }

@@ -10,17 +10,17 @@ use super::{QueryMetadata, QueryResult};
 
 #[derive(Debug, Clone)]
 pub enum Event {
-    QueryStart(Arc<QueryStartEvent>),
-    QueryEnd(Arc<QueryEndEvent>),
-    OptimizationStart(Arc<OptimizationStartEvent>),
-    OptimizationComplete(Arc<OptimizationCompleteEvent>),
-    ExecStart(Arc<ExecStartEvent>),
-    ExecEnd(Arc<ExecEndEvent>),
-    OperatorStart(Arc<OperatorStartEvent>),
-    OperatorEnd(Arc<OperatorEndEvent>),
-    Stats(Arc<StatsEvent>),
-    ProcessStats(Arc<ProcessStatsEvent>),
-    ResultOut(Arc<ResultOutEvent>),
+    QueryStart(QueryStartEvent),
+    QueryEnd(QueryEndEvent),
+    OptimizationStart(OptimizationStartEvent),
+    OptimizationComplete(OptimizationCompleteEvent),
+    ExecStart(ExecStartEvent),
+    ExecEnd(ExecEndEvent),
+    OperatorStart(OperatorStartEvent),
+    OperatorEnd(OperatorEndEvent),
+    Stats(StatsEvent),
+    ProcessStats(ProcessStatsEvent),
+    ResultOut(ResultOutEvent),
 }
 
 #[derive(Debug, Clone)]
@@ -70,67 +70,67 @@ impl From<&NodeInfo> for OperatorMeta {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OperatorStartEvent {
     pub header: EventHeader,
     pub operator: Arc<OperatorMeta>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OperatorEndEvent {
     pub header: EventHeader,
     pub operator: Arc<OperatorMeta>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StatsEvent {
     pub header: EventHeader,
     pub stats: Arc<Vec<(NodeID, Stats)>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ProcessStatsEvent {
     pub header: EventHeader,
     pub stats: Stats,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct QueryStartEvent {
     pub header: EventHeader,
     pub metadata: Arc<QueryMetadata>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct QueryEndEvent {
     pub header: EventHeader,
     pub result: QueryResult,
     pub duration_ms: Option<f64>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OptimizationStartEvent {
     pub header: EventHeader,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OptimizationCompleteEvent {
     pub header: EventHeader,
     pub optimized_plan: QueryPlan,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExecStartEvent {
     pub header: EventHeader,
     pub physical_plan: QueryPlan,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExecEndEvent {
     pub header: EventHeader,
     pub duration_ms: Option<f64>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ResultOutEvent {
     pub header: EventHeader,
     pub num_rows: u64,

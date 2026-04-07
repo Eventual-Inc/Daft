@@ -375,7 +375,7 @@ impl DashboardSubscriber {
         self.on_exec_end_with_id(query_id, "unknown")
     }
 
-    fn on_operator_start(&self, event: Arc<OperatorStartEvent>) -> DaftResult<()> {
+    fn on_operator_start(&self, event: &OperatorStartEvent) -> DaftResult<()> {
         if self.is_worker() {
             return Ok(());
         }
@@ -390,7 +390,7 @@ impl DashboardSubscriber {
         Ok(())
     }
 
-    fn on_stats(&self, event: Arc<StatsEvent>) -> DaftResult<()> {
+    fn on_stats(&self, event: &StatsEvent) -> DaftResult<()> {
         if self.is_worker() {
             return Ok(());
         }
@@ -426,7 +426,7 @@ impl DashboardSubscriber {
         Ok(())
     }
 
-    fn on_operator_end(&self, event: Arc<OperatorEndEvent>) -> DaftResult<()> {
+    fn on_operator_end(&self, event: &OperatorEndEvent) -> DaftResult<()> {
         if self.is_worker() {
             return Ok(());
         }
@@ -473,31 +473,31 @@ impl Subscriber for DashboardSubscriber {
     fn on_event(&self, event: Event) -> DaftResult<()> {
         match event {
             Event::QueryStart(e) => {
-                self.on_query_start(e.header.query_id.clone(), e.metadata.clone())?;
+                self.on_query_start(e.header.query_id, e.metadata)?;
             }
             Event::QueryEnd(e) => {
-                self.on_query_end(e.header.query_id.clone(), e.result.clone())?;
+                self.on_query_end(e.header.query_id, e.result)?;
             }
             Event::OptimizationStart(e) => {
-                self.on_optimization_start(e.header.query_id.clone())?;
+                self.on_optimization_start(e.header.query_id)?;
             }
             Event::OptimizationComplete(e) => {
-                self.on_optimization_end(e.header.query_id.clone(), e.optimized_plan.clone())?;
+                self.on_optimization_end(e.header.query_id, e.optimized_plan)?;
             }
             Event::ExecStart(e) => {
-                self.on_exec_start(e.header.query_id.clone(), e.physical_plan.clone())?;
+                self.on_exec_start(e.header.query_id, e.physical_plan)?;
             }
             Event::ExecEnd(e) => {
-                self.on_exec_end(e.header.query_id.clone())?;
+                self.on_exec_end(e.header.query_id)?;
             }
             Event::OperatorStart(e) => {
-                self.on_operator_start(e)?;
+                self.on_operator_start(&e)?;
             }
             Event::OperatorEnd(e) => {
-                self.on_operator_end(e)?;
+                self.on_operator_end(&e)?;
             }
             Event::Stats(e) => {
-                self.on_stats(e)?;
+                self.on_stats(&e)?;
             }
             Event::ProcessStats(_e) => {}
             Event::ResultOut(e) => {

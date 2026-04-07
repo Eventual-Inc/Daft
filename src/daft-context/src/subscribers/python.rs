@@ -44,7 +44,7 @@ fn event_class<'py>(py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> 
     events_module(py)?.getattr(name)
 }
 
-fn build_operator_started(py: Python<'_>, event: Arc<OperatorStartEvent>) -> PyResult<Py<PyAny>> {
+fn build_operator_started(py: Python<'_>, event: &OperatorStartEvent) -> PyResult<Py<PyAny>> {
     event_class(py, "OperatorStarted")?
         .call1((
             event.header.query_id.to_string(),
@@ -54,7 +54,7 @@ fn build_operator_started(py: Python<'_>, event: Arc<OperatorStartEvent>) -> PyR
         .map(Into::into)
 }
 
-fn build_operator_finished(py: Python<'_>, event: Arc<OperatorEndEvent>) -> PyResult<Py<PyAny>> {
+fn build_operator_finished(py: Python<'_>, event: &OperatorEndEvent) -> PyResult<Py<PyAny>> {
     event_class(py, "OperatorFinished")?
         .call1((
             event.header.query_id.to_string(),
@@ -64,7 +64,7 @@ fn build_operator_finished(py: Python<'_>, event: Arc<OperatorEndEvent>) -> PyRe
         .map(Into::into)
 }
 
-fn build_query_started(py: Python<'_>, event: Arc<QueryStartEvent>) -> PyResult<Py<PyAny>> {
+fn build_query_started(py: Python<'_>, event: &QueryStartEvent) -> PyResult<Py<PyAny>> {
     event_class(py, "QueryStarted")?
         .call1((
             event.header.query_id.to_string(),
@@ -73,7 +73,7 @@ fn build_query_started(py: Python<'_>, event: Arc<QueryStartEvent>) -> PyResult<
         .map(Into::into)
 }
 
-fn build_query_finished(py: Python<'_>, event: Arc<QueryEndEvent>) -> PyResult<Py<PyAny>> {
+fn build_query_finished(py: Python<'_>, event: &QueryEndEvent) -> PyResult<Py<PyAny>> {
     event_class(py, "QueryFinished")?
         .call1((
             event.header.query_id.to_string(),
@@ -85,7 +85,7 @@ fn build_query_finished(py: Python<'_>, event: Arc<QueryEndEvent>) -> PyResult<P
 
 fn build_optimization_completed(
     py: Python<'_>,
-    event: Arc<OptimizationCompleteEvent>,
+    event: &OptimizationCompleteEvent,
 ) -> PyResult<Py<PyAny>> {
     event_class(py, "OptimizationCompleted")?
         .call1((
@@ -97,14 +97,14 @@ fn build_optimization_completed(
 
 fn build_optimization_started(
     py: Python<'_>,
-    event: Arc<OptimizationStartEvent>,
+    event: &OptimizationStartEvent,
 ) -> PyResult<Py<PyAny>> {
     event_class(py, "OptimizationStarted")?
         .call1((event.header.query_id.to_string(),))
         .map(Into::into)
 }
 
-fn build_execution_started(py: Python<'_>, event: Arc<ExecStartEvent>) -> PyResult<Py<PyAny>> {
+fn build_execution_started(py: Python<'_>, event: &ExecStartEvent) -> PyResult<Py<PyAny>> {
     event_class(py, "ExecutionStarted")?
         .call1((
             event.header.query_id.to_string(),
@@ -113,7 +113,7 @@ fn build_execution_started(py: Python<'_>, event: Arc<ExecStartEvent>) -> PyResu
         .map(Into::into)
 }
 
-fn build_execution_finished(py: Python<'_>, event: Arc<ExecEndEvent>) -> PyResult<Py<PyAny>> {
+fn build_execution_finished(py: Python<'_>, event: &ExecEndEvent) -> PyResult<Py<PyAny>> {
     event_class(py, "ExecutionFinished")?
         .call1((event.header.query_id.to_string(), event.duration_ms))
         .map(Into::into)
@@ -134,14 +134,14 @@ fn build_py_stats<'py>(py: Python<'py>, stats: &[(NodeID, Stats)]) -> PyResult<B
     stats_map.into_pyobject(py).map(|obj| obj.into_any())
 }
 
-fn build_stats(py: Python<'_>, event: Arc<StatsEvent>) -> PyResult<Py<PyAny>> {
+fn build_stats(py: Python<'_>, event: &StatsEvent) -> PyResult<Py<PyAny>> {
     let py_stats = build_py_stats(py, event.stats.as_ref())?;
     event_class(py, "Stats")?
         .call1((event.header.query_id.to_string(), py_stats))
         .map(Into::into)
 }
 
-fn build_process_stats(py: Python<'_>, event: Arc<ProcessStatsEvent>) -> PyResult<Py<PyAny>> {
+fn build_process_stats(py: Python<'_>, event: &ProcessStatsEvent) -> PyResult<Py<PyAny>> {
     let py_stats = event
         .stats
         .iter()
@@ -153,7 +153,7 @@ fn build_process_stats(py: Python<'_>, event: Arc<ProcessStatsEvent>) -> PyResul
         .map(Into::into)
 }
 
-fn build_result_produced(py: Python<'_>, event: Arc<ResultOutEvent>) -> PyResult<Py<PyAny>> {
+fn build_result_produced(py: Python<'_>, event: &ResultOutEvent) -> PyResult<Py<PyAny>> {
     event_class(py, "ResultProduced")?
         .call1((event.header.query_id.to_string(), event.num_rows))
         .map(Into::into)
@@ -161,16 +161,16 @@ fn build_result_produced(py: Python<'_>, event: Arc<ResultOutEvent>) -> PyResult
 
 fn build_py_event(py: Python<'_>, event: Event) -> PyResult<Py<PyAny>> {
     match event {
-        Event::QueryStart(event) => build_query_started(py, event),
-        Event::QueryEnd(event) => build_query_finished(py, event),
-        Event::OptimizationStart(event) => build_optimization_started(py, event),
-        Event::OptimizationComplete(event) => build_optimization_completed(py, event),
-        Event::ExecStart(event) => build_execution_started(py, event),
-        Event::ExecEnd(event) => build_execution_finished(py, event),
-        Event::OperatorStart(event) => build_operator_started(py, event),
-        Event::OperatorEnd(event) => build_operator_finished(py, event),
-        Event::Stats(event) => build_stats(py, event),
-        Event::ProcessStats(event) => build_process_stats(py, event),
-        Event::ResultOut(event) => build_result_produced(py, event),
+        Event::QueryStart(event) => build_query_started(py, &event),
+        Event::QueryEnd(event) => build_query_finished(py, &event),
+        Event::OptimizationStart(event) => build_optimization_started(py, &event),
+        Event::OptimizationComplete(event) => build_optimization_completed(py, &event),
+        Event::ExecStart(event) => build_execution_started(py, &event),
+        Event::ExecEnd(event) => build_execution_finished(py, &event),
+        Event::OperatorStart(event) => build_operator_started(py, &event),
+        Event::OperatorEnd(event) => build_operator_finished(py, &event),
+        Event::Stats(event) => build_stats(py, &event),
+        Event::ProcessStats(event) => build_process_stats(py, &event),
+        Event::ResultOut(event) => build_result_produced(py, &event),
     }
 }

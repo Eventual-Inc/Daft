@@ -140,20 +140,20 @@ impl DaftContext {
         query_id: QueryID,
         metadata: Arc<QueryMetadata>,
     ) -> DaftResult<()> {
-        let event = Event::QueryStart(Arc::new(QueryStartEvent {
+        let event = Event::QueryStart(QueryStartEvent {
             header: event_header(query_id),
             metadata,
-        }));
-        self.dispatch_event(event, "notify query start")
+        });
+        self.dispatch_event(&event, "notify query start")
     }
 
     pub fn notify_query_end(&self, query_id: QueryID, result: QueryResult) {
-        let event = Event::QueryEnd(Arc::new(QueryEndEvent {
+        let event = Event::QueryEnd(QueryEndEvent {
             header: event_header(query_id),
             result,
             duration_ms: None,
-        }));
-        if let Err(e) = self.dispatch_event(event, "notify query end") {
+        });
+        if let Err(e) = self.dispatch_event(&event, "notify query end") {
             log::error!("Failed to dispatch query end event: {}", e);
         }
     }
@@ -163,19 +163,19 @@ impl DaftContext {
         query_id: QueryID,
         result: MicroPartitionRef,
     ) -> DaftResult<()> {
-        let event = Event::ResultOut(Arc::new(ResultOutEvent {
+        let event = Event::ResultOut(ResultOutEvent {
             header: event_header(query_id),
             num_rows: (result.num_rows() as u64),
             data: Some(result),
-        }));
-        self.dispatch_event(event, "notify result out")
+        });
+        self.dispatch_event(&event, "notify result out")
     }
 
     pub fn notify_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
-        let event = Event::OptimizationStart(Arc::new(OptimizationStartEvent {
+        let event = Event::OptimizationStart(OptimizationStartEvent {
             header: event_header(query_id),
-        }));
-        self.dispatch_event(event, "notify optimization start")
+        });
+        self.dispatch_event(&event, "notify optimization start")
     }
 
     pub fn notify_optimization_end(
@@ -183,43 +183,43 @@ impl DaftContext {
         query_id: QueryID,
         optimized_plan: QueryPlan,
     ) -> DaftResult<()> {
-        let event = Event::OptimizationComplete(Arc::new(OptimizationCompleteEvent {
+        let event = Event::OptimizationComplete(OptimizationCompleteEvent {
             header: event_header(query_id),
             optimized_plan,
-        }));
-        self.dispatch_event(event, "notify optimization complete")
+        });
+        self.dispatch_event(&event, "notify optimization complete")
     }
 
     pub fn notify_exec_start(&self, query_id: QueryID, physical_plan: String) -> DaftResult<()> {
-        let event = Event::ExecStart(Arc::new(ExecStartEvent {
+        let event = Event::ExecStart(ExecStartEvent {
             header: event_header(query_id),
             physical_plan: physical_plan.into(),
-        }));
-        self.dispatch_event(event, "notify exec start")
+        });
+        self.dispatch_event(&event, "notify exec start")
     }
 
     pub fn notify_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
-        let event = Event::ExecEnd(Arc::new(ExecEndEvent {
+        let event = Event::ExecEnd(ExecEndEvent {
             header: event_header(query_id),
             duration_ms: None,
-        }));
-        self.dispatch_event(event, "notify exec end")
+        });
+        self.dispatch_event(&event, "notify exec end")
     }
 
     pub fn notify_exec_operator_start(&self, query_id: QueryID, node_id: usize) -> DaftResult<()> {
-        let event = Event::OperatorStart(Arc::new(OperatorStartEvent {
+        let event = Event::OperatorStart(OperatorStartEvent {
             header: event_header(query_id),
             operator: Arc::new(OperatorMeta::from_id(node_id)),
-        }));
-        self.dispatch_event(event, "notify exec operator start")
+        });
+        self.dispatch_event(&event, "notify exec operator start")
     }
 
     pub fn notify_exec_operator_end(&self, query_id: QueryID, node_id: usize) -> DaftResult<()> {
-        let event = Event::OperatorEnd(Arc::new(OperatorEndEvent {
+        let event = Event::OperatorEnd(OperatorEndEvent {
             header: event_header(query_id),
             operator: Arc::new(OperatorMeta::from_id(node_id)),
-        }));
-        self.dispatch_event(event, "notify exec operator end")
+        });
+        self.dispatch_event(&event, "notify exec operator end")
     }
 
     pub fn notify_exec_emit_stats(
@@ -227,14 +227,14 @@ impl DaftContext {
         query_id: QueryID,
         stats: Vec<(usize, common_metrics::Stats)>,
     ) -> DaftResult<()> {
-        let event = Event::Stats(Arc::new(StatsEvent {
+        let event = Event::Stats(StatsEvent {
             header: event_header(query_id),
             stats: Arc::new(stats),
-        }));
-        self.dispatch_event(event, "notify exec emit stats")
+        });
+        self.dispatch_event(&event, "notify exec emit stats")
     }
 
-    fn dispatch_event(&self, event: Event, err_context: &'static str) -> DaftResult<()> {
+    fn dispatch_event(&self, event: &Event, err_context: &'static str) -> DaftResult<()> {
         let subscribers = self.with_state(|state| {
             state
                 .subscribers

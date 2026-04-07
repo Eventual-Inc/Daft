@@ -189,22 +189,22 @@ impl RuntimeStatsManager {
         };
 
         if let Some(snapshot) = snapshot {
-            let stats_event = Event::Stats(Arc::new(StatsEvent {
+            let stats_event = Event::Stats(StatsEvent {
                 header: event_header(query_id.clone()),
                 stats: Arc::new(vec![(node_id, snapshot.to_stats())]),
-            }));
+            });
             dispatch_event(subscribers, &stats_event, "flush node final stats");
 
-            let end_event = Event::OperatorEnd(Arc::new(OperatorEndEvent {
+            let end_event = Event::OperatorEnd(OperatorEndEvent {
                 header: event_header(query_id.clone()),
                 operator: operator_meta.clone(),
-            }));
+            });
             dispatch_event(subscribers, &end_event, "flush node operator end");
         } else {
-            let end_event = Event::OperatorEnd(Arc::new(OperatorEndEvent {
+            let end_event = Event::OperatorEnd(OperatorEndEvent {
                 header: event_header(query_id.clone()),
                 operator: operator_meta.clone(),
-            }));
+            });
             dispatch_event(subscribers, &end_event, "flush node operator end");
         }
     }
@@ -235,10 +235,10 @@ impl RuntimeStatsManager {
             .expect("Failed to serialize physical plan")
             .into();
 
-        let exec_start_event = Event::ExecStart(Arc::new(ExecStartEvent {
+        let exec_start_event = Event::ExecStart(ExecStartEvent {
             header: event_header(query_id.clone()),
             physical_plan: serialized_plan,
-        }));
+        });
         dispatch_event(&subscribers, &exec_start_event, "notify execution start");
 
         let progress_bar = match progress_bar_mode(is_flotilla_worker) {
@@ -315,10 +315,10 @@ impl RuntimeStatsManager {
                                         continue;
                                     };
 
-                                    let event = Event::OperatorStart(Arc::new(OperatorStartEvent {
+                                    let event = Event::OperatorStart(OperatorStartEvent {
                                         header: event_header(query_id.clone()),
                                         operator: operator_meta.clone(),
-                                    }));
+                                    });
                                     dispatch_event(&subscribers, &event, "notify operator start");
                                 } else if !is_initialize && active_nodes.remove(&node_id) {
                                     Self::flush_and_finalize_node(
@@ -369,11 +369,10 @@ impl RuntimeStatsManager {
                     _ = interval.tick() => {
                         if let Some(ps) = &mut process_stats {
                             let ps_stats = ps.sample();
-                            let event = Event::ProcessStats(Arc::new(
-                                ProcessStatsEvent {
-                                    header: event_header(query_id.clone()),
-                                    stats: ps_stats,
-                                }));
+                            let event = Event::ProcessStats(ProcessStatsEvent {
+                                header: event_header(query_id.clone()),
+                                stats: ps_stats,
+                            });
                             dispatch_event(&subscribers, &event, "notify process stats");
                         }
 
@@ -392,10 +391,10 @@ impl RuntimeStatsManager {
 
                         if !snapshot_container.is_empty() {
                             let snapshot_container = Arc::new(std::mem::take(&mut snapshot_container));
-                            let event = Event::Stats(Arc::new(StatsEvent {
+                            let event = Event::Stats(StatsEvent {
                                 header: event_header(query_id.clone()),
                                 stats: snapshot_container.clone(),
-                            }));
+                            });
                             dispatch_event(&subscribers, &event, "notify runtime stats");
                         }
                     }
@@ -438,10 +437,10 @@ impl RuntimeStatsManager {
                 .lock()
                 .expect("finished_snapshots lock poisoned") = Some(finished);
 
-            let exec_end_event = Event::ExecEnd(Arc::new(ExecEndEvent {
+            let exec_end_event = Event::ExecEnd(ExecEndEvent {
                 header: event_header(query_id.clone()),
                 duration_ms: None,
-            }));
+            });
             dispatch_event(&subscribers, &exec_end_event, "notify execution end");
         };
 
