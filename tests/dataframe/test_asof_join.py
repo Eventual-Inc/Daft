@@ -4,7 +4,7 @@ import pytest
 
 import daft
 from daft import col
-from daft.context import get_tests_daft_runner_name
+from tests.conftest import get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
     get_tests_daft_runner_name() == "ray",
