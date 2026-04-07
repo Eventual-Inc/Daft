@@ -1,4 +1,4 @@
-use std::{collections::HashMap, pin::Pin, sync::Arc};
+use std::{collections::HashMap, io::Cursor, pin::Pin, sync::Arc};
 
 use arrow_flight::{
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
@@ -10,8 +10,11 @@ use arrow_ipc::{
 };
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
+use daft_core::{prelude::SchemaRef, series::Series};
+use daft_recordbatch::RecordBatch;
+use daft_schema::field::FieldRef;
 use flatbuffers::FlatBufferBuilder;
-use futures::{Stream, StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
 use tokio::{io::BufReader, sync::Mutex};
 use tonic::{Request, Response, Status, transport::Server};
 
@@ -116,6 +119,56 @@ impl ShuffleFlightServer {
             .count()
     }
 
+    /// Read partition data directly from disk, bypassing the gRPC stack.
+    /// Used when the shuffle reader runs on the same node as the shuffle server.
+    pub async fn read_local_partitions(
+        &self,
+        shuffle_id: u64,
+        partition_ref_ids: &[u64],
+        schema: SchemaRef,
+    ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+        let partitions = self
+            .get_shuffle_partitions(shuffle_id, partition_ref_ids)
+            .await
+            .ok_or_else(|| {
+                DaftError::ValueError(format!(
+                    "Shuffle partitions not found for shuffle {} refs {:?}",
+                    shuffle_id, partition_ref_ids
+                ))
+            })?;
+
+        let file_paths: Vec<String> = partitions
+            .into_iter()
+            .filter_map(|p| if p.has_data() { p.file_path } else { None })
+            .collect();
+
+        if file_paths.is_empty() {
+            return Ok(futures::stream::empty().boxed());
+        }
+
+        let fields: Vec<FieldRef> = schema
+            .fields()
+            .iter()
+            .map(|f| Arc::new(f.clone()))
+            .collect();
+
+        let stream = futures::stream::iter(file_paths)
+            .then(move |file_path| {
+                let schema = schema.clone();
+                let fields = fields.clone();
+                async move {
+                    let bytes = tokio::fs::read(&file_path)
+                        .await
+                        .map_err(DaftError::IoError)?;
+                    let batches = read_ipc_to_record_batches(&bytes, &schema, &fields)?;
+                    Ok::<_, DaftError>(futures::stream::iter(batches.into_iter().map(Ok)))
+                }
+            })
+            .try_flatten();
+
+        Ok(stream.boxed())
+    }
+
     async fn get_shuffle_partitions(
         &self,
         shuffle_id: u64,
@@ -128,6 +181,34 @@ impl ShuffleFlightServer {
             .map(|partition_ref_id| shuffle_partitions.get(partition_ref_id).cloned())
             .collect()
     }
+}
+
+/// Read an Arrow IPC streaming file directly into Daft RecordBatches.
+fn read_ipc_to_record_batches(
+    bytes: &[u8],
+    schema: &SchemaRef,
+    fields: &[FieldRef],
+) -> DaftResult<Vec<RecordBatch>> {
+    let mut cursor = Cursor::new(bytes);
+    let reader = arrow_ipc::reader::StreamReader::try_new(&mut cursor, None)
+        .map_err(|e| DaftError::InternalError(format!("Error reading IPC stream: {}", e)))?;
+
+    let mut batches = Vec::new();
+    for arrow_batch_result in reader {
+        let arrow_batch = arrow_batch_result
+            .map_err(|e| DaftError::InternalError(format!("Error reading IPC batch: {}", e)))?;
+        let columns = fields
+            .iter()
+            .zip(arrow_batch.columns())
+            .map(|(field, array)| Series::from_arrow(field.clone(), array.clone()))
+            .collect::<DaftResult<Vec<_>>>()?;
+        batches.push(RecordBatch::new_with_size(
+            schema.clone(),
+            columns,
+            arrow_batch.num_rows(),
+        )?);
+    }
+    Ok(batches)
 }
 
 #[tonic::async_trait]
@@ -347,11 +428,20 @@ pub fn start_server_loop(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{
+        sync::Arc,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
-    use daft_core::prelude::{DataType, Field, Schema};
+    use daft_core::{
+        prelude::{DataType, Field, Int64Array, Schema},
+        series::IntoSeries,
+    };
+    use daft_micropartition::MicroPartition;
+    use futures::TryStreamExt;
 
     use super::*;
+    use crate::partition_store::InProgressFlightPartitionSet;
 
     fn make_schema() -> Arc<daft_schema::schema::Schema> {
         Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)]))
@@ -365,6 +455,24 @@ mod tests {
             num_rows: 0,
             size_bytes: 0,
         }
+    }
+
+    fn make_mp(values: &[i64]) -> MicroPartition {
+        let rb = daft_recordbatch::RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_values("a", values.iter().copied()).into_series(),
+        ])
+        .unwrap();
+        MicroPartition::new_loaded(make_schema(), Arc::new(vec![rb]), None)
+    }
+
+    fn make_temp_dir() -> String {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("daft-flight-server-test-{unique}"));
+        std::fs::create_dir_all(&path).unwrap();
+        path.to_string_lossy().to_string()
     }
 
     #[tokio::test]
@@ -401,5 +509,97 @@ mod tests {
         assert_eq!(server.clear_shuffles(&[11, 12, 99]).await, 2);
         assert!(server.get_shuffle_partitions(11, &[101]).await.is_none());
         assert!(server.get_shuffle_partitions(12, &[201]).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn read_local_partitions_reads_ipc_from_disk() {
+        let temp_dir = make_temp_dir();
+        let shuffle_id = 42;
+        let input_id = 7;
+
+        // Write real IPC files through the partition store.
+        let partition_set = InProgressFlightPartitionSet::try_new(
+            2,
+            std::slice::from_ref(&temp_dir),
+            input_id,
+            shuffle_id,
+            make_schema(),
+            None,
+        )
+        .unwrap();
+        partition_set
+            .push_partitioned_data(vec![make_mp(&[10, 20, 30]), make_mp(&[40])])
+            .await
+            .unwrap();
+        let registered = partition_set.close().await.unwrap();
+
+        // Register them with the flight server.
+        let server = ShuffleFlightServer::new();
+        let ref_ids: Vec<u64> = registered.iter().map(|p| p.partition_ref_id).collect();
+        server
+            .register_shuffle_partitions(shuffle_id, registered)
+            .await
+            .unwrap();
+
+        // Read back via the local disk path (no gRPC involved).
+        let stream = server
+            .read_local_partitions(shuffle_id, &ref_ids, make_schema())
+            .await
+            .unwrap();
+        let batches: Vec<RecordBatch> = stream.try_collect().await.unwrap();
+
+        let total_rows: usize = batches.iter().map(|b| b.len()).sum();
+        assert_eq!(total_rows, 4);
+
+        let all_values: Vec<i64> = batches
+            .iter()
+            .flat_map(|b| {
+                let col = b.get_column(0).i64().unwrap();
+                (0..b.len()).map(move |i| col.get(i).unwrap())
+            })
+            .collect();
+        assert_eq!(all_values, vec![10, 20, 30, 40]);
+    }
+
+    #[tokio::test]
+    async fn read_local_partitions_skips_empty_partitions() {
+        let temp_dir = make_temp_dir();
+        let shuffle_id = 43;
+
+        // Create partition set but only write to one partition.
+        let partition_set = InProgressFlightPartitionSet::try_new(
+            2,
+            std::slice::from_ref(&temp_dir),
+            1,
+            shuffle_id,
+            make_schema(),
+            None,
+        )
+        .unwrap();
+        partition_set
+            .push_partitioned_data(vec![
+                make_mp(&[100]),
+                MicroPartition::empty(Some(make_schema())),
+            ])
+            .await
+            .unwrap();
+        let registered = partition_set.close().await.unwrap();
+
+        let server = ShuffleFlightServer::new();
+        let ref_ids: Vec<u64> = registered.iter().map(|p| p.partition_ref_id).collect();
+        server
+            .register_shuffle_partitions(shuffle_id, registered)
+            .await
+            .unwrap();
+
+        let stream = server
+            .read_local_partitions(shuffle_id, &ref_ids, make_schema())
+            .await
+            .unwrap();
+        let batches: Vec<RecordBatch> = stream.try_collect().await.unwrap();
+
+        // Only the non-empty partition's data should appear.
+        let total_rows: usize = batches.iter().map(|b| b.len()).sum();
+        assert_eq!(total_rows, 1);
     }
 }
