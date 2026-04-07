@@ -156,9 +156,17 @@ impl ShuffleFlightServer {
                         .into_stream()
                         .map_err(|e| FlightError::from_external_error(Box::new(e)));
 
+                    let arrow_schema = schema.to_arrow().map_err(|e| {
+                        DaftError::InternalError(format!("Error converting schema to arrow: {}", e))
+                    })?;
+                    let options = IpcWriteOptions::default();
+                    let flight_schema = SchemaAsIpc::new(&arrow_schema, &options).into();
+                    let flight_data =
+                        futures::stream::once(async { Ok(flight_schema) }).chain(reader);
+
                     // Doing some shenanigans here to reuse existing code
                     // TODO: Refactor this to get Arrow RecordBatchStream directly using async IO
-                    let arrow_stream = FlightRecordBatchStream::new_from_flight_data(reader);
+                    let arrow_stream = FlightRecordBatchStream::new_from_flight_data(flight_data);
                     let daft_stream =
                         FlightRecordBatchStreamToDaftRecordBatchStream::new(arrow_stream, schema);
                     Ok::<_, DaftError>(daft_stream)
