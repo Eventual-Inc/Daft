@@ -96,13 +96,8 @@ impl RaySwordfishWorker {
             .expect("Failed to shutdown RaySwordfishWorker");
     }
 
-    pub fn clear_flight_shuffles(&self, py: Python<'_>, shuffle_ids: &[u64]) -> DaftResult<()> {
-        self.ray_worker_handle.call_method1(
-            py,
-            pyo3::intern!(py, "clear_flight_shuffles"),
-            (shuffle_ids.to_vec(),),
-        )?;
-        Ok(())
+    pub fn ray_worker_handle(&self, py: Python<'_>) -> Py<PyAny> {
+        self.ray_worker_handle.as_ref().clone_ref(py)
     }
 }
 

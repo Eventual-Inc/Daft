@@ -8,7 +8,9 @@ use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use pyo3::prelude::*;
 
-use super::{task::RayTaskResultHandle, worker::RaySwordfishWorker};
+use super::{
+    clear_flight_shuffle_state_on_workers, task::RayTaskResultHandle, worker::RaySwordfishWorker,
+};
 use crate::scheduling::{
     scheduler::WorkerSnapshot,
     task::{SwordfishTask, TaskContext, TaskResourceRequest},

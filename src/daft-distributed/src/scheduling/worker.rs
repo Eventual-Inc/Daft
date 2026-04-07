@@ -147,11 +147,11 @@ pub(crate) mod tests {
             Ok(())
         }
 
-        fn clear_flight_shuffles(&self, _shuffle_ids: &[u64]) -> DaftResult<()> {
+        fn clear_flight_shuffles(&self, shuffle_ids: &[u64]) -> DaftResult<()> {
             self.clear_flight_shuffle_calls
                 .lock()
                 .expect("Failed to lock clear_flight_shuffle_calls")
-                .push(_shuffle_ids.to_vec());
+                .push(shuffle_ids.to_vec());
             Ok(())
         }
 
