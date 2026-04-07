@@ -1,18 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { main } from "@/lib/utils";
 import { ExecutingState, OperatorInfo, PhysicalPlanNode } from "./types";
 import {
   getStatusIcon,
   formatStatValue,
   formatDuration,
+  statNumericValue,
   ROWS_IN_STAT_KEY,
   ROWS_OUT_STAT_KEY,
+  BYTES_IN_STAT_KEY,
+  BYTES_OUT_STAT_KEY,
   DURATION_US_STAT_KEY,
 } from "./stats-utils";
 import ProgressTable from "./progress-table";
 import TreeLayout from "./tree-layout";
+import EdgeLabel from "./edge-label";
 import { getHeatmapStyle, FINISHED_STYLE } from "./tree-colors";
 
 function getCpuSec(operator?: OperatorInfo): number {
@@ -34,6 +38,28 @@ function getCountStat(
 }
 
 /**
+ * NodeType variants where (rows_in - rows_out) is a meaningful queue-depth
+ * signal — i.e. the operator is a true 1:1 row transform in steady state.
+ *
+ * Excluded on purpose:
+ *   - Reductive: Filter, Sample, Limit (rows_in > rows_out by design,
+ *     would otherwise be misread as a stuck queue)
+ *   - Amplifying: Explode, Unpivot (rows_in < rows_out)
+ *   - Multi-input / variable cardinality: Concat, all join variants
+ *   - Blocking sinks (Aggregate, Sort, Write, ...) and sources — handled
+ *     by cpu_fraction alone
+ */
+const QUEUE_SIGNAL_NODE_TYPES = new Set<string>([
+  "Project",
+  "UDFProject",
+  "VLLMProject",
+  "AsyncUDFProject",
+  "DistributedActorPoolProject",
+  "IntoBatches",
+  "MonotonicallyIncreasingId",
+]);
+
+/**
  * Combined bottleneck signal in [0, 1].
  *
  * Two signals, take whichever is louder:
@@ -41,15 +67,13 @@ function getCountStat(
  *      — flags CPU-bound work (image_decode, image_resize, sync compute).
  *   2. queue_fraction = (rows_in - rows_out) / rows_in
  *      — flags ops sitting on input they haven't emitted (UDF predict
- *        batching for GPU, async stalls). Only meaningful for ops where
- *        rows.in/rows.out are paired 1:1; we restrict it to Intermediate
- *        and StreamingSink nodes that actually emit a rows.out stat.
- *
- * Sources, BlockingSinks, and Write sinks are intentionally excluded from
- * the queue signal because their in/out asymmetry is by design.
+ *        batching for GPU, async stalls). Only applied to operators in
+ *        QUEUE_SIGNAL_NODE_TYPES so that reductive/amplifying ops don't
+ *        produce false positives.
  */
 function getBottleneckIntensity(
   operator: OperatorInfo | undefined,
+  nodeType: string | undefined,
   maxCpuSec: number,
 ): number {
   if (!operator) return 0;
@@ -58,8 +82,7 @@ function getBottleneckIntensity(
     maxCpuSec > 0 ? Math.min(1, getCpuSec(operator) / maxCpuSec) : 0;
 
   let queueFraction = 0;
-  const cat = operator.node_info?.node_category;
-  if (cat === "Intermediate" || cat === "StreamingSink") {
+  if (nodeType && QUEUE_SIGNAL_NODE_TYPES.has(nodeType)) {
     const rowsIn = getCountStat(operator, ROWS_IN_STAT_KEY);
     const rowsOut = getCountStat(operator, ROWS_OUT_STAT_KEY);
     if (rowsIn != null && rowsOut != null && rowsIn > 0) {
@@ -214,6 +237,34 @@ export default function PhysicalPlanTree({
     ...Object.values(operators).map(getCpuSec),
   );
 
+  const maxBytes = useMemo(() => {
+    let m = 0;
+    for (const op of Object.values(operators)) {
+      const out = statNumericValue(op.stats[BYTES_OUT_STAT_KEY]);
+      if (out > m) m = out;
+    }
+    return m;
+  }, [operators]);
+
+  const renderEdge = (
+    _parent: PhysicalPlanNode,
+    child: PhysicalPlanNode,
+    position: "single" | "branch",
+  ) => {
+    const childOp = operators[child.id];
+    const bytesOut = childOp ? statNumericValue(childOp.stats[BYTES_OUT_STAT_KEY]) : 0;
+    const bytesIn = childOp ? statNumericValue(childOp.stats[BYTES_IN_STAT_KEY]) : 0;
+    const amplification = bytesIn > 0 ? bytesOut / bytesIn : 0;
+    return (
+      <EdgeLabel
+        bytes={bytesOut}
+        amplification={amplification}
+        maxBytes={maxBytes}
+        position={position}
+      />
+    );
+  };
+
   return (
     <div className="bg-zinc-900 h-full flex flex-col">
       {/* View toggle */}
@@ -263,7 +314,11 @@ export default function PhysicalPlanTree({
               getChildren={(node) => node.children ?? []}
               renderNode={(node) => {
                 const op = operators[node.id];
-                const intensity = getBottleneckIntensity(op, maxCpuSec);
+                const intensity = getBottleneckIntensity(
+                  op,
+                  node.type,
+                  maxCpuSec,
+                );
                 return (
                   <PhysicalNodeCard
                     node={node}
@@ -272,6 +327,7 @@ export default function PhysicalPlanTree({
                   />
                 );
               }}
+              renderEdge={renderEdge}
             />
           </div>
         ) : viewMode === "json" && plan ? (

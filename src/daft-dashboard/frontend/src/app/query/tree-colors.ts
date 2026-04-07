@@ -13,7 +13,8 @@ export const defaultColor = { bg: "bg-zinc-900", border: "border-zinc-600", text
 /**
  * Heatmap style for an execution node, encoding bottleneck intensity as color.
  * intensity ∈ [0, 1] — 0 is "idle" (blends with background), 1 is "hot" (bottleneck).
- * Three-stop gradient: zinc-900 → amber-800 → red-700.
+ * Three-stop gradient through dusty/desaturated warm tones — reads as "slow",
+ * not "error".
  */
 export function getHeatmapStyle(intensity: number): {
   backgroundColor: string;
@@ -21,8 +22,8 @@ export function getHeatmapStyle(intensity: number): {
 } {
   const t = Math.max(0, Math.min(1, intensity));
   const cold: [number, number, number] = [24, 24, 27];
-  const warm: [number, number, number] = [146, 64, 14];
-  const hot: [number, number, number] = [185, 28, 28];
+  const warm: [number, number, number] = [70, 48, 28];
+  const hot: [number, number, number] = [110, 58, 42];
 
   const lerp = (a: number, b: number, u: number) => a + (b - a) * u;
   const mix = (a: [number, number, number], b: [number, number, number], u: number) =>
@@ -33,7 +34,7 @@ export function getHeatmapStyle(intensity: number): {
 
   return {
     backgroundColor: `rgb(${r}, ${g}, ${b})`,
-    borderColor: `rgb(${Math.min(255, r + 70)}, ${Math.min(255, g + 70)}, ${Math.min(255, b + 70)})`,
+    borderColor: `rgb(${Math.min(255, r + 45)}, ${Math.min(255, g + 45)}, ${Math.min(255, b + 45)})`,
   };
 }
 
@@ -42,3 +43,29 @@ export const FINISHED_STYLE: { backgroundColor: string; borderColor: string } = 
   backgroundColor: "rgb(20, 83, 45)",
   borderColor: "rgb(34, 122, 64)",
 };
+
+/**
+ * Style for an amplification badge on an edge.
+ * Cyan for expansion (>1×), purple for reduction (<1×), neutral otherwise.
+ */
+export function getAmplificationStyle(amplification: number): {
+  borderColor: string;
+  textColor: string;
+} {
+  if (amplification > 1) {
+    return {
+      borderColor: "rgb(34, 211, 238)",
+      textColor: "rgb(165, 243, 252)",
+    };
+  }
+  if (amplification > 0 && amplification < 1) {
+    return {
+      borderColor: "rgb(192, 132, 252)",
+      textColor: "rgb(233, 213, 255)",
+    };
+  }
+  return {
+    borderColor: "rgb(82, 82, 91)",
+    textColor: "rgb(161, 161, 170)",
+  };
+}
