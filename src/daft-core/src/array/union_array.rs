@@ -16,8 +16,8 @@ use crate::{
 pub struct UnionArray {
     pub field: Arc<Field>,
     pub children: Vec<Series>,
-    ids: ScalarBuffer<i8>,
-    offsets: Option<ScalarBuffer<i32>>,
+    ids: Vec<i8>,
+    offsets: Option<Vec<i32>>,
     id_map: [usize; 128],
 }
 
@@ -35,8 +35,6 @@ impl UnionArray {
         offsets: Option<Vec<i32>>,
     ) -> Self {
         let field: Arc<Field> = field.into();
-        let ids: ScalarBuffer<i8> = ScalarBuffer::from(ids);
-        let offsets: Option<ScalarBuffer<i32>> = offsets.map(ScalarBuffer::from);
         match &field.as_ref().dtype {
             DataType::Union(fields, type_ids, mode) => {
                 assert!(
@@ -103,7 +101,7 @@ impl UnionArray {
         }
     }
 
-    pub fn ids(&self) -> &ScalarBuffer<i8> {
+    pub fn ids(&self) -> &Vec<i8> {
         &self.ids
     }
 
@@ -127,7 +125,7 @@ impl UnionArray {
         &self.field
     }
 
-    pub fn offsets(&self) -> &Option<ScalarBuffer<i32>> {
+    pub fn offsets(&self) -> &Option<Vec<i32>> {
         &self.offsets
     }
 
@@ -190,7 +188,7 @@ impl UnionArray {
         let (offsets, children) = match self.offsets.as_ref() {
             // If dense union, slice offsets
             Some(offsets) => {
-                let sliced_offsets = offsets.slice(start, end - start);
+                let sliced_offsets = offsets[start..end].to_vec();
                 (Some(sliced_offsets), self.children.clone())
             }
             // Otherwise need to slice sparse children
@@ -206,9 +204,9 @@ impl UnionArray {
 
         Ok(Self::new(
             self.field.clone(),
-            self.ids.slice(start, end - start).to_vec(),
+            self.ids[start..end].to_vec(),
             children,
-            offsets.map(|o| o.to_vec()),
+            offsets,
         ))
     }
 
@@ -228,22 +226,20 @@ impl UnionArray {
             .map(|x| x.to_arrow())
             .collect::<DaftResult<Vec<ArrayRef>>>()?;
 
+        let ids: ScalarBuffer<i8> = ScalarBuffer::from(self.ids.clone());
+        let offsets: Option<ScalarBuffer<i32>> = self.offsets.clone().map(ScalarBuffer::from);
+
         Ok(Arc::new(unsafe {
-            arrow::array::UnionArray::new_unchecked(
-                fields.clone(),
-                self.ids.clone(),
-                self.offsets.clone(),
-                children,
-            )
+            arrow::array::UnionArray::new_unchecked(fields.clone(), ids, offsets, children)
         }) as _)
     }
 
     pub fn with_nulls(&self, _nulls: Option<arrow::buffer::NullBuffer>) -> DaftResult<Self> {
         Ok(Self::new(
             self.field.clone(),
-            self.ids.to_vec(),
+            self.ids.clone(),
             self.children.clone(),
-            self.offsets.as_ref().map(|o| o.to_vec()),
+            self.offsets.clone(),
         ))
     }
 }
