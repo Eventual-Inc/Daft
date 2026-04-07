@@ -109,13 +109,17 @@ impl ColumnRangeStatistics {
         match self {
             Self::Missing => TruthValue::Maybe,
             Self::Loaded(lower, upper) => {
-                let lower = lower.bool().unwrap().get(0).unwrap();
-                let upper = upper.bool().unwrap().get(0).unwrap();
+                // If the series can't be cast to bool (e.g. Null-typed from null substitution)
+                // or contains a null value, treat as Maybe (conservative).
+                let lower = lower.bool().ok().and_then(|b| b.get(0));
+                let upper = upper.bool().ok().and_then(|b| b.get(0));
                 match (lower, upper) {
-                    (false, false) => TruthValue::False,
-                    (false, true) => TruthValue::Maybe,
-                    (true, true) => TruthValue::True,
-                    (true, false) => panic!("Upper is false and lower is true; Invalid states!"),
+                    (Some(false), Some(false)) => TruthValue::False,
+                    (Some(true), Some(true)) => TruthValue::True,
+                    (Some(true), Some(false)) => {
+                        panic!("Upper is false and lower is true; Invalid states!")
+                    }
+                    _ => TruthValue::Maybe,
                 }
             }
         }
@@ -268,6 +272,8 @@ impl From<Error> for crate::Error {
 #[cfg(test)]
 mod test {
 
+    use std::ops::Not;
+
     use daft_core::prelude::*;
 
     use super::ColumnRangeStatistics;
@@ -284,6 +290,43 @@ mod test {
             Some(Int32Array::from_slice("r", &[4]).into_series()),
         )?;
         assert_eq!(l.lt(&r)?.to_truth_value(), TruthValue::Maybe);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_not_boolean_stats() -> crate::Result<()> {
+        // NOT of a True-range → False, NOT of a False-range → True.
+        let all_true = ColumnRangeStatistics::from_truth_value(TruthValue::True);
+        assert_eq!(all_true.not()?.to_truth_value(), TruthValue::False);
+
+        let all_false = ColumnRangeStatistics::from_truth_value(TruthValue::False);
+        assert_eq!(all_false.not()?.to_truth_value(), TruthValue::True);
+
+        let maybe = ColumnRangeStatistics::from_truth_value(TruthValue::Maybe);
+        assert_eq!(maybe.not()?.to_truth_value(), TruthValue::Maybe);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_not_null_stats_is_missing() -> crate::Result<()> {
+        // NOT of Null-typed stats (schema evolution: missing column substituted with null_lit)
+        // must conservatively return Missing, not prune the row group.
+        let null_series = NullArray::full_null("x", &DataType::Null, 1).into_series();
+        let null_stats = ColumnRangeStatistics::new(Some(null_series.clone()), Some(null_series))?;
+        let result = null_stats.not()?;
+        assert_eq!(result, ColumnRangeStatistics::Missing);
+        assert_eq!(result.to_truth_value(), TruthValue::Maybe);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_not_missing_stats_is_missing() -> crate::Result<()> {
+        // NOT of Missing stays Missing.
+        let result = ColumnRangeStatistics::Missing.not()?;
+        assert_eq!(result, ColumnRangeStatistics::Missing);
 
         Ok(())
     }

@@ -10,10 +10,12 @@ common-image = {workspace = true}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
+image = {workspace = true}
 log = {workspace = true}
 serde = {workspace = true}
 typetag = {workspace = true}
 rayon.workspace = true
+rustfft.workspace = true
 
 [dev-dependencies]
 criterion = {workspace = true}

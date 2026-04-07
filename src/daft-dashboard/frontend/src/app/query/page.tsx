@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { toHumanReadableDate, main, getEngineName } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import LoadingPage from "@/components/loading";
@@ -27,6 +27,7 @@ import ResultPreview from "./result-preview";
 function QueryPageInner() {
   const searchParams = useSearchParams();
   const queryId = searchParams.get("id");
+  const debug = useMemo(() => searchParams.has("debug"), [searchParams]);
   const [query, setQuery] = useState<QueryInfo | null>(null);
 
   useEffect(() => {
@@ -40,20 +41,23 @@ function QueryPageInner() {
     // These overwrite
     es.addEventListener("initial_state", event => {
       const data: QueryInfo = JSON.parse(event.data);
+      if (debug) console.log("[debug] initial_state (query)", data);
       setQuery(data);
     });
     // TODO: Consistent ordering of statistics
     es.addEventListener("query_info", event => {
       const data: QueryInfo = JSON.parse(event.data);
+      if (debug) console.log("[debug] query_info", data);
       setQuery(data);
     });
     // Merges with existing info, preserving the current status
     es.addEventListener("operator_info", event => {
+      const data: Record<number, OperatorInfo> = JSON.parse(event.data);
+      if (debug) console.log("[debug] operator_info", data);
       setQuery(prev => {
         if (!prev) return prev;
         if (!("exec_info" in prev.state)) return prev;
 
-        const data: Record<number, OperatorInfo> = JSON.parse(event.data);
         const new_exec_info = { ...prev.state.exec_info, operators: data };
         return {
           ...prev,
@@ -65,7 +69,7 @@ function QueryPageInner() {
       console.info("Closing query SSE endpoint");
       es.close();
     };
-  }, [queryId, setQuery]);
+  }, [queryId, debug, setQuery]);
 
   if (!query) {
     return <LoadingPage />;

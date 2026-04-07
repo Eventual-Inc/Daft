@@ -18,9 +18,10 @@ use tracing::info_span;
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
+    batch_manager::BatchManager,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
-    dynamic_batching::{BatchManager, BatchingStrategy},
+    dynamic_batching::BatchingStrategy,
     pipeline::{
         BuilderContext, InputId, MorselSizeRequirement, NodeName, PipelineEvent, PipelineMessage,
         PipelineNode, next_event,
@@ -421,6 +422,9 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                             &mut tasks,
                         );
                     }
+                }
+                PipelineEvent::ShuffleMetadata => {
+                    unreachable!("StreamingSinkNode should not receive shuffle metadata")
                 }
                 PipelineEvent::InputClosed => {
                     for p in inputs.values_mut() {

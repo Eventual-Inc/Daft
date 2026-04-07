@@ -111,10 +111,10 @@ crate-type = ["cdylib"]
 name = "daft"
 
 [package]
-edition = "2024"
+edition = {workspace = true}
 name = "daft"
 publish = false
-version = "0.3.0-dev0"
+version = {workspace = true}
 # Exclude unnecessary files from sdist
 exclude = [
   "examples/dvector",
@@ -359,6 +359,7 @@ tonic-build = "0.14.2"
 tracing = {version = "0.1", features = ["log"]}
 tracing-subscriber = {version = "0.3.22", default-features = false, features = ["std", "fmt", "ansi", "env-filter", "json"]}
 typetag = "0.2.21"
+rustfft = "6"
 url = "2.4.0"
 uuid = {version = "1.19.0", features = ["v4"]}
 xxhash-rust = {version = "0.8.15", features = ["const_xxh3", "const_xxh64", "const_xxh32", "xxh64", "xxh3", "xxh32"]}

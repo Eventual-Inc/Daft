@@ -13,6 +13,7 @@ use daft_dsl::{
     python_udf::PyScalarFn,
 };
 
+use super::inline_agg::can_inline_agg;
 use crate::RecordBatch;
 
 impl RecordBatch {
@@ -47,6 +48,11 @@ impl RecordBatch {
                     .collect::<Vec<_>>(),
                 group_by,
             );
+        }
+
+        // Fast path: inline aggregation for supported agg types (count, sum, min, max).
+        if can_inline_agg(to_agg, self) {
+            return self.agg_groupby_inline(to_agg, group_by);
         }
 
         // Table with just the groupby columns.

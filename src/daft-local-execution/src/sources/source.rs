@@ -248,6 +248,9 @@ impl PipelineNode for SourceNode {
                         PipelineMessage::Flush(input_id) => {
                             per_input_stats.remove(input_id);
                         }
+                        PipelineMessage::ShuffleMetadata { .. } => {
+                            unreachable!("SourceNode should not receive shuffle metadata")
+                        }
                     }
                     if destination_sender.send(msg).await.is_err() {
                         break;

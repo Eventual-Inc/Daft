@@ -25,11 +25,16 @@ use crate::{
     },
     resource_manager::MemoryManager,
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
+    shuffle_metadata::ShuffleMetadata,
 };
 
 pub(crate) type BlockingSinkSinkResult<Op> =
     OperatorOutput<DaftResult<<Op as BlockingSink>::State>>;
-pub(crate) type BlockingSinkFinalizeResult = OperatorOutput<DaftResult<Vec<MicroPartition>>>;
+pub(crate) enum BlockingSinkOutput {
+    Partitions(Vec<MicroPartition>),
+    ShuffleMetadata(ShuffleMetadata),
+}
+pub(crate) type BlockingSinkFinalizeResult = OperatorOutput<DaftResult<BlockingSinkOutput>>;
 
 pub(crate) trait BlockingSink: Send + Sync {
     type State: Send + Sync + Unpin;
@@ -179,14 +184,23 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
     ) {
         tasks.spawn(async move {
             let output = op.finalize(per_input.states, &finalize_spawner).await??;
-            for partition in output {
-                per_input.runtime_stats.add_rows_out(partition.len() as u64);
-                let _ = output_tx
-                    .send(PipelineMessage::Morsel {
-                        input_id,
-                        partition,
-                    })
-                    .await;
+            match output {
+                BlockingSinkOutput::Partitions(partitions) => {
+                    for partition in partitions {
+                        per_input.runtime_stats.add_rows_out(partition.len() as u64);
+                        let _ = output_tx
+                            .send(PipelineMessage::Morsel {
+                                input_id,
+                                partition,
+                            })
+                            .await;
+                    }
+                }
+                BlockingSinkOutput::ShuffleMetadata(metadata) => {
+                    let _ = output_tx
+                        .send(PipelineMessage::ShuffleMetadata { input_id, metadata })
+                        .await;
+                }
             }
             let _ = output_tx.send(PipelineMessage::Flush(input_id)).await;
             Ok(TaskResult::Finalized)
@@ -280,6 +294,9 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     per_input.runtime_stats.add_rows_in(partition.len() as u64);
                     per_input.pending.push_back(partition);
                     per_input.flush_pending(&mut tasks, &op, &task_spawner, input_id)?;
+                }
+                PipelineEvent::ShuffleMetadata => {
+                    unreachable!("BlockingSinkNode should not receive shuffle metadata from child")
                 }
                 PipelineEvent::Flush(input_id) => {
                     if let Some(p) = inputs.get_mut(&input_id) {

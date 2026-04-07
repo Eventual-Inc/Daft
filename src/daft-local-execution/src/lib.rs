@@ -1,5 +1,6 @@
 #![feature(associated_type_defaults)]
 
+mod batch_manager;
 mod buffer;
 mod channel;
 mod concat;
@@ -11,6 +12,7 @@ mod pipeline;
 mod resource_manager;
 mod run;
 mod runtime_stats;
+mod shuffle_metadata;
 mod sinks;
 mod sources;
 mod streaming_sink;
