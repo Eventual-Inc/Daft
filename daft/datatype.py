@@ -624,23 +624,61 @@ class DataType:
         return cls._from_pydatatype(PyDataType.python())
 
     # Properties that can also be called as methods for backward compatibility
-    int8 = _DataTypeProperty(_int8, "int8")
-    int16 = _DataTypeProperty(_int16, "int16")
-    int32 = _DataTypeProperty(_int32, "int32")
-    int64 = _DataTypeProperty(_int64, "int64")
-    uint8 = _DataTypeProperty(_uint8, "uint8")
-    uint16 = _DataTypeProperty(_uint16, "uint16")
-    uint32 = _DataTypeProperty(_uint32, "uint32")
-    uint64 = _DataTypeProperty(_uint64, "uint64")
-    float32 = _DataTypeProperty(_float32, "float32")
-    float64 = _DataTypeProperty(_float64, "float64")
-    string = _DataTypeProperty(_string, "string")
-    bool = _DataTypeProperty(_bool, "bool")
-    binary = _DataTypeProperty(_binary, "binary")
-    null = _DataTypeProperty(_null, "null")
-    date = _DataTypeProperty(_date, "date")
-    interval = _DataTypeProperty(_interval, "interval")
-    python = _DataTypeProperty(_python, "python")
+    # For mypy, we provide type stubs that return DataType directly
+    if TYPE_CHECKING:
+        # These stubs help mypy understand that DataType.int64() returns DataType
+        @staticmethod
+        def int8() -> DataType: ...
+        @staticmethod
+        def int16() -> DataType: ...
+        @staticmethod
+        def int32() -> DataType: ...
+        @staticmethod
+        def int64() -> DataType: ...
+        @staticmethod
+        def uint8() -> DataType: ...
+        @staticmethod
+        def uint16() -> DataType: ...
+        @staticmethod
+        def uint32() -> DataType: ...
+        @staticmethod
+        def uint64() -> DataType: ...
+        @staticmethod
+        def float32() -> DataType: ...
+        @staticmethod
+        def float64() -> DataType: ...
+        @staticmethod
+        def string() -> DataType: ...
+        @staticmethod
+        def bool() -> DataType: ...
+        @staticmethod
+        def binary() -> DataType: ...
+        @staticmethod
+        def null() -> DataType: ...
+        @staticmethod
+        def date() -> DataType: ...
+        @staticmethod
+        def interval() -> DataType: ...
+        @staticmethod
+        def python() -> DataType: ...
+    else:
+        int8 = _DataTypeProperty(_int8, "int8")
+        int16 = _DataTypeProperty(_int16, "int16")
+        int32 = _DataTypeProperty(_int32, "int32")
+        int64 = _DataTypeProperty(_int64, "int64")
+        uint8 = _DataTypeProperty(_uint8, "uint8")
+        uint16 = _DataTypeProperty(_uint16, "uint16")
+        uint32 = _DataTypeProperty(_uint32, "uint32")
+        uint64 = _DataTypeProperty(_uint64, "uint64")
+        float32 = _DataTypeProperty(_float32, "float32")
+        float64 = _DataTypeProperty(_float64, "float64")
+        string = _DataTypeProperty(_string, "string")
+        bool = _DataTypeProperty(_bool, "bool")  # type: ignore[misc]
+        binary = _DataTypeProperty(_binary, "binary")
+        null = _DataTypeProperty(_null, "null")
+        date = _DataTypeProperty(_date, "date")
+        interval = _DataTypeProperty(_interval, "interval")
+        python = _DataTypeProperty(_python, "python")
 
     @datatype_constructor
     @classmethod
