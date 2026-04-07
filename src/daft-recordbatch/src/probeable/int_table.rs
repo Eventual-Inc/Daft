@@ -27,7 +27,7 @@ where
     const TABLE_IDX_SHIFT: usize = 36;
     const LOWER_MASK: u64 = (1 << Self::TABLE_IDX_SHIFT) - 1;
 
-    const DEFAULT_SIZE: usize = 32;
+    const DEFAULT_SIZE: usize = 256;
 
     pub(crate) fn new() -> DaftResult<Self> {
         let hash_table = HashMap::with_capacity(Self::DEFAULT_SIZE);
@@ -43,7 +43,7 @@ where
     ) -> DaftResult<impl Iterator<Item = Option<V::ProbeOutput<'a>>> + 'a> {
         Ok(input.into_iter().map(|val| {
             let val = val?;
-            self.hash_table.get(val).map(|indices| indices.probe_out())
+            self.hash_table.get(&val).map(|indices| indices.probe_out())
         }))
     }
 
@@ -54,7 +54,7 @@ where
             };
 
             let idx = (self.num_tables << Self::TABLE_IDX_SHIFT) | i;
-            self.hash_table.entry(*h).or_default().add_row(idx as u64);
+            self.hash_table.entry(h).or_default().add_row(idx as u64);
         }
 
         self.num_tables += 1;

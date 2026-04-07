@@ -93,8 +93,10 @@ impl<T: ProbeContent> ProbeTable<T> {
         #[allow(clippy::needless_collect)]
         let hash_vec: Vec<Option<u64>> = hashes.iter().collect();
 
-        Ok(Box::new(hash_vec.into_iter().enumerate().map(
-            move |(idx, h)| match h {
+        Ok(hash_vec
+            .into_iter()
+            .enumerate()
+            .map(move |(idx, h)| match h {
                 Some(h) => {
                     if let Some((_, indices)) = self.hash_table.raw_entry().from_hash(h, |other| {
                         h == other.hash && {
@@ -103,14 +105,13 @@ impl<T: ProbeContent> ProbeTable<T> {
                             comparators[other_table_idx](other_row_idx, idx)
                         }
                     }) {
-                        Some(indices.as_slice())
+                        Some(indices.probe_out())
                     } else {
                         None
                     }
                 }
                 None => None,
-            },
-        )))
+            }))
     }
 
     fn add_table(&mut self, table: &RecordBatch) -> DaftResult<()> {

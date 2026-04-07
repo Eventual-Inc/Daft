@@ -214,7 +214,7 @@ pub fn build_multi_array_bicompare(
 impl<T> DataArray<T>
 where
     T: DaftIntegerType,
-    <T as DaftNumericType>::Native: Ord,
+    <T as DaftNumericType>::Native: Ord + std::hash::Hash,
     <<<T as DaftNumericType>::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native:
         Ord,
 {
