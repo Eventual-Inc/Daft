@@ -124,11 +124,11 @@ class TimeUnit:
 class _DataTypeProperty:
     """Descriptor that allows DataType factory methods to be accessed as properties or called as methods."""
 
-    def __init__(self, factory_func: Callable[..., Any], name: str):
+    def __init__(self, factory_func: Callable[..., Any] | classmethod, name: str):
         # Extract underlying function if a classmethod was passed
         if isinstance(factory_func, classmethod):
             factory_func = factory_func.__func__
-        self._factory_func = factory_func
+        self._factory_func: Callable[..., Any] = factory_func
         self._name = name
         _DATATYPE_CONSTRUCTOR_SET.add(name)
 
@@ -624,23 +624,23 @@ class DataType:
         return cls._from_pydatatype(PyDataType.python())
 
     # Properties that can also be called as methods for backward compatibility
-    int8 = _DataTypeProperty(_int8, "int8")  # type: ignore[arg-type]
-    int16 = _DataTypeProperty(_int16, "int16")  # type: ignore[arg-type]
-    int32 = _DataTypeProperty(_int32, "int32")  # type: ignore[arg-type]
-    int64 = _DataTypeProperty(_int64, "int64")  # type: ignore[arg-type]
-    uint8 = _DataTypeProperty(_uint8, "uint8")  # type: ignore[arg-type]
-    uint16 = _DataTypeProperty(_uint16, "uint16")  # type: ignore[arg-type]
-    uint32 = _DataTypeProperty(_uint32, "uint32")  # type: ignore[arg-type]
-    uint64 = _DataTypeProperty(_uint64, "uint64")  # type: ignore[arg-type]
-    float32 = _DataTypeProperty(_float32, "float32")  # type: ignore[arg-type]
-    float64 = _DataTypeProperty(_float64, "float64")  # type: ignore[arg-type]
-    string = _DataTypeProperty(_string, "string")  # type: ignore[arg-type]
-    bool = _DataTypeProperty(_bool, "bool")  # type: ignore[arg-type]
-    binary = _DataTypeProperty(_binary, "binary")  # type: ignore[arg-type]
-    null = _DataTypeProperty(_null, "null")  # type: ignore[arg-type]
-    date = _DataTypeProperty(_date, "date")  # type: ignore[arg-type]
-    interval = _DataTypeProperty(_interval, "interval")  # type: ignore[arg-type]
-    python = _DataTypeProperty(_python, "python")  # type: ignore[arg-type]
+    int8 = _DataTypeProperty(_int8, "int8")
+    int16 = _DataTypeProperty(_int16, "int16")
+    int32 = _DataTypeProperty(_int32, "int32")
+    int64 = _DataTypeProperty(_int64, "int64")
+    uint8 = _DataTypeProperty(_uint8, "uint8")
+    uint16 = _DataTypeProperty(_uint16, "uint16")
+    uint32 = _DataTypeProperty(_uint32, "uint32")
+    uint64 = _DataTypeProperty(_uint64, "uint64")
+    float32 = _DataTypeProperty(_float32, "float32")
+    float64 = _DataTypeProperty(_float64, "float64")
+    string = _DataTypeProperty(_string, "string")
+    bool = _DataTypeProperty(_bool, "bool")
+    binary = _DataTypeProperty(_binary, "binary")
+    null = _DataTypeProperty(_null, "null")
+    date = _DataTypeProperty(_date, "date")
+    interval = _DataTypeProperty(_interval, "interval")
+    python = _DataTypeProperty(_python, "python")
 
     @datatype_constructor
     @classmethod
