@@ -3496,7 +3496,7 @@ class DataFrame:
             left_by_exprs = column_inputs_to_expressions(by_tuple)
             right_by_exprs = column_inputs_to_expressions(by_tuple)
         else:
-            if left_by is None:
+            if left_by is None and right_by is None:
                 left_by_exprs = []
                 right_by_exprs = []
             elif left_by is None or right_by is None:

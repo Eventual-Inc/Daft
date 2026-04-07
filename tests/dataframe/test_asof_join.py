@@ -42,6 +42,12 @@ class TestAsofJoinParameterValidation:
         with pytest.raises(ValueError, match="Specify both"):
             left.join_asof(right, on="ts", left_by="g")
 
+    def test_right_by_without_left_by_raises(self):
+        left = daft.from_pydict({"ts": [1], "g": ["a"]})
+        right = daft.from_pydict({"ts": [1], "h": ["a"]})
+        with pytest.raises(ValueError, match="Specify both"):
+            left.join_asof(right, on="ts", right_by="h")
+
     def test_left_by_right_by_length_mismatch_raises(self):
         left = daft.from_pydict({"ts": [1], "g1": ["a"], "g2": ["b"]})
         right = daft.from_pydict({"ts": [1], "h1": ["a"]})
