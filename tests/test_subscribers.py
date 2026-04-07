@@ -84,8 +84,7 @@ class MockSubscriber(Subscriber):
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
 def test_capture_states(monkeypatch):
     subscriber = MockSubscriber()
-    ctx = daft.context.get_context()
-    ctx.attach_subscriber("mock", subscriber)
+    daft.attach_subscriber("mock", subscriber)
 
     def inject_keyboard_interrupt():
         threading.Timer(2.0, lambda: signal.raise_signal(signal.SIGINT)).start()
@@ -152,10 +151,8 @@ def test_show_fires_query_end():
     on_query_end so the dashboard transitions out of Finalizing.
     """
     subscriber = MockSubscriber()
-    ctx = daft.context.get_context()
-    ctx.attach_subscriber("mock", subscriber)
 
-    try:
+    with daft.with_subscriber("mock", subscriber):
         # Sanity check: .collect() on a transformed DataFrame fires on_query_end.
         df = daft.from_pydict({"x": list(range(100))})
         df = df.with_column("y", daft.col("x") + 1)
@@ -176,41 +173,37 @@ def test_show_fires_query_end():
             "on_query_end was not called — query would be stuck in Finalizing on the dashboard"
         )
         assert subscriber.end_states[query_id] == QueryEndState.Finished
-    finally:
-        ctx.detach_subscriber("mock")
 
 
 def test_subscriber_template():
     subscriber = MockSubscriber()
-    ctx = daft.context.get_context()
-    ctx.attach_subscriber("mock", subscriber)
 
-    df = daft.from_pydict({"x": [1, 2, 3]})
-    df = df.with_column("y", df["x"] + 1)
-    df = df.limit(5)
+    with daft.with_subscriber("mock", subscriber):
+        df = daft.from_pydict({"x": [1, 2, 3]})
+        df = df.with_column("y", df["x"] + 1)
+        df = df.limit(5)
 
-    output_schema = df.schema()
-    unoptimized_plan_json = df._builder.repr_json()
-    df = df.collect()
+        output_schema = df.schema()
+        unoptimized_plan_json = df._builder.repr_json()
+        df = df.collect()
 
-    query_id = next(iter(subscriber.query_metadata.keys()))
-    # Subscriber now receives JSON representation
-    assert subscriber.query_metadata[query_id].unoptimized_plan == unoptimized_plan_json
-    assert subscriber.query_metadata[query_id].output_schema == output_schema._schema
-    # Optimized plan should be different from unoptimized plan
-    assert subscriber.query_optimized_plan[query_id] != unoptimized_plan_json
+        query_id = next(iter(subscriber.query_metadata.keys()))
+        # Subscriber now receives JSON representation
+        assert subscriber.query_metadata[query_id].unoptimized_plan == unoptimized_plan_json
+        assert subscriber.query_metadata[query_id].output_schema == output_schema._schema
+        # Optimized plan should be different from unoptimized plan
+        assert subscriber.query_optimized_plan[query_id] != unoptimized_plan_json
 
-    # Verify ResultProduced events delivered the expected row count
-    assert subscriber.query_result_rows[query_id] == 3
+        # Verify ResultProduced events delivered the expected row count
+        assert subscriber.query_result_rows[query_id] == 3
 
-    # Test stats
-    for _, stats in subscriber.query_node_stats[query_id].items():
-        for stat_name, stat_value in stats.items():
-            if stat_name == "rows_in" or stat_name == "rows_out":
-                assert stat_value == 3
+        # Test stats
+        for _, stats in subscriber.query_node_stats[query_id].items():
+            for stat_name, stat_value in stats.items():
+                if stat_name == "rows_in" or stat_name == "rows_out":
+                    assert stat_value == 3
 
     # Verify detach
-    ctx.detach_subscriber("mock")
     df = daft.from_pydict({"x": [1, 2, 3]})
     df = df.with_column("y", df["x"] + 1)
     df.collect()
@@ -226,10 +219,8 @@ def test_execution_events_inherit_from_event_base():
 
 def test_csv_scan_reports_bytes_read(tmp_path):
     subscriber = MockSubscriber()
-    ctx = daft.context.get_context()
-    ctx.attach_subscriber("mock", subscriber)
 
-    try:
+    with daft.with_subscriber("mock", subscriber):
         csv_path = tmp_path / "input.csv"
         csv_path.write_text("a,b\n1,2\n3,4\n5,6\n")
 
@@ -242,5 +233,3 @@ def test_csv_scan_reports_bytes_read(tmp_path):
         ]
         assert bytes_read_values, "Expected at least one source node to report bytes.read"
         assert any(value > 0 for value in bytes_read_values)
-    finally:
-        ctx.detach_subscriber("mock")
