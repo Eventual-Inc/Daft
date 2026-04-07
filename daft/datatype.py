@@ -122,12 +122,27 @@ class TimeUnit:
 
 
 # Names of no-arg DataType factory methods that support property-style access.
-_SIMPLE_TYPE_NAMES: frozenset[str] = frozenset({
-    "int8", "int16", "int32", "int64",
-    "uint8", "uint16", "uint32", "uint64",
-    "float32", "float64",
-    "string", "bool", "binary", "null", "date", "interval", "python",
-})
+_SIMPLE_TYPE_NAMES: frozenset[str] = frozenset(
+    {
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "float32",
+        "float64",
+        "string",
+        "bool",
+        "binary",
+        "null",
+        "date",
+        "interval",
+        "python",
+    }
+)
 
 
 class _DataTypeMeta(type):

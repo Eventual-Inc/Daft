@@ -444,8 +444,7 @@ def test_datatype_property_set_dedup():
     assert len(s2) == 2
 
     # Mixed types should deduplicate per-type
-    s3 = {DataType.int8, DataType.int8(), DataType.uint64, DataType.uint64(),
-          DataType.string, DataType.string()}
+    s3 = {DataType.int8, DataType.int8(), DataType.uint64, DataType.uint64(), DataType.string, DataType.string()}
     assert len(s3) == 3
     assert DataType.int8 in s3
     assert DataType.uint64 in s3
@@ -497,11 +496,23 @@ def test_datatype_property_repr():
 def test_datatype_property_call_returns_datatype():
     """Verify calling property results (e.g. DataType.int8()) returns DataType instances."""
     type_names = [
-        "int8", "int16", "int32", "int64",
-        "uint8", "uint16", "uint32", "uint64",
-        "float32", "float64",
-        "string", "bool", "binary", "null",
-        "date", "interval", "python",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "float32",
+        "float64",
+        "string",
+        "bool",
+        "binary",
+        "null",
+        "date",
+        "interval",
+        "python",
     ]
     for name in type_names:
         result = getattr(DataType, name)()
