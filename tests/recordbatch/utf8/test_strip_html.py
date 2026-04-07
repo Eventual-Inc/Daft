@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import pytest
-
 from daft.expressions import col
+from daft.functions import strip_html
 from daft.recordbatch import MicroPartition
 
 
@@ -19,17 +18,13 @@ def test_strip_html_inline_tags():
 
 
 def test_strip_html_script_removed():
-    table = MicroPartition.from_pydict(
-        {"col": ["<p>text</p><script>alert(1)</script>"]}
-    )
+    table = MicroPartition.from_pydict({"col": ["<p>text</p><script>alert(1)</script>"]})
     result = table.eval_expression_list([col("col").strip_html()])
     assert result.to_pydict() == {"col": ["text"]}
 
 
 def test_strip_html_style_removed():
-    table = MicroPartition.from_pydict(
-        {"col": ["<style>body{color:red}</style><p>text</p>"]}
-    )
+    table = MicroPartition.from_pydict({"col": ["<style>body{color:red}</style><p>text</p>"]})
     result = table.eval_expression_list([col("col").strip_html()])
     assert result.to_pydict() == {"col": ["text"]}
 
@@ -94,24 +89,18 @@ def test_strip_html_batch():
 
 
 def test_strip_html_via_function_import():
-    from daft.functions import strip_html
-
     table = MicroPartition.from_pydict({"col": ["<b>bold</b>"]})
     result = table.eval_expression_list([strip_html(col("col"))])
     assert result.to_pydict() == {"col": ["bold"]}
 
 
 def test_strip_html_separator_space():
-    from daft.functions import strip_html
-
     table = MicroPartition.from_pydict({"col": ["<p>first</p><p>second</p>"]})
     result = table.eval_expression_list([strip_html(col("col"), separator=" ")])
     assert result.to_pydict() == {"col": ["first second"]}
 
 
 def test_strip_html_separator_empty():
-    from daft.functions import strip_html
-
     table = MicroPartition.from_pydict({"col": ["<p>first</p><p>second</p>"]})
     result = table.eval_expression_list([strip_html(col("col"), separator="")])
     assert result.to_pydict() == {"col": ["firstsecond"]}

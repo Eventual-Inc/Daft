@@ -165,8 +165,7 @@ mod tests {
 
     #[test]
     fn test_style_removed() {
-        #[allow(clippy::literal_string_with_formatting_args)]
-        let input = "<style>body{color:red}</style><p>text</p>";
+        let input = "<style>body { color: red; }</style><p>text</p>";
         assert_eq!(strip_html_str(input, "\n"), "text");
     }
 
