@@ -121,10 +121,57 @@ class TimeUnit:
         return f"TimeUnit({self.__str__()})"
 
 
+class _DataTypeProperty:
+    """Descriptor that allows DataType factory methods to be accessed as properties or called as methods."""
+
+    def __init__(self, factory_func: Callable, name: str):
+        self._factory_func = factory_func
+        self._name = name
+        _DATATYPE_CONSTRUCTOR_SET.add(name)
+
+    def __get__(self, obj: DataType | None, objtype: type[DataType]) -> _DataTypePropertyResult:
+        dtype = self._factory_func(objtype)
+        return _DataTypePropertyResult(dtype)
+
+    def __repr__(self) -> str:
+        return f"<DataType property: {self._name}>"
+
+
+class _DataTypePropertyResult:
+    """Wrapper holding a DataType that is also callable, enabling both property and method access."""
+
+    def __init__(self, dtype: DataType):
+        self._pydtype = dtype._dtype if isinstance(dtype, DataType) else dtype
+
+    @property
+    def _dtype(self):
+        return self._pydtype
+
+    def __call__(self) -> DataType:
+        return DataType._from_pydatatype(self._pydtype)
+
+    def __repr__(self) -> str:
+        return repr(DataType._from_pydatatype(self._pydtype))
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, _DataTypePropertyResult):
+            return self._pydtype.is_equal(other._pydtype)
+        if isinstance(other, DataType):
+            return self._pydtype.is_equal(other._dtype)
+        return False
+
+    def __hash__(self) -> int:
+        return self._pydtype.__hash__()
+
+    def __getattr__(self, name: str):
+        return getattr(self._dtype, name)
+
+
 _DATATYPE_CONSTRUCTOR_SET: set[str] = set()
 
 
 def datatype_constructor(obj: Any) -> Any:
+    """Decorator to register a DataType factory method in the constructor set."""
     if isinstance(obj, classmethod):
         name = obj.__func__.__name__
     else:
@@ -485,83 +532,129 @@ class DataType:
         dt._dtype = pydt
         return dt
 
+    # Simple type constructors that take no arguments - converted to properties for easier access
+    # These can be accessed as both DataType.int8 (property) and DataType.int8() (method call)
+
     @datatype_constructor
     @classmethod
-    def int8(cls) -> DataType:
+    def _int8(cls) -> DataType:
         """Create an 8-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.int8())
 
     @datatype_constructor
     @classmethod
-    def int16(cls) -> DataType:
+    def _int16(cls) -> DataType:
         """Create an 16-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.int16())
 
     @datatype_constructor
     @classmethod
-    def int32(cls) -> DataType:
+    def _int32(cls) -> DataType:
         """Create an 32-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.int32())
 
     @datatype_constructor
     @classmethod
-    def int64(cls) -> DataType:
+    def _int64(cls) -> DataType:
         """Create an 64-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.int64())
 
     @datatype_constructor
     @classmethod
-    def uint8(cls) -> DataType:
+    def _uint8(cls) -> DataType:
         """Create an unsigned 8-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.uint8())
 
     @datatype_constructor
     @classmethod
-    def uint16(cls) -> DataType:
+    def _uint16(cls) -> DataType:
         """Create an unsigned 16-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.uint16())
 
     @datatype_constructor
     @classmethod
-    def uint32(cls) -> DataType:
+    def _uint32(cls) -> DataType:
         """Create an unsigned 32-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.uint32())
 
     @datatype_constructor
     @classmethod
-    def uint64(cls) -> DataType:
+    def _uint64(cls) -> DataType:
         """Create an unsigned 64-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.uint64())
 
     @datatype_constructor
     @classmethod
-    def float32(cls) -> DataType:
+    def _float32(cls) -> DataType:
         """Create a 32-bit float DataType."""
         return cls._from_pydatatype(PyDataType.float32())
 
     @datatype_constructor
     @classmethod
-    def float64(cls) -> DataType:
+    def _float64(cls) -> DataType:
         """Create a 64-bit float DataType."""
         return cls._from_pydatatype(PyDataType.float64())
 
     @datatype_constructor
     @classmethod
-    def string(cls) -> DataType:
+    def _string(cls) -> DataType:
         """Create a String DataType: A string of UTF8 characters."""
         return cls._from_pydatatype(PyDataType.string())
 
     @datatype_constructor
     @classmethod
-    def bool(cls) -> DataType:
+    def _bool(cls) -> DataType:
         """Create the Boolean DataType: Either ``True`` or ``False``."""
         return cls._from_pydatatype(PyDataType.bool())
 
     @datatype_constructor
     @classmethod
-    def binary(cls) -> DataType:
+    def _binary(cls) -> DataType:
         """Create a Binary DataType: A string of bytes."""
         return cls._from_pydatatype(PyDataType.binary())
+
+    @datatype_constructor
+    @classmethod
+    def _null(cls) -> DataType:
+        """Creates the Null DataType: Always the ``Null`` value."""
+        return cls._from_pydatatype(PyDataType.null())
+
+    @datatype_constructor
+    @classmethod
+    def _date(cls) -> DataType:
+        """Create a Date DataType: A date with a year, month and day."""
+        return cls._from_pydatatype(PyDataType.date())
+
+    @datatype_constructor
+    @classmethod
+    def _interval(cls) -> DataType:
+        """Interval DataType."""
+        return cls._from_pydatatype(PyDataType.interval())
+
+    @datatype_constructor
+    @classmethod
+    def _python(cls) -> DataType:
+        """Create a Python DataType: a type which refers to an arbitrary Python object."""
+        return cls._from_pydatatype(PyDataType.python())
+
+    # Properties that can also be called as methods for backward compatibility
+    int8 = _DataTypeProperty(_int8.__func__, "int8")
+    int16 = _DataTypeProperty(_int16.__func__, "int16")
+    int32 = _DataTypeProperty(_int32.__func__, "int32")
+    int64 = _DataTypeProperty(_int64.__func__, "int64")
+    uint8 = _DataTypeProperty(_uint8.__func__, "uint8")
+    uint16 = _DataTypeProperty(_uint16.__func__, "uint16")
+    uint32 = _DataTypeProperty(_uint32.__func__, "uint32")
+    uint64 = _DataTypeProperty(_uint64.__func__, "uint64")
+    float32 = _DataTypeProperty(_float32.__func__, "float32")
+    float64 = _DataTypeProperty(_float64.__func__, "float64")
+    string = _DataTypeProperty(_string.__func__, "string")
+    bool = _DataTypeProperty(_bool.__func__, "bool")
+    binary = _DataTypeProperty(_binary.__func__, "binary")
+    null = _DataTypeProperty(_null.__func__, "null")
+    date = _DataTypeProperty(_date.__func__, "date")
+    interval = _DataTypeProperty(_interval.__func__, "interval")
+    python = _DataTypeProperty(_python.__func__, "python")
 
     @datatype_constructor
     @classmethod
@@ -573,21 +666,9 @@ class DataType:
 
     @datatype_constructor
     @classmethod
-    def null(cls) -> DataType:
-        """Creates the Null DataType: Always the ``Null`` value."""
-        return cls._from_pydatatype(PyDataType.null())
-
-    @datatype_constructor
-    @classmethod
     def decimal128(cls, precision: int, scale: int) -> DataType:
         """Fixed-precision decimal."""
         return cls._from_pydatatype(PyDataType.decimal128(precision, scale))
-
-    @datatype_constructor
-    @classmethod
-    def date(cls) -> DataType:
-        """Create a Date DataType: A date with a year, month and day."""
-        return cls._from_pydatatype(PyDataType.date())
 
     @datatype_constructor
     @classmethod
@@ -612,12 +693,6 @@ class DataType:
         if isinstance(timeunit, str):
             timeunit = TimeUnit.from_str(timeunit)
         return cls._from_pydatatype(PyDataType.duration(timeunit._timeunit))
-
-    @datatype_constructor
-    @classmethod
-    def interval(cls) -> DataType:
-        """Interval DataType."""
-        return cls._from_pydatatype(PyDataType.interval())
 
     @datatype_constructor
     @classmethod
@@ -907,12 +982,6 @@ class DataType:
 
     @datatype_constructor
     @classmethod
-    def python(cls) -> DataType:
-        """Create a Python DataType: a type which refers to an arbitrary Python object."""
-        return cls._from_pydatatype(PyDataType.python())
-
-    @datatype_constructor
-    @classmethod
     def file(cls, media_type: MediaType = MediaType.unknown()) -> DataType:
         """Create a File DataType: a type which refers to a file object."""
         return cls._from_pydatatype(PyDataType.file(media_type._media_type))
@@ -922,7 +991,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.null()
+            >>> dtype = daft.DataType.null  # or daft.DataType.null()
             >>> dtype.is_null()
             True
         """
@@ -933,7 +1002,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.bool()
+            >>> dtype = daft.DataType.bool  # or daft.DataType.bool()
             >>> assert dtype.is_boolean()
         """
         return self._dtype.is_boolean()
@@ -943,7 +1012,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.int8()
+            >>> dtype = daft.DataType.int8  # or daft.DataType.int8()
             >>> assert dtype.is_int8()
         """
         return self._dtype.is_int8()
@@ -953,7 +1022,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.int16()
+            >>> dtype = daft.DataType.int16  # or daft.DataType.int16()
             >>> assert dtype.is_int16()
         """
         return self._dtype.is_int16()
@@ -963,7 +1032,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.int32()
+            >>> dtype = daft.DataType.int32  # or daft.DataType.int32()
             >>> assert dtype.is_int32()
         """
         return self._dtype.is_int32()
@@ -973,7 +1042,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.int64()
+            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
             >>> assert dtype.is_int64()
         """
         return self._dtype.is_int64()
@@ -983,7 +1052,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.uint8()
+            >>> dtype = daft.DataType.uint8  # or daft.DataType.uint8()
             >>> assert dtype.is_uint8()
         """
         return self._dtype.is_uint8()
@@ -993,7 +1062,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.uint16()
+            >>> dtype = daft.DataType.uint16  # or daft.DataType.uint16()
             >>> assert dtype.is_uint16()
         """
         return self._dtype.is_uint16()
@@ -1003,7 +1072,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.uint32()
+            >>> dtype = daft.DataType.uint32  # or daft.DataType.uint32()
             >>> assert dtype.is_uint32()
         """
         return self._dtype.is_uint32()
@@ -1013,7 +1082,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.uint64()
+            >>> dtype = daft.DataType.uint64  # or daft.DataType.uint64()
             >>> assert dtype.is_uint64()
         """
         return self._dtype.is_uint64()
@@ -1023,7 +1092,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.float32()
+            >>> dtype = daft.DataType.float32  # or daft.DataType.float32()
             >>> assert dtype.is_float32()
         """
         return self._dtype.is_float32()
@@ -1033,7 +1102,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.float64()
+            >>> dtype = daft.DataType.float64  # or daft.DataType.float64()
             >>> assert dtype.is_float64()
         """
         return self._dtype.is_float64()
@@ -1063,7 +1132,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.date()
+            >>> dtype = daft.DataType.date  # or daft.DataType.date()
             >>> assert dtype.is_date()
         """
         return self._dtype.is_date()
@@ -1093,7 +1162,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.interval()
+            >>> dtype = daft.DataType.interval  # or daft.DataType.interval()
             >>> assert dtype.is_interval()
         """
         return self._dtype.is_interval()
@@ -1103,7 +1172,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.binary()
+            >>> dtype = daft.DataType.binary  # or daft.DataType.binary()
             >>> assert dtype.is_binary()
         """
         return self._dtype.is_binary()
@@ -1123,7 +1192,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.string()
+            >>> dtype = daft.DataType.string  # or daft.DataType.string()
             >>> assert dtype.is_string()
         """
         return self._dtype.is_string()
@@ -1253,7 +1322,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.python()
+            >>> dtype = daft.DataType.python  # or daft.DataType.python()
             >>> assert dtype.is_python()
         """
         return self._dtype.is_python()
@@ -1263,7 +1332,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.float64()
+            >>> dtype = daft.DataType.float64  # or daft.DataType.float64()
             >>> assert dtype.is_numeric()
         """
         return self._dtype.is_numeric()
@@ -1273,7 +1342,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.int64()
+            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
             >>> assert dtype.is_integer()
         """
         return self._dtype.is_integer()
@@ -1283,7 +1352,7 @@ class DataType:
 
         Examples:
             >>> import daft
-            >>> dtype = daft.DataType.bool()
+            >>> dtype = daft.DataType.bool  # or daft.DataType.bool()
             >>> assert not dtype.is_logical()
         """
         return self._dtype.is_logical()
@@ -1316,7 +1385,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.fixed_size_binary(size=10)
             >>> assert dtype.size == 10
-            >>> dtype = daft.DataType.binary()
+            >>> dtype = daft.DataType.binary  # or daft.DataType.binary()
             >>> try:
             ...     dtype.size
             ... except AttributeError:
@@ -1350,7 +1419,7 @@ class DataType:
             >>> dtype = daft.DataType.time(timeunit="ns")
             >>> dtype.timeunit
             TimeUnit(ns)
-            >>> dtype = daft.DataType.int64()
+            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
             >>> try:
             ...     dtype.timeunit
             ... except AttributeError:
@@ -1366,7 +1435,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.timestamp(timeunit="ns", timezone="UTC")
             >>> assert dtype.timezone == "UTC"
-            >>> dtype = daft.DataType.int64()
+            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
             >>> try:
             ...     dtype.time_zone
             ... except AttributeError:
@@ -1382,7 +1451,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.list(daft.DataType.int64())
             >>> assert dtype.dtype == daft.DataType.int64()
-            >>> dtype = daft.DataType.int64()
+            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
             >>> try:
             ...     dtype.dtype
             ... except AttributeError:
@@ -1399,7 +1468,7 @@ class DataType:
             >>> dtype = daft.DataType.struct({"a": daft.DataType.int64()})
             >>> fields = dtype.fields
             >>> assert fields["a"] == daft.DataType.int64()
-            >>> dtype = daft.DataType.int64()
+            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
             >>> try:
             ...     dtype.fields
             ... except AttributeError:
@@ -1415,7 +1484,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.decimal128(precision=10, scale=2)
             >>> assert dtype.precision == 10
-            >>> dtype = daft.DataType.int64()
+            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
             >>> try:
             ...     dtype.precision
             ... except AttributeError:
@@ -1431,7 +1500,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.decimal128(precision=10, scale=2)
             >>> assert dtype.scale == 2
-            >>> dtype = daft.DataType.int64()
+            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
             >>> try:
             ...     dtype.precision
             ... except AttributeError:
@@ -1447,7 +1516,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.image(mode="RGB")
             >>> assert dtype.image_mode == daft.ImageMode.RGB
-            >>> dtype = daft.DataType.int64()
+            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
             >>> try:
             ...     dtype.image_mode
             ... except AttributeError:
@@ -1463,7 +1532,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.sparse_tensor(daft.DataType.float32(), use_offset_indices=True)
             >>> assert dtype.use_offset_indices
-            >>> dtype = daft.DataType.int64()
+            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
             >>> try:
             ...     dtype.use_offset_indices
             ... except AttributeError:
@@ -1479,7 +1548,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.map(daft.DataType.string(), daft.DataType.int64())
             >>> assert dtype.key_type == daft.DataType.string()
-            >>> dtype = daft.DataType.int64()
+            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
             >>> try:
             ...     dtype.key_type
             ... except AttributeError:
@@ -1495,7 +1564,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.map(daft.DataType.string(), daft.DataType.int64())
             >>> assert dtype.value_type == daft.DataType.int64()
-            >>> dtype = daft.DataType.int64()
+            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
             >>> try:
             ...     dtype.value_type
             ... except AttributeError:
@@ -1513,6 +1582,8 @@ class DataType:
         return self._dtype.__repr__()
 
     def __eq__(self, other: object) -> builtins.bool:
+        if isinstance(other, _DataTypePropertyResult):
+            return self._dtype.is_equal(other._pydtype)
         return isinstance(other, DataType) and self._dtype.is_equal(other._dtype)
 
     def __reduce__(self) -> tuple[Callable[[PyDataType], DataType], tuple[PyDataType]]:
