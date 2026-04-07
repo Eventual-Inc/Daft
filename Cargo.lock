@@ -2377,7 +2377,6 @@ dependencies = [
 name = "daft-context"
 version = "0.3.0-dev0"
 dependencies = [
- "async-trait",
  "common-daft-config",
  "common-error",
  "common-metrics",
@@ -2524,6 +2523,7 @@ dependencies = [
  "common-resource-request",
  "common-runtime",
  "common-treenode",
+ "daft-checkpoint",
  "daft-context",
  "daft-dsl",
  "daft-functions",
@@ -2914,6 +2914,7 @@ dependencies = [
  "common-system-info",
  "common-tracing",
  "console",
+ "daft-checkpoint",
  "daft-context",
  "daft-core",
  "daft-csv",

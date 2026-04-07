@@ -44,8 +44,8 @@ def helper_write_dataframe(
             existing_path=root_dir,
             key_column=skip_existing_config["key_column"],
             file_format=fmt,
-            num_workers=4 if num_workers is None else num_workers,
-            cpus_per_worker=1.0 if cpus_per_worker is None else cpus_per_worker,
+            num_workers=2 if num_workers is None else num_workers,
+            cpus_per_worker=0.5 if cpus_per_worker is None else cpus_per_worker,
         )
     if fmt == FileFormat.Csv:
         return df.write_csv(str(root_dir), write_mode=write_mode)

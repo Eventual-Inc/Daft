@@ -15,6 +15,7 @@ common-runtime = {path = "../common/runtime", default-features = false}
 common-system-info = {path = "../common/system-info", default-features = false}
 common-tracing = {path = "../common/tracing", default-features = false}
 console = {workspace = true}
+daft-checkpoint = {path = "../daft-checkpoint", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-context = {path = "../daft-context", default-features = false}
 daft-csv = {path = "../daft-csv", default-features = false}

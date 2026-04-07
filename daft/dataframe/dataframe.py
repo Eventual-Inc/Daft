@@ -4050,6 +4050,40 @@ class DataFrame:
         return self._apply_agg_fn(lambda expr: Expression.var(expr, ddof), cols)
 
     @DataframePublicAPI
+    def skew(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global skew on the DataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to compute skewness for
+
+        Returns:
+            DataFrame: Globally aggregated skewness. Should be a single row.
+
+        Note:
+            Daft uses the **biased (population) skewness** formula, which is equivalent to
+            ``scipy.stats.skew(bias=True)``. This differs from pandas' default ``DataFrame.skew()``,
+            which uses the adjusted Fisher-Pearson (sample) formula. For small samples, the two
+            formulas can produce meaningfully different results.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [1, 2, 3, 4, 5]})
+            >>> df = df.skew("col_a")
+            >>> df.show()
+            ╭─────────╮
+            │ col_a   │
+            │ ---     │
+            │ Float64 │
+            ╞═════════╡
+            │ 0       │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        """
+        return self._apply_agg_fn(Expression.skew, cols)
+
+    @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
         """Performs a global min on the DataFrame.
 
