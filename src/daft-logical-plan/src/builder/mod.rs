@@ -18,8 +18,7 @@ use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
     Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg,
-    join::get_right_cols_to_drop, left_col, resolved_col, right_col,
-    unresolved_col,
+    join::get_right_cols_to_drop, left_col, resolved_col, right_col, unresolved_col,
 };
 use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use daft_schema::schema::{Schema, SchemaRef};

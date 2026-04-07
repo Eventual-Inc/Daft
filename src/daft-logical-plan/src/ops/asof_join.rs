@@ -73,21 +73,18 @@ impl AsofJoin {
     }
 
     pub(crate) fn with_materialized_stats(mut self) -> Self {
+        // An asof join is a left join: every left row produces exactly one output row
+        // (matched or null-filled). The output cardinality is therefore always equal to
+        // the left side's row count, regardless of the right table size.
         let left_stats = self.left.materialized_stats();
         let right_stats = self.right.materialized_stats();
-        let left_num_rows =
-            left_stats.approx_stats.num_rows as f64 * right_stats.approx_stats.acc_selectivity;
-        let right_num_rows =
-            right_stats.approx_stats.num_rows as f64 * left_stats.approx_stats.acc_selectivity;
-        let left_size =
-            left_stats.approx_stats.size_bytes as f64 * right_stats.approx_stats.acc_selectivity;
-        let right_size =
-            right_stats.approx_stats.size_bytes as f64 * left_stats.approx_stats.acc_selectivity;
+        let size_bytes = left_stats.approx_stats.size_bytes
+            + (right_stats.approx_stats.size_bytes as f64 * left_stats.approx_stats.acc_selectivity)
+                as usize;
         let approx_stats = ApproxStats {
-            num_rows: left_num_rows.max(right_num_rows).ceil() as usize,
-            size_bytes: left_size.max(right_size).ceil() as usize,
-            acc_selectivity: left_stats.approx_stats.acc_selectivity
-                * right_stats.approx_stats.acc_selectivity,
+            num_rows: left_stats.approx_stats.num_rows,
+            size_bytes,
+            acc_selectivity: left_stats.approx_stats.acc_selectivity,
         };
         self.stats_state = StatsState::Materialized(PlanStats::new(approx_stats).into());
         self
