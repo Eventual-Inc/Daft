@@ -65,11 +65,6 @@ pub fn infer_join_schema(
 }
 
 /// Infer the output schema for an asof join.
-///
-/// `right_cols_to_drop`: set of right column names that are plain-col keys
-///   with the same name as a left key. These are excluded from the output
-///   (coalesced into the left side).
-///
 /// Column order: all left columns in their original schema order, then
 /// right columns not in `right_cols_to_drop` in their original schema order.
 pub fn infer_asof_join_schema(
@@ -94,9 +89,8 @@ pub fn infer_asof_join_schema(
 
 /// Compute the right key column names to exclude from the asof join output.
 ///
-/// For by-keys: if both left and right are plain columns with the same name,
-/// the right column is excluded (coalesced). For on-keys: only excluded when
-/// the left_on and right_on column names are identical.
+/// For by-keys: all right by columns that are direct column references (not complex expressions) are dropped.
+/// For on-keys: the right on column is dropped only when it has the same name as the left on column.
 ///
 /// Returns the set of right column names to drop from the output.
 pub fn get_right_cols_to_drop<E, F>(
