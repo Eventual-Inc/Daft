@@ -2,33 +2,39 @@ use std::{fmt, time::SystemTime};
 
 use uuid::Uuid;
 
-/// Unique identifier for a checkpoint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CheckpointId(Uuid);
+/// Opaque identifier for a checkpoint.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CheckpointId(String);
 
 impl CheckpointId {
-    /// Generate a new random checkpoint ID.
+    /// Generate a new checkpoint ID associated with a task.
     #[must_use]
-    pub fn generate() -> Self {
-        Self(Uuid::new_v4())
+    pub fn generate(task_id: u32) -> Self {
+        Self(format!("task-{task_id}-checkpoint-{}", Uuid::new_v4()))
     }
 
-    /// Create a checkpoint ID from an existing UUID.
+    /// Reconstruct a checkpoint ID from a previously serialized string.
     #[must_use]
-    pub fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
-    }
-
-    /// Get the inner UUID.
-    #[must_use]
-    pub fn as_uuid(&self) -> &Uuid {
-        &self.0
+    pub fn from_string(s: String) -> Self {
+        Self(s)
     }
 }
 
 impl fmt::Display for CheckpointId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "checkpoint-{}", self.0)
+        f.write_str(&self.0)
+    }
+}
+
+impl From<CheckpointId> for String {
+    fn from(id: CheckpointId) -> Self {
+        id.0
+    }
+}
+
+impl AsRef<str> for CheckpointId {
+    fn as_ref(&self) -> &str {
+        &self.0
     }
 }
 
