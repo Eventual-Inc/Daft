@@ -335,19 +335,21 @@ impl SortNode {
         }
 
         if materialized_outputs.len() == 1 {
-            // TODO repro and handle this case?
-            let (in_memory_scan, psets) = MaterializedOutput::into_in_memory_scan_with_psets(
-                materialized_outputs,
-                self.config.schema.clone(),
-                self.node_id(),
-            );
+            // skip straight to the final sort phase
+            let (in_memory_scan, psets) =
+                MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
+                    materialized_outputs,
+                    self.config.schema.clone(),
+                    self.node_id(),
+                    FINAL_SORT_PHASE,
+                );
             let plan = LocalPhysicalPlan::sort(
                 in_memory_scan,
                 self.sort_by.clone(),
                 self.descending.clone(),
                 self.nulls_first.clone(),
                 StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(self.node_id() as usize)),
+                LocalNodeContext::new(Some(self.node_id() as usize)).with_phase(FINAL_SORT_PHASE),
             );
             let task = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
                 .with_psets(self.node_id(), psets);
