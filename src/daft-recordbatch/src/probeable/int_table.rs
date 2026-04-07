@@ -1,7 +1,8 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::{array::DataArray, prelude::DaftIntegerType};
+use hashbrown::HashMap;
 
 use super::{IndicesMapper, ProbeContent, Probeable, ProbeableBuilder};
 use crate::RecordBatch;
@@ -26,8 +27,7 @@ where
     // Use the leftmost 28 bits for the table index and the rightmost 36 bits for the row number
     const TABLE_IDX_SHIFT: usize = 36;
     const LOWER_MASK: u64 = (1 << Self::TABLE_IDX_SHIFT) - 1;
-
-    const DEFAULT_SIZE: usize = 256;
+    const DEFAULT_SIZE: usize = 64 * 1024;
 
     pub(crate) fn new() -> DaftResult<Self> {
         let hash_table = HashMap::with_capacity(Self::DEFAULT_SIZE);
