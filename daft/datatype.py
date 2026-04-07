@@ -535,103 +535,86 @@ class DataType:
     # Simple type constructors that take no arguments - converted to properties for easier access
     # These can be accessed as both DataType.int8 (property) and DataType.int8() (method call)
 
-    @datatype_constructor
     @classmethod
     def _int8(cls) -> DataType:
         """Create an 8-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.int8())
 
-    @datatype_constructor
     @classmethod
     def _int16(cls) -> DataType:
         """Create an 16-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.int16())
 
-    @datatype_constructor
     @classmethod
     def _int32(cls) -> DataType:
         """Create an 32-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.int32())
 
-    @datatype_constructor
     @classmethod
     def _int64(cls) -> DataType:
         """Create an 64-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.int64())
 
-    @datatype_constructor
     @classmethod
     def _uint8(cls) -> DataType:
         """Create an unsigned 8-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.uint8())
 
-    @datatype_constructor
     @classmethod
     def _uint16(cls) -> DataType:
         """Create an unsigned 16-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.uint16())
 
-    @datatype_constructor
     @classmethod
     def _uint32(cls) -> DataType:
         """Create an unsigned 32-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.uint32())
 
-    @datatype_constructor
     @classmethod
     def _uint64(cls) -> DataType:
         """Create an unsigned 64-bit integer DataType."""
         return cls._from_pydatatype(PyDataType.uint64())
 
-    @datatype_constructor
     @classmethod
     def _float32(cls) -> DataType:
         """Create a 32-bit float DataType."""
         return cls._from_pydatatype(PyDataType.float32())
 
-    @datatype_constructor
     @classmethod
     def _float64(cls) -> DataType:
         """Create a 64-bit float DataType."""
         return cls._from_pydatatype(PyDataType.float64())
 
-    @datatype_constructor
     @classmethod
     def _string(cls) -> DataType:
         """Create a String DataType: A string of UTF8 characters."""
         return cls._from_pydatatype(PyDataType.string())
 
-    @datatype_constructor
     @classmethod
     def _bool(cls) -> DataType:
         """Create the Boolean DataType: Either ``True`` or ``False``."""
         return cls._from_pydatatype(PyDataType.bool())
 
-    @datatype_constructor
     @classmethod
     def _binary(cls) -> DataType:
         """Create a Binary DataType: A string of bytes."""
         return cls._from_pydatatype(PyDataType.binary())
 
-    @datatype_constructor
     @classmethod
     def _null(cls) -> DataType:
         """Creates the Null DataType: Always the ``Null`` value."""
         return cls._from_pydatatype(PyDataType.null())
 
-    @datatype_constructor
     @classmethod
     def _date(cls) -> DataType:
         """Create a Date DataType: A date with a year, month and day."""
         return cls._from_pydatatype(PyDataType.date())
 
-    @datatype_constructor
     @classmethod
     def _interval(cls) -> DataType:
         """Interval DataType."""
         return cls._from_pydatatype(PyDataType.interval())
 
-    @datatype_constructor
     @classmethod
     def _python(cls) -> DataType:
         """Create a Python DataType: a type which refers to an arbitrary Python object."""

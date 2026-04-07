@@ -591,3 +591,21 @@ def test_datatype_property_is_methods():
     assert DataType.date.is_date()
     assert DataType.interval.is_interval()
     assert DataType.python.is_python()
+
+
+def test_datatype_constructor_names_no_underscore():
+    """Verify _DATATYPE_CONSTRUCTOR_SET does not contain underscore-prefixed names.
+
+    This prevents a regression where @datatype_constructor on private methods
+    (_int8, _int16, etc.) would pollute the set, causing double-underscore methods
+    like Expression.as__int8 to be created.
+    """
+    from daft.expressions import Expression
+
+    constructor_names = DataType._constructor_names()
+    underscore_names = [n for n in constructor_names if n.startswith("_")]
+    assert not underscore_names, f"Constructor names should not start with underscore: {underscore_names}"
+
+    # Verify no double-underscore methods on Expression
+    bad_methods = [m for m in dir(Expression) if m.startswith("as__")]
+    assert not bad_methods, f"Expression should not have double-underscore methods: {bad_methods}"
