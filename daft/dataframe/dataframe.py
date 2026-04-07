@@ -3420,19 +3420,18 @@ class DataFrame:
     def join_asof(
         self,
         other: "DataFrame",
+        *,
         on: ColumnInputType | None = None,
         left_on: ColumnInputType | None = None,
         right_on: ColumnInputType | None = None,
         by: list[ColumnInputType] | ColumnInputType | None = None,
         left_by: list[ColumnInputType] | ColumnInputType | None = None,
         right_by: list[ColumnInputType] | ColumnInputType | None = None,
+        direction: Literal["backward"] = "backward",
         prefix: str | None = None,
         suffix: str | None = None,
     ) -> "DataFrame":
-        """Point-in-time (asof) join: each left row matches the latest right row at or before the asof key within each group.
-
-        This is a backward asof join only: for each left row, Daft selects the right row with the greatest asof key
-        that is still less than or equal to the left row's asof key, among rows that agree on the ``by`` equality keys.
+        """Point-in-time (asof) join: each left row matches the nearest right row according to the chosen strategy.
 
         Args:
             other: Right-hand DataFrame (e.g. feature table).
@@ -3442,6 +3441,7 @@ class DataFrame:
             by: Equality key column(s) with the same name on both sides (entity / group columns).
             left_by: Equality keys on the left when names differ; use with ``right_by``.
             right_by: Equality keys on the right when names differ; use with ``left_by``.
+            strategy: Match strategy. Currently only ``"backward"`` is supported.
 
         Returns:
             DataFrame: Left-join-shaped result (every left row kept; unmatched right columns are null).
