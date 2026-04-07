@@ -379,7 +379,10 @@ class RemoteFlotillaRunner:
         partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
     ) -> None:
         psets = {
-            k: [RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0) for v in v.values()]
+            k: [
+                RayPartitionRef(res.partition(), res.metadata().num_rows, res.metadata().size_bytes or 0)
+                for res in v.values()
+            ]
             for k, v in partition_sets.items()
         }
         self.curr_plans[plan.idx()] = plan

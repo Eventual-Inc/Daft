@@ -602,8 +602,8 @@ class RayRunner(Runner[ray.ObjectRef]):
             all_partition_sets = self._part_set_cache.get_all_partition_sets()
             repr_psets = {
                 k: [
-                    RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0)
-                    for v in v.values()
+                    RayPartitionRef(res.partition(), res.metadata().num_rows, res.metadata().size_bytes or 0)
+                    for res in v.values()
                 ]
                 for k, v in all_partition_sets.items()
             }
