@@ -124,7 +124,10 @@ class TimeUnit:
 class _DataTypeProperty:
     """Descriptor that allows DataType factory methods to be accessed as properties or called as methods."""
 
-    def __init__(self, factory_func: Callable, name: str):
+    def __init__(self, factory_func: Callable[..., Any], name: str):
+        # Extract underlying function if a classmethod was passed
+        if isinstance(factory_func, classmethod):
+            factory_func = factory_func.__func__
         self._factory_func = factory_func
         self._name = name
         _DATATYPE_CONSTRUCTOR_SET.add(name)
@@ -144,7 +147,7 @@ class _DataTypePropertyResult:
         self._pydtype = dtype._dtype if isinstance(dtype, DataType) else dtype
 
     @property
-    def _dtype(self):
+    def _dtype(self) -> PyDataType:
         return self._pydtype
 
     def __call__(self) -> DataType:
@@ -163,7 +166,7 @@ class _DataTypePropertyResult:
     def __hash__(self) -> int:
         return self._pydtype.__hash__()
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Any:
         return getattr(self._dtype, name)
 
 
@@ -621,23 +624,23 @@ class DataType:
         return cls._from_pydatatype(PyDataType.python())
 
     # Properties that can also be called as methods for backward compatibility
-    int8 = _DataTypeProperty(_int8.__func__, "int8")
-    int16 = _DataTypeProperty(_int16.__func__, "int16")
-    int32 = _DataTypeProperty(_int32.__func__, "int32")
-    int64 = _DataTypeProperty(_int64.__func__, "int64")
-    uint8 = _DataTypeProperty(_uint8.__func__, "uint8")
-    uint16 = _DataTypeProperty(_uint16.__func__, "uint16")
-    uint32 = _DataTypeProperty(_uint32.__func__, "uint32")
-    uint64 = _DataTypeProperty(_uint64.__func__, "uint64")
-    float32 = _DataTypeProperty(_float32.__func__, "float32")
-    float64 = _DataTypeProperty(_float64.__func__, "float64")
-    string = _DataTypeProperty(_string.__func__, "string")
-    bool = _DataTypeProperty(_bool.__func__, "bool")
-    binary = _DataTypeProperty(_binary.__func__, "binary")
-    null = _DataTypeProperty(_null.__func__, "null")
-    date = _DataTypeProperty(_date.__func__, "date")
-    interval = _DataTypeProperty(_interval.__func__, "interval")
-    python = _DataTypeProperty(_python.__func__, "python")
+    int8 = _DataTypeProperty(_int8, "int8")  # type: ignore[arg-type]
+    int16 = _DataTypeProperty(_int16, "int16")  # type: ignore[arg-type]
+    int32 = _DataTypeProperty(_int32, "int32")  # type: ignore[arg-type]
+    int64 = _DataTypeProperty(_int64, "int64")  # type: ignore[arg-type]
+    uint8 = _DataTypeProperty(_uint8, "uint8")  # type: ignore[arg-type]
+    uint16 = _DataTypeProperty(_uint16, "uint16")  # type: ignore[arg-type]
+    uint32 = _DataTypeProperty(_uint32, "uint32")  # type: ignore[arg-type]
+    uint64 = _DataTypeProperty(_uint64, "uint64")  # type: ignore[arg-type]
+    float32 = _DataTypeProperty(_float32, "float32")  # type: ignore[arg-type]
+    float64 = _DataTypeProperty(_float64, "float64")  # type: ignore[arg-type]
+    string = _DataTypeProperty(_string, "string")  # type: ignore[arg-type]
+    bool = _DataTypeProperty(_bool, "bool")  # type: ignore[arg-type]
+    binary = _DataTypeProperty(_binary, "binary")  # type: ignore[arg-type]
+    null = _DataTypeProperty(_null, "null")  # type: ignore[arg-type]
+    date = _DataTypeProperty(_date, "date")  # type: ignore[arg-type]
+    interval = _DataTypeProperty(_interval, "interval")  # type: ignore[arg-type]
+    python = _DataTypeProperty(_python, "python")  # type: ignore[arg-type]
 
     @datatype_constructor
     @classmethod
@@ -1368,7 +1371,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.fixed_size_binary(size=10)
             >>> assert dtype.size == 10
-            >>> dtype = daft.DataType.binary  # or daft.DataType.binary()
+            >>> dtype = daft.DataType.binary()
             >>> try:
             ...     dtype.size
             ... except AttributeError:
@@ -1402,7 +1405,7 @@ class DataType:
             >>> dtype = daft.DataType.time(timeunit="ns")
             >>> dtype.timeunit
             TimeUnit(ns)
-            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
+            >>> dtype = daft.DataType.int64()
             >>> try:
             ...     dtype.timeunit
             ... except AttributeError:
@@ -1418,9 +1421,9 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.timestamp(timeunit="ns", timezone="UTC")
             >>> assert dtype.timezone == "UTC"
-            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
+            >>> dtype = daft.DataType.int64()
             >>> try:
-            ...     dtype.time_zone
+            ...     dtype.timezone
             ... except AttributeError:
             ...     pass
         """
@@ -1434,7 +1437,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.list(daft.DataType.int64())
             >>> assert dtype.dtype == daft.DataType.int64()
-            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
+            >>> dtype = daft.DataType.int64()
             >>> try:
             ...     dtype.dtype
             ... except AttributeError:
@@ -1451,7 +1454,7 @@ class DataType:
             >>> dtype = daft.DataType.struct({"a": daft.DataType.int64()})
             >>> fields = dtype.fields
             >>> assert fields["a"] == daft.DataType.int64()
-            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
+            >>> dtype = daft.DataType.int64()
             >>> try:
             ...     dtype.fields
             ... except AttributeError:
@@ -1467,7 +1470,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.decimal128(precision=10, scale=2)
             >>> assert dtype.precision == 10
-            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
+            >>> dtype = daft.DataType.int64()
             >>> try:
             ...     dtype.precision
             ... except AttributeError:
@@ -1483,9 +1486,9 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.decimal128(precision=10, scale=2)
             >>> assert dtype.scale == 2
-            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
+            >>> dtype = daft.DataType.int64()
             >>> try:
-            ...     dtype.precision
+            ...     dtype.scale
             ... except AttributeError:
             ...     pass
         """
@@ -1499,7 +1502,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.image(mode="RGB")
             >>> assert dtype.image_mode == daft.ImageMode.RGB
-            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
+            >>> dtype = daft.DataType.int64()
             >>> try:
             ...     dtype.image_mode
             ... except AttributeError:
@@ -1515,7 +1518,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.sparse_tensor(daft.DataType.float32(), use_offset_indices=True)
             >>> assert dtype.use_offset_indices
-            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
+            >>> dtype = daft.DataType.int64()
             >>> try:
             ...     dtype.use_offset_indices
             ... except AttributeError:
@@ -1531,7 +1534,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.map(daft.DataType.string(), daft.DataType.int64())
             >>> assert dtype.key_type == daft.DataType.string()
-            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
+            >>> dtype = daft.DataType.int64()
             >>> try:
             ...     dtype.key_type
             ... except AttributeError:
@@ -1547,7 +1550,7 @@ class DataType:
             >>> import daft
             >>> dtype = daft.DataType.map(daft.DataType.string(), daft.DataType.int64())
             >>> assert dtype.value_type == daft.DataType.int64()
-            >>> dtype = daft.DataType.int64  # or daft.DataType.int64()
+            >>> dtype = daft.DataType.int64()
             >>> try:
             ...     dtype.value_type
             ... except AttributeError:
