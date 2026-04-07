@@ -2180,6 +2180,23 @@ class Expression:
 
         return startswith(self, prefix)
 
+    def strip_html(self, separator: str = "\n") -> Expression:
+        r"""Strips HTML tags from a string, returning plain text.
+
+        Content inside ``<script>`` and ``<style>`` tags is removed entirely.
+        Block-level elements are separated by ``separator`` (default: ``"\n"``).
+        HTML entities (e.g. ``&amp;``) are decoded automatically.
+
+        Args:
+            separator: String inserted between block-level elements (default: ``"\n"``).
+
+        Tip: See Also
+            [`daft.functions.strip_html`](https://docs.daft.ai/en/stable/api/functions/strip_html/)
+        """
+        from daft.functions import strip_html
+
+        return strip_html(self, separator=separator)
+
     def normalize(
         self,
         *,
