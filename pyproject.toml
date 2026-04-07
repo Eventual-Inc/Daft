@@ -5,7 +5,7 @@ requires = ["maturin>=1.5.0,<2.0.0"]
 [project]
 authors = [{name = "Eventual Inc", email = "daft@eventualcomputing.com"}]
 dependencies = [
-  "pyarrow >= 15.0.0,<24.0.0",
+  "pyarrow >= 8.0.0,<24.0.0",
   "fsspec<2026.3.0",
   "tqdm<4.68.0",
   "typing-extensions >= 4.0.0; python_version < '3.11'",
@@ -30,7 +30,7 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[aws, azure, clickhouse, deltalake, gcp, google, gravitino, hudi, huggingface, iceberg, kafka, lance, numpy, openai, pandas, postgres, ray, sentence-transformers, sql, transformers, turbopuffer, unity, video]"]
+all = ["daft[aws, azure, clickhouse, deltalake, gcp, google, gravitino, hudi, huggingface, iceberg, lance, numpy, openai, pandas, postgres, ray, sentence-transformers, sql, transformers, turbopuffer, unity, video]"]
 aws = ["boto3<1.43.0", "mypy-boto3-glue"]
 azure = []
 clickhouse = ["clickhouse_connect<0.12.0"]
@@ -38,10 +38,9 @@ deltalake = ["deltalake < 1.3.0"]
 gcp = []
 google = ["google-genai<1.64.0", "numpy<2.4.0", "pillow==12.1.1"]
 gravitino = ["requests>=2.28.0,<3.0.0"]
-hudi = ["pyarrow >= 15.0.0,<22.1.0"]
+hudi = ["pyarrow >= 8.0.0,<22.1.0"]
 huggingface = ["huggingface-hub<1.5.0", "datasets<4.6.0"]
 iceberg = ["pyiceberg >= 0.7.0, <= 0.11.0, != 0.9.1, != 0.10.0"]
-kafka = ["confluent-kafka>=2.6.0,<3.0.0"]
 lance = ["pylance<0.40.0"]
 numpy = ["numpy<2.4.0"]
 openai = ["openai<2.21.0", "numpy<2.4.0", "pillow==12.1.1"]
@@ -57,7 +56,7 @@ transformers = ["transformers<5.2.0", "sentence-transformers<5.3.0", "torch<2.11
 sql = ["connectorx>=0.4.4,<0.5.0", "sqlalchemy<2.1.0", "sqlglot<28.11.0"]
 turbopuffer = ["turbopuffer<1.16.0"]
 unity = ["httpx<=0.28.1", "unitycatalog<0.2.0", "deltalake<1.3.0"]
-video = ["av >= 15.0.0,<16.2.0", "pillow==12.1.1"]
+video = ["av >= 15.0.0,<16.2.0"]
 audio = ["soundfile >= 0.13.0,<0.14.0", "librosa >= 0.11.0,<0.12.0"]
 viz = []
 
@@ -104,7 +103,7 @@ dev = [
   "jax==0.6.2",
   "jaxtyping==0.3.7",
   # Pyarrow
-  "pyarrow >= 15.0.0,<24.0.0",
+  "pyarrow >= 8.0.0,<24.0.0",
   "pyarrow-stubs==20.0.0.20251215",
   # Ray
   "ray[data, client]==2.53.0",
@@ -156,9 +155,7 @@ dev = [
   "mcap-ros2-support==0.5.7",
   "mcap-protobuf-support==0.5.4",
   # BigTable
-  "google-cloud-bigtable==2.35.0",
-  # confluent-Kafka
-  "confluent-kafka==2.13.2"
+  "google-cloud-bigtable==2.35.0"
 ]
 docs = [
   "markdown-exec==1.12.1",
@@ -247,37 +244,6 @@ addopts = "-m 'not (integration or benchmark or hypothesis)'"
 minversion = "6.0"
 testpaths = [
   "tests"
-]
-filterwarnings = [
-  # Expected warnings from repartition without columns (tests intentionally exercise this)
-  "ignore:No columns specified for repartition:UserWarning",
-  # Expected warnings from aggregation without columns (tests intentionally exercise this)
-  "ignore:No columns specified; performing aggregation:UserWarning",
-  # Expected warnings from datatype inference (tests exercise edge cases)
-  "ignore:Cannot derive inner type from:UserWarning",
-  "ignore:numpy.datetime64 may be converted:UserWarning",
-  # Deprecated APIs being tested (llm_generate, @daft.udf)
-  "ignore:This method is deprecated and will be removed in v0.8.0:DeprecationWarning",
-  "ignore:The `@daft.udf` decorator is deprecated:DeprecationWarning",
-  "ignore:daft.io.lance.merge_columns is deprecated:DeprecationWarning",
-  "ignore:FragmentHandler is deprecated:DeprecationWarning",
-  # Third-party deprecation warnings we can't fix
-  "ignore:datetime.datetime.utcnow\\(\\) is deprecated:DeprecationWarning:botocore",
-  "ignore:`use_push_based_shuffle` is deprecated:DeprecationWarning:ray",
-  "ignore:`use_polars` is deprecated:DeprecationWarning:ray",
-  "ignore:`free` is a deprecated API:DeprecationWarning:ray",
-  # Custom UDF metrics warning (expected outside UDF context)
-  "ignore:Custom UDF metrics will only be recorded:RuntimeWarning",
-  # pandas FutureWarning for assert_frame_equal with None/nan
-  "ignore:Mismatched null-like values:FutureWarning",
-  # pandas FutureWarning for incompatible dtype assignment in tests
-  "ignore:Setting an item of incompatible dtype is deprecated:FutureWarning",
-  # pandas FutureWarning for groupby.apply on grouping columns
-  "ignore:DataFrameGroupBy.apply operated on the grouping columns:FutureWarning",
-  # pandas arctanh/arccosh RuntimeWarnings (expected math edge cases)
-  "ignore:divide by zero encountered in arctanh:RuntimeWarning",
-  "ignore:invalid value encountered in arctanh:RuntimeWarning",
-  "ignore:invalid value encountered in arccosh:RuntimeWarning"
 ]
 
 [tool.uv.sources.daft_dashboard]

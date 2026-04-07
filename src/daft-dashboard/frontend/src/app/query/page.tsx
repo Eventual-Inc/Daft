@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { toHumanReadableDate, main, getEngineName } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import LoadingPage from "@/components/loading";
@@ -27,6 +27,7 @@ import ResultPreview from "./result-preview";
 function QueryPageInner() {
   const searchParams = useSearchParams();
   const queryId = searchParams.get("id");
+  const debug = useMemo(() => searchParams.has("debug"), [searchParams]);
   const [query, setQuery] = useState<QueryInfo | null>(null);
 
   useEffect(() => {
@@ -40,20 +41,23 @@ function QueryPageInner() {
     // These overwrite
     es.addEventListener("initial_state", event => {
       const data: QueryInfo = JSON.parse(event.data);
+      if (debug) console.log("[debug] initial_state (query)", data);
       setQuery(data);
     });
     // TODO: Consistent ordering of statistics
     es.addEventListener("query_info", event => {
       const data: QueryInfo = JSON.parse(event.data);
+      if (debug) console.log("[debug] query_info", data);
       setQuery(data);
     });
     // Merges with existing info, preserving the current status
     es.addEventListener("operator_info", event => {
+      const data: Record<number, OperatorInfo> = JSON.parse(event.data);
+      if (debug) console.log("[debug] operator_info", data);
       setQuery(prev => {
         if (!prev) return prev;
         if (!("exec_info" in prev.state)) return prev;
 
-        const data: Record<number, OperatorInfo> = JSON.parse(event.data);
         const new_exec_info = { ...prev.state.exec_info, operators: data };
         return {
           ...prev,
@@ -65,7 +69,7 @@ function QueryPageInner() {
       console.info("Closing query SSE endpoint");
       es.close();
     };
-  }, [queryId, setQuery]);
+  }, [queryId, debug, setQuery]);
 
   if (!query) {
     return <LoadingPage />;
@@ -188,7 +192,7 @@ function QueryPageInner() {
           defaultValue="progress-table"
           className="w-full h-full flex flex-col"
         >
-          <TabsList className="grid w-full grid-cols-4 flex-shrink-0">
+          <TabsList className={`grid w-full flex-shrink-0 ${getEngineName(query.runner) === "Swordfish" ? "grid-cols-4" : "grid-cols-3"}`}>
             <TabsTrigger
               value="progress-table"
               disabled={
@@ -206,12 +210,15 @@ function QueryPageInner() {
               Optimized Plan
             </TabsTrigger>
             <TabsTrigger value="unoptimized-plan">Unoptimized Plan</TabsTrigger>
-            <TabsTrigger
-              value="results"
-              disabled={query.state.status !== "Finished"}
-            >
-              Results
-            </TabsTrigger>
+            {/* Results preview only supported for Swordfish for now (#6559) */}
+            {getEngineName(query.runner) === "Swordfish" && (
+              <TabsTrigger
+                value="results"
+                disabled={query.state.status !== "Finished"}
+              >
+                Results
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent

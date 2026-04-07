@@ -372,6 +372,9 @@ fn exists_skip_list_map<F: FnMut(&ExprRef) -> bool>(expr: &ExprRef, mut f: F) ->
     expr.apply(|n| {
         Ok(if is_list_map(n) {
             TreeNodeRecursion::Stop
+        } else if matches!(n.as_ref(), daft_dsl::Expr::Coalesce(_)) {
+            // Don't split UDFs inside Coalesce expressions to preserve short-circuit behavior
+            TreeNodeRecursion::Stop
         } else if f(n) {
             found = true;
             TreeNodeRecursion::Stop

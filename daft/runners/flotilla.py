@@ -6,8 +6,9 @@ import os
 import shutil
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple, TypeAlias
 
+from daft.context import get_context
 from daft.daft import (
     DistributedPhysicalPlan,
     DistributedPhysicalPlanRunner,
@@ -23,7 +24,6 @@ from daft.daft import (
     RaySwordfishWorker,
     RayTaskResult,
     set_compute_runtime_num_worker_threads,
-    start_flight_server,
 )
 from daft.event_loop import set_event_loop
 from daft.expressions import Expression, ExpressionsProjection
@@ -37,6 +37,7 @@ from daft.runners.profiler import profile
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Generator
 
+    from daft.daft import ShuffleWriteInfo
     from daft.runners.ray_runner import RayMaterializedResult
 
 try:
@@ -46,10 +47,26 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+ShufflePlanMetadata = list[tuple[object | None, int, int]]
+ShufflePlanResult = tuple[str, ShufflePlanMetadata, bytes]
+ShuffleWriteInfoLike: TypeAlias = "ShuffleWriteInfo | tuple[str, int, int]"
+
 
 class SwordfishTaskMetadata(NamedTuple):
     partition_metadatas: list[PartitionMetadata]
     stats: bytes
+
+
+def _shuffle_write_backend(info: ShuffleWriteInfoLike) -> str:
+    if isinstance(info, tuple):
+        return info[0]
+    return info.backend
+
+
+def _shuffle_write_id(info: ShuffleWriteInfoLike) -> int:
+    if isinstance(info, tuple):
+        return info[1]
+    return info.shuffle_id
 
 
 @ray.remote  # type: ignore[untyped-decorator]
@@ -99,19 +116,38 @@ class RaySwordfishActor:
     """
 
     def __init__(self, num_cpus: int, num_gpus: int) -> None:
-        os.environ["DAFT_FLOTILLA_WORKER"] = "1"
+        os.environ["DAFT_FLOTILLA_WORKER"] = "1"  # TODO: Remove once fixed DashboardSubscriber
         if num_gpus > 0:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_cpus)
         set_event_loop(asyncio.get_running_loop())
-        self.native_executor = NativeExecutor()
+
         self.ip = ray.util.get_node_ip_address()
-        self.server = start_flight_server(self.ip)
-        self.port = self.server.port()
+        self.native_executor = NativeExecutor(is_flotilla_worker=True, ip=self.ip)
+        self.port = self.native_executor.shuffle_port()
 
     def get_address(self) -> str:
         return f"grpc://{self.ip}:{self.port}"
+
+    async def _resolve_inputs(
+        self,
+        context: dict[str, str] | None,
+        inputs: dict[str, Input | list[ray.ObjectRef]],
+    ) -> tuple[dict[int, Input | list[PyMicroPartition]], int]:
+        resolved_inputs: dict[int, Input | list[PyMicroPartition]] = {}
+        list_items = [(source_id, part) for source_id, part in inputs.items() if isinstance(part, list)]
+        non_list_items = [(source_id, part) for source_id, part in inputs.items() if not isinstance(part, list)]
+        task_id = int(context.get("task_id", "0")) if context else 0
+        if list_items:
+            list_results = await asyncio.gather(*[asyncio.gather(*part) for _, part in list_items])
+            for (source_id, _), mps in zip(list_items, list_results):
+                resolved_inputs[int(source_id)] = [getattr(mp, "_micropartition", mp) for mp in mps]
+
+        for source_id, part in non_list_items:
+            resolved_inputs[int(source_id)] = part
+
+        return resolved_inputs, task_id
 
     async def run_plan(
         self,
@@ -127,18 +163,7 @@ class RaySwordfishActor:
         from daft.daft import PyDaftContext
 
         with profile():
-            # create the resolved inputs from the micropartitions and the other inputs
-            resolved_inputs: dict[int, Input | list[PyMicroPartition]] = {}
-            list_items = [(source_id, part) for source_id, part in inputs.items() if isinstance(part, list)]
-            non_list_items = [(source_id, part) for source_id, part in inputs.items() if not isinstance(part, list)]
-            task_id = int(context.get("task_id", "0")) if context else 0
-            if list_items:
-                list_results = await asyncio.gather(*[asyncio.gather(*part) for _, part in list_items])
-                for (source_id, _), mps in zip(list_items, list_results):
-                    resolved_inputs[int(source_id)] = [mp._micropartition for mp in mps]
-
-            for source_id, part in non_list_items:
-                resolved_inputs[int(source_id)] = part
+            resolved_inputs, task_id = await self._resolve_inputs(context, inputs)
 
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
@@ -161,6 +186,44 @@ class RaySwordfishActor:
 
             stats = await result_handle.try_finish()
             yield SwordfishTaskMetadata(partition_metadatas=metas, stats=stats.encode())
+
+    async def run_shuffle_plan(
+        self,
+        plan: LocalPhysicalPlan,
+        exec_cfg: PyDaftExecutionConfig,
+        context: dict[str, str] | None,
+        **inputs: Input | list[ray.ObjectRef],
+    ) -> ShufflePlanResult:
+        from daft.daft import PyDaftContext
+
+        with profile():
+            resolved_inputs, task_id = await self._resolve_inputs(context, inputs)
+
+            ctx = PyDaftContext()
+            ctx._daft_execution_config = exec_cfg
+
+            backend_info = plan.shuffle_write_info()
+            if backend_info is None:
+                raise ValueError("run_shuffle_plan() requires a repartition write plan")
+            backend = _shuffle_write_backend(backend_info)
+
+            result_handle = await self.native_executor.run(
+                plan,
+                ctx,
+                task_id,
+                resolved_inputs,
+                context,
+                False,
+            )
+            stats, shuffle_metadata = await result_handle.try_finish_with_shuffle_metadata()
+            if shuffle_metadata is None:
+                raise ValueError("Shuffle plan did not return shuffle metadata")
+
+            return (
+                backend,
+                [(object_ref, int(num_rows), int(size_bytes)) for object_ref, num_rows, size_bytes in shuffle_metadata],
+                stats.encode(),
+            )
 
 
 @ray.remote  # type: ignore[untyped-decorator]
@@ -204,37 +267,52 @@ class RaySwordfishTaskHandle:
 
     result_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
-    shuffle_write_info: tuple[str, int, int] | None = None
+    shuffle_write_info: ShuffleWriteInfoLike | None = None
     cache_id: int | None = None
     task: asyncio.Task[RayTaskResult] | None = None
 
     async def _get_result(self) -> RayTaskResult:
         try:
+            if self.shuffle_write_info is not None:
+                backend, refs, stats = await self.result_handle
+                if backend == "ray":
+                    ray_refs: list[RayPartitionRef] = []
+                    for object_ref, num_rows, size_bytes in refs:
+                        if object_ref is None:
+                            raise ValueError("Expected Ray shuffle metadata to include object refs")
+                        ray_refs.append(RayPartitionRef(object_ref, num_rows, size_bytes))
+                    return RayTaskResult.ray_shuffle_success(
+                        ray_refs,
+                        stats,
+                    )
+                if backend == "flight":
+                    shuffle_id = _shuffle_write_id(self.shuffle_write_info)
+                    actor_address = await self.actor_handle.get_address.remote()
+                    cache_id = self.cache_id if self.cache_id is not None else 0
+                    flight_refs: list[FlightShufflePartitionRef] = []
+                    for partition_idx, (object_ref, num_rows, size_bytes) in enumerate(refs):
+                        if object_ref is not None:
+                            raise ValueError("Expected Flight shuffle metadata to not include object refs")
+                        flight_refs.append(
+                            FlightShufflePartitionRef(
+                                shuffle_id,
+                                partition_idx,
+                                actor_address,
+                                cache_id,
+                                num_rows,
+                                size_bytes,
+                            )
+                        )
+                    return RayTaskResult.flight_shuffle_success(
+                        flight_refs,
+                        stats,
+                    )
+                raise NotImplementedError(f"Unsupported shuffle write backend: {backend}")
+
             await self.result_handle.completed()
             results = [result for result in self.result_handle]
             metadata_ref = results.pop()
-
             task_metadata: SwordfishTaskMetadata = await metadata_ref
-            if self.shuffle_write_info is not None:
-                backend, shuffle_id, _ = self.shuffle_write_info
-                if backend != "flight":
-                    raise NotImplementedError(f"Unsupported shuffle write backend: {backend}")
-                cache_id = self.cache_id if self.cache_id is not None else 0
-                actor_address = await self.actor_handle.get_address.remote()
-                return RayTaskResult.shuffle_success(
-                    [
-                        FlightShufflePartitionRef(
-                            shuffle_id,
-                            partition_idx,
-                            actor_address,
-                            cache_id,
-                            metadata.num_rows,
-                            metadata.size_bytes or 0,
-                        )
-                        for partition_idx, metadata in enumerate(task_metadata.partition_metadatas)
-                    ],
-                    task_metadata.stats,
-                )
             assert len(results) == len(task_metadata.partition_metadatas)
 
             return RayTaskResult.success(
@@ -280,16 +358,25 @@ class RaySwordfishActorHandle:
             inputs[str(source_id)] = py_input
         for source_id, refs in task.psets().items():
             inputs[str(source_id)] = [ref.object_ref for ref in refs]
-        result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
-            plan,
-            task.config(),
-            task.context(),
-            **inputs,
-        )
+        shuffle_write_info = plan.shuffle_write_info()
+        if shuffle_write_info is None:
+            result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
+                plan,
+                task.config(),
+                task.context(),
+                **inputs,
+            )
+        else:
+            result_handle = self.actor_handle.run_shuffle_plan.options(name=task.name()).remote(
+                plan,
+                task.config(),
+                task.context(),
+                **inputs,
+            )
         return RaySwordfishTaskHandle(
             result_handle,
             self.actor_handle,
-            plan.shuffle_write_info(),
+            shuffle_write_info,
             task.id(),
         )
 
@@ -297,8 +384,8 @@ class RaySwordfishActorHandle:
         ray.kill(self.actor_handle)
 
 
-# TODO: Consider making configurable depending on real-world behavior
-ACTOR_STARTUP_TIMEOUT = 120
+def _get_worker_startup_timeout() -> int:
+    return get_context().daft_execution_config.worker_startup_timeout
 
 
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
@@ -324,10 +411,14 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             actors.append((node, actor))
 
     # Batch all IP address retrievals into a single ray.get call
+    actor_startup_timeout = _get_worker_startup_timeout()
     try:
-        ip_addresses = ray.get([actor.get_address.remote() for _, actor in actors], timeout=ACTOR_STARTUP_TIMEOUT)
+        ip_addresses = ray.get(
+            [actor.get_address.remote() for _, actor in actors],
+            timeout=actor_startup_timeout,
+        )
     except ray.exceptions.GetTimeoutError:
-        raise RuntimeError(f"Failed to get IP addresses for actors within {ACTOR_STARTUP_TIMEOUT} seconds")
+        raise RuntimeError(f"Failed to get IP addresses for actors within {actor_startup_timeout} seconds")
 
     handles = []
     for (node, actor), ip_address in zip(actors, ip_addresses):
@@ -380,7 +471,10 @@ class RemoteFlotillaRunner:
         partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
     ) -> None:
         psets = {
-            k: [RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0) for v in v.values()]
+            k: [
+                RayPartitionRef(res.partition(), res.metadata().num_rows, res.metadata().size_bytes or 0)
+                for res in v.values()
+            ]
             for k, v in partition_sets.items()
         }
         self.curr_plans[plan.idx()] = plan
@@ -427,7 +521,14 @@ def _get_ray_job_id_for_actor_naming() -> str | None:
         runtime_ctx = None
 
     if runtime_ctx is not None:
-        job_id = getattr(runtime_ctx, "job_id", None)
+        get_job_id = getattr(runtime_ctx, "get_job_id", None)
+        if callable(get_job_id):
+            try:
+                job_id = get_job_id()
+            except Exception:
+                job_id = None
+        else:
+            job_id = getattr(runtime_ctx, "job_id", None)
         if job_id is not None:
             try:
                 return job_id.hex()

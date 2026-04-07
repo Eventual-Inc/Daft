@@ -345,7 +345,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 | RepartitionSpec::Random(_)
                 | RepartitionSpec::Range(_) => {
                     let child = self.curr_node.pop().unwrap();
-                    self.gen_shuffle_node(
+                    self.gen_repartition_node(
                         repartition.repartition_spec.clone(),
                         node.schema(),
                         child,
@@ -422,7 +422,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     );
 
                     // Second stage: Repartition to distribute the dataset
-                    let repartition = self.gen_shuffle_node(
+                    let repartition = self.gen_repartition_node(
                         RepartitionSpec::Hash(HashRepartitionConfig::new(
                             None,
                             columns.clone().into_iter().map(|e| e.into()).collect(),
@@ -459,7 +459,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 } else if Self::needs_hash_repartition(&input_node, &partition_by)? {
                     input_node
                 } else {
-                    self.gen_shuffle_node(
+                    self.gen_repartition_node(
                         RepartitionSpec::Hash(HashRepartitionConfig::new(
                             None,
                             partition_by.clone().into_iter().map(|e| e.into()).collect(),

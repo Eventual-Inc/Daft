@@ -280,8 +280,32 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
 mod tests {
     use std::{sync::Arc, time::Duration};
 
+    use common_metrics::{Meter, ops::NodeInfo};
+
     use super::*;
-    use crate::{dynamic_batching::tests::MockRuntimeStats, runtime_stats::RuntimeStats};
+    use crate::runtime_stats::RuntimeStats;
+
+    struct MockRuntimeStats;
+    impl RuntimeStats for MockRuntimeStats {
+        fn new(_meter: &Meter, _node_info: &NodeInfo) -> Self {
+            Self {}
+        }
+        fn build_snapshot(
+            &self,
+            _ordering: std::sync::atomic::Ordering,
+        ) -> common_metrics::StatSnapshot {
+            unimplemented!()
+        }
+        fn add_rows_in(&self, _rows: u64) {
+            unimplemented!()
+        }
+        fn add_rows_out(&self, _rows: u64) {
+            unimplemented!()
+        }
+        fn add_duration_us(&self, _cpu_us: u64) {
+            unimplemented!()
+        }
+    }
 
     fn create_strategy() -> LatencyConstrainedBatchingStrategy {
         LatencyConstrainedBatchingStrategy {

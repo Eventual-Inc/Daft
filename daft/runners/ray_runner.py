@@ -15,7 +15,7 @@ import pyarrow as pa  # noqa: TID253
 import ray.experimental  # noqa: TID253
 
 from daft.context import get_context
-from daft.daft import DistributedPhysicalPlan, PyExecutionStats
+from daft.daft import DistributedPhysicalPlan, PyExecutionStats, RayPartitionRef
 from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.dependencies import np
 from daft.execution.metadata import ExecutionMetadata
@@ -523,7 +523,6 @@ class RayRunner(Runner[ray.ObjectRef]):
     def __init__(
         self,
         address: str | None,
-        max_task_backlog: int | None,
         force_client_mode: bool = False,
     ) -> None:
         super().__init__()
@@ -596,7 +595,18 @@ class RayRunner(Runner[ray.ObjectRef]):
             distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
                 builder._builder, query_id, daft_execution_config
             )
-            physical_plan_json = distributed_plan.repr_json()
+            # Build psets for repr_json so the pipeline tree structure matches run_plan.
+            # Without psets, partition-count-dependent nodes (e.g. PreShuffleMerge) may
+            # differ, causing node ID mismatches between the dashboard plan and execution stats.
+            all_partition_sets = self._part_set_cache.get_all_partition_sets()
+            repr_psets = {
+                k: [
+                    RayPartitionRef(res.partition(), res.metadata().num_rows, res.metadata().size_bytes or 0)
+                    for res in v.values()
+                ]
+                for k, v in all_partition_sets.items()
+            }
+            physical_plan_json = distributed_plan.repr_json(repr_psets)
 
             # Only send notifications after we've successfully created the distributed plan
             if should_notify:

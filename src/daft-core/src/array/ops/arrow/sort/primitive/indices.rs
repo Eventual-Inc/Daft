@@ -6,6 +6,7 @@ use arrow::{
 use super::common;
 
 /// Unstable sort of indices.
+#[inline(never)]
 pub fn indices_sorted_unstable_by<T, F>(
     array: &PrimitiveArray<T>,
     cmp: F,

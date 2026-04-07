@@ -100,6 +100,8 @@ pub enum JoinStrategy {
     Broadcast,
     /// only used internally, do not let users to specify
     Cross,
+    /// only used internally for actor-backed key-filtering anti-joins; do not let users specify
+    KeyFiltering,
 }
 
 #[cfg(feature = "python")]
