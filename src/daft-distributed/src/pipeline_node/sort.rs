@@ -58,7 +58,8 @@ impl RuntimeStats for SortStats {
         // All phases contribute duration
         self.base.add_duration_us(snapshot.duration_us());
 
-        // For row counts, ignore snapshots from the sample and repartition phases.
+        // For row counts, ignore snapshots from the sample and repartition phases
+        // (if they occurred - skipped for the single-partition case).
         // The final sort phase produces two snapshots:
         // * a Source snapshot from the in_memory_scan, which we also ignore to avoid double-counting rows_out
         // * a Default snapshot from the sort, which we report as the rows_in and rows_out for the distributed operator
