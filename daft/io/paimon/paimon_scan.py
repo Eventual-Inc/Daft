@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import daft
 from daft.dependencies import pa
 from daft.expressions import ExpressionsProjection
+from daft.io.paimon._predicate_visitor import convert_filters_to_paimon
 from daft.io.partitioning import PartitionField
 from daft.io.source import DataSource, DataSourceTask
 from daft.logical.schema import Schema
@@ -93,9 +94,7 @@ class PaimonDataSource(DataSource):
             else {}
         )
 
-        # Filter pushdown state
-        self._pushed_filters: list[PyExpr] | None = None
-        self._remaining_filters: list[PyExpr] | None = None
+        # Filter pushdown state (populated by push_filters, consumed by get_tasks)
         self._paimon_predicate: Predicate | None = None
 
     @property
@@ -119,12 +118,8 @@ class PaimonDataSource(DataSource):
         - pushed_filters: filters that were converted to Paimon predicates
         - remaining_filters: filters that need post-scan evaluation
         """
-        from daft.io.paimon._predicate_visitor import convert_filters_to_paimon
-
         pushed_filters, remaining_filters, paimon_predicate = convert_filters_to_paimon(self._table, filters)
 
-        self._pushed_filters = pushed_filters if pushed_filters else None
-        self._remaining_filters = remaining_filters if remaining_filters else None
         self._paimon_predicate = paimon_predicate
 
         if pushed_filters:
@@ -145,16 +140,12 @@ class PaimonDataSource(DataSource):
         if pushdowns.limit is not None:
             read_builder = read_builder.with_limit(pushdowns.limit)
 
-        if pushdowns.filters is not None:
-            from daft.io.paimon._predicate_visitor import convert_filters_to_paimon
-
-            _, _, paimon_predicate = convert_filters_to_paimon(self._table, pushdowns.filters._expr)
-            if paimon_predicate is not None:
-                read_builder = read_builder.with_filter(paimon_predicate)
-                logger.debug(
-                    "Applied Paimon filter pushdown predicate: %s",
-                    paimon_predicate,
-                )
+        if self._paimon_predicate is not None:
+            read_builder = read_builder.with_filter(self._paimon_predicate)
+            logger.debug(
+                "Applied Paimon filter pushdown predicate: %s",
+                self._paimon_predicate,
+            )
 
         if self._table.partition_keys and pushdowns.partition_filters is None:
             logger.warning(

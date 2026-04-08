@@ -14,9 +14,6 @@ pypaimon = pytest.importorskip("pypaimon")
 
 import daft
 
-# Import paimon_write to apply the patch for complex types support
-from daft.io.paimon import paimon_write  # noqa: F401
-
 # ---------------------------------------------------------------------------
 # Basic append
 # ---------------------------------------------------------------------------
