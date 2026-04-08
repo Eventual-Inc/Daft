@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Check that the public Daft API is covered in the documentation."""
 
-import importlib
 import inspect
 import re
 import sys
-import tomllib
 from pathlib import Path
+
+import tomllib
 
 DOCS_DIR = Path(__file__).parent.parent
 PROJECT_ROOT = DOCS_DIR.parent
@@ -56,9 +56,7 @@ def check_install_extras() -> list[str]:
     with open(pyproject, "rb") as f:
         data = tomllib.load(f)
 
-    toml_extras = {
-        k for k in data.get("project", {}).get("optional-dependencies", {}) if k not in META_EXTRAS
-    }
+    toml_extras = {k for k in data.get("project", {}).get("optional-dependencies", {}) if k not in META_EXTRAS}
 
     install_md = DOCS_DIR / "install.md"
     text = install_md.read_text()

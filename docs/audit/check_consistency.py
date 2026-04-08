@@ -16,10 +16,7 @@ BAD_PARAMS = {
 
 
 def iter_doc_files() -> list[Path]:
-    return [
-        p for p in DOCS_DIR.rglob("*.md")
-        if not any(part in SKIP_DIRS for part in p.parts)
-    ]
+    return [p for p in DOCS_DIR.rglob("*.md") if not any(part in SKIP_DIRS for part in p.parts)]
 
 
 def extract_code_blocks(text: str) -> list[tuple[int, str]]:
@@ -49,9 +46,7 @@ def check_syntax(files: list[Path]) -> list[str]:
             try:
                 ast.parse(code)
             except SyntaxError as e:
-                issues.append(
-                    f"SYNTAX: {rel}:{lineno + (e.lineno or 1) - 1} - {e.msg}"
-                )
+                issues.append(f"SYNTAX: {rel}:{lineno + (e.lineno or 1) - 1} - {e.msg}")
     return issues
 
 
@@ -73,10 +68,7 @@ def check_api_names(files: list[Path], daft_mod) -> list[str]:
                     and not node.attr.startswith("_")
                     and not hasattr(daft_mod, node.attr)
                 ):
-                    issues.append(
-                        f"API_NAME: {rel}:{lineno + node.col_offset - 1}"
-                        f" - daft.{node.attr} does not exist"
-                    )
+                    issues.append(f"API_NAME: {rel}:{lineno + node.col_offset - 1} - daft.{node.attr} does not exist")
     return issues
 
 
@@ -103,9 +95,7 @@ def check_import_consistency(files: list[Path]) -> list[str]:
         if len(modules) > 1:
             files_str = ", ".join(sorted({f for _, f in sources}))
             modules_str = " vs ".join(sorted(modules))
-            issues.append(
-                f"IMPORT: {files_str} - '{name}' imported from multiple paths: {modules_str}"
-            )
+            issues.append(f"IMPORT: {files_str} - '{name}' imported from multiple paths: {modules_str}")
     return issues
 
 
@@ -146,10 +136,7 @@ def check_bad_params(files: list[Path]) -> list[str]:
                     if kw.arg in BAD_PARAMS[func_name]:
                         correct = BAD_PARAMS[func_name][kw.arg]
                         line = lineno + (node.lineno or 1) - 1
-                        issues.append(
-                            f"BAD_PARAM: {rel}:{line}"
-                            f" - {func_name}({kw.arg}=...) should be {correct}="
-                        )
+                        issues.append(f"BAD_PARAM: {rel}:{line} - {func_name}({kw.arg}=...) should be {correct}=")
     return issues
 
 

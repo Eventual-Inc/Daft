@@ -19,9 +19,7 @@ STALE_PHRASES = [
 
 def iter_doc_files() -> list[Path]:
     return [
-        p for p in DOCS_DIR.rglob("*.md")
-        if not any(part in SKIP_DIRS for part in p.parts)
-        and p.name not in SKIP_FILES
+        p for p in DOCS_DIR.rglob("*.md") if not any(part in SKIP_DIRS for part in p.parts) and p.name not in SKIP_FILES
     ]
 
 
@@ -31,9 +29,9 @@ def strip_code_blocks(text: str) -> str:
 
 def strip_content(text: str) -> str:
     text = re.sub(r"^---\s*\n.*?\n---\s*\n", "", text, flags=re.DOTALL)  # frontmatter
-    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)              # html comments
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)  # html comments
     text = strip_code_blocks(text)
-    text = re.sub(r"^:::.*$", "", text, flags=re.MULTILINE)              # mkdocstrings
+    text = re.sub(r"^:::.*$", "", text, flags=re.MULTILINE)  # mkdocstrings
     return text
 
 
