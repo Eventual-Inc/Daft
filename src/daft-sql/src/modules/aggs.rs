@@ -91,7 +91,7 @@ impl SQLFunction for AggExpr {
 fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
     Ok(match inputs {
         [FunctionArg::Unnamed(FunctionArgExpr::Wildcard)] => match &planner.current_plan {
-            Some(_plan) => Arc::new(Expr::Agg(AggExpr::CountRows)),
+            Some(_plan) => Arc::new(Expr::Agg(AggExpr::CountRows)).alias("count"),
             None => unsupported_sql_err!("Wildcard is not supported in this context"),
         },
         [FunctionArg::Unnamed(FunctionArgExpr::QualifiedWildcard(name))] => {

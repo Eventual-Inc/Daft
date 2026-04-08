@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 
 import numpy as np
@@ -339,7 +340,7 @@ def test_cast_image():
     assert actual.schema()["img"].dtype == DataType.image("RGB")
 
 
-def test_count_pushdown(capsys):
+def test_count_pushdown():
     data = [
         {"id_spec": 1, "age": "2020-01-15", "tags": ["a", "b"]},
         {"id_spec": 2, "age": "2020-01-16", "tags": ["c"]},
@@ -353,7 +354,7 @@ def test_count_pushdown(capsys):
 
     assert result == {"total": [3]}, "count(1) return 3 rows"
 
-    result_df.explain(show_all=True)
-    captured = capsys.readouterr()
+    output = io.StringIO()
+    result_df.explain(show_all=True, file=io.StringIO())
 
-    assert "count(col(id_spec)" in captured.out.lower(), "Should show optimized count expression"
+    assert "count(col(id_spec)" in output.lower(), "Should show optimized count expression"

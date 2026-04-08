@@ -248,6 +248,7 @@ impl GroupedAggregateSink {
     pub fn new(
         aggregations: &[BoundAggExpr],
         group_by: &[BoundExpr],
+        aliases: &[Option<Arc<str>>],
         input_schema: &SchemaRef,
         cfg: &DaftExecutionConfig,
     ) -> DaftResult<Self> {
@@ -257,6 +258,17 @@ impl GroupedAggregateSink {
                 input_schema,
                 group_by,
             )?;
+        let final_projections = final_projections
+            .into_iter()
+            .zip(aliases.iter())
+            .map(|(expr, alias)| {
+                if let Some(alias) = alias {
+                    BoundExpr::new_unchecked(expr.into_inner().alias(alias.clone()))
+                } else {
+                    expr
+                }
+            })
+            .collect::<Vec<_>>();
 
         // MapGroups aggregations cannot be decomposed into partial / final stages and
         // must see the full group in a single pass. Detect this case so that we force

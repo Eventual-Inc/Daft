@@ -798,15 +798,17 @@ fn physical_plan_to_pipeline(
             input,
             aggregations,
             group_by,
+            aliases,
             stats_state,
             context,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let agg_sink = GroupedAggregateSink::new(aggregations, group_by, input.schema(), cfg)
-                .with_context(|_| PipelineCreationSnafu {
-                plan_name: physical_plan.name(),
-            })?;
+            let agg_sink =
+                GroupedAggregateSink::new(aggregations, group_by, aliases, input.schema(), cfg)
+                    .with_context(|_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    })?;
             BlockingSinkNode::new(
                 Arc::new(agg_sink),
                 child_node,
