@@ -5,6 +5,7 @@ mod explode;
 mod filter;
 mod into_batches;
 mod into_partitions;
+mod iterative_join;
 pub mod join;
 pub mod key_filtering;
 mod limit;
@@ -34,6 +35,7 @@ pub use explode::Explode;
 pub use filter::Filter;
 pub use into_batches::IntoBatches;
 pub use into_partitions::IntoPartitions;
+pub use iterative_join::IterativeJoin;
 pub use join::Join;
 pub use key_filtering::KeyFilteringConfig;
 #[cfg(feature = "python")]

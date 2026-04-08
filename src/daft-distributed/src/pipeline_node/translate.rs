@@ -10,10 +10,12 @@ use daft_dsl::{
         agg::extract_agg_expr,
         bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
     },
-    is_partition_compatible, resolved_col,
+    is_partition_compatible,
+    join::normalize_join_keys,
+    resolved_col,
 };
 use daft_logical_plan::{
-    LogicalPlan, LogicalPlanRef, SourceInfo,
+    JoinType, LogicalPlan, LogicalPlanRef, SourceInfo,
     partitioning::{ClusteringSpec, HashRepartitionConfig, RepartitionSpec},
 };
 use daft_scan::{ScanState, scan_task_iters};
@@ -487,6 +489,42 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     )?),
                     &self.meter,
                 )
+            }
+            LogicalPlan::IterativeJoin(fp) => {
+                let right_node = self.curr_node.pop().unwrap();
+                let left_node = self.curr_node.pop().unwrap();
+
+                let (remaining_on, left_on, right_on, null_equals_nulls) = fp.on.split_eq_preds();
+                if !remaining_on.is_empty() {
+                    return Err(common_error::DaftError::not_implemented(
+                        "FixedPointHashJoin only supports equi-join predicates",
+                    ));
+                }
+                if left_on.is_empty() && right_on.is_empty() && fp.join_type == JoinType::Inner {
+                    return Err(common_error::DaftError::not_implemented(
+                        "FixedPointHashJoin with no join keys (cross join) is not implemented",
+                    ));
+                }
+                let (left_on, right_on) = normalize_join_keys(
+                    left_on,
+                    right_on,
+                    left_node.config().schema.clone(),
+                    right_node.config().schema.clone(),
+                )?;
+                let left_on = BoundExpr::bind_all(&left_on, &left_node.config().schema)?;
+                let right_on = BoundExpr::bind_all(&right_on, &right_node.config().schema)?;
+                let signature = BoundExpr::bind_all(&fp.signature, &fp.output_schema)?;
+                self.gen_iterative_hash_join_nodes(
+                    left_node,
+                    right_node,
+                    left_on,
+                    right_on,
+                    null_equals_nulls,
+                    fp.join_type,
+                    fp.output_schema.clone(),
+                    signature,
+                    fp.max_iterations,
+                )?
             }
             LogicalPlan::Join(join) => {
                 // Visitor appends in in-order

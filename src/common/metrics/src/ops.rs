@@ -59,6 +59,7 @@ pub enum NodeType {
     // Specific to distributed only
     BroadcastJoin,
     KeyFilteringJoin,
+    IterativeHashJoin,
 }
 
 impl Display for NodeType {

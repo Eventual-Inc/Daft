@@ -14,7 +14,9 @@ use daft_schema::schema::SchemaRef;
 use crate::pipeline_node::join::KeyFilteringJoinNode;
 use crate::pipeline_node::{
     DistributedPipelineNode,
-    join::{BroadcastJoinNode, CrossJoinNode, HashJoinNode, SortMergeJoinNode},
+    join::{
+        BroadcastJoinNode, CrossJoinNode, HashJoinNode, IterativeHashJoinNode, SortMergeJoinNode,
+    },
     translate::LogicalPlanToPipelineNodeTranslator,
 };
 
@@ -157,6 +159,108 @@ impl LogicalPlanToPipelineNodeTranslator {
                 left,
                 right,
                 output_schema,
+            )),
+            &self.meter,
+        ))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn gen_iterative_hash_join_nodes(
+        &mut self,
+        left: DistributedPipelineNode,
+        right: DistributedPipelineNode,
+        left_on: Vec<BoundExpr>,
+        right_on: Vec<BoundExpr>,
+        null_equals_nulls: Vec<bool>,
+        join_type: JoinType,
+        output_schema: SchemaRef,
+        signature: Vec<BoundExpr>,
+        max_iterations: Option<usize>,
+    ) -> DaftResult<DistributedPipelineNode> {
+        let left_spec = left.config().clustering_spec.as_ref();
+        let right_spec = right.config().clustering_spec.as_ref();
+
+        let is_left_hash_partitioned = matches!(left_spec, ClusteringSpec::Hash(..))
+            && is_partition_compatible(
+                &left_spec.partition_by(),
+                left_on.iter().map(|e| e.inner()),
+            );
+        let is_right_hash_partitioned = matches!(right_spec, ClusteringSpec::Hash(..))
+            && is_partition_compatible(
+                &right_spec.partition_by(),
+                right_on.iter().map(|e| e.inner()),
+            );
+        let num_left_partitions = left_spec.num_partitions();
+        let num_right_partitions = right_spec.num_partitions();
+
+        let num_partitions = match (
+            is_left_hash_partitioned,
+            is_right_hash_partitioned,
+            num_left_partitions,
+            num_right_partitions,
+        ) {
+            (true, true, a, b) | (false, false, a, b) => max(a, b),
+            (_, _, 1, x) | (_, _, x, 1) => x,
+            (true, false, a, b)
+                if (a as f64)
+                    >= (b as f64) * self.plan_config.config.hash_join_partition_size_leniency =>
+            {
+                a
+            }
+            (false, true, a, b)
+                if (b as f64)
+                    >= (a as f64) * self.plan_config.config.hash_join_partition_size_leniency =>
+            {
+                b
+            }
+            (_, _, a, b) => max(a, b),
+        };
+
+        let left = if num_left_partitions != num_partitions
+            || (num_partitions > 1 && !is_left_hash_partitioned)
+        {
+            self.gen_repartition_node(
+                RepartitionSpec::Hash(HashRepartitionConfig::new(
+                    Some(num_partitions),
+                    left_on.iter().map(|e| e.clone().into()).collect(),
+                )),
+                left.config().schema.clone(),
+                left,
+            )?
+        } else {
+            left
+        };
+
+        let right = if num_right_partitions != num_partitions
+            || (num_partitions > 1 && !is_right_hash_partitioned)
+        {
+            self.gen_repartition_node(
+                RepartitionSpec::Hash(HashRepartitionConfig::new(
+                    Some(num_partitions),
+                    right_on.iter().map(|e| e.clone().into()).collect(),
+                )),
+                right.config().schema.clone(),
+                right,
+            )?
+        } else {
+            right
+        };
+
+        let node_id = self.get_next_pipeline_node_id();
+        Ok(DistributedPipelineNode::new(
+            Arc::new(IterativeHashJoinNode::new(
+                node_id,
+                &self.plan_config,
+                left_on,
+                right_on,
+                Some(null_equals_nulls),
+                join_type,
+                num_partitions,
+                left,
+                right,
+                output_schema,
+                signature,
+                max_iterations,
             )),
             &self.meter,
         ))

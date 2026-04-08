@@ -83,6 +83,12 @@ pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
             "type": join.join_type,
             "strategy": join.join_strategy,
         }),
+        LogicalPlan::IterativeJoin(fp) => json!({
+            "on": vec![&fp.on.inner().map(|e| e.to_string())],
+            "type": fp.join_type,
+            "signature_len": fp.signature.len(),
+            "max_iterations": fp.max_iterations,
+        }),
         LogicalPlan::Sink(_) => json!({}),
         LogicalPlan::Sample(sample) => json!({
             "fraction": sample.fraction,

@@ -417,6 +417,9 @@ fn translate_helper(
                 inputs,
             ))
         }
+        LogicalPlan::IterativeJoin(_) => Err(DaftError::not_implemented(
+            "FixedPointHashJoin is only supported on the Ray runner. Please use daft.set_runner_ray().",
+        )),
         LogicalPlan::Join(join) => {
             if let Some(strategy) = join.join_strategy {
                 match strategy {
