@@ -23,11 +23,6 @@ from daft.subscribers.events import (
     ResultProduced,
     Stats,
 )
-from tests.conftest import get_tests_daft_runner_name
-
-pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="Only Native Runner supports subscribers right now"
-)
 
 
 class MockSubscriber(Subscriber):
