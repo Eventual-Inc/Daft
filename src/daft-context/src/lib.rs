@@ -272,7 +272,6 @@ impl DaftContext {
 
 static DAFT_CONTEXT: OnceLock<DaftContext> = OnceLock::new();
 
-#[cfg(feature = "python")]
 pub fn get_context() -> DaftContext {
     match DAFT_CONTEXT.get() {
         Some(ctx) => ctx.clone(),
@@ -294,11 +293,6 @@ pub fn get_context() -> DaftContext {
             ctx
         }
     }
-}
-
-#[cfg(not(feature = "python"))]
-pub fn get_context() -> DaftContext {
-    unimplemented!()
 }
 
 #[cfg(feature = "python")]

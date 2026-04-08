@@ -946,7 +946,6 @@ pub(super) mod tests {
         assert!(heap.pop().is_none()); // Heap should be empty
     }
 
-    #[cfg(feature = "python")]
     #[test]
     fn test_swordfish_task_added_resources_from_context() {
         use crate::{
