@@ -325,6 +325,11 @@ impl<T: Task> SubmittableTask<T> {
         }
     }
 
+    #[cfg(test)]
+    pub fn task(&self) -> &T {
+        &self.task
+    }
+
     pub fn submit(self, scheduler_handle: &SchedulerHandle<T>) -> DaftResult<SubmittedTask> {
         scheduler_handle.submit_task(self)
     }

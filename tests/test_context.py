@@ -342,3 +342,33 @@ def test_set_worker_startup_timeout():
         assert daft.context.get_context().daft_execution_config.worker_startup_timeout == 321
 
     assert daft.context.get_context().daft_execution_config.worker_startup_timeout == original_timeout
+
+
+def test_added_resources_get_and_set():
+    """Test that added_resources can be set and retrieved from DaftContext."""
+    ctx = daft.context.get_context()
+
+    # Initially empty
+    original = ctx.added_resources
+    assert isinstance(original, dict)
+
+    # Set a resource with a timestamp
+    import time
+
+    now = int(time.time() * 1000)
+    ctx.added_resources = {"my_resource": now}
+
+    # Verify it was set
+    resources = ctx.added_resources
+    assert len(resources) == 1
+    assert resources["my_resource"] == now
+
+    # Set multiple resources
+    ctx.added_resources = {"res_a": 1000, "res_b": 2000}
+    resources = ctx.added_resources
+    assert len(resources) == 2
+    assert resources["res_a"] == 1000
+    assert resources["res_b"] == 2000
+
+    # Clean up: restore original
+    ctx.added_resources = original
