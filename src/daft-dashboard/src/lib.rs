@@ -323,8 +323,6 @@ async fn ping() -> StatusCode {
 }
 
 pub async fn launch_server(
-    //addr: IpAddr,
-    //port: u16,
     options: ServerOptions,
     shutdown_fn: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {

@@ -90,7 +90,9 @@ pub(crate) fn import_event_log(
     let file = File::open(path)?;
     let reader = BufReader::new(file);
     let source = path.display().to_string();
-    import_events(reader, &source, state.as_ref())
+    import_events(reader, &source, state.as_ref())?;
+    eprintln!("✅ Success! event log imported from {}", path.display());
+    Ok(())
 }
 
 fn import_events<R: BufRead>(
