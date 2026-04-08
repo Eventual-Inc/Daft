@@ -43,6 +43,7 @@
         * [Delta Lake](connectors/delta_lake.md)
         * [Lance](connectors/lance.md)
         * [Hugging Face Datasets](connectors/huggingface.md)
+        * [Apache Paimon](connectors/paimon.md)
         * [Postgres](connectors/postgres.md)
         * [S3](connectors/aws.md)
         * [SQL Databases](connectors/sql.md)
@@ -84,6 +85,7 @@
     * [UDF Patterns](examples/udf-patterns.md)
     * [Window Functions](examples/window-functions.md)
     * [Working with Common Crawl Data](examples/common-crawl-daft-tutorial.md)
+    * [Document Processing](examples/document-processing.md)
 * Python API
     * [Python API](api/index.md)
     * [AI](api/ai.md)
@@ -113,6 +115,7 @@
         * [SHOW](sql/statements/show.md)
         * [USE](sql/statements/use.md)
     * [Data Types](sql/datatypes.md)
+    * [Identifiers](sql/identifiers.md)
     * [Window Functions](sql/window_functions.md)
 * Contributing
     * [Overview](contributing/overview.md)
