@@ -164,13 +164,13 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "CheckpointId must be non-empty")]
+    #[should_panic(expected = "CheckpointId must be non-empty and contain only ASCII alphanumeric")]
     fn from_string_rejects_slash() {
         let _ = CheckpointId::from_string("bad/path".to_string());
     }
 
     #[test]
-    #[should_panic(expected = "CheckpointId must be non-empty")]
+    #[should_panic(expected = "CheckpointId must be non-empty and contain only ASCII alphanumeric")]
     fn from_string_rejects_space() {
         let _ = CheckpointId::from_string("bad path".to_string());
     }
