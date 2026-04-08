@@ -1,0 +1,64 @@
+name: Docs Audit
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'daft/**'
+      - 'pyproject.toml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'daft/**'
+      - 'pyproject.toml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tier1-audit:
+    runs-on: ubuntu-latest
+    env:
+      python-version: "3.12"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: moonrepo/setup-rust@v1
+        with:
+          cache: false
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ runner.os }}-dev-build
+          cache-all-crates: "true"
+          cache-workspace-crates: "true"
+          save-if: false
+      - name: Setup Python and uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.python-version }}
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+      - name: Setup Virtual Env
+        run: |
+          uv venv --seed .venv
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: |
+          source activate
+          uv sync --no-install-project --all-extras --all-groups
+      - name: Build Daft
+        env:
+          DAFT_DASHBOARD_SKIP_BUILD: "1"
+        run: |
+          source activate
+          maturin develop --uv
+      - name: Check API coverage
+        run: python docs/audit/check_api_coverage.py
+      - name: Check consistency
+        run: python docs/audit/check_consistency.py
+      - name: Check completeness
+        run: python docs/audit/check_completeness.py

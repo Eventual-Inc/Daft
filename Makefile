@@ -123,6 +123,20 @@ docs: .venv install-docs-deps ## Build Daft documentation
 docs-serve: .venv install-docs-deps ## Build Daft documentation in development server
 	JUPYTER_PLATFORM_DIRS=1 uv run mkdocs serve -f mkdocs.yml
 
+.PHONY: docs-audit
+docs-audit: .venv ## Run all docs audit checks (no API key needed)
+	$(VENV_BIN)/python docs/audit/check_api_coverage.py
+	$(VENV_BIN)/python docs/audit/check_consistency.py
+	$(VENV_BIN)/python docs/audit/check_completeness.py
+
+.PHONY: docs-audit-code
+docs-audit-code: .venv ## Run docs code block validation
+	$(VENV_BIN)/pytest --markdown-docs docs/ -v --tb=short
+
+.PHONY: docs-audit-coverage
+docs-audit-coverage: .venv ## Run docs API coverage check only
+	$(VENV_BIN)/python docs/audit/check_api_coverage.py
+
 
 .PHONY: check-format
 check-format: check-toolchain .venv  ## Check if code is properly formatted
