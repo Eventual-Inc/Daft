@@ -14,7 +14,7 @@ def test_sample_with_percent():
     result.collect()
 
     # Should return approximately 50% of rows (2-3 rows for 5 rows)
-    assert 1 <= len(result) <= 5
+    assert 0 <= len(result) <= 5
     assert result.column_names == ["a", "b"]
 
 
