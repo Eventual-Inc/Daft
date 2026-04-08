@@ -73,15 +73,6 @@ Describe the execution plan for a query with joins.
 DESCRIBE SELECT a.*, b.name FROM T a JOIN S b ON a.id = b.id;
 ```
 
-## Unsupported Features
-
-The following features are not currently supported:
-
-- `EXPLAIN` - Use `DESCRIBE` instead
-- `DESCRIBE ANALYZE` - Performance analysis is not yet implemented
-- `DESCRIBE VERBOSE` - Verbose output is not yet implemented
-- `DESCRIBE FORMAT` - Custom output formats are not yet implemented
-
 !!! warning "Work in Progress"
 
     The SQL Reference documents are a work in progress.
