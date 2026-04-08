@@ -70,7 +70,7 @@ pub trait CheckpointStore: Send + Sync {
     /// add cost for no benefit at this layer.
     ///
     /// [`AlreadySealed`]: crate::error::CheckpointError::AlreadySealed
-    async fn stage_keys(&self, id: CheckpointId, keys: Series) -> CheckpointResult<()>;
+    async fn stage_keys(&self, id: &CheckpointId, keys: Series) -> CheckpointResult<()>;
 
     /// Stage output file metadata into a checkpoint. May be called multiple
     /// times for the same [`CheckpointId`]. Staged files are not visible to
@@ -84,8 +84,11 @@ pub trait CheckpointStore: Send + Sync {
     /// **Not idempotent** — uses append semantics, same as [`stage_keys`](Self::stage_keys).
     ///
     /// [`AlreadySealed`]: crate::error::CheckpointError::AlreadySealed
-    async fn stage_files(&self, id: CheckpointId, files: Vec<FileMetadata>)
-    -> CheckpointResult<()>;
+    async fn stage_files(
+        &self,
+        id: &CheckpointId,
+        files: Vec<FileMetadata>,
+    ) -> CheckpointResult<()>;
 
     /// Checkpoint (seal) a staged entry — couples the staged keys and files, making them
     /// visible to readers. No further staging is allowed after this call.
@@ -97,7 +100,7 @@ pub trait CheckpointStore: Send + Sync {
     /// acknowledgement is lost, worker retries).
     ///
     /// [`CheckpointNotFound`]: crate::error::CheckpointError::CheckpointNotFound
-    async fn checkpoint(&self, id: CheckpointId) -> CheckpointResult<()>;
+    async fn checkpoint(&self, id: &CheckpointId) -> CheckpointResult<()>;
 
     /// Stream all checkpointed source keys (both checkpointed and committed)
     /// as columnar [`Series`] chunks. Useful for building a filter to skip
@@ -115,7 +118,7 @@ pub trait CheckpointStore: Send + Sync {
     ) -> CheckpointResult<BoxStream<'_, CheckpointResult<FileMetadata>>>;
 
     /// Get metadata for a single checkpoint by ID.
-    async fn get_checkpoint(&self, id: CheckpointId) -> CheckpointResult<Checkpoint>;
+    async fn get_checkpoint(&self, id: &CheckpointId) -> CheckpointResult<Checkpoint>;
 
     /// Stream metadata for all checkpoints in the store.
     async fn list_checkpoints(
