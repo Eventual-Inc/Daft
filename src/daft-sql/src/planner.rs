@@ -29,8 +29,9 @@ use sqlparser::{
     ast::{
         self, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct, ExcludeSelectItem,
         FunctionArg, FunctionArgExpr, GroupByExpr, Ident, ObjectName, Query, SelectItem, SetExpr,
-        Subscript, TableAlias, TableFunctionArgs, TableWithJoins, TimezoneInfo, UnaryOperator,
-        Value, WildcardAdditionalOptions, With,
+        Subscript, TableAlias, TableFunctionArgs, TableSample, TableSampleKind, TableSampleQuantity,
+        TableSampleUnit, TableWithJoins, TimezoneInfo, UnaryOperator, Value,
+        WildcardAdditionalOptions, With,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
@@ -1073,10 +1074,8 @@ impl SQLPlanner<'_> {
     fn plan_sample(
         &self,
         plan: LogicalPlanBuilder,
-        sample_kind: &sqlparser::ast::TableSampleKind,
+        sample_kind: &TableSampleKind,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
-        use sqlparser::ast::{TableSample, TableSampleKind, TableSampleQuantity, TableSampleUnit};
-
         let table_sample = match sample_kind {
             TableSampleKind::BeforeTableAlias(sample) | TableSampleKind::AfterTableAlias(sample) => {
                 sample.as_ref()
