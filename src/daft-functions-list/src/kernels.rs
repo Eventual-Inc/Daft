@@ -25,6 +25,7 @@ use indexmap::{
 pub trait ListArrayExtension: Sized {
     fn value_counts(&self) -> DaftResult<MapArray>;
     fn count(&self, mode: CountMode) -> DaftResult<UInt64Array>;
+    fn list_flatten(&self) -> DaftResult<ListArray>;
     fn explode(&self, ignore_empty_and_null: bool) -> DaftResult<Series>;
     fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array>;
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series>;
@@ -211,6 +212,10 @@ impl ListArrayExtension for ListArray {
                 .collect(),
         };
         UInt64Array::from_values(self.name(), counts).with_nulls(self.nulls().cloned())
+    }
+
+    fn list_flatten(&self) -> DaftResult<ListArray> {
+        
     }
 
     // TODO(desmond): Migrate this to arrow-rs after migrating growable internals.
