@@ -84,7 +84,7 @@ impl std::fmt::Display for Stat {
 /// This is intended to be lightweight for execution to generate while still
 /// encoding to the same format as the receivable end.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Stats(pub SmallVec<[(Arc<str>, Stat); 3]>);
+pub struct Stats(pub SmallVec<[(Arc<str>, Stat); 7]>);
 
 impl Stats {
     pub fn names(&self) -> impl Iterator<Item = &str> + '_ {
@@ -109,7 +109,7 @@ impl Index<usize> for Stats {
 
 impl IntoIterator for Stats {
     type Item = (Arc<str>, Stat);
-    type IntoIter = smallvec::IntoIter<[(Arc<str>, Stat); 3]>;
+    type IntoIter = smallvec::IntoIter<[(Arc<str>, Stat); 7]>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
