@@ -1,8 +1,9 @@
 use std::ops::Rem;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array};
+use daft_core::datatypes::UInt64Array;
 use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_groupby::IntoGroups;
 use rand::SeedableRng;
 
 use crate::RecordBatch;
@@ -110,7 +111,7 @@ impl RecordBatch {
         let output_tables = group_idx
             .into_iter()
             .map(|gidx| {
-                let gidx = UInt64Array::from_vec("idx", gidx);
+                let gidx = UInt64Array::from_vec("idx", gidx.into_vec());
                 self.take(&gidx)
             })
             .collect::<DaftResult<Vec<_>>>()?;

@@ -102,8 +102,14 @@ impl InMemoryCheckpointStore {
     ) -> Vec<Checkpoint> {
         entries
             .iter()
-            .map(|(&id, e)| {
-                Checkpoint::new(id, e.status, e.created_at, e.sealed_at, e.committed_at)
+            .map(|(id, e)| {
+                Checkpoint::new(
+                    id.clone(),
+                    e.status,
+                    e.created_at,
+                    e.sealed_at,
+                    e.committed_at,
+                )
             })
             .collect()
     }
@@ -117,13 +123,15 @@ impl Default for InMemoryCheckpointStore {
 
 #[async_trait]
 impl CheckpointStore for InMemoryCheckpointStore {
-    async fn stage_keys(&self, id: CheckpointId, keys: Series) -> CheckpointResult<()> {
+    async fn stage_keys(&self, id: &CheckpointId, keys: Series) -> CheckpointResult<()> {
         let mut entries = self.write_entries()?;
 
-        let entry = entries.entry(id).or_insert_with(CheckpointEntry::new);
+        let entry = entries
+            .entry(id.clone())
+            .or_insert_with(CheckpointEntry::new);
 
         if entry.status != CheckpointStatus::Staged {
-            return Err(CheckpointError::AlreadySealed { id });
+            return Err(CheckpointError::AlreadySealed { id: id.clone() });
         }
 
         entry.keys.push(keys);
@@ -132,27 +140,29 @@ impl CheckpointStore for InMemoryCheckpointStore {
 
     async fn stage_files(
         &self,
-        id: CheckpointId,
+        id: &CheckpointId,
         files: Vec<FileMetadata>,
     ) -> CheckpointResult<()> {
         let mut entries = self.write_entries()?;
 
-        let entry = entries.entry(id).or_insert_with(CheckpointEntry::new);
+        let entry = entries
+            .entry(id.clone())
+            .or_insert_with(CheckpointEntry::new);
 
         if entry.status != CheckpointStatus::Staged {
-            return Err(CheckpointError::AlreadySealed { id });
+            return Err(CheckpointError::AlreadySealed { id: id.clone() });
         }
 
         entry.files.extend(files);
         Ok(())
     }
 
-    async fn checkpoint(&self, id: CheckpointId) -> CheckpointResult<()> {
+    async fn checkpoint(&self, id: &CheckpointId) -> CheckpointResult<()> {
         let mut entries = self.write_entries()?;
 
         let entry = entries
-            .get_mut(&id)
-            .ok_or(CheckpointError::CheckpointNotFound { id })?;
+            .get_mut(id)
+            .ok_or_else(|| CheckpointError::CheckpointNotFound { id: id.clone() })?;
 
         // Idempotent: no-op if already checkpointed or committed.
         if entry.status != CheckpointStatus::Staged {
@@ -192,15 +202,15 @@ impl CheckpointStore for InMemoryCheckpointStore {
         Ok(Box::pin(stream::iter(files.into_iter().map(Ok))))
     }
 
-    async fn get_checkpoint(&self, id: CheckpointId) -> CheckpointResult<Checkpoint> {
+    async fn get_checkpoint(&self, id: &CheckpointId) -> CheckpointResult<Checkpoint> {
         let entries = self.read_entries()?;
 
         let entry = entries
-            .get(&id)
-            .ok_or(CheckpointError::CheckpointNotFound { id })?;
+            .get(id)
+            .ok_or_else(|| CheckpointError::CheckpointNotFound { id: id.clone() })?;
 
         Ok(Checkpoint::new(
-            id,
+            id.clone(),
             entry.status,
             entry.created_at,
             entry.sealed_at,
@@ -222,10 +232,10 @@ impl CheckpointStore for InMemoryCheckpointStore {
     async fn mark_committed(&self, ids: &[CheckpointId]) -> CheckpointResult<()> {
         let mut entries = self.write_entries()?;
 
-        for &id in ids {
+        for id in ids {
             let entry = entries
-                .get_mut(&id)
-                .ok_or(CheckpointError::CheckpointNotFound { id })?;
+                .get_mut(id)
+                .ok_or_else(|| CheckpointError::CheckpointNotFound { id: id.clone() })?;
 
             match entry.status {
                 // Already committed — idempotent no-op.
@@ -237,7 +247,7 @@ impl CheckpointStore for InMemoryCheckpointStore {
                 }
                 // Staged entries haven't been sealed yet.
                 CheckpointStatus::Staged => {
-                    return Err(CheckpointError::NotCheckpointed { id });
+                    return Err(CheckpointError::NotCheckpointed { id: id.clone() });
                 }
             }
         }

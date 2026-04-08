@@ -2,11 +2,12 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
-use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array, prelude::*};
+use daft_core::{datatypes::UInt64Array, prelude::*};
 use daft_dsl::{
     Expr, WindowExpr,
     expr::bound_expr::{BoundExpr, BoundWindowExpr},
 };
+use daft_groupby::IntoGroups;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
@@ -163,7 +164,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 .iter()
                                 .map(|indices| {
                                     let indices_arr =
-                                        UInt64Array::from_vec("indices", indices.clone());
+                                        UInt64Array::from_vec("indices", indices.to_vec());
                                     input_data.take(&indices_arr).unwrap()
                                 })
                                 .collect::<Vec<_>>();
