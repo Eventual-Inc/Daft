@@ -112,6 +112,7 @@
     * [SQL Reference](sql/index.md)
     * Statements
         * [SELECT](sql/statements/select.md)
+        * [DESCRIBE](sql/statements/describe.md)
         * [SHOW](sql/statements/show.md)
         * [USE](sql/statements/use.md)
     * [Data Types](sql/datatypes.md)
