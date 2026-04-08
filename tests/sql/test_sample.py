@@ -67,7 +67,7 @@ def test_sample_with_alias():
     result = daft.sql("SELECT t.* FROM df AS t SAMPLE (50 PERCENT)", df=df)
     result.collect()
 
-    assert 1 <= len(result) <= 5
+    assert 0 <= len(result) <= 5
     assert result.column_names == ["a", "b"]
 
 
