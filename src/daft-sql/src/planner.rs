@@ -1122,8 +1122,15 @@ impl SQLPlanner<'_> {
                         fraction = Some(num / 100.0);
                     }
                     Some(TableSampleUnit::Rows) => {
+                    Some(TableSampleUnit::Rows) => {
                         // Sample by number of rows
+                        if num.fract() != 0.0 {
+                            return Err(PlannerError::invalid_operation(format!(
+                                "SAMPLE ROWS quantity must be a whole number, got: {num}"
+                            )));
+                        }
                         size = Some(num as usize);
+                    }
                     }
                     None => {
                         // No unit specified - treat as fraction (0.0-1.0)
