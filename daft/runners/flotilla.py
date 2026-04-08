@@ -27,6 +27,7 @@ from daft.daft import (
     set_compute_runtime_num_worker_threads,
 )
 from daft.event_loop import set_event_loop
+from daft.execution.file_resource_manager import file_resource_manager
 from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import (
@@ -143,10 +144,6 @@ class RaySwordfishActor:
         set_compute_runtime_num_worker_threads(num_cpus)
         set_event_loop(asyncio.get_running_loop())
 
-        from daft.execution.file_resource_manager import file_resource_manager
-
-        self._resource_manager = file_resource_manager
-
         self.ip = ray.util.get_node_ip_address()
         self.native_executor = NativeExecutor(is_flotilla_worker=True, ip=self.ip)
 
@@ -187,7 +184,7 @@ class RaySwordfishActor:
     ) -> AsyncGenerator[MicroPartition | SwordfishTaskMetadata, None]:
         """Run a plan on swordfish and yield partitions."""
         if added_resources:
-            self._resource_manager.resolve(added_resources)
+            file_resource_manager.resolve(added_resources)
 
         # We import PyDaftContext inside the function because PyDaftContext is not serializable.
         from daft.daft import PyDaftContext
@@ -226,7 +223,7 @@ class RaySwordfishActor:
         **inputs: Input | list[ray.ObjectRef],
     ) -> ShufflePlanResult:
         if added_resources:
-            self._resource_manager.resolve(added_resources)
+            file_resource_manager.resolve(added_resources)
 
         from daft.daft import PyDaftContext
 

@@ -23,6 +23,8 @@ import time
 import zipfile
 from typing import Literal
 
+from daft.file import File
+
 logger = logging.getLogger(__name__)
 
 # File extensions
@@ -284,8 +286,6 @@ class FileResourceManager:
         last_error: Exception | None = None
         for attempt in range(1, _MAX_DOWNLOAD_RETRIES + 1):
             try:
-                from daft.file import File
-
                 remote_file = File(name)
                 with remote_file.open() as f:
                     data = f.read()
