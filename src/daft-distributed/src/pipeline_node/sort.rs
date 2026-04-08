@@ -41,12 +41,12 @@ const SAMPLE_PHASE: &str = "sample";
 const REPARTITION_PHASE: &str = "repartition";
 const FINAL_SORT_PHASE: &str = "final-sort";
 
-pub struct SortStats {
+struct SortStats {
     base: BaseCounters,
 }
 
 impl SortStats {
-    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+    fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
         Self {
             base: BaseCounters::new(meter, context),
         }
