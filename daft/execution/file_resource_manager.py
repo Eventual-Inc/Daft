@@ -25,7 +25,7 @@ from typing import Literal
 
 logger = logging.getLogger(__name__)
 
-# Supported file extensions
+# File extensions
 _ARCHIVE_EXTENSIONS = (".tar", ".tar.gz", ".tgz", ".tar.bz2", ".zip", ".whl")
 _DIRECT_EXTENSIONS = (".py", ".egg")
 
@@ -101,7 +101,7 @@ def _parse_resource_name(name: str) -> tuple[str, str | None]:
 class FileResourceManager:
     """Resource manager that downloads file resources to the worker's local filesystem.
 
-    Supported file types:
+    file types:
     - Python files: .py, .egg — downloaded to the current working directory.
     - Archives: .tar, .tar.gz, .tgz, .tar.bz2, .zip, .whl — downloaded and extracted
       to the current working directory (or to a custom directory via ``name#path``).
