@@ -437,6 +437,152 @@ impl SortNode {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_metrics::{
+        Meter, StatSnapshot,
+        ops::{NodeCategory, NodeInfo, NodeType},
+        snapshot::{DefaultSnapshot, SourceSnapshot, StatSnapshotImpl as _},
+    };
+
+    use super::*;
+    use crate::{pipeline_node::PipelineNodeContext, statistics::RuntimeStats};
+
+    fn make_sort_stats() -> SortStats {
+        let meter = Meter::test_scope("sort_stats_test");
+        let context = PipelineNodeContext::new(
+            0,
+            Arc::from("test-query"),
+            0,
+            Arc::from("Sort"),
+            NodeType::Sort,
+            NodeCategory::BlockingSink,
+        );
+        SortStats::new(&meter, &context)
+    }
+
+    fn node_info_with_phase(phase: &str) -> NodeInfo {
+        NodeInfo {
+            node_phase: Some(phase.to_string()),
+            ..Default::default()
+        }
+    }
+
+    fn default_snapshot(cpu_us: u64, rows_in: u64, rows_out: u64) -> StatSnapshot {
+        StatSnapshot::Default(DefaultSnapshot {
+            cpu_us,
+            rows_in,
+            rows_out,
+        })
+    }
+
+    fn source_snapshot(cpu_us: u64, rows_out: u64) -> StatSnapshot {
+        StatSnapshot::Source(SourceSnapshot {
+            cpu_us,
+            rows_out,
+            bytes_read: 0,
+        })
+    }
+
+    #[test]
+    fn test_only_final_sort_default_snapshots_count_rows() {
+        let stats = make_sort_stats();
+
+        // Sample phase: rows should be ignored, duration counted
+        stats.handle_worker_node_stats(
+            &node_info_with_phase(SAMPLE_PHASE),
+            &default_snapshot(100, 500, 50),
+        );
+
+        // Repartition phase: rows should be ignored, duration counted
+        stats.handle_worker_node_stats(
+            &node_info_with_phase(REPARTITION_PHASE),
+            &default_snapshot(200, 1000, 1000),
+        );
+
+        // Final sort phase, Source snapshot (in_memory_scan): rows ignored, duration counted
+        stats.handle_worker_node_stats(
+            &node_info_with_phase(FINAL_SORT_PHASE),
+            &source_snapshot(50, 1000),
+        );
+
+        // Final sort phase, Default snapshot (the actual sort): rows AND duration counted
+        stats.handle_worker_node_stats(
+            &node_info_with_phase(FINAL_SORT_PHASE),
+            &default_snapshot(300, 1000, 1000),
+        );
+
+        let exported = stats.export_snapshot();
+        let StatSnapshot::Default(snap) = exported else {
+            panic!("expected Default snapshot");
+        };
+
+        // Duration: 100 + 200 + 50 + 300 = 650
+        assert_eq!(snap.cpu_us, 650, "all phases should contribute duration");
+        // Rows: only from the final sort Default snapshot
+        assert_eq!(snap.rows_in, 1000, "only final-sort Default counts rows_in");
+        assert_eq!(
+            snap.rows_out, 1000,
+            "only final-sort Default counts rows_out"
+        );
+    }
+
+    #[test]
+    fn test_multiple_final_sort_partitions_accumulate() {
+        let stats = make_sort_stats();
+
+        // Simulate two partition groups going through the final sort
+        stats.handle_worker_node_stats(
+            &node_info_with_phase(FINAL_SORT_PHASE),
+            &default_snapshot(100, 400, 400),
+        );
+        stats.handle_worker_node_stats(
+            &node_info_with_phase(FINAL_SORT_PHASE),
+            &default_snapshot(150, 600, 600),
+        );
+
+        let StatSnapshot::Default(snap) = stats.export_snapshot() else {
+            panic!("expected Default snapshot");
+        };
+
+        assert_eq!(snap.cpu_us, 250);
+        assert_eq!(snap.rows_in, 1000, "rows_in should accumulate across partitions");
+        assert_eq!(snap.rows_out, 1000, "rows_out should accumulate across partitions");
+    }
+
+    #[test]
+    fn test_no_snapshots_yields_zero() {
+        let stats = make_sort_stats();
+        let StatSnapshot::Default(snap) = stats.export_snapshot() else {
+            panic!("expected Default snapshot");
+        };
+        assert_eq!(snap.cpu_us, 0);
+        assert_eq!(snap.rows_in, 0);
+        assert_eq!(snap.rows_out, 0);
+    }
+
+    #[test]
+    fn test_snapshot_without_phase_ignored_for_rows() {
+        let stats = make_sort_stats();
+
+        // A snapshot with no phase set should still contribute duration but not rows
+        let no_phase = NodeInfo {
+            node_phase: None,
+            ..Default::default()
+        };
+        stats.handle_worker_node_stats(&no_phase, &default_snapshot(100, 500, 500));
+
+        let StatSnapshot::Default(snap) = stats.export_snapshot() else {
+            panic!("expected Default snapshot");
+        };
+        assert_eq!(snap.cpu_us, 100, "duration should be counted");
+        assert_eq!(snap.rows_in, 0, "rows should not be counted without phase");
+        assert_eq!(snap.rows_out, 0, "rows should not be counted without phase");
+    }
+}
+
 impl PipelineNodeImpl for SortNode {
     fn context(&self) -> &PipelineNodeContext {
         &self.context
