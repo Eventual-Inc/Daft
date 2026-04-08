@@ -489,7 +489,7 @@ impl DaftSetAggable for Series {
                 continue;
             }
 
-            let group_indices = UInt64Array::from_vec("", group.clone());
+            let group_indices = UInt64Array::from_vec("", group.to_vec());
             let group_series = series.take(&group_indices)?;
 
             let unique_indices = deduplicate_indices(&group_series)?;

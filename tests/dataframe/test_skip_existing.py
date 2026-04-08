@@ -300,8 +300,8 @@ def test_skip_existing_multiple_calls_chain_semantics(tmp_path: Path):
     (ckpt_b / "part-0.csv").write_text("id,val\n2,b\n", encoding="utf-8")
 
     out = (
-        df.skip_existing(existing_path=ckpt_a, key_column="id", file_format="csv")
-        .skip_existing(existing_path=ckpt_b, key_column="id", file_format="csv")
+        df.skip_existing(existing_path=ckpt_a, key_column="id", file_format="csv", num_workers=2)
+        .skip_existing(existing_path=ckpt_b, key_column="id", file_format="csv", num_workers=2)
         .collect()
     )
     assert out.select("id").to_pydict()["id"] == [3]
@@ -319,8 +319,8 @@ def test_skip_existing_multiple_calls_distinct_key_columns_are_applied_in_order(
     (ckpt_path / "part-0.csv").write_text("path\nb\n", encoding="utf-8")
 
     out = (
-        df.skip_existing(existing_path=ckpt_id, key_column="id", file_format="csv")
-        .skip_existing(existing_path=ckpt_path, key_column="path", file_format="csv")
+        df.skip_existing(existing_path=ckpt_id, key_column="id", file_format="csv", num_workers=2)
+        .skip_existing(existing_path=ckpt_path, key_column="path", file_format="csv", num_workers=2)
         .collect()
     )
     assert out.select("id").to_pydict()["id"] == [3]
@@ -339,8 +339,8 @@ def test_skip_existing_on_both_join_branches_maps_to_correct_inputs(tmp_path: Pa
     (ckpt_left / "part-0.csv").write_text("id\n1\n", encoding="utf-8")
     (ckpt_right / "part-0.csv").write_text("rid\n2\n", encoding="utf-8")
 
-    left = left.skip_existing(existing_path=ckpt_left, key_column="id", file_format="csv")
-    right = right.skip_existing(existing_path=ckpt_right, key_column="rid", file_format="csv")
+    left = left.skip_existing(existing_path=ckpt_left, key_column="id", file_format="csv", num_workers=2)
+    right = right.skip_existing(existing_path=ckpt_right, key_column="rid", file_format="csv", num_workers=2)
     out = left.join(right, left_on="id", right_on="rid", how="inner").collect()
     assert out.select("id").to_pydict()["id"] == [3]
 
@@ -357,8 +357,8 @@ def test_skip_existing_multiple_calls_are_cumulative(tmp_path: Path):
     (ckpt_b / "part-0.csv").write_text("id,val\n2,b\n", encoding="utf-8")
 
     out = (
-        df.skip_existing(existing_path=ckpt_a, key_column="id", file_format="csv")
-        .skip_existing(existing_path=ckpt_b, key_column="id", file_format="csv")
+        df.skip_existing(existing_path=ckpt_a, key_column="id", file_format="csv", num_workers=2)
+        .skip_existing(existing_path=ckpt_b, key_column="id", file_format="csv", num_workers=2)
         .collect()
     )
     assert out.select("id").to_pydict()["id"] == [3]

@@ -380,7 +380,7 @@ class DataFrame:
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.schema()
             ╭─────────────┬────────╮
-            │ column_name ┆ type   │
+            │ Column Name ┆ DType  │
             ╞═════════════╪════════╡
             │ x           ┆ Int64  │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
