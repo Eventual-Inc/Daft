@@ -3,7 +3,7 @@ from __future__ import annotations
 import atexit
 import json
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -40,8 +40,8 @@ def _json_default(obj: object) -> object:
     return str(obj)
 
 
-def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+def _epoch_now() -> float:
+    return time.time()
 
 
 def _mono_ms() -> float:
@@ -122,7 +122,11 @@ class EventLogSubscriber(Subscriber):
         query_file = self._get_query_file(query_id)
         if query_file is None:
             return
-        record: dict[str, Any] = {"event": event_name, "ts": _iso_now(), "query_id": query_id}
+        record: dict[str, Any] = {
+            "event": event_name,
+            "timestamp": _epoch_now(),
+            "query_id": query_id,
+        }
         record.update(payload)
         try:
             query_file.write(json.dumps(record, default=_json_default) + "\n")
@@ -144,11 +148,14 @@ class EventLogSubscriber(Subscriber):
 
     def on_query_started(self, event: QueryStarted) -> None:
         self._query_starts[event.query_id] = _mono_ms()
-        self._write_event(event.query_id, "query_started", {})
         self._write_event(
             event.query_id,
-            "plan_unoptimized",
-            {"plan": event.metadata.unoptimized_plan},
+            "query_started",
+            {
+                "plan": event.metadata.unoptimized_plan,
+                "runner": event.metadata.runner,
+                "entrypoint": event.metadata.entrypoint,
+            },
         )
 
     def on_query_finished(self, event: QueryFinished) -> None:
@@ -181,7 +188,7 @@ class EventLogSubscriber(Subscriber):
     def on_result_produced(self, event: ResultProduced) -> None:
         self._write_event(
             event.query_id,
-            "result_out",
+            "result_produced",
             {
                 "rows": event.num_rows,
             },
@@ -197,19 +204,17 @@ class EventLogSubscriber(Subscriber):
         start = self._optimization_starts.pop(event.query_id, None)
         duration_ms = round(_mono_ms() - start) if start is not None else None
 
-        payload: dict[str, Any] = {}
+        payload: dict[str, Any] = {"plan": event.optimized_plan}
         if duration_ms is not None:
             payload["duration_ms"] = duration_ms
 
         self._write_event(event.query_id, "optimization_ended", payload)
-        self._write_event(event.query_id, "plan_optimized", {"plan": event.optimized_plan})
 
     # Execution
 
     def on_execution_started(self, event: ExecutionStarted) -> None:
         self._exec_starts[event.query_id] = _mono_ms()
-        self._write_event(event.query_id, "execution_started", {})
-        self._write_event(event.query_id, "plan_physical", {"plan": event.physical_plan})
+        self._write_event(event.query_id, "execution_started", {"physical_plan": event.physical_plan})
 
     def on_operator_start(self, event: OperatorStarted) -> None:
         query_id = event.query_id
@@ -254,7 +259,7 @@ class EventLogSubscriber(Subscriber):
         if duration_ms is not None:
             payload["duration_ms"] = duration_ms
 
-        self._write_event(query_id, "operator_finished", payload)
+        self._write_event(query_id, "operator_ended", payload)
 
     def on_execution_finished(self, event: ExecutionFinished) -> None:
         duration_ms = event.duration_ms
