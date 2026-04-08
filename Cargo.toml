@@ -111,10 +111,10 @@ crate-type = ["cdylib"]
 name = "daft"
 
 [package]
-edition = "2024"
+edition = {workspace = true}
 name = "daft"
 publish = false
-version = "0.3.0-dev0"
+version = {workspace = true}
 # Exclude unnecessary files from sdist
 exclude = [
   "examples/dvector",
@@ -187,6 +187,7 @@ members = [
   "src/daft-checkpoint",
   "src/daft-context",
   "src/daft-core",
+  "src/daft-groupby",
   "src/daft-csv",
   "src/daft-dashboard",
   "src/daft-dsl",
@@ -269,6 +270,7 @@ daft-algebra = {path = "src/daft-algebra"}
 daft-catalog = {path = "src/daft-catalog"}
 daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
+daft-groupby = {path = "src/daft-groupby"}
 daft-dsl = {path = "src/daft-dsl"}
 daft-ext-internal = {path = "src/daft-ext-internal"}
 daft-ext-macros = {path = "src/daft-ext-macros", version = "0.1.1"}

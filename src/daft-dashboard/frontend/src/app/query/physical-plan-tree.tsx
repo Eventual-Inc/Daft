@@ -5,7 +5,6 @@ import { main } from "@/lib/utils";
 import { ExecutingState, OperatorInfo, PhysicalPlanNode } from "./types";
 import {
   getStatusIcon,
-  getStatusBorderColor,
   formatStatValue,
   formatDuration,
   ROWS_IN_STAT_KEY,
@@ -14,11 +13,80 @@ import {
 } from "./stats-utils";
 import ProgressTable from "./progress-table";
 import TreeLayout from "./tree-layout";
-import { categoryColors, defaultColor } from "./tree-colors";
+import { getHeatmapStyle, FINISHED_STYLE } from "./tree-colors";
 
-function getCategoryColor(node: PhysicalPlanNode) {
-  // Try node.type first (e.g. "Source", "Join"), then node.category
-  return categoryColors[node.type] ?? categoryColors[node.category] ?? defaultColor;
+function getCpuSec(operator?: OperatorInfo): number {
+  if (!operator) return 0;
+  const cpuStat = operator.stats[DURATION_US_STAT_KEY];
+  if (cpuStat?.type === "Duration") {
+    return cpuStat.value.secs + cpuStat.value.nanos / 1e9;
+  }
+  return 0;
+}
+
+function getCountStat(
+  operator: OperatorInfo | undefined,
+  key: string,
+): number | null {
+  const stat = operator?.stats[key];
+  if (!stat || stat.type !== "Count") return null;
+  return stat.value;
+}
+
+/**
+ * NodeType variants where (rows_in - rows_out) is a meaningful queue-depth
+ * signal — i.e. the operator is a true 1:1 row transform in steady state.
+ *
+ * Excluded on purpose:
+ *   - Reductive: Filter, Sample, Limit (rows_in > rows_out by design,
+ *     would otherwise be misread as a stuck queue)
+ *   - Amplifying: Explode, Unpivot (rows_in < rows_out)
+ *   - Multi-input / variable cardinality: Concat, all join variants
+ *   - Blocking sinks (Aggregate, Sort, Write, ...) and sources — handled
+ *     by cpu_fraction alone
+ */
+const QUEUE_SIGNAL_NODE_TYPES = new Set<string>([
+  "Project",
+  "UDFProject",
+  "VLLMProject",
+  "AsyncUDFProject",
+  "DistributedActorPoolProject",
+  "IntoBatches",
+  "MonotonicallyIncreasingId",
+]);
+
+/**
+ * Combined bottleneck signal in [0, 1].
+ *
+ * Two signals, take whichever is louder:
+ *   1. cpu_fraction = cpu_us / max(cpu_us across operators)
+ *      — flags CPU-bound work (image_decode, image_resize, sync compute).
+ *   2. queue_fraction = (rows_in - rows_out) / rows_in
+ *      — flags ops sitting on input they haven't emitted (UDF predict
+ *        batching for GPU, async stalls). Only applied to operators in
+ *        QUEUE_SIGNAL_NODE_TYPES so that reductive/amplifying ops don't
+ *        produce false positives.
+ */
+function getBottleneckIntensity(
+  operator: OperatorInfo | undefined,
+  nodeType: string | undefined,
+  maxCpuSec: number,
+): number {
+  if (!operator) return 0;
+
+  const cpuFraction =
+    maxCpuSec > 0 ? Math.min(1, getCpuSec(operator) / maxCpuSec) : 0;
+
+  let queueFraction = 0;
+  if (nodeType && QUEUE_SIGNAL_NODE_TYPES.has(nodeType)) {
+    const rowsIn = getCountStat(operator, ROWS_IN_STAT_KEY);
+    const rowsOut = getCountStat(operator, ROWS_OUT_STAT_KEY);
+    if (rowsIn != null && rowsOut != null && rowsIn > 0) {
+      queueFraction = Math.max(0, (rowsIn - rowsOut) / rowsIn);
+    }
+  }
+
+  return Math.max(cpuFraction, queueFraction);
 }
 
 function useWallClockDuration(operator?: OperatorInfo): string | null {
@@ -40,15 +108,17 @@ function useWallClockDuration(operator?: OperatorInfo): string | null {
 function PhysicalNodeCard({
   node,
   operator,
+  intensity,
 }: {
   node: PhysicalPlanNode;
   operator?: OperatorInfo;
+  intensity: number;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const catColor = getCategoryColor(node);
   const status = operator?.status ?? "Pending";
-  const statusBorder = getStatusBorderColor(status);
   const wallClock = useWallClockDuration(operator);
+  const cardStyle: React.CSSProperties =
+    status === "Finished" ? FINISHED_STYLE : getHeatmapStyle(intensity);
 
   const rowsIn = operator?.stats[ROWS_IN_STAT_KEY]?.value ?? 0;
   const rowsOut = operator?.stats[ROWS_OUT_STAT_KEY]?.value ?? 0;
@@ -66,15 +136,16 @@ function PhysicalNodeCard({
 
   return (
     <div
-      className={`${catColor.bg} ${statusBorder} border-2 rounded-lg px-4 py-2.5 cursor-pointer
-        hover:brightness-125 transition-all min-w-[180px] max-w-[320px]`}
+      className="border-2 rounded-lg px-4 py-2.5 cursor-pointer
+        hover:brightness-125 transition-all min-w-[180px] max-w-[320px]"
+      style={cardStyle}
       onClick={() => setExpanded(!expanded)}
     >
       {/* Header: status icon + name */}
       <div className="flex items-center gap-2">
         {getStatusIcon(status)}
         <span
-          className={`${main.className} ${catColor.text} text-sm font-bold tracking-wide truncate`}
+          className={`${main.className} text-zinc-100 text-sm font-bold tracking-wide truncate`}
         >
           {node.name}
         </span>
@@ -157,6 +228,10 @@ export default function PhysicalPlanTree({
   }
 
   const operators = exec_state.exec_info.operators;
+  const maxCpuSec = Math.max(
+    0.001,
+    ...Object.values(operators).map(getCpuSec),
+  );
 
   return (
     <div className="bg-zinc-900 h-full flex flex-col">
@@ -205,9 +280,21 @@ export default function PhysicalPlanTree({
             <TreeLayout
               node={plan}
               getChildren={(node) => node.children ?? []}
-              renderNode={(node) => (
-                <PhysicalNodeCard node={node} operator={operators[node.id]} />
-              )}
+              renderNode={(node) => {
+                const op = operators[node.id];
+                const intensity = getBottleneckIntensity(
+                  op,
+                  node.type,
+                  maxCpuSec,
+                );
+                return (
+                  <PhysicalNodeCard
+                    node={node}
+                    operator={op}
+                    intensity={intensity}
+                  />
+                );
+              }}
             />
           </div>
         ) : viewMode === "json" && plan ? (
