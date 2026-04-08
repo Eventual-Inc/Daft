@@ -1,11 +1,12 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::ops::arrow::comparison::build_multi_array_is_equal,
+    array::ops::{VecIndices, arrow::comparison::build_multi_array_is_equal},
     datatypes::UInt64Array,
     series::Series,
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };
 use hashbrown::{HashMap, hash_map::RawEntryMut};
+use smallvec::smallvec;
 
 use crate::RecordBatch;
 
@@ -26,7 +27,7 @@ impl RecordBatch {
 
     pub fn to_probe_hash_table(
         &self,
-    ) -> DaftResult<HashMap<IndexHash, Vec<u64>, IdentityBuildHasher>> {
+    ) -> DaftResult<HashMap<IndexHash, VecIndices, IdentityBuildHasher>> {
         let hashes = self.hash_rows()?;
 
         const DEFAULT_SIZE: usize = 20;
@@ -39,7 +40,7 @@ impl RecordBatch {
         )?;
 
         let mut probe_table =
-            HashMap::<IndexHash, Vec<u64>, IdentityBuildHasher>::with_capacity_and_hasher(
+            HashMap::<IndexHash, VecIndices, IdentityBuildHasher>::with_capacity_and_hasher(
                 DEFAULT_SIZE,
                 Default::default(),
             );
@@ -59,7 +60,7 @@ impl RecordBatch {
                             idx: i as u64,
                             hash: *h,
                         },
-                        vec![i as u64],
+                        smallvec![i as u64],
                     );
                 }
                 RawEntryMut::Occupied(mut entry) => {
