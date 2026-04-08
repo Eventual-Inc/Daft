@@ -582,7 +582,6 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         entrypoint = "python " + " ".join(sys.argv)
         dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
-        should_notify = bool(ray_dashboard_url or dashboard_url)
 
         # Log Dashboard URL if configured
         if dashboard_url:
@@ -609,19 +608,18 @@ class RayRunner(Runner[ray.ObjectRef]):
             physical_plan_json = distributed_plan.repr_json(repr_psets)
 
             # Only send notifications after we've successfully created the distributed plan
-            if should_notify:
-                try:
-                    ctx._notify_query_start(
-                        query_id,
-                        PyQueryMetadata(
-                            output_schema._schema, builder.repr_json(), "Ray (Flotilla)", ray_dashboard_url, entrypoint
-                        ),
-                    )
-                    ctx._notify_optimization_start(query_id)
-                    ctx._notify_optimization_end(query_id, builder.repr_json())
-                    ctx._notify_exec_start(query_id, physical_plan_json)
-                except Exception:
-                    pass
+            try:
+                ctx._notify_query_start(
+                    query_id,
+                    PyQueryMetadata(
+                        output_schema._schema, builder.repr_json(), "Ray (Flotilla)", ray_dashboard_url, entrypoint
+                    ),
+                )
+                ctx._notify_optimization_start(query_id)
+                ctx._notify_optimization_end(query_id, builder.repr_json())
+                ctx._notify_exec_start(query_id, physical_plan_json)
+            except Exception:
+                pass
 
             if self.flotilla_plan_runner is None:
                 self.flotilla_plan_runner = FlotillaRunner()
@@ -640,27 +638,25 @@ class RayRunner(Runner[ray.ObjectRef]):
                 stats: PyExecutionStats = e.value
 
             # Mark all operators as finished to clean up the Dashboard UI before notify_exec_end
-            if should_notify:
-                try:
-                    plan_dict = json.loads(physical_plan_json)
+            try:
+                plan_dict = json.loads(physical_plan_json)
 
-                    def notify_end(node: dict[str, Any]) -> None:
-                        if "children" in node:
-                            for child in node["children"]:
-                                notify_end(child)
-                        if "id" in node:
-                            ctx._notify_exec_operator_end(query_id, node["id"])
+                def notify_end(node: dict[str, Any]) -> None:
+                    if "children" in node:
+                        for child in node["children"]:
+                            notify_end(child)
+                    if "id" in node:
+                        ctx._notify_exec_operator_end(query_id, node["id"])
 
-                    notify_end(plan_dict)
-                except Exception:
-                    pass
+                notify_end(plan_dict)
+            except Exception:
+                pass
 
-            if should_notify:
-                try:
-                    ctx._notify_exec_end(query_id)
-                except Exception:
-                    pass
-                ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Finished, "Query finished"))
+            try:
+                ctx._notify_exec_end(query_id)
+            except Exception:
+                pass
+            ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Finished, "Query finished"))
 
         except GeneratorExit:
             # GeneratorExit is raised when the generator is closed (e.g. by break)
@@ -669,8 +665,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             # For now, we propagate it to ensure proper cleanup.
             raise
         except Exception as e:
-            if should_notify:
-                ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, str(e)))
+            ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, str(e)))
             raise
 
         return ExecutionMetadata._from_runner_output(stats, query_id, physical_plan_json)
