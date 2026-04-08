@@ -22,7 +22,7 @@ use daft_scan::{
     WarcSourceConfig, python::PyFileFormatConfig,
 };
 pub use logical_plan::{LogicalPlan, LogicalPlanRef};
-pub use ops::join::JoinOptions;
+pub use ops::join::{JoinOptions, JoinPredicate};
 pub use partitioning::ClusteringSpec;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;

@@ -14,6 +14,7 @@ use self::hash_join::{hash_inner_join, hash_left_right_join, hash_outer_join};
 use crate::RecordBatch;
 mod hash_join;
 mod merge_join;
+mod nested_loop_join;
 
 fn match_types_for_tables(
     left: &RecordBatch,
@@ -189,6 +190,11 @@ impl RecordBatch {
         join_series = add_non_join_key_columns(self, right, lidx, ridx, join_series)?;
 
         Self::new_with_size(join_schema, join_series, num_rows)
+    }
+
+    pub fn nested_loop_join(&self, right: &Self, predicate: &[BoundExpr]) -> DaftResult<Self> {
+        let join_schema = infer_join_schema(&self.schema, &right.schema, JoinType::Inner)?;
+        nested_loop_join::nested_loop_join(self, right, predicate, &join_schema)
     }
 
     pub fn cross_join(&self, right: &Self, outer_loop_side: JoinSide) -> DaftResult<Self> {

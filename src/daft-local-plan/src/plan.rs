@@ -109,6 +109,7 @@ pub enum LocalPhysicalPlan {
     RepartitionWrite(RepartitionWrite),
     ShuffleRead(ShuffleRead),
     SortMergeJoin(SortMergeJoin),
+    NestedLoopJoin(NestedLoopJoin),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
     VLLMProject(VLLMProject),
@@ -157,6 +158,7 @@ impl LocalPhysicalPlan {
             | Self::HashJoin(HashJoin { stats_state, .. })
             | Self::CrossJoin(CrossJoin { stats_state, .. })
             | Self::SortMergeJoin(SortMergeJoin { stats_state, .. })
+            | Self::NestedLoopJoin(NestedLoopJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
@@ -206,6 +208,7 @@ impl LocalPhysicalPlan {
             | Self::HashJoin(HashJoin { context, .. })
             | Self::CrossJoin(CrossJoin { context, .. })
             | Self::SortMergeJoin(SortMergeJoin { context, .. })
+            | Self::NestedLoopJoin(NestedLoopJoin { context, .. })
             | Self::PhysicalWrite(PhysicalWrite { context, .. })
             | Self::CommitWrite(CommitWrite { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
@@ -779,6 +782,25 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub fn nested_loop_join(
+        left: LocalPhysicalPlanRef,
+        right: LocalPhysicalPlanRef,
+        predicate: Vec<BoundExpr>,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::NestedLoopJoin(NestedLoopJoin {
+            left,
+            right,
+            predicate,
+            schema,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn sort_merge_join(
         left: LocalPhysicalPlanRef,
@@ -1013,6 +1035,7 @@ impl LocalPhysicalPlan {
             | Self::HashJoin(HashJoin { schema, .. })
             | Self::CrossJoin(CrossJoin { schema, .. })
             | Self::SortMergeJoin(SortMergeJoin { schema, .. })
+            | Self::NestedLoopJoin(NestedLoopJoin { schema, .. })
             | Self::Explode(Explode { schema, .. })
             | Self::Unpivot(Unpivot { schema, .. })
             | Self::Concat(Concat { schema, .. })
@@ -1104,6 +1127,9 @@ impl LocalPhysicalPlan {
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             Self::CrossJoin(CrossJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
+                vec![left.clone(), right.clone()]
+            }
+            Self::NestedLoopJoin(NestedLoopJoin { left, right, .. }) => {
                 vec![left.clone(), right.clone()]
             }
             #[cfg(feature = "python")]
@@ -1603,6 +1629,11 @@ impl LocalPhysicalPlan {
                         "LocalPhysicalPlan::with_new_children: SortMergeJoin should have 2 children"
                     )
                 }
+                Self::NestedLoopJoin(_) => {
+                    panic!(
+                        "LocalPhysicalPlan::with_new_children: NestedLoopJoin should have 2 children"
+                    )
+                }
                 Self::Concat(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children")
                 }
@@ -1659,6 +1690,20 @@ impl LocalPhysicalPlan {
                     left_on.clone(),
                     right_on.clone(),
                     *join_type,
+                    schema.clone(),
+                    stats_state.clone(),
+                    context.clone(),
+                ),
+                Self::NestedLoopJoin(NestedLoopJoin {
+                    predicate,
+                    schema,
+                    stats_state,
+                    context,
+                    ..
+                }) => Self::nested_loop_join(
+                    new_left.clone(),
+                    new_right.clone(),
+                    predicate.clone(),
                     schema.clone(),
                     stats_state.clone(),
                     context.clone(),
@@ -1969,6 +2014,17 @@ pub struct HashJoin {
 pub struct CrossJoin {
     pub left: LocalPhysicalPlanRef,
     pub right: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct NestedLoopJoin {
+    pub left: LocalPhysicalPlanRef,
+    pub right: LocalPhysicalPlanRef,
+    pub predicate: Vec<BoundExpr>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,

@@ -58,6 +58,7 @@ pub enum NodeType {
     CrossJoin,
     // Specific to distributed only
     BroadcastJoin,
+    NestedLoopJoin,
     KeyFilteringJoin,
 }
 

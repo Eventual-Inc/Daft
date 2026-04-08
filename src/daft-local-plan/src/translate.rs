@@ -11,7 +11,9 @@ use daft_dsl::{
     resolved_col, window_to_agg_exprs,
 };
 use daft_functions::random::random_int_expr;
-use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState};
+use daft_logical_plan::{
+    JoinPredicate, JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState,
+};
 use daft_micropartition::MicroPartitionRef;
 use daft_scan::{ScanState, ScanTaskRef};
 
@@ -447,7 +449,57 @@ fn translate_helper(
             let (remaining_on, left_on, right_on, null_equals_nulls) = join.on.split_eq_preds();
 
             if !remaining_on.is_empty() {
-                return Err(DaftError::not_implemented("Execution of non-equality join"));
+                if !left_on.is_empty() || !right_on.is_empty() {
+                    // Mixed equality + inequality: hash-join on equality keys, then filter on inequality predicate.
+                    let (left_on, right_on) = normalize_join_keys(
+                        left_on,
+                        right_on,
+                        join.left.schema(),
+                        join.right.schema(),
+                    )?;
+                    let left_on = BoundExpr::bind_all(&left_on, left_plan.schema())?;
+                    let right_on = BoundExpr::bind_all(&right_on, right_plan.schema())?;
+                    let hash_join_plan = LocalPhysicalPlan::hash_join(
+                        left_plan,
+                        right_plan,
+                        left_on,
+                        right_on,
+                        None,
+                        Some(null_equals_nulls),
+                        join.join_type,
+                        join.output_schema.clone(),
+                        join.stats_state.clone(),
+                        LocalNodeContext::default(),
+                    );
+                    let pred_expr = remaining_on.inner().unwrap().clone();
+                    let cleaned = JoinPredicate::replace_join_side_cols(pred_expr);
+                    let bound_pred = BoundExpr::try_new(cleaned, &join.output_schema)?;
+                    return Ok((
+                        LocalPhysicalPlan::filter(
+                            hash_join_plan,
+                            bound_pred,
+                            join.stats_state.clone(),
+                            LocalNodeContext::default(),
+                        ),
+                        left_inputs,
+                    ));
+                }
+
+                // Pure inequality join → NestedLoopJoin
+                let pred_expr = remaining_on.inner().unwrap().clone();
+                let cleaned = JoinPredicate::replace_join_side_cols(pred_expr);
+                let bound_pred = BoundExpr::try_new(cleaned, &join.output_schema)?;
+                return Ok((
+                    LocalPhysicalPlan::nested_loop_join(
+                        left_plan,
+                        right_plan,
+                        vec![bound_pred],
+                        join.output_schema.clone(),
+                        join.stats_state.clone(),
+                        LocalNodeContext::default(),
+                    ),
+                    left_inputs,
+                ));
             }
 
             let (left_on, right_on) =
