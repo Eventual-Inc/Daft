@@ -320,7 +320,38 @@ class TestAsofJoinBackwardMatchCorrectness:
 
 
 # ---------------------------------------------------------------------------
-# 4. Column Handling
+# 4. Empty Table Edge Cases
+# ---------------------------------------------------------------------------
+
+
+class TestAsofJoinEmptyTables:
+    def test_empty_left_table(self):
+        """Empty left table produces an empty result."""
+        left = daft.from_pydict({"ts": [], "v": []})
+        right = daft.from_pydict({"ts": [1, 2, 3], "w": [10, 20, 30]})
+        result = left.join_asof(right, on="ts")
+        assert result.column_names == ["ts", "v", "w"]
+        assert result.to_pydict() == {"ts": [], "v": [], "w": []}
+
+    def test_empty_right_table(self):
+        """Empty right table produces nulls for all right columns."""
+        left = daft.from_pydict({"ts": [1, 2, 3], "v": [10, 20, 30]})
+        right = daft.from_pydict({"ts": [], "w": []})
+        result = left.join_asof(right, on="ts").sort("ts")
+        assert result.column_names == ["ts", "v", "w"]
+        assert result.to_pydict() == {"ts": [1, 2, 3], "v": [10, 20, 30], "w": [None, None, None]}
+
+    def test_empty_left_and_right_tables(self):
+        """Both tables empty produces an empty result."""
+        left = daft.from_pydict({"ts": [], "v": []})
+        right = daft.from_pydict({"ts": [], "w": []})
+        result = left.join_asof(right, on="ts")
+        assert result.column_names == ["ts", "v", "w"]
+        assert result.to_pydict() == {"ts": [], "v": [], "w": []}
+
+
+# ---------------------------------------------------------------------------
+# 5. Column Handling
 # ---------------------------------------------------------------------------
 
 
@@ -402,7 +433,7 @@ class TestAsofJoinColumnHandling:
 
 
 # ---------------------------------------------------------------------------
-# 5. Complex Expressions
+# 6. Complex Expressions
 # ---------------------------------------------------------------------------
 
 
@@ -477,7 +508,7 @@ class TestAsofJoinComplexExpressions:
 
 
 # ---------------------------------------------------------------------------
-# 6. Integration with Other Operations
+# 7. Integration with Other Operations
 # ---------------------------------------------------------------------------
 
 
