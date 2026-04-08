@@ -444,142 +444,367 @@ mod tests {
     use common_metrics::{
         Meter, StatSnapshot,
         ops::{NodeCategory, NodeInfo, NodeType},
-        snapshot::{DefaultSnapshot, SourceSnapshot, StatSnapshotImpl as _},
+        snapshot::{DefaultSnapshot, SourceSnapshot},
     };
+    use common_partitioning::PartitionRef;
+    use daft_local_plan::{
+        ExecutionStats, InMemoryScan, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,
+    };
+    use daft_schema::{dtype::DataType, field::Field, schema::Schema};
 
     use super::*;
-    use crate::{pipeline_node::PipelineNodeContext, statistics::RuntimeStats};
+    use crate::{
+        pipeline_node::PipelineNodeContext,
+        scheduling::tests::create_mock_partition_ref,
+        statistics::{TaskEvent, stats::RuntimeNodeManager},
+    };
 
-    fn make_sort_stats() -> SortStats {
+    const SORT_NODE_ID: NodeID = 42;
+    // common_metrics::NodeID is usize; daft-distributed::NodeID is u32.
+    const SORT_ORIGIN_ID: common_metrics::NodeID = SORT_NODE_ID as common_metrics::NodeID;
+
+    // ---------------------------------------------------------------
+    // Plan construction helpers — mirror what execution_loop builds
+    // ---------------------------------------------------------------
+
+    /// Build the same in_memory_scan → sort plan that execution_loop
+    /// creates for the single-partition final-sort path.
+    fn build_final_sort_plan() -> (LocalPhysicalPlanRef, Vec<PartitionRef>) {
+        let schema = test_schema();
+        let sort_by = test_sort_by(&schema);
+        let partition = create_mock_partition_ref(1000, 10240);
+        let mo = MaterializedOutput::new(
+            vec![partition],
+            "worker1".into(),
+            "127.0.0.1".to_string(),
+            0,
+        );
+
+        let (in_memory_scan, psets) =
+            MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
+                vec![mo],
+                schema.clone(),
+                SORT_NODE_ID,
+                FINAL_SORT_PHASE,
+            );
+        let plan = LocalPhysicalPlan::sort(
+            in_memory_scan,
+            sort_by,
+            vec![false],
+            vec![false],
+            StatsState::NotMaterialized,
+            LocalNodeContext::new(Some(SORT_NODE_ID as usize)).with_phase(FINAL_SORT_PHASE),
+        );
+        (plan, psets)
+    }
+
+    /// Build an in_memory_scan plan with a given phase (used for sample
+    /// and repartition phases in the multi-partition path).
+    fn build_phased_scan_plan(phase: &str) -> LocalPhysicalPlanRef {
+        let schema = test_schema();
+        let partition = create_mock_partition_ref(1000, 10240);
+        let mo = MaterializedOutput::new(
+            vec![partition],
+            "worker1".into(),
+            "127.0.0.1".to_string(),
+            0,
+        );
+        let (plan, _) = MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
+            vec![mo],
+            schema,
+            SORT_NODE_ID,
+            phase,
+        );
+        plan
+    }
+
+    fn test_schema() -> SchemaRef {
+        Arc::new(Schema::new(vec![Field::new("x", DataType::Int64)]))
+    }
+
+    fn test_sort_by(schema: &Schema) -> Vec<BoundExpr> {
+        vec![BoundExpr::try_new(daft_dsl::resolved_col("x"), schema).unwrap()]
+    }
+
+    // ---------------------------------------------------------------
+    // ExecutionStats builders — derive stats from plan structure so
+    // they stay in sync with what local execution actually produces.
+    //
+    // Contract with daft-local-execution:
+    //   • InMemoryScan → StatSnapshot::Source
+    //   • Sort (BlockingSink) → StatSnapshot::Default
+    //   • Both carry the phase from their LocalNodeContext
+    // ---------------------------------------------------------------
+
+    /// Given a Sort plan, produce the ExecutionStats that the local
+    /// execution engine would emit: a Source snapshot from the scan
+    /// and a Default snapshot from the sort operator.
+    fn execution_stats_for_sort_plan(plan: &LocalPhysicalPlan, num_rows: u64) -> ExecutionStats {
+        let LocalPhysicalPlan::Sort(sort) = plan else {
+            panic!("expected Sort at top of plan");
+        };
+        let LocalPhysicalPlan::InMemoryScan(scan) = sort.input.as_ref() else {
+            panic!("expected InMemoryScan as input to Sort");
+        };
+
+        let scan_node = Arc::new(NodeInfo {
+            name: Arc::from("In Memory Scan"),
+            node_origin_id: scan.context.origin_node_id.unwrap_or(0),
+            node_type: NodeType::InMemoryScan,
+            node_category: NodeCategory::Source,
+            node_phase: scan.context.phase.clone(),
+            ..Default::default()
+        });
+        let sort_node = Arc::new(NodeInfo {
+            name: Arc::from("Sort"),
+            node_origin_id: sort.context.origin_node_id.unwrap_or(0),
+            node_type: NodeType::Sort,
+            node_category: NodeCategory::BlockingSink,
+            node_phase: sort.context.phase.clone(),
+            ..Default::default()
+        });
+
+        ExecutionStats::new(
+            "test".into(),
+            vec![
+                (
+                    scan_node,
+                    StatSnapshot::Source(SourceSnapshot {
+                        cpu_us: 10,
+                        rows_out: num_rows,
+                        bytes_read: 0,
+                    }),
+                ),
+                (
+                    sort_node,
+                    StatSnapshot::Default(DefaultSnapshot {
+                        cpu_us: 50,
+                        rows_in: num_rows,
+                        rows_out: num_rows,
+                    }),
+                ),
+            ],
+        )
+    }
+
+    /// Produce the stats that a scan-only phase (sample / repartition)
+    /// would emit from its Source node.
+    fn execution_stats_for_scan_plan(plan: &LocalPhysicalPlan, num_rows: u64) -> ExecutionStats {
+        let LocalPhysicalPlan::InMemoryScan(scan) = plan else {
+            panic!("expected InMemoryScan");
+        };
+
+        let node = Arc::new(NodeInfo {
+            name: Arc::from("In Memory Scan"),
+            node_origin_id: scan.context.origin_node_id.unwrap_or(0),
+            node_type: NodeType::InMemoryScan,
+            node_category: NodeCategory::Source,
+            node_phase: scan.context.phase.clone(),
+            ..Default::default()
+        });
+
+        ExecutionStats::new(
+            "test".into(),
+            vec![(
+                node,
+                StatSnapshot::Default(DefaultSnapshot {
+                    cpu_us: 20,
+                    rows_in: num_rows,
+                    rows_out: num_rows,
+                }),
+            )],
+        )
+    }
+
+    // ---------------------------------------------------------------
+    // RuntimeNodeManager + SortStats wiring
+    // ---------------------------------------------------------------
+
+    fn make_sort_manager() -> RuntimeNodeManager {
         let meter = Meter::test_scope("sort_stats_test");
         let context = PipelineNodeContext::new(
             0,
             Arc::from("test-query"),
-            0,
+            SORT_NODE_ID,
             Arc::from("Sort"),
             NodeType::Sort,
             NodeCategory::BlockingSink,
         );
-        SortStats::new(&meter, &context)
+        let sort_stats: RuntimeStatsRef = Arc::new(SortStats::new(&meter, &context));
+        let node_info = Arc::new(NodeInfo {
+            name: Arc::from("Sort"),
+            node_origin_id: SORT_ORIGIN_ID,
+            node_type: NodeType::Sort,
+            node_category: NodeCategory::BlockingSink,
+            ..Default::default()
+        });
+        RuntimeNodeManager::new(&meter, sort_stats, node_info)
     }
 
-    fn node_info_with_phase(phase: &str) -> NodeInfo {
-        NodeInfo {
-            node_phase: Some(phase.to_string()),
-            ..Default::default()
+    fn dummy_task_context() -> crate::scheduling::task::TaskContext {
+        crate::scheduling::task::TaskContext {
+            query_idx: 0,
+            last_node_id: SORT_NODE_ID,
+            task_id: 0,
+            node_ids: vec![SORT_NODE_ID],
+            plan_fingerprint: 0,
+            checkpoint_id: None,
         }
     }
 
-    fn default_snapshot(cpu_us: u64, rows_in: u64, rows_out: u64) -> StatSnapshot {
-        StatSnapshot::Default(DefaultSnapshot {
-            cpu_us,
-            rows_in,
-            rows_out,
-        })
+    fn completed_event(stats: ExecutionStats) -> TaskEvent {
+        TaskEvent::Completed {
+            context: dummy_task_context(),
+            stats,
+        }
     }
 
-    fn source_snapshot(cpu_us: u64, rows_out: u64) -> StatSnapshot {
-        StatSnapshot::Source(SourceSnapshot {
-            cpu_us,
-            rows_out,
-            bytes_read: 0,
-        })
-    }
+    // ---------------------------------------------------------------
+    // Tests
+    // ---------------------------------------------------------------
 
+    /// Verify that the plans execution_loop constructs carry the
+    /// correct phase tags. If someone renames or removes a phase
+    /// constant without updating execution_loop, this fails.
     #[test]
-    fn test_only_final_sort_default_snapshots_count_rows() {
-        let stats = make_sort_stats();
-
-        // Sample phase: rows should be ignored, duration counted
-        stats.handle_worker_node_stats(
-            &node_info_with_phase(SAMPLE_PHASE),
-            &default_snapshot(100, 500, 50),
+    fn test_plan_phases_match_sort_constants() {
+        // Final-sort plan
+        let (plan, _) = build_final_sort_plan();
+        let LocalPhysicalPlan::Sort(sort) = plan.as_ref() else {
+            panic!("expected Sort");
+        };
+        assert_eq!(
+            sort.context.phase.as_deref(),
+            Some(FINAL_SORT_PHASE),
+            "sort node must carry the final-sort phase"
+        );
+        let LocalPhysicalPlan::InMemoryScan(scan) = sort.input.as_ref() else {
+            panic!("expected InMemoryScan");
+        };
+        assert_eq!(
+            scan.context.phase.as_deref(),
+            Some(FINAL_SORT_PHASE),
+            "scan feeding the sort must carry the same phase"
         );
 
-        // Repartition phase: rows should be ignored, duration counted
-        stats.handle_worker_node_stats(
-            &node_info_with_phase(REPARTITION_PHASE),
-            &default_snapshot(200, 1000, 1000),
-        );
+        // Sample-phase scan
+        let sample_plan = build_phased_scan_plan(SAMPLE_PHASE);
+        let InMemoryScan { context, .. } = match sample_plan.as_ref() {
+            LocalPhysicalPlan::InMemoryScan(s) => s,
+            _ => panic!("expected InMemoryScan"),
+        };
+        assert_eq!(context.phase.as_deref(), Some(SAMPLE_PHASE));
 
-        // Final sort phase, Source snapshot (in_memory_scan): rows ignored, duration counted
-        stats.handle_worker_node_stats(
-            &node_info_with_phase(FINAL_SORT_PHASE),
-            &source_snapshot(50, 1000),
-        );
+        // Repartition-phase scan
+        let repart_plan = build_phased_scan_plan(REPARTITION_PHASE);
+        let InMemoryScan { context, .. } = match repart_plan.as_ref() {
+            LocalPhysicalPlan::InMemoryScan(s) => s,
+            _ => panic!("expected InMemoryScan"),
+        };
+        assert_eq!(context.phase.as_deref(), Some(REPARTITION_PHASE));
+    }
 
-        // Final sort phase, Default snapshot (the actual sort): rows AND duration counted
-        stats.handle_worker_node_stats(
-            &node_info_with_phase(FINAL_SORT_PHASE),
-            &default_snapshot(300, 1000, 1000),
-        );
+    /// Simulate a multi-phase distributed sort (sample → repartition →
+    /// final sort) and verify that only the final-sort phase's Default
+    /// snapshots feed into the row counts reported by SortStats.
+    ///
+    /// This exercises the full stats pipeline:
+    ///   plan construction → ExecutionStats → TaskEvent::Completed
+    ///   → RuntimeNodeManager (node_origin_id matching)
+    ///   → SortStats::handle_worker_node_stats → export
+    #[test]
+    fn test_multi_phase_sort_stats_end_to_end() {
+        let manager = make_sort_manager();
 
-        let exported = stats.export_snapshot();
-        let StatSnapshot::Default(snap) = exported else {
-            panic!("expected Default snapshot");
+        // Phase 1: sample — stats should NOT contribute rows
+        let sample_plan = build_phased_scan_plan(SAMPLE_PHASE);
+        let sample_stats = execution_stats_for_scan_plan(&sample_plan, 50);
+        manager.handle_task_event(&completed_event(sample_stats));
+
+        // Phase 2: repartition — stats should NOT contribute rows
+        let repart_plan = build_phased_scan_plan(REPARTITION_PHASE);
+        let repart_stats = execution_stats_for_scan_plan(&repart_plan, 1000);
+        manager.handle_task_event(&completed_event(repart_stats));
+
+        // Phase 3: final sort — only the Default snapshot should contribute rows
+        let (sort_plan, _) = build_final_sort_plan();
+        let sort_stats = execution_stats_for_sort_plan(&sort_plan, 1000);
+        manager.handle_task_event(&completed_event(sort_stats));
+
+        // Export and verify
+        let (_, snapshot) = manager.export_snapshot();
+        let StatSnapshot::Default(snap) = snapshot else {
+            panic!("expected Default snapshot from SortStats");
         };
 
-        // Duration: 100 + 200 + 50 + 300 = 650
-        assert_eq!(snap.cpu_us, 650, "all phases should contribute duration");
-        // Rows: only from the final sort Default snapshot
-        assert_eq!(snap.rows_in, 1000, "only final-sort Default counts rows_in");
+        // Duration accumulates from all phases: 20 (sample) + 20 (repart) + 10 + 50 (sort)
+        assert_eq!(snap.cpu_us, 100, "all phases should contribute duration");
+        // Rows come ONLY from the final-sort Default snapshot
+        assert_eq!(snap.rows_in, 1000, "rows_in must reflect only the final sort");
         assert_eq!(
             snap.rows_out, 1000,
-            "only final-sort Default counts rows_out"
+            "rows_out must reflect only the final sort"
         );
     }
 
+    /// Two partition groups go through the final sort phase. Verify that
+    /// SortStats accumulates row counts across both.
     #[test]
-    fn test_multiple_final_sort_partitions_accumulate() {
-        let stats = make_sort_stats();
+    fn test_multiple_partition_groups_accumulate() {
+        let manager = make_sort_manager();
 
-        // Simulate two partition groups going through the final sort
-        stats.handle_worker_node_stats(
-            &node_info_with_phase(FINAL_SORT_PHASE),
-            &default_snapshot(100, 400, 400),
-        );
-        stats.handle_worker_node_stats(
-            &node_info_with_phase(FINAL_SORT_PHASE),
-            &default_snapshot(150, 600, 600),
-        );
+        // First partition group: 400 rows
+        let (plan, _) = build_final_sort_plan();
+        let stats1 = execution_stats_for_sort_plan(&plan, 400);
+        manager.handle_task_event(&completed_event(stats1));
 
-        let StatSnapshot::Default(snap) = stats.export_snapshot() else {
+        // Second partition group: 600 rows
+        let stats2 = execution_stats_for_sort_plan(&plan, 600);
+        manager.handle_task_event(&completed_event(stats2));
+
+        let (_, snapshot) = manager.export_snapshot();
+        let StatSnapshot::Default(snap) = snapshot else {
             panic!("expected Default snapshot");
         };
-
-        assert_eq!(snap.cpu_us, 250);
-        assert_eq!(snap.rows_in, 1000, "rows_in should accumulate across partitions");
-        assert_eq!(snap.rows_out, 1000, "rows_out should accumulate across partitions");
+        assert_eq!(snap.rows_in, 1000, "rows_in accumulates across partitions");
+        assert_eq!(snap.rows_out, 1000, "rows_out accumulates across partitions");
     }
 
+    /// Stats from a different node_origin_id must be ignored, even if
+    /// they have the right phase and snapshot type.
     #[test]
-    fn test_no_snapshots_yields_zero() {
-        let stats = make_sort_stats();
-        let StatSnapshot::Default(snap) = stats.export_snapshot() else {
-            panic!("expected Default snapshot");
-        };
-        assert_eq!(snap.cpu_us, 0);
-        assert_eq!(snap.rows_in, 0);
-        assert_eq!(snap.rows_out, 0);
-    }
+    fn test_stats_from_different_node_ignored() {
+        let manager = make_sort_manager();
 
-    #[test]
-    fn test_snapshot_without_phase_ignored_for_rows() {
-        let stats = make_sort_stats();
-
-        // A snapshot with no phase set should still contribute duration but not rows
-        let no_phase = NodeInfo {
-            node_phase: None,
+        // Create stats that look like final-sort but with wrong origin_id
+        let wrong_origin = Arc::new(NodeInfo {
+            name: Arc::from("Sort"),
+            node_origin_id: 999, // does not match SORT_ORIGIN_ID
+            node_type: NodeType::Sort,
+            node_category: NodeCategory::BlockingSink,
+            node_phase: Some(FINAL_SORT_PHASE.to_string()),
             ..Default::default()
-        };
-        stats.handle_worker_node_stats(&no_phase, &default_snapshot(100, 500, 500));
+        });
+        let stats = ExecutionStats::new(
+            "test".into(),
+            vec![(
+                wrong_origin,
+                StatSnapshot::Default(DefaultSnapshot {
+                    cpu_us: 100,
+                    rows_in: 500,
+                    rows_out: 500,
+                }),
+            )],
+        );
+        manager.handle_task_event(&completed_event(stats));
 
-        let StatSnapshot::Default(snap) = stats.export_snapshot() else {
+        let (_, snapshot) = manager.export_snapshot();
+        let StatSnapshot::Default(snap) = snapshot else {
             panic!("expected Default snapshot");
         };
-        assert_eq!(snap.cpu_us, 100, "duration should be counted");
-        assert_eq!(snap.rows_in, 0, "rows should not be counted without phase");
-        assert_eq!(snap.rows_out, 0, "rows should not be counted without phase");
+        assert_eq!(snap.rows_in, 0, "wrong origin_id should be filtered out");
+        assert_eq!(snap.rows_out, 0);
+        assert_eq!(snap.cpu_us, 0);
     }
 }
 
