@@ -117,7 +117,7 @@ class FileResourceManager:
 
     def __init__(self, cache_max_size_bytes: int = _CACHE_MAX_SIZE_BYTES) -> None:
         self._cache_dir = os.path.join(tempfile.gettempdir(), "daft_resources")
-        self._resolved: dict[str, str] = {}  # resource name -> local path
+        self._resolved: dict[str, tuple[str, int]] = {}  # resource name -> (local path, timestamp)
         self._cache_max_size_bytes = cache_max_size_bytes
         os.makedirs(self._cache_dir, exist_ok=True)
 
@@ -177,14 +177,19 @@ class FileResourceManager:
 
         for name, timestamp in added_resources.items():
             if name in self._resolved:
-                logger.debug("Resource '%s' already resolved, skipping", name)
-                continue
+                _, resolved_timestamp = self._resolved[name]
+                if resolved_timestamp == timestamp:
+                    logger.debug("Resource '%s' already resolved with same timestamp, skipping", name)
+                    continue
+                logger.info(
+                    "Resource '%s' timestamp changed (%d -> %d), re-downloading", name, resolved_timestamp, timestamp
+                )
 
             actual_name, extract_path = _parse_resource_name(name)
 
             local_path = self._fetch_resource(actual_name, timestamp, extract_path)
             if local_path is not None:
-                self._resolved[name] = local_path
+                self._resolved[name] = (local_path, timestamp)
                 logger.info("Resolved resource '%s' -> %s", name, local_path)
             else:
                 logger.warning("Failed to resolve resource '%s'", name)
@@ -201,7 +206,8 @@ class FileResourceManager:
         Returns:
             Local filesystem path, or None if not resolved.
         """
-        return self._resolved.get(name)
+        entry = self._resolved.get(name)
+        return entry[0] if entry is not None else None
 
     def _fetch_resource(self, name: str, timestamp: int, extract_path: str | None = None) -> str | None:
         """Fetch a resource: download to cache, then place or extract.
