@@ -6,12 +6,11 @@ chrono-tz = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
-ego-tree = "0.9"
 heck = "0.5.0"
+html5ever = "0.29"
 itertools = {workspace = true}
 num-traits = {workspace = true}
 regex = {workspace = true}
-scraper = {version = "0.21", default-features = false}
 serde = {workspace = true}
 typetag = {workspace = true}
 unicode-normalization = "0.1.25"

@@ -1,3 +1,5 @@
+use std::cell::{Cell, RefCell};
+
 use common_error::{DaftResult, ensure};
 use daft_core::{
     prelude::{Field, Schema, Utf8Array},
@@ -7,14 +9,22 @@ use daft_dsl::{
     ExprRef,
     functions::{FunctionArgs, ScalarUDF},
 };
-use ego_tree::iter::Edge;
-use scraper::{Html, node::Node};
+use html5ever::{
+    tendril::StrTendril,
+    tokenizer::{
+        BufferQueue, CharacterTokens, EndTag, StartTag, TagToken, Token, TokenSink,
+        TokenSinkResult, Tokenizer, TokenizerOpts, states,
+    },
+};
 use serde::{Deserialize, Serialize};
 
 /// Tag names whose text content should be completely discarded.
+/// `script` and `style` use the tokenizer's raw-data / script-data modes for
+/// correct end-tag detection even when the content contains `</` sequences.
+/// `head` is processed in normal mode but its content is still skipped.
 const SKIP_TAGS: &[&str] = &["script", "style", "head"];
 
-/// Block-level tag names that should emit a newline before their content.
+/// Block-level tag names that should emit the separator before their content.
 const BLOCK_TAGS: &[&str] = &[
     "p",
     "div",
@@ -89,50 +99,98 @@ impl ScalarUDF for StripHtml {
     }
 }
 
-/// Extract plain text from an HTML string.
+// ---------------------------------------------------------------------------
+// Tokenizer sink
+// ---------------------------------------------------------------------------
+
+/// Accumulates plain text while the html5ever tokenizer feeds us tokens.
+///
+/// `process_token` takes `&self`, so we use `Cell`/`RefCell` for interior
+/// mutability — this is the standard pattern for html5ever sinks.
+struct HtmlTextExtractor<'a> {
+    separator: &'a str,
+    result: RefCell<String>,
+    skip_depth: Cell<usize>,
+}
+
+impl<'a> HtmlTextExtractor<'a> {
+    fn new(separator: &'a str) -> Self {
+        Self {
+            separator,
+            result: RefCell::new(String::new()),
+            skip_depth: Cell::new(0),
+        }
+    }
+}
+
+impl TokenSink for HtmlTextExtractor<'_> {
+    type Handle = ();
+
+    fn process_token(&self, token: Token, _line_number: u64) -> TokenSinkResult<()> {
+        match token {
+            TagToken(tag) => {
+                let name = tag.name.as_ref();
+                match tag.kind {
+                    StartTag => {
+                        if SKIP_TAGS.contains(&name) {
+                            self.skip_depth.set(self.skip_depth.get() + 1);
+                            // Signal the tokenizer to enter the correct raw mode so
+                            // that end-tag detection is spec-correct even for content
+                            // that contains `</` sequences (e.g. JS strings in scripts).
+                            // Note: Script(()) must NOT be used here — it pauses the
+                            // tokenizer and returns early from feed(), so subsequent
+                            // HTML would never be processed. RawData(ScriptData) gives
+                            // identical tokenizer behaviour without the early return.
+                            return TokenSinkResult::RawData(if name == "script" {
+                                states::ScriptData
+                            } else {
+                                states::Rawtext
+                            });
+                        } else if self.skip_depth.get() == 0 {
+                            let mut result = self.result.borrow_mut();
+                            if BLOCK_TAGS.contains(&name)
+                                && !result.is_empty()
+                                && !result.ends_with(self.separator)
+                            {
+                                result.push_str(self.separator);
+                            }
+                        }
+                    }
+                    EndTag => {
+                        if SKIP_TAGS.contains(&name) {
+                            self.skip_depth.set(self.skip_depth.get().saturating_sub(1));
+                        }
+                    }
+                }
+            }
+            CharacterTokens(s) => {
+                if self.skip_depth.get() == 0 {
+                    self.result.borrow_mut().push_str(&s);
+                }
+            }
+            _ => {}
+        }
+        TokenSinkResult::Continue
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Core function
+// ---------------------------------------------------------------------------
+
+/// Extract plain text from an HTML string using the html5ever tokenizer.
 ///
 /// - Content inside `<script>`, `<style>`, and `<head>` is dropped.
 /// - Block-level elements inject `separator` before their content.
 /// - The result is trimmed of leading/trailing whitespace.
 fn strip_html_str(html: &str, separator: &str) -> String {
-    let document = Html::parse_document(html);
-    let mut result = String::new();
-    let mut skip_depth: usize = 0;
-
-    for edge in document.tree.root().traverse() {
-        match edge {
-            Edge::Open(node) => match node.value() {
-                Node::Element(elem) => {
-                    let tag = elem.name();
-                    if SKIP_TAGS.contains(&tag) {
-                        skip_depth += 1;
-                    } else if skip_depth == 0
-                        && BLOCK_TAGS.contains(&tag)
-                        && !result.is_empty()
-                        && !result.ends_with(separator)
-                    {
-                        result.push_str(separator);
-                    }
-                }
-                Node::Text(text) => {
-                    if skip_depth == 0 {
-                        result.push_str(text);
-                    }
-                }
-                _ => {}
-            },
-            Edge::Close(node) => {
-                if let Node::Element(elem) = node.value() {
-                    let tag = elem.name();
-                    if SKIP_TAGS.contains(&tag) {
-                        skip_depth = skip_depth.saturating_sub(1);
-                    }
-                }
-            }
-        }
-    }
-
-    result.trim().to_string()
+    let sink = HtmlTextExtractor::new(separator);
+    let input = BufferQueue::default();
+    input.push_back(StrTendril::from(html));
+    let tok = Tokenizer::new(sink, TokenizerOpts::default());
+    let _ = tok.feed(&input);
+    tok.end();
+    tok.sink.result.into_inner().trim().to_string()
 }
 
 fn strip_html_impl(input: &Series, separator: &str) -> DaftResult<Series> {
@@ -145,6 +203,10 @@ fn strip_html_impl(input: &Series, separator: &str) -> DaftResult<Series> {
         .into_series())
     })
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -170,6 +232,17 @@ mod tests {
     }
 
     #[test]
+    fn test_script_with_closing_tag_in_string() {
+        // Without raw/script-data mode the inner </script> would end the element
+        // prematurely; the tokenizer must handle this correctly.
+        let input = r#"<p>ok</p><script>var s = "<\/script>";</script><p>after</p>"#;
+        let result = strip_html_str(input, "\n");
+        assert!(result.contains("ok"), "got: {result:?}");
+        assert!(result.contains("after"), "got: {result:?}");
+        assert!(!result.contains("var"), "got: {result:?}");
+    }
+
+    #[test]
     fn test_block_newlines() {
         let result = strip_html_str("<p>first</p><p>second</p>", "\n");
         assert!(
@@ -192,14 +265,12 @@ mod tests {
 
     #[test]
     fn test_entities_decoded() {
-        // scraper / html5ever decodes entities automatically
         let result = strip_html_str("<p>fish &amp; chips</p>", "\n");
         assert_eq!(result, "fish & chips");
     }
 
     #[test]
     fn test_null_safe_via_option() {
-        // strip_html_str is only called on Some values; None is passed through
         let none: Option<&str> = None;
         let result: Option<String> = none.map(|s| strip_html_str(s, "\n"));
         assert!(result.is_none());
