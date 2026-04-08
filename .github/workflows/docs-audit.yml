@@ -3,15 +3,15 @@ name: Docs Audit
 on:
   pull_request:
     paths:
-      - 'docs/**'
-      - 'daft/**'
-      - 'pyproject.toml'
+    - docs/**
+    - daft/**
+    - pyproject.toml
   push:
     branches: [main]
     paths:
-      - 'docs/**'
-      - 'daft/**'
-      - 'pyproject.toml'
+    - docs/**
+    - daft/**
+    - pyproject.toml
 
 permissions:
   contents: read
@@ -26,42 +26,62 @@ jobs:
     env:
       python-version: "3.12"
     steps:
-      - uses: actions/checkout@v6
-      - uses: moonrepo/setup-rust@v1
-        with:
-          cache: false
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ${{ runner.os }}-dev-build
-          cache-all-crates: "true"
-          cache-workspace-crates: "true"
-          save-if: false
-      - name: Setup Python and uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          python-version: ${{ env.python-version }}
-          enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-      - name: Setup Virtual Env
-        run: |
-          uv venv --seed .venv
-          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
-      - name: Install dependencies
-        run: |
-          source activate
-          uv sync --no-install-project --all-extras --all-groups
-      - name: Build Daft
-        env:
-          DAFT_DASHBOARD_SKIP_BUILD: "1"
-        run: |
-          source activate
-          maturin develop --uv
-      - name: Check API coverage
-        continue-on-error: true
-        run: python docs/audit/check_api_coverage.py
-      - name: Check consistency
-        continue-on-error: true
-        run: python docs/audit/check_consistency.py
-      - name: Check completeness
-        continue-on-error: true
-        run: python docs/audit/check_completeness.py
+    - uses: actions/checkout@v6
+    - uses: moonrepo/setup-rust@v1
+      with:
+        cache: false
+    - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ${{ runner.os }}-dev-build
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: false
+    - name: Setup Python and uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        python-version: ${{ env.python-version }}
+        enable-cache: true
+        cache-dependency-glob: "**/pyproject.toml"
+    - name: Setup Virtual Env
+      run: |
+        uv venv --seed .venv
+        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+    - name: Install dependencies
+      run: |
+        source activate
+        uv sync --no-install-project --all-extras --all-groups
+    - name: Build Daft
+      env:
+        DAFT_DASHBOARD_SKIP_BUILD: "1"
+      run: |
+        source activate
+        maturin develop --uv
+    - name: Run audit checks
+      run: |
+        set +e
+        echo "## Docs Audit Results" >> $GITHUB_STEP_SUMMARY
+
+        echo "### API Coverage" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        python docs/audit/check_api_coverage.py 2>&1 | tee /tmp/api_coverage.txt
+        API_EXIT=${PIPESTATUS[0]}
+        cat /tmp/api_coverage.txt >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        echo "### Consistency" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        python docs/audit/check_consistency.py 2>&1 | tee /tmp/consistency.txt
+        CON_EXIT=${PIPESTATUS[0]}
+        cat /tmp/consistency.txt >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        echo "### Completeness" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        python docs/audit/check_completeness.py 2>&1 | tee /tmp/completeness.txt
+        COM_EXIT=${PIPESTATUS[0]}
+        cat /tmp/completeness.txt >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+
+        exit $((API_EXIT | CON_EXIT | COM_EXIT))
