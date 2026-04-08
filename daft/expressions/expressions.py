@@ -2790,6 +2790,51 @@ class Expression:
 
         return file_size(self)
 
+    def video_metadata(self) -> Expression:
+        """Gets metadata for a video file.
+
+        Tip: See Also
+            [`daft.functions.video_metadata`](https://docs.daft.ai/en/stable/api/functions/video_metadata/)
+        """
+        from daft.functions import video_metadata
+
+        return video_metadata(self)
+
+    def video_keyframes(self, *, start_time: float = 0, end_time: float | None = None) -> Expression:
+        """Gets keyframes for a video file.
+
+        Tip: See Also
+            [`daft.functions.video_keyframes`](https://docs.daft.ai/en/stable/api/functions/video_keyframes/)
+        """
+        from daft.functions import video_keyframes
+
+        return video_keyframes(self, start_time=start_time, end_time=end_time)
+
+    def video_frames(
+        self,
+        *,
+        start_time: float = 0,
+        end_time: float | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        is_key_frame: bool | None = None,
+    ) -> Expression:
+        """Decodes video frames from a video file.
+
+        Tip: See Also
+            [`daft.functions.video_frames`](https://docs.daft.ai/en/stable/api/functions/video_frames/)
+        """
+        from daft.functions import video_frames
+
+        return video_frames(
+            self,
+            start_time=start_time,
+            end_time=end_time,
+            width=width,
+            height=height,
+            is_key_frame=is_key_frame,
+        )
+
 
 class WhenExpr(Expression):
     """Helper class for building a SQL-style CASE WHEN expression.
