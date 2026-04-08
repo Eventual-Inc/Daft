@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 _ARCHIVE_EXTENSIONS = (".tar", ".tar.gz", ".tgz", ".tar.bz2", ".zip", ".whl")
 _DIRECT_EXTENSIONS = (".py", ".egg")
 
-_REMOTE_SCHEMES = ("s3://", "gs://", "gcs://", "http://", "https://", "az://", "abfs://", "oss://")
+_REMOTE_SCHEMES = ("s3://", "gs://", "gcs://", "http://", "https://", "az://", "abfs://")
 
 # Retry configuration for remote downloads
 _MAX_DOWNLOAD_RETRIES = 3
