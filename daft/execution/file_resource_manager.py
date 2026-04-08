@@ -357,7 +357,7 @@ class FileResourceManager:
                 with tarfile.open(cached_path, mode) as tf:
                     for member in tf.getmembers():
                         self._validate_extraction_path(member.name, dest_dir)
-                    tf.extractall(dest_dir)
+                    tf.extractall(dest_dir, filter="fully_trusted")
             else:
                 logger.warning("Unknown archive format for '%s'", name)
                 return None
