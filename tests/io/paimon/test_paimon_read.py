@@ -6,12 +6,17 @@ to create and populate test tables, then Daft's read_paimon() is validated.
 
 from __future__ import annotations
 
+import decimal
+
 import pyarrow as pa
 import pytest
 
 pypaimon = pytest.importorskip("pypaimon")
 
 import daft
+
+# Import paimon_write to apply the patch for complex types support
+from daft.io.paimon import paimon_write  # noqa: F401
 from tests.io.paimon.conftest import _write_to_paimon
 
 # ---------------------------------------------------------------------------
@@ -296,3 +301,266 @@ def test_read_paimon_combined_filter(append_only_table):
     assert result.num_rows == 1
     assert result.column("id").to_pylist() == [2]
     assert result.column("dt").to_pylist() == ["2024-01-01"]
+
+
+# ---------------------------------------------------------------------------
+# Filter pushdown tests
+# ---------------------------------------------------------------------------
+
+
+class TestFilterPushdown:
+    """Tests for filter pushdown to Paimon."""
+
+    @pytest.fixture
+    def filter_table(self, local_paimon_catalog):
+        """Create a table for filter pushdown tests."""
+        catalog, tmp_path = local_paimon_catalog
+        pa_schema = pa.schema([("id", pa.int64()), ("value", pa.string())])
+        paimon_schema = pypaimon.Schema.from_pyarrow_schema(pa_schema)
+        catalog.create_table("test_db.filter_test", paimon_schema, ignore_if_exists=True)
+        table = catalog.get_table("test_db.filter_test")
+
+        data = pa.table({"id": [1, 2, 3, 4, 5], "value": ["a", "b", "c", "d", "e"]})
+        _write_to_paimon(table, data)
+        return table
+
+    def test_filter_pushdown_equal(self, filter_table):
+        """Test filter pushdown for equality comparison."""
+        df = daft.read_paimon(filter_table).where(daft.col("id") == 3)
+        result = df.to_pydict()
+
+        assert result["id"] == [3]
+        assert result["value"] == ["c"]
+
+    def test_filter_pushdown_comparison(self, filter_table):
+        """Test filter pushdown for comparison operators."""
+        # Test greater than
+        df = daft.read_paimon(filter_table).where(daft.col("id") > 3)
+        result = df.to_pydict()
+        assert result["id"] == [4, 5]
+
+        # Test less than or equal
+        df = daft.read_paimon(filter_table).where(daft.col("id") <= 2)
+        result = df.to_pydict()
+        assert result["id"] == [1, 2]
+
+    def test_filter_pushdown_is_in(self, filter_table):
+        """Test filter pushdown for IS IN operator."""
+        df = daft.read_paimon(filter_table).where(daft.col("id").is_in([2, 4]))
+        result = df.to_pydict()
+        assert result["id"] == [2, 4]
+
+    def test_filter_pushdown_is_null(self, local_paimon_catalog):
+        """Test filter pushdown for IS NULL operator."""
+        catalog, tmp_path = local_paimon_catalog
+
+        pa_schema = pa.schema([("id", pa.int64()), ("value", pa.string())])
+        paimon_schema = pypaimon.Schema.from_pyarrow_schema(pa_schema)
+        catalog.create_table("test_db.filter_null", paimon_schema, ignore_if_exists=True)
+        table = catalog.get_table("test_db.filter_null")
+
+        # Write data with nulls
+        data = pa.table({"id": [1, 2, 3], "value": ["a", None, "c"]})
+        _write_to_paimon(table, data)
+
+        # Read with IS NULL filter
+        df = daft.read_paimon(table).where(daft.col("value").is_null())
+        result = df.to_pydict()
+        assert result["id"] == [2]
+
+    def test_filter_pushdown_string(self, filter_table):
+        """Test filter pushdown for string operations."""
+        # Test starts_with
+        df = daft.read_paimon(filter_table).where(daft.col("value").startswith("a"))
+        result = df.to_pydict()
+        assert result["value"] == ["a"]
+
+        # Test contains
+        df = daft.read_paimon(filter_table).where(daft.col("value").contains("b"))
+        result = df.to_pydict()
+        assert result["value"] == ["b"]
+
+    def test_filter_pushdown_combined(self, filter_table):
+        """Test combined filter pushdown with AND."""
+        df = daft.read_paimon(filter_table).where((daft.col("id") >= 2) & (daft.col("id") <= 4))
+        result = df.to_pydict()
+        assert result["id"] == [2, 3, 4]
+
+
+# ---------------------------------------------------------------------------
+# Advanced data types
+# ---------------------------------------------------------------------------
+
+
+class TestNestedTypes:
+    """Tests for nested data types (list, map, struct)."""
+
+    def test_read_nested_list(self, local_paimon_catalog):
+        """Test reading Paimon table with list type.
+
+        Note: Writing complex types requires a workaround because pypaimon's
+        stats computation uses pyarrow min/max which doesn't support these types.
+        Daft patches pypaimon's _get_column_stats to handle this gracefully.
+        """
+        catalog, tmp_path = local_paimon_catalog
+
+        pa_schema = pa.schema(
+            [
+                ("id", pa.int64()),
+                ("list_col", pa.list_(pa.int64())),
+            ]
+        )
+        paimon_schema = pypaimon.Schema.from_pyarrow_schema(pa_schema)
+        catalog.create_table("test_db.nested_list", paimon_schema, ignore_if_exists=True)
+        table = catalog.get_table("test_db.nested_list")
+
+        data = pa.table(
+            {
+                "id": [1, 2],
+                "list_col": [[1, 2, 3], [4, 5]],
+            },
+            schema=pa_schema,
+        )
+        _write_to_paimon(table, data)
+
+        df = daft.read_paimon(table)
+        result = df.to_pydict()
+
+        assert len(result["id"]) == 2
+        assert result["list_col"][0] == [1, 2, 3]
+
+    def test_read_nested_map(self, local_paimon_catalog):
+        """Test reading Paimon table with map type."""
+        catalog, tmp_path = local_paimon_catalog
+
+        pa_schema = pa.schema(
+            [
+                ("id", pa.int64()),
+                ("map_col", pa.map_(pa.string(), pa.int64())),
+            ]
+        )
+        paimon_schema = pypaimon.Schema.from_pyarrow_schema(pa_schema)
+        catalog.create_table("test_db.nested_map", paimon_schema, ignore_if_exists=True)
+        table = catalog.get_table("test_db.nested_map")
+
+        data = pa.table(
+            {
+                "id": [1, 2],
+                "map_col": [[("k1", 1), ("k2", 2)], [("k3", 3)]],
+            },
+            schema=pa_schema,
+        )
+        _write_to_paimon(table, data)
+
+        df = daft.read_paimon(table)
+        result = df.to_pydict()
+
+        assert len(result["id"]) == 2
+
+
+class TestDecimalType:
+    """Tests for decimal type support."""
+
+    def test_read_decimal(self, local_paimon_catalog):
+        """Test reading Paimon table with decimal type."""
+        catalog, tmp_path = local_paimon_catalog
+
+        pa_schema = pa.schema(
+            [
+                ("id", pa.int64()),
+                ("amount", pa.decimal128(10, 2)),
+            ]
+        )
+        paimon_schema = pypaimon.Schema.from_pyarrow_schema(pa_schema)
+        catalog.create_table("test_db.decimal_table", paimon_schema, ignore_if_exists=True)
+        table = catalog.get_table("test_db.decimal_table")
+
+        # Write data using decimal.Decimal
+        data = pa.table(
+            {
+                "id": [1, 2, 3],
+                "amount": [decimal.Decimal("100.50"), decimal.Decimal("200.75"), decimal.Decimal("300.00")],
+            },
+            schema=pa_schema,
+        )
+        _write_to_paimon(table, data)
+
+        df = daft.read_paimon(table)
+        result = df.to_pydict()
+
+        assert len(result["id"]) == 3
+
+
+class TestNullValues:
+    """Tests for null value handling."""
+
+    def test_read_with_nulls(self, local_paimon_catalog):
+        """Test reading table with null values."""
+        catalog, tmp_path = local_paimon_catalog
+
+        pa_schema = pa.schema(
+            [
+                ("id", pa.int64()),
+                ("name", pa.string()),
+                ("value", pa.float64()),
+            ]
+        )
+        paimon_schema = pypaimon.Schema.from_pyarrow_schema(pa_schema)
+        catalog.create_table("test_db.null_table", paimon_schema, ignore_if_exists=True)
+        table = catalog.get_table("test_db.null_table")
+
+        # Write data with nulls
+        data = pa.table(
+            {
+                "id": [1, 2, 3],
+                "name": ["alice", None, "charlie"],
+                "value": [1.1, 2.2, None],
+            }
+        )
+        _write_to_paimon(table, data)
+
+        df = daft.read_paimon(table)
+        result = df.to_pydict()
+
+        assert len(result["id"]) == 3
+        assert result["name"][1] is None
+        assert result["value"][2] is None
+
+
+class TestCompositePrimaryKey:
+    """Tests for composite primary key tables."""
+
+    def test_read_composite_pk_table(self, local_paimon_catalog):
+        """Test reading from a table with composite primary key."""
+        catalog, tmp_path = local_paimon_catalog
+
+        pa_schema = pa.schema(
+            [
+                ("pk1", pa.int64()),
+                ("pk2", pa.string()),
+                ("value", pa.float64()),
+            ]
+        )
+        # Composite primary key table
+        paimon_schema = pypaimon.Schema.from_pyarrow_schema(
+            pa_schema,
+            primary_keys=["pk1", "pk2"],
+            options={"bucket": "2"},
+        )
+        catalog.create_table("test_db.composite_pk", paimon_schema, ignore_if_exists=True)
+        table = catalog.get_table("test_db.composite_pk")
+
+        # Write data
+        data = pa.table(
+            {
+                "pk1": [1, 1, 2],
+                "pk2": ["a", "b", "a"],
+                "value": [1.1, 2.2, 3.3],
+            }
+        )
+        _write_to_paimon(table, data)
+
+        df = daft.read_paimon(table)
+        result = df.to_pydict()
+
+        assert len(result["pk1"]) == 3
