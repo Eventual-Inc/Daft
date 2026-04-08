@@ -172,7 +172,7 @@ impl AsofJoin {
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
-        let mut res = vec!["AsofJoin: direction = backward".to_string()];
+        let mut res = vec!["AsofJoin: strategy = backward".to_string()];
         res.push(format!(
             "left_by = [{}]",
             self.left_by

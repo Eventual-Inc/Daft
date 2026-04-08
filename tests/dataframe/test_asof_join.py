@@ -67,12 +67,12 @@ class TestAsofJoinParameterValidation:
         with pytest.raises(ValueError):
             left.join_asof(right)
 
-    # remove this test once we support more directions
-    def test_invalid_direction_raises(self):
+    # remove this test once we support more strategies
+    def test_invalid_strategy_raises(self):
         left = daft.from_pydict({"ts": [1, 2]})
         right = daft.from_pydict({"ts": [1, 2]})
         with pytest.raises(APITypeError):
-            left.join_asof(right, direction="forward")
+            left.join_asof(right, strategy="forward")
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +200,7 @@ class TestAsofJoinBackwardMatchCorrectness:
         """When right has exact timestamp, pick it."""
         left = daft.from_pydict({"ts": [10, 20, 30], "v": [1, 2, 3]})
         right = daft.from_pydict({"ts": [10, 20, 30], "w": [11, 22, 33]})
-        result = left.join_asof(right, on="ts", direction="backward").sort("ts")
+        result = left.join_asof(right, on="ts", strategy="backward").sort("ts")
         assert result.to_pydict() == {"ts": [10, 20, 30], "v": [1, 2, 3], "w": [11, 22, 33]}
 
     def test_closest_earlier_when_no_exact(self):
