@@ -56,6 +56,15 @@ class DaftContext:
     def daft_event_log_config(self) -> PyDaftEventLogConfig:
         return self._ctx._daft_event_log_config
 
+    @property
+    def added_resources(self) -> dict[str, int]:
+        """Get the added resources map (resource name -> Unix millisecond timestamp)."""
+        return self._ctx._added_resources
+
+    @added_resources.setter
+    def added_resources(self, value: dict[str, int]) -> None:
+        self._ctx._added_resources = value
+
     def attach_subscriber(self, alias: str, subscriber: Subscriber) -> None:
         """Attaches a subscriber to this context.
 

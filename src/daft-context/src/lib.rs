@@ -47,6 +47,8 @@ struct ContextState {
     /// Shared configuration for the context
     config: Config,
     subscribers: HashMap<String, Arc<dyn Subscriber>>,
+    /// User-added resources with their timestamps (Unix milliseconds)
+    added_resources: HashMap<String, i64>,
 }
 
 /// Wrapper around the ContextState to provide a thread-safe interface.
@@ -111,6 +113,16 @@ impl DaftContext {
     /// set the event log config
     pub fn set_event_log_config(&self, config: DaftEventLogConfig) {
         self.with_state_mut(|state| state.config.event_log = config);
+    }
+
+    /// get the added resources map
+    pub fn added_resources(&self) -> HashMap<String, i64> {
+        self.with_state(|state| state.added_resources.clone())
+    }
+
+    /// set the added resources map
+    pub fn set_added_resources(&self, resources: HashMap<String, i64>) {
+        self.with_state_mut(|state| state.added_resources = resources);
     }
 
     pub fn io_config(&self) -> IOConfig {
@@ -271,6 +283,7 @@ pub fn get_context() -> DaftContext {
             let state = ContextState {
                 config: Config::from_env(),
                 subscribers: default_subscribers(),
+                added_resources: HashMap::new(),
             };
             let state = RwLock::new(state);
             let state = Arc::new(state);
@@ -294,6 +307,7 @@ pub fn get_context() -> DaftContext {
             let state = ContextState {
                 config: Config::from_env(),
                 subscribers: HashMap::new(),
+                added_resources: HashMap::new(),
             };
             let state = RwLock::new(state);
             let state = Arc::new(state);
