@@ -63,20 +63,29 @@ export const FINISHED_STYLE: HeatmapStyle = {
 };
 
 /**
+ * Thresholds at which an edge's bytes-out / bytes-in ratio is considered
+ * meaningful enough to badge. Shared with EdgeLabel so both files agree on
+ * what counts as expansion vs. reduction.
+ */
+export const EXPANSION_THRESHOLD = 1.25;
+export const REDUCTION_THRESHOLD = 0.8;
+
+/**
  * Style for an amplification badge on an edge.
- * Cyan for expansion (>1×), purple for reduction (<1×), neutral otherwise.
+ * Cyan for expansion (≥ EXPANSION_THRESHOLD), purple for reduction
+ * (≤ REDUCTION_THRESHOLD), neutral otherwise.
  */
 export function getAmplificationStyle(amplification: number): {
   borderColor: string;
   textColor: string;
 } {
-  if (amplification > 1) {
+  if (amplification >= EXPANSION_THRESHOLD) {
     return {
       borderColor: "rgb(34, 211, 238)",
       textColor: "rgb(165, 243, 252)",
     };
   }
-  if (amplification > 0 && amplification < 1) {
+  if (amplification > 0 && amplification <= REDUCTION_THRESHOLD) {
     return {
       borderColor: "rgb(192, 132, 252)",
       textColor: "rgb(233, 213, 255)",

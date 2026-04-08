@@ -3,12 +3,14 @@
 import { CSSProperties } from "react";
 import { main } from "@/lib/utils";
 import { formatBytes } from "./stats-utils";
-import { getAmplificationStyle } from "./tree-colors";
+import {
+  getAmplificationStyle,
+  EXPANSION_THRESHOLD,
+  REDUCTION_THRESHOLD,
+} from "./tree-colors";
 
 const MIN_THICKNESS_PX = 1;
 const MAX_THICKNESS_PX = 14;
-const EXPANSION_THRESHOLD = 1.25;
-const REDUCTION_THRESHOLD = 0.8;
 
 const computeThickness = (bytes: number, maxBytes: number) => {
   if (maxBytes <= 0 || bytes <= 0) return MIN_THICKNESS_PX;

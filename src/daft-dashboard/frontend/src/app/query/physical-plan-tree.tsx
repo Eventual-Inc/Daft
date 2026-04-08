@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { main } from "@/lib/utils";
 import { ExecutingState, OperatorInfo, PhysicalPlanNode } from "./types";
 import {
@@ -246,24 +246,27 @@ export default function PhysicalPlanTree({
     return m;
   }, [operators]);
 
-  const renderEdge = (
-    _parent: PhysicalPlanNode,
-    child: PhysicalPlanNode,
-    position: "single" | "branch",
-  ) => {
-    const childOp = operators[child.id];
-    const bytesOut = childOp ? statNumericValue(childOp.stats[BYTES_OUT_STAT_KEY]) : 0;
-    const bytesIn = childOp ? statNumericValue(childOp.stats[BYTES_IN_STAT_KEY]) : 0;
-    const amplification = bytesIn > 0 ? bytesOut / bytesIn : 0;
-    return (
-      <EdgeLabel
-        bytes={bytesOut}
-        amplification={amplification}
-        maxBytes={maxBytes}
-        position={position}
-      />
-    );
-  };
+  const renderEdge = useCallback(
+    (
+      _parent: PhysicalPlanNode,
+      child: PhysicalPlanNode,
+      position: "single" | "branch",
+    ) => {
+      const childOp = operators[child.id];
+      const bytesOut = childOp ? statNumericValue(childOp.stats[BYTES_OUT_STAT_KEY]) : 0;
+      const bytesIn = childOp ? statNumericValue(childOp.stats[BYTES_IN_STAT_KEY]) : 0;
+      const amplification = bytesIn > 0 ? bytesOut / bytesIn : 0;
+      return (
+        <EdgeLabel
+          bytes={bytesOut}
+          amplification={amplification}
+          maxBytes={maxBytes}
+          position={position}
+        />
+      );
+    },
+    [operators, maxBytes],
+  );
 
   return (
     <div className="bg-zinc-900 h-full flex flex-col">

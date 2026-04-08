@@ -81,16 +81,7 @@ export const formatStatValue = (stat: Stat) => {
     case "Count":
       return stat.value.toLocaleString();
     case "Bytes":
-      const bytes = stat.value;
-      if (bytes >= 1024 * 1024 * 1024) {
-        return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
-      } else if (bytes >= 1024 * 1024) {
-        return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
-      } else if (bytes >= 1024) {
-        return `${(bytes / 1024).toFixed(1)} KiB`;
-      } else {
-        return `${bytes} B`;
-      }
+      return formatBytes(stat.value);
     case "Percent":
       return `${stat.value.toFixed(1)}%`;
     case "Duration":
