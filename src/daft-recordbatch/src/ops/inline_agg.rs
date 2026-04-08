@@ -48,6 +48,10 @@ impl CountAccum {
         }
     }
 
+    fn init_groups(&mut self, n: usize) {
+        self.counts.resize(n, 0);
+    }
+
     /// Use pre-computed group sizes when no per-row null checking is needed.
     /// Returns true if the optimization was applied, false if caller must use update_batch.
     fn try_use_group_sizes(&mut self, group_sizes: &[u64]) -> bool {
@@ -132,6 +136,10 @@ macro_rules! define_sum_accum {
                 }
             }
 
+            fn init_groups(&mut self, n: usize) {
+                self.accumulators.resize(n, None);
+            }
+
             /// Vectorized batch update over pre-computed group_ids.
             fn update_batch(&mut self, group_ids: &[u32]) {
                 let accs = &mut self.accumulators;
@@ -198,6 +206,10 @@ macro_rules! define_minmax_accum {
                     accumulators: Vec::new(),
                     source,
                 }
+            }
+
+            fn init_groups(&mut self, n: usize) {
+                self.accumulators.resize(n, None);
             }
 
             fn update_batch(&mut self, group_ids: &[u32]) {
@@ -287,9 +299,47 @@ define_minmax_accum!(MaxAccumF64, Float64Type, f64, |a, b| if a.gt(&b) {
 // AggAccumulator enum — eliminates vtable dispatch in the hot loop
 // ---------------------------------------------------------------------------
 
-// Sum widens small integers (e.g. Int8 → Int64) so only 4 variants are needed.
-// Min/Max preserve the original dtype, so each numeric type needs its own variant.
-enum AggAccumulator {
+/// Generates the `AggAccumulator` enum and its `init_groups` / `update_batch` /
+/// `finalize` dispatch methods from a single list of variants.
+///
+/// Each accumulator struct must implement inherent methods:
+///   - `init_groups(&mut self, n: usize)`
+///   - `update_batch(&mut self, group_ids: &[u32])`
+///   - `finalize(self, name: &str) -> DaftResult<Series>`
+macro_rules! define_agg_accumulator_enum {
+    ($($variant:ident($accum:ty)),+ $(,)?) => {
+        enum AggAccumulator {
+            $($variant($accum),)+
+        }
+
+        impl AggAccumulator {
+            /// Pre-initialize storage for `n` groups.
+            fn init_groups(&mut self, n: u32) {
+                let n = n as usize;
+                match self {
+                    $(Self::$variant(s) => s.init_groups(n),)+
+                }
+            }
+
+            /// Vectorized batch update: tight loop per accumulator type over group_ids.
+            fn update_batch(&mut self, group_ids: &[u32]) {
+                match self {
+                    $(Self::$variant(s) => s.update_batch(group_ids),)+
+                }
+            }
+
+            fn finalize(self, name: &str) -> DaftResult<Series> {
+                match self {
+                    $(Self::$variant(s) => s.finalize(name),)+
+                }
+            }
+        }
+    };
+}
+
+// Sum widens small integers (e.g. Int8 → Int64) so only 4 Sum variants are needed.
+// Min/Max preserve the original dtype, so each numeric type gets its own variant.
+define_agg_accumulator_enum!(
     Count(CountAccum),
     SumI64(SumAccumI64),
     SumU64(SumAccumU64),
@@ -315,108 +365,18 @@ enum AggAccumulator {
     MaxU64(MaxAccumU64),
     MaxF32(MaxAccumF32),
     MaxF64(MaxAccumF64),
-}
+);
 
 impl AggAccumulator {
-    /// Pre-initialize storage for `n` groups.
-    fn init_groups(&mut self, n: u32) {
-        let n = n as usize;
-        match self {
-            Self::Count(s) => s.counts.resize(n, 0),
-            Self::SumI64(s) => s.accumulators.resize(n, None),
-            Self::SumU64(s) => s.accumulators.resize(n, None),
-            Self::SumF32(s) => s.accumulators.resize(n, None),
-            Self::SumF64(s) => s.accumulators.resize(n, None),
-            Self::MinI8(s) => s.accumulators.resize(n, None),
-            Self::MinI16(s) => s.accumulators.resize(n, None),
-            Self::MinI32(s) => s.accumulators.resize(n, None),
-            Self::MinI64(s) => s.accumulators.resize(n, None),
-            Self::MinU8(s) => s.accumulators.resize(n, None),
-            Self::MinU16(s) => s.accumulators.resize(n, None),
-            Self::MinU32(s) => s.accumulators.resize(n, None),
-            Self::MinU64(s) => s.accumulators.resize(n, None),
-            Self::MinF32(s) => s.accumulators.resize(n, None),
-            Self::MinF64(s) => s.accumulators.resize(n, None),
-            Self::MaxI8(s) => s.accumulators.resize(n, None),
-            Self::MaxI16(s) => s.accumulators.resize(n, None),
-            Self::MaxI32(s) => s.accumulators.resize(n, None),
-            Self::MaxI64(s) => s.accumulators.resize(n, None),
-            Self::MaxU8(s) => s.accumulators.resize(n, None),
-            Self::MaxU16(s) => s.accumulators.resize(n, None),
-            Self::MaxU32(s) => s.accumulators.resize(n, None),
-            Self::MaxU64(s) => s.accumulators.resize(n, None),
-            Self::MaxF32(s) => s.accumulators.resize(n, None),
-            Self::MaxF64(s) => s.accumulators.resize(n, None),
-        }
-    }
-
     /// Try to use pre-computed group sizes for O(groups) count instead of O(rows).
     /// Returns true if the accumulator was fully updated (no scatter loop needed).
+    ///
+    /// Only `Count` benefits from this optimization today; all other accumulators
+    /// must still iterate per-row to combine values.
     fn try_use_group_sizes(&mut self, group_sizes: &[u64]) -> bool {
         match self {
             Self::Count(s) => s.try_use_group_sizes(group_sizes),
             _ => false,
-        }
-    }
-
-    /// Vectorized batch update: tight loop per accumulator type over group_ids.
-    fn update_batch(&mut self, group_ids: &[u32]) {
-        match self {
-            Self::Count(s) => s.update_batch(group_ids),
-            Self::SumI64(s) => s.update_batch(group_ids),
-            Self::SumU64(s) => s.update_batch(group_ids),
-            Self::SumF32(s) => s.update_batch(group_ids),
-            Self::SumF64(s) => s.update_batch(group_ids),
-            Self::MinI8(s) => s.update_batch(group_ids),
-            Self::MinI16(s) => s.update_batch(group_ids),
-            Self::MinI32(s) => s.update_batch(group_ids),
-            Self::MinI64(s) => s.update_batch(group_ids),
-            Self::MinU8(s) => s.update_batch(group_ids),
-            Self::MinU16(s) => s.update_batch(group_ids),
-            Self::MinU32(s) => s.update_batch(group_ids),
-            Self::MinU64(s) => s.update_batch(group_ids),
-            Self::MinF32(s) => s.update_batch(group_ids),
-            Self::MinF64(s) => s.update_batch(group_ids),
-            Self::MaxI8(s) => s.update_batch(group_ids),
-            Self::MaxI16(s) => s.update_batch(group_ids),
-            Self::MaxI32(s) => s.update_batch(group_ids),
-            Self::MaxI64(s) => s.update_batch(group_ids),
-            Self::MaxU8(s) => s.update_batch(group_ids),
-            Self::MaxU16(s) => s.update_batch(group_ids),
-            Self::MaxU32(s) => s.update_batch(group_ids),
-            Self::MaxU64(s) => s.update_batch(group_ids),
-            Self::MaxF32(s) => s.update_batch(group_ids),
-            Self::MaxF64(s) => s.update_batch(group_ids),
-        }
-    }
-
-    fn finalize(self, name: &str) -> DaftResult<Series> {
-        match self {
-            Self::Count(s) => s.finalize(name),
-            Self::SumI64(s) => s.finalize(name),
-            Self::SumU64(s) => s.finalize(name),
-            Self::SumF32(s) => s.finalize(name),
-            Self::SumF64(s) => s.finalize(name),
-            Self::MinI8(s) => s.finalize(name),
-            Self::MinI16(s) => s.finalize(name),
-            Self::MinI32(s) => s.finalize(name),
-            Self::MinI64(s) => s.finalize(name),
-            Self::MinU8(s) => s.finalize(name),
-            Self::MinU16(s) => s.finalize(name),
-            Self::MinU32(s) => s.finalize(name),
-            Self::MinU64(s) => s.finalize(name),
-            Self::MinF32(s) => s.finalize(name),
-            Self::MinF64(s) => s.finalize(name),
-            Self::MaxI8(s) => s.finalize(name),
-            Self::MaxI16(s) => s.finalize(name),
-            Self::MaxI32(s) => s.finalize(name),
-            Self::MaxI64(s) => s.finalize(name),
-            Self::MaxU8(s) => s.finalize(name),
-            Self::MaxU16(s) => s.finalize(name),
-            Self::MaxU32(s) => s.finalize(name),
-            Self::MaxU64(s) => s.finalize(name),
-            Self::MaxF32(s) => s.finalize(name),
-            Self::MaxF64(s) => s.finalize(name),
         }
     }
 }
@@ -424,6 +384,27 @@ impl AggAccumulator {
 // ---------------------------------------------------------------------------
 // Factory: create accumulator from a BoundAggExpr
 // ---------------------------------------------------------------------------
+
+/// Matches `$evaluated`'s dtype and constructs the corresponding typed
+/// `AggAccumulator` variant by downcasting to the matching array type.
+macro_rules! dispatch_typed_accum {
+    ($evaluated:expr, $name:expr,
+        $($dtype:ident => $arr_ty:ident => $variant:ident($accum:ident)),+ $(,)?
+    ) => {
+        match $evaluated.data_type() {
+            $(
+                DataType::$dtype => {
+                    let arr = $evaluated.downcast::<$arr_ty>()?;
+                    Ok(Some((
+                        AggAccumulator::$variant($accum::new(arr.clone())),
+                        $name,
+                    )))
+                }
+            )+
+            _ => Ok(None),
+        }
+    };
+}
 
 fn try_create_accumulator(
     agg_expr: &BoundAggExpr,
@@ -478,156 +459,36 @@ fn try_create_accumulator(
         AggExpr::Min(expr) => {
             let evaluated = source.eval_agg_child(expr)?;
             let name = evaluated.name().to_string();
-            match evaluated.data_type() {
-                DataType::Int8 => {
-                    let arr = evaluated.downcast::<Int8Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MinI8(MinAccumI8::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::Int16 => {
-                    let arr = evaluated.downcast::<Int16Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MinI16(MinAccumI16::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::Int32 => {
-                    let arr = evaluated.downcast::<Int32Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MinI32(MinAccumI32::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::Int64 => {
-                    let arr = evaluated.downcast::<Int64Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MinI64(MinAccumI64::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::UInt8 => {
-                    let arr = evaluated.downcast::<UInt8Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MinU8(MinAccumU8::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::UInt16 => {
-                    let arr = evaluated.downcast::<UInt16Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MinU16(MinAccumU16::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::UInt32 => {
-                    let arr = evaluated.downcast::<UInt32Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MinU32(MinAccumU32::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::UInt64 => {
-                    let arr = evaluated.downcast::<UInt64Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MinU64(MinAccumU64::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::Float32 => {
-                    let arr = evaluated.downcast::<Float32Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MinF32(MinAccumF32::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::Float64 => {
-                    let arr = evaluated.downcast::<Float64Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MinF64(MinAccumF64::new(arr.clone())),
-                        name,
-                    )))
-                }
-                _ => Ok(None),
-            }
+            dispatch_typed_accum!(
+                evaluated, name,
+                Int8 => Int8Array => MinI8(MinAccumI8),
+                Int16 => Int16Array => MinI16(MinAccumI16),
+                Int32 => Int32Array => MinI32(MinAccumI32),
+                Int64 => Int64Array => MinI64(MinAccumI64),
+                UInt8 => UInt8Array => MinU8(MinAccumU8),
+                UInt16 => UInt16Array => MinU16(MinAccumU16),
+                UInt32 => UInt32Array => MinU32(MinAccumU32),
+                UInt64 => UInt64Array => MinU64(MinAccumU64),
+                Float32 => Float32Array => MinF32(MinAccumF32),
+                Float64 => Float64Array => MinF64(MinAccumF64),
+            )
         }
         AggExpr::Max(expr) => {
             let evaluated = source.eval_agg_child(expr)?;
             let name = evaluated.name().to_string();
-            match evaluated.data_type() {
-                DataType::Int8 => {
-                    let arr = evaluated.downcast::<Int8Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MaxI8(MaxAccumI8::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::Int16 => {
-                    let arr = evaluated.downcast::<Int16Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MaxI16(MaxAccumI16::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::Int32 => {
-                    let arr = evaluated.downcast::<Int32Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MaxI32(MaxAccumI32::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::Int64 => {
-                    let arr = evaluated.downcast::<Int64Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MaxI64(MaxAccumI64::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::UInt8 => {
-                    let arr = evaluated.downcast::<UInt8Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MaxU8(MaxAccumU8::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::UInt16 => {
-                    let arr = evaluated.downcast::<UInt16Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MaxU16(MaxAccumU16::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::UInt32 => {
-                    let arr = evaluated.downcast::<UInt32Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MaxU32(MaxAccumU32::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::UInt64 => {
-                    let arr = evaluated.downcast::<UInt64Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MaxU64(MaxAccumU64::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::Float32 => {
-                    let arr = evaluated.downcast::<Float32Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MaxF32(MaxAccumF32::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::Float64 => {
-                    let arr = evaluated.downcast::<Float64Array>()?;
-                    Ok(Some((
-                        AggAccumulator::MaxF64(MaxAccumF64::new(arr.clone())),
-                        name,
-                    )))
-                }
-                _ => Ok(None),
-            }
+            dispatch_typed_accum!(
+                evaluated, name,
+                Int8 => Int8Array => MaxI8(MaxAccumI8),
+                Int16 => Int16Array => MaxI16(MaxAccumI16),
+                Int32 => Int32Array => MaxI32(MaxAccumI32),
+                Int64 => Int64Array => MaxI64(MaxAccumI64),
+                UInt8 => UInt8Array => MaxU8(MaxAccumU8),
+                UInt16 => UInt16Array => MaxU16(MaxAccumU16),
+                UInt32 => UInt32Array => MaxU32(MaxAccumU32),
+                UInt64 => UInt64Array => MaxU64(MaxAccumU64),
+                Float32 => Float32Array => MaxF32(MaxAccumF32),
+                Float64 => Float64Array => MaxF64(MaxAccumF64),
+            )
         }
         _ => Ok(None),
     }
