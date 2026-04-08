@@ -3,10 +3,21 @@ use std::{fmt, time::SystemTime};
 use uuid::Uuid;
 
 /// Opaque identifier for a checkpoint.
+///
+/// The inner string is guaranteed to be safe for use as a path segment in
+/// object-store keys (S3, GCS, local FS). Only ASCII alphanumeric characters,
+/// hyphens (`-`), and underscores (`_`) are allowed.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CheckpointId(String);
 
 impl CheckpointId {
+    /// Characters permitted in a checkpoint ID: ASCII alphanumeric, `-`, `_`.
+    fn is_valid(s: &str) -> bool {
+        !s.is_empty()
+            && s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    }
+
     /// Generate a new checkpoint ID associated with a task.
     #[must_use]
     pub fn generate(task_id: u32) -> Self {
@@ -14,8 +25,17 @@ impl CheckpointId {
     }
 
     /// Reconstruct a checkpoint ID from a previously serialized string.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `s` is empty or contains characters outside the allowed set
+    /// (ASCII alphanumeric, `-`, `_`).
     #[must_use]
     pub fn from_string(s: String) -> Self {
+        assert!(
+            Self::is_valid(&s),
+            "CheckpointId must be non-empty and contain only ASCII alphanumeric, '-', or '_' characters, got: {s:?}"
+        );
         Self(s)
     }
 }
@@ -118,5 +138,40 @@ impl FileMetadata {
     #[must_use]
     pub fn new(format: FileFormat, data: Vec<u8>) -> Self {
         Self { format, data }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generate_produces_valid_id() {
+        let id = CheckpointId::generate(42);
+        assert!(CheckpointId::is_valid(id.as_ref()));
+    }
+
+    #[test]
+    fn from_string_accepts_valid_id() {
+        let id = CheckpointId::from_string("task-0-checkpoint-abc123".to_string());
+        assert_eq!(id.as_ref(), "task-0-checkpoint-abc123");
+    }
+
+    #[test]
+    #[should_panic(expected = "CheckpointId must be non-empty")]
+    fn from_string_rejects_empty() {
+        let _ = CheckpointId::from_string(String::new());
+    }
+
+    #[test]
+    #[should_panic(expected = "CheckpointId must be non-empty")]
+    fn from_string_rejects_slash() {
+        let _ = CheckpointId::from_string("bad/path".to_string());
+    }
+
+    #[test]
+    #[should_panic(expected = "CheckpointId must be non-empty")]
+    fn from_string_rejects_space() {
+        let _ = CheckpointId::from_string("bad path".to_string());
     }
 }
