@@ -140,7 +140,7 @@ function PhysicalNodeCard({
 
   return (
     <div
-      className="border-2 rounded-lg px-4 py-2.5 cursor-pointer
+      className="border-solid rounded-lg px-4 py-2.5 cursor-pointer
         hover:brightness-125 transition-all min-w-[180px] max-w-[320px]"
       style={cardStyle}
       onClick={() => setExpanded(!expanded)}

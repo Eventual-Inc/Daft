@@ -10,38 +10,56 @@ export const categoryColors: Record<string, { bg: string; border: string; text: 
 
 export const defaultColor = { bg: "bg-zinc-900", border: "border-zinc-600", text: "text-zinc-300" };
 
-/**
- * Heatmap style for an execution node, encoding bottleneck intensity as color.
- * intensity ∈ [0, 1] — 0 is "idle" (blends with background), 1 is "hot" (bottleneck).
- * Three-stop gradient through dusty/desaturated warm tones — reads as "slow",
- * not "error".
- */
-export function getHeatmapStyle(intensity: number): {
+export type HeatmapStyle = {
   backgroundColor: string;
   borderColor: string;
-} {
+  borderWidth: string;
+};
+
+/**
+ * Heatmap style for an execution node, encoding bottleneck intensity as color.
+ * intensity ∈ [0, 1] — 0 is "idle", 1 is "hot" (bottleneck).
+ *
+ * The border carries the real heat signal (dim grey → dusty mauve → Daft
+ * magenta) and thickens as it heats up. The background only whispers a
+ * magenta tint at high heat, keeping white text comfortably legible at every
+ * intensity. Stays within the daft.ai palette (black + magenta + greys).
+ */
+export function getHeatmapStyle(intensity: number): HeatmapStyle {
   const t = Math.max(0, Math.min(1, intensity));
-  const cold: [number, number, number] = [24, 24, 27];
-  const warm: [number, number, number] = [70, 48, 28];
-  const hot: [number, number, number] = [110, 58, 42];
+
+  const bgCold: [number, number, number] = [24, 24, 27];
+  const bgHot: [number, number, number] = [30, 22, 32];
+
+  const borderCold: [number, number, number] = [63, 63, 70];
+  const borderWarm: [number, number, number] = [120, 50, 110];
+  const borderHot: [number, number, number] = [217, 70, 219];
 
   const lerp = (a: number, b: number, u: number) => a + (b - a) * u;
   const mix = (a: [number, number, number], b: [number, number, number], u: number) =>
     [lerp(a[0], b[0], u), lerp(a[1], b[1], u), lerp(a[2], b[2], u)] as const;
 
-  const rgb = t < 0.5 ? mix(cold, warm, t * 2) : mix(warm, hot, (t - 0.5) * 2);
-  const [r, g, b] = rgb.map(Math.round);
+  const bg = mix(bgCold, bgHot, t).map(Math.round);
+  const border =
+    t < 0.5
+      ? mix(borderCold, borderWarm, t * 2).map(Math.round)
+      : mix(borderWarm, borderHot, (t - 0.5) * 2).map(Math.round);
 
   return {
-    backgroundColor: `rgb(${r}, ${g}, ${b})`,
-    borderColor: `rgb(${Math.min(255, r + 45)}, ${Math.min(255, g + 45)}, ${Math.min(255, b + 45)})`,
+    backgroundColor: `rgb(${bg[0]}, ${bg[1]}, ${bg[2]})`,
+    borderColor: `rgb(${border[0]}, ${border[1]}, ${border[2]})`,
+    borderWidth: `${lerp(2, 4, t).toFixed(2)}px`,
   };
 }
 
-/** Discrete style for a Finished operator — overrides the heatmap. */
-export const FINISHED_STYLE: { backgroundColor: string; borderColor: string } = {
-  backgroundColor: "rgb(20, 83, 45)",
-  borderColor: "rgb(34, 122, 64)",
+/** Discrete style for a Finished operator — overrides the heatmap.
+ * Background fades to cold zinc so the eye isn't pulled toward done work;
+ * a muted emerald border still marks it as completed (vs. Pending, which
+ * is cold zinc with no special border). */
+export const FINISHED_STYLE: HeatmapStyle = {
+  backgroundColor: "rgb(24, 24, 27)",
+  borderColor: "rgb(52, 120, 80)",
+  borderWidth: "2px",
 };
 
 /**
