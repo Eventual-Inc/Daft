@@ -78,7 +78,8 @@ class PaimonCatalog(Catalog):
         pa_schema = _cast_large_types(schema.to_pyarrow_schema())
         partition_keys = [pf.field.name for pf in (partition_fields or [])]
         primary_keys = list((properties or {}).get("primary_keys", []))
-        options = dict(properties) if properties else {}
+        # Exclude non-option keys so only string-valued table properties are forwarded
+        options = {k: str(v) for k, v in (properties or {}).items() if k != "primary_keys"} if properties else {}
 
         paimon_schema = pypaimon.Schema.from_pyarrow_schema(
             pa_schema,
@@ -313,9 +314,20 @@ class PaimonTable(Table):
 
 
 def _to_paimon_ident(ident: Identifier) -> str:
-    """Convert a Daft identifier to a pypaimon identifier string."""
+    """Convert a Daft identifier to a pypaimon identifier string.
+
+    Strips the leading catalog prefix for 3-part identifiers:
+    - 1 part  (table,)              → 'table'
+    - 2 parts (db, table)           → 'db.table'
+    - 3 parts (catalog, db, table)  → 'db.table'  (catalog prefix stripped)
+    """
     if isinstance(ident, Identifier):
-        return ".".join(str(part) for part in ident)
+        parts = tuple(ident)
+        if len(parts) == 3:
+            return f"{parts[1]}.{parts[2]}"
+        if len(parts) == 2:
+            return f"{parts[0]}.{parts[1]}"
+        return str(parts[0])
     return ident
 
 
