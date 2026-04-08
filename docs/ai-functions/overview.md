@@ -17,5 +17,5 @@ For more detailed information on the Providers, see [AI Providers Overview](prov
 - [Working with Text](../modalities/text.md) - Text processing and chunking strategies
 - [Working with Images](../modalities/images.md) - Image processing and transformations
 - [Embeddings](../modalities/embeddings.md) - Vector representations for RAG and search
-- [Custom Code with @daft.func](../custom-code/func.md) - Write custom Python functions for specialized processing
+- [Custom Code with `@daft.func`](../custom-code/func.md) - Write custom Python functions for specialized processing
 - [Batch Inference](../use-case/batch-inference.md) - End-to-end batch inference patterns
