@@ -959,23 +959,25 @@ impl SQLPlanner<'_> {
         &self,
         rel: &sqlparser::ast::TableFactor,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
-        let (plan, alias) = match rel {
+        let (plan, alias, sample) = match rel {
             sqlparser::ast::TableFactor::Table {
                 name,
                 args: Some(args),
                 alias,
+                sample,
                 ..
             } => {
                 let tbl_fn = match name.0.first().unwrap() {
                     ast::ObjectNamePart::Identifier(ident) => ident.value.as_str(),
                     ast::ObjectNamePart::Function(func) => func.name.value.as_str(),
                 };
-                (self.plan_table_function(tbl_fn, args)?, alias)
+                (self.plan_table_function(tbl_fn, args)?, alias, sample)
             }
             sqlparser::ast::TableFactor::Table {
                 name,
                 args: None,
                 alias,
+                sample,
                 ..
             } => {
                 let plan = if is_table_path(name) {
@@ -988,7 +990,7 @@ impl SQLPlanner<'_> {
                     self.plan_relation_table(name)?
                 };
 
-                (plan, alias)
+                (plan, alias, sample)
             }
             sqlparser::ast::TableFactor::Derived {
                 lateral,
@@ -999,7 +1001,7 @@ impl SQLPlanner<'_> {
                     unsupported_sql_err!("LATERAL");
                 }
                 let subquery = self.new_with_context().plan_query(subquery)?;
-                (subquery, alias)
+                (subquery, alias, &None)
             }
             sqlparser::ast::TableFactor::TableFunction { .. } => {
                 unsupported_sql_err!("Unsupported table factor: TableFunction")
@@ -1035,6 +1037,12 @@ impl SQLPlanner<'_> {
                 unsupported_sql_err!("Unsupported table factor: SemanticView")
             }
         };
+        // Apply sample operation if present
+        let plan = if let Some(sample_kind) = sample {
+            self.plan_sample(plan, sample_kind)?
+        } else {
+            plan
+        };
         if let Some(alias) = alias {
             apply_table_alias(plan, alias)
         } else {
@@ -1059,6 +1067,101 @@ impl SQLPlanner<'_> {
             settings: None,
         };
         self.plan_table_function(func, &args)
+    }
+
+    /// Plans a TABLESAMPLE/SAMPLE clause and returns the sampled plan.
+    fn plan_sample(
+        &self,
+        plan: LogicalPlanBuilder,
+        sample_kind: &sqlparser::ast::TableSampleKind,
+    ) -> SQLPlannerResult<LogicalPlanBuilder> {
+        use sqlparser::ast::{TableSample, TableSampleKind, TableSampleQuantity, TableSampleUnit};
+
+        let table_sample = match sample_kind {
+            TableSampleKind::BeforeTableAlias(sample) | TableSampleKind::AfterTableAlias(sample) => {
+                sample.as_ref()
+            }
+        };
+
+        let TableSample {
+            quantity,
+            seed,
+            ..
+        } = table_sample;
+
+        // Parse quantity (percentage or rows)
+        let mut fraction = None;
+        let mut size = None;
+
+        if let Some(TableSampleQuantity { value, unit, .. }) = quantity {
+            // Try to parse the value as a number
+            if let ast::Expr::Value(ast::ValueWithSpan {
+                value: ast::Value::Number(num_str, _),
+                ..
+            }) = value
+            {
+                let num: f64 = num_str.parse().map_err(|_| {
+                    PlannerError::invalid_operation(format!("Invalid SAMPLE quantity: {num_str}"))
+                })?;
+
+                // Validate non-negative
+                if num < 0.0 {
+                    return Err(PlannerError::invalid_operation(format!(
+                        "SAMPLE quantity must be non-negative, got: {num}"
+                    )));
+                }
+
+                match unit {
+                    Some(TableSampleUnit::Percent) => {
+                        // Validate percent is between 0 and 100
+                        if num > 100.0 {
+                            return Err(PlannerError::invalid_operation(format!(
+                                "SAMPLE percent must be between 0 and 100, got: {num}"
+                            )));
+                        }
+                        // Convert percent to fraction (e.g., 50% -> 0.5)
+                        fraction = Some(num / 100.0);
+                    }
+                    Some(TableSampleUnit::Rows) => {
+                        // Sample by number of rows
+                        size = Some(num as usize);
+                    }
+                    None => {
+                        // No unit specified - treat as fraction (0.0-1.0)
+                        if num > 1.0 {
+                            return Err(PlannerError::invalid_operation(format!(
+                                "SAMPLE fraction must be between 0.0 and 1.0 when no unit is specified, got: {num}. Use PERCENT or ROWS unit for other ranges."
+                            )));
+                        }
+                        fraction = Some(num);
+                    }
+                }
+            } else {
+                unsupported_sql_err!("SAMPLE quantity must be a numeric literal");
+            }
+        } else {
+            unsupported_sql_err!("SAMPLE requires a quantity");
+        }
+
+        // Parse seed if present
+        let with_replacement = false;
+        let seed_value = if let Some(seed_info) = seed {
+            // Extract seed value from REPEATABLE(n) or SEED(n)
+            if let ast::Value::Number(seed_str, _) = &seed_info.value {
+                let seed_num: u64 = seed_str.parse().map_err(|_| {
+                    PlannerError::invalid_operation(format!("Invalid SAMPLE seed: {seed_str}"))
+                })?;
+                Some(seed_num)
+            } else {
+                unsupported_sql_err!("SAMPLE seed must be a numeric literal");
+            }
+        } else {
+            None
+        };
+
+        // Apply sample operation
+        plan.sample(fraction, size, with_replacement, seed_value)
+            .map_err(|e| e.into())
     }
 
     /// Returns a normalized daft identifier from an sqlparser ObjectName
