@@ -74,6 +74,8 @@ def main() -> int:
             for name, ver in removed:
                 print(line_for_entry(name, ver))
             print()
+
+        print()
         if over:
             print(
                 f"**FAILED:** {len(added) - len(removed)} new crates exceeds limit of {args.max_new}.\n",
