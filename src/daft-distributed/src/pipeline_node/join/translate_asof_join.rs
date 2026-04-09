@@ -76,7 +76,9 @@ impl LogicalPlanToPipelineNodeTranslator {
         let left = if left_by.is_empty() {
             // No by keys: gather everything into a single partition
             self.gen_gather_node(left)
-        } else if num_left_partitions != num_partitions || !is_left_hash_partitioned {
+        } else if num_left_partitions != num_partitions
+            || (num_partitions > 1 && !is_left_hash_partitioned)
+        {
             self.gen_repartition_node(
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     Some(num_partitions),
@@ -92,7 +94,9 @@ impl LogicalPlanToPipelineNodeTranslator {
         let right = if right_by.is_empty() {
             // No by keys: gather everything into a single partition
             self.gen_gather_node(right)
-        } else if num_right_partitions != num_partitions || !is_right_hash_partitioned {
+        } else if num_right_partitions != num_partitions
+            || (num_partitions > 1 && !is_right_hash_partitioned)
+        {
             self.gen_repartition_node(
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     Some(num_partitions),
