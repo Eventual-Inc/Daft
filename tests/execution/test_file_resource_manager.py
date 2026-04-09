@@ -17,9 +17,12 @@ from daft.execution.file_resource_manager import (
 
 
 @pytest.fixture
-def resource_manager():
-    """Create a fresh FileResourceManager instance for each test to avoid state pollution."""
-    return FileResourceManager()
+def resource_manager(tmp_path):
+    """Create a fresh FileResourceManager with an isolated cache directory for each test."""
+    manager = FileResourceManager()
+    manager._cache_dir = str(tmp_path / "daft_cache")
+    os.makedirs(manager._cache_dir, exist_ok=True)
+    return manager
 
 
 class TestHelpers:
@@ -176,22 +179,32 @@ class TestFileResourceManager:
         with open(work_dir / "mypackage" / "__init__.py") as f:
             assert f.read() == "__version__ = '1.0'"
 
-    def test_unsupported_type_skipped(self, resource_manager, tmp_path):
-        """Unsupported file types are skipped with a warning."""
+    def test_any_file_type_resolved(self, resource_manager, tmp_path, monkeypatch):
+        """Any file type should be downloaded to the current working directory."""
         src = tmp_path / "data.csv"
         src.write_text("a,b,c")
 
+        work_dir = tmp_path / "workdir"
+        work_dir.mkdir()
+        monkeypatch.chdir(work_dir)
+
         resource_manager.resolve({str(src): 1000})
 
-        assert resource_manager.get_resource_path(str(src)) is None
+        result = resource_manager.get_resource_path(str(src))
+        assert result is not None
+        assert result == str(work_dir / "data.csv")
 
-    def test_unsupported_types_examples(self, resource_manager, tmp_path):
-        """Various unsupported types are all rejected."""
+    def test_various_file_types_resolved(self, resource_manager, tmp_path, monkeypatch):
+        """Various file types are all accepted and placed in cwd."""
+        work_dir = tmp_path / "workdir"
+        work_dir.mkdir()
+        monkeypatch.chdir(work_dir)
+
         for ext in (".csv", ".txt", ".bin", ".png", ".json", ".parquet"):
             src = tmp_path / f"file{ext}"
             src.write_text("x")
             resource_manager.resolve({str(src): 1000})
-            assert resource_manager.get_resource_path(str(src)) is None
+            assert resource_manager.get_resource_path(str(src)) is not None
 
     def test_resolve_skips_already_resolved(self, resource_manager, tmp_path, monkeypatch):
         """Resources already resolved are skipped."""
@@ -212,10 +225,10 @@ class TestFileResourceManager:
     def test_get_resource_path_unknown(self, resource_manager):
         assert resource_manager.get_resource_path("nonexistent") is None
 
-    def test_resolve_nonexistent_resource(self, resource_manager, tmp_path):
-        """Resolving a nonexistent .py resource returns None."""
-        resource_manager.resolve({"/nonexistent/path/script.py": 3000})
-        assert resource_manager.get_resource_path("/nonexistent/path/script.py") is None
+    def test_resolve_nonexistent_resource_raises(self, resource_manager, tmp_path):
+        """Resolving a nonexistent .py resource raises FileNotFoundError."""
+        with pytest.raises(FileNotFoundError):
+            resource_manager.resolve({"/nonexistent/path/script.py": 3000})
 
     def test_resolve_multiple_resources(self, resource_manager, tmp_path, monkeypatch):
         """Multiple resources can be resolved at once."""
@@ -275,9 +288,9 @@ class TestRemoteDownload:
             def open(self):
                 return MockFileHandle()
 
-        import daft.file
+        import daft.execution.file_resource_manager as frm
 
-        monkeypatch.setattr(daft.file, "File", MockFile)
+        monkeypatch.setattr(frm, "File", MockFile)
 
         resource_manager.resolve({"s3://bucket/model.py": 5000})
         local_path = resource_manager.get_resource_path("s3://bucket/model.py")
@@ -286,8 +299,8 @@ class TestRemoteDownload:
         with open(local_path) as f:
             assert f.read() == "print('remote')"
 
-    def test_download_remote_failure_logged_and_skipped(self, resource_manager, tmp_path, monkeypatch):
-        """Remote download failure is caught by resolve() and the resource is skipped."""
+    def test_download_remote_failure_raises(self, resource_manager, tmp_path, monkeypatch):
+        """Remote download failure raises RuntimeError after retries."""
 
         class FailingFile:
             def __init__(self, url, **kwargs):
@@ -297,18 +310,12 @@ class TestRemoteDownload:
                 raise ConnectionError("Network unreachable")
 
         import daft.execution.file_resource_manager as frm
-        import daft.file
 
-        monkeypatch.setattr(daft.file, "File", FailingFile)
+        monkeypatch.setattr(frm, "File", FailingFile)
         monkeypatch.setattr(frm, "_RETRY_BACKOFF_SECS", 0)
 
-        resource_manager.resolve({"s3://nonexistent/script.py": 6000})
-        assert resource_manager.get_resource_path("s3://nonexistent/script.py") is None
-
-    def test_unsupported_remote_type_rejected(self, resource_manager, tmp_path):
-        """Remote URIs with unsupported extensions are rejected."""
-        resource_manager.resolve({"s3://bucket/model.bin": 7000})
-        assert resource_manager.get_resource_path("s3://bucket/model.bin") is None
+        with pytest.raises(RuntimeError, match="Failed to download resource"):
+            resource_manager.resolve({"s3://nonexistent/script.py": 6000})
 
     def test_download_retries_then_succeeds(self, resource_manager, tmp_path, monkeypatch):
         """Download succeeds after transient failures."""
@@ -340,9 +347,8 @@ class TestRemoteDownload:
                 pass
 
         import daft.execution.file_resource_manager as frm
-        import daft.file
 
-        monkeypatch.setattr(daft.file, "File", TransientFailFile)
+        monkeypatch.setattr(frm, "File", TransientFailFile)
         monkeypatch.setattr(frm, "_RETRY_BACKOFF_SECS", 0)
 
         resource_manager.resolve({"s3://bucket/recover.py": 9000})

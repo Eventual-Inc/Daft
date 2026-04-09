@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 # File extensions
 _ARCHIVE_EXTENSIONS = (".tar", ".tar.gz", ".tgz", ".tar.bz2", ".zip", ".whl")
-_DIRECT_EXTENSIONS = (".py", ".egg")
 
 _REMOTE_SCHEMES = ("s3://", "gs://", "gcs://", "http://", "https://", "az://", "abfs://")
 
@@ -209,7 +208,7 @@ class FileResourceManager:
         entry = self._resolved.get(name)
         return entry[0] if entry is not None else None
 
-    def _fetch_resource(self, name: str, timestamp: int, extract_path: str | None = None) -> str | None:
+    def _fetch_resource(self, name: str, timestamp: int, extract_path: str | None = None) -> str:
         """Fetch a resource: download to cache, then place or extract.
 
         Args:
@@ -219,14 +218,8 @@ class FileResourceManager:
                 ``None``, archives are extracted to the current working directory.
 
         Returns:
-            Final local path (file or extraction directory), or None on failure.
+            Final local path (file or extraction directory).
         """
-        # Reject unsupported file types early
-        ext = _get_extension(name)
-        if ext not in _ARCHIVE_EXTENSIONS and ext not in _DIRECT_EXTENSIONS:
-            logger.warning("Unsupported file type '%s' for resource '%s'", ext, name)
-            return None
-
         # Step 1: download to cache
         cached_path = self._download_to_cache(name, timestamp)
 
@@ -237,15 +230,11 @@ class FileResourceManager:
                 os.makedirs(extract_path, exist_ok=True)
             return self._extract_archive(cached_path, name, dest_dir)
         else:
-            # .py / .egg — copy to cwd
+            # copy to cwd
             cwd = os.getcwd()
             dest = os.path.join(cwd, os.path.basename(name))
-            try:
-                shutil.copy2(cached_path, dest)
-                return dest
-            except OSError as e:
-                logger.warning("Failed to copy '%s' to working directory: %s", name, e)
-                return None
+            shutil.copy2(cached_path, dest)
+            return dest
 
     def _download_to_cache(self, name: str, timestamp: int) -> str:
         """Download a resource to the local cache directory.
@@ -335,7 +324,7 @@ class FileResourceManager:
         if not target.startswith(dest_real + os.sep) and target != dest_real:
             raise ValueError(f"Archive member '{member_name}' would escape destination directory '{dest_dir}'")
 
-    def _extract_archive(self, cached_path: str, name: str, dest_dir: str) -> str | None:
+    def _extract_archive(self, cached_path: str, name: str, dest_dir: str) -> str:
         """Extract an archive file into the destination directory.
 
         All archive members are validated against path traversal attacks
@@ -347,33 +336,29 @@ class FileResourceManager:
             dest_dir: Directory to extract into.
 
         Returns:
-            The destination directory path, or None on failure.
+            The destination directory path.
+
+        Raises:
+            ValueError: If the archive format is unknown or path traversal is detected.
+            RuntimeError: If extraction fails due to a corrupt archive or I/O error.
         """
         ext = _get_extension(name)
-        try:
-            if ext in (".zip", ".whl"):
-                with zipfile.ZipFile(cached_path, "r") as zf:
-                    for member_name in zf.namelist():
-                        self._validate_extraction_path(member_name, dest_dir)
-                    zf.extractall(dest_dir)
-            elif ext in (".tar", ".tar.gz", ".tgz", ".tar.bz2"):
-                mode: Literal["r:", "r:gz", "r:bz2"] = (
-                    "r:gz" if ext in (".tar.gz", ".tgz") else "r:bz2" if ext == ".tar.bz2" else "r:"
-                )
-                with tarfile.open(cached_path, mode) as tf:
-                    for member in tf.getmembers():
-                        self._validate_extraction_path(member.name, dest_dir)
-                    tf.extractall(dest_dir, filter="fully_trusted")
-            else:
-                logger.warning("Unknown archive format for '%s'", name)
-                return None
-            return dest_dir
-        except ValueError as e:
-            logger.error("Path traversal detected in archive '%s': %s", name, e)
-            return None
-        except (tarfile.TarError, zipfile.BadZipFile, OSError) as e:
-            logger.warning("Failed to extract archive '%s': %s", name, e)
-            return None
+        if ext in (".zip", ".whl"):
+            with zipfile.ZipFile(cached_path, "r") as zf:
+                for member_name in zf.namelist():
+                    self._validate_extraction_path(member_name, dest_dir)
+                zf.extractall(dest_dir)
+        elif ext in (".tar", ".tar.gz", ".tgz", ".tar.bz2"):
+            mode: Literal["r:", "r:gz", "r:bz2"] = (
+                "r:gz" if ext in (".tar.gz", ".tgz") else "r:bz2" if ext == ".tar.bz2" else "r:"
+            )
+            with tarfile.open(cached_path, mode) as tf:
+                for member in tf.getmembers():
+                    self._validate_extraction_path(member.name, dest_dir)
+                tf.extractall(dest_dir, filter="fully_trusted")
+        else:
+            raise ValueError(f"Unknown archive format for '{name}'")
+        return dest_dir
 
 
 file_resource_manager = FileResourceManager()
