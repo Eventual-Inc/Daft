@@ -546,6 +546,7 @@ mod tests {
                         cpu_us: 10,
                         rows_out: num_rows,
                         bytes_read: 0,
+                        bytes_out: 0,
                     }),
                 ),
                 (
@@ -561,6 +562,8 @@ mod tests {
                         cpu_us: 50,
                         rows_in: num_rows,
                         rows_out: num_rows,
+                        bytes_in: 0,
+                        bytes_out: 0,
                     }),
                 ),
             ],
@@ -727,6 +730,8 @@ mod tests {
                     cpu_us: 100,
                     rows_in: 500,
                     rows_out: 500,
+                    bytes_in: 0,
+                    bytes_out: 0,
                 }),
             )],
         );
