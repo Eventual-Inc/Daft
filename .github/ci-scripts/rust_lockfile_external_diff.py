@@ -36,8 +36,10 @@ def line_for_entry(name: str, ver: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base", type=Path, required=True, help="Base branch Cargo.lock")
-    parser.add_argument("--head", type=Path, required=True, help="PR head Cargo.lock")
+    parser.add_argument("--base", type=str, required=True, help="Base branch SHA")
+    parser.add_argument("--head", type=str, required=True, help="PR head SHA")
+    parser.add_argument("--base-lockfile", type=Path, required=True, help="Base branch Cargo.lock")
+    parser.add_argument("--head-lockfile", type=Path, required=True, help="PR head Cargo.lock")
     parser.add_argument(
         "--max-new",
         type=int,
@@ -51,8 +53,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    base_keys = external_package_keys(args.base)
-    head_keys = external_package_keys(args.head)
+    base_keys = external_package_keys(args.base_lockfile)
+    head_keys = external_package_keys(args.head_lockfile)
     added = sorted(head_keys - base_keys)
     removed = sorted(base_keys - head_keys)
     over = (len(added) - len(removed)) > args.max_new

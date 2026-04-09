@@ -1448,8 +1448,10 @@ jobs:
         set -euo pipefail
         git show "${BASE_SHA}:Cargo.lock" > /tmp/base-Cargo.lock
         python3 .github/ci-scripts/rust_lockfile_external_diff.py \
-          --base /tmp/base-Cargo.lock \
-          --head Cargo.lock \
+          --base ${BASE_SHA} \
+          --head ${GITHUB_SHA} \
+          --base-lockfile /tmp/base-Cargo.lock \
+          --head-lockfile Cargo.lock \
           --max-new 25 \
           --markdown-summary | tee rust_dep_report.md >> "$GITHUB_STEP_SUMMARY"
     - name: Post sticky PR comment
