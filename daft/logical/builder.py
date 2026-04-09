@@ -311,6 +311,28 @@ class LogicalPlanBuilder:
         )
         return LogicalPlanBuilder(builder)
 
+    def join_asof(
+        self,
+        right: LogicalPlanBuilder,
+        left_by: list[Expression],
+        right_by: list[Expression],
+        left_on: Expression,
+        right_on: Expression,
+        prefix: str | None = None,
+        suffix: str | None = None,
+    ) -> LogicalPlanBuilder:
+        """Backward asof join (logical plan). Each left row matches the latest right row at or before the asof key per group."""
+        builder = self._builder.join_asof(
+            right._builder,
+            [expr._expr for expr in left_by],
+            [expr._expr for expr in right_by],
+            left_on._expr,
+            right_on._expr,
+            prefix,
+            suffix,
+        )
+        return LogicalPlanBuilder(builder)
+
     def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder:
         builder = self._builder.concat(other._builder)
         return LogicalPlanBuilder(builder)

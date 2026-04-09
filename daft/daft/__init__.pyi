@@ -2134,6 +2134,16 @@ class LogicalPlanBuilder:
         suffix: str | None = None,
         key_filtering_config: KeyFilteringConfig | None = None,
     ) -> LogicalPlanBuilder: ...
+    def join_asof(
+        self,
+        right: LogicalPlanBuilder,
+        left_by: list[PyExpr],
+        right_by: list[PyExpr],
+        left_on: PyExpr,
+        right_on: PyExpr,
+        prefix: str | None = None,
+        suffix: str | None = None,
+    ) -> LogicalPlanBuilder: ...
     def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder: ...
     def union(self, other: LogicalPlanBuilder, is_all: bool, is_by_name: bool) -> LogicalPlanBuilder: ...
     def intersect(self, other: LogicalPlanBuilder, is_all: bool) -> LogicalPlanBuilder: ...

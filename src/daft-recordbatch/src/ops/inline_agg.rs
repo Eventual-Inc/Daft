@@ -951,7 +951,7 @@ impl RecordBatch {
         to_agg: &[BoundAggExpr],
         group_by: &[BoundExpr],
     ) -> DaftResult<Self> {
-        use daft_core::array::ops::IntoGroups;
+        use daft_groupby::IntoGroups;
         let groupby_table = self.eval_expression_list(group_by)?;
 
         let (groupkey_indices, groupvals_indices) = groupby_table.make_groups()?;
