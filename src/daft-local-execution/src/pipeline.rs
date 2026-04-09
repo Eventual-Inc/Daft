@@ -17,11 +17,11 @@ use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 pub use daft_local_plan::InputId;
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
-    HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
-    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, RepartitionWrite,
-    RepartitionWriteBackend, Sample, ShuffleReadBackend, Sort, SortMergeJoin, SourceId, TopN,
-    UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
+    AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
+    GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext,
+    LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
+    RepartitionWrite, RepartitionWriteBackend, Sample, ShuffleReadBackend, Sort, SortMergeJoin,
+    SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
@@ -43,7 +43,9 @@ use crate::{
         into_batches::IntoBatchesOperator, project::ProjectOperator, udf::UdfOperator,
         unpivot::UnpivotOperator,
     },
-    join::{CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator},
+    join::{
+        AsofJoinOperator, CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator,
+    },
     shuffle_metadata::ShuffleMetadata,
     sinks::{
         aggregate::AggregateSink,
@@ -260,7 +262,7 @@ pub struct BuilderContext {
     index_counter: std::cell::RefCell<usize>,
     pub meter: Meter,
     context: HashMap<String, String>,
-    shuffle_server: Option<Arc<ShuffleFlightServer>>,
+    shuffle_server: Option<(Arc<ShuffleFlightServer>, String)>,
 }
 
 impl BuilderContext {
@@ -271,7 +273,7 @@ impl BuilderContext {
     pub fn new_with_context(
         query_id: QueryID,
         context: HashMap<String, String>,
-        shuffle_server: Option<Arc<ShuffleFlightServer>>,
+        shuffle_server: Option<(Arc<ShuffleFlightServer>, String)>,
     ) -> Self {
         let meter = Meter::query_scope(query_id, "daft.execution.local");
 
@@ -283,7 +285,7 @@ impl BuilderContext {
         }
     }
 
-    pub fn shuffle_server(&self) -> Option<Arc<ShuffleFlightServer>> {
+    pub fn shuffle_server(&self) -> Option<(Arc<ShuffleFlightServer>, String)> {
         self.shuffle_server.clone()
     }
 
@@ -1239,6 +1241,39 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
+        LocalPhysicalPlan::AsofJoin(AsofJoin {
+            left,
+            right,
+            left_by,
+            right_by,
+            left_on,
+            right_on,
+            stats_state,
+            context,
+            ..
+        }) => {
+            let left_node = physical_plan_to_pipeline(left, cfg, ctx, input_senders)?;
+            let right_node = physical_plan_to_pipeline(right, cfg, ctx, input_senders)?;
+
+            let asof_join_op = AsofJoinOperator::new(
+                left_by.clone(),
+                right_by.clone(),
+                left_on.clone(),
+                right_on.clone(),
+                left.schema().clone(),
+                right.schema().clone(),
+            );
+
+            JoinNode::new(
+                Arc::new(asof_join_op),
+                left_node,
+                right_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
+        }
         LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
             input,
             file_info,
@@ -1449,7 +1484,7 @@ fn physical_plan_to_pipeline(
                     shuffle_dirs,
                     compression,
                 } => {
-                    let shuffle_server = ctx
+                    let (shuffle_server, _) = ctx
                         .shuffle_server()
                         .expect("Flight shuffle server must be initialized for Flight repartition plans when using flight_shuffle algorithm");
                     let repartition_sink = RepartitionSink::try_new_flight(
@@ -1499,19 +1534,23 @@ fn physical_plan_to_pipeline(
                 shuffle_id,
                 server_cache_mapping,
             } => {
-                let shuffle_server = ctx
+                let (shuffle_server, shuffle_address) = ctx
                     .shuffle_server()
                     .expect("Flight shuffle server must be initialized for FlightShuffleWrite plans when using flight_shuffle algorithm");
                 let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
                 input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
-                let source = ShuffleReadSource::new(
+                let source = ShuffleReadSource::try_new(
                     rx,
                     *shuffle_id,
                     server_cache_mapping.clone(),
+                    shuffle_server,
+                    shuffle_address,
                     schema.clone(),
                     cfg,
-                    shuffle_server,
-                );
+                )
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                })?;
                 SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
             }
         },

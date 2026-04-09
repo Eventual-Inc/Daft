@@ -3,7 +3,11 @@ use daft_core::{
     array::ops::DaftCompare,
     join::{JoinSide, JoinType},
 };
-use daft_dsl::{expr::bound_expr::BoundExpr, join::infer_join_schema};
+use daft_dsl::{
+    Expr,
+    expr::bound_expr::BoundExpr,
+    join::{get_right_cols_to_drop, infer_asof_join_schema, infer_join_schema},
+};
 use daft_recordbatch::RecordBatch;
 use daft_stats::TruthValue;
 
@@ -115,6 +119,44 @@ impl MicroPartition {
         };
 
         self.join(right, left_on, right_on, how, table_join)
+    }
+
+    pub fn asof_join(
+        &self,
+        right: &Self,
+        left_by: &[BoundExpr],
+        right_by: &[BoundExpr],
+        left_on: &BoundExpr,
+        right_on: &BoundExpr,
+    ) -> DaftResult<Self> {
+        let right_cols_to_drop = get_right_cols_to_drop(right_by, left_on, right_on, |e| {
+            match e.inner().unwrap_alias().0.as_ref() {
+                Expr::Column(_) => Some(e.inner().unwrap_alias().0.name().to_string()),
+                _ => None,
+            }
+        });
+        let join_schema = infer_asof_join_schema(&self.schema, &right.schema, &right_cols_to_drop)?;
+        if self.is_empty() {
+            return Ok(Self::empty(Some(join_schema)));
+        }
+
+        let lt = self.concat_or_get()?;
+        let rt = right.concat_or_get()?;
+
+        let Some(lt) = lt else {
+            return Ok(Self::empty(Some(join_schema)));
+        };
+        let rt = match rt {
+            Some(rt) => rt,
+            None => RecordBatch::empty(Some(right.schema())),
+        };
+
+        let joined_table = RecordBatch::asof_join(&lt, &rt, left_by, right_by, left_on, right_on)?;
+        Ok(Self::new_loaded(
+            join_schema,
+            vec![joined_table].into(),
+            None,
+        ))
     }
 
     pub fn cross_join(&self, right: &Self, outer_loop_side: JoinSide) -> DaftResult<Self> {

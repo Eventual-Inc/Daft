@@ -8,26 +8,31 @@ similar to how the TPC-H benchmark works.
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 import time
 
 from ray.job_submission import JobStatus, JobSubmissionClient
 
 import daft
-from tools.ci_bench_utils import get_run_metadata, tail_logs, upload_to_google_sheets
+from benchmarking.utils import daft_uv_runtime_env, get_run_metadata, tail_logs, upload_to_google_sheets
 
 
 def run_benchmark(benchmark_name: str):
     """Run a single AI benchmark and return the execution time."""
     print(f"Running {benchmark_name} benchmark... ", end="", flush=True)
 
-    client = JobSubmissionClient(address="http://localhost:8265")
+    ray_address = os.getenv("RAY_ADDRESS", "http://localhost:8265")
+    client = JobSubmissionClient(address=ray_address)
 
     start: float = time.perf_counter()
 
     submission_id = client.submit_job(
         entrypoint="DAFT_RUNNER=ray DAFT_PROGRESS_BAR=0 python daft_main.py",
-        runtime_env={"working_dir": f"./benchmarking/ai/{benchmark_name}"},
+        runtime_env={
+            "working_dir": f"./benchmarking/ai/{benchmark_name}",
+            "uv": daft_uv_runtime_env(),
+        },
     )
 
     job_details = asyncio.run(tail_logs(client, submission_id))
