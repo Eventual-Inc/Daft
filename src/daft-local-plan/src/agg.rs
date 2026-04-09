@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::DaftResult;
 use daft_core::prelude::{CountMode, DataType, Schema};
 use daft_dsl::{
@@ -12,14 +14,20 @@ use indexmap::IndexSet;
 
 pub fn populate_aggregation_stages_bound(
     aggregations: &[BoundAggExpr],
-    schema: &Schema,
+    aliases: &[Option<Arc<str>>],
     group_by: &[BoundExpr],
+    input_schema: &Schema,
 ) -> DaftResult<(Vec<BoundAggExpr>, Vec<BoundAggExpr>, Vec<BoundExpr>)> {
     let (
         (first_stage_aggs, _first_stage_schema),
         (second_stage_aggs, _second_stage_schema),
         final_exprs,
-    ) = populate_aggregation_stages_bound_with_schema(aggregations, schema, group_by)?;
+    ) = populate_aggregation_stages_bound_with_schema(
+        aggregations,
+        aliases,
+        group_by,
+        input_schema,
+    )?;
 
     Ok((first_stage_aggs, second_stage_aggs, final_exprs))
 }
@@ -27,8 +35,9 @@ pub fn populate_aggregation_stages_bound(
 #[allow(clippy::type_complexity)]
 pub fn populate_aggregation_stages_bound_with_schema(
     aggregations: &[BoundAggExpr],
-    schema: &Schema,
+    aliases: &[Option<Arc<str>>],
     group_by: &[BoundExpr],
+    input_schema: &Schema,
 ) -> DaftResult<(
     (Vec<BoundAggExpr>, Schema),
     (Vec<BoundAggExpr>, Schema),
@@ -39,7 +48,7 @@ pub fn populate_aggregation_stages_bound_with_schema(
 
     let group_by_fields = group_by
         .iter()
-        .map(|expr| expr.inner().to_field(schema))
+        .map(|expr| expr.inner().to_field(input_schema))
         .collect::<DaftResult<Vec<_>>>()?;
     let mut first_stage_schema = Schema::new(group_by_fields);
     let mut second_stage_schema = first_stage_schema.clone();
@@ -48,7 +57,7 @@ pub fn populate_aggregation_stages_bound_with_schema(
         .iter()
         .enumerate()
         .map(|(i, e)| {
-            let field = e.inner().to_field(schema)?;
+            let field = e.inner().to_field(input_schema)?;
 
             Ok(BoundExpr::new_unchecked(bound_col(i, field)))
         })
@@ -81,7 +90,7 @@ pub fn populate_aggregation_stages_bound_with_schema(
         ($expr:expr) => {
             add_to_stage(
                 &mut first_stage_aggs,
-                schema,
+                input_schema,
                 &mut first_stage_schema,
                 group_by.len(),
                 $expr,
@@ -101,11 +110,11 @@ pub fn populate_aggregation_stages_bound_with_schema(
         };
     }
 
-    for agg_expr in aggregations {
-        let output_field = agg_expr.as_ref().to_field(schema)?;
-        let output_name = output_field.name.as_ref();
+    for (agg_expr, alias) in aggregations.iter().zip(aliases.iter()) {
+        let output_field = agg_expr.as_ref().to_field(input_schema)?;
+        let output_name = alias.clone().unwrap_or(output_field.name);
 
-        let mut final_stage = |expr: ExprRef| {
+        let final_stage = |expr: ExprRef| {
             final_exprs.push(BoundExpr::new_unchecked(expr.alias(output_name)));
         };
 

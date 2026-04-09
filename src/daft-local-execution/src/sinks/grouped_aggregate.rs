@@ -4,7 +4,7 @@ use std::{
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::{
@@ -255,51 +255,10 @@ impl GroupedAggregateSink {
         let (partial_agg_exprs, final_agg_exprs, final_projections) =
             daft_local_plan::agg::populate_aggregation_stages_bound(
                 aggregations,
-                input_schema,
+                aliases,
                 group_by,
+                input_schema,
             )?;
-        // `final_projections` is [group key columns..., per-aggregation final exprs...].
-        // `aliases` only lists optional aliases for the aggregation outputs (same order as
-        // `aggregations`). Zipping the full list would pair the first aliases with group keys
-        // and truncate, dropping aggregate projections (see grouped aggregate / doctest failures).
-        let group_by_len = group_by.len();
-        if final_projections.len() < group_by_len {
-            return Err(DaftError::InternalError(format!(
-                "populate_aggregation_stages_bound returned {} final projections but group_by has {} keys",
-                final_projections.len(),
-                group_by_len
-            )));
-        }
-        let mut iter = final_projections.into_iter();
-        let mut final_projections: Vec<BoundExpr> = (&mut iter).take(group_by_len).collect();
-        let agg_tail: Vec<BoundExpr> = iter.collect();
-        // For MapGroups, `populate_aggregation_stages_bound` does not push final-stage exprs (see
-        // `AggExpr::MapGroups` arm in `daft_local_plan::agg`); `final_projections` is only group
-        // keys. `aliases` still matches `aggregations`. Finalize uses `original_aggregations`
-        // without `eval_expression_list`, so leave projections as group keys only.
-        let all_map_groups = aggregations
-            .iter()
-            .all(|a| matches!(a.as_ref(), daft_dsl::AggExpr::MapGroups { .. }));
-        if agg_tail.len() == aliases.len() {
-            final_projections.extend(agg_tail.into_iter().zip(aliases.iter()).map(
-                |(expr, alias)| {
-                    if let Some(alias) = alias {
-                        BoundExpr::new_unchecked(expr.into_inner().alias(alias.clone()))
-                    } else {
-                        expr
-                    }
-                },
-            ));
-        } else if agg_tail.is_empty() && aliases.len() == aggregations.len() && all_map_groups {
-            // Keep `final_projections` as group keys only.
-        } else {
-            return Err(DaftError::InternalError(format!(
-                "final projection tail length {} does not match aliases length {} (group_by_len={}, all_map_groups={all_map_groups})",
-                agg_tail.len(),
-                aliases.len(),
-                group_by_len,
-            )));
-        }
 
         // MapGroups aggregations cannot be decomposed into partial / final stages and
         // must see the full group in a single pass. Detect this case so that we force

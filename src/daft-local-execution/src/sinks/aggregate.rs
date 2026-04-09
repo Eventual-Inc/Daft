@@ -65,20 +65,10 @@ impl AggregateSink {
         let (sink_agg_exprs, finalize_agg_exprs, final_projections) =
             daft_local_plan::agg::populate_aggregation_stages_bound(
                 aggregations,
-                input_schema,
+                aliases,
                 &[],
+                input_schema,
             )?;
-        let final_projections = final_projections
-            .into_iter()
-            .zip(aliases.iter())
-            .map(|(expr, alias)| {
-                if let Some(alias) = alias {
-                    BoundExpr::new_unchecked(expr.into_inner().alias(alias.clone()))
-                } else {
-                    expr
-                }
-            })
-            .collect();
 
         Ok(Self {
             aggregate_name,
