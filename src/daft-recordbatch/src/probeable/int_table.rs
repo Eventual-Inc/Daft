@@ -47,7 +47,10 @@ where
         }))
     }
 
-    fn insert_build(&mut self, input: &DataArray<T>) -> DaftResult<()> {
+    fn add_table(&mut self, input: &DataArray<T>) -> DaftResult<()> {
+        debug_assert!(self.num_tables < (1 << (64 - Self::TABLE_IDX_SHIFT)));
+        debug_assert!(input.len() < (1 << Self::TABLE_IDX_SHIFT));
+
         for (i, h) in input.into_iter().enumerate() {
             let Some(h) = h else {
                 continue;
@@ -104,7 +107,7 @@ where
 {
     fn add_table(&mut self, table: &RecordBatch) -> DaftResult<()> {
         self.0
-            .insert_build(table.get_column(0).downcast::<DataArray<T>>()?)
+            .add_table(table.get_column(0).downcast::<DataArray<T>>()?)
     }
 
     fn build(self: Box<Self>) -> Arc<dyn Probeable> {
