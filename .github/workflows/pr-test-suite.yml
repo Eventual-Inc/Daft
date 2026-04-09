@@ -1447,7 +1447,7 @@ jobs:
       run: |
         set -euo pipefail
         git show "${BASE_SHA}:Cargo.lock" > /tmp/base-Cargo.lock
-        python3 .github/ci-scripts/rust_lockfile_external_diff.py \
+        python3 .github/ci-scripts/rust_lockfile_diff.py \
           --base ${BASE_SHA} \
           --head ${GITHUB_SHA} \
           --base-lockfile /tmp/base-Cargo.lock \

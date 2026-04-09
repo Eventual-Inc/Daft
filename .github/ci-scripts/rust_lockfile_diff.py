@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Diff external (registry/git) crates between two Cargo.lock files.
-
-Workspace/path packages have no `source` in the lockfile and are ignored.
-"""
+"""Diff crates between two Cargo.lock files."""
 
 from __future__ import annotations
 
