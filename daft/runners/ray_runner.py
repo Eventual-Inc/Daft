@@ -53,6 +53,7 @@ from daft.daft import (
     QueryEndState,
 )
 from daft.datatype import DataType
+from daft.errors import UDFException
 from daft.filesystem import glob_path_with_stats
 from daft.recordbatch import MicroPartition
 from daft.runners import runner_io
@@ -559,6 +560,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         query_id = generate_query_name()
         daft_execution_config = ctx.daft_execution_config
         output_schema = builder.schema()
+        unoptimized_plan_json = builder.repr_json()
 
         # Notify query start
         ray_dashboard_url = None
@@ -612,7 +614,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 ctx._notify_query_start(
                     query_id,
                     PyQueryMetadata(
-                        output_schema._schema, builder.repr_json(), "Ray (Flotilla)", ray_dashboard_url, entrypoint
+                        output_schema._schema, unoptimized_plan_json, "Ray (Flotilla)", ray_dashboard_url, entrypoint
                     ),
                 )
                 ctx._notify_optimization_start(query_id)
@@ -659,14 +661,26 @@ class RayRunner(Runner[ray.ObjectRef]):
             ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Finished, "Query finished"))
 
         except GeneratorExit:
-            # GeneratorExit is raised when the generator is closed (e.g. by break)
-            # We should treat this as a cancellation/interruption but not necessarily a failure if execution was partial
-            # However, if it's external cancellation, we might want to log it.
-            # For now, we propagate it to ensure proper cleanup.
-            raise
+            # Generator was abandoned (e.g. .show() breaking out early). Match NativeRunner so
+            # subscribers and the dashboard leave the Finalizing state.
+            try:
+                query_result = PyQueryResult(QueryEndState.Finished, "Query finished")
+                ctx._notify_query_end(query_id, query_result)
+            except Exception as ex:
+                logger.warning("Failed to send query end notification: %s", ex)
+            return  # type: ignore[return-value]
+        except KeyboardInterrupt as e:
+            query_result = PyQueryResult(QueryEndState.Canceled, "Query canceled by the user.")
+            ctx._notify_query_end(query_id, query_result)
+            raise e
+        except UDFException as e:
+            err_msg = f"UDF failed with exception: {e.original_exception}"
+            ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, err_msg))
+            raise e
         except Exception as e:
-            ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, str(e)))
-            raise
+            err_msg = f"General Exception raised: {e}"
+            ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, err_msg))
+            raise e
 
         return ExecutionMetadata._from_runner_output(stats, query_id, physical_plan_json)
 
