@@ -27,8 +27,8 @@ impl ProbeContent for ProbeExists {
         panic!("to_indices should not be called on ProbeExists")
     }
 
-    fn to_exists(_output: Option<Self::ProbeOutput<'_>>) -> bool {
-        true
+    fn to_exists(output: Option<Self::ProbeOutput<'_>>) -> bool {
+        output.is_some()
     }
 }
 
