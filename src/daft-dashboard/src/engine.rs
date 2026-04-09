@@ -30,6 +30,8 @@ pub struct StartQueryArgs {
     pub runner: Option<String>,
     pub ray_dashboard_url: Option<String>,
     pub entrypoint: Option<String>,
+    pub python_version: Option<String>,
+    pub daft_version: Option<String>,
 }
 
 async fn query_start(
@@ -50,6 +52,8 @@ async fn query_start(
             .unwrap_or_else(|| "Native (Swordfish)".to_string()),
         ray_dashboard_url: args.ray_dashboard_url,
         entrypoint: args.entrypoint,
+        python_version: args.python_version,
+        daft_version: args.daft_version,
         state: QueryState::Pending,
     };
 

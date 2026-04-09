@@ -98,6 +98,10 @@ pub(crate) struct QuerySummary {
     pub ray_dashboard_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entrypoint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub python_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub daft_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -154,6 +158,8 @@ pub(crate) struct QueryInfo {
     pub runner: String,
     pub ray_dashboard_url: Option<String>,
     pub entrypoint: Option<String>,
+    pub python_version: Option<String>,
+    pub daft_version: Option<String>,
     pub state: QueryState,
 }
 
@@ -200,6 +206,8 @@ impl QueryInfo {
             runner: self.runner.clone(),
             ray_dashboard_url: self.ray_dashboard_url.clone(),
             entrypoint: self.entrypoint.clone(),
+            python_version: self.python_version.clone(),
+            daft_version: self.daft_version.clone(),
         }
     }
 }

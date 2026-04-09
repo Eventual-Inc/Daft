@@ -18,13 +18,15 @@ pub struct PyQueryMetadata(pub(crate) Arc<QueryMetadata>);
 #[pymethods]
 impl PyQueryMetadata {
     #[new]
-    #[pyo3(signature = (output_schema, unoptimized_plan, runner, ray_dashboard_url=None, entrypoint=None))]
+    #[pyo3(signature = (output_schema, unoptimized_plan, runner, ray_dashboard_url=None, entrypoint=None, python_version=None, daft_version=None))]
     fn __new__(
         output_schema: PySchema,
         unoptimized_plan: &str,
         runner: &str,
         ray_dashboard_url: Option<String>,
         entrypoint: Option<String>,
+        python_version: Option<String>,
+        daft_version: Option<String>,
     ) -> Self {
         Self(Arc::new(QueryMetadata {
             output_schema: output_schema.into(),
@@ -32,6 +34,8 @@ impl PyQueryMetadata {
             runner: runner.into(),
             ray_dashboard_url,
             entrypoint,
+            python_version,
+            daft_version,
         }))
     }
     #[getter]
@@ -53,6 +57,14 @@ impl PyQueryMetadata {
     #[getter]
     pub fn entrypoint(&self) -> Option<String> {
         self.0.entrypoint.clone()
+    }
+    #[getter]
+    pub fn python_version(&self) -> Option<String> {
+        self.0.python_version.clone()
+    }
+    #[getter]
+    pub fn daft_version(&self) -> Option<String> {
+        self.0.daft_version.clone()
     }
 }
 

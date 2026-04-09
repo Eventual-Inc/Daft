@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import platform
 import sys
 from typing import TYPE_CHECKING
 
+import daft
 from daft.context import get_context
 from daft.daft import (
     FileFormatConfig,
@@ -89,6 +91,8 @@ class NativeRunner(Runner[MicroPartition]):
         output_schema = builder.schema()
 
         entrypoint = "python " + " ".join(sys.argv)
+        python_version = platform.python_version()
+        daft_version = daft.get_version()
 
         try:
             # Try to send notifications, but don't fail the query if they fail
@@ -102,6 +106,8 @@ class NativeRunner(Runner[MicroPartition]):
                     "Native (Swordfish)",
                     ray_dashboard_url=None,
                     entrypoint=entrypoint,
+                    python_version=python_version,
+                    daft_version=daft_version,
                 ),
             )
             ctx._notify_optimization_start(query_id)

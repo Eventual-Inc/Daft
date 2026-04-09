@@ -234,6 +234,8 @@ impl DashboardSubscriber {
                 runner: Some(metadata.runner.clone()),
                 ray_dashboard_url: metadata.ray_dashboard_url.clone(),
                 entrypoint: metadata.entrypoint.clone(),
+                python_version: metadata.python_version.clone(),
+                daft_version: metadata.daft_version.clone(),
             },
         );
         Ok(())
