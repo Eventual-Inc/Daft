@@ -214,9 +214,36 @@ impl ListArrayExtension for ListArray {
         UInt64Array::from_values(self.name(), counts).with_nulls(self.nulls().cloned())
     }
 
-    fn list_flatten(&self) -> DaftResult<ListArray> {
-        
-    }
+    fn list_flatten(&self) -> DaftResult<ListArray>{
+        let offsets = self.offsets();
+        let total_capacity: usize = (0..self.len()).map(|i|{
+                let is_valid = self.is_valid(i);
+                let len: usize = (offsets.get(i + 1).unwrap() - offsets.get(i).unwrap()) as usize;
+                match (is_valid, len) {
+                    (false, _) => 0,
+                    (true, 0) => 0,
+                    (true, l) => l,
+                }
+        }).sum();
+        let mut growable: Box<dyn Growable> = make_growable(
+            self.name(),
+            self.child_data_type(),
+            vec![&self.flat_child],
+            true,
+            total_capacity,
+        );
+        for i in 0..self.len() {
+            let is_valid = self.is_valid(i);
+            let start = offsets.get(i).unwrap();
+            let len = offsets.get(i + 1).unwrap() - start;
+            match (is_valid, len) {
+                (false, _) => {},
+                (true, 0) => {},
+                (true, l) => growable.extend(0, *start as usize, l as usize),
+            }
+        }
+        growable.build()
+    }        
 
     // TODO(desmond): Migrate this to arrow-rs after migrating growable internals.
     fn explode(&self, ignore_empty_and_null: bool) -> DaftResult<Series> {
@@ -598,6 +625,10 @@ impl ListArrayExtension for FixedSizeListArray {
             ),
         };
         counts.with_nulls(self.nulls().cloned())
+    }
+
+    fn list_flatten(&self) -> DaftResult<ListArray>{
+        todo!("This function will be implemented soon.")
     }
 
     // TODO(desmond): Migrate this to arrow-rs after migrating growable internals.

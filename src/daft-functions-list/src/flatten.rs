@@ -43,11 +43,12 @@ impl ScalarUDF for Flatten {
             field.dtype.is_list() || field.dtype.is_fixed_size_list(),
             "Input must be a list"
         );
+        let inner_field = field.to_exploded_field()?;
         ensure!(
-            field.dtype.inner_dtype().is_list() || field.dtype.inner_dtype().is_fixed_size_list(),
+            inner_field.dtype.is_list() || inner_field.dtype.is_fixed_size_list(),
             "Input must be a list of lists"
         );
-        field.to_exploded_field()
+        Ok(inner_field)
     }
 }
 
