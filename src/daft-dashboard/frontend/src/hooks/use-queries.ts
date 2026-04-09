@@ -71,6 +71,8 @@ export type QuerySummary = {
   runner: string;
   ray_dashboard_url?: string;
   entrypoint?: string;
+  python_version?: string;
+  daft_version?: string;
 };
 
 export type QuerySummaryMap = { [_: string]: QuerySummary };

@@ -180,6 +180,30 @@ function QueryPageInner() {
                   </div>
                 )}
               </div>
+              {(query.daft_version || query.python_version) && (
+              <div className="space-y-3">
+                {query.daft_version && (
+                  <div>
+                    <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
+                      Daft Version
+                    </h3>
+                    <p className={`${main.className} text-lg font-mono text-zinc-100`}>
+                      {query.daft_version}
+                    </p>
+                  </div>
+                )}
+                {query.python_version && (
+                  <div>
+                    <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
+                      Python Version
+                    </h3>
+                    <p className={`${main.className} text-lg font-mono text-zinc-100`}>
+                      {query.python_version}
+                    </p>
+                  </div>
+                )}
+              </div>
+              )}
             </div>
           </div>
         </div>
