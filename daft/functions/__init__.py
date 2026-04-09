@@ -75,7 +75,7 @@ from .similarity import (
     jaccard_similarity,
 )
 
-from .file_ import file, file_size, video_file, audio_file, guess_mime_type
+from .file_ import file, file_path, file_size, video_file, audio_file, guess_mime_type
 
 from .image import (
     resize,
@@ -321,6 +321,7 @@ __all__ = [
     "explode",
     "expm1",
     "file",
+    "file_path",
     "file_size",
     "fill_nan",
     "fill_null",
