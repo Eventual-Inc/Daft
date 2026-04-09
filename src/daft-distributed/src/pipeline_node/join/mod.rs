@@ -6,9 +6,9 @@ pub(crate) mod hash_join;
 pub(crate) mod key_filtering_join;
 pub(crate) mod sort_merge_join;
 mod stats;
+pub(crate) mod translate_asof_join;
 pub(crate) mod translate_join;
 
-#[allow(unused_imports)]
 pub(crate) use asof_join::AsofJoinNode;
 pub(crate) use broadcast_join::BroadcastJoinNode;
 pub(crate) use cross_join::CrossJoinNode;

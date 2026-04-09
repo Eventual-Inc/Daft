@@ -21,7 +21,6 @@ use crate::{
     statistics::stats::RuntimeStatsRef,
 };
 
-#[allow(dead_code)]
 pub(crate) struct AsofJoinNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
@@ -35,7 +34,6 @@ pub(crate) struct AsofJoinNode {
     right: DistributedPipelineNode,
 }
 
-#[allow(dead_code)]
 impl AsofJoinNode {
     const NODE_NAME: &'static str = "AsofJoin";
 

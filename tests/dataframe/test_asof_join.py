@@ -5,12 +5,6 @@ import pytest
 import daft
 from daft import col
 from daft.api_annotations import APITypeError
-from tests.conftest import get_tests_daft_runner_name
-
-pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray",
-    reason="ASOF join is not supported on the Ray runner",
-)
 
 # ---------------------------------------------------------------------------
 # 1. Parameter Validation
