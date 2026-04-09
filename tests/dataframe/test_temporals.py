@@ -923,6 +923,18 @@ def test_from_unixtime_custom_format() -> None:
     assert result == expected
 
 
+def test_from_unixtime_utc_boundary() -> None:
+    # 1609466400 = 2021-01-01 02:00:00 UTC, but 2020-12-31 18:00:00 PST.
+    # Locks in that from_unixtime formats in UTC rather than local/session time.
+    df = daft.from_pydict({"s": [1609466400]})
+    df = df.select(from_unixtime(col("s")).alias("formatted"))
+    result = df.to_pydict()
+
+    expected = {"formatted": ["2021-01-01 02:00:00"]}
+
+    assert result == expected
+
+
 def test_temporal_batch2_sql() -> None:
     df = daft.from_pydict(  # noqa: F841
         {"d": [date(2021, 1, 1)], "s": [1609459200], "days_val": [10]}

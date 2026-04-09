@@ -1287,10 +1287,10 @@ def current_timezone() -> Expression:
 
 
 def date_add(expr: Expression, days: Expression) -> Expression:
-    """Adds a number of days to a date or timestamp.
+    """Adds a number of days to a date.
 
     Args:
-        expr: A date or timestamp expression.
+        expr: A date expression.
         days: An integer expression representing the number of days to add.
 
     Returns:
@@ -1309,10 +1309,10 @@ def date_add(expr: Expression, days: Expression) -> Expression:
 
 
 def date_sub(expr: Expression, days: Expression) -> Expression:
-    """Subtracts a number of days from a date or timestamp.
+    """Subtracts a number of days from a date.
 
     Args:
-        expr: A date or timestamp expression.
+        expr: A date expression.
         days: An integer expression representing the number of days to subtract.
 
     Returns:
