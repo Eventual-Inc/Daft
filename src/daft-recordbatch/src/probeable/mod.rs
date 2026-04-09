@@ -22,8 +22,14 @@ pub fn make_probeable_builder(
     nulls_equal_aware: Option<&Vec<bool>>,
     track_indices: bool,
 ) -> DaftResult<Box<dyn ProbeableBuilder>> {
+    let physical_type = (schema.len() == 1).then(|| schema[0].dtype.to_physical());
+    let nulls_equal = nulls_equal_aware
+        .map(|v| v.iter().any(|is_null_equal| *is_null_equal))
+        .unwrap_or(false);
+    let physical_type = if !nulls_equal { physical_type } else { None };
+
     if track_indices {
-        match (schema.len() == 1).then(|| &schema[0].dtype) {
+        match physical_type {
             Some(DataType::Int8) => Ok(Box::new(
                 IntProbeTableBuilder::<Int8Type, ProbeIndices>::new()?,
             )),
@@ -54,7 +60,7 @@ pub fn make_probeable_builder(
             )?)),
         }
     } else {
-        match (schema.len() == 1).then(|| &schema[0].dtype) {
+        match physical_type {
             Some(DataType::Int8) => Ok(Box::new(
                 IntProbeTableBuilder::<Int8Type, ProbeExists>::new()?,
             )),
