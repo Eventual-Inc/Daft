@@ -1,4 +1,7 @@
-use std::{cmp::Ordering, collections::HashMap};
+use std::{
+    cmp::Ordering,
+    collections::{BinaryHeap, HashMap},
+};
 
 use super::{
     task::{SchedulingStrategy, Task, TaskDetails},
@@ -26,6 +29,15 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn schedule_tasks(&mut self) -> Vec<ScheduledTask<T>>;
     fn get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>>;
     fn num_pending_tasks(&self) -> usize;
+}
+
+fn pending_tasks_in_priority_order<T: Task>(
+    pending_tasks: &BinaryHeap<PendingTask<T>>,
+) -> Vec<&PendingTask<T>> {
+    let mut ordered_tasks = pending_tasks.iter().collect::<Vec<_>>();
+    // Match the order that repeated BinaryHeap::pop() calls would produce.
+    ordered_tasks.sort_unstable_by(|a, b| b.cmp(a));
+    ordered_tasks
 }
 
 pub(crate) struct PendingTask<T: Task> {
