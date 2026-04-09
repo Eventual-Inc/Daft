@@ -456,6 +456,7 @@ impl PushDownProjection {
                     Ok(new_plan)
                 }
             }
+            LogicalPlan::AsofJoin(_) => Ok(Transformed::no(plan)),
             LogicalPlan::Distinct(distinct) => {
                 if distinct.columns.is_none() {
                     // Cannot push down past a Distinct if the distinct is on all columns
@@ -649,6 +650,7 @@ impl PushDownProjection {
             }
             // Joins also do column projection
             LogicalPlan::Join(join) => self.try_optimize_join(join, plan.clone()),
+            LogicalPlan::AsofJoin(_) => Ok(Transformed::no(plan)),
             // Pivots also do column projection
             LogicalPlan::Pivot(pivot) => self.try_optimize_pivot(pivot, plan.clone()),
             _ => Ok(Transformed::no(plan)),
