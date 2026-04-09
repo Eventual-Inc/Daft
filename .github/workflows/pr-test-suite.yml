@@ -1297,7 +1297,7 @@ jobs:
     - name: Run benchmarks
       uses: CodSpeedHQ/action@v4
       with:
-        run: source .venv/bin/activate; pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py tests/benchmarks/test_json_reads.py -m benchmark --codspeed
+        run: source .venv/bin/activate; pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py tests/benchmarks/test_json_reads.py tests/benchmarks/test_clickbench.py -m benchmark --codspeed
         mode: "simulation"
       env:
         DAFT_RUNNER: native
@@ -1314,7 +1314,7 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] Benchmark Local TPCH <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                  "text": ":rotating_light: [CI] Benchmarks (TPCH / ClickBench / reads) <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
                 }
               }
             ]
