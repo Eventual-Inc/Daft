@@ -170,19 +170,22 @@ impl WorkerManager for RayWorkerManager {
     /// Autoscale the Ray cluster by requesting resources from Ray's autoscaler.
     ///
     /// Constraints we operate under:
-    /// - `ray.autoscaler.sdk.request_resources(bundles=...)` **replaces** the current demand
-    ///   (it is not additive). Each call overwrites the previous request.
-    /// - Ray's autoscaler reconciliation loop checks the request every ~5 seconds by default
+    /// - `ray.autoscaler.sdk.request_resources(bundles=...)` is **asynchronous** and each
+    ///   call **replaces** the current demand (it is not additive).
+    /// - Ray's autoscaler reconciliation loop processes the request every ~5 seconds by default
     ///   (configurable via `AUTOSCALER_UPDATE_INTERVAL_S`). Calls between cycles overwrite
     ///   each other — only the latest value at reconciliation time is processed.
     /// - If the requested bundles exceed the cluster's maximum capacity (e.g., KubeRay
     ///   `maxReplicas`), the autoscaler refuses to scale **at all** — not even partially.
+    /// - We cannot detect whether the Ray autoscaler accepted or rejected the request, and
+    ///   observing new workers is not a reliable signal for whether a request succeeded, since
+    ///   node provisioning time varies (seconds to minutes depending on the environment).
     ///
-    /// Algorithm: to avoid exceeding the cluster's unknown max capacity, we ramp up demand
-    /// gradually. Each autoscaler cycle, we send one more bundle than the previous request
-    /// (tracked via `max_resources_requested` as a high-water mark). The high-water mark is
-    /// floored to current cluster resources so the very first cycle immediately requests
-    /// scaling beyond current capacity.
+    /// Algorithm: since we cannot detect failures and don't know the cluster's max capacity,
+    /// we ramp up demand gradually. In each autoscaler cycle, we send one more bundle than the
+    /// previous request (tracked via `max_resources_requested` as a high-water mark). The
+    /// high-water mark is floored to current cluster resources so the very first cycle
+    /// immediately requests scaling beyond current capacity.
     fn try_autoscale(&self, bundles: Vec<TaskResourceRequest>) -> DaftResult<()> {
         let mut state = self
             .state
