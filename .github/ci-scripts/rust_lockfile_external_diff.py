@@ -62,6 +62,13 @@ def main() -> int:
     if args.markdown_summary:
         print("## Rust Dependency Diff\n")
         print(f"Head: `{args.head}` vs Base: `{args.base}`.\n")
+        if over:
+            print(
+                f"❌ **FAILED:** {len(added) - len(removed)} new crates exceeds limit of {args.max_new}.\n",
+            )
+        else:
+            print("✅ **OK:** Within budget.\n")
+
         print(f"- **New Crates:** {len(added)}")
         print(f"- **Removed Crates:** {len(removed)}")
         if added:
@@ -75,13 +82,6 @@ def main() -> int:
                 print(line_for_entry(name, ver))
             print()
 
-        print()
-        if over:
-            print(
-                f"**FAILED:** {len(added) - len(removed)} new crates exceeds limit of {args.max_new}.\n",
-            )
-        else:
-            print("**OK:** Within budget.\n")
     else:
         print(f"New Crates: {len(added)}")
         print(f"Removed Crates: {len(removed)}")
