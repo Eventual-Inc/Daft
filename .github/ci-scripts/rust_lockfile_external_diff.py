@@ -13,28 +13,25 @@ from pathlib import Path
 import tomllib
 
 
-def external_package_keys(lock_path: Path) -> set[tuple[str, str, str]]:
+def external_package_keys(lock_path: Path) -> set[tuple[str, str]]:
     raw = tomllib.loads(lock_path.read_text(encoding="utf-8"))
     packages = raw.get("package", [])
     if not isinstance(packages, list):
         return set()
-    keys: set[tuple[str, str, str]] = set()
+    keys: set[tuple[str, str]] = set()
     for pkg in packages:
         if not isinstance(pkg, dict):
-            continue
-        src = pkg.get("source")
-        if not src:
             continue
         name = pkg.get("name")
         version = pkg.get("version")
         if name is None or version is None:
             continue
-        keys.add((str(name), str(version), str(src)))
+        keys.add((str(name), str(version)))
     return keys
 
 
-def line_for_entry(name: str, ver: str, src: str) -> str:
-    return f"- `{name}` {ver} — `{src}`"
+def line_for_entry(name: str, ver: str) -> str:
+    return f"- `{name}`: {ver}"
 
 
 def main() -> int:
@@ -58,44 +55,43 @@ def main() -> int:
     head_keys = external_package_keys(args.head)
     added = sorted(head_keys - base_keys)
     removed = sorted(base_keys - head_keys)
-    over = len(added) > args.max_new
+    over = (len(added) - len(removed)) > args.max_new
 
     if args.markdown_summary:
-        print("## Rust external dependency diff\n")
-        print(f"Head: `{args.head}` vs base: `{args.base}`.\n")
-        print(f"- **New external crates:** {len(added)}")
-        print(f"- **Removed external crates:** {len(removed)}")
-        print(f"- **Budget:** at most {args.max_new} new crates allowed.\n")
+        print("## Rust Dependency Diff\n")
+        print(f"Head: `{args.head}` vs Base: `{args.base}`.\n")
+        print(f"- **New Crates:** {len(added)}")
+        print(f"- **Removed Crates:** {len(removed)}")
         if added:
             print("### Added\n")
-            for name, ver, src in added:
-                print(line_for_entry(name, ver, src))
+            for name, ver in added:
+                print(line_for_entry(name, ver))
             print()
         if removed:
             print("### Removed\n")
-            for name, ver, src in removed:
-                print(line_for_entry(name, ver, src))
+            for name, ver in removed:
+                print(line_for_entry(name, ver))
             print()
         if over:
             print(
-                f"**FAILED:** {len(added)} new crates exceeds limit of {args.max_new}.\n",
+                f"**FAILED:** {len(added) - len(removed)} new crates exceeds limit of {args.max_new}.\n",
             )
         else:
-            print("**OK:** within budget.\n")
+            print("**OK:** Within budget.\n")
     else:
-        print(f"New external crates: {len(added)}")
-        print(f"Removed external crates: {len(removed)}")
+        print(f"New Crates: {len(added)}")
+        print(f"Removed Crates: {len(removed)}")
         if added:
             print("\nAdded:")
-            for name, ver, src in added:
-                print(line_for_entry(name, ver, src))
+            for name, ver in added:
+                print(line_for_entry(name, ver))
         if removed:
             print("\nRemoved:")
-            for name, ver, src in removed:
-                print(line_for_entry(name, ver, src))
+            for name, ver in removed:
+                print(line_for_entry(name, ver))
         if over:
             print(
-                f"\nERROR: {len(added)} new crates exceeds limit of {args.max_new}.",
+                f"\nERROR: {len(added) - len(removed)} new crates exceeds limit of {args.max_new}.",
                 file=sys.stderr,
             )
 
@@ -103,4 +99,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    exit(main())
