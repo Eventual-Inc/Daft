@@ -203,7 +203,6 @@ class OpenLineageSubscriber(Subscriber):
 
 
 if __name__ == "__main__":
-    # Set DAFT_RUNNER=native to ensure query lifecycle subscriber events are emitted.
     subscriber = OpenLineageSubscriber(
         namespace="local",
         name_prefix="daft_query",
