@@ -319,13 +319,12 @@ impl SortNode {
         &self,
         materialized_outputs: Vec<MaterializedOutput>,
     ) -> SwordfishTaskBuilder {
-        let (in_memory_scan, psets) =
-            MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
-                materialized_outputs,
-                self.config.schema.clone(),
-                self.node_id(),
-                FINAL_SORT_PHASE,
-            );
+        let (in_memory_scan, psets) = MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
+            materialized_outputs,
+            self.config.schema.clone(),
+            self.node_id(),
+            FINAL_SORT_PHASE,
+        );
         let plan = LocalPhysicalPlan::sort(
             in_memory_scan,
             self.sort_by.clone(),
@@ -334,8 +333,7 @@ impl SortNode {
             StatsState::NotMaterialized,
             LocalNodeContext::new(Some(self.node_id() as usize)).with_phase(FINAL_SORT_PHASE),
         );
-        SwordfishTaskBuilder::new(plan, self, self.node_id())
-            .with_psets(self.node_id(), psets)
+        SwordfishTaskBuilder::new(plan, self, self.node_id()).with_psets(self.node_id(), psets)
     }
 
     async fn execution_loop(
@@ -460,10 +458,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        pipeline_node::{
-            PipelineNodeConfig, PipelineNodeContext,
-            tests::MockNode,
-        },
+        pipeline_node::{PipelineNodeConfig, PipelineNodeContext, tests::MockNode},
         plan::PlanConfig,
         scheduling::tests::create_mock_partition_ref,
         statistics::{TaskEvent, stats::RuntimeNodeManager},
