@@ -1638,7 +1638,15 @@ mod tests {
         .unwrap();
         let vals = Int64Array::from_iter(
             Field::new("val", DataType::Int64),
-            vec![Some(10), Some(20), Some(30), Some(40), Some(50), Some(60), Some(70)],
+            vec![
+                Some(10),
+                Some(20),
+                Some(30),
+                Some(40),
+                Some(50),
+                Some(60),
+                Some(70),
+            ],
         )
         .into_series();
         let schema = Schema::new(vec![
