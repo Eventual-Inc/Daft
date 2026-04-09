@@ -196,6 +196,16 @@ def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) ->
     assert df.to_arrow() == expected
 
 
+def test_create_dataframe_arrow_uuid(valid_data: list[dict[str, float]]) -> None:
+    pydict = {"uuid": [uuid.uuid4().bytes for _ in range(len(valid_data))]}
+    pa_schema = pa.schema([pa.field("uuid", pa.uuid())])
+    t = pa.Table.from_pydict(pydict, schema=pa_schema)
+    df = daft.from_arrow(t)
+    assert set(df.column_names) == {"uuid"}
+    assert df.schema()["uuid"].dtype == DataType.uuid()
+    assert df.to_arrow() == t
+
+
 def test_create_dataframe_arrow_tensor_canonical(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     shape = (2, 2)

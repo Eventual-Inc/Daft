@@ -12,7 +12,7 @@ use super::as_arrow::AsArrow;
 use crate::prelude::PythonArray;
 use crate::{
     array::{
-        DataArray, FixedSizeListArray, ListArray, StructArray,
+        DataArray, FixedSizeListArray, ListArray, StructArray, UuidArray,
         ops::arrow::sort::primitive::{
             common::multi_column_idx_sort, indices::indices_sorted_unstable_by, sort::sort_by,
         },
@@ -24,7 +24,7 @@ use crate::{
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray, UuidArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
     },
     file::DaftMediaType,

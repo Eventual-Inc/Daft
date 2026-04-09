@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import itertools
+import uuid
 
 import numpy as np
 import pyarrow as pa
 import pytest
 
 from daft import DataType, Series
-from tests.conftest import UuidType, get_tests_daft_runner_name
+from tests.conftest import DaftUuidType, get_tests_daft_runner_name
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
 
@@ -151,6 +152,21 @@ def test_series_concat_struct_array(chunks) -> None:
 
 
 @pytest.mark.parametrize("chunks", [1, 2, 3, 10])
+def test_series_concat_uuid_array(chunks) -> None:
+    data = []
+    for i in range(chunks):
+        data.append([uuid.uuid4().bytes for _ in range(i)])
+
+    series = []
+    for i in range(chunks):
+        series.append(Series.from_arrow(pa.array(data[i], type=pa.uuid())))
+
+    concated = Series.concat(series)
+    assert concated.datatype() == DataType.uuid()
+    assert concated.to_arrow() == pa.array([item for d in data for item in d], type=pa.uuid())
+
+
+@pytest.mark.parametrize("chunks", [1, 2, 3, 10])
 def test_series_concat_tensor_array_canonical(chunks) -> None:
     element_shape = (2, 2)
     num_elements_per_tensor = np.prod(element_shape)
@@ -195,7 +211,7 @@ def test_series_concat_extension_type(uuid_ext_type, chunks) -> None:
         uuid_ext_type.NAME, DataType.from_arrow_type(uuid_ext_type.storage_type), ""
     )
     concated_arrow = concated.to_arrow()
-    assert isinstance(concated_arrow.type, UuidType)
+    assert isinstance(concated_arrow.type, DaftUuidType)
     assert concated_arrow.type == uuid_ext_type
 
     expected = uuid_ext_type.wrap_array(pa.concat_arrays(storage_arrays))

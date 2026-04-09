@@ -1,14 +1,14 @@
 use common_error::{DaftError, DaftResult};
 use logical::{
     EmbeddingArray, FixedShapeSparseTensorArray, FixedShapeTensorArray, SparseTensorArray,
-    TensorArray, UuidArray,
+    TensorArray,
 };
 
 use self::logical::{DurationArray, ImageArray, MapArray};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{ListArray, StructArray},
+    array::{ListArray, StructArray, UuidArray},
     datatypes::{
         logical::{DateArray, FixedShapeImageArray, TimeArray, TimestampArray},
         *,

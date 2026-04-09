@@ -6,7 +6,7 @@ use common_error::DaftResult;
 use super::{
     DaftArrayType, DaftDataType, DataArray, DataType, DurationType, EmbeddingType,
     FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, FixedSizeListArray,
-    ImageType, MapType, SparseTensorType, TensorType, TimeType, TimestampType, UuidType,
+    ImageType, MapType, SparseTensorType, TensorType, TimeType, TimestampType,
 };
 use crate::{
     array::{ListArray, StructArray},
@@ -132,6 +132,7 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, StructArray> {
     }
 }
 
+pub type MapArray = LogicalArray<MapType>;
 impl MapArray {
     impl_logical_type!(ListArray);
 
@@ -185,7 +186,6 @@ pub type LogicalArray<L> =
 pub type DateArray = LogicalArray<DateType>;
 pub type TimeArray = LogicalArray<TimeType>;
 pub type DurationArray = LogicalArray<DurationType>;
-pub type UuidArray = LogicalArray<UuidType>;
 pub type ImageArray = LogicalArray<ImageType>;
 pub type TimestampArray = LogicalArray<TimestampType>;
 pub type TensorArray = LogicalArray<TensorType>;
@@ -194,7 +194,6 @@ pub type FixedShapeTensorArray = LogicalArray<FixedShapeTensorType>;
 pub type SparseTensorArray = LogicalArray<SparseTensorType>;
 pub type FixedShapeSparseTensorArray = LogicalArray<FixedShapeSparseTensorType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
-pub type MapArray = LogicalArray<MapType>;
 
 pub trait DaftImageryType: DaftLogicalType {}
 
