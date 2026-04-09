@@ -2805,6 +2805,16 @@ class Expression:
 
         return image_hash(self, method=method, hash_size=hash_size, binbits=binbits)
 
+    def file_path(self) -> Expression:
+        """Gets the path (URL) of a file as a string.
+
+        Tip: See Also
+            [`daft.functions.file_path`](https://docs.daft.ai/en/stable/api/functions/file_path/)
+        """
+        from daft.functions import file_path
+
+        return file_path(self)
+
     def file_size(self) -> Expression:
         """Gets the size of a file in bytes.
 

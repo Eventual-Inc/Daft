@@ -21,6 +21,8 @@ pub struct ExplodeStats {
     duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
+    bytes_in: Counter,
+    bytes_out: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -32,6 +34,8 @@ impl RuntimeStats for ExplodeStats {
             duration_us: meter.duration_us_metric(),
             rows_in: meter.rows_in_metric(),
             rows_out: meter.rows_out_metric(),
+            bytes_in: meter.bytes_in_metric(),
+            bytes_out: meter.bytes_out_metric(),
             node_kv,
         }
     }
@@ -52,6 +56,8 @@ impl RuntimeStats for ExplodeStats {
             rows_in,
             rows_out,
             amplification,
+            bytes_in: self.bytes_in.load(ordering),
+            bytes_out: self.bytes_out.load(ordering),
         })
     }
 
@@ -65,6 +71,14 @@ impl RuntimeStats for ExplodeStats {
 
     fn add_duration_us(&self, cpu_us: u64) {
         self.duration_us.add(cpu_us, self.node_kv.as_slice());
+    }
+
+    fn add_bytes_in(&self, bytes: u64) {
+        self.bytes_in.add(bytes, self.node_kv.as_slice());
+    }
+
+    fn add_bytes_out(&self, bytes: u64) {
+        self.bytes_out.add(bytes, self.node_kv.as_slice());
     }
 }
 

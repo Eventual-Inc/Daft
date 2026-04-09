@@ -1431,6 +1431,36 @@ jobs:
     - name: Run Machete
       run: cargo machete --with-metadata
 
+  rust-dependency-budget:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - name: Compare Cargo.lock to base (external crates budget)
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        set -euo pipefail
+        git show "${BASE_SHA}:Cargo.lock" > /tmp/base-Cargo.lock
+        python3 .github/ci-scripts/rust_lockfile_diff.py \
+          --base ${BASE_SHA} \
+          --head ${GITHUB_SHA} \
+          --base-lockfile /tmp/base-Cargo.lock \
+          --head-lockfile Cargo.lock \
+          --max-new 25 \
+          --markdown-summary | tee rust_dep_report.md >> "$GITHUB_STEP_SUMMARY"
+    - name: Post sticky PR comment
+      uses: marocchino/sticky-pull-request-comment@v2
+      with:
+        header: rust-dependency-budget
+        path: rust_dep_report.md
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   doctests:
     runs-on: ubuntu-latest
     env:

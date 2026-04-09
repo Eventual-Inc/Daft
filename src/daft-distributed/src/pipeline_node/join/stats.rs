@@ -1,8 +1,9 @@
 use std::{borrow::Cow, sync::atomic::Ordering};
 
 use common_metrics::{
-    Counter, JOIN_BUILD_ROWS_INSERTED_KEY, JOIN_PROBE_ROWS_IN_KEY, JOIN_PROBE_ROWS_OUT_KEY, Meter,
-    StatSnapshot, UNIT_ROWS,
+    Counter, JOIN_BUILD_BYTES_INSERTED_KEY, JOIN_BUILD_ROWS_INSERTED_KEY, JOIN_PROBE_BYTES_IN_KEY,
+    JOIN_PROBE_BYTES_OUT_KEY, JOIN_PROBE_ROWS_IN_KEY, JOIN_PROBE_ROWS_OUT_KEY, Meter, StatSnapshot,
+    UNIT_BYTES, UNIT_ROWS,
     ops::NodeInfo,
     snapshot::{JoinSnapshot, StatSnapshotImpl as _},
 };
@@ -18,6 +19,9 @@ pub(crate) struct BasicJoinStats {
     build_rows_inserted: Counter,
     probe_rows_in: Counter,
     probe_rows_out: Counter,
+    build_bytes_inserted: Counter,
+    probe_bytes_in: Counter,
+    probe_bytes_out: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -41,6 +45,21 @@ impl BasicJoinStats {
                 None,
                 Some(Cow::Borrowed(UNIT_ROWS)),
             ),
+            build_bytes_inserted: meter.u64_counter_with_desc_and_unit(
+                JOIN_BUILD_BYTES_INSERTED_KEY,
+                None,
+                Some(Cow::Borrowed(UNIT_BYTES)),
+            ),
+            probe_bytes_in: meter.u64_counter_with_desc_and_unit(
+                JOIN_PROBE_BYTES_IN_KEY,
+                None,
+                Some(Cow::Borrowed(UNIT_BYTES)),
+            ),
+            probe_bytes_out: meter.u64_counter_with_desc_and_unit(
+                JOIN_PROBE_BYTES_OUT_KEY,
+                None,
+                Some(Cow::Borrowed(UNIT_BYTES)),
+            ),
             node_kv,
         }
     }
@@ -60,6 +79,12 @@ impl RuntimeStats for BasicJoinStats {
             .add(snapshot.probe_rows_in, self.node_kv.as_slice());
         self.probe_rows_out
             .add(snapshot.probe_rows_out, self.node_kv.as_slice());
+        self.build_bytes_inserted
+            .add(snapshot.build_bytes_inserted, self.node_kv.as_slice());
+        self.probe_bytes_in
+            .add(snapshot.probe_bytes_in, self.node_kv.as_slice());
+        self.probe_bytes_out
+            .add(snapshot.probe_bytes_out, self.node_kv.as_slice());
     }
 
     fn export_snapshot(&self) -> StatSnapshot {
@@ -68,6 +93,9 @@ impl RuntimeStats for BasicJoinStats {
             build_rows_inserted: self.build_rows_inserted.load(Ordering::SeqCst),
             probe_rows_in: self.probe_rows_in.load(Ordering::SeqCst),
             probe_rows_out: self.probe_rows_out.load(Ordering::SeqCst),
+            build_bytes_inserted: self.build_bytes_inserted.load(Ordering::SeqCst),
+            probe_bytes_in: self.probe_bytes_in.load(Ordering::SeqCst),
+            probe_bytes_out: self.probe_bytes_out.load(Ordering::SeqCst),
         })
     }
 }
