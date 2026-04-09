@@ -684,6 +684,49 @@ class TestAsofJoinDistributed:
             "w": [50, 150, 80, 180],
         }
 
+    @pytest.mark.parametrize(
+        "left_partitions,right_partitions",
+        [(4, 2), (2, 4), (8, 2), (2, 8)],
+    )
+    def test_asymmetric_partition_counts(self, make_df, left_partitions, right_partitions, with_default_morsel_size):
+        """Left and right have different partition counts.
+
+        Exercises the partition-leniency arms in gen_asof_join_nodes:
+          (true, false, a, b) if a >= b * leniency => a
+          (false, true, a, b) if b >= a * leniency => b
+        Both sides are pre-partitioned on the by-key with different counts, so the
+        executor must reconcile the mismatch via the leniency logic or repartition.
+        """
+        left = make_df(
+            {
+                "entity": ["A", "B", "C", "D", "A", "B", "C", "D"],
+                "ts": [10, 10, 10, 10, 20, 20, 20, 20],
+                "v": [1, 2, 3, 4, 5, 6, 7, 8],
+            },
+            repartition=left_partitions,
+            repartition_columns=["entity"],
+        )
+        right = make_df(
+            {
+                "entity": ["A", "B", "C", "D", "A", "B", "C", "D"],
+                "ts": [5, 8, 12, 15, 18, 22, 25, 28],
+                "w": [100, 200, 300, 400, 500, 600, 700, 800],
+            },
+            repartition=right_partitions,
+            repartition_columns=["entity"],
+        )
+        result = left.join_asof(right, on="ts", by="entity").sort(["entity", "ts"])
+        assert result.to_pydict() == {
+            "entity": ["A", "A", "B", "B", "C", "C", "D", "D"],
+            "ts": [10, 20, 10, 20, 10, 20, 10, 20],
+            "v": [1, 5, 2, 6, 3, 7, 4, 8],
+            # A@10: right A@5=100; A@20: right A@18=500
+            # B@10: right B@8=200; B@20: right B@8=200 (22 is future)
+            # C@10: no right C<=10 -> None; C@20: right C@12=300
+            # D@10: no right D<=10 -> None; D@20: right D@15=400
+            "w": [100, 500, 200, 200, None, 300, None, 400],
+        }
+
     @pytest.mark.parametrize("n_partitions", get_n_partitions())
     def test_child_join_different_by_keys(self, make_df, n_partitions, with_default_morsel_size):
         """ASOF join where left input is a join hashed on different keys than the ASOF by-keys.
