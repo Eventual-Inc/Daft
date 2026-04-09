@@ -8,9 +8,6 @@ pub trait ProbeContent: Default + Send + Sync + 'static {
 
     /// Convert the probe output to indices for probe_indices
     fn to_indices(output: Option<Self::ProbeOutput<'_>>) -> Option<&[u64]>;
-
-    /// Convert the probe output to boolean for probe_exists
-    fn to_exists(output: Option<Self::ProbeOutput<'_>>) -> bool;
 }
 
 /// For set / exist ops
@@ -25,10 +22,6 @@ impl ProbeContent for ProbeExists {
 
     fn to_indices(_output: Option<Self::ProbeOutput<'_>>) -> Option<&[u64]> {
         panic!("to_indices should not be called on ProbeExists")
-    }
-
-    fn to_exists(output: Option<Self::ProbeOutput<'_>>) -> bool {
-        output.is_some()
     }
 }
 
@@ -49,9 +42,5 @@ impl ProbeContent for ProbeIndices {
 
     fn to_indices(output: Option<Self::ProbeOutput<'_>>) -> Option<&[u64]> {
         output
-    }
-
-    fn to_exists(output: Option<Self::ProbeOutput<'_>>) -> bool {
-        output.is_some()
     }
 }

@@ -84,7 +84,7 @@ where
         table: &'a RecordBatch,
     ) -> DaftResult<Box<dyn Iterator<Item = bool> + 'a>> {
         let iter = self.probe(table.get_column(0).downcast::<DataArray<T>>()?)?;
-        Ok(Box::new(iter.map(|output| V::to_exists(output))))
+        Ok(Box::new(iter.map(|output| output.is_some())))
     }
 }
 

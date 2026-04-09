@@ -199,7 +199,7 @@ impl<T: ProbeContent> Probeable for ProbeTable<T> {
         table: &'a RecordBatch,
     ) -> DaftResult<Box<dyn Iterator<Item = bool> + 'a>> {
         let iter = self.probe(table)?;
-        Ok(Box::new(iter.map(|output| T::to_exists(output))))
+        Ok(Box::new(iter.map(|output| output.is_some())))
     }
 }
 
