@@ -53,6 +53,7 @@ from daft.daft import (
     QueryEndState,
 )
 from daft.datatype import DataType
+from daft.errors import UDFException
 from daft.filesystem import glob_path_with_stats
 from daft.recordbatch import MicroPartition
 from daft.runners import runner_io
@@ -559,6 +560,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         query_id = generate_query_name()
         daft_execution_config = ctx.daft_execution_config
         output_schema = builder.schema()
+        unoptimized_plan_json = builder.repr_json()
 
         # Notify query start
         ray_dashboard_url = None
@@ -582,7 +584,6 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         entrypoint = "python " + " ".join(sys.argv)
         dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
-        should_notify = bool(ray_dashboard_url or dashboard_url)
 
         # Log Dashboard URL if configured
         if dashboard_url:
@@ -609,19 +610,18 @@ class RayRunner(Runner[ray.ObjectRef]):
             physical_plan_json = distributed_plan.repr_json(repr_psets)
 
             # Only send notifications after we've successfully created the distributed plan
-            if should_notify:
-                try:
-                    ctx._notify_query_start(
-                        query_id,
-                        PyQueryMetadata(
-                            output_schema._schema, builder.repr_json(), "Ray (Flotilla)", ray_dashboard_url, entrypoint
-                        ),
-                    )
-                    ctx._notify_optimization_start(query_id)
-                    ctx._notify_optimization_end(query_id, builder.repr_json())
-                    ctx._notify_exec_start(query_id, physical_plan_json)
-                except Exception:
-                    pass
+            try:
+                ctx._notify_query_start(
+                    query_id,
+                    PyQueryMetadata(
+                        output_schema._schema, unoptimized_plan_json, "Ray (Flotilla)", ray_dashboard_url, entrypoint
+                    ),
+                )
+                ctx._notify_optimization_start(query_id)
+                ctx._notify_optimization_end(query_id, builder.repr_json())
+                ctx._notify_exec_start(query_id, physical_plan_json)
+            except Exception:
+                pass
 
             if self.flotilla_plan_runner is None:
                 self.flotilla_plan_runner = FlotillaRunner()
@@ -640,38 +640,47 @@ class RayRunner(Runner[ray.ObjectRef]):
                 stats: PyExecutionStats = e.value
 
             # Mark all operators as finished to clean up the Dashboard UI before notify_exec_end
-            if should_notify:
-                try:
-                    plan_dict = json.loads(physical_plan_json)
+            try:
+                plan_dict = json.loads(physical_plan_json)
 
-                    def notify_end(node: dict[str, Any]) -> None:
-                        if "children" in node:
-                            for child in node["children"]:
-                                notify_end(child)
-                        if "id" in node:
-                            ctx._notify_exec_operator_end(query_id, node["id"])
+                def notify_end(node: dict[str, Any]) -> None:
+                    if "children" in node:
+                        for child in node["children"]:
+                            notify_end(child)
+                    if "id" in node:
+                        ctx._notify_exec_operator_end(query_id, node["id"])
 
-                    notify_end(plan_dict)
-                except Exception:
-                    pass
+                notify_end(plan_dict)
+            except Exception:
+                pass
 
-            if should_notify:
-                try:
-                    ctx._notify_exec_end(query_id)
-                except Exception:
-                    pass
-                ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Finished, "Query finished"))
+            try:
+                ctx._notify_exec_end(query_id)
+            except Exception:
+                pass
+            ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Finished, "Query finished"))
 
         except GeneratorExit:
-            # GeneratorExit is raised when the generator is closed (e.g. by break)
-            # We should treat this as a cancellation/interruption but not necessarily a failure if execution was partial
-            # However, if it's external cancellation, we might want to log it.
-            # For now, we propagate it to ensure proper cleanup.
-            raise
+            # Generator was abandoned (e.g. .show() breaking out early). Match NativeRunner so
+            # subscribers and the dashboard leave the Finalizing state.
+            try:
+                query_result = PyQueryResult(QueryEndState.Finished, "Query finished")
+                ctx._notify_query_end(query_id, query_result)
+            except Exception as ex:
+                logger.warning("Failed to send query end notification: %s", ex)
+            return  # type: ignore[return-value]
+        except KeyboardInterrupt as e:
+            query_result = PyQueryResult(QueryEndState.Canceled, "Query canceled by the user.")
+            ctx._notify_query_end(query_id, query_result)
+            raise e
+        except UDFException as e:
+            err_msg = f"UDF failed with exception: {e.original_exception}"
+            ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, err_msg))
+            raise e
         except Exception as e:
-            if should_notify:
-                ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, str(e)))
-            raise
+            err_msg = f"General Exception raised: {e}"
+            ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, err_msg))
+            raise e
 
         return ExecutionMetadata._from_runner_output(stats, query_id, physical_plan_json)
 
