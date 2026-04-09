@@ -12,7 +12,7 @@ from openlineage.client.event_v2 import (
     RunEvent,
     RunState,
 )
-from openlineage.client.facet_v2 import error_message_run, parent_run
+from openlineage.client.facet_v2 import error_message_run, parent_run, processing_engine_run
 from openlineage.client.transport import HttpConfig, HttpTransport, Transport
 from openlineage.client.uuid import generate_new_uuid
 from typing_extensions import override
@@ -136,9 +136,12 @@ class OpenLineageSubscriber(Subscriber):
                     runId=run_id,
                     facets={
                         "parent": self._parent,
+                        "engine": processing_engine_run.ProcessingEngineRunFacet(
+                            version=daft_version,
+                            name="daft",
+                        ),
                         "daft": {
                             "query_id": start_event.query_id,
-                            "daft_version": daft_version,
                         },
                     },
                 ),
