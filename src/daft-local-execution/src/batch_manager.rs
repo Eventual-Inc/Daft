@@ -1,8 +1,7 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, time::Duration};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
-use parking_lot::Mutex;
 
 use crate::{
     buffer::RowBasedBuffer,
@@ -38,10 +37,7 @@ struct InputBuffer {
 /// manager.record_completion(stats, batch_size, duration);
 /// ```
 pub struct BatchManager<S: BatchingStrategy> {
-    // TODO: Remove Arc<Mutex<>> once streaming sink is migrated to the consolidated API.
-    // Only needed because the legacy &self methods (calculate_batch_size/record_execution_stats)
-    // require interior mutability. The consolidated &mut self methods don't need it.
-    state: Arc<Mutex<S::State>>,
+    state: S::State,
     pub(crate) strategy: S,
     inputs: HashMap<InputId, InputBuffer>,
     current_requirements: MorselSizeRequirement,
@@ -57,7 +53,6 @@ where
     pub fn new(strategy: S) -> Self {
         let state = strategy.make_state();
         let current_requirements = strategy.initial_requirements();
-        let state = Arc::new(Mutex::new(state));
 
         Self {
             state,
@@ -65,29 +60,6 @@ where
             inputs: HashMap::new(),
             current_requirements,
         }
-    }
-
-    /// Computes current batch size requirements from the strategy.
-    /// Used by streaming sink which manages its own buffers separately.
-    /// TODO: Migrate streaming sink to use the consolidated API (push/next_batch/record_completion)
-    /// so this can be removed.
-    pub fn calculate_batch_size(&self) -> MorselSizeRequirement {
-        let mut state = self.state.lock();
-        self.strategy.calculate_new_requirements(&mut state)
-    }
-
-    /// Records execution metrics without recalculating requirements.
-    /// Used by streaming sink which manages its own buffers separately.
-    /// TODO: Migrate streaming sink to use the consolidated API (push/next_batch/record_completion)
-    /// so this can be removed.
-    pub fn record_execution_stats(
-        &self,
-        stats: &dyn RuntimeStats,
-        batch_size: usize,
-        duration: Duration,
-    ) {
-        let mut state = self.state.lock();
-        state.record_execution_stat(stats, batch_size, duration);
     }
 
     /// Buffers an incoming partition for the given input. Creates the input's
@@ -114,10 +86,9 @@ where
             .expect("Input should be present");
         input.buffer.update_bounds(self.current_requirements);
 
-        let batch = {
-            let mut state = self.state.lock();
-            self.strategy.next_batch(&mut state, &mut input.buffer)?
-        };
+        let batch = self
+            .strategy
+            .next_batch(&mut self.state, &mut input.buffer)?;
         match batch {
             Some(b) => Ok(Some(b)),
             None if input.pending_flush => input.buffer.pop_all(),
@@ -134,9 +105,9 @@ where
         batch_size: usize,
         duration: Duration,
     ) {
-        let mut state = self.state.lock();
-        state.record_execution_stat(stats, batch_size, duration);
-        self.current_requirements = self.strategy.calculate_new_requirements(&mut state);
+        self.state
+            .record_execution_stat(stats, batch_size, duration);
+        self.current_requirements = self.strategy.calculate_new_requirements(&mut self.state);
     }
 
     /// Signals that the given input has finished sending data. `next_batch`
@@ -189,13 +160,21 @@ where
     pub fn initial_requirements(&self) -> MorselSizeRequirement {
         self.strategy.initial_requirements()
     }
+
+    #[cfg(test)]
+    pub fn current_requirements(&self) -> MorselSizeRequirement {
+        self.current_requirements
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::{
         num::NonZeroUsize,
-        sync::atomic::{AtomicUsize, Ordering},
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
         time::Duration,
     };
 
@@ -228,6 +207,9 @@ mod tests {
         fn add_duration_us(&self, _cpu_us: u64) {
             unimplemented!()
         }
+
+        fn add_bytes_in(&self, _bytes: u64) {}
+        fn add_bytes_out(&self, _bytes: u64) {}
     }
 
     struct MockBatchingState {
@@ -305,95 +287,67 @@ mod tests {
     }
 
     #[test]
-    fn test_batch_manager_calculate_no_measurements() {
+    fn test_batch_manager_no_completions() {
         let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(
             2,
             NonZeroUsize::new(64).unwrap(),
         ));
         let manager = BatchManager::new(strategy.clone());
 
-        let req = manager.calculate_batch_size();
         assert_eq!(
-            req,
+            manager.current_requirements(),
             MorselSizeRequirement::Flexible(2, NonZeroUsize::new(64).unwrap())
         );
-        assert_eq!(strategy.call_count(), 1);
+        assert_eq!(strategy.call_count(), 0);
     }
 
     #[test]
-    fn test_batch_manager_record_and_calculate() {
+    fn test_batch_manager_record_completion() {
         let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(
             1,
             NonZeroUsize::new(16).unwrap(),
         ));
-        let manager = BatchManager::new(strategy.clone());
+        let mut manager = BatchManager::new(strategy.clone());
 
-        manager.record_execution_stats(
+        manager.record_completion(
             Arc::new(MockRuntimeStats).as_ref(),
             32,
             Duration::from_millis(100),
         );
 
-        let req = manager.calculate_batch_size();
         assert_eq!(
-            req,
+            manager.current_requirements(),
             MorselSizeRequirement::Flexible(1, NonZeroUsize::new(10).unwrap())
         );
         assert_eq!(strategy.call_count(), 1);
     }
 
     #[test]
-    fn test_batch_manager_multiple_measurements() {
+    fn test_batch_manager_multiple_completions() {
         let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(
             1,
             NonZeroUsize::new(8).unwrap(),
         ));
-        let manager = BatchManager::new(strategy.clone());
+        let mut manager = BatchManager::new(strategy.clone());
 
-        manager.record_execution_stats(
+        manager.record_completion(
             Arc::new(MockRuntimeStats).as_ref(),
             10,
             Duration::from_millis(50),
         );
-        manager.record_execution_stats(
+        assert_eq!(
+            manager.current_requirements(),
+            MorselSizeRequirement::Flexible(1, NonZeroUsize::new(10).unwrap())
+        );
+
+        manager.record_completion(
             Arc::new(MockRuntimeStats).as_ref(),
             20,
             Duration::from_millis(75),
         );
-
-        let req = manager.calculate_batch_size();
         assert_eq!(
-            req,
+            manager.current_requirements(),
             MorselSizeRequirement::Flexible(5, NonZeroUsize::new(20).unwrap())
-        );
-        assert_eq!(strategy.call_count(), 1);
-    }
-
-    #[test]
-    fn test_batch_manager_multiple_calculations() {
-        let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(
-            1,
-            NonZeroUsize::new(4).unwrap(),
-        ));
-        let manager = BatchManager::new(strategy.clone());
-
-        manager.record_execution_stats(
-            Arc::new(MockRuntimeStats).as_ref(),
-            5,
-            Duration::from_millis(25),
-        );
-
-        let req1 = manager.calculate_batch_size();
-        assert_eq!(
-            req1,
-            MorselSizeRequirement::Flexible(1, NonZeroUsize::new(10).unwrap())
-        );
-        assert_eq!(strategy.call_count(), 1);
-
-        let req2 = manager.calculate_batch_size();
-        assert_eq!(
-            req2,
-            MorselSizeRequirement::Flexible(1, NonZeroUsize::new(10).unwrap())
         );
         assert_eq!(strategy.call_count(), 2);
     }
@@ -404,53 +358,49 @@ mod tests {
             2,
             NonZeroUsize::new(8).unwrap(),
         ));
-        let manager = BatchManager::new(strategy.clone());
+        let mut manager = BatchManager::new(strategy.clone());
 
-        manager.record_execution_stats(
+        manager.record_completion(
             Arc::new(MockRuntimeStats).as_ref(),
             10,
             Duration::from_millis(30),
         );
-        let req1 = manager.calculate_batch_size();
         assert_eq!(
-            req1,
+            manager.current_requirements(),
             MorselSizeRequirement::Flexible(1, NonZeroUsize::new(10).unwrap())
         );
 
-        manager.record_execution_stats(
+        manager.record_completion(
             Arc::new(MockRuntimeStats).as_ref(),
             15,
             Duration::from_millis(40),
         );
-        manager.record_execution_stats(
+        manager.record_completion(
             Arc::new(MockRuntimeStats).as_ref(),
             20,
             Duration::from_millis(60),
         );
-        let req2 = manager.calculate_batch_size();
         assert_eq!(
-            req2,
+            manager.current_requirements(),
             MorselSizeRequirement::Flexible(5, NonZeroUsize::new(20).unwrap())
         );
-
-        assert_eq!(strategy.call_count(), 2);
+        assert_eq!(strategy.call_count(), 3);
     }
 
     #[test]
     fn test_batch_manager_with_static_strategy() {
         let static_req = MorselSizeRequirement::Flexible(16, NonZeroUsize::new(128).unwrap());
         let strategy = StaticBatchingStrategy::new(static_req);
-        let manager = BatchManager::new(strategy);
+        let mut manager = BatchManager::new(strategy);
 
         assert_eq!(manager.initial_requirements(), static_req);
 
-        manager.record_execution_stats(
+        manager.record_completion(
             Arc::new(MockRuntimeStats).as_ref(),
             64,
             Duration::from_millis(200),
         );
 
-        let req = manager.calculate_batch_size();
-        assert_eq!(req, static_req);
+        assert_eq!(manager.current_requirements(), static_req);
     }
 }

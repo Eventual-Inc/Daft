@@ -187,6 +187,7 @@ members = [
   "src/daft-checkpoint",
   "src/daft-context",
   "src/daft-core",
+  "src/daft-groupby",
   "src/daft-csv",
   "src/daft-dashboard",
   "src/daft-dsl",
@@ -269,6 +270,7 @@ daft-algebra = {path = "src/daft-algebra"}
 daft-catalog = {path = "src/daft-catalog"}
 daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
+daft-groupby = {path = "src/daft-groupby"}
 daft-dsl = {path = "src/daft-dsl"}
 daft-ext-internal = {path = "src/daft-ext-internal"}
 daft-ext-macros = {path = "src/daft-ext-macros", version = "0.1.1"}
@@ -341,7 +343,7 @@ sysinfo = "0.38.4"
 tango-bench = "0.6.0"
 test-log = "0.2.19"
 thiserror = "2.0.17"
-tiktoken-rs = "0.7.0"
+tiktoken-rs = "0.9.1"
 tokio = {version = "1.48.0", features = [
   "net",
   "time",

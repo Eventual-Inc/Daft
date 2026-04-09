@@ -125,10 +125,12 @@ class RaySwordfishActor:
 
         self.ip = ray.util.get_node_ip_address()
         self.native_executor = NativeExecutor(is_flotilla_worker=True, ip=self.ip)
-        self.port = self.native_executor.shuffle_port()
 
     def get_address(self) -> str:
-        return f"grpc://{self.ip}:{self.port}"
+        address = self.native_executor.shuffle_address()
+        if address is None:
+            raise RuntimeError("Flotilla worker should have started a Flight shuffle server")
+        return address
 
     async def _resolve_inputs(
         self,

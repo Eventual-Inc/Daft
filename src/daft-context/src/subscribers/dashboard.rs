@@ -6,9 +6,8 @@ use std::{
     time::SystemTime,
 };
 
-use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::{NodeID, QueryID, QueryPlan, Stats};
+use common_metrics::{QueryID, QueryPlan};
 use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use dashmap::DashMap;
@@ -214,37 +213,8 @@ impl DashboardSubscriber {
             }
         }
     }
-}
 
-impl Drop for DashboardSubscriber {
-    fn drop(&mut self) {
-        // Close channel so worker drains buffered events and exits.
-        let _ = self.dashboard_tx.take();
-
-        // Wait up to timeout for clean drain; then force abort.
-        if let Some(mut worker) = self.dashboard_worker.take() {
-            let shutdown = self.runtime.block_within_async_context(async move {
-                if tokio::time::timeout(
-                    std::time::Duration::from_millis(DASHBOARD_SHUTDOWN_TIMEOUT_MS),
-                    &mut worker,
-                )
-                .await
-                .is_err()
-                {
-                    log::warn!("Dashboard worker did not drain in time, aborting");
-                    worker.abort();
-                }
-            });
-
-            if let Err(e) = shutdown {
-                log::warn!("Dashboard worker shutdown encountered an error: {e}");
-            }
-        }
-    }
-}
-
-#[async_trait]
-impl Subscriber for DashboardSubscriber {
+    // event handlers
     fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
         if self.is_worker() {
             return Ok(());
@@ -384,78 +354,7 @@ impl Subscriber for DashboardSubscriber {
         self.on_exec_start_with_id(query_id.clone(), &query_id, physical_plan)
     }
 
-    async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
-        if self.is_worker() {
-            return Ok(());
-        }
-
-        self.enqueue_no_body(
-            format!("engine/query/{}/exec/{}/start", query_id, node_id),
-            "exec_operator_start",
-        );
-        Ok(())
-    }
-
-    async fn on_exec_emit_stats_with_id(
-        &self,
-        query_id: QueryID,
-        execution_id: &str,
-        stats: Arc<Vec<(NodeID, Stats)>>,
-    ) -> DaftResult<()> {
-        self.enqueue_json(
-            format!("engine/query/{}/exec/emit_stats", query_id),
-            "exec_emit_stats",
-            &daft_dashboard::engine::ExecEmitStatsArgsSend {
-                source_id: execution_id.to_string(),
-                stats: stats
-                    .iter()
-                    .map(|(node_id, snapshot)| {
-                        (
-                            *node_id,
-                            snapshot
-                                .0
-                                .iter()
-                                .map(|(name, stat)| (name.to_string(), stat.clone()))
-                                .collect(),
-                        )
-                    })
-                    .collect(),
-            },
-        );
-        Ok(())
-    }
-
-    async fn on_exec_emit_stats(
-        &self,
-        query_id: QueryID,
-        stats: Arc<Vec<(NodeID, Stats)>>,
-    ) -> DaftResult<()> {
-        if self.is_worker() {
-            return Ok(());
-        }
-
-        let source_id = self
-            .execution_ids
-            .get(&query_id)
-            .map(|id| id.clone())
-            .unwrap_or_else(|| "unknown".to_string());
-        self.on_exec_emit_stats_with_id(query_id, &source_id, stats)
-            .await
-    }
-
-    async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
-        if self.is_worker() {
-            return Ok(());
-        }
-
-        self.enqueue_no_body(
-            format!("engine/query/{}/exec/{}/end", query_id, node_id),
-            "exec_operator_end",
-        );
-        Ok(())
-    }
-
-    async fn on_exec_end_with_id(&self, query_id: QueryID, _execution_id: &str) -> DaftResult<()> {
+    fn on_exec_end_with_id(&self, query_id: QueryID, _execution_id: &str) -> DaftResult<()> {
         if self.is_worker() {
             return Ok(());
         }
@@ -472,11 +371,11 @@ impl Subscriber for DashboardSubscriber {
         Ok(())
     }
 
-    async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
-        self.on_exec_end_with_id(query_id, "unknown").await
+    fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
+        self.on_exec_end_with_id(query_id, "unknown")
     }
 
-    async fn on_operator_start(&self, event: Arc<OperatorStartEvent>) -> DaftResult<()> {
+    fn on_operator_start(&self, event: &OperatorStartEvent) -> DaftResult<()> {
         if self.is_worker() {
             return Ok(());
         }
@@ -491,7 +390,7 @@ impl Subscriber for DashboardSubscriber {
         Ok(())
     }
 
-    async fn on_stats(&self, event: Arc<StatsEvent>) -> DaftResult<()> {
+    fn on_stats(&self, event: &StatsEvent) -> DaftResult<()> {
         if self.is_worker() {
             return Ok(());
         }
@@ -527,7 +426,7 @@ impl Subscriber for DashboardSubscriber {
         Ok(())
     }
 
-    async fn on_operator_end(&self, event: Arc<OperatorEndEvent>) -> DaftResult<()> {
+    fn on_operator_end(&self, event: &OperatorEndEvent) -> DaftResult<()> {
         if self.is_worker() {
             return Ok(());
         }
@@ -541,12 +440,71 @@ impl Subscriber for DashboardSubscriber {
         );
         Ok(())
     }
+}
 
-    async fn on_event(&self, event: Event) -> DaftResult<()> {
+impl Drop for DashboardSubscriber {
+    fn drop(&mut self) {
+        // Close channel so worker drains buffered events and exits.
+        let _ = self.dashboard_tx.take();
+
+        // Wait up to timeout for clean drain; then force abort.
+        if let Some(mut worker) = self.dashboard_worker.take() {
+            let shutdown = self.runtime.block_within_async_context(async move {
+                if tokio::time::timeout(
+                    std::time::Duration::from_millis(DASHBOARD_SHUTDOWN_TIMEOUT_MS),
+                    &mut worker,
+                )
+                .await
+                .is_err()
+                {
+                    log::warn!("Dashboard worker did not drain in time, aborting");
+                    worker.abort();
+                }
+            });
+
+            if let Err(e) = shutdown {
+                log::warn!("Dashboard worker shutdown encountered an error: {e}");
+            }
+        }
+    }
+}
+
+impl Subscriber for DashboardSubscriber {
+    fn on_event(&self, event: Event) -> DaftResult<()> {
         match event {
-            Event::Stats(e) => self.on_stats(e).await?,
-            Event::OperatorStart(e) => self.on_operator_start(e).await?,
-            Event::OperatorEnd(e) => self.on_operator_end(e).await?,
+            Event::QueryStart(e) => {
+                self.on_query_start(e.header.query_id, e.metadata)?;
+            }
+            Event::QueryEnd(e) => {
+                self.on_query_end(e.header.query_id, e.result)?;
+            }
+            Event::OptimizationStart(e) => {
+                self.on_optimization_start(e.header.query_id)?;
+            }
+            Event::OptimizationComplete(e) => {
+                self.on_optimization_end(e.header.query_id, e.optimized_plan)?;
+            }
+            Event::ExecStart(e) => {
+                self.on_exec_start(e.header.query_id, e.physical_plan)?;
+            }
+            Event::ExecEnd(e) => {
+                self.on_exec_end(e.header.query_id)?;
+            }
+            Event::OperatorStart(e) => {
+                self.on_operator_start(&e)?;
+            }
+            Event::OperatorEnd(e) => {
+                self.on_operator_end(&e)?;
+            }
+            Event::Stats(e) => {
+                self.on_stats(&e)?;
+            }
+            Event::ProcessStats(_e) => {}
+            Event::ResultOut(e) => {
+                if let Some(result) = &e.data {
+                    self.on_result_out(e.header.query_id.clone(), result.clone())?;
+                }
+            }
         }
         Ok(())
     }

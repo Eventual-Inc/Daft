@@ -485,6 +485,34 @@ fn translate_helper(
                 ))
             }
         }
+        LogicalPlan::AsofJoin(asof_join) => {
+            let (left_plan, mut left_inputs) =
+                translate_helper(&asof_join.left, source_counter, psets)?;
+            let (right_plan, right_inputs) =
+                translate_helper(&asof_join.right, source_counter, psets)?;
+
+            left_inputs.extend(right_inputs);
+
+            let left_by = BoundExpr::bind_all(&asof_join.left_by, left_plan.schema())?;
+            let right_by = BoundExpr::bind_all(&asof_join.right_by, right_plan.schema())?;
+            let left_on = BoundExpr::try_new(asof_join.left_on.clone(), left_plan.schema())?;
+            let right_on = BoundExpr::try_new(asof_join.right_on.clone(), right_plan.schema())?;
+
+            Ok((
+                LocalPhysicalPlan::asof_join(
+                    left_plan,
+                    right_plan,
+                    left_by,
+                    right_by,
+                    left_on,
+                    right_on,
+                    asof_join.output_schema.clone(),
+                    asof_join.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                left_inputs,
+            ))
+        }
         LogicalPlan::Distinct(distinct) => {
             let schema = distinct.input.schema();
             let (input_plan, inputs) = translate_helper(&distinct.input, source_counter, psets)?;
