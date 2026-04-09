@@ -214,16 +214,16 @@ impl Broadcastable for StructArray {
         }
 
         if self.is_valid(0) {
+            let field = Arc::new(Field::new(self.name(), self.data_type().clone()));
+            if self.children.is_empty() {
+                return Ok(Self::new_empty(field, num, None));
+            }
             let broadcasted_children = self
                 .children
                 .iter()
                 .map(|child| child.broadcast(num))
                 .collect::<DaftResult<Vec<_>>>()?;
-            Ok(Self::new(
-                Arc::new(Field::new(self.name(), self.data_type().clone())),
-                broadcasted_children,
-                None,
-            ))
+            Ok(Self::new(field, broadcasted_children, None))
         } else {
             Ok(Self::full_null(self.name(), self.data_type(), num))
         }
