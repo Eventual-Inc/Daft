@@ -17,8 +17,9 @@ export default function TreeLayout<T>({ node, getChildren, renderNode }: TreeLay
 
       {children.length > 0 && (
         <div className="flex flex-col items-center">
-          {/* Vertical line from parent */}
-          <div className="w-px h-6 bg-zinc-600" />
+          {/* Vertical line from parent (data flows up into parent) */}
+          <div className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-l-transparent border-r-transparent border-b-zinc-600" />
+          <div className="w-px h-[18px] bg-zinc-600" />
 
           {children.length > 1 ? (
             <div className="flex items-start">

@@ -2377,7 +2377,6 @@ dependencies = [
 name = "daft-context"
 version = "0.3.0-dev0"
 dependencies = [
- "async-trait",
  "common-daft-config",
  "common-error",
  "common-metrics",
@@ -2422,7 +2421,6 @@ dependencies = [
  "daft-sketch",
  "derive_more",
  "fastrand 2.3.0",
- "fnv",
  "html-escape",
  "hyperloglog",
  "image",
@@ -2435,6 +2433,7 @@ dependencies = [
  "rstest",
  "serde",
  "sketches-ddsketch",
+ "smallvec",
  "xxhash-rust",
 ]
 
@@ -2524,6 +2523,7 @@ dependencies = [
  "common-resource-request",
  "common-runtime",
  "common-treenode",
+ "daft-checkpoint",
  "daft-context",
  "daft-dsl",
  "daft-functions",
@@ -2736,6 +2736,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-io",
+ "rustc-hash 1.1.0",
  "serde",
  "snafu",
  "tiktoken-rs",
@@ -2780,6 +2781,17 @@ dependencies = [
  "serde",
  "typetag",
  "unicode-normalization",
+]
+
+[[package]]
+name = "daft-groupby"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow",
+ "common-error",
+ "daft-core",
+ "hashbrown 0.16.1",
+ "smallvec",
 ]
 
 [[package]]
@@ -2914,12 +2926,14 @@ dependencies = [
  "common-system-info",
  "common-tracing",
  "console",
+ "daft-checkpoint",
  "daft-context",
  "daft-core",
  "daft-csv",
  "daft-dsl",
  "daft-functions-list",
  "daft-functions-uri",
+ "daft-groupby",
  "daft-io",
  "daft-json",
  "daft-local-plan",
@@ -3116,6 +3130,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions-list",
+ "daft-groupby",
  "daft-image",
  "fnv",
  "futures",
@@ -7722,9 +7737,9 @@ dependencies = [
 
 [[package]]
 name = "tiktoken-rs"
-version = "0.7.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25563eeba904d770acf527e8b370fe9a5547bacd20ff84a0b6c3bc41288e5625"
+checksum = "3a19830747d9034cd9da43a60eaa8e552dfda7712424aebf187b7a60126bae0d"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
