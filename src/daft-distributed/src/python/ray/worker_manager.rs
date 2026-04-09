@@ -170,6 +170,10 @@ impl WorkerManager for RayWorkerManager {
     /// Autoscale the Ray cluster by requesting resources from Ray's autoscaler.
     ///
     /// Constraints we operate under:
+    /// - There is no reliable programmatic way for Daft to know the cluster's true autoscaling
+    ///   ceiling ahead of time (for example, KubeRay `maxReplicas` or other external limits).
+    /// - Daft can only observe currently registered Ray workers; it cannot directly account for
+    ///   capacity that has already been requested but is still provisioning.
     /// - `ray.autoscaler.sdk.request_resources(bundles=...)` is **asynchronous** and each
     ///   call **replaces** the current demand (it is not additive).
     /// - Ray's autoscaler reconciliation loop processes the request every ~5 seconds by default
