@@ -100,6 +100,8 @@ pub struct BaseCounters {
     duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
+    bytes_in: Counter,
+    bytes_out: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -110,6 +112,8 @@ impl BaseCounters {
             duration_us: meter.duration_us_metric(),
             rows_in: meter.rows_in_metric(),
             rows_out: meter.rows_out_metric(),
+            bytes_in: meter.bytes_in_metric(),
+            bytes_out: meter.bytes_out_metric(),
             node_kv,
         }
     }
@@ -126,11 +130,21 @@ impl BaseCounters {
         self.rows_out.add(v, self.node_kv.as_slice());
     }
 
+    pub fn add_bytes_in(&self, v: u64) {
+        self.bytes_in.add(v, self.node_kv.as_slice());
+    }
+
+    pub fn add_bytes_out(&self, v: u64) {
+        self.bytes_out.add(v, self.node_kv.as_slice());
+    }
+
     pub fn export_default_snapshot(&self) -> StatSnapshot {
         StatSnapshot::Default(DefaultSnapshot {
             cpu_us: self.duration_us.load(Ordering::Relaxed),
             rows_in: self.rows_in.load(Ordering::Relaxed),
             rows_out: self.rows_out.load(Ordering::Relaxed),
+            bytes_in: self.bytes_in.load(Ordering::Relaxed),
+            bytes_out: self.bytes_out.load(Ordering::Relaxed),
         })
     }
 }
@@ -158,6 +172,8 @@ impl RuntimeStats for DefaultRuntimeStats {
 
         self.base.add_rows_in(snapshot.rows_in);
         self.base.add_rows_out(snapshot.rows_out);
+        self.base.add_bytes_in(snapshot.bytes_in);
+        self.base.add_bytes_out(snapshot.bytes_out);
     }
 
     fn export_snapshot(&self) -> StatSnapshot {

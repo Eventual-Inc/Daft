@@ -220,6 +220,7 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
                 };
                 if let Some(mp) = mp {
                     runtime_stats.add_rows_out(mp.len() as u64);
+                    runtime_stats.add_bytes_out(mp.size_bytes() as u64);
                     let _ = output_tx
                         .send(PipelineMessage::Morsel {
                             input_id,
@@ -243,6 +244,7 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
                     } => {
                         if let Some(mp) = output {
                             runtime_stats.add_rows_out(mp.len() as u64);
+                            runtime_stats.add_bytes_out(mp.size_bytes() as u64);
                             let _ = output_tx
                                 .send(PipelineMessage::Morsel {
                                     input_id,
@@ -255,6 +257,7 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
                     StreamingSinkFinalizeOutput::Finished(output) => {
                         if let Some(mp) = output {
                             runtime_stats.add_rows_out(mp.len() as u64);
+                            runtime_stats.add_bytes_out(mp.size_bytes() as u64);
                             let _ = output_tx
                                 .send(PipelineMessage::Morsel {
                                     input_id,
@@ -295,6 +298,9 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
         );
         if let Some(mp) = mp {
             per_input.runtime_stats.add_rows_out(mp.len() as u64);
+            per_input
+                .runtime_stats
+                .add_bytes_out(mp.size_bytes() as u64);
             if self
                 .output_sender
                 .send(PipelineMessage::Morsel {
@@ -355,6 +361,9 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
                     }
                     let per_input = self.get_or_create_input(input_id)?;
                     per_input.runtime_stats.add_rows_in(partition.len() as u64);
+                    per_input
+                        .runtime_stats
+                        .add_bytes_in(partition.size_bytes() as u64);
                     self.batch_manager.push(input_id, partition);
                     self.dispatch_ready_batches(input_id)?;
                     ControlFlow::Continue(())
