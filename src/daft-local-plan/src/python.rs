@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use crate::{ExecutionStats, LocalPhysicalPlanRef, translate};
-use crate::{Input, LocalPhysicalPlan, RepartitionWriteBackend};
+use crate::{FlightShufflePartitionRef, Input, LocalPhysicalPlan, RepartitionWriteBackend};
 
 #[pyclass(
     module = "daft.daft",
@@ -25,6 +25,78 @@ pub struct PyShuffleWriteInfo {
     pub shuffle_id: u64,
     #[pyo3(get)]
     pub num_partitions: usize,
+}
+
+#[pyclass(
+    module = "daft.daft",
+    name = "FlightShufflePartitionRef",
+    frozen,
+    from_py_object
+)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PyFlightShufflePartitionRef {
+    pub inner: FlightShufflePartitionRef,
+}
+
+impl_bincode_py_state_serialization!(PyFlightShufflePartitionRef);
+
+#[pymethods]
+impl PyFlightShufflePartitionRef {
+    #[new]
+    pub fn new(
+        shuffle_id: u64,
+        server_address: String,
+        partition_ref_id: u64,
+        num_rows: usize,
+        size_bytes: usize,
+    ) -> Self {
+        Self {
+            inner: FlightShufflePartitionRef {
+                shuffle_id,
+                server_address,
+                partition_ref_id,
+                num_rows,
+                size_bytes,
+            },
+        }
+    }
+
+    #[getter]
+    pub fn shuffle_id(&self) -> u64 {
+        self.inner.shuffle_id
+    }
+
+    #[getter]
+    pub fn server_address(&self) -> String {
+        self.inner.server_address.clone()
+    }
+
+    #[getter]
+    pub fn partition_ref_id(&self) -> u64 {
+        self.inner.partition_ref_id
+    }
+
+    #[getter]
+    pub fn num_rows(&self) -> usize {
+        self.inner.num_rows
+    }
+
+    #[getter]
+    pub fn size_bytes(&self) -> usize {
+        self.inner.size_bytes
+    }
+}
+
+impl From<FlightShufflePartitionRef> for PyFlightShufflePartitionRef {
+    fn from(inner: FlightShufflePartitionRef) -> Self {
+        Self { inner }
+    }
+}
+
+impl From<PyFlightShufflePartitionRef> for FlightShufflePartitionRef {
+    fn from(py_ref: PyFlightShufflePartitionRef) -> Self {
+        py_ref.inner
+    }
 }
 
 #[pyclass(module = "daft.daft", name = "LocalPhysicalPlan")]
@@ -170,6 +242,7 @@ impl From<ExecutionStats> for PyExecutionStats {
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    parent.add_class::<PyFlightShufflePartitionRef>()?;
     parent.add_class::<PyLocalPhysicalPlan>()?;
     parent.add_class::<PyInput>()?;
     parent.add_class::<PyExecutionStats>()?;
