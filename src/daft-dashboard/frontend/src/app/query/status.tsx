@@ -123,10 +123,11 @@ const LastHeartbeat = ({
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentTime(Date.now());
-    }, 1000);
+    }, 10000);
     return () => clearInterval(interval);
   }, []);
 
+  // TODO comparing clocks wrong
   const ago = Math.round(currentTime / 1000 - last_heartbeat_sec);
 
   if (ago < 10) return null;
