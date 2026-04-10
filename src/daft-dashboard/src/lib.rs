@@ -36,6 +36,8 @@ use crate::state::{DashboardState, GLOBAL_DASHBOARD_STATE, QueryState};
 pub const DEFAULT_SERVER_ADDR: Ipv4Addr = Ipv4Addr::UNSPECIFIED;
 pub const DEFAULT_SERVER_PORT: u16 = 3238;
 
+const DEAD_QUERY_THRESHOLD_SEC: f64 = 60.;
+
 fn generate_interactive_html(
     record_batch: &RecordBatch,
     df_id: &str,
@@ -319,12 +321,11 @@ pub async fn launch_server(
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs_f64()
-                - 60.;
+                - DEAD_QUERY_THRESHOLD_SEC;
 
             let state = GLOBAL_DASHBOARD_STATE.clone();
 
             for mut q in state.queries.iter_mut() {
-                // TODO comparing clocks wrong!
                 let QueryState::Executing {
                     last_heartbeat_sec, ..
                 } = q.state

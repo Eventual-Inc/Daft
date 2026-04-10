@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{collections::HashMap, sync::Arc, time::SystemTime};
 
 use axum::{
     Json, Router,
@@ -83,7 +79,7 @@ pub struct QueryHeartbeatArgs {
 async fn query_heartbeat(
     State(state): State<Arc<DashboardState>>,
     Path(query_id): Path<QueryID>,
-    Json(args): Json<QueryHeartbeatArgs>,
+    Json(_args): Json<QueryHeartbeatArgs>,
 ) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
@@ -95,17 +91,11 @@ async fn query_heartbeat(
         QueryState::Executing {
             last_heartbeat_sec, ..
         } => {
-            if args.timestamp_sec <= *last_heartbeat_sec {
-                tracing::warn!(
-                    "Query `{}` got stale heartbeat {:?} (last heartbeat: {:?})",
-                    query_id,
-                    SystemTime::UNIX_EPOCH + Duration::from_secs_f64(args.timestamp_sec),
-                    SystemTime::UNIX_EPOCH + Duration::from_secs_f64(*last_heartbeat_sec),
-                );
-                return StatusCode::BAD_REQUEST;
-            }
-
-            *last_heartbeat_sec = args.timestamp_sec;
+            // Record the dashboard server's clock as the heartbeat even though
+            // the request includes a timestamp according to the runner's clock,
+            // because we care about how *recent* the heartbeat is, and we don't
+            // have the runner's *current* clock to compare against.
+            *last_heartbeat_sec = secs_from_epoch();
         }
         _ => {
             tracing::error!(
@@ -261,7 +251,6 @@ async fn exec_start(
                     physical_plan: args.physical_plan.clone(),
                     operators: parse_physical_plan(&args.physical_plan),
                 },
-                // TODO this uses the dashboard server's clock, but heartbeats use the query runner's clock
                 last_heartbeat_sec: secs_from_epoch(),
             };
 
