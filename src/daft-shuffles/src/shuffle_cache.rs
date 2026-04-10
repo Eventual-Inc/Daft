@@ -167,10 +167,7 @@ impl InProgressShuffleCache {
             return Err(DaftError::InternalError(error.clone()));
         }
 
-        let writer_senders = state
-            .writer_senders
-            .take()
-            .expect("writer_senders should be present");
+        let writer_senders = std::mem::take(&mut state.writer_senders);
         let writer_tasks = std::mem::take(&mut state.writer_tasks);
 
         // Close the writer tasks
@@ -218,11 +215,13 @@ impl InProgressShuffleCache {
     }
 
     async fn close_internal(
-        writer_senders: Vec<async_channel::Sender<MicroPartition>>,
+        writer_senders: Option<Vec<async_channel::Sender<MicroPartition>>>,
         writer_tasks: Vec<WriterTask>,
     ) -> DaftResult<Vec<WriterTaskResult>> {
         // Drop the writer senders so that the writer tasks can exit
-        drop(writer_senders);
+        if let Some(writer_senders) = writer_senders {
+            drop(writer_senders);
+        }
 
         // Wait for the writer tasks to exit
         let results = futures::future::try_join_all(writer_tasks)
