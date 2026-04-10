@@ -169,6 +169,7 @@ impl<'py> IntoPyObject<'py> for Literal {
             Self::List(series) => Ok(PySeries { series }
                 .to_pylist_impl(py, PyMapConversionMode::AssociationList)?
                 .into_any()),
+            Self::Uuid(uuid) => uuid.to_string().into_bound_py_any(py),
             Self::Python(val) => val.0.as_ref().into_bound_py_any(py),
             Self::Struct(entries) => entries.into_bound_py_any(py),
             Self::File(f) => {

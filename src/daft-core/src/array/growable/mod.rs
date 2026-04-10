@@ -192,6 +192,7 @@ impl_growable_array!(
 
 impl_growable_array!(DateArray, logical_growable::LogicalDateGrowable<'a>);
 impl_growable_array!(TimeArray, logical_growable::LogicalTimeGrowable<'a>);
+impl_growable_array!(UuidArray, logical_growable::LogicalUuidGrowable<'a>);
 impl_growable_array!(
     EmbeddingArray,
     logical_growable::LogicalEmbeddingGrowable<'a>

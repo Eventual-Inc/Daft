@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::dtype::{DAFT_SUPER_EXTENSION_NAME, DataType};
 
+const ARROW_UUID_EXTENSION_NAME: &str = "arrow.uuid";
+
 /// Registry that maps extension type names to their original arrow-rs storage DataType
 /// (before Daft coercion, e.g. Binary instead of LargeBinary). This allows `to_arrow`
 /// to reverse the coercion so PyArrow sees the original storage type.
@@ -110,6 +112,15 @@ impl Field {
                     metadata_map.insert(EXTENSION_TYPE_METADATA_KEY.to_string(), metadata.clone());
                 }
                 physical.with_metadata(metadata_map)
+            }
+            // Use the canonical arrow extension type `arrow.uuid`
+            DataType::Uuid => {
+                let mut metadata_map = HashMap::new();
+                metadata_map.insert(
+                    EXTENSION_TYPE_NAME_KEY.to_string(),
+                    ARROW_UUID_EXTENSION_NAME.to_string(),
+                );
+                self.to_physical().to_arrow()?.with_metadata(metadata_map)
             }
             dtype @ DataType::Embedding(..)
             | dtype @ DataType::Image(..)
@@ -214,51 +225,63 @@ impl TryFrom<&arrow_schema::Field> for Field {
     type Error = DaftError;
 
     fn try_from(field: &arrow_schema::Field) -> Result<Self, Self::Error> {
-        if field.extension_type_name() == Some(DAFT_SUPER_EXTENSION_NAME) {
-            let metadata = field.extension_type_metadata()
-                         .expect("DataType::try_from<&arrow_schema::Field> failed to get metadata for extension type");
-            let dtype = DataType::from_json(metadata)?;
+        match field.extension_type_name() {
+            Some(DAFT_SUPER_EXTENSION_NAME) => {
+                let metadata = field.extension_type_metadata()
+                    .expect("DataType::try_from<&arrow_schema::Field> failed to get metadata for extension type");
+                let dtype = DataType::from_json(metadata)?;
 
-            let mut metadata = field.metadata().clone();
-            metadata.remove(EXTENSION_TYPE_NAME_KEY);
-            metadata.remove(EXTENSION_TYPE_METADATA_KEY);
+                let mut metadata = field.metadata().clone();
+                metadata.remove(EXTENSION_TYPE_NAME_KEY);
+                metadata.remove(EXTENSION_TYPE_METADATA_KEY);
 
-            Ok(Self {
-                name: Arc::from(field.name().as_str()),
-                dtype,
-                metadata: Arc::new(metadata.into_iter().collect()),
-            })
-        } else if let Some(extension_name) = field.extension_type_name() {
-            // Generic extension type (e.g. daft.uuid)
-            let physical = DataType::try_from(field.data_type())?;
-            let ext_metadata = field.extension_type_metadata().map(|s| s.to_string());
+                Ok(Self {
+                    name: Arc::from(field.name().as_str()),
+                    dtype,
+                    metadata: Arc::new(metadata.into_iter().collect()),
+                })
+            }
+            Some(ARROW_UUID_EXTENSION_NAME) => {
+                let mut metadata = field.metadata().clone();
+                metadata.remove(EXTENSION_TYPE_NAME_KEY);
 
-            // Remember the original arrow storage type so to_arrow() can
-            // reverse the coercion (e.g. Binary instead of LargeBinary).
-            EXTENSION_TYPE_REGISTRY
-                .lock()
-                .unwrap()
-                .insert(extension_name.to_string(), field.data_type().clone());
+                Ok(Self {
+                    name: Arc::from(field.name().as_str()),
+                    dtype: DataType::Uuid,
+                    metadata: Arc::new(metadata.into_iter().collect()),
+                })
+            }
+            Some(extension_name) => {
+                // Generic extension type (e.g. daft.uuid)
+                let physical = DataType::try_from(field.data_type())?;
+                let ext_metadata = field.extension_type_metadata().map(|s| s.to_string());
 
-            let mut field_metadata = field.metadata().clone();
-            field_metadata.remove(EXTENSION_TYPE_NAME_KEY);
-            field_metadata.remove(EXTENSION_TYPE_METADATA_KEY);
+                // Remember the original arrow storage type so to_arrow() can
+                // reverse the coercion (e.g. Binary instead of LargeBinary).
+                EXTENSION_TYPE_REGISTRY
+                    .lock()
+                    .unwrap()
+                    .insert(extension_name.to_string(), field.data_type().clone());
 
-            Ok(Self {
-                name: Arc::from(field.name().as_str()),
-                dtype: DataType::Extension(
-                    extension_name.to_string(),
-                    Box::new(physical),
-                    ext_metadata,
-                ),
-                metadata: Arc::new(field_metadata.into_iter().collect()),
-            })
-        } else {
-            Ok(Self {
+                let mut field_metadata = field.metadata().clone();
+                field_metadata.remove(EXTENSION_TYPE_NAME_KEY);
+                field_metadata.remove(EXTENSION_TYPE_METADATA_KEY);
+
+                Ok(Self {
+                    name: Arc::from(field.name().as_str()),
+                    dtype: DataType::Extension(
+                        extension_name.to_string(),
+                        Box::new(physical),
+                        ext_metadata,
+                    ),
+                    metadata: Arc::new(field_metadata.into_iter().collect()),
+                })
+            }
+            None => Ok(Self {
                 name: Arc::from(field.name().as_str()),
                 dtype: field.try_into()?,
                 metadata: Arc::new(field.metadata().clone().into_iter().collect()),
-            })
+            }),
         }
     }
 }
