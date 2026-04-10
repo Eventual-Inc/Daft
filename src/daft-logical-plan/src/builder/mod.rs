@@ -17,8 +17,8 @@ use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
-    Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg, left_col,
-    resolved_col, right_col, unresolved_col,
+    Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg,
+    join::get_right_cols_to_drop, left_col, resolved_col, right_col, unresolved_col,
 };
 use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use daft_schema::schema::{Schema, SchemaRef};
@@ -738,6 +738,57 @@ impl LogicalPlanBuilder {
         let logical_plan: LogicalPlan =
             ops::Join::try_new(left_plan, right_plan, combined_on, join_type, join_strategy)?
                 .into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn join_asof<Right: Into<LogicalPlanRef>>(
+        &self,
+        right: Right,
+        left_by: Vec<ExprRef>,
+        right_by: Vec<ExprRef>,
+        left_on: ExprRef,
+        right_on: ExprRef,
+        options: JoinOptions,
+    ) -> DaftResult<Self> {
+        let left_plan = self.plan.clone();
+        let right_plan = right.into();
+
+        let right_cols_to_drop =
+            get_right_cols_to_drop(&right_by, &left_on, &right_on, |e| {
+                match e.unwrap_alias().0.as_ref() {
+                    Expr::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => {
+                        Some(name.to_string())
+                    }
+                    _ => None,
+                }
+            });
+
+        let (right_plan, right_by, right_on) = ops::AsofJoin::deduplicate_asof_join_columns(
+            left_plan.clone(),
+            right_plan,
+            right_by,
+            right_on,
+            &right_cols_to_drop,
+            &options,
+        )?;
+
+        let expr_resolver = ExprResolver::default();
+        let left_by = expr_resolver.resolve(left_by, left_plan.clone())?;
+        let right_by = expr_resolver.resolve(right_by, right_plan.clone())?;
+        let left_on = expr_resolver.resolve_single(left_on, left_plan.clone())?;
+        let right_on = expr_resolver.resolve_single(right_on, right_plan.clone())?;
+
+        let logical_plan: LogicalPlan = ops::AsofJoin::try_new(
+            left_plan,
+            right_plan,
+            left_by,
+            right_by,
+            left_on,
+            right_on,
+            right_cols_to_drop,
+        )?
+        .into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -1509,6 +1560,30 @@ impl PyLogicalPlanBuilder {
         }
 
         Ok(result.into())
+    }
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (right, left_by, right_by, left_on, right_on, prefix, suffix))]
+    pub fn join_asof(
+        &self,
+        right: &Self,
+        left_by: Vec<PyExpr>,
+        right_by: Vec<PyExpr>,
+        left_on: PyExpr,
+        right_on: PyExpr,
+        prefix: Option<String>,
+        suffix: Option<String>,
+    ) -> PyResult<Self> {
+        Ok(self
+            .builder
+            .join_asof(
+                &right.builder,
+                pyexprs_to_exprs(left_by),
+                pyexprs_to_exprs(right_by),
+                left_on.into(),
+                right_on.into(),
+                JoinOptions { prefix, suffix },
+            )?
+            .into())
     }
 
     pub fn concat(&self, other: &Self) -> DaftResult<Self> {

@@ -195,13 +195,13 @@ if __name__ == "__main__":
         .with_column(
             "filename_sanitized",
             sanitize_filename(
-                col("path").split("/").list.get(-1).split(".").list.get(0)
+                col("path").split("/")[-1].split(".")[0]
             ),
         )
         .with_column(
             "resampled_path",
             write_audio_to_mp3(
-                audio=col("audio").struct.get("audio_array"),
+                audio=col("audio")["audio_array"],
                 destination=format(
                     "{}{}{}", lit(DEST_URI), col("filename_sanitized"), lit(".mp3")
                 ),

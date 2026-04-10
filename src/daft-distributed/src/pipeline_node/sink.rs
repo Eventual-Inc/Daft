@@ -34,6 +34,7 @@ use crate::{
 pub struct WriteStats {
     duration_us: Counter,
     rows_in: Counter,
+    bytes_in: Counter,
     rows_written: Counter,
     bytes_written: Counter,
     node_kv: Vec<KeyValue>,
@@ -45,6 +46,7 @@ impl WriteStats {
         Self {
             duration_us: meter.duration_us_metric(),
             rows_in: meter.rows_in_metric(),
+            bytes_in: meter.bytes_in_metric(),
             rows_written: meter.u64_counter_with_desc_and_unit(
                 ROWS_WRITTEN_KEY,
                 None,
@@ -68,6 +70,8 @@ impl RuntimeStats for WriteStats {
         self.duration_us
             .add(snapshot.cpu_us, self.node_kv.as_slice());
         self.rows_in.add(snapshot.rows_in, self.node_kv.as_slice());
+        self.bytes_in
+            .add(snapshot.bytes_in, self.node_kv.as_slice());
         self.rows_written
             .add(snapshot.rows_written, self.node_kv.as_slice());
         self.bytes_written
@@ -80,6 +84,7 @@ impl RuntimeStats for WriteStats {
             rows_in: self.rows_in.load(Ordering::Relaxed),
             rows_written: self.rows_written.load(Ordering::Relaxed),
             bytes_written: self.bytes_written.load(Ordering::Relaxed),
+            bytes_in: self.bytes_in.load(Ordering::Relaxed),
         })
     }
 }

@@ -52,8 +52,10 @@ impl RuntimeStats for LimitStats {
                     // The first limit is used for pruning, the second limit is for the final output
                     if phase == FIRST_LIMIT_PHASE {
                         self.base.add_rows_in(snapshot.rows_in);
+                        self.base.add_bytes_in(snapshot.bytes_in);
                     } else if phase == SECOND_LIMIT_PHASE {
                         self.base.add_rows_out(snapshot.rows_out);
+                        self.base.add_bytes_out(snapshot.bytes_out);
                     }
                 }
             }
@@ -62,6 +64,7 @@ impl RuntimeStats for LimitStats {
                     && phase == SECOND_LIMIT_PHASE
                 {
                     self.base.add_rows_out(snapshot.rows_out);
+                    self.base.add_bytes_out(snapshot.bytes_out);
                 }
             }
             _ => {} // Limit don't receive stats from other Swordfish nodes

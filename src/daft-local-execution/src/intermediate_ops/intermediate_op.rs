@@ -185,6 +185,7 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
         self.batch_manager
             .record_completion(runtime_stats.as_ref(), result.len(), elapsed);
         runtime_stats.add_rows_out(result.len() as u64);
+        runtime_stats.add_bytes_out(result.size_bytes() as u64);
 
         if self
             .output_sender
@@ -227,8 +228,9 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
                         self.stats_manager.activate_node(self.node_id);
                         self.node_initialized = true;
                     }
-                    self.get_or_create_stats(input_id)
-                        .add_rows_in(partition.len() as u64);
+                    let stats = self.get_or_create_stats(input_id);
+                    stats.add_rows_in(partition.len() as u64);
+                    stats.add_bytes_in(partition.size_bytes() as u64);
                     self.batch_manager.push(input_id, partition);
                     self.try_dispatch()?;
                     ControlFlow::Continue(())

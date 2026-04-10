@@ -80,7 +80,10 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
             let arr = s.interval().unwrap();
             arr.html_value(idx, truncate)
         }
-
+        DataType::Uuid => {
+            let arr = s.uuid().unwrap();
+            arr.html_value(idx, truncate)
+        }
         DataType::Binary => {
             let arr = s.binary().unwrap();
             arr.html_value(idx, truncate)

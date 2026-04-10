@@ -168,6 +168,23 @@ impl MapArray {
     }
 }
 
+impl UuidArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+
+        if self.physical.is_valid(idx) {
+            Literal::Uuid(uuid::Uuid::from_slice(self.physical.get(idx).unwrap()).unwrap())
+        } else {
+            Literal::Null
+        }
+    }
+}
+
 impl ExtensionArray {
     pub fn get_lit(&self, idx: usize) -> Literal {
         assert!(

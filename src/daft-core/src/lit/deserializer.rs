@@ -304,6 +304,7 @@ impl<'de> Deserializer<'de> for OwnedLiteralDeserializer {
             Literal::Interval(..) => Err(LitError::custom("Not implemented: Interval")),
             Literal::Decimal(_, _, _) => Err(LitError::custom("Not implemented: Decimal")),
             Literal::List(_) => Err(LitError::custom("Not implemented: List")),
+            Literal::Uuid(_) => Err(LitError::custom("Not implemented: UUID")),
             #[cfg(feature = "python")]
             Literal::Python(_) => Err(LitError::custom("Not implemented: Python")),
             Literal::Struct(_) => Err(LitError::custom("Not implemented: Struct")),
@@ -353,6 +354,7 @@ impl<'de> Deserializer<'de> for LiteralDeserializer<'de> {
             Literal::Interval(..) => Err(LitError::custom("Not implemented: Interval")),
             Literal::Decimal(_, _, _) => Err(LitError::custom("Not implemented: Decimal")),
             Literal::List(s) => visitor.visit_seq(SeriesDeserializer::new(s)),
+            Literal::Uuid(_) => Err(LitError::custom("Not implemented: UUID")),
             #[cfg(feature = "python")]
             Literal::Python(_) => Err(LitError::custom("Not implemented: Python")),
             Literal::File(_) => Err(LitError::custom("Not implemented: File")),

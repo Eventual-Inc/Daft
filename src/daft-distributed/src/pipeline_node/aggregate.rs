@@ -236,7 +236,11 @@ fn split_groupby_aggs(
 impl LogicalPlanToPipelineNodeTranslator {
     /// Generate PipelineNodes for aggregates with no pre-aggregation.
     /// This is only necessary if the pre-aggregation (first stage aggregation) is empty.
-    /// That is currently only applicable for MapGroup aggregations
+    /// That is currently only applicable for:
+    /// - MapGroups aggregations, because they can't be decomposed
+    /// - ApproxCountDistinct aggregations, because we can't merge HLL sketches
+    /// - List aggregations, because it is more efficient to do a single post-repartition aggregate
+    /// - Decimal128 aggregations, because it messed with the supertyping logic
     fn gen_without_pre_agg(
         &mut self,
         input_node: DistributedPipelineNode,
@@ -387,14 +391,13 @@ impl LogicalPlanToPipelineNodeTranslator {
         )?;
 
         if split_details.first_stage_aggs.is_empty()
-        // Special case for ApproxCountDistinct
-        // Right now, we can't do a pre-aggregation because we can't recursively merge HLL sketches
-        // TODO: Look for alternative approaches for this
+        // Special case for:
+        // - ApproxCountDistinct: we can't recursively merge HLL sketches  TODO: Look for alternative approaches for this
+        // - List: it is more efficient to do a single post-repartition aggregate
+        // - Decimal128: we can't do a pre-aggregation because decimal dtype will change in swordfish's own two stage aggregation
             || aggregations
                 .iter()
-                .any(|agg| matches!(agg.as_ref(), AggExpr::ApproxCountDistinct(_)))
-            // Special case for Decimal128
-            // Right now, we can't do a pre-aggregation because decimal dtype will change in swordfish's own two stage aggregation
+                .any(|agg| matches!(agg.as_ref(), AggExpr::ApproxCountDistinct(_) | AggExpr::List(_)))
             || split_details
                 .first_stage_schema
                 .fields()
