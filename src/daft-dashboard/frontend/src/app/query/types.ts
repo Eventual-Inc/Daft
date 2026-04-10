@@ -111,6 +111,7 @@ export type QueryState =
       plan_info: PlanInfo;
       exec_info: ExecInfo;
       marked_dead_sec: number;
+      last_heartbeat_sec: number;
     };
 
 export type QueryInfo = {

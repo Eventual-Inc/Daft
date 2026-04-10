@@ -83,7 +83,7 @@ function QueryPageInner() {
         : null;
 
   const last_heartbeat_sec =
-    query.state.status === "Executing"
+    query.state.status === "Executing" || query.state.status === "Dead"
       ? query.state.last_heartbeat_sec
       : null;
 

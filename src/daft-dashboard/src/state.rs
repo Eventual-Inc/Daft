@@ -154,6 +154,7 @@ pub(crate) enum QueryState {
         plan_info: PlanInfo,
         exec_info: ExecInfo,
         marked_dead_sec: f64,
+        last_heartbeat_sec: f64,
     },
 }
 

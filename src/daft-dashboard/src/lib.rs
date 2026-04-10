@@ -344,6 +344,7 @@ pub async fn launch_server(
                         plan_info: plan_info.clone(),
                         exec_info: exec_info.clone(),
                         marked_dead_sec: engine::secs_from_epoch(),
+                        last_heartbeat_sec,
                     };
 
                     state.ping_clients_on_query_update(&q);

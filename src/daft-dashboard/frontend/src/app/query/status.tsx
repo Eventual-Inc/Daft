@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { main, toHumanReadableDuration } from "@/lib/utils";
+import { main, toHumanReadableDuration, toHumanReadableDate } from "@/lib/utils";
 import { Ban, CircleX, LoaderCircle, Skull } from "lucide-react";
 import { QueryStatusName } from "@/hooks/use-queries";
 import { AnimatedFish, Naruto } from "@/components/icons";
@@ -140,7 +140,7 @@ const LastHeartbeat = ({
   if (ago > 30) {
     return (
       <div className={`${main.className} text-xs font-mono text-red-400`}>
-        Query unresponsive ({toHumanReadableDuration(ago)} since last heartbeat)
+        Query unresponsive (last heartbeat: {toHumanReadableDate(last_heartbeat_sec)})
       </div>
     );
   }
