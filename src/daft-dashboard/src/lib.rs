@@ -8,6 +8,7 @@ pub(crate) mod state;
 use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
@@ -29,7 +30,7 @@ use tower_http::{
 };
 use tracing::Level;
 
-use crate::state::{DashboardState, GLOBAL_DASHBOARD_STATE};
+use crate::state::{DashboardState, GLOBAL_DASHBOARD_STATE, QueryState};
 
 // NOTE(void001): default listen to all ipv4 address, which pose a security risk in production environment
 pub const DEFAULT_SERVER_ADDR: Ipv4Addr = Ipv4Addr::UNSPECIFIED;
@@ -307,12 +308,54 @@ pub async fn launch_server(
         )
         .with_state(GLOBAL_DASHBOARD_STATE.clone());
 
+    let mut ticker = tokio::time::interval(Duration::from_secs(10));
+
+    // TODO move this
+    let reaper = tokio::spawn(async move {
+        loop {
+            ticker.tick().await;
+
+            let dead_threshold = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs_f64()
+                - 60.;
+
+            let state = GLOBAL_DASHBOARD_STATE.clone();
+
+            for mut q in state.queries.iter_mut() {
+                // TODO comparing clocks wrong!
+                let QueryState::Executing {
+                    last_heartbeat_sec, ..
+                } = q.state
+                else {
+                    continue;
+                };
+                if 0. < last_heartbeat_sec && last_heartbeat_sec < dead_threshold {
+                    tracing::error!(
+                        "Marking query {} as dead, last heartbeat {:?}",
+                        q.id,
+                        SystemTime::UNIX_EPOCH + Duration::from_secs_f64(last_heartbeat_sec),
+                    );
+                    q.state = QueryState::Dead {};
+
+                    state.ping_clients_on_query_update(&q);
+                    // TODO actually handle Dead in frontend and state transitions
+                }
+            }
+        }
+    });
+
     // Start the server
     let listener = TcpListener::bind((addr, port)).await?;
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_fn)
         .await
         .unwrap();
+
+    tracing::error!("ABORT!");
+
+    reaper.abort();
 
     Ok(())
 }

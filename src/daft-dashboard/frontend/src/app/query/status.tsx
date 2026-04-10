@@ -128,6 +128,17 @@ const LastHeartbeat = ({
   }, []);
 
   const ago = Math.round(currentTime / 1000 - last_heartbeat_sec);
+
+  if (ago < 10) return null;
+
+  if (ago > 30) {
+    return (
+      <div className={`${main.className} text-xs font-mono text-red-400`}>
+        Query unresponsive ({toHumanReadableDuration(ago)} since last heartbeat)
+      </div>
+    );
+  }
+
   return (
     <div className={`${main.className} text-xs font-mono text-zinc-500`}>
       Last heartbeat: {toHumanReadableDuration(ago)} ago
