@@ -68,6 +68,13 @@ where
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         if self.data_type().is_null() || dtype.is_null() {
             return Ok(Series::full_null(self.name(), dtype, self.len()));
+        } else if dtype.is_uuid() {
+            let physical_series = self.cast(&DataType::FixedSizeBinary(16))?;
+            let physical = physical_series.fixed_size_binary()?;
+            return Ok(
+                UuidArray::new(Field::new(self.name(), DataType::Uuid), physical.clone())
+                    .into_series(),
+            );
         }
 
         match dtype {
