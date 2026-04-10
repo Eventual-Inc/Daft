@@ -1531,16 +1531,10 @@ fn physical_plan_to_pipeline(
                 )
                 .boxed()
             }
-            ShuffleReadBackend::Flight { shuffle_id } => {
+            ShuffleReadBackend::Flight => {
                 let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
                 input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
-                let source = ShuffleReadSource::new(
-                    rx,
-                    *shuffle_id,
-                    schema.clone(),
-                    cfg,
-                    ctx.shuffle_server(),
-                );
+                let source = ShuffleReadSource::new(rx, schema.clone(), cfg, ctx.shuffle_server());
                 SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
             }
         },

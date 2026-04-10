@@ -25,7 +25,6 @@ use crate::{
 
 pub struct ShuffleReadSource {
     receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
-    shuffle_id: u64,
     local_server: Option<(Arc<ShuffleFlightServer>, String)>,
     schema: SchemaRef,
     num_parallel_tasks: usize,
@@ -34,7 +33,6 @@ pub struct ShuffleReadSource {
 impl ShuffleReadSource {
     pub fn new(
         receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
-        shuffle_id: u64,
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
         local_server: Option<(Arc<ShuffleFlightServer>, String)>,
@@ -48,7 +46,6 @@ impl ShuffleReadSource {
 
         Self {
             receiver,
-            shuffle_id,
             local_server,
             schema,
             num_parallel_tasks,
@@ -62,6 +59,7 @@ impl ShuffleReadSource {
         let mut receiver = self.receiver;
         let num_parallel_tasks = self.num_parallel_tasks;
         let local_server = self.local_server;
+        let schema = self.schema;
 
         let io_runtime = get_io_runtime(true);
         io_runtime.spawn(async move {
@@ -76,9 +74,8 @@ impl ShuffleReadSource {
                     task_set.spawn(forward_partition_refs(
                         client_manager.clone(),
                         local_server.clone(),
-                        self.shuffle_id,
                         input.refs,
-                        self.schema.clone(),
+                        schema.clone(),
                         output_sender.clone(),
                         input_id,
                     ));
@@ -88,7 +85,7 @@ impl ShuffleReadSource {
                     recv_result = receiver.recv(), if !receiver_exhausted => {
                         match recv_result {
                             Some((input_id, inputs)) if inputs.is_empty() => {
-                                let empty = MicroPartition::empty(Some(self.schema.clone()));
+                                let empty = MicroPartition::empty(Some(schema.clone()));
                                 if output_sender.send(PipelineMessage::Morsel {
                                     input_id,
                                     partition: empty,
@@ -138,7 +135,6 @@ impl ShuffleReadSource {
 async fn fetch_partition_refs(
     client_manager: FlightClientManager,
     local_server: Option<&(Arc<ShuffleFlightServer>, String)>,
-    shuffle_id: u64,
     refs: &[FlightShufflePartitionRef],
     schema: SchemaRef,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
@@ -166,31 +162,39 @@ async fn fetch_partition_refs(
     if !local_refs.is_empty() {
         let (server, _) =
             local_server.expect("local_refs is non-empty only when local_server is Some");
-        let partition_ref_ids: Vec<u64> = local_refs.iter().map(|r| r.partition_ref_id).collect();
-        let local_stream = server
-            .read_local_partitions(shuffle_id, &partition_ref_ids, schema.clone())
-            .await?;
-        streams.push(local_stream);
+        let mut refs_by_shuffle: HashMap<u64, Vec<u64>> = HashMap::new();
+        for partition_ref in local_refs {
+            refs_by_shuffle
+                .entry(partition_ref.shuffle_id)
+                .or_default()
+                .push(partition_ref.partition_ref_id);
+        }
+
+        for (shuffle_id, partition_ref_ids) in refs_by_shuffle {
+            let local_stream = server
+                .read_local_partitions(shuffle_id, &partition_ref_ids, schema.clone())
+                .await?;
+            streams.push(local_stream);
+        }
     }
 
     // Remote path: fetch over gRPC.
     if !remote_refs.is_empty() {
-        let mut refs_by_server: HashMap<&str, Vec<&FlightShufflePartitionRef>> = HashMap::new();
+        let mut refs_by_server: HashMap<(u64, &str), Vec<u64>> = HashMap::new();
         for partition_ref in remote_refs {
             refs_by_server
-                .entry(partition_ref.server_address.as_str())
+                .entry((
+                    partition_ref.shuffle_id,
+                    partition_ref.server_address.as_str(),
+                ))
                 .or_default()
-                .push(partition_ref);
+                .push(partition_ref.partition_ref_id);
         }
         let fetches = refs_by_server
             .into_iter()
-            .map(|(server_address, partition_refs)| {
+            .map(|((shuffle_id, server_address), partition_ref_ids)| {
                 let client_manager = client_manager.clone();
                 let schema = schema.clone();
-                let partition_ref_ids = partition_refs
-                    .iter()
-                    .map(|partition_ref| partition_ref.partition_ref_id)
-                    .collect::<Vec<_>>();
                 let server_address = server_address.to_string();
                 async move {
                     client_manager
@@ -214,7 +218,6 @@ async fn fetch_partition_refs(
 async fn forward_partition_refs(
     client_manager: FlightClientManager,
     local_server: Option<(Arc<ShuffleFlightServer>, String)>,
-    shuffle_id: u64,
     refs: Vec<FlightShufflePartitionRef>,
     schema: SchemaRef,
     sender: Sender<PipelineMessage>,
@@ -238,14 +241,8 @@ async fn forward_partition_refs(
         return Ok(input_id);
     }
 
-    let mut batches = fetch_partition_refs(
-        client_manager,
-        local_server.as_ref(),
-        shuffle_id,
-        &refs,
-        schema.clone(),
-    )
-    .await?;
+    let mut batches =
+        fetch_partition_refs(client_manager, local_server.as_ref(), &refs, schema.clone()).await?;
 
     while let Some(batch) = batches.next().await {
         let batch = batch?;
@@ -280,7 +277,7 @@ impl Source for ShuffleReadSource {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        vec![format!("ShuffleRead: shuffle_id={}", self.shuffle_id)]
+        vec!["ShuffleRead".to_string()]
     }
 
     #[instrument(skip_all, name = "ShuffleReadSource::get_data")]
@@ -312,7 +309,7 @@ mod tests {
         prelude::{DataType, Field, Int64Array, Schema},
         series::IntoSeries,
     };
-    use daft_shuffles::partition_store::InProgressFlightPartitionSet;
+    use daft_shuffles::partition_store::{InProgressFlightPartitionStore, partition_ref_id};
     use futures::TryStreamExt;
 
     use super::*;
@@ -354,10 +351,11 @@ mod tests {
         let input_id = 1;
         let local_address = "grpc://local:9999".to_string();
 
-        let partition_set = InProgressFlightPartitionSet::try_new(
-            values.len(),
+        let partition_set = InProgressFlightPartitionStore::try_new(
+            (0..values.len())
+                .map(|partition_idx| partition_ref_id(input_id, partition_idx))
+                .collect(),
             std::slice::from_ref(&temp_dir),
-            input_id,
             shuffle_id,
             make_schema(),
             None,
@@ -424,7 +422,6 @@ mod tests {
         let completed_input_id = forward_partition_refs(
             FlightClientManager::new(),
             None,
-            11,
             refs,
             schema.clone(),
             sender.clone(),
@@ -454,14 +451,13 @@ mod tests {
     /// from disk. No gRPC server is running, so success proves the local path was used.
     #[tokio::test]
     async fn fetch_partition_refs_uses_local_disk_path() -> DaftResult<()> {
-        let (server, refs, shuffle_id) = setup_local_server(&[&[10, 20], &[30]]).await;
+        let (server, refs, _) = setup_local_server(&[&[10, 20], &[30]]).await;
         let local_address = "grpc://local:9999".to_string();
         let local_server = (server, local_address);
 
         let stream = fetch_partition_refs(
             FlightClientManager::new(),
             Some(&local_server),
-            shuffle_id,
             &refs,
             make_schema(),
         )
@@ -489,12 +485,11 @@ mod tests {
     /// the local disk path is not used.
     #[tokio::test]
     async fn fetch_partition_refs_without_local_server_goes_to_grpc() {
-        let (_server, refs, shuffle_id) = setup_local_server(&[&[10, 20]]).await;
+        let (_server, refs, _) = setup_local_server(&[&[10, 20]]).await;
 
         let stream = fetch_partition_refs(
             FlightClientManager::new(),
             None, // no local server → must use gRPC
-            shuffle_id,
             &refs,
             make_schema(),
         )
@@ -508,14 +503,13 @@ mod tests {
     /// proving the address comparison drives the routing decision.
     #[tokio::test]
     async fn fetch_partition_refs_mismatched_address_goes_to_grpc() {
-        let (server, refs, shuffle_id) = setup_local_server(&[&[10, 20]]).await;
+        let (server, refs, _) = setup_local_server(&[&[10, 20]]).await;
         // local_server address doesn't match the refs' address
         let local_server = (server, "grpc://OTHER-HOST:7777".to_string());
 
         let stream = fetch_partition_refs(
             FlightClientManager::new(),
             Some(&local_server),
-            shuffle_id,
             &refs,
             make_schema(),
         )
@@ -556,11 +550,9 @@ mod tests {
         all_refs.push(remote_ref); // second ref goes through gRPC
 
         let local_server = (server, local_address);
-        let shuffle_id = 99; // matches setup_local_server
         let stream = fetch_partition_refs(
             FlightClientManager::new(),
             Some(&local_server),
-            shuffle_id,
             &all_refs,
             make_schema(),
         )

@@ -10,7 +10,8 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
 use daft_shuffles::{
-    partition_store::InProgressFlightPartitionSet, server::flight_server::ShuffleFlightServer,
+    partition_store::{InProgressFlightPartitionStore, partition_ref_id},
+    server::flight_server::ShuffleFlightServer,
 };
 use itertools::Itertools;
 use tracing::{Span, instrument};
@@ -41,7 +42,7 @@ impl RayRepartitionState {
 }
 
 pub(crate) struct FlightRepartitionState {
-    partitions: Arc<InProgressFlightPartitionSet>,
+    partitions: Arc<InProgressFlightPartitionStore>,
 }
 
 pub(crate) enum RepartitionState {
@@ -63,7 +64,7 @@ enum RepartitionBackend {
         compression: Option<String>,
         local_server: Arc<ShuffleFlightServer>,
         // Only accessed from the single-threaded event loop; Mutex is just for Sync.
-        partitions: Mutex<HashMap<InputId, Arc<InProgressFlightPartitionSet>>>,
+        partitions: Mutex<HashMap<InputId, Arc<InProgressFlightPartitionStore>>>,
     },
 }
 
@@ -418,10 +419,12 @@ impl BlockingSink for RepartitionSink {
                 let partition_set = match partitions.entry(input_id) {
                     std::collections::hash_map::Entry::Occupied(e) => e.get().clone(),
                     std::collections::hash_map::Entry::Vacant(e) => {
-                        let partition_set = Arc::new(InProgressFlightPartitionSet::try_new(
-                            *num_partitions,
+                        let partition_ref_ids = (0..*num_partitions)
+                            .map(|partition_idx| partition_ref_id(input_id, partition_idx))
+                            .collect();
+                        let partition_set = Arc::new(InProgressFlightPartitionStore::try_new(
+                            partition_ref_ids,
                             shuffle_dirs,
-                            input_id,
                             *shuffle_id,
                             schema.clone(),
                             compression.as_deref(),

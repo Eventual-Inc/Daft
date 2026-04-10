@@ -120,11 +120,11 @@ impl ShuffleBackend {
                 .await
             }
             (
-                DistributedShuffleBackend::Flight(backend),
+                DistributedShuffleBackend::Flight(_),
                 ShuffleBackendReadSpec::Flight { partition_groups },
             ) => {
                 let read_spec: FlightShuffleReadSpec =
-                    flight::read_spec_from_partition_groups(backend, partition_groups);
+                    flight::read_spec_from_partition_groups(partition_groups);
                 flight::emit_read_tasks(
                     self.node_id,
                     self.schema.clone(),

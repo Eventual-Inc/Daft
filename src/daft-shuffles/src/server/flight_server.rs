@@ -1,25 +1,30 @@
-use std::{collections::HashMap, io::Cursor, pin::Pin, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    pin::Pin,
+    sync::Arc,
+};
 
 use arrow_flight::{
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
     HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaAsIpc, SchemaResult, Ticket,
+    decode::FlightRecordBatchStream,
+    error::FlightError,
     flight_service_server::{FlightService, FlightServiceServer},
 };
-use arrow_ipc::{
-    MessageArgs, MessageHeader, MetadataVersion, finish_message_buffer, writer::IpcWriteOptions,
-};
+use arrow_ipc::writer::IpcWriteOptions;
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
-use daft_core::{prelude::SchemaRef, series::Series};
+use daft_core::prelude::SchemaRef;
 use daft_recordbatch::RecordBatch;
-use daft_schema::field::FieldRef;
-use flatbuffers::FlatBufferBuilder;
 use futures::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
 use tokio::{io::BufReader, sync::Mutex};
 use tonic::{Request, Response, Status, transport::Server};
 
 use super::stream::FlightDataStreamReader;
-use crate::partition_store::RegisteredFlightPartition;
+use crate::{
+    client::flight_client::FlightRecordBatchStreamToDaftRecordBatchStream,
+    partition_store::RegisteredFlightPartition,
+};
 
 struct ParsedTicket {
     shuffle_id: u64,
@@ -63,29 +68,15 @@ impl ParsedTicket {
     }
 }
 
-fn partition_boundary_flight_data(partition_ref_id: u64) -> FlightData {
-    let mut builder = FlatBufferBuilder::new();
-    let message = arrow_ipc::Message::create(
-        &mut builder,
-        &MessageArgs {
-            version: MetadataVersion::V5,
-            header_type: MessageHeader::NONE,
-            header: None,
-            bodyLength: 0,
-            custom_metadata: None,
-        },
-    );
-    finish_message_buffer(&mut builder, message);
-    FlightData {
-        data_header: builder.finished_data().to_vec().into(),
-        app_metadata: format!("partition_ref_id:{partition_ref_id}").into(),
-        ..Default::default()
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct FlightPartitionKey {
+    shuffle_id: u64,
+    partition_ref_id: u64,
 }
 
 #[derive(Clone, Default)]
 pub struct ShuffleFlightServer {
-    shuffle_partitions: Arc<Mutex<HashMap<u64, HashMap<u64, RegisteredFlightPartition>>>>,
+    shuffle_partitions: Arc<Mutex<HashMap<FlightPartitionKey, RegisteredFlightPartition>>>,
 }
 
 impl ShuffleFlightServer {
@@ -99,24 +90,37 @@ impl ShuffleFlightServer {
         partitions: Vec<RegisteredFlightPartition>,
     ) -> DaftResult<()> {
         let mut shuffle_partitions = self.shuffle_partitions.lock().await;
-        let partition_map = shuffle_partitions.entry(shuffle_id).or_default();
         for partition in partitions {
-            partition_map.insert(partition.partition_ref_id, partition);
+            shuffle_partitions.insert(
+                FlightPartitionKey {
+                    shuffle_id,
+                    partition_ref_id: partition.partition_ref_id,
+                },
+                partition,
+            );
         }
         Ok(())
     }
 
     pub async fn clear_shuffle(&self, shuffle_id: u64) -> bool {
         let mut shuffle_partitions = self.shuffle_partitions.lock().await;
-        shuffle_partitions.remove(&shuffle_id).is_some()
+        let len_before = shuffle_partitions.len();
+        shuffle_partitions.retain(|key, _| key.shuffle_id != shuffle_id);
+        len_before != shuffle_partitions.len()
     }
 
     pub async fn clear_shuffles(&self, shuffle_ids: &[u64]) -> usize {
         let mut shuffle_partitions = self.shuffle_partitions.lock().await;
-        shuffle_ids
-            .iter()
-            .filter(|shuffle_id| shuffle_partitions.remove(shuffle_id).is_some())
-            .count()
+        let shuffle_ids: HashSet<u64> = shuffle_ids.iter().copied().collect();
+        let mut removed_shuffle_ids = HashSet::new();
+        shuffle_partitions.retain(|key, _| {
+            let should_remove = shuffle_ids.contains(&key.shuffle_id);
+            if should_remove {
+                removed_shuffle_ids.insert(key.shuffle_id);
+            }
+            !should_remove
+        });
+        removed_shuffle_ids.len()
     }
 
     /// Read partition data directly from disk, bypassing the gRPC stack.
@@ -146,22 +150,31 @@ impl ShuffleFlightServer {
             return Ok(futures::stream::empty().boxed());
         }
 
-        let fields: Vec<FieldRef> = schema
-            .fields()
-            .iter()
-            .map(|f| Arc::new(f.clone()))
-            .collect();
-
         let stream = futures::stream::iter(file_paths)
             .then(move |file_path| {
                 let schema = schema.clone();
-                let fields = fields.clone();
                 async move {
-                    let bytes = tokio::fs::read(&file_path)
+                    let file = tokio::fs::File::open(file_path)
                         .await
                         .map_err(DaftError::IoError)?;
-                    let batches = read_ipc_to_record_batches(&bytes, &schema, &fields)?;
-                    Ok::<_, DaftError>(futures::stream::iter(batches.into_iter().map(Ok)))
+                    let reader = FlightDataStreamReader::try_new(BufReader::new(file))
+                        .await?
+                        .into_stream()
+                        .map_err(|e| FlightError::from_external_error(Box::new(e)));
+
+                    let arrow_schema = schema.to_arrow().map_err(|e| {
+                        DaftError::InternalError(format!("Error converting schema to arrow: {}", e))
+                    })?;
+                    let options = IpcWriteOptions::default();
+                    let flight_schema = SchemaAsIpc::new(&arrow_schema, &options).into();
+                    let flight_data =
+                        futures::stream::once(async { Ok(flight_schema) }).chain(reader);
+
+                    let arrow_stream = FlightRecordBatchStream::new_from_flight_data(flight_data);
+                    Ok::<_, DaftError>(FlightRecordBatchStreamToDaftRecordBatchStream::new(
+                        arrow_stream,
+                        schema,
+                    ))
                 }
             })
             .try_flatten();
@@ -175,40 +188,18 @@ impl ShuffleFlightServer {
         partition_ref_ids: &[u64],
     ) -> Option<Vec<RegisteredFlightPartition>> {
         let partitions = self.shuffle_partitions.lock().await;
-        let shuffle_partitions = partitions.get(&shuffle_id)?;
         partition_ref_ids
             .iter()
-            .map(|partition_ref_id| shuffle_partitions.get(partition_ref_id).cloned())
+            .map(|partition_ref_id| {
+                partitions
+                    .get(&FlightPartitionKey {
+                        shuffle_id,
+                        partition_ref_id: *partition_ref_id,
+                    })
+                    .cloned()
+            })
             .collect()
     }
-}
-
-/// Read an Arrow IPC streaming file directly into Daft RecordBatches.
-fn read_ipc_to_record_batches(
-    bytes: &[u8],
-    schema: &SchemaRef,
-    fields: &[FieldRef],
-) -> DaftResult<Vec<RecordBatch>> {
-    let mut cursor = Cursor::new(bytes);
-    let reader = arrow_ipc::reader::StreamReader::try_new(&mut cursor, None)
-        .map_err(|e| DaftError::InternalError(format!("Error reading IPC stream: {}", e)))?;
-
-    let mut batches = Vec::new();
-    for arrow_batch_result in reader {
-        let arrow_batch = arrow_batch_result
-            .map_err(|e| DaftError::InternalError(format!("Error reading IPC batch: {}", e)))?;
-        let columns = fields
-            .iter()
-            .zip(arrow_batch.columns())
-            .map(|(field, array)| Series::from_arrow(field.clone(), array.clone()))
-            .collect::<DaftResult<Vec<_>>>()?;
-        batches.push(RecordBatch::new_with_size(
-            schema.clone(),
-            columns,
-            arrow_batch.num_rows(),
-        )?);
-    }
-    Ok(batches)
 }
 
 #[tonic::async_trait]
@@ -286,10 +277,6 @@ impl FlightService for ShuffleFlightServer {
 
         let partition_stream = futures::stream::iter(partitions)
             .then(|partition| async move {
-                let boundary_stream = futures::stream::once(async move {
-                    Ok::<_, Status>(partition_boundary_flight_data(partition.partition_ref_id))
-                });
-
                 let data_stream = if let Some(file_path) = partition.file_path.clone() {
                     let file = tokio::fs::File::open(file_path)
                         .await
@@ -307,7 +294,7 @@ impl FlightService for ShuffleFlightServer {
                     futures::stream::empty::<Result<FlightData, Status>>().boxed()
                 };
 
-                Ok::<_, Status>(boundary_stream.chain(data_stream).boxed())
+                Ok::<_, Status>(data_stream)
             })
             .try_flatten();
 
@@ -441,7 +428,7 @@ mod tests {
     use futures::TryStreamExt;
 
     use super::*;
-    use crate::partition_store::InProgressFlightPartitionSet;
+    use crate::partition_store::{InProgressFlightPartitionStore, partition_ref_id};
 
     fn make_schema() -> Arc<daft_schema::schema::Schema> {
         Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)]))
@@ -518,10 +505,9 @@ mod tests {
         let input_id = 7;
 
         // Write real IPC files through the partition store.
-        let partition_set = InProgressFlightPartitionSet::try_new(
-            2,
+        let partition_set = InProgressFlightPartitionStore::try_new(
+            vec![partition_ref_id(input_id, 0), partition_ref_id(input_id, 1)],
             std::slice::from_ref(&temp_dir),
-            input_id,
             shuffle_id,
             make_schema(),
             None,
@@ -567,10 +553,9 @@ mod tests {
         let shuffle_id = 43;
 
         // Create partition set but only write to one partition.
-        let partition_set = InProgressFlightPartitionSet::try_new(
-            2,
+        let partition_set = InProgressFlightPartitionStore::try_new(
+            vec![partition_ref_id(1, 0), partition_ref_id(1, 1)],
             std::slice::from_ref(&temp_dir),
-            1,
             shuffle_id,
             make_schema(),
             None,

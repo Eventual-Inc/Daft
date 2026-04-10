@@ -7,12 +7,18 @@ pub(crate) struct ShuffleMetadata {
 }
 
 #[derive(Debug)]
-pub(crate) struct ShufflePartitionMetadata {
+pub(crate) enum ShufflePartitionMetadata {
     #[cfg(feature = "python")]
-    pub object_ref: Option<Py<PyAny>>,
-    pub partition_ref_id: Option<u64>,
-    pub num_rows: usize,
-    pub size_bytes: usize,
+    Ray {
+        object_ref: Py<PyAny>,
+        num_rows: usize,
+        size_bytes: usize,
+    },
+    Flight {
+        partition_ref_id: u64,
+        num_rows: usize,
+        size_bytes: usize,
+    },
 }
 
 impl ShufflePartitionMetadata {
@@ -21,10 +27,8 @@ impl ShufflePartitionMetadata {
         num_rows: usize,
         size_bytes: usize,
     ) -> Self {
-        Self {
-            #[cfg(feature = "python")]
-            object_ref: None,
-            partition_ref_id: Some(partition_ref_id),
+        Self::Flight {
+            partition_ref_id,
             num_rows,
             size_bytes,
         }
@@ -32,9 +36,8 @@ impl ShufflePartitionMetadata {
 
     #[cfg(feature = "python")]
     pub fn with_object_ref(object_ref: Py<PyAny>, num_rows: usize, size_bytes: usize) -> Self {
-        Self {
-            object_ref: Some(object_ref),
-            partition_ref_id: None,
+        Self::Ray {
+            object_ref,
             num_rows,
             size_bytes,
         }
@@ -46,13 +49,18 @@ impl ShuffleMetadata {
     pub fn to_pyobject(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         self.partitions
             .iter()
-            .map(|partition| {
-                (
-                    partition.object_ref.as_ref().map(|obj| obj.clone_ref(py)),
-                    partition.partition_ref_id,
-                    partition.num_rows,
-                    partition.size_bytes,
-                )
+            .map(|partition| match partition {
+                #[cfg(feature = "python")]
+                ShufflePartitionMetadata::Ray {
+                    object_ref,
+                    num_rows,
+                    size_bytes,
+                } => (Some(object_ref.clone_ref(py)), None, *num_rows, *size_bytes),
+                ShufflePartitionMetadata::Flight {
+                    partition_ref_id,
+                    num_rows,
+                    size_bytes,
+                } => (None, Some(*partition_ref_id), *num_rows, *size_bytes),
             })
             .collect::<Vec<_>>()
             .into_py_any(py)

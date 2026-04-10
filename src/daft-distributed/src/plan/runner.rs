@@ -50,8 +50,13 @@ pub(crate) struct PlanExecutionContext {
     scheduler_handle: SchedulerHandle<SwordfishTask>,
     joinset: JoinSet<DaftResult<()>>,
     task_id_counter: TaskIDCounter,
+    flight_shuffle_cleanups: Vec<FlightShuffleCleanup>,
+}
+
+#[derive(Debug)]
+struct FlightShuffleCleanup {
+    shuffle_id: u64,
     shuffle_dirs: Vec<String>,
-    flight_shuffle_ids: Vec<u64>,
 }
 
 impl PlanExecutionContext {
@@ -62,8 +67,7 @@ impl PlanExecutionContext {
             scheduler_handle,
             joinset,
             task_id_counter: TaskIDCounter::new(),
-            shuffle_dirs: Vec::new(),
-            flight_shuffle_ids: Vec::new(),
+            flight_shuffle_cleanups: Vec::new(),
         }
     }
 
@@ -79,13 +83,14 @@ impl PlanExecutionContext {
         self.task_id_counter.clone()
     }
 
-    /// Register shuffle directories for cleanup when the plan completes
-    pub fn register_shuffle_dirs(&mut self, dirs: Vec<String>) {
-        self.shuffle_dirs.extend(dirs);
-    }
-
-    pub fn register_flight_shuffle_id(&mut self, shuffle_id: u64) {
-        self.flight_shuffle_ids.push(shuffle_id);
+    /// Flight shuffle cleanup has two coupled pieces:
+    /// removing on-disk shuffle files and clearing worker-local in-memory registrations.
+    /// Register both together so the lifecycle stays explicit in the plan context.
+    pub fn register_flight_shuffle_cleanup(&mut self, shuffle_id: u64, shuffle_dirs: Vec<String>) {
+        self.flight_shuffle_cleanups.push(FlightShuffleCleanup {
+            shuffle_id,
+            shuffle_dirs,
+        });
     }
 }
 
@@ -188,8 +193,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         let mut plan_context = PlanExecutionContext::new(query_idx, scheduler_handle.clone());
 
         let running_node = pipeline_node.produce_tasks(&mut plan_context);
-        let shuffle_dirs = std::mem::take(&mut plan_context.shuffle_dirs);
-        let flight_shuffle_ids = std::mem::take(&mut plan_context.flight_shuffle_ids);
+        let flight_shuffle_cleanups = std::mem::take(&mut plan_context.flight_shuffle_cleanups);
         let running_stage = RunningPlan::new(running_node, plan_context);
 
         let mut materialized_result_stream = running_stage.materialize(scheduler_handle);
@@ -199,12 +203,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
             }
         }
 
-        cleanup_plan_shuffle_state(
-            self.worker_manager.as_ref(),
-            shuffle_dirs,
-            flight_shuffle_ids,
-        )
-        .await;
+        cleanup_plan_shuffle_state(self.worker_manager.as_ref(), flight_shuffle_cleanups).await;
 
         Ok(())
     }
@@ -212,9 +211,15 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
 
 async fn cleanup_plan_shuffle_state<WM: WorkerManager + ?Sized>(
     worker_manager: &WM,
-    shuffle_dirs: Vec<String>,
-    flight_shuffle_ids: Vec<u64>,
+    flight_shuffle_cleanups: Vec<FlightShuffleCleanup>,
 ) {
+    let mut shuffle_dirs = Vec::new();
+    let mut flight_shuffle_ids = Vec::new();
+    for cleanup in flight_shuffle_cleanups {
+        shuffle_dirs.extend(cleanup.shuffle_dirs);
+        flight_shuffle_ids.push(cleanup.shuffle_id);
+    }
+
     #[cfg(feature = "python")]
     if !shuffle_dirs.is_empty()
         && let Err(e) = crate::python::ray::clear_shuffle_dirs_on_all_nodes(shuffle_dirs).await
@@ -236,14 +241,27 @@ async fn cleanup_plan_shuffle_state<WM: WorkerManager + ?Sized>(
 mod tests {
     use std::collections::HashMap;
 
-    use super::cleanup_plan_shuffle_state;
+    use super::{FlightShuffleCleanup, cleanup_plan_shuffle_state};
     use crate::scheduling::worker::tests::MockWorkerManager;
 
     #[tokio::test]
     async fn cleanup_plan_shuffle_state_clears_registered_flight_shuffle_ids() {
         let worker_manager = MockWorkerManager::new(HashMap::new());
 
-        cleanup_plan_shuffle_state(&worker_manager, vec![], vec![11, 12]).await;
+        cleanup_plan_shuffle_state(
+            &worker_manager,
+            vec![
+                FlightShuffleCleanup {
+                    shuffle_id: 11,
+                    shuffle_dirs: vec![],
+                },
+                FlightShuffleCleanup {
+                    shuffle_id: 12,
+                    shuffle_dirs: vec![],
+                },
+            ],
+        )
+        .await;
 
         assert_eq!(
             worker_manager.clear_flight_shuffle_calls(),

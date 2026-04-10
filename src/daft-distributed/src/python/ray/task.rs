@@ -235,11 +235,7 @@ impl Partition for RayPartitionRef {
 )]
 #[derive(Debug, Clone)]
 pub(crate) struct FlightShufflePartitionRef {
-    pub shuffle_id: u64,
-    pub server_address: String,
-    pub partition_ref_id: u64,
-    pub num_rows: usize,
-    pub size_bytes: usize,
+    inner: RustFlightShufflePartitionRef,
 }
 
 #[pymethods]
@@ -253,24 +249,51 @@ impl FlightShufflePartitionRef {
         size_bytes: usize,
     ) -> Self {
         Self {
-            shuffle_id,
-            server_address,
-            partition_ref_id,
-            num_rows,
-            size_bytes,
+            inner: RustFlightShufflePartitionRef {
+                shuffle_id,
+                server_address,
+                partition_ref_id,
+                num_rows,
+                size_bytes,
+            },
         }
+    }
+
+    #[getter]
+    pub fn shuffle_id(&self) -> u64 {
+        self.inner.shuffle_id
+    }
+
+    #[getter]
+    pub fn server_address(&self) -> String {
+        self.inner.server_address.clone()
+    }
+
+    #[getter]
+    pub fn partition_ref_id(&self) -> u64 {
+        self.inner.partition_ref_id
+    }
+
+    #[getter]
+    pub fn num_rows(&self) -> usize {
+        self.inner.num_rows
+    }
+
+    #[getter]
+    pub fn size_bytes(&self) -> usize {
+        self.inner.size_bytes
+    }
+}
+
+impl From<RustFlightShufflePartitionRef> for FlightShufflePartitionRef {
+    fn from(inner: RustFlightShufflePartitionRef) -> Self {
+        Self { inner }
     }
 }
 
 impl From<FlightShufflePartitionRef> for ShufflePartitionRef {
     fn from(py_ref: FlightShufflePartitionRef) -> Self {
-        Self::Flight(RustFlightShufflePartitionRef {
-            shuffle_id: py_ref.shuffle_id,
-            server_address: py_ref.server_address,
-            partition_ref_id: py_ref.partition_ref_id,
-            num_rows: py_ref.num_rows,
-            size_bytes: py_ref.size_bytes,
-        })
+        Self::Flight(py_ref.inner)
     }
 }
 

@@ -2215,7 +2215,7 @@ pub enum RepartitionWriteBackend {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ShuffleReadBackend {
     Ray,
-    Flight { shuffle_id: u64 },
+    Flight,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

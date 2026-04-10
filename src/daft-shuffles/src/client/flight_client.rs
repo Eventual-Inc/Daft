@@ -1,25 +1,20 @@
-use std::sync::Arc;
-
-use arrow_flight::{
-    Ticket,
-    client::FlightClient,
-    decode::{DecodedPayload, FlightRecordBatchStream},
+use std::{
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
 };
-use async_stream::try_stream;
+
+use arrow_flight::{Ticket, client::FlightClient, decode::FlightRecordBatchStream};
 use common_error::{DaftError, DaftResult};
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_recordbatch::RecordBatch;
 use daft_schema::field::FieldRef;
-use futures::{StreamExt, stream::BoxStream};
+use futures::{FutureExt, Stream, StreamExt, stream::BoxStream};
 use tonic::transport::Endpoint;
-
-const PARTITION_BOUNDARY_PREFIX: &str = "partition_ref_id:";
 
 #[allow(clippy::large_enum_variant)]
 enum ClientState {
-    // The address of the flight server
     Uninitialized(String),
-    // The address of the flight server and the flight client
     Initialized(String, FlightClient),
 }
 
@@ -84,98 +79,65 @@ impl ShuffleFlightClient {
                 .into(),
             )
         })?;
-        let fields = schema
-            .fields()
-            .iter()
-            .map(|field| Arc::new(field.clone()))
-            .collect::<Vec<_>>();
 
-        Ok(decode_batch_stream(stream, partition_ref_ids.to_vec(), schema, fields).boxed())
+        Ok(FlightRecordBatchStreamToDaftRecordBatchStream::new(stream, schema).boxed())
     }
 }
 
-fn decode_batch_stream(
+pub struct FlightRecordBatchStreamToDaftRecordBatchStream {
     stream: FlightRecordBatchStream,
-    expected_partition_ref_ids: Vec<u64>,
+    done: bool,
     schema: SchemaRef,
     fields: Vec<FieldRef>,
-) -> impl futures::Stream<Item = DaftResult<RecordBatch>> + Send + 'static {
-    try_stream! {
-        let mut decoded_stream = stream.into_inner();
-        let mut expected_partition_ref_ids = expected_partition_ref_ids.into_iter();
-        let mut current_partition_ref_id = None;
+}
 
-        while let Some(message) = decoded_stream.next().await {
-            let message = message.map_err(|e| DaftError::External(e.to_string().into()))?;
-            match message.payload {
-                DecodedPayload::Schema(_) => {}
-                DecodedPayload::None => {
-                    let Some(partition_ref_id) = parse_partition_boundary(message.app_metadata())? else {
-                        continue;
-                    };
-
-                    let expected_partition_ref_id = expected_partition_ref_ids
-                        .next()
-                        .ok_or_else(|| DaftError::InternalError(format!(
-                            "Received unexpected partition ref boundary {}",
-                            partition_ref_id
-                        )))?;
-                    if partition_ref_id != expected_partition_ref_id {
-                        Err(DaftError::InternalError(format!(
-                            "Received partition ref boundary {} but expected {}",
-                            partition_ref_id, expected_partition_ref_id
-                        )))?;
-                    }
-
-                    current_partition_ref_id = Some(partition_ref_id);
-                }
-                DecodedPayload::RecordBatch(batch) => {
-                    if current_partition_ref_id.is_none() {
-                        Err(DaftError::InternalError(
-                            "Received shuffle record batch before partition boundary".to_string(),
-                        ))?;
-                    }
-                    let columns = fields
-                        .iter()
-                        .zip(batch.columns())
-                        .map(|(field, array)| Series::from_arrow(field.clone(), array.clone()))
-                        .collect::<DaftResult<Vec<_>>>()?;
-                    yield RecordBatch::new_with_size(
-                        schema.clone(),
-                        columns,
-                        batch.num_rows(),
-                    )?;
-                }
-            }
-        }
-
-        if let Some(missing_partition_ref_id) = expected_partition_ref_ids.next() {
-            Err(DaftError::InternalError(format!(
-                "Missing partition ref boundary for {}",
-                missing_partition_ref_id
-            )))?;
+impl FlightRecordBatchStreamToDaftRecordBatchStream {
+    pub fn new(stream: FlightRecordBatchStream, schema: SchemaRef) -> Self {
+        Self {
+            stream,
+            done: false,
+            schema: schema.clone(),
+            fields: schema
+                .fields()
+                .iter()
+                .map(|field| Arc::new(field.clone()))
+                .collect(),
         }
     }
 }
 
-fn parse_partition_boundary(app_metadata: impl AsRef<[u8]>) -> DaftResult<Option<u64>> {
-    let app_metadata = app_metadata.as_ref();
-    if app_metadata.is_empty() {
-        return Ok(None);
-    }
+impl Stream for FlightRecordBatchStreamToDaftRecordBatchStream {
+    type Item = DaftResult<RecordBatch>;
 
-    let app_metadata = std::str::from_utf8(app_metadata).map_err(|e| {
-        DaftError::InternalError(format!("Invalid shuffle partition boundary metadata: {e}"))
-    })?;
-    let Some(partition_ref_id) = app_metadata.strip_prefix(PARTITION_BOUNDARY_PREFIX) else {
-        return Ok(None);
-    };
-    let partition_ref_id = partition_ref_id.parse::<u64>().map_err(|e| {
-        DaftError::InternalError(format!(
-            "Invalid partition ref id in boundary metadata: {e}"
-        ))
-    })?;
-    Ok(Some(partition_ref_id))
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+
+        if this.done {
+            return Poll::Ready(None);
+        }
+
+        match this.stream.next().poll_unpin(cx) {
+            Poll::Ready(Some(Ok(batch))) => {
+                let columns = this
+                    .fields
+                    .iter()
+                    .zip(batch.columns())
+                    .map(|(field, array)| Series::from_arrow(field.clone(), array.clone()))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let rb =
+                    RecordBatch::new_with_size(this.schema.clone(), columns, batch.num_rows())?;
+                Poll::Ready(Some(Ok(rb)))
+            }
+            Poll::Ready(Some(Err(e))) => {
+                Poll::Ready(Some(Err(DaftError::External(e.to_string().into()))))
+            }
+            Poll::Ready(None) => {
+                this.done = true;
+                Poll::Ready(None)
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -186,26 +148,14 @@ mod tests {
         array::{ArrayRef, Int64Array},
         record_batch::RecordBatch as ArrowRecordBatch,
     };
-    use arrow_flight::{
-        FlightData, decode::FlightRecordBatchStream, encode::FlightDataEncoderBuilder,
-    };
-    use arrow_ipc::{MessageArgs, MessageHeader, MetadataVersion, finish_message_buffer};
+    use arrow_flight::encode::FlightDataEncoderBuilder;
     use daft_core::prelude::{DataType, Field, Schema};
-    use flatbuffers::FlatBufferBuilder;
-    use futures::{StreamExt, TryStreamExt, stream};
+    use futures::{TryStreamExt, stream};
 
     use super::*;
 
     fn make_schema() -> SchemaRef {
         Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)]))
-    }
-
-    fn make_fields() -> Vec<FieldRef> {
-        make_schema()
-            .fields()
-            .iter()
-            .map(|field| Arc::new(field.clone()))
-            .collect()
     }
 
     fn make_batch() -> ArrowRecordBatch {
@@ -216,69 +166,19 @@ mod tests {
         .unwrap()
     }
 
-    fn partition_boundary(partition_ref_id: u64) -> FlightData {
-        let mut builder = FlatBufferBuilder::new();
-        let message = arrow_ipc::Message::create(
-            &mut builder,
-            &MessageArgs {
-                version: MetadataVersion::V5,
-                header_type: MessageHeader::NONE,
-                header: None,
-                bodyLength: 0,
-                custom_metadata: None,
-            },
-        );
-        finish_message_buffer(&mut builder, message);
-        FlightData {
-            data_header: builder.finished_data().to_vec().into(),
-            app_metadata: format!("partition_ref_id:{partition_ref_id}").into(),
-            ..Default::default()
-        }
-    }
-
     #[tokio::test]
-    async fn decode_batch_stream_rejects_record_batch_before_boundary() {
+    async fn record_batch_stream_decodes_arrow_batches() -> DaftResult<()> {
         let schema = make_schema();
-        let stream = FlightRecordBatchStream::new_from_flight_data(
-            FlightDataEncoderBuilder::new().build(stream::iter(vec![Ok(make_batch())])),
-        );
+        let stream = FlightDataEncoderBuilder::new().build(stream::iter(vec![Ok(make_batch())]));
+        let stream = FlightRecordBatchStream::new_from_flight_data(stream);
 
-        let err = decode_batch_stream(stream, vec![11], schema, make_fields())
-            .try_collect::<Vec<_>>()
-            .await
-            .unwrap_err();
+        let batches: Vec<RecordBatch> =
+            FlightRecordBatchStreamToDaftRecordBatchStream::new(stream, schema)
+                .try_collect()
+                .await?;
 
-        assert!(
-            err.to_string()
-                .contains("Received shuffle record batch before partition boundary")
-        );
-    }
-
-    #[tokio::test]
-    async fn decode_batch_stream_rejects_missing_partition_boundary() {
-        let schema = make_schema();
-        let encoded = FlightDataEncoderBuilder::new().build(stream::iter(vec![Ok(make_batch())]));
-        let stream = FlightRecordBatchStream::new_from_flight_data(
-            stream::once(async { Ok(partition_boundary(11)) }).chain(encoded),
-        );
-
-        let err = decode_batch_stream(stream, vec![11, 12], schema, make_fields())
-            .try_collect::<Vec<_>>()
-            .await
-            .unwrap_err();
-
-        assert!(
-            err.to_string()
-                .contains("Missing partition ref boundary for 12")
-        );
-    }
-
-    #[test]
-    fn parse_partition_boundary_rejects_invalid_partition_ref_id() {
-        let err = parse_partition_boundary("partition_ref_id:not-a-number").unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("Invalid partition ref id in boundary metadata")
-        );
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].len(), 3);
+        Ok(())
     }
 }

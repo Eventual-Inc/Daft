@@ -8,19 +8,19 @@ use tokio::sync::Mutex;
 
 const SINGLE_FILE_TARGET_SIZE: usize = usize::MAX;
 
-fn get_shuffle_dirs(shuffle_dirs: &[String], writer_id: String, shuffle_id: u64) -> Vec<String> {
+fn get_shuffle_dirs(shuffle_dirs: &[String], shuffle_id: u64) -> Vec<String> {
     shuffle_dirs
         .iter()
-        .map(|dir| format!("{}/daft_shuffle/{}/{}", dir, shuffle_id, writer_id))
+        .map(|dir| format!("{}/daft_shuffle/{}", dir, shuffle_id))
         .collect()
 }
 
-fn get_partition_dir(shuffle_dirs: &[String], partition_idx: usize) -> String {
-    let dir = &shuffle_dirs[partition_idx % shuffle_dirs.len()];
-    format!("{}/partition_{}", dir, partition_idx)
+fn get_partition_dir(shuffle_dirs: &[String], partition_ref_id: u64) -> String {
+    let dir = &shuffle_dirs[(partition_ref_id as usize) % shuffle_dirs.len()];
+    format!("{}/partition_ref_{}", dir, partition_ref_id)
 }
 
-fn partition_ref_id(input_id: u32, partition_idx: usize) -> u64 {
+pub fn partition_ref_id(input_id: u32, partition_idx: usize) -> u64 {
     ((input_id as u64) << 32) | partition_idx as u64
 }
 
@@ -33,14 +33,14 @@ struct WriterTaskResult {
 
 type WriterTask = RuntimeTask<DaftResult<WriterTaskResult>>;
 
-struct InProgressFlightPartitionSetState {
+struct InProgressFlightPartitionStoreState {
     writer_senders: Option<Vec<async_channel::Sender<MicroPartition>>>,
     writer_tasks: Vec<WriterTask>,
     error: Option<String>,
 }
 
-pub struct InProgressFlightPartitionSet {
-    state: Mutex<InProgressFlightPartitionSetState>,
+pub struct InProgressFlightPartitionStore {
+    state: Mutex<InProgressFlightPartitionStoreState>,
     writer_senders_weak: Vec<async_channel::WeakSender<MicroPartition>>,
     expected_schema: SchemaRef,
     partition_ref_ids: Vec<u64>,
@@ -61,16 +61,15 @@ impl RegisteredFlightPartition {
     }
 }
 
-impl InProgressFlightPartitionSet {
+impl InProgressFlightPartitionStore {
     pub fn try_new(
-        num_partitions: usize,
+        partition_ref_ids: Vec<u64>,
         dirs: &[String],
-        input_id: u32,
         shuffle_id: u64,
         expected_schema: SchemaRef,
         compression: Option<&str>,
     ) -> DaftResult<Self> {
-        let shuffle_dirs = get_shuffle_dirs(dirs, input_id.to_string(), shuffle_id);
+        let shuffle_dirs = get_shuffle_dirs(dirs, shuffle_id);
         for dir in &shuffle_dirs {
             let (source_type, _) = parse_url(dir)?;
             if source_type != SourceType::File {
@@ -80,15 +79,15 @@ impl InProgressFlightPartitionSet {
                 )));
             }
 
-            if std::path::Path::new(dir).exists() {
-                std::fs::remove_dir_all(dir)?;
-            }
             std::fs::create_dir_all(dir)?;
         }
 
-        let mut writers = Vec::with_capacity(num_partitions);
-        for partition_idx in 0..num_partitions {
-            let partition_dir = get_partition_dir(&shuffle_dirs, partition_idx);
+        let mut writers = Vec::with_capacity(partition_ref_ids.len());
+        for partition_ref_id in &partition_ref_ids {
+            let partition_dir = get_partition_dir(&shuffle_dirs, *partition_ref_id);
+            if std::path::Path::new(&partition_dir).exists() {
+                std::fs::remove_dir_all(&partition_dir)?;
+            }
             std::fs::create_dir_all(&partition_dir)?;
             let writer = make_ipc_writer(&partition_dir, SINGLE_FILE_TARGET_SIZE, compression)?;
             writers.push(writer);
@@ -108,12 +107,9 @@ impl InProgressFlightPartitionSet {
             .iter()
             .map(|sender| sender.downgrade())
             .collect();
-        let partition_ref_ids = (0..num_partitions)
-            .map(|partition_idx| partition_ref_id(input_id, partition_idx))
-            .collect();
 
         Ok(Self {
-            state: Mutex::new(InProgressFlightPartitionSetState {
+            state: Mutex::new(InProgressFlightPartitionStoreState {
                 writer_senders: Some(writer_senders),
                 writer_tasks,
                 error: None,
@@ -292,10 +288,9 @@ mod tests {
     #[tokio::test]
     async fn test_flight_partition_set_basic() -> DaftResult<()> {
         let temp_dir = make_temp_dir();
-        let partitions = InProgressFlightPartitionSet::try_new(
-            2,
+        let partitions = InProgressFlightPartitionStore::try_new(
+            vec![partition_ref_id(7, 0), partition_ref_id(7, 1)],
             std::slice::from_ref(&temp_dir),
-            7,
             9,
             make_schema(),
             None,
@@ -321,10 +316,9 @@ mod tests {
     #[tokio::test]
     async fn test_flight_partition_set_empty_finalize_uses_expected_schema() -> DaftResult<()> {
         let temp_dir = make_temp_dir();
-        let partitions = InProgressFlightPartitionSet::try_new(
-            1,
+        let partitions = InProgressFlightPartitionStore::try_new(
+            vec![partition_ref_id(1, 0)],
             std::slice::from_ref(&temp_dir),
-            1,
             2,
             make_schema(),
             None,
