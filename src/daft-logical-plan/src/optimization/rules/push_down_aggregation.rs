@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{count_mode::CountMode, prelude::Schema};
-use daft_dsl::{AggExpr, Expr, ExprRef};
+use daft_dsl::{AggExpr, Expr, ExprRef, resolved_col};
 
 use crate::{
-    LogicalPlan, logical_plan::Aggregate, ops::Source as LogicalSource,
-    optimization::rules::OptimizerRule, source_info::SourceInfo,
+    LogicalPlan,
+    logical_plan::{Aggregate, Project},
+    ops::Source as LogicalSource,
+    optimization::rules::OptimizerRule,
+    source_info::SourceInfo,
 };
 
 /// Optimization rules for pushing Aggregation further into the logical plan.
@@ -36,8 +39,22 @@ impl OptimizerRule for PushDownAggregation {
                     && aggregations.len() == 1
                     && let Some(count_mode) = is_count_expr(&aggregations[0])
                 {
-                    // Only handle global aggregation with no GROUP BY and a single aggregation expression
-                    match input.as_ref() {
+                    // Only handle global aggregation with no GROUP BY and a single aggregation expression.
+                    //
+                    // For COUNT(*, All), row counts are invariant under projection,
+                    // so we walk through Project nodes to find the underlying Source.
+                    let current = if is_count_mode_supported(count_mode) {
+                        let mut cur = input.clone();
+                        while let LogicalPlan::Project(Project { input: child, .. }) = cur.as_ref()
+                        {
+                            cur = child.clone();
+                        }
+                        cur
+                    } else {
+                        input.clone()
+                    };
+
+                    match current.as_ref() {
                         LogicalPlan::Source(source) => {
                             match source.source_info.as_ref() {
                                 // Determine if aggregation can be pushed down based on data source type
@@ -66,11 +83,16 @@ impl OptimizerRule for PushDownAggregation {
 
                                     if can_pushdown {
                                         // Create new pushdown info with count aggregation
+                                        // Strip Alias wrapper for pushdown - the executor
+                                        // matches on Expr::Agg(AggExpr::Count(..)) directly.
+                                        let agg_for_pushdown = unwrap_alias(&aggregations[0]);
                                         let new_pushdowns = external_info
                                             .pushdowns
-                                            .with_aggregation(Some(aggregations[0].clone()));
+                                            .with_aggregation(Some(agg_for_pushdown));
 
-                                        let field = aggregations[0].to_field(&input.schema())?;
+                                        let field = aggregations[0].to_field(&current.schema())?;
+                                        // Capture the field name before moving field into the schema.
+                                        let count_output_name = field.name.clone();
                                         let new_schema = Arc::new(Schema::new(vec![field]));
 
                                         let new_external_info =
@@ -81,11 +103,12 @@ impl OptimizerRule for PushDownAggregation {
                                         ))
                                         .into();
                                         // Scan operators may produce partial counts over multiple scan tasks (e.g., distributed parquet reads), so we still need to sum them.
+                                        let count_output_ref = resolved_col(count_output_name);
                                         let new_aggregate = Aggregate::try_new(
                                             new_source,
-                                            vec![Arc::new(Expr::Agg(AggExpr::Sum(count_expr(
-                                                &aggregations[0],
-                                            )?)))],
+                                            vec![Arc::new(Expr::Agg(AggExpr::Sum(
+                                                count_output_ref,
+                                            )))],
                                             groupby.clone(),
                                         )?
                                         .into();
@@ -96,7 +119,7 @@ impl OptimizerRule for PushDownAggregation {
                                 }
                             }
                         }
-                        // Input is not a Source node, cannot push down aggregation
+                        // Could not find a Source node (possibly behind Filter, Join, etc.)
                         _ => Ok(Transformed::no(node.clone())),
                     }
                 } else {
@@ -109,20 +132,19 @@ impl OptimizerRule for PushDownAggregation {
     }
 }
 
-// Check if expression is count aggregation
+// Check if expression is count aggregation, looking through Alias wrappers.
 fn is_count_expr(expr: &ExprRef) -> Option<&CountMode> {
     match expr.as_ref() {
         Expr::Agg(AggExpr::Count(_, count_mode)) => Some(count_mode),
+        Expr::Alias(inner, _) => is_count_expr(inner),
         _ => None,
     }
 }
 
-fn count_expr(expr: &ExprRef) -> DaftResult<ExprRef> {
+fn unwrap_alias(expr: &ExprRef) -> ExprRef {
     match expr.as_ref() {
-        Expr::Agg(AggExpr::Count(expr, _)) => Ok(expr.clone()),
-        _ => Err(DaftError::InternalError(
-            "Tried to get count expression from non-count expression".to_string(),
-        )),
+        Expr::Alias(inner, _) => unwrap_alias(inner),
+        _ => expr.clone(),
     }
 }
 
@@ -432,6 +454,81 @@ mod tests {
             .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
             .build();
         let expected = plan.clone();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    #[test]
+    fn agg_count_all_through_project() -> DaftResult<()> {
+        // COUNT(*, All) should push down through a Project node since
+        // row counts are invariant under projection.
+        let scan_op =
+            dummy_scan_operator_for_aggregation(vec![Field::new("a", DataType::UInt64)], true);
+
+        let plan = dummy_scan_node(scan_op.clone())
+            .select(vec![resolved_col("a")])?
+            .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
+            .build();
+
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_aggregation(Some(Arc::new(Expr::Agg(AggExpr::Count(
+                resolved_col("a"),
+                CountMode::All,
+            ))))),
+        )
+        .aggregate(vec![unresolved_col("a").sum()], vec![])?
+        .build();
+
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    #[test]
+    fn agg_count_all_through_multiple_projects() -> DaftResult<()> {
+        // COUNT(*, All) should push down through multiple nested Project nodes.
+        let scan_op =
+            dummy_scan_operator_for_aggregation(vec![Field::new("a", DataType::UInt64)], true);
+
+        let plan = dummy_scan_node(scan_op.clone())
+            .select(vec![resolved_col("a")])?
+            .select(vec![resolved_col("a")])?
+            .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
+            .build();
+
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_aggregation(Some(Arc::new(Expr::Agg(AggExpr::Count(
+                resolved_col("a"),
+                CountMode::All,
+            ))))),
+        )
+        .aggregate(vec![unresolved_col("a").sum()], vec![])?
+        .build();
+
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    #[test]
+    fn agg_count_null_through_project_should_not_pushdown() -> DaftResult<()> {
+        // COUNT(col, Null) should NOT push down through Project since
+        // it needs to inspect actual column values for null counting.
+        let scan_op = dummy_scan_operator_for_aggregation(
+            vec![
+                Field::new("a", DataType::Int64),
+                Field::new("b", DataType::Int64),
+            ],
+            true,
+        );
+
+        let plan = dummy_scan_node(scan_op)
+            .select(vec![resolved_col("a")])?
+            .aggregate(vec![unresolved_col("a").count(CountMode::Null)], vec![])?
+            .build();
+
+        let expected = plan.clone();
+
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }

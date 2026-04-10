@@ -5,7 +5,7 @@ use common_file_formats::FileFormat;
 use common_runtime::RuntimeRef;
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
-use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_io::{FileMetadata, FileType, IOClient, IOStatsContext, IOStatsRef, parse_url};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_recordbatch::RecordBatch;
@@ -21,6 +21,7 @@ use snafu::Snafu;
 use crate::{
     ChunkSpec, CsvSourceConfig, FileFormatConfig, ParquetSourceConfig, PartitionField, Pushdowns,
     ScanOperator, ScanSource, ScanSourceKind, ScanTask, ScanTaskRef, SourceConfig,
+    SupportsPushdownFilters,
     hive::{hive_partitions_to_fields, hive_partitions_to_series, parse_hive_partitioning},
     storage_config::StorageConfig,
 };
@@ -425,6 +426,19 @@ impl GlobScanOperator {
     }
 }
 
+impl SupportsPushdownFilters for GlobScanOperator {
+    fn push_filters(&self, filters: &[ExprRef]) -> (Vec<ExprRef>, Vec<ExprRef>) {
+        if self.file_format_config.file_format() == FileFormat::Parquet {
+            // The parquet reader supports row-level filter evaluation via build_row_filter(),
+            // so all data filters can be pushed down.
+            (filters.to_vec(), vec![])
+        } else {
+            // Other formats don't support filter pushdown.
+            (vec![], filters.to_vec())
+        }
+    }
+}
+
 impl ScanOperator for GlobScanOperator {
     fn name(&self) -> &'static str {
         "GlobScanOperator"
@@ -462,6 +476,14 @@ impl ScanOperator for GlobScanOperator {
 
     fn supports_count_pushdown(&self) -> bool {
         self.file_format_config.file_format() == FileFormat::Parquet
+    }
+
+    fn as_pushdown_filter(&self) -> Option<&dyn SupportsPushdownFilters> {
+        if self.file_format_config.file_format() == FileFormat::Parquet {
+            Some(self)
+        } else {
+            None
+        }
     }
 
     fn multiline_display(&self) -> Vec<String> {
