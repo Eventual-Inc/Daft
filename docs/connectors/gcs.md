@@ -74,6 +74,10 @@ Alternatively, Daft supports overriding the default IOConfig per-operation by pa
 === "Per-Operation Config"
 
     ```python
+    from daft.io import IOConfig, GCSConfig
+
+    io_config = IOConfig(gcs=GCSConfig(credentials="/path/to/service-account-key.json"))
+
     # Perform some I/O operation but override the IOConfig
     df2 = daft.read_csv("gs://my_bucket/my_other_path/**/*", io_config=io_config)
     ```

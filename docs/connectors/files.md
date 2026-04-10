@@ -75,8 +75,8 @@ df = daft.from_files("/path/to/files/*")
 
 # Access file properties
 df = df.select(
-    col("file").file.path().alias("path"),
-    col("file").file.size().alias("size_bytes"),
+    col("file").file_path().alias("path"),
+    col("file").file_size().alias("size_bytes"),
 )
 df.show()
 ```
@@ -85,17 +85,17 @@ df.show()
 
 ### Image Processing Pipeline
 
+For image processing, use [`daft.from_glob_path()`][daft.from_glob_path] with `.download()` and `decode_image()`:
+
 ```python
 import daft
 from daft import col
+from daft.functions import decode_image
 
-# Create file references for images
-df = daft.from_files("s3://bucket/images/**/*.jpg")
-
-# Decode images when needed
-df = df.select(
-    col("file").file.path().alias("path"),
-    col("file").image.decode().alias("image"),
+df = (
+    daft.from_glob_path("s3://bucket/images/**/*.jpg")
+    .with_column("image_bytes", col("path").download())
+    .with_column("image", decode_image(col("image_bytes")))
 )
 df.show()
 ```
@@ -110,7 +110,7 @@ from daft import col
 df = daft.from_files("/data/**/*")
 
 # Filter by file properties before reading content
-large_files = df.where(col("file").file.size() > 1_000_000)
+large_files = df.where(col("file").file_size() > 1_000_000)
 large_files.show()
 ```
 

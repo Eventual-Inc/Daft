@@ -58,13 +58,13 @@ The `read_mcap` function returns a DataFrame with the following schema:
 
 ### Time Range
 
-Filter messages by time range (in nanoseconds):
+Filter messages by time range. The time unit matches the MCAP `log_time` field (typically nanoseconds):
 
 ```python
 df = daft.read_mcap(
     "/path/to/recording.mcap",
-    start_time=1609459200000000000,  # Start time in nanoseconds
-    end_time=1609545600000000000,    # End time in nanoseconds
+    start_time=1609459200000000000,  # 2021-01-01 UTC in nanoseconds
+    end_time=1609545600000000000,    # 2021-01-02 UTC in nanoseconds
 )
 df.show()
 ```
