@@ -23,6 +23,7 @@ from daft.filesystem import glob_path_with_stats
 from daft.naming import generate_query_name
 from daft.recordbatch import MicroPartition
 from daft.runners import runner_io
+from daft.runners.heartbeat import Heartbeat
 from daft.runners.partitioning import (
     LocalMaterializedResult,
     LocalPartitionSet,
@@ -36,6 +37,8 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Iterator
 
     from daft.logical.builder import LogicalPlanBuilder
+
+HEARTBEAT_INTERVAL_SEC = 10.0
 
 logger = logging.getLogger(__name__)
 
@@ -137,21 +140,8 @@ class NativeRunner(Runner[MicroPartition]):
             {"query_id": query_id},
         )
 
-        # TODO move this
-        import threading
-
-        def start_heartbeat(stop_evt: threading.Event, interval: float) -> threading.Thread:
-            def run() -> None:
-                while not stop_evt.wait(interval):
-                    logger.warning("BEAT")  # TODO delete me
-                    ctx._notify_query_heartbeat(query_id)
-
-            t = threading.Thread(target=run)
-            t.start()
-            return t
-
-        stop_heartbeat = threading.Event()
-        heartbeat = start_heartbeat(stop_heartbeat, 10.0)
+        heartbeat = Heartbeat(HEARTBEAT_INTERVAL_SEC, ctx, query_id)
+        heartbeat.start()
 
         try:
             while True:
@@ -190,8 +180,7 @@ class NativeRunner(Runner[MicroPartition]):
             ctx._notify_query_end(query_id, query_result)
             raise e
         finally:
-            stop_heartbeat.set()
-            heartbeat.join()
+            heartbeat.stop()
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

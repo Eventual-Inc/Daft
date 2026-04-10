@@ -24,6 +24,7 @@ from daft.execution.metadata import ExecutionMetadata
 from daft.naming import generate_query_name
 from daft.recordbatch import RecordBatch
 from daft.runners.flotilla import FlotillaRunner
+from daft.runners.heartbeat import Heartbeat
 from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
 
@@ -84,6 +85,8 @@ except ImportError:
 from daft.logical.schema import Schema
 
 RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
+
+HEARTBEAT_INTERVAL_SEC = 10.0
 
 _RAY_DATA_ARROW_TENSOR_TYPE_AVAILABLE = True
 try:
@@ -633,12 +636,14 @@ class RayRunner(Runner[ray.ObjectRef]):
             if self.flotilla_plan_runner is None:
                 self.flotilla_plan_runner = FlotillaRunner()
 
-            # TODO implement heartbeat
-
             total_rows = 0
             result_gen = self.flotilla_plan_runner.stream_plan(
                 distributed_plan, self._part_set_cache.get_all_partition_sets()
             )
+
+            heartbeat = Heartbeat(HEARTBEAT_INTERVAL_SEC, ctx, query_id)
+            heartbeat.start()
+
             try:
                 while True:
                     result = next(result_gen)
@@ -647,6 +652,8 @@ class RayRunner(Runner[ray.ObjectRef]):
                     yield result
             except StopIteration as e:
                 stats: PyExecutionStats = e.value
+            finally:
+                heartbeat.stop()
 
             # Mark all operators as finished to clean up the Dashboard UI before notify_exec_end
             if should_notify:
