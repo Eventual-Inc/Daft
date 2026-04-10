@@ -232,7 +232,7 @@ from .str import (
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
 from .audio import audio_metadata, resample
-from .video import video_metadata, video_keyframes
+from .video import video_metadata, video_keyframes, video_frames
 from .window import (
     row_number,
     rank,
@@ -482,6 +482,7 @@ __all__ = [
     "value_counts",
     "var",
     "video_file",
+    "video_frames",
     "video_keyframes",
     "video_metadata",
     "week_of_year",
