@@ -309,7 +309,9 @@ mod tests {
         prelude::{DataType, Field, Int64Array, Schema},
         series::IntoSeries,
     };
-    use daft_shuffles::partition_store::InProgressFlightPartitionStore;
+    use daft_shuffles::partition_store::{
+        InProgressFlightPartitionWriter, RegisteredFlightPartition, partition_ref_id,
+    };
     use futures::TryStreamExt;
 
     use super::*;
@@ -351,30 +353,24 @@ mod tests {
         let input_id = 1;
         let local_address = "grpc://local:9999".to_string();
 
-        let partition_set = InProgressFlightPartitionStore::try_new(
-            input_id,
-            values.len(),
-            std::slice::from_ref(&temp_dir),
-            shuffle_id,
-            make_schema(),
-            None,
-        )
-        .unwrap();
-        let partitions: Vec<MicroPartition> = values
-            .iter()
-            .map(|vals| {
-                if vals.is_empty() {
-                    MicroPartition::empty(Some(make_schema()))
-                } else {
-                    make_mp(vals)
-                }
-            })
-            .collect();
-        partition_set
-            .push_partitioned_data(partitions)
-            .await
+        let mut registered: Vec<RegisteredFlightPartition> = Vec::with_capacity(values.len());
+        for (partition_idx, vals) in values.iter().enumerate() {
+            let writer = InProgressFlightPartitionWriter::try_new(
+                partition_ref_id(input_id, partition_idx),
+                std::slice::from_ref(&temp_dir),
+                shuffle_id,
+                make_schema(),
+                None,
+            )
             .unwrap();
-        let registered = partition_set.close().await.unwrap();
+            let partition = if vals.is_empty() {
+                MicroPartition::empty(Some(make_schema()))
+            } else {
+                make_mp(vals)
+            };
+            writer.push(partition).await.unwrap();
+            registered.push(writer.close().await.unwrap());
+        }
 
         let refs: Vec<FlightShufflePartitionRef> = registered
             .iter()

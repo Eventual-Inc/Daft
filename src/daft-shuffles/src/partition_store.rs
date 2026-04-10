@@ -33,18 +33,16 @@ struct WriterTaskResult {
 
 type WriterTask = RuntimeTask<DaftResult<WriterTaskResult>>;
 
-struct InProgressFlightPartitionStoreState {
-    writer_senders: Option<Vec<Option<async_channel::Sender<MicroPartition>>>>,
-    writer_tasks: Vec<Option<WriterTask>>,
+struct InProgressFlightPartitionWriterState {
+    writer_sender: Option<async_channel::Sender<MicroPartition>>,
+    writer_task: Option<WriterTask>,
     error: Option<String>,
-    saw_push: bool,
 }
 
-pub struct InProgressFlightPartitionStore {
-    state: Mutex<InProgressFlightPartitionStoreState>,
+pub struct InProgressFlightPartitionWriter {
+    state: Mutex<InProgressFlightPartitionWriterState>,
     expected_schema: SchemaRef,
-    input_id: u32,
-    num_partitions: usize,
+    partition_ref_id: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -62,10 +60,9 @@ impl RegisteredFlightPartition {
     }
 }
 
-impl InProgressFlightPartitionStore {
+impl InProgressFlightPartitionWriter {
     pub fn try_new(
-        input_id: u32,
-        num_partitions: usize,
+        partition_ref_id: u64,
         dirs: &[String],
         shuffle_id: u64,
         expected_schema: SchemaRef,
@@ -76,173 +73,104 @@ impl InProgressFlightPartitionStore {
             let (source_type, _) = parse_url(dir)?;
             if source_type != SourceType::File {
                 return Err(DaftError::ValueError(format!(
-                    "Flight partition store only supports file paths, got: {}",
+                    "Flight partition writer only supports file paths, got: {}",
                     dir
                 )));
             }
-
             std::fs::create_dir_all(dir)?;
         }
 
-        let num_cpus = std::thread::available_parallelism().unwrap().get();
-        let mut writer_senders = Vec::with_capacity(num_partitions);
-        let mut writer_tasks = Vec::with_capacity(num_partitions);
-        for partition_idx in 0..num_partitions {
-            let partition_ref_id = partition_ref_id(input_id, partition_idx);
-            let partition_dir = get_partition_dir(&shuffle_dirs, partition_ref_id);
-            if std::path::Path::new(&partition_dir).exists() {
-                std::fs::remove_dir_all(&partition_dir)?;
-            }
-            std::fs::create_dir_all(&partition_dir)?;
-
-            let writer = make_ipc_writer(&partition_dir, SINGLE_FILE_TARGET_SIZE, compression)?;
-            let (tx, rx) = async_channel::bounded(num_cpus * 2);
-            let task = get_io_runtime(true).spawn(async move { writer_task(rx, writer).await });
-            writer_senders.push(Some(tx));
-            writer_tasks.push(Some(task));
+        let partition_dir = get_partition_dir(&shuffle_dirs, partition_ref_id);
+        if std::path::Path::new(&partition_dir).exists() {
+            std::fs::remove_dir_all(&partition_dir)?;
         }
+        std::fs::create_dir_all(&partition_dir)?;
+
+        let writer = make_ipc_writer(&partition_dir, SINGLE_FILE_TARGET_SIZE, compression)?;
+        let num_cpus = std::thread::available_parallelism().unwrap().get();
+        let (tx, rx) = async_channel::bounded(num_cpus * 2);
+        let task = get_io_runtime(true).spawn(async move { writer_task(rx, writer).await });
 
         Ok(Self {
-            state: Mutex::new(InProgressFlightPartitionStoreState {
-                writer_senders: Some(writer_senders),
-                writer_tasks,
+            state: Mutex::new(InProgressFlightPartitionWriterState {
+                writer_sender: Some(tx),
+                writer_task: Some(task),
                 error: None,
-                saw_push: false,
             }),
             expected_schema,
-            input_id,
-            num_partitions,
+            partition_ref_id,
         })
     }
 
-    pub async fn push_partitioned_data(
-        &self,
-        partitioned_data: Vec<MicroPartition>,
-    ) -> DaftResult<()> {
-        let mut state = self.state.lock().await;
-        if let Some(error) = &state.error {
-            return Err(DaftError::InternalError(error.clone()));
-        }
-        if state.writer_senders.is_none() {
-            return Err(DaftError::InternalError(
-                "Flight partition store has been closed".to_string(),
-            ));
-        }
-        state.saw_push = true;
-
-        if partitioned_data.len() != self.num_partitions {
-            return Err(DaftError::ValueError(format!(
-                "Expected {} partitions in flight partition store, got {}",
-                self.num_partitions,
-                partitioned_data.len()
-            )));
+    pub async fn push(&self, partition: MicroPartition) -> DaftResult<()> {
+        if partition.is_empty() {
+            return Ok(());
         }
 
-        let mut send_inputs = Vec::new();
-        for (partition_idx, partition) in partitioned_data.into_iter().enumerate() {
-            if partition.is_empty() {
-                continue;
+        let sender = {
+            let state = self.state.lock().await;
+            if let Some(error) = &state.error {
+                return Err(DaftError::InternalError(error.clone()));
             }
-            let sender = self.get_writer_sender(&mut state, partition_idx)?;
-            send_inputs.push((sender, partition));
-        }
-        drop(state);
+            state.writer_sender.clone().ok_or_else(|| {
+                DaftError::InternalError("Flight partition writer has been closed".to_string())
+            })?
+        };
 
-        let send_futures = send_inputs
-            .into_iter()
-            .map(|(sender, partition)| async move {
-                sender.send(partition).await.map_err(|e| e.to_string())
-            });
-
-        if let Err(e) = futures::future::try_join_all(send_futures).await {
+        if let Err(e) = sender.send(partition).await {
             self.close().await?;
-            return Err(DaftError::InternalError(e));
+            return Err(DaftError::InternalError(e.to_string()));
         }
 
         Ok(())
     }
 
-    pub async fn close(&self) -> DaftResult<Vec<RegisteredFlightPartition>> {
+    pub async fn close(&self) -> DaftResult<RegisteredFlightPartition> {
         let mut state = self.state.lock().await;
         if let Some(error) = &state.error {
             return Err(DaftError::InternalError(error.clone()));
         }
 
-        let writer_senders = state
-            .writer_senders
-            .take()
-            .expect("writer_senders should be present");
-        let writer_tasks = std::mem::take(&mut state.writer_tasks);
-        let saw_push = state.saw_push;
-        let close_result = Self::close_internal(writer_senders, writer_tasks).await;
+        let writer_sender = state.writer_sender.take();
+        let writer_task = state.writer_task.take();
+        let close_result = Self::close_internal(writer_sender, writer_task).await;
         if let Err(err) = close_result {
             state.error = Some(err.to_string());
             return Err(err);
         }
 
-        if !saw_push {
-            return Ok(vec![]);
+        match close_result.unwrap() {
+            Some(result) => Ok(RegisteredFlightPartition {
+                partition_ref_id: self.partition_ref_id,
+                schema: result
+                    .schema
+                    .unwrap_or_else(|| self.expected_schema.clone()),
+                file_path: result.file_path,
+                num_rows: result.total_rows_written,
+                size_bytes: result.total_bytes_written,
+            }),
+            None => Ok(RegisteredFlightPartition {
+                partition_ref_id: self.partition_ref_id,
+                schema: self.expected_schema.clone(),
+                file_path: None,
+                num_rows: 0,
+                size_bytes: 0,
+            }),
         }
-
-        Ok(close_result
-            .unwrap()
-            .into_iter()
-            .enumerate()
-            .map(|(partition_idx, result)| {
-                let partition_ref_id = partition_ref_id(self.input_id, partition_idx);
-                match result {
-                    Some(result) => RegisteredFlightPartition {
-                        partition_ref_id,
-                        schema: result
-                            .schema
-                            .unwrap_or_else(|| self.expected_schema.clone()),
-                        file_path: result.file_path,
-                        num_rows: result.total_rows_written,
-                        size_bytes: result.total_bytes_written,
-                    },
-                    None => RegisteredFlightPartition {
-                        partition_ref_id,
-                        schema: self.expected_schema.clone(),
-                        file_path: None,
-                        num_rows: 0,
-                        size_bytes: 0,
-                    },
-                }
-            })
-            .collect())
-    }
-
-    fn get_writer_sender(
-        &self,
-        state: &mut InProgressFlightPartitionStoreState,
-        partition_idx: usize,
-    ) -> DaftResult<async_channel::Sender<MicroPartition>> {
-        let writer_senders = state
-            .writer_senders
-            .as_mut()
-            .expect("writer_senders should be present before close");
-        writer_senders[partition_idx]
-            .clone()
-            .ok_or_else(|| DaftError::InternalError("Flight partition writer missing".to_string()))
     }
 
     async fn close_internal(
-        writer_senders: Vec<Option<async_channel::Sender<MicroPartition>>>,
-        writer_tasks: Vec<Option<WriterTask>>,
-    ) -> DaftResult<Vec<Option<WriterTaskResult>>> {
-        drop(writer_senders);
-        let results =
-            futures::future::try_join_all(writer_tasks.into_iter().map(|task| async move {
-                match task {
-                    Some(task) => {
-                        let result = task.await??;
-                        Ok::<Option<WriterTaskResult>, DaftError>(Some(result))
-                    }
-                    None => Ok::<Option<WriterTaskResult>, DaftError>(None),
-                }
-            }))
-            .await?;
-        Ok(results)
+        writer_sender: Option<async_channel::Sender<MicroPartition>>,
+        writer_task: Option<WriterTask>,
+    ) -> DaftResult<Option<WriterTaskResult>> {
+        drop(writer_sender);
+        match writer_task {
+            Some(task) => {
+                let result = task.await??;
+                Ok(Some(result))
+            }
+            None => Ok(None),
+        }
     }
 }
 
@@ -335,76 +263,64 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_flight_partition_set_basic() -> DaftResult<()> {
+    async fn test_flight_partition_writer_basic() -> DaftResult<()> {
         let temp_dir = make_temp_dir();
-        let partitions = InProgressFlightPartitionStore::try_new(
-            7,
-            2,
+        let writer = InProgressFlightPartitionWriter::try_new(
+            partition_ref_id(7, 0),
             std::slice::from_ref(&temp_dir),
             9,
             make_schema(),
             None,
         )?;
 
-        partitions
-            .push_partitioned_data(vec![make_mp(&[1, 2]), make_mp(&[3])])
-            .await?;
-        partitions
-            .push_partitioned_data(vec![make_mp(&[4]), make_mp(&[])])
-            .await?;
+        writer.push(make_mp(&[1, 2])).await?;
+        writer.push(make_mp(&[4])).await?;
 
-        let finalized = partitions.close().await?;
-        assert_eq!(finalized.len(), 2);
-        assert_eq!(finalized[0].partition_ref_id, ((7_u64) << 32));
-        assert_eq!(finalized[0].num_rows, 3);
-        assert!(finalized[0].file_path.is_some());
-        assert_eq!(finalized[1].num_rows, 1);
+        let finalized = writer.close().await?;
+        assert_eq!(finalized.partition_ref_id, partition_ref_id(7, 0));
+        assert_eq!(finalized.num_rows, 3);
+        assert!(finalized.file_path.is_some());
 
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_flight_partition_set_empty_finalize_uses_expected_schema() -> DaftResult<()> {
+    async fn test_flight_partition_writer_empty_finalize_uses_expected_schema() -> DaftResult<()> {
         let temp_dir = make_temp_dir();
-        let partitions = InProgressFlightPartitionStore::try_new(
-            1,
-            1,
+        let writer = InProgressFlightPartitionWriter::try_new(
+            partition_ref_id(1, 0),
             std::slice::from_ref(&temp_dir),
             2,
             make_schema(),
             None,
         )?;
 
-        let finalized = partitions.close().await?;
-        assert_eq!(finalized.len(), 0);
+        let finalized = writer.close().await?;
+        assert_eq!(finalized.schema.names(), vec!["ints"]);
+        assert!(finalized.file_path.is_none());
+        assert_eq!(finalized.num_rows, 0);
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_flight_partition_set_empty_push_returns_dense_empty_refs() -> DaftResult<()> {
+    async fn test_flight_partition_writer_empty_push_stays_empty() -> DaftResult<()> {
         let temp_dir = make_temp_dir();
-        let partitions = InProgressFlightPartitionStore::try_new(
-            1,
-            2,
+        let writer = InProgressFlightPartitionWriter::try_new(
+            partition_ref_id(1, 1),
             std::slice::from_ref(&temp_dir),
             2,
             make_schema(),
             None,
         )?;
 
-        partitions
-            .push_partitioned_data(vec![
-                MicroPartition::empty(Some(make_schema())),
-                MicroPartition::empty(Some(make_schema())),
-            ])
+        writer
+            .push(MicroPartition::empty(Some(make_schema())))
             .await?;
 
-        let finalized = partitions.close().await?;
-        assert_eq!(finalized.len(), 2);
-        assert_eq!(finalized[0].schema.names(), vec!["ints"]);
-        assert!(finalized[0].file_path.is_none());
-        assert_eq!(finalized[0].num_rows, 0);
-        assert!(finalized[1].file_path.is_none());
+        let finalized = writer.close().await?;
+        assert_eq!(finalized.schema.names(), vec!["ints"]);
+        assert!(finalized.file_path.is_none());
+        assert_eq!(finalized.num_rows, 0);
 
         Ok(())
     }

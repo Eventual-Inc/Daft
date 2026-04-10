@@ -428,7 +428,7 @@ mod tests {
     use futures::TryStreamExt;
 
     use super::*;
-    use crate::partition_store::InProgressFlightPartitionStore;
+    use crate::partition_store::{InProgressFlightPartitionWriter, partition_ref_id};
 
     fn make_schema() -> Arc<daft_schema::schema::Schema> {
         Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)]))
@@ -505,20 +505,28 @@ mod tests {
         let input_id = 7;
 
         // Write real IPC files through the partition store.
-        let partition_set = InProgressFlightPartitionStore::try_new(
-            input_id,
-            2,
+        let writer_0 = InProgressFlightPartitionWriter::try_new(
+            partition_ref_id(input_id, 0),
             std::slice::from_ref(&temp_dir),
             shuffle_id,
             make_schema(),
             None,
         )
         .unwrap();
-        partition_set
-            .push_partitioned_data(vec![make_mp(&[10, 20, 30]), make_mp(&[40])])
-            .await
-            .unwrap();
-        let registered = partition_set.close().await.unwrap();
+        writer_0.push(make_mp(&[10, 20, 30])).await.unwrap();
+        let writer_1 = InProgressFlightPartitionWriter::try_new(
+            partition_ref_id(input_id, 1),
+            std::slice::from_ref(&temp_dir),
+            shuffle_id,
+            make_schema(),
+            None,
+        )
+        .unwrap();
+        writer_1.push(make_mp(&[40])).await.unwrap();
+        let registered = vec![
+            writer_0.close().await.unwrap(),
+            writer_1.close().await.unwrap(),
+        ];
 
         // Register them with the flight server.
         let server = ShuffleFlightServer::new();
@@ -554,23 +562,31 @@ mod tests {
         let shuffle_id = 43;
 
         // Create partition set but only write to one partition.
-        let partition_set = InProgressFlightPartitionStore::try_new(
-            1,
-            2,
+        let writer_0 = InProgressFlightPartitionWriter::try_new(
+            partition_ref_id(1, 0),
             std::slice::from_ref(&temp_dir),
             shuffle_id,
             make_schema(),
             None,
         )
         .unwrap();
-        partition_set
-            .push_partitioned_data(vec![
-                make_mp(&[100]),
-                MicroPartition::empty(Some(make_schema())),
-            ])
+        writer_0.push(make_mp(&[100])).await.unwrap();
+        let writer_1 = InProgressFlightPartitionWriter::try_new(
+            partition_ref_id(1, 1),
+            std::slice::from_ref(&temp_dir),
+            shuffle_id,
+            make_schema(),
+            None,
+        )
+        .unwrap();
+        writer_1
+            .push(MicroPartition::empty(Some(make_schema())))
             .await
             .unwrap();
-        let registered = partition_set.close().await.unwrap();
+        let registered = vec![
+            writer_0.close().await.unwrap(),
+            writer_1.close().await.unwrap(),
+        ];
 
         let server = ShuffleFlightServer::new();
         let ref_ids: Vec<u64> = registered.iter().map(|p| p.partition_ref_id).collect();

@@ -10,7 +10,8 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
 use daft_shuffles::{
-    partition_store::InProgressFlightPartitionStore, server::flight_server::ShuffleFlightServer,
+    partition_store::{InProgressFlightPartitionWriter, partition_ref_id},
+    server::flight_server::ShuffleFlightServer,
 };
 use itertools::Itertools;
 use tracing::{Span, instrument};
@@ -41,7 +42,8 @@ impl RayRepartitionState {
 }
 
 pub(crate) struct FlightRepartitionState {
-    partitions: Arc<InProgressFlightPartitionStore>,
+    partitions: Arc<Vec<Arc<InProgressFlightPartitionWriter>>>,
+    saw_push: bool,
 }
 
 pub(crate) enum RepartitionState {
@@ -63,7 +65,7 @@ enum RepartitionBackend {
         compression: Option<String>,
         local_server: Arc<ShuffleFlightServer>,
         // Only accessed from the single-threaded event loop; Mutex is just for Sync.
-        partitions: Mutex<HashMap<InputId, Arc<InProgressFlightPartitionStore>>>,
+        partitions: Mutex<HashMap<InputId, Arc<Vec<Arc<InProgressFlightPartitionWriter>>>>>,
     },
 }
 
@@ -191,10 +193,20 @@ impl BlockingSink for RepartitionSink {
                                 }
                                 None => input.partition_by_random(num_partitions, 0)?,
                             };
-                            state
-                                .partitions
-                                .push_partitioned_data(partitioned.into_iter().collect())
-                                .await?;
+                            let mut push_futures = Vec::new();
+                            for (writer, partition) in
+                                state.partitions.iter().zip(partitioned.into_iter())
+                            {
+                                if partition.is_empty() {
+                                    continue;
+                                }
+                                push_futures.push(writer.push(partition));
+                            }
+                            futures::future::try_join_all(push_futures).await?;
+                            let state = FlightRepartitionState {
+                                saw_push: true,
+                                ..state
+                            };
                             Ok(RepartitionState::Flight(state))
                         },
                         Span::current(),
@@ -314,8 +326,21 @@ impl BlockingSink for RepartitionSink {
                 spawner
                     .spawn(
                         async move {
-                            let partitions = states.into_iter().next().unwrap().partitions;
-                            let finalized = partitions.close().await?;
+                            let saw_push = states.iter().any(|state| state.saw_push);
+                            let partitions = states
+                                .into_iter()
+                                .next()
+                                .expect("Flight repartition finalize requires at least one state")
+                                .partitions;
+                            let finalized = futures::future::try_join_all(
+                                partitions.iter().map(|partition| partition.close()),
+                            )
+                            .await?;
+                            if !saw_push {
+                                return Ok(BlockingSinkOutput::ShuffleMetadata(ShuffleMetadata {
+                                    partitions: vec![],
+                                }));
+                            }
                             let registered_partitions = finalized
                                 .iter()
                                 .filter(|partition| partition.has_data())
@@ -418,20 +443,26 @@ impl BlockingSink for RepartitionSink {
                 let partition_set = match partitions.entry(input_id) {
                     std::collections::hash_map::Entry::Occupied(e) => e.get().clone(),
                     std::collections::hash_map::Entry::Vacant(e) => {
-                        let partition_set = Arc::new(InProgressFlightPartitionStore::try_new(
-                            input_id,
-                            *num_partitions,
-                            shuffle_dirs,
-                            *shuffle_id,
-                            schema.clone(),
-                            compression.as_deref(),
-                        )?);
+                        let partition_set = Arc::new(
+                            (0..*num_partitions)
+                                .map(|partition_idx| {
+                                    Ok(Arc::new(InProgressFlightPartitionWriter::try_new(
+                                        partition_ref_id(input_id, partition_idx),
+                                        shuffle_dirs,
+                                        *shuffle_id,
+                                        schema.clone(),
+                                        compression.as_deref(),
+                                    )?))
+                                })
+                                .collect::<DaftResult<Vec<_>>>()?,
+                        );
                         e.insert(partition_set.clone());
                         partition_set
                     }
                 };
                 Ok(RepartitionState::Flight(FlightRepartitionState {
                     partitions: partition_set,
+                    saw_push: false,
                 }))
             }
         }
