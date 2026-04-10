@@ -173,6 +173,7 @@ where
             }
 
             // 4: Concurrently wait for new tasks, task completions, or periodic tick
+            // TODO maybe put heartbeat here if Python solution isn't good?
             tokio::select! {
                 maybe_new_task = task_rx.recv(), if !input_exhausted => {
                     Self::handle_new_tasks(maybe_new_task, &mut task_rx, &statistics_manager, &mut scheduler, &mut input_exhausted)?;

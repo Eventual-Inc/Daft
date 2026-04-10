@@ -633,6 +633,8 @@ class RayRunner(Runner[ray.ObjectRef]):
             if self.flotilla_plan_runner is None:
                 self.flotilla_plan_runner = FlotillaRunner()
 
+            # TODO implement heartbeat
+
             total_rows = 0
             result_gen = self.flotilla_plan_runner.stream_plan(
                 distributed_plan, self._part_set_cache.get_all_partition_sets()

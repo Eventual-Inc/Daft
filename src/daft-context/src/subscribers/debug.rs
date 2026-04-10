@@ -185,6 +185,8 @@ impl Subscriber for DebugSubscriber {
     fn on_event(&self, event: Event) -> DaftResult<()> {
         match event {
             Event::QueryStart(e) => self.handle_query_start(&e)?,
+            // ignore heartbeats for debug, too verbose
+            Event::QueryHeartbeat(_) => (),
             Event::QueryEnd(e) => self.handle_query_end(&e)?,
             Event::OptimizationStart(e) => self.handle_optimization_start(&e)?,
             Event::OptimizationComplete(e) => self.handle_optimization_complete(&e)?,

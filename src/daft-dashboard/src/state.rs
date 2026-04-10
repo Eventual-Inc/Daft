@@ -122,6 +122,7 @@ pub(crate) enum QueryState {
     Executing {
         plan_info: PlanInfo,
         exec_info: ExecInfo,
+        last_heartbeat_sec: f64,
     },
     Finalizing {
         plan_info: PlanInfo,

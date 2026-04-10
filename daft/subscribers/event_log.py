@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         OptimizationStarted,
         ProcessStats,
         QueryFinished,
+        QueryHeartbeat,
         QueryStarted,
         ResultProduced,
         Stats,
@@ -150,6 +151,10 @@ class EventLogSubscriber(Subscriber):
             "plan_unoptimized",
             {"plan": event.metadata.unoptimized_plan},
         )
+
+    def on_query_heartbeat(self, event: QueryHeartbeat) -> None:
+        """Don't log out heartbeats, too verbose."""
+        pass
 
     def on_query_finished(self, event: QueryFinished) -> None:
         duration_ms = event.duration_ms

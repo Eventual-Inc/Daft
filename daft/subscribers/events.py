@@ -19,6 +19,11 @@ class QueryStarted(Event):
 
 
 @dataclass(frozen=True)
+class QueryHeartbeat(Event):
+    query_id: str
+
+
+@dataclass(frozen=True)
 class QueryFinished(Event):
     query_id: str
     result: PyQueryResult

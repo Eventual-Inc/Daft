@@ -137,6 +137,21 @@ class NativeRunner(Runner[MicroPartition]):
             {"query_id": query_id},
         )
 
+        # TODO move this
+        import threading
+
+        def start_heartbeat(stop_evt: threading.Event, interval: float) -> threading.Thread:
+            def run() -> None:
+                while not stop_evt.wait(interval):
+                    ctx._notify_query_heartbeat(query_id)
+
+            t = threading.Thread(target=run)
+            t.start()
+            return t
+
+        stop_heartbeat = threading.Event()
+        heartbeat = start_heartbeat(stop_heartbeat, 10.0)
+
         try:
             while True:
                 result = next(results_gen)
@@ -173,6 +188,9 @@ class NativeRunner(Runner[MicroPartition]):
             query_result = PyQueryResult(QueryEndState.Failed, err_msg)
             ctx._notify_query_end(query_id, query_result)
             raise e
+        finally:
+            stop_heartbeat.set()
+            heartbeat.join()
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

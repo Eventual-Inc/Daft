@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::Arc, time::SystemTime};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use axum::{
     Json, Router,
@@ -67,6 +71,54 @@ async fn query_start(
         return StatusCode::BAD_REQUEST;
     };
     state.ping_clients_on_query_update(query_info.value());
+    StatusCode::OK
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct QueryHeartbeatArgs {
+    pub timestamp_sec: f64,
+}
+
+async fn query_heartbeat(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    Json(args): Json<QueryHeartbeatArgs>,
+) -> StatusCode {
+    let query_info = state.queries.get_mut(&query_id);
+    let Some(mut query_info) = query_info else {
+        tracing::error!("Query `{}` not found", query_id);
+        return StatusCode::BAD_REQUEST;
+    };
+
+    match &mut query_info.state {
+        QueryState::Executing {
+            last_heartbeat_sec, ..
+        } => {
+            if args.timestamp_sec <= *last_heartbeat_sec {
+                tracing::warn!(
+                    "Query `{}` got stale heartbeat {:?} (last heartbeat: {:?})",
+                    query_id,
+                    SystemTime::UNIX_EPOCH + Duration::from_secs_f64(args.timestamp_sec),
+                    SystemTime::UNIX_EPOCH + Duration::from_secs_f64(*last_heartbeat_sec),
+                );
+                return StatusCode::BAD_REQUEST;
+            }
+
+            *last_heartbeat_sec = args.timestamp_sec;
+        }
+        _ => {
+            tracing::error!(
+                "Got heartbeat for query `{}` in state {:?} (only expected while executing)",
+                query_id,
+                query_info.state
+            );
+            return StatusCode::BAD_REQUEST;
+        }
+    }
+
+    state.ping_clients_on_query_update(query_info.value());
+
     StatusCode::OK
 }
 
@@ -209,6 +261,7 @@ async fn exec_start(
                     physical_plan: args.physical_plan.clone(),
                     operators: parse_physical_plan(&args.physical_plan),
                 },
+                last_heartbeat_sec: 0.,
             };
 
             if let QueryState::Executing { exec_info, .. } = &mut query_info.state {
@@ -471,6 +524,7 @@ async fn exec_end(
     let QueryState::Executing {
         mut exec_info,
         plan_info,
+        last_heartbeat_sec: _,
     } = query_info.state.clone()
     else {
         unreachable!();
@@ -531,6 +585,7 @@ async fn query_end(
         QueryState::Executing {
             exec_info,
             plan_info,
+            last_heartbeat_sec: _,
         } => (
             Some(plan_info.clone()),
             Some(exec_info.clone()),
@@ -653,6 +708,7 @@ pub(crate) fn routes() -> Router<Arc<DashboardState>> {
         // Query lifecycle
         // TODO: Consider replacing with websocket for active engine -> server communication
         .route("/query/{query_id}/start", post(query_start))
+        .route("/query/{query_id}/heartbeat", post(query_heartbeat))
         .route("/query/{query_id}/plan_start", post(plan_start))
         .route("/query/{query_id}/plan_end", post(plan_end))
         .route("/query/{query_id}/exec/start", post(exec_start))
