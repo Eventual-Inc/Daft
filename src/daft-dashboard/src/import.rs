@@ -15,9 +15,9 @@ use common_metrics::{QueryEndState, Stat};
 use crate::{
     engine::{
         ExecEmitStatsArgsRecv, ExecEndArgs, ExecStartArgs, FinalizeArgs, PlanEndArgs,
-        PlanStartArgs, StartQueryArgs, apply_emit_stats, apply_exec_end, apply_exec_start,
-        apply_operator_end, apply_operator_start, apply_plan_end, apply_plan_start,
-        apply_query_end, apply_query_start,
+        PlanStartArgs, ProcessStatsArgsRecv, StartQueryArgs, apply_emit_stats, apply_exec_end,
+        apply_exec_start, apply_operator_end, apply_operator_start, apply_plan_end,
+        apply_plan_start, apply_process_stats, apply_query_end, apply_query_start,
     },
     events::{Event, MetricValue, QueryEndStatus},
     state::DashboardState,
@@ -183,6 +183,7 @@ fn import_event(event: &Event, state: &DashboardState) -> Result<(), EventLogErr
                 source_id: e.query_id.clone(),
                 stats: vec![(e.node_id, metrics_to_stats(&e.metrics))],
             },
+            e.timestamp,
         ),
         Event::ExecutionEnded(e) => apply_exec_end(
             state,
@@ -206,8 +207,14 @@ fn import_event(event: &Event, state: &DashboardState) -> Result<(), EventLogErr
         // so at this point it does not make sense to send
         // this event to dashboard.
         Event::ResultProduced(_e) => return Ok(()),
-        // TODO add support in  dashboard for process stats
-        Event::ProcessStats(_e) => return Ok(()),
+        Event::ProcessStats(e) => apply_process_stats(
+            state,
+            e.query_id.clone().into(),
+            ProcessStatsArgsRecv {
+                timestamp: e.timestamp,
+                metrics: metrics_to_stats(&e.metrics),
+            },
+        ),
         Event::EventLogStarted(_e) => return Ok(()),
     };
 

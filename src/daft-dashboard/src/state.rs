@@ -40,6 +40,8 @@ pub(crate) struct OperatorInfo {
     pub start_sec: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_sec: Option<f64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub stats_history: Vec<(f64, HashMap<String, Stat>)>,
 }
 
 pub(crate) type OperatorInfos = HashMap<NodeID, OperatorInfo>;
@@ -155,6 +157,8 @@ pub(crate) struct QueryInfo {
     pub ray_dashboard_url: Option<String>,
     pub entrypoint: Option<String>,
     pub state: QueryState,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub process_stats: Vec<(f64, HashMap<String, Stat>)>,
 }
 
 impl QueryInfo {

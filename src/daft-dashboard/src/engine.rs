@@ -59,6 +59,7 @@ pub(crate) fn apply_query_start(
         ray_dashboard_url: args.ray_dashboard_url,
         entrypoint: args.entrypoint,
         state: QueryState::Pending,
+        process_stats: Vec::new(),
     };
 
     state.queries.insert(query_id.clone(), query_info);
@@ -191,6 +192,7 @@ fn parse_physical_plan(physical_plan: &QueryPlan) -> OperatorInfos {
                 source_stats: HashMap::new(),
                 start_sec: None,
                 end_sec: None,
+                stats_history: Vec::new(),
             },
         );
 
@@ -238,9 +240,10 @@ pub(crate) fn apply_exec_start(
             };
 
             if let QueryState::Executing { exec_info, .. } = &mut query_info.state {
+                let replay_ts = args.exec_start_sec;
                 for (source_id, per_op_stats) in pending_source_stats {
                     let stats = per_op_stats.into_iter().collect::<Vec<_>>();
-                    apply_exec_emit_stats(exec_info, &query_id, &source_id, stats);
+                    apply_exec_emit_stats(exec_info, &query_id, &source_id, stats, replay_ts);
                 }
             }
 
@@ -369,6 +372,7 @@ fn apply_exec_emit_stats(
     query_id: &QueryID,
     source_id: &str,
     stats: Vec<(usize, HashMap<String, Stat>)>,
+    timestamp: f64,
 ) {
     for (operator_id, operator_stats) in stats {
         if let Some(op) = exec_info.operators.get_mut(&operator_id) {
@@ -409,7 +413,8 @@ fn apply_exec_emit_stats(
                 }
             }
 
-            op.stats = aggregated_stats;
+            op.stats = aggregated_stats.clone();
+            op.stats_history.push((timestamp, aggregated_stats));
 
             if op.status == OperatorStatus::Pending {
                 op.status = OperatorStatus::Executing;
@@ -429,13 +434,14 @@ async fn exec_emit_stats(
     Path(query_id): Path<QueryID>,
     Json(args): Json<ExecEmitStatsArgsRecv>,
 ) -> StatusCode {
-    apply_emit_stats(&state, query_id, args)
+    apply_emit_stats(&state, query_id, args, secs_from_epoch())
 }
 
 pub(crate) fn apply_emit_stats(
     state: &DashboardState,
     query_id: QueryID,
     args: ExecEmitStatsArgsRecv,
+    timestamp: f64,
 ) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
@@ -459,7 +465,7 @@ pub(crate) fn apply_emit_stats(
         QueryState::Executing { exec_info, .. }
         | QueryState::Finalizing { exec_info, .. }
         | QueryState::Finished { exec_info, .. } => {
-            apply_exec_emit_stats(exec_info, &query_id, &source_id, stats);
+            apply_exec_emit_stats(exec_info, &query_id, &source_id, stats, timestamp);
         }
         QueryState::Failed {
             exec_info: Some(exec_info),
@@ -469,7 +475,7 @@ pub(crate) fn apply_emit_stats(
             exec_info: Some(exec_info),
             ..
         } => {
-            apply_exec_emit_stats(exec_info, &query_id, &source_id, stats);
+            apply_exec_emit_stats(exec_info, &query_id, &source_id, stats, timestamp);
         }
         QueryState::Failed {
             exec_info: None, ..
@@ -490,6 +496,47 @@ pub(crate) fn apply_emit_stats(
     }
 
     state.ping_clients_on_operator_update(query_info.value());
+    StatusCode::OK
+}
+
+#[derive(Clone, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct ProcessStatsArgsSend {
+    pub timestamp: f64,
+    pub metrics: HashMap<String, Stat>,
+}
+
+#[derive(Clone, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct ProcessStatsArgsRecv {
+    pub timestamp: f64,
+    pub metrics: HashMap<String, Stat>,
+}
+
+async fn process_stats(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    Json(args): Json<ProcessStatsArgsRecv>,
+) -> StatusCode {
+    apply_process_stats(&state, query_id, args)
+}
+
+pub(crate) fn apply_process_stats(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: ProcessStatsArgsRecv,
+) -> StatusCode {
+    let query_info = state.queries.get_mut(&query_id);
+    let Some(mut query_info) = query_info else {
+        tracing::error!("Query {} not found in process_stats", query_id);
+        return StatusCode::BAD_REQUEST;
+    };
+
+    query_info
+        .process_stats
+        .push((args.timestamp, args.metrics));
+
+    state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
 }
 
@@ -727,6 +774,7 @@ pub(crate) fn routes() -> Router<Arc<DashboardState>> {
         .route("/query/{query_id}/exec/{op_id}/start", post(exec_op_start))
         .route("/query/{query_id}/exec/{op_id}/end", post(exec_op_end))
         .route("/query/{query_id}/exec/emit_stats", post(exec_emit_stats))
+        .route("/query/{query_id}/process_stats", post(process_stats))
         .route("/query/{query_id}/exec/end", post(exec_end))
         .route("/query/{query_id}/end", post(query_end))
 }

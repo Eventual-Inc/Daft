@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::subscribers::{
     Event, QueryMetadata, QueryResult, Subscriber,
-    events::{OperatorEndEvent, OperatorStartEvent, StatsEvent},
+    events::{OperatorEndEvent, OperatorStartEvent, ProcessStatsEvent, StatsEvent},
 };
 
 const TOTAL_ROWS: usize = 10;
@@ -440,6 +440,28 @@ impl DashboardSubscriber {
         );
         Ok(())
     }
+
+    fn on_process_stats(&self, event: &ProcessStatsEvent) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        let query_id = event.header.query_id.clone();
+        self.enqueue_json(
+            format!("engine/query/{}/process_stats", query_id),
+            "process_stats",
+            &daft_dashboard::engine::ProcessStatsArgsSend {
+                timestamp: event.header.timestamp_epoch_secs,
+                metrics: event
+                    .stats
+                    .0
+                    .iter()
+                    .map(|(name, stat)| (name.to_string(), stat.clone()))
+                    .collect(),
+            },
+        );
+        Ok(())
+    }
 }
 
 impl Drop for DashboardSubscriber {
@@ -499,7 +521,9 @@ impl Subscriber for DashboardSubscriber {
             Event::Stats(e) => {
                 self.on_stats(&e)?;
             }
-            Event::ProcessStats(_e) => {}
+            Event::ProcessStats(e) => {
+                self.on_process_stats(&e)?;
+            }
             Event::ResultOut(e) => {
                 if let Some(result) = &e.data {
                     self.on_result_out(e.header.query_id.clone(), result.clone())?;

@@ -46,6 +46,7 @@ export type OperatorInfo = {
   stats: Record<string, Stat>;
   start_sec?: number;
   end_sec?: number;
+  stats_history?: [number, Record<string, Stat>][];
 };
 
 export type PhysicalPlanNode = {
@@ -117,6 +118,7 @@ export type QueryInfo = {
   ray_dashboard_url?: string;
   entrypoint?: string;
   state: QueryState;
+  process_stats?: [number, Record<string, Stat>][];
 };
 
 export type ResultPreview = {

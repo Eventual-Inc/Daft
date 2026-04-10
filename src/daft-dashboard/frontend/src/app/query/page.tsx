@@ -103,6 +103,21 @@ function QueryPageInner() {
           </BreadcrumbList>
         </Breadcrumb>
 
+        <div className="flex justify-end gap-2">
+          <Link
+            href={`/query/timeline?id=${queryId}`}
+            className={`${main.className} text-xs px-3 py-1 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors`}
+          >
+            Timeline (Gantt) →
+          </Link>
+          <Link
+            href={`/query/sparklines?id=${queryId}`}
+            className={`${main.className} text-xs px-3 py-1 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors`}
+          >
+            Sparklines →
+          </Link>
+        </div>
+
         <div className="w-full flex border-b border-zinc-800">
           <div className="w-1/4 border-r border-zinc-800 px-6 py-4">
             <Status
