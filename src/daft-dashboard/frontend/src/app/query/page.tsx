@@ -180,7 +180,7 @@ function QueryPageInner() {
                   </div>
                 )}
               </div>
-              {(query.daft_version || query.python_version) && (
+              {(query.daft_version || query.python_version || query.ray_version) && (
               <div className="space-y-3">
                 {query.daft_version && (
                   <div>
@@ -199,6 +199,16 @@ function QueryPageInner() {
                     </h3>
                     <p className={`${main.className} text-lg font-mono text-zinc-100`}>
                       {query.python_version}
+                    </p>
+                  </div>
+                )}
+                {query.ray_version && (
+                  <div>
+                    <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
+                      Ray Version
+                    </h3>
+                    <p className={`${main.className} text-lg font-mono text-zinc-100`}>
+                      {query.ray_version}
                     </p>
                   </div>
                 )}

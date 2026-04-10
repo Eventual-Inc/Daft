@@ -236,6 +236,7 @@ impl DashboardSubscriber {
                 entrypoint: metadata.entrypoint.clone(),
                 python_version: metadata.python_version.clone(),
                 daft_version: metadata.daft_version.clone(),
+                ray_version: metadata.ray_version.clone(),
             },
         );
         Ok(())

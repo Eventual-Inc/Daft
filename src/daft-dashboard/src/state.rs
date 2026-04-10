@@ -102,6 +102,8 @@ pub(crate) struct QuerySummary {
     pub python_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub daft_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ray_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -160,6 +162,7 @@ pub(crate) struct QueryInfo {
     pub entrypoint: Option<String>,
     pub python_version: Option<String>,
     pub daft_version: Option<String>,
+    pub ray_version: Option<String>,
     pub state: QueryState,
 }
 
@@ -208,6 +211,7 @@ impl QueryInfo {
             entrypoint: self.entrypoint.clone(),
             python_version: self.python_version.clone(),
             daft_version: self.daft_version.clone(),
+            ray_version: self.ray_version.clone(),
         }
     }
 }

@@ -32,6 +32,7 @@ pub struct StartQueryArgs {
     pub entrypoint: Option<String>,
     pub python_version: Option<String>,
     pub daft_version: Option<String>,
+    pub ray_version: Option<String>,
 }
 
 async fn query_start(
@@ -54,6 +55,7 @@ async fn query_start(
         entrypoint: args.entrypoint,
         python_version: args.python_version,
         daft_version: args.daft_version,
+        ray_version: args.ray_version,
         state: QueryState::Pending,
     };
 

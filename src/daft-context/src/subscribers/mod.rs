@@ -26,6 +26,7 @@ pub struct QueryMetadata {
     pub entrypoint: Option<String>,
     pub python_version: Option<String>,
     pub daft_version: Option<String>,
+    pub ray_version: Option<String>,
 }
 
 #[derive(Debug, Clone)]

@@ -73,6 +73,7 @@ export type QuerySummary = {
   entrypoint?: string;
   python_version?: string;
   daft_version?: string;
+  ray_version?: string;
 };
 
 export type QuerySummaryMap = { [_: string]: QuerySummary };

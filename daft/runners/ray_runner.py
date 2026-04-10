@@ -621,6 +621,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                             entrypoint,
                             python_version=platform.python_version(),
                             daft_version=daft.get_version(),
+                            ray_version=ray.__version__,
                         ),
                     )
                     ctx._notify_optimization_start(query_id)
