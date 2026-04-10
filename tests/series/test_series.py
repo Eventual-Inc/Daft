@@ -178,6 +178,10 @@ def test_series_bincode_serdes_on_data(data) -> None:
     assert s.to_pylist() == copied_s.to_pylist()
 
 
+@pytest.mark.skipif(
+    not hasattr(pa, "uuid"),
+    reason="Arrow version doesn't support the uuid extension type.",
+)
 def test_series_bincode_serdes_on_uuid_array(uuid_ext_type) -> None:
     data = pa.array([uuid.uuid4().bytes for _ in range(5)], type=pa.uuid())
     s = Series.from_arrow(data)

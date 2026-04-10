@@ -151,6 +151,10 @@ def test_series_concat_struct_array(chunks) -> None:
             counter += 1
 
 
+@pytest.mark.skipif(
+    not hasattr(pa, "uuid"),
+    reason="Arrow version doesn't support the uuid extension type.",
+)
 @pytest.mark.parametrize("chunks", [1, 2, 3, 10])
 def test_series_concat_uuid_array(chunks) -> None:
     data = []

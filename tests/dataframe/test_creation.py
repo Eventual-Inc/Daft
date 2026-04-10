@@ -196,6 +196,10 @@ def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) ->
     assert df.to_arrow() == expected
 
 
+@pytest.mark.skipif(
+    not hasattr(pa, "uuid"),
+    reason="Arrow version doesn't support the uuid extension type.",
+)
 def test_create_dataframe_arrow_uuid(valid_data: list[dict[str, float]]) -> None:
     pydict = {"uuid": [uuid.uuid4().bytes for _ in range(len(valid_data))]}
     pa_schema = pa.schema([pa.field("uuid", pa.uuid())])
