@@ -25,10 +25,6 @@ from daft.subscribers.events import (
 )
 from tests.conftest import get_tests_daft_runner_name
 
-pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() != "native", reason="Only Native Runner supports subscribers right now"
-)
-
 
 class MockSubscriber(Subscriber):
     query_metadata: dict[str, PyQueryMetadata]
@@ -187,21 +183,19 @@ def test_subscriber_template():
         unoptimized_plan_json = df._builder.repr_json()
         df = df.collect()
 
-        query_id = next(iter(subscriber.query_metadata.keys()))
-        # Subscriber now receives JSON representation
+        query_id = subscriber.query_ids[-1]
         assert subscriber.query_metadata[query_id].unoptimized_plan == unoptimized_plan_json
         assert subscriber.query_metadata[query_id].output_schema == output_schema._schema
         # Optimized plan should be different from unoptimized plan
         assert subscriber.query_optimized_plan[query_id] != unoptimized_plan_json
 
-        # Verify ResultProduced events delivered the expected row count
-        assert subscriber.query_result_rows[query_id] == 3
-
-        # Test stats
-        for _, stats in subscriber.query_node_stats[query_id].items():
-            for stat_name, stat_value in stats.items():
-                if stat_name == "rows_in" or stat_name == "rows_out":
-                    assert stat_value == 3
+        # ResultProduced and per-row execution stats are only wired through the native runner today.
+        if get_tests_daft_runner_name() == "native":
+            assert subscriber.query_result_rows[query_id] == 3
+            for _, stats in subscriber.query_node_stats[query_id].items():
+                for stat_name, stat_value in stats.items():
+                    if stat_name == "rows_in" or stat_name == "rows_out":
+                        assert stat_value == 3
 
     # Verify detach
     df = daft.from_pydict({"x": [1, 2, 3]})
@@ -217,6 +211,10 @@ def test_execution_events_inherit_from_event_base():
     assert isinstance(OperatorFinished(query_id="q", node_id=1, name="scan"), Event)
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="bytes.read is not yet emitted to Python subscribers on Ray Flotilla",
+)
 def test_csv_scan_reports_bytes_read(tmp_path):
     subscriber = MockSubscriber()
 
