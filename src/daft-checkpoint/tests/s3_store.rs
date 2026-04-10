@@ -1,8 +1,8 @@
 //! Integration tests for [`S3CheckpointStore`] using the local filesystem backend.
 //!
 //! These tests exercise the full S3CheckpointStore lifecycle against a real
-//! (but local) object store, verifying that the committed_log/, source_keys/,
-//! written_files/, and manifest.json layout behaves correctly.
+//! (but local) object store, verifying that the keys/, files/, and manifest.json
+//! layout behaves correctly.
 
 use std::sync::Arc;
 
@@ -80,7 +80,7 @@ async fn collect_files(store: &S3CheckpointStore) -> Vec<FileMetadata> {
 #[tokio::test]
 async fn test_lifecycle() {
     let (_dir, store) = make_store();
-    let id = CheckpointId::generate();
+    let id = CheckpointId::generate(0);
 
     // Store is empty.
     let checkpoints: Vec<_> = store
@@ -92,9 +92,9 @@ async fn test_lifecycle() {
         .unwrap();
     assert!(checkpoints.is_empty());
 
-    store.stage_keys(id, keys(&["a", "b"])).await.unwrap();
+    store.stage_keys(&id, keys(&["a", "b"])).await.unwrap();
     store
-        .stage_files(id, vec![file(b"file1"), file(b"file2")])
+        .stage_files(&id, vec![file(b"file1"), file(b"file2")])
         .await
         .unwrap();
 
@@ -103,7 +103,7 @@ async fn test_lifecycle() {
     assert_eq!(collect_files(&store).await, Vec::<FileMetadata>::new());
 
     // Seal makes data visible.
-    store.checkpoint(id).await.unwrap();
+    store.checkpoint(&id).await.unwrap();
     assert_eq!(collect_key_strings(&store).await, vec!["a", "b"]);
     assert_eq!(
         collect_files(&store).await,
@@ -123,20 +123,20 @@ async fn test_lifecycle() {
 #[tokio::test]
 async fn test_multiple_checkpoints_and_partial_commit() {
     let (_dir, store) = make_store();
-    let id1 = CheckpointId::generate();
-    let id2 = CheckpointId::generate();
+    let id1 = CheckpointId::generate(1);
+    let id2 = CheckpointId::generate(2);
 
     // Checkpoint 1
-    store.stage_keys(id1, keys(&["a"])).await.unwrap();
-    store.stage_files(id1, vec![file(b"f1")]).await.unwrap();
-    store.checkpoint(id1).await.unwrap();
+    store.stage_keys(&id1, keys(&["a"])).await.unwrap();
+    store.stage_files(&id1, vec![file(b"f1")]).await.unwrap();
+    store.checkpoint(&id1).await.unwrap();
 
-    // Checkpoint 2: multiple stage_keys calls → multiple source_keys/*.ipc files
-    store.stage_keys(id2, keys(&["b"])).await.unwrap();
-    store.stage_keys(id2, keys(&["c", "d"])).await.unwrap();
-    store.stage_files(id2, vec![file(b"f2")]).await.unwrap();
-    store.stage_files(id2, vec![file(b"f3")]).await.unwrap();
-    store.checkpoint(id2).await.unwrap();
+    // Checkpoint 2: multiple stage_keys calls → multiple keys/*.ipc files
+    store.stage_keys(&id2, keys(&["b"])).await.unwrap();
+    store.stage_keys(&id2, keys(&["c", "d"])).await.unwrap();
+    store.stage_files(&id2, vec![file(b"f2")]).await.unwrap();
+    store.stage_files(&id2, vec![file(b"f3")]).await.unwrap();
+    store.checkpoint(&id2).await.unwrap();
 
     assert_eq!(collect_key_strings(&store).await, vec!["a", "b", "c", "d"]);
     assert_eq!(
@@ -144,7 +144,7 @@ async fn test_multiple_checkpoints_and_partial_commit() {
         vec![file(b"f1"), file(b"f2"), file(b"f3")]
     );
 
-    // Commit only id1 — single atomic write to committed_log/
+    // Commit only id1
     store.mark_committed(&[id1]).await.unwrap();
 
     // All keys still visible; only id2's files remain
@@ -159,25 +159,31 @@ async fn test_multiple_checkpoints_and_partial_commit() {
 #[tokio::test]
 async fn test_idempotency() {
     let (_dir, store) = make_store();
-    let id = CheckpointId::generate();
+    let id = CheckpointId::generate(0);
 
-    store.stage_keys(id, keys(&["a"])).await.unwrap();
-    store.stage_files(id, vec![file(b"f1")]).await.unwrap();
+    store.stage_keys(&id, keys(&["a"])).await.unwrap();
+    store.stage_files(&id, vec![file(b"f1")]).await.unwrap();
 
     // Double checkpoint()
-    store.checkpoint(id).await.unwrap();
-    store.checkpoint(id).await.unwrap();
+    store.checkpoint(&id).await.unwrap();
+    store.checkpoint(&id).await.unwrap();
     assert_eq!(collect_key_strings(&store).await, vec!["a"]);
     assert_eq!(collect_files(&store).await, vec![file(b"f1")]);
 
     // Double mark_committed()
-    store.mark_committed(&[id]).await.unwrap();
-    store.mark_committed(&[id]).await.unwrap();
+    store
+        .mark_committed(std::slice::from_ref(&id))
+        .await
+        .unwrap();
+    store
+        .mark_committed(std::slice::from_ref(&id))
+        .await
+        .unwrap();
     assert_eq!(collect_key_strings(&store).await, vec!["a"]);
     assert_eq!(collect_files(&store).await, Vec::<FileMetadata>::new());
 
     // checkpoint() on an already-committed ID is a no-op
-    store.checkpoint(id).await.unwrap();
+    store.checkpoint(&id).await.unwrap();
 }
 
 // ---------------------------------------------------------------------------
@@ -190,14 +196,14 @@ async fn test_error_paths() {
 
     // checkpoint() on an unknown ID
     let err = store
-        .checkpoint(CheckpointId::generate())
+        .checkpoint(&CheckpointId::generate(0))
         .await
         .unwrap_err();
     assert!(matches!(err, CheckpointError::CheckpointNotFound { .. }));
 
     // mark_committed() on an unknown ID
     let err = store
-        .mark_committed(&[CheckpointId::generate()])
+        .mark_committed(&[CheckpointId::generate(0)])
         .await
         .unwrap_err();
     assert!(matches!(
@@ -206,19 +212,19 @@ async fn test_error_paths() {
     ));
 
     // stage_keys after checkpoint() → AlreadySealed
-    let id = CheckpointId::generate();
-    store.stage_keys(id, keys(&["a"])).await.unwrap();
-    store.checkpoint(id).await.unwrap();
+    let id = CheckpointId::generate(0);
+    store.stage_keys(&id, keys(&["a"])).await.unwrap();
+    store.checkpoint(&id).await.unwrap();
 
-    let err = store.stage_keys(id, keys(&["b"])).await.unwrap_err();
+    let err = store.stage_keys(&id, keys(&["b"])).await.unwrap_err();
     assert!(matches!(err, CheckpointError::AlreadySealed { .. }));
 
-    let err = store.stage_files(id, vec![file(b"f")]).await.unwrap_err();
+    let err = store.stage_files(&id, vec![file(b"f")]).await.unwrap_err();
     assert!(matches!(err, CheckpointError::AlreadySealed { .. }));
 
     // mark_committed on staged (not yet checkpointed)
-    let id2 = CheckpointId::generate();
-    store.stage_keys(id2, keys(&["x"])).await.unwrap();
+    let id2 = CheckpointId::generate(1);
+    store.stage_keys(&id2, keys(&["x"])).await.unwrap();
     let err = store.mark_committed(&[id2]).await.unwrap_err();
     assert!(matches!(err, CheckpointError::NotCheckpointed { .. }));
 }
@@ -232,24 +238,24 @@ async fn test_orphaned_staged_entries_invisible() {
     let (_dir, store) = make_store();
 
     // Orphan: staged but never checkpointed (crash simulation)
-    let orphan_id = CheckpointId::generate();
+    let orphan_id = CheckpointId::generate(0);
     store
-        .stage_keys(orphan_id, keys(&["orphan"]))
+        .stage_keys(&orphan_id, keys(&["orphan"]))
         .await
         .unwrap();
     store
-        .stage_files(orphan_id, vec![file(b"orphan_file")])
+        .stage_files(&orphan_id, vec![file(b"orphan_file")])
         .await
         .unwrap();
 
     // Good: fully checkpointed
-    let good_id = CheckpointId::generate();
-    store.stage_keys(good_id, keys(&["good"])).await.unwrap();
+    let good_id = CheckpointId::generate(1);
+    store.stage_keys(&good_id, keys(&["good"])).await.unwrap();
     store
-        .stage_files(good_id, vec![file(b"good_file")])
+        .stage_files(&good_id, vec![file(b"good_file")])
         .await
         .unwrap();
-    store.checkpoint(good_id).await.unwrap();
+    store.checkpoint(&good_id).await.unwrap();
 
     // Only the good checkpoint's data is visible
     assert_eq!(collect_key_strings(&store).await, vec!["good"]);
@@ -263,10 +269,10 @@ async fn test_orphaned_staged_entries_invisible() {
 #[tokio::test]
 async fn test_checkpoint_keys_only() {
     let (_dir, store) = make_store();
-    let id = CheckpointId::generate();
+    let id = CheckpointId::generate(0);
 
-    store.stage_keys(id, keys(&["a", "b"])).await.unwrap();
-    store.checkpoint(id).await.unwrap();
+    store.stage_keys(&id, keys(&["a", "b"])).await.unwrap();
+    store.checkpoint(&id).await.unwrap();
 
     assert_eq!(collect_key_strings(&store).await, vec!["a", "b"]);
     assert_eq!(collect_files(&store).await, Vec::<FileMetadata>::new());
@@ -279,13 +285,13 @@ async fn test_checkpoint_keys_only() {
 #[tokio::test]
 async fn test_checkpoint_files_only() {
     let (_dir, store) = make_store();
-    let id = CheckpointId::generate();
+    let id = CheckpointId::generate(0);
 
     store
-        .stage_files(id, vec![file(b"data1"), file(b"data2")])
+        .stage_files(&id, vec![file(b"data1"), file(b"data2")])
         .await
         .unwrap();
-    store.checkpoint(id).await.unwrap();
+    store.checkpoint(&id).await.unwrap();
 
     assert_eq!(collect_key_strings(&store).await, Vec::<String>::new());
     assert_eq!(
@@ -301,37 +307,40 @@ async fn test_checkpoint_files_only() {
 #[tokio::test]
 async fn test_get_checkpoint_and_list() {
     let (_dir, store) = make_store();
-    let id1 = CheckpointId::generate();
-    let id2 = CheckpointId::generate();
+    let id1 = CheckpointId::generate(1);
+    let id2 = CheckpointId::generate(2);
 
     // Unknown ID
     let err = store
-        .get_checkpoint(CheckpointId::generate())
+        .get_checkpoint(&CheckpointId::generate(0))
         .await
         .unwrap_err();
     assert!(matches!(err, CheckpointError::CheckpointNotFound { .. }));
 
     // Staged → Checkpointed → Committed via get_checkpoint
-    store.stage_keys(id1, keys(&["a"])).await.unwrap();
-    let ckpt = store.get_checkpoint(id1).await.unwrap();
+    store.stage_keys(&id1, keys(&["a"])).await.unwrap();
+    let ckpt = store.get_checkpoint(&id1).await.unwrap();
     assert_eq!(ckpt.status, CheckpointStatus::Staged);
     assert!(ckpt.sealed_at.is_none());
     assert!(ckpt.committed_at.is_none());
 
-    store.checkpoint(id1).await.unwrap();
-    let ckpt = store.get_checkpoint(id1).await.unwrap();
+    store.checkpoint(&id1).await.unwrap();
+    let ckpt = store.get_checkpoint(&id1).await.unwrap();
     assert_eq!(ckpt.status, CheckpointStatus::Checkpointed);
     assert!(ckpt.sealed_at.is_some());
     assert!(ckpt.committed_at.is_none());
     assert!(ckpt.sealed_at.unwrap() >= ckpt.created_at);
 
-    store.mark_committed(&[id1]).await.unwrap();
-    let ckpt = store.get_checkpoint(id1).await.unwrap();
+    store
+        .mark_committed(std::slice::from_ref(&id1))
+        .await
+        .unwrap();
+    let ckpt = store.get_checkpoint(&id1).await.unwrap();
     assert_eq!(ckpt.status, CheckpointStatus::Committed);
-    // committed_at not tracked in the S3 impl (committed_log has no timestamp)
+    assert!(ckpt.committed_at.is_some());
 
     // list_checkpoints: mixed state
-    store.stage_keys(id2, keys(&["b"])).await.unwrap();
+    store.stage_keys(&id2, keys(&["b"])).await.unwrap();
 
     let checkpoints: Vec<_> = store
         .list_checkpoints()
@@ -354,11 +363,11 @@ async fn test_get_checkpoint_and_list() {
 #[tokio::test]
 async fn test_empty_inputs() {
     let (_dir, store) = make_store();
-    let id = CheckpointId::generate();
+    let id = CheckpointId::generate(0);
 
-    store.stage_keys(id, keys(&[])).await.unwrap();
-    store.stage_files(id, vec![]).await.unwrap();
-    store.checkpoint(id).await.unwrap();
+    store.stage_keys(&id, keys(&[])).await.unwrap();
+    store.stage_files(&id, vec![]).await.unwrap();
+    store.checkpoint(&id).await.unwrap();
 
     assert_eq!(collect_key_strings(&store).await, Vec::<String>::new());
     assert_eq!(collect_files(&store).await, Vec::<FileMetadata>::new());
@@ -368,27 +377,25 @@ async fn test_empty_inputs() {
 }
 
 // ---------------------------------------------------------------------------
-// 10. mark_committed atomicity: all IDs committed in a single write
+// 10. mark_committed: all IDs committed in a single concurrent batch
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn test_mark_committed_batch_atomic() {
+async fn test_mark_committed_batch() {
     let (_dir, store) = make_store();
-    let id1 = CheckpointId::generate();
-    let id2 = CheckpointId::generate();
-    let id3 = CheckpointId::generate();
+    let ids: Vec<CheckpointId> = (1..=3).map(CheckpointId::generate).collect();
 
-    for &id in &[id1, id2, id3] {
+    for id in &ids {
         store.stage_keys(id, keys(&["k"])).await.unwrap();
         store.stage_files(id, vec![file(b"f")]).await.unwrap();
         store.checkpoint(id).await.unwrap();
     }
 
-    // Commit all three in a single call → single committed_log entry
-    store.mark_committed(&[id1, id2, id3]).await.unwrap();
+    // Commit all three in a single call — concurrent manifest overwrites
+    store.mark_committed(&ids).await.unwrap();
 
     // All are now committed
-    for &id in &[id1, id2, id3] {
+    for id in &ids {
         let ckpt = store.get_checkpoint(id).await.unwrap();
         assert_eq!(ckpt.status, CheckpointStatus::Committed);
     }
@@ -405,16 +412,22 @@ async fn test_mark_committed_batch_atomic() {
 #[tokio::test]
 async fn test_mark_committed_idempotent_retry() {
     let (_dir, store) = make_store();
-    let id = CheckpointId::generate();
+    let id = CheckpointId::generate(0);
 
-    store.stage_keys(id, keys(&["a"])).await.unwrap();
-    store.checkpoint(id).await.unwrap();
+    store.stage_keys(&id, keys(&["a"])).await.unwrap();
+    store.checkpoint(&id).await.unwrap();
 
-    store.mark_committed(&[id]).await.unwrap();
-    // Retry: should be a no-op (no error, no duplicate log entry needed)
-    store.mark_committed(&[id]).await.unwrap();
+    store
+        .mark_committed(std::slice::from_ref(&id))
+        .await
+        .unwrap();
+    // Retry: should be a no-op (no error)
+    store
+        .mark_committed(std::slice::from_ref(&id))
+        .await
+        .unwrap();
 
-    let ckpt = store.get_checkpoint(id).await.unwrap();
+    let ckpt = store.get_checkpoint(&id).await.unwrap();
     assert_eq!(ckpt.status, CheckpointStatus::Committed);
 }
 
@@ -425,13 +438,13 @@ async fn test_mark_committed_idempotent_retry() {
 #[tokio::test]
 async fn test_multiple_key_batches_become_separate_ipc_files() {
     let (_dir, store) = make_store();
-    let id = CheckpointId::generate();
+    let id = CheckpointId::generate(0);
 
     // 3 separate stage_keys calls → 3 IPC files
-    store.stage_keys(id, keys(&["a"])).await.unwrap();
-    store.stage_keys(id, keys(&["b", "c"])).await.unwrap();
-    store.stage_keys(id, keys(&["d"])).await.unwrap();
-    store.checkpoint(id).await.unwrap();
+    store.stage_keys(&id, keys(&["a"])).await.unwrap();
+    store.stage_keys(&id, keys(&["b", "c"])).await.unwrap();
+    store.stage_keys(&id, keys(&["d"])).await.unwrap();
+    store.checkpoint(&id).await.unwrap();
 
     assert_eq!(collect_key_strings(&store).await, vec!["a", "b", "c", "d"]);
 }
@@ -443,14 +456,14 @@ async fn test_multiple_key_batches_become_separate_ipc_files() {
 #[tokio::test]
 async fn test_parquet_file_metadata_roundtrip() {
     let (_dir, store) = make_store();
-    let id = CheckpointId::generate();
+    let id = CheckpointId::generate(0);
     let parquet_file = FileMetadata::new(FileFormat::Parquet, vec![10, 20, 30]);
 
     store
-        .stage_files(id, vec![parquet_file.clone()])
+        .stage_files(&id, vec![parquet_file.clone()])
         .await
         .unwrap();
-    store.checkpoint(id).await.unwrap();
+    store.checkpoint(&id).await.unwrap();
 
     let files: Vec<_> = store
         .get_checkpointed_files()

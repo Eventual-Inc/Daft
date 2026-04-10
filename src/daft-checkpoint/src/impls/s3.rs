@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{Arc, RwLock},
     time::SystemTime,
 };
@@ -10,9 +10,12 @@ use chrono::{DateTime, Utc};
 use daft_core::series::Series;
 use daft_io::{IOConfig, get_io_client};
 use daft_recordbatch::RecordBatch;
-use futures::{StreamExt, future::try_join_all, stream::BoxStream};
+use futures::{
+    StreamExt,
+    future::{join_all, try_join_all},
+    stream::BoxStream,
+};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::{
     Checkpoint, CheckpointId, CheckpointStatus, CheckpointStore, FileMetadata,
@@ -30,66 +33,41 @@ fn rfc3339_from(t: SystemTime) -> String {
         .to_string()
 }
 
-fn system_time_from_rfc3339(s: &str) -> SystemTime {
+fn system_time_from_rfc3339(s: &str) -> CheckpointResult<SystemTime> {
     s.parse::<DateTime<Utc>>()
         .map(SystemTime::from)
-        .unwrap_or(SystemTime::UNIX_EPOCH)
+        .map_err(|e| CheckpointError::Internal {
+            message: format!("failed to parse timestamp {s:?}: {e}"),
+        })
 }
 
 /// Written to `{prefix}/{id}/manifest.json` by `checkpoint()`.
-/// Presence of this file is the atomic visibility boundary — once written, never overwritten.
-#[derive(Serialize, Deserialize)]
+///
+/// Presence of this file marks the checkpoint as sealed. `mark_committed()` overwrites
+/// it with `committed_at` set, transitioning the checkpoint to the `Committed` state.
+#[derive(Clone, Serialize, Deserialize)]
 struct Manifest {
     checkpoint_id: String,
     created_at: String,
     sealed_at: String,
+    committed_at: Option<String>,
     num_key_files: usize,
     num_file_files: usize,
 }
 
-/// Written to `{prefix}/committed_log/{uuid}.json` by `mark_committed()`.
-///
-/// One file per call — append-only log. This makes `mark_committed(ids)` a single atomic
-/// `PutObject`: crash before → nothing recorded; crash after → all IDs marked.
-#[derive(Serialize, Deserialize)]
-struct CommittedLogEntry {
-    committed_checkpoint_ids: Vec<String>,
-}
-
 struct StagedEntry {
-    keys: Vec<Series>,
-    files: Vec<FileMetadata>,
+    num_key_files: usize,
+    num_file_files: usize,
     created_at: SystemTime,
 }
 
 impl StagedEntry {
     fn new() -> Self {
         Self {
-            keys: Vec::new(),
-            files: Vec::new(),
+            num_key_files: 0,
+            num_file_files: 0,
             created_at: SystemTime::now(),
         }
-    }
-}
-
-/// Controls what happens to checkpoint data after a successful job run.
-#[derive(Debug, Clone)]
-pub enum CleanupPolicy {
-    /// No automatic cleanup. The operator is responsible for deleting the prefix
-    /// when it is no longer needed (e.g., `aws s3 rm --recursive s3://bucket/prefix/`
-    /// after each successful run). For time-based expiry, an S3 lifecycle rule on
-    /// the prefix can also be configured out-of-band. This is the default.
-    Manual,
-
-    /// After a successful [`mark_committed()`](CheckpointStore::mark_committed),
-    /// Daft deletes the entire checkpoint prefix. Safe because checkpoint data
-    /// loses its value once the job completes — any re-run creates fresh checkpoints.
-    DeleteAfterSuccess,
-}
-
-impl Default for CleanupPolicy {
-    fn default() -> Self {
-        Self::Manual
     }
 }
 
@@ -104,32 +82,15 @@ impl Default for CleanupPolicy {
 ///       0000.ipc          ← Arrow IPC; one file per stage_keys() call
 ///       ...
 ///     files/
-///       0000.bin          ← FileMetadata blob; one file per staged file
+///       0000.bin          ← FileMetadata blob; one file per stage_files() call
 ///       ...
-///     manifest.json       ← written last by checkpoint(); presence = sealed
-///   committed_log/
-///     {uuid}.json         ← { "committed_checkpoint_ids": [...] }
-///     ...                 ← one file per mark_committed() call (append-only log)
+///     manifest.json       ← written by checkpoint(); presence = sealed;
+///                           overwritten by mark_committed() with committed_at set
 /// ```
-///
-/// # Crash semantics
-///
-/// - **Staging** is in-memory only — a crash before `checkpoint()` leaves no trace.
-/// - **`checkpoint()`** writes keys then files then `manifest.json` last. Orphaned
-///   key/file objects from an interrupted write are harmless — they are never read
-///   because their `manifest.json` was never written.
-/// - **`mark_committed()`** is a single atomic `PutObject` to `committed_log/`.
-///
-/// # Consistency
-///
-/// AWS S3 offers strong read-after-write consistency for PUTs and LISTs (since
-/// December 2020). S3-compatible stores (MinIO, Ceph, GCS) may have weaker LIST
-/// guarantees — verify your backend before relying on listing correctness.
 pub struct S3CheckpointStore {
     prefix: String,
     io_config: Arc<IOConfig>,
-    /// Never held across `.await` points.
-    staged: RwLock<HashMap<CheckpointId, StagedEntry>>,
+    staged: RwLock<HashMap<String, StagedEntry>>,
 }
 
 impl S3CheckpointStore {
@@ -142,47 +103,20 @@ impl S3CheckpointStore {
         }
     }
 
-    /// Delete all objects under the checkpoint prefix and clear in-memory staged entries.
-    /// Called automatically by [`CleanupPolicy::DeleteAfterSuccess`], but can also be
-    /// invoked explicitly regardless of policy.
-    pub async fn cleanup(&self) -> CheckpointResult<()> {
-        self.staged
-            .write()
-            .map_err(|e| CheckpointError::Internal {
-                message: format!("staged lock poisoned: {e}"),
-            })?
-            .clear();
-
-        self.io_client()?
-            .delete_dir(&self.prefix, None)
-            .await
-            .map_err(|e| CheckpointError::Internal {
-                message: format!("cleanup of prefix {} failed: {e}", self.prefix),
-            })
+    fn manifest_path(&self, id: &CheckpointId) -> String {
+        format!("{}/{}/manifest.json", self.prefix, id)
     }
 
-    fn manifest_path(&self, id: CheckpointId) -> String {
-        format!("{}/{}/manifest.json", self.prefix, id.as_uuid())
+    fn key_path(&self, id: &CheckpointId, idx: usize) -> String {
+        format!("{}/{}/keys/{:04}.ipc", self.prefix, id, idx)
     }
 
-    fn key_path(&self, id: CheckpointId, idx: usize) -> String {
-        format!("{}/{}/keys/{:04}.ipc", self.prefix, id.as_uuid(), idx)
-    }
-
-    fn file_path(&self, id: CheckpointId, idx: usize) -> String {
-        format!("{}/{}/files/{:04}.bin", self.prefix, id.as_uuid(), idx)
+    fn file_path(&self, id: &CheckpointId, idx: usize) -> String {
+        format!("{}/{}/files/{:04}.bin", self.prefix, id, idx)
     }
 
     fn manifests_glob(&self) -> String {
         format!("{}/*/manifest.json", self.prefix)
-    }
-
-    fn committed_log_glob(&self) -> String {
-        format!("{}/committed_log/*.json", self.prefix)
-    }
-
-    fn new_committed_log_path(&self) -> String {
-        format!("{}/committed_log/{}.json", self.prefix, Uuid::new_v4())
     }
 
     fn io_client(&self) -> CheckpointResult<Arc<daft_io::IOClient>> {
@@ -192,7 +126,9 @@ impl S3CheckpointStore {
     }
 
     async fn put_bytes(&self, path: &str, data: Vec<u8>) -> CheckpointResult<()> {
-        // S3 is a flat key-value store; local paths need parent dirs created explicitly.
+        // Tests run against a local filesystem backend (`file://`), which requires
+        // parent directories to be created before writing — S3 does not.
+        #[cfg(any(test, feature = "test-utils"))]
         if let Some(local) = path.strip_prefix("file://")
             && let Some(parent) = std::path::Path::new(local).parent()
         {
@@ -296,31 +232,16 @@ impl S3CheckpointStore {
         Ok(FileMetadata::new(format, bytes[1..].to_vec()))
     }
 
-    async fn committed_set(&self) -> CheckpointResult<HashSet<CheckpointId>> {
-        let paths = self.glob_paths(&self.committed_log_glob()).await?;
-        let raw_bytes = try_join_all(paths.iter().map(|path| self.get_bytes(path))).await?;
-        let mut set = HashSet::new();
-        for (path, raw) in paths.iter().zip(raw_bytes) {
-            let entry: CommittedLogEntry =
-                serde_json::from_slice(&raw).map_err(|e| CheckpointError::Internal {
-                    message: format!("failed to parse committed_log entry at {path}: {e}"),
-                })?;
-            for id_str in &entry.committed_checkpoint_ids {
-                if let Ok(uuid) = Uuid::parse_str(id_str) {
-                    set.insert(CheckpointId::from_uuid(uuid));
-                }
-            }
-        }
-        Ok(set)
-    }
-
     fn parse_id_from_manifest_path(&self, path: &str) -> Option<CheckpointId> {
         let after_prefix = path.strip_prefix(&self.prefix)?.strip_prefix('/')?;
-        let uuid_str = after_prefix.strip_suffix("/manifest.json")?;
-        Uuid::parse_str(uuid_str).ok().map(CheckpointId::from_uuid)
+        let id_str = after_prefix.strip_suffix("/manifest.json")?;
+        if !CheckpointId::is_valid(id_str) {
+            return None;
+        }
+        Some(CheckpointId::from_string(id_str.to_string()))
     }
 
-    async fn read_manifest(&self, id: CheckpointId) -> CheckpointResult<Manifest> {
+    async fn read_manifest(&self, id: &CheckpointId) -> CheckpointResult<Manifest> {
         let path = self.manifest_path(id);
         let raw = self.get_bytes(&path).await?;
         serde_json::from_slice(&raw).map_err(|e| CheckpointError::Internal {
@@ -328,7 +249,7 @@ impl S3CheckpointStore {
         })
     }
 
-    async fn write_manifest(&self, id: CheckpointId, manifest: &Manifest) -> CheckpointResult<()> {
+    async fn write_manifest(&self, id: &CheckpointId, manifest: &Manifest) -> CheckpointResult<()> {
         let path = self.manifest_path(id);
         let raw = serde_json::to_vec(manifest).map_err(|e| CheckpointError::Internal {
             message: format!("failed to serialize manifest: {e}"),
@@ -339,103 +260,104 @@ impl S3CheckpointStore {
 
 #[async_trait]
 impl CheckpointStore for S3CheckpointStore {
-    async fn stage_keys(&self, id: CheckpointId, keys: Series) -> CheckpointResult<()> {
+    async fn stage_keys(&self, id: &CheckpointId, keys: Series) -> CheckpointResult<()> {
+        let key = id.to_string();
         let already_staged = {
             let staged = self.staged.read().map_err(|e| CheckpointError::Internal {
                 message: format!("staged lock poisoned: {e}"),
             })?;
-            staged.contains_key(&id)
+            staged.contains_key(&key)
         };
 
-        // Avoid a network round-trip if the ID is already in the staged map.
         if !already_staged && self.get_bytes(&self.manifest_path(id)).await.is_ok() {
-            return Err(CheckpointError::AlreadySealed { id });
+            return Err(CheckpointError::AlreadySealed { id: id.clone() });
         }
 
-        let mut staged = self.staged.write().map_err(|e| CheckpointError::Internal {
-            message: format!("staged lock poisoned: {e}"),
-        })?;
-        let entry = staged.entry(id).or_insert_with(StagedEntry::new);
-        entry.keys.push(keys);
-        Ok(())
+        let ipc = Self::series_to_ipc(&keys)?;
+
+        // Reserve an index slot before writing to S3.
+        let idx = {
+            let mut staged = self.staged.write().map_err(|e| CheckpointError::Internal {
+                message: format!("staged lock poisoned: {e}"),
+            })?;
+            let entry = staged.entry(key).or_insert_with(StagedEntry::new);
+            let idx = entry.num_key_files;
+            entry.num_key_files += 1;
+            idx
+        };
+
+        self.put_bytes(&self.key_path(id, idx), ipc).await
     }
 
     async fn stage_files(
         &self,
-        id: CheckpointId,
+        id: &CheckpointId,
         files: Vec<FileMetadata>,
     ) -> CheckpointResult<()> {
+        let key = id.to_string();
         let already_staged = {
             let staged = self.staged.read().map_err(|e| CheckpointError::Internal {
                 message: format!("staged lock poisoned: {e}"),
             })?;
-            staged.contains_key(&id)
+            staged.contains_key(&key)
         };
 
         if !already_staged && self.get_bytes(&self.manifest_path(id)).await.is_ok() {
-            return Err(CheckpointError::AlreadySealed { id });
+            return Err(CheckpointError::AlreadySealed { id: id.clone() });
         }
 
-        let mut staged = self.staged.write().map_err(|e| CheckpointError::Internal {
-            message: format!("staged lock poisoned: {e}"),
-        })?;
-        let entry = staged.entry(id).or_insert_with(StagedEntry::new);
-        entry.files.extend(files);
+        let bins: CheckpointResult<Vec<Vec<u8>>> =
+            files.iter().map(Self::encode_file_metadata).collect();
+        let bins = bins?;
+
+        // Reserve index slots for all files before writing.
+        let start_idx = {
+            let mut staged = self.staged.write().map_err(|e| CheckpointError::Internal {
+                message: format!("staged lock poisoned: {e}"),
+            })?;
+            let entry = staged.entry(key).or_insert_with(StagedEntry::new);
+            let start = entry.num_file_files;
+            entry.num_file_files += files.len();
+            start
+        };
+
+        let file_paths: Vec<String> = (0..bins.len())
+            .map(|i| self.file_path(id, start_idx + i))
+            .collect();
+        try_join_all(
+            file_paths
+                .iter()
+                .zip(bins)
+                .map(|(path, bin)| self.put_bytes(path, bin)),
+        )
+        .await?;
+
         Ok(())
     }
 
-    async fn checkpoint(&self, id: CheckpointId) -> CheckpointResult<()> {
+    async fn checkpoint(&self, id: &CheckpointId) -> CheckpointResult<()> {
         // Idempotency: manifest already exists → already sealed.
         if self.get_bytes(&self.manifest_path(id)).await.is_ok() {
             return Ok(());
         }
 
-        // Serialize while holding the read lock (no `.await` in this block).
-        // The entry stays in `staged` until manifest.json is durably written —
-        // a failed upload leaves the staged data intact so the caller can retry.
-        let (num_key_files, num_file_files, key_ipcs, file_bins, created_at) = {
+        // Keys and files are already in S3 — just read the counts for the manifest.
+        let (num_key_files, num_file_files, created_at) = {
             let staged = self.staged.read().map_err(|e| CheckpointError::Internal {
                 message: format!("staged lock poisoned: {e}"),
             })?;
             let entry = staged
-                .get(&id)
-                .ok_or(CheckpointError::CheckpointNotFound { id })?;
-            let key_ipcs: CheckpointResult<Vec<Vec<u8>>> =
-                entry.keys.iter().map(Self::series_to_ipc).collect();
-            let file_bins: CheckpointResult<Vec<Vec<u8>>> =
-                entry.files.iter().map(Self::encode_file_metadata).collect();
-            (
-                entry.keys.len(),
-                entry.files.len(),
-                key_ipcs?,
-                file_bins?,
-                entry.created_at,
-            )
+                .get(id.as_ref())
+                .ok_or_else(|| CheckpointError::CheckpointNotFound { id: id.clone() })?;
+            (entry.num_key_files, entry.num_file_files, entry.created_at)
         };
-
-        // Upload keys and files concurrently, all before manifest.json.
-        let key_paths: Vec<String> = (0..num_key_files).map(|i| self.key_path(id, i)).collect();
-        let file_paths: Vec<String> = (0..num_file_files).map(|i| self.file_path(id, i)).collect();
-        try_join_all(
-            key_paths
-                .iter()
-                .zip(key_ipcs)
-                .map(|(path, ipc)| self.put_bytes(path, ipc)),
-        )
-        .await?;
-        try_join_all(
-            file_paths
-                .iter()
-                .zip(file_bins)
-                .map(|(path, bin)| self.put_bytes(path, bin)),
-        )
-        .await?;
 
         // manifest.json is written last — its presence is the atomic seal.
         let manifest = Manifest {
-            checkpoint_id: id.as_uuid().to_string(),
+            checkpoint_id: id.to_string(),
             created_at: rfc3339_from(created_at),
             sealed_at: rfc3339_now(),
+            committed_at: None,
             num_key_files,
             num_file_files,
         };
@@ -447,7 +369,7 @@ impl CheckpointStore for S3CheckpointStore {
             .map_err(|e| CheckpointError::Internal {
                 message: format!("staged lock poisoned: {e}"),
             })?
-            .remove(&id);
+            .remove(id.as_ref());
 
         Ok(())
     }
@@ -456,15 +378,17 @@ impl CheckpointStore for S3CheckpointStore {
         &self,
     ) -> CheckpointResult<BoxStream<'_, CheckpointResult<Series>>> {
         let manifest_paths = self.glob_paths(&self.manifests_glob()).await?;
+        let ids: Vec<CheckpointId> = manifest_paths
+            .iter()
+            .filter_map(|path| self.parse_id_from_manifest_path(path))
+            .collect();
+
+        let manifests = try_join_all(ids.iter().map(|id| self.read_manifest(id))).await?;
 
         // Include both checkpointed and committed keys — all are needed for the
         // skip-on-rerun filter.
         let mut key_paths: Vec<String> = Vec::new();
-        for path in &manifest_paths {
-            let Some(id) = self.parse_id_from_manifest_path(path) else {
-                continue;
-            };
-            let manifest = self.read_manifest(id).await?;
+        for (id, manifest) in ids.iter().zip(&manifests) {
             for i in 0..manifest.num_key_files {
                 key_paths.push(self.key_path(id, i));
             }
@@ -497,17 +421,18 @@ impl CheckpointStore for S3CheckpointStore {
         &self,
     ) -> CheckpointResult<BoxStream<'_, CheckpointResult<FileMetadata>>> {
         let manifest_paths = self.glob_paths(&self.manifests_glob()).await?;
-        let committed = self.committed_set().await?;
+        let ids: Vec<CheckpointId> = manifest_paths
+            .iter()
+            .filter_map(|path| self.parse_id_from_manifest_path(path))
+            .collect();
+
+        let manifests = try_join_all(ids.iter().map(|id| self.read_manifest(id))).await?;
 
         let mut file_paths: Vec<String> = Vec::new();
-        for path in &manifest_paths {
-            let Some(id) = self.parse_id_from_manifest_path(path) else {
-                continue;
-            };
-            if committed.contains(&id) {
+        for (id, manifest) in ids.iter().zip(&manifests) {
+            if manifest.committed_at.is_some() {
                 continue; // Already committed to the catalog — files no longer needed.
             }
-            let manifest = self.read_manifest(id).await?;
             for i in 0..manifest.num_file_files {
                 file_paths.push(self.file_path(id, i));
             }
@@ -536,14 +461,14 @@ impl CheckpointStore for S3CheckpointStore {
         Ok(Box::pin(stream))
     }
 
-    async fn get_checkpoint(&self, id: CheckpointId) -> CheckpointResult<Checkpoint> {
+    async fn get_checkpoint(&self, id: &CheckpointId) -> CheckpointResult<Checkpoint> {
         {
             let staged = self.staged.read().map_err(|e| CheckpointError::Internal {
                 message: format!("staged lock poisoned: {e}"),
             })?;
-            if let Some(entry) = staged.get(&id) {
+            if let Some(entry) = staged.get(id.as_ref()) {
                 return Ok(Checkpoint::new(
-                    id,
+                    id.clone(),
                     CheckpointStatus::Staged,
                     entry.created_at,
                     None,
@@ -555,21 +480,24 @@ impl CheckpointStore for S3CheckpointStore {
         let manifest = self
             .read_manifest(id)
             .await
-            .map_err(|_| CheckpointError::CheckpointNotFound { id })?;
+            .map_err(|_| CheckpointError::CheckpointNotFound { id: id.clone() })?;
 
-        let committed = self.committed_set().await?;
-        let status = if committed.contains(&id) {
+        let status = if manifest.committed_at.is_some() {
             CheckpointStatus::Committed
         } else {
             CheckpointStatus::Checkpointed
         };
 
         Ok(Checkpoint::new(
-            id,
+            id.clone(),
             status,
-            system_time_from_rfc3339(&manifest.created_at),
-            Some(system_time_from_rfc3339(&manifest.sealed_at)),
-            None, // committed_at not stored; committed_log entries carry no timestamp
+            system_time_from_rfc3339(&manifest.created_at)?,
+            Some(system_time_from_rfc3339(&manifest.sealed_at)?),
+            manifest
+                .committed_at
+                .as_deref()
+                .map(system_time_from_rfc3339)
+                .transpose()?,
         ))
     }
 
@@ -582,9 +510,9 @@ impl CheckpointStore for S3CheckpointStore {
             let staged = self.staged.read().map_err(|e| CheckpointError::Internal {
                 message: format!("staged lock poisoned: {e}"),
             })?;
-            for (&id, entry) in staged.iter() {
+            for (id_str, entry) in staged.iter() {
                 checkpoints.push(Checkpoint::new(
-                    id,
+                    CheckpointId::from_string(id_str.clone()),
                     CheckpointStatus::Staged,
                     entry.created_at,
                     None,
@@ -594,27 +522,34 @@ impl CheckpointStore for S3CheckpointStore {
         }
 
         let manifest_paths = self.glob_paths(&self.manifests_glob()).await?;
-        let committed = self.committed_set().await?;
+        let ids: Vec<CheckpointId> = manifest_paths
+            .iter()
+            .filter_map(|path| self.parse_id_from_manifest_path(path))
+            .collect();
 
-        for path in &manifest_paths {
-            let Some(id) = self.parse_id_from_manifest_path(path) else {
-                continue;
-            };
-            let manifest = match self.read_manifest(id).await {
+        // Read all manifests concurrently, tolerating individual failures.
+        let results = join_all(ids.iter().map(|id| self.read_manifest(id))).await;
+        for (id, result) in ids.iter().zip(results) {
+            let manifest = match result {
                 Ok(m) => m,
                 Err(_) => continue,
             };
-            let status = if committed.contains(&id) {
+            let status = if manifest.committed_at.is_some() {
                 CheckpointStatus::Committed
             } else {
                 CheckpointStatus::Checkpointed
             };
             checkpoints.push(Checkpoint::new(
-                id,
+                id.clone(),
                 status,
-                system_time_from_rfc3339(&manifest.created_at),
-                Some(system_time_from_rfc3339(&manifest.sealed_at)),
-                None,
+                system_time_from_rfc3339(&manifest.created_at).unwrap_or(SystemTime::UNIX_EPOCH),
+                Some(
+                    system_time_from_rfc3339(&manifest.sealed_at).unwrap_or(SystemTime::UNIX_EPOCH),
+                ),
+                manifest
+                    .committed_at
+                    .as_deref()
+                    .map(|s| system_time_from_rfc3339(s).unwrap_or(SystemTime::UNIX_EPOCH)),
             ));
         }
 
@@ -628,43 +563,44 @@ impl CheckpointStore for S3CheckpointStore {
             return Ok(());
         }
 
-        let already_committed = self.committed_set().await?;
+        // Read all manifests concurrently — also validates each checkpoint is sealed.
+        // Use join_all (not try_join_all) so we can map errors to specific types.
+        let results = join_all(ids.iter().map(|id| self.read_manifest(id))).await;
 
-        for &id in ids {
-            if already_committed.contains(&id) {
-                continue;
-            }
-            if self.get_bytes(&self.manifest_path(id)).await.is_err() {
-                // No manifest → staged or unknown.
-                let staged = self.staged.read().map_err(|e| CheckpointError::Internal {
-                    message: format!("staged lock poisoned: {e}"),
-                })?;
-                return if staged.contains_key(&id) {
-                    Err(CheckpointError::NotCheckpointed { id })
-                } else {
-                    Err(CheckpointError::CheckpointNotFound { id })
-                };
+        let mut to_update: Vec<(&CheckpointId, Manifest)> = Vec::new();
+        for (id, result) in ids.iter().zip(results) {
+            match result {
+                Ok(m) if m.committed_at.is_some() => {} // already committed, skip
+                Ok(m) => to_update.push((id, m)),
+                Err(_) => {
+                    // Distinguish staged (not yet checkpointed) from completely unknown.
+                    let staged = self.staged.read().map_err(|e| CheckpointError::Internal {
+                        message: format!("staged lock poisoned: {e}"),
+                    })?;
+                    return if staged.contains_key(id.as_ref()) {
+                        Err(CheckpointError::NotCheckpointed { id: id.clone() })
+                    } else {
+                        Err(CheckpointError::CheckpointNotFound { id: id.clone() })
+                    };
+                }
             }
         }
 
-        let new_ids: Vec<String> = ids
-            .iter()
-            .filter(|&&id| !already_committed.contains(&id))
-            .map(|id| id.as_uuid().to_string())
-            .collect();
-
-        if new_ids.is_empty() {
+        if to_update.is_empty() {
             return Ok(());
         }
 
-        // Single atomic PutObject: crash before → nothing recorded; crash after → all IDs marked.
-        let entry = CommittedLogEntry {
-            committed_checkpoint_ids: new_ids,
-        };
-        let raw = serde_json::to_vec(&entry).map_err(|e| CheckpointError::Internal {
-            message: format!("failed to serialize committed_log entry: {e}"),
-        })?;
-        self.put_bytes(&self.new_committed_log_path(), raw).await?;
+        let committed_at = rfc3339_now();
+
+        // Write updated manifests concurrently — partial failure is safe to retry.
+        try_join_all(to_update.iter().map(|(id, manifest)| {
+            let updated = Manifest {
+                committed_at: Some(committed_at.clone()),
+                ..manifest.clone()
+            };
+            async move { self.write_manifest(id, &updated).await }
+        }))
+        .await?;
 
         Ok(())
     }
@@ -712,8 +648,8 @@ mod tests {
     #[test]
     fn test_parse_id_from_manifest_path() {
         let store = S3CheckpointStore::new("s3://my-bucket/my-job", Arc::new(IOConfig::default()));
-        let id = CheckpointId::generate();
-        let path = store.manifest_path(id);
+        let id = CheckpointId::generate(0);
+        let path = store.manifest_path(&id);
         let parsed = store.parse_id_from_manifest_path(&path).unwrap();
         assert_eq!(parsed, id);
     }
@@ -721,14 +657,18 @@ mod tests {
     #[test]
     fn test_parse_id_from_manifest_path_invalid() {
         let store = S3CheckpointStore::new("s3://my-bucket/my-job", Arc::new(IOConfig::default()));
+        // Wrong bucket — prefix doesn't match.
         assert!(
             store
-                .parse_id_from_manifest_path("s3://other-bucket/not-a-uuid/manifest.json")
+                .parse_id_from_manifest_path(
+                    "s3://other-bucket/my-job/task-0-checkpoint-abc/manifest.json"
+                )
                 .is_none()
         );
+        // Empty segment between prefix and manifest.json.
         assert!(
             store
-                .parse_id_from_manifest_path("s3://my-bucket/my-job/not-a-uuid/manifest.json")
+                .parse_id_from_manifest_path("s3://my-bucket/my-job//manifest.json")
                 .is_none()
         );
     }
@@ -738,34 +678,31 @@ mod tests {
         let store = S3CheckpointStore::new("s3://bucket/prefix/", Arc::new(IOConfig::default()));
         // Trailing slash is stripped.
         assert!(store.prefix.ends_with("prefix"));
-        let id = CheckpointId::generate();
-        let uuid = id.as_uuid().to_string();
+        let id = CheckpointId::generate(3);
+        let id_str = id.to_string();
         assert_eq!(
-            store.key_path(id, 3),
-            format!("s3://bucket/prefix/{uuid}/keys/0003.ipc")
+            store.key_path(&id, 3),
+            format!("s3://bucket/prefix/{id_str}/keys/0003.ipc")
         );
         assert_eq!(
-            store.file_path(id, 0),
-            format!("s3://bucket/prefix/{uuid}/files/0000.bin")
+            store.file_path(&id, 0),
+            format!("s3://bucket/prefix/{id_str}/files/0000.bin")
         );
         assert_eq!(
-            store.manifest_path(id),
-            format!("s3://bucket/prefix/{uuid}/manifest.json")
+            store.manifest_path(&id),
+            format!("s3://bucket/prefix/{id_str}/manifest.json")
         );
         assert_eq!(store.manifests_glob(), "s3://bucket/prefix/*/manifest.json");
-        assert_eq!(
-            store.committed_log_glob(),
-            "s3://bucket/prefix/committed_log/*.json"
-        );
     }
 
     #[test]
     fn test_manifest_serde_roundtrip() {
         let now = rfc3339_now();
         let manifest = Manifest {
-            checkpoint_id: Uuid::new_v4().to_string(),
+            checkpoint_id: "task-0-checkpoint-abc".to_string(),
             created_at: now.clone(),
             sealed_at: now.clone(),
+            committed_at: None,
             num_key_files: 3,
             num_file_files: 1,
         };
@@ -774,8 +711,25 @@ mod tests {
         assert_eq!(decoded.checkpoint_id, manifest.checkpoint_id);
         assert_eq!(decoded.created_at, now);
         assert_eq!(decoded.sealed_at, now);
+        assert_eq!(decoded.committed_at, None);
         assert_eq!(decoded.num_key_files, 3);
         assert_eq!(decoded.num_file_files, 1);
+    }
+
+    #[test]
+    fn test_manifest_committed_at_serde_roundtrip() {
+        let now = rfc3339_now();
+        let manifest = Manifest {
+            checkpoint_id: "task-0-checkpoint-abc".to_string(),
+            created_at: now.clone(),
+            sealed_at: now.clone(),
+            committed_at: Some(now.clone()),
+            num_key_files: 1,
+            num_file_files: 0,
+        };
+        let raw = serde_json::to_vec(&manifest).unwrap();
+        let decoded: Manifest = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(decoded.committed_at, Some(now));
     }
 
     #[test]
@@ -783,7 +737,7 @@ mod tests {
         let original = SystemTime::now();
         // Round-trip loses sub-second precision — expected.
         let s = rfc3339_from(original);
-        let recovered = system_time_from_rfc3339(&s);
+        let recovered = system_time_from_rfc3339(&s).unwrap();
         let diff = original
             .duration_since(recovered)
             .or_else(|e| Ok::<_, ()>(e.duration()))
@@ -794,20 +748,8 @@ mod tests {
     }
 
     #[test]
-    fn test_committed_log_entry_serde_roundtrip() {
-        let entry = CommittedLogEntry {
-            committed_checkpoint_ids: vec![Uuid::new_v4().to_string(), Uuid::new_v4().to_string()],
-        };
-        let raw = serde_json::to_vec(&entry).unwrap();
-        let decoded: CommittedLogEntry = serde_json::from_slice(&raw).unwrap();
-        assert_eq!(
-            decoded.committed_checkpoint_ids,
-            entry.committed_checkpoint_ids
-        );
-    }
-
-    #[test]
-    fn test_default_cleanup_policy_is_manual() {
-        assert!(matches!(CleanupPolicy::default(), CleanupPolicy::Manual));
+    fn test_system_time_from_rfc3339_error() {
+        let err = system_time_from_rfc3339("not-a-timestamp").unwrap_err();
+        assert!(matches!(err, CheckpointError::Internal { .. }));
     }
 }

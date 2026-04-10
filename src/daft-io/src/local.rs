@@ -263,29 +263,6 @@ impl ObjectSource for LocalSource {
         })
     }
 
-    async fn delete_dir(
-        self: Arc<Self>,
-        prefix: &str,
-        io_stats: Option<IOStatsRef>,
-    ) -> super::Result<()> {
-        const LOCAL_PROTOCOL: &str = "file://";
-        let path = prefix.strip_prefix(LOCAL_PROTOCOL).unwrap_or(prefix);
-        match tokio::fs::remove_dir_all(path).await {
-            Ok(()) => {
-                if let Some(is) = io_stats.as_ref() {
-                    is.mark_delete_requests(1);
-                }
-                Ok(())
-            }
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(err) => Err(Error::UnableToDeleteFile {
-                path: prefix.into(),
-                source: err,
-            }
-            .into()),
-        }
-    }
-
     async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<()> {
         const LOCAL_PROTOCOL: &str = "file://";
         if let Some(path) = uri.strip_prefix(LOCAL_PROTOCOL) {

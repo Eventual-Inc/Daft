@@ -12,7 +12,7 @@ pub struct CheckpointId(String);
 
 impl CheckpointId {
     /// Characters permitted in a checkpoint ID: ASCII alphanumeric, `-`, `_`.
-    fn is_valid(s: &str) -> bool {
+    pub(crate) fn is_valid(s: &str) -> bool {
         !s.is_empty()
             && s.bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
