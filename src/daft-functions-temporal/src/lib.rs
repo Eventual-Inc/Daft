@@ -11,8 +11,6 @@ mod unix_timestamp;
 
 use common_error::{DaftResult, ensure};
 use current::{CurrentDate, CurrentTimestamp, CurrentTimezone};
-use date_construction::{MakeDate, MakeTimestamp, MakeTimestampLtz};
-use date_navigation::{LastDay, NextDay};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
@@ -22,6 +20,8 @@ use daft_dsl::{
     functions::{FunctionArgs, FunctionModule, FunctionRegistry, ScalarUDF, UnaryArg},
 };
 use date_arithmetic::{DateAdd, DateDiff, DateSub};
+use date_construction::{MakeDate, MakeTimestamp, MakeTimestampLtz};
+use date_navigation::{LastDay, NextDay};
 use epoch_conversions::{
     DateFromUnixDate, FromUnixtime, TimestampMicros, TimestampMillis, TimestampSeconds,
 };

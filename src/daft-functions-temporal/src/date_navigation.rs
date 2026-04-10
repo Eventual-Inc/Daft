@@ -42,17 +42,16 @@ impl ScalarUDF for LastDay {
         let values: Vec<Option<i32>> = arr
             .iter()
             .map(|opt_days| {
-                opt_days.map(|days| {
+                opt_days.and_then(|days| {
                     let d = days_to_date(days);
                     let (y, m) = (d.year(), d.month());
-                    let last = if m == 12 {
+                    let first_of_next = if m == 12 {
                         NaiveDate::from_ymd_opt(y + 1, 1, 1)
                     } else {
                         NaiveDate::from_ymd_opt(y, m + 1, 1)
-                    }
-                    .unwrap()
-                        - chrono::Duration::days(1);
-                    date_to_days(last)
+                    }?;
+                    let last = first_of_next - chrono::Duration::days(1);
+                    Some(date_to_days(last))
                 })
             })
             .collect();

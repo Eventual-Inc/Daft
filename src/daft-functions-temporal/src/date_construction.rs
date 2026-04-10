@@ -151,7 +151,12 @@ impl ScalarUDF for MakeTimestamp {
             .map(|(((((y, mo), d), h), mi), s)| match (y, mo, d, h, mi, s) {
                 (Some(y), Some(mo), Some(d), Some(h), Some(mi), Some(s)) => {
                     let whole_secs = s as u32;
-                    let frac_micros = ((s - whole_secs as f64) * 1_000_000.0).round() as u32;
+                    let frac_micros_raw = ((s - whole_secs as f64) * 1_000_000.0).round() as u32;
+                    let (whole_secs, frac_micros) = if frac_micros_raw >= 1_000_000 {
+                        (whole_secs + 1, 0)
+                    } else {
+                        (whole_secs, frac_micros_raw)
+                    };
                     let date = NaiveDate::from_ymd_opt(y, mo as u32, d as u32)?;
                     let time = chrono::NaiveTime::from_hms_micro_opt(
                         h as u32,
@@ -306,7 +311,12 @@ impl ScalarUDF for MakeTimestampLtz {
             .map(|(((((y, mo), d), h), mi), s)| match (y, mo, d, h, mi, s) {
                 (Some(y), Some(mo), Some(d), Some(h), Some(mi), Some(s)) => {
                     let whole_secs = s as u32;
-                    let frac_micros = ((s - whole_secs as f64) * 1_000_000.0).round() as u32;
+                    let frac_micros_raw = ((s - whole_secs as f64) * 1_000_000.0).round() as u32;
+                    let (whole_secs, frac_micros) = if frac_micros_raw >= 1_000_000 {
+                        (whole_secs + 1, 0)
+                    } else {
+                        (whole_secs, frac_micros_raw)
+                    };
                     let date = NaiveDate::from_ymd_opt(y, mo as u32, d as u32)?;
                     let time = chrono::NaiveTime::from_hms_micro_opt(
                         h as u32,
