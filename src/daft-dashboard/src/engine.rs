@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::Arc, time::SystemTime};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use axum::{
     Json, Router,
@@ -9,6 +13,8 @@ use axum::{
 use common_metrics::{QueryEndState, QueryID, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KEY, Stat};
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
+
+const DEAD_QUERY_THRESHOLD_SEC: f64 = 60.;
 
 pub(crate) fn secs_from_epoch() -> f64 {
     SystemTime::now()
@@ -691,6 +697,41 @@ async fn query_end(
 
     state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
+}
+
+/// periodic check for dead queries. Not an HTTP handler.
+pub(crate) async fn mark_dead_queries(state: Arc<DashboardState>) {
+    let dead_threshold = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64()
+        - DEAD_QUERY_THRESHOLD_SEC;
+
+    for mut q in state.queries.iter_mut() {
+        let QueryState::Executing {
+            last_heartbeat_sec,
+            ref plan_info,
+            ref exec_info,
+        } = q.state
+        else {
+            continue;
+        };
+        if last_heartbeat_sec < dead_threshold {
+            tracing::error!(
+                "Marking query {} as dead, last heartbeat {:?}",
+                q.id,
+                SystemTime::UNIX_EPOCH + Duration::from_secs_f64(last_heartbeat_sec),
+            );
+            q.state = QueryState::Dead {
+                plan_info: plan_info.clone(),
+                exec_info: exec_info.clone(),
+                marked_dead_sec: secs_from_epoch(),
+                last_heartbeat_sec,
+            };
+
+            state.ping_clients_on_query_update(&q);
+        }
+    }
 }
 
 pub(crate) fn routes() -> Router<Arc<DashboardState>> {

@@ -8,7 +8,7 @@ pub(crate) mod state;
 use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 use axum::{
@@ -30,13 +30,11 @@ use tower_http::{
 };
 use tracing::Level;
 
-use crate::state::{DashboardState, GLOBAL_DASHBOARD_STATE, QueryState};
+use crate::state::{DashboardState, GLOBAL_DASHBOARD_STATE};
 
 // NOTE(void001): default listen to all ipv4 address, which pose a security risk in production environment
 pub const DEFAULT_SERVER_ADDR: Ipv4Addr = Ipv4Addr::UNSPECIFIED;
 pub const DEFAULT_SERVER_PORT: u16 = 3238;
-
-const DEAD_QUERY_THRESHOLD_SEC: f64 = 60.;
 
 fn generate_interactive_html(
     record_batch: &RecordBatch,
@@ -310,46 +308,13 @@ pub async fn launch_server(
         )
         .with_state(GLOBAL_DASHBOARD_STATE.clone());
 
-    let mut ticker = tokio::time::interval(Duration::from_secs(10));
+    let mut reaper_ticker = tokio::time::interval(Duration::from_secs(10));
 
-    // TODO move this
     let reaper = tokio::spawn(async move {
         loop {
-            ticker.tick().await;
+            reaper_ticker.tick().await;
 
-            let dead_threshold = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs_f64()
-                - DEAD_QUERY_THRESHOLD_SEC;
-
-            let state = GLOBAL_DASHBOARD_STATE.clone();
-
-            for mut q in state.queries.iter_mut() {
-                let QueryState::Executing {
-                    last_heartbeat_sec,
-                    ref plan_info,
-                    ref exec_info,
-                } = q.state
-                else {
-                    continue;
-                };
-                if 0. < last_heartbeat_sec && last_heartbeat_sec < dead_threshold {
-                    tracing::error!(
-                        "Marking query {} as dead, last heartbeat {:?}",
-                        q.id,
-                        SystemTime::UNIX_EPOCH + Duration::from_secs_f64(last_heartbeat_sec),
-                    );
-                    q.state = QueryState::Dead {
-                        plan_info: plan_info.clone(),
-                        exec_info: exec_info.clone(),
-                        marked_dead_sec: engine::secs_from_epoch(),
-                        last_heartbeat_sec,
-                    };
-
-                    state.ping_clients_on_query_update(&q);
-                }
-            }
+            engine::mark_dead_queries(GLOBAL_DASHBOARD_STATE.clone()).await;
         }
     });
 
@@ -359,8 +324,6 @@ pub async fn launch_server(
         .with_graceful_shutdown(shutdown_fn)
         .await
         .unwrap();
-
-    tracing::error!("ABORT!");
 
     reaper.abort();
 
