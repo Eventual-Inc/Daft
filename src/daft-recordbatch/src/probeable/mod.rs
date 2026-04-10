@@ -139,12 +139,12 @@ pub trait Probeable: Send + Sync {
     /// The inner iterator, if present, iterates over the rows of the left table that match the right row.
     /// Otherwise, if the inner iterator is None, indicates that the right row has no matches.
     /// NOTE: This function only works if track_indices is true.
-    fn probe_indices<'a>(&'a self, table: &'a RecordBatch) -> DaftResult<IndicesMapper<'a>>;
+    fn probe_indices(&'_ self, table: RecordBatch) -> DaftResult<IndicesMapper<'_>>;
 
     /// Probe_exists returns an iterator of booleans. The iterator iterates over the rows of the right table.
     fn probe_exists<'a>(
         &'a self,
-        table: &'a RecordBatch,
+        table: RecordBatch,
     ) -> DaftResult<Box<dyn Iterator<Item = bool> + 'a>>;
 }
 
@@ -164,20 +164,20 @@ impl ProbeState {
 
     /// Returns an iterator of booleans. The iterator iterates over the rows of the input table.
     /// True if the right row has a match in the left table, false otherwise.
-    pub fn probe_exists<'a>(
-        &'a self,
-        record_batch: &'a RecordBatch,
-    ) -> DaftResult<impl Iterator<Item = bool> + 'a> {
+    pub fn probe_exists(
+        &self,
+        record_batch: RecordBatch,
+    ) -> DaftResult<impl Iterator<Item = bool>> {
         self.probeable.probe_exists(record_batch)
     }
 
     /// Returns an iterator of optional iterators.
     /// The outer iterator iterates over the rows of the input table.
     /// The inner iterator, if present, iterates over the rows of the build table that match the input row.
-    pub fn probe_indices<'a>(
-        &'a self,
-        record_batch: &'a RecordBatch,
-    ) -> DaftResult<impl Iterator<Item = Option<impl Iterator<Item = (u32, u64)> + 'a>>> {
+    pub fn probe_indices(
+        &self,
+        record_batch: RecordBatch,
+    ) -> DaftResult<impl Iterator<Item = Option<impl Iterator<Item = (u32, u64)>>>> {
         self.probeable
             .probe_indices(record_batch)
             .map(|indices_mapper| indices_mapper.make_iter())

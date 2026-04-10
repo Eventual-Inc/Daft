@@ -7,10 +7,11 @@ use hashbrown::HashMap;
 use super::{IndicesMapper, ProbeContent, Probeable, ProbeableBuilder};
 use crate::RecordBatch;
 
+// Applies to logical types that are backed by ints as well
 // TODO: Extend to types other than ints
 // In order of the following:
 // * Float types: f32, f64
-// * Decimal, bool, Date, Time, Datetime
+// * Decimal, bool
 
 pub struct IntProbeTable<T: DaftIntegerType, V: ProbeContent>
 where
@@ -37,10 +38,10 @@ where
         })
     }
 
-    fn probe<'a>(
-        &'a self,
-        input: &'a DataArray<T>,
-    ) -> DaftResult<impl Iterator<Item = Option<V::ProbeOutput<'a>>> + 'a> {
+    fn probe(
+        &self,
+        input: DataArray<T>,
+    ) -> DaftResult<impl Iterator<Item = Option<V::ProbeOutput<'_>>>> {
         Ok(input.into_iter().map(|val| {
             let val = val?;
             self.hash_table.get(&val).map(|indices| indices.probe_out())
@@ -69,8 +70,14 @@ impl<T: DaftIntegerType, V: ProbeContent> Probeable for IntProbeTable<T, V>
 where
     T::Native: Ord + std::hash::Hash,
 {
-    fn probe_indices<'a>(&'a self, table: &'a RecordBatch) -> DaftResult<IndicesMapper<'a>> {
-        let iter = self.probe(table.get_column(0).downcast::<DataArray<T>>()?)?;
+    fn probe_indices(&'_ self, table: RecordBatch) -> DaftResult<IndicesMapper<'_>> {
+        let iter = self.probe(
+            table
+                .get_column(0)
+                .as_physical()?
+                .downcast::<DataArray<T>>()?
+                .clone(),
+        )?;
         let converted_iter = iter.map(|opt| V::to_indices(opt));
         Ok(IndicesMapper::new(
             Box::new(converted_iter),
@@ -81,9 +88,15 @@ where
 
     fn probe_exists<'a>(
         &'a self,
-        table: &'a RecordBatch,
+        table: RecordBatch,
     ) -> DaftResult<Box<dyn Iterator<Item = bool> + 'a>> {
-        let iter = self.probe(table.get_column(0).downcast::<DataArray<T>>()?)?;
+        let iter = self.probe(
+            table
+                .get_column(0)
+                .as_physical()?
+                .downcast::<DataArray<T>>()?
+                .clone(),
+        )?;
         Ok(Box::new(iter.map(|output| output.is_some())))
     }
 }
@@ -106,8 +119,12 @@ where
     T::Native: Ord + std::hash::Hash,
 {
     fn add_table(&mut self, table: &RecordBatch) -> DaftResult<()> {
-        self.0
-            .add_table(table.get_column(0).downcast::<DataArray<T>>()?)
+        self.0.add_table(
+            table
+                .get_column(0)
+                .as_physical()?
+                .downcast::<DataArray<T>>()?,
+        )
     }
 
     fn build(self: Box<Self>) -> Arc<dyn Probeable> {

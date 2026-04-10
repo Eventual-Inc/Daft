@@ -53,10 +53,10 @@ impl<T: ProbeContent> ProbeTable<T> {
         })
     }
 
-    fn probe<'a>(
-        &'a self,
-        input: &'a RecordBatch,
-    ) -> DaftResult<impl Iterator<Item = Option<T::ProbeOutput<'a>>> + 'a> {
+    fn probe(
+        &self,
+        input: RecordBatch,
+    ) -> DaftResult<impl Iterator<Item = Option<T::ProbeOutput<'_>>>> {
         debug_assert_eq!(self.schema.len(), input.schema.len());
         debug_assert!(
             self.schema
@@ -184,7 +184,7 @@ impl<T: ProbeContent> ProbeTable<T> {
 }
 
 impl<T: ProbeContent> Probeable for ProbeTable<T> {
-    fn probe_indices<'a>(&'a self, table: &'a RecordBatch) -> DaftResult<IndicesMapper<'a>> {
+    fn probe_indices(&'_ self, table: RecordBatch) -> DaftResult<IndicesMapper<'_>> {
         let iter = self.probe(table)?;
         let converted_iter = iter.map(|opt| T::to_indices(opt));
         Ok(IndicesMapper::new(
@@ -196,7 +196,7 @@ impl<T: ProbeContent> Probeable for ProbeTable<T> {
 
     fn probe_exists<'a>(
         &'a self,
-        table: &'a RecordBatch,
+        table: RecordBatch,
     ) -> DaftResult<Box<dyn Iterator<Item = bool> + 'a>> {
         let iter = self.probe(table)?;
         Ok(Box::new(iter.map(|output| output.is_some())))
