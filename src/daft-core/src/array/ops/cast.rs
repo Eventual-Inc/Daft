@@ -1651,23 +1651,15 @@ impl UuidArray {
             DataType::Uuid => Ok(self.clone().into_series()),
             DataType::Utf8 => {
                 // Convert UUID to string representation
-                let uuid_strings = self.physical.iter().map(|opt_bytes| {
-                    opt_bytes.map(|bytes| {
-                        if let Ok(uuid) = uuid::Uuid::from_slice(bytes) {
-                            uuid.to_string()
-                        } else {
-                            "invalid-uuid".to_string()
-                        }
-                    })
-                });
+                let uuid_strings = self
+                    .into_iter()
+                    .map(|opt_bytes| opt_bytes.map(|bytes| bytes.to_string()));
                 Ok(Utf8Array::from_iter(self.name(), uuid_strings).into_series())
             }
+            DataType::FixedSizeBinary(16) => Ok(self.physical.clone().into_series()),
             DataType::Binary => {
                 // Convert UUID to binary representation
-                let binary_values = self
-                    .physical
-                    .iter()
-                    .map(|opt_bytes| opt_bytes.map(|bytes| bytes.to_vec()));
+                let binary_values = self.physical.iter();
                 Ok(
                     DataArray::<crate::datatypes::BinaryType>::from_iter(
                         self.name(),
