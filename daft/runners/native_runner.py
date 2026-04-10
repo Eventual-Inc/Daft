@@ -143,6 +143,7 @@ class NativeRunner(Runner[MicroPartition]):
         def start_heartbeat(stop_evt: threading.Event, interval: float) -> threading.Thread:
             def run() -> None:
                 while not stop_evt.wait(interval):
+                    logger.warning("BEAT")  # TODO delete me
                     ctx._notify_query_heartbeat(query_id)
 
             t = threading.Thread(target=run)

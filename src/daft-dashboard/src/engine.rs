@@ -261,7 +261,8 @@ async fn exec_start(
                     physical_plan: args.physical_plan.clone(),
                     operators: parse_physical_plan(&args.physical_plan),
                 },
-                last_heartbeat_sec: 0.,
+                // TODO this uses the dashboard server's clock, but heartbeats use the query runner's clock
+                last_heartbeat_sec: secs_from_epoch(),
             };
 
             if let QueryState::Executing { exec_info, .. } = &mut query_info.state {
