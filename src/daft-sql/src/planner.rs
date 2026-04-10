@@ -29,7 +29,7 @@ use sqlparser::{
     ast::{
         self, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct, ExcludeSelectItem,
         FunctionArg, FunctionArgExpr, GroupByExpr, Ident, ObjectName, Query, SelectItem, SetExpr,
-        Subscript, TableAlias, TableFunctionArgs, TableSample, TableSampleKind,
+        Subscript, TableAlias, TableFunctionArgs, TableSample, TableSampleBucket, TableSampleKind,
         TableSampleQuantity, TableSampleUnit, TableWithJoins, TimezoneInfo, UnaryOperator, Value,
         WildcardAdditionalOptions, With,
     },
@@ -1086,6 +1086,7 @@ impl SQLPlanner<'_> {
             quantity,
             seed,
             name,
+            bucket,
             ..
         } = table_sample;
 
@@ -1093,7 +1094,43 @@ impl SQLPlanner<'_> {
         let mut fraction = None;
         let mut size = None;
 
-        if let Some(TableSampleQuantity { value, unit, .. }) = quantity {
+        // Handle BUCKET syntax (Spark style): BUCKET x OUT OF y
+        if let Some(TableSampleBucket { bucket, total, .. }) = bucket {
+            // Extract bucket and total values
+            if let (ast::Value::Number(bucket_str, _), ast::Value::Number(total_str, _)) =
+                (bucket, total)
+            {
+                let bucket_num: f64 = bucket_str.parse().map_err(|_| {
+                    PlannerError::invalid_operation(format!("Invalid BUCKET number: {bucket_str}"))
+                })?;
+                let total_num: f64 = total_str.parse().map_err(|_| {
+                    PlannerError::invalid_operation(format!("Invalid total number: {total_str}"))
+                })?;
+
+                if total_num == 0.0 {
+                    return Err(PlannerError::invalid_operation(
+                        "BUCKET total must be non-zero",
+                    ));
+                }
+
+                if bucket_num < 0.0 || total_num < 0.0 {
+                    return Err(PlannerError::invalid_operation(
+                        "BUCKET values must be non-negative",
+                    ));
+                }
+
+                if bucket_num > total_num {
+                    return Err(PlannerError::invalid_operation(format!(
+                        "BUCKET number ({bucket_num}) cannot exceed total ({total_num})"
+                    )));
+                }
+
+                // Calculate fraction from bucket/total
+                fraction = Some(bucket_num / total_num);
+            } else {
+                unsupported_sql_err!("BUCKET values must be numeric literals");
+            }
+        } else if let Some(TableSampleQuantity { value, unit, .. }) = quantity {
             // Try to parse the value as a number
             if let ast::Expr::Value(ast::ValueWithSpan {
                 value: ast::Value::Number(num_str, _),
@@ -1163,8 +1200,8 @@ impl SQLPlanner<'_> {
             } else {
                 unsupported_sql_err!("SAMPLE quantity must be a numeric literal");
             }
-        } else {
-            unsupported_sql_err!("SAMPLE requires a quantity");
+        } else if bucket.is_none() {
+            unsupported_sql_err!("SAMPLE requires a quantity or BUCKET clause");
         }
 
         // Parse seed if present

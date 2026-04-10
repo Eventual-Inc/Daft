@@ -243,3 +243,37 @@ def test_postgres_tablesample_syntax_variants():
     result_seed_1.collect()
     result_seed_2.collect()
     assert result_seed_1.to_pydict() == result_seed_2.to_pydict()
+
+
+def test_spark_tablesample_bucket():
+    """Test Spark TABLESAMPLE BUCKET syntax.
+    
+    Reference: https://spark.apache.org/docs/latest/sql-ref-syntax-qry-select-sampling.html
+    
+    Spark supports: TABLESAMPLE (BUCKET x OUT OF y)
+    This samples approximately x/y fraction of the table.
+    """
+    df = daft.from_pydict({
+        "id": list(range(1, 101)),
+        "value": ["x"] * 100
+    })
+
+    # BUCKET 4 OUT OF 10 = 40%
+    result_40 = daft.sql("SELECT * FROM df TABLESAMPLE (BUCKET 4 OUT OF 10)", df=df)
+    result_40.collect()
+    assert 35 <= len(result_40) <= 45  # Allow some variance
+
+    # BUCKET 1 OUT OF 2 = 50%
+    result_50 = daft.sql("SELECT * FROM df TABLESAMPLE (BUCKET 1 OUT OF 2)", df=df)
+    result_50.collect()
+    assert 45 <= len(result_50) <= 55
+
+    # BUCKET 1 OUT OF 4 = 25%
+    result_25 = daft.sql("SELECT * FROM df TABLESAMPLE (BUCKET 1 OUT OF 4)", df=df)
+    result_25.collect()
+    assert 20 <= len(result_25) <= 30
+
+    # BUCKET 100 OUT OF 100 = 100%
+    result_100 = daft.sql("SELECT * FROM df TABLESAMPLE (BUCKET 100 OUT OF 100)", df=df)
+    result_100.collect()
+    assert len(result_100) == 100
