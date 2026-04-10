@@ -80,6 +80,11 @@ function QueryPageInner() {
       ? query.state.end_sec
       : null;
 
+  const last_heartbeat_sec =
+    query.state.status === "Executing"
+      ? query.state.last_heartbeat_sec
+      : null;
+
   return (
     <div className="h-full flex flex-col">
       {/* Fixed Header Section */}
@@ -109,6 +114,7 @@ function QueryPageInner() {
               status={query.state.status}
               start_sec={query.start_sec}
               end_sec={end_sec}
+              last_heartbeat_sec={last_heartbeat_sec}
             />
           </div>
           <div className="flex-1 px-6 py-4">

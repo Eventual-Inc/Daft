@@ -114,14 +114,37 @@ const StatusIcon = ({ status }: { status: QueryStatusName }) => {
   );
 };
 
+const LastHeartbeat = ({
+  last_heartbeat_sec,
+}: {
+  last_heartbeat_sec: number;
+}) => {
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const ago = Math.round(currentTime / 1000 - last_heartbeat_sec);
+  return (
+    <div className={`${main.className} text-xs font-mono text-zinc-500`}>
+      Last heartbeat: {toHumanReadableDuration(ago)} ago
+    </div>
+  );
+};
+
 export function Status({
   status,
   start_sec,
   end_sec,
+  last_heartbeat_sec,
 }: {
   status: QueryStatusName;
   start_sec: number;
   end_sec: number | null;
+  last_heartbeat_sec: number | null;
 }) {
   return (
     <div className="flex flex-col items-center justify-center h-full space-y-4">
@@ -135,6 +158,9 @@ export function Status({
       ) : (
         <Timer start_sec={start_sec} />
       )}
+      {last_heartbeat_sec ? (
+        <LastHeartbeat last_heartbeat_sec={last_heartbeat_sec} />
+      ) : null}
     </div>
   );
 }

@@ -67,6 +67,7 @@ export type ExecutingState = {
   status: "Executing";
   plan_info: PlanInfo;
   exec_info: ExecInfo;
+  last_heartbeat_sec: number;
 };
 
 export type QueryState =
