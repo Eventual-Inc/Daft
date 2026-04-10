@@ -1,5 +1,6 @@
 use std::{fmt, time::SystemTime};
 
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Opaque identifier for a checkpoint.
@@ -116,7 +117,8 @@ impl Checkpoint {
 
 /// Tag indicating the format of the opaque file metadata blob.
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum FileFormat {
     Iceberg,
     Parquet,
