@@ -30,8 +30,8 @@ use sqlparser::{
         self, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct, ExcludeSelectItem,
         FunctionArg, FunctionArgExpr, GroupByExpr, Ident, ObjectName, Query, SelectItem, SetExpr,
         Subscript, TableAlias, TableFunctionArgs, TableSample, TableSampleBucket, TableSampleKind,
-        TableSampleQuantity, TableSampleUnit, TableWithJoins, TimezoneInfo, UnaryOperator, Value,
-        WildcardAdditionalOptions, With,
+        TableSampleQuantity, TableSampleSeed, TableSampleUnit, TableWithJoins, TimezoneInfo,
+        UnaryOperator, Value, WildcardAdditionalOptions, With,
     },
     dialect::GenericDialect,
     parser::{Parser, ParserOptions},
@@ -1077,9 +1077,8 @@ impl SQLPlanner<'_> {
         sample_kind: &TableSampleKind,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
         let table_sample = match sample_kind {
-            TableSampleKind::BeforeTableAlias(sample) | TableSampleKind::AfterTableAlias(sample) => {
-                sample.as_ref()
-            }
+            TableSampleKind::BeforeTableAlias(sample)
+            | TableSampleKind::AfterTableAlias(sample) => sample.as_ref(),
         };
 
         let TableSample {
@@ -1090,139 +1089,174 @@ impl SQLPlanner<'_> {
             ..
         } = table_sample;
 
-        // Parse quantity (percentage or rows)
+        // Parse sampling parameters
+        let (fraction, size) = self.parse_sample_quantity(quantity.as_ref(), name.as_ref(), bucket.as_ref())?;
+
+        // Parse seed if present
+        let seed_value = self.parse_sample_seed(seed.as_ref())?;
+
+        // Apply sample operation
+        let with_replacement = false;
+        plan.sample(fraction, size, with_replacement, seed_value)
+            .map_err(|e| e.into())
+    }
+
+    /// Parse the sample quantity (PERCENT, ROWS, BUCKET, or bare number)
+    fn parse_sample_quantity(
+        &self,
+        quantity: Option<&TableSampleQuantity>,
+        name: Option<&ast::TableSampleMethod>,
+        bucket: Option<&TableSampleBucket>,
+    ) -> SQLPlannerResult<(Option<f64>, Option<usize>)> {
         let mut fraction = None;
         let mut size = None;
 
         // Handle BUCKET syntax (Spark style): BUCKET x OUT OF y
         if let Some(TableSampleBucket { bucket, total, .. }) = bucket {
-            // Extract bucket and total values
-            if let (ast::Value::Number(bucket_str, _), ast::Value::Number(total_str, _)) =
-                (bucket, total)
-            {
-                let bucket_num: f64 = bucket_str.parse().map_err(|_| {
-                    PlannerError::invalid_operation(format!("Invalid BUCKET number: {bucket_str}"))
-                })?;
-                let total_num: f64 = total_str.parse().map_err(|_| {
-                    PlannerError::invalid_operation(format!("Invalid total number: {total_str}"))
-                })?;
-
-                if total_num == 0.0 {
-                    return Err(PlannerError::invalid_operation(
-                        "BUCKET total must be non-zero",
-                    ));
-                }
-
-                if bucket_num < 0.0 || total_num < 0.0 {
-                    return Err(PlannerError::invalid_operation(
-                        "BUCKET values must be non-negative",
-                    ));
-                }
-
-                if bucket_num > total_num {
-                    return Err(PlannerError::invalid_operation(format!(
-                        "BUCKET number ({bucket_num}) cannot exceed total ({total_num})"
-                    )));
-                }
-
-                // Calculate fraction from bucket/total
-                fraction = Some(bucket_num / total_num);
-            } else {
-                unsupported_sql_err!("BUCKET values must be numeric literals");
-            }
+            let (bucket_num, total_num) = self.parse_bucket_values(bucket, total)?;
+            fraction = Some(bucket_num / total_num);
         } else if let Some(TableSampleQuantity { value, unit, .. }) = quantity {
-            // Try to parse the value as a number
-            if let ast::Expr::Value(ast::ValueWithSpan {
-                value: ast::Value::Number(num_str, _),
-                ..
-            }) = value
-            {
-                let num: f64 = num_str.parse().map_err(|_| {
-                    PlannerError::invalid_operation(format!("Invalid SAMPLE quantity: {num_str}"))
-                })?;
-
-                // Validate non-negative
-                if num < 0.0 {
-                    return Err(PlannerError::invalid_operation(format!(
-                        "SAMPLE quantity must be non-negative, got: {num}"
-                    )));
+            let num = self.parse_quantity_value(value)?;
+            match unit {
+                Some(TableSampleUnit::Percent) => {
+                    self.validate_percent(num)?;
+                    fraction = Some(num / 100.0);
                 }
-
-                match unit {
-                    Some(TableSampleUnit::Percent) => {
-                        // Validate percent is between 0 and 100
-                        if num > 100.0 {
-                            return Err(PlannerError::invalid_operation(format!(
-                                "SAMPLE percent must be between 0 and 100, got: {num}"
-                            )));
-                        }
-                        // Convert percent to fraction (e.g., 50% -> 0.5)
+                Some(TableSampleUnit::Rows) => {
+                    self.validate_rows(num)?;
+                    size = Some(num as usize);
+                }
+                None => {
+                    // No unit - check if it's Postgres SYSTEM/BERNOULLI (treat as percent)
+                    // or generic syntax (treat as fraction 0.0-1.0)
+                    if self.is_postgres_method(name) {
+                        self.validate_percent(num)?;
                         fraction = Some(num / 100.0);
-                    }
-                    Some(TableSampleUnit::Rows) => {
-                        // Sample by number of rows
-                        if num.fract() != 0.0 {
-                            return Err(PlannerError::invalid_operation(format!(
-                                "SAMPLE ROWS quantity must be a whole number, got: {num}"
-                            )));
-                        }
-                        size = Some(num as usize);
-                    }
-                    None => {
-                        // No unit specified
-                        // If method is SYSTEM or BERNOULLI (Postgres style), treat as percent
-                        // Otherwise treat as fraction (0.0-1.0)
-                        let is_postgres_method = matches!(
-                            name,
-                            Some(ast::TableSampleMethod::System)
-                                | Some(ast::TableSampleMethod::Bernoulli)
-                        );
-
-                        if is_postgres_method {
-                            // Postgres TABLESAMPLE SYSTEM(n) or BERNOULLI(n) - treat as percent
-                            if num > 100.0 {
-                                return Err(PlannerError::invalid_operation(format!(
-                                    "TABLESAMPLE percent must be between 0 and 100, got: {num}"
-                                )));
-                            }
-                            fraction = Some(num / 100.0);
-                        } else {
-                            // No unit and no method - treat as fraction (0.0-1.0)
-                            if num > 1.0 {
-                                return Err(PlannerError::invalid_operation(format!(
-                                    "SAMPLE fraction must be between 0.0 and 1.0 when no unit is specified, got: {num}. Use PERCENT or ROWS unit for other ranges."
-                                )));
-                            }
-                            fraction = Some(num);
-                        }
+                    } else {
+                        self.validate_fraction(num)?;
+                        fraction = Some(num);
                     }
                 }
-            } else {
-                unsupported_sql_err!("SAMPLE quantity must be a numeric literal");
             }
         } else if bucket.is_none() {
             unsupported_sql_err!("SAMPLE requires a quantity or BUCKET clause");
         }
 
-        // Parse seed if present
-        let with_replacement = false;
-        let seed_value = if let Some(seed_info) = seed {
-            // Extract seed value from REPEATABLE(n) or SEED(n)
+        Ok((fraction, size))
+    }
+
+    /// Check if the sampling method is Postgres-style (SYSTEM or BERNOULLI)
+    fn is_postgres_method(&self, name: Option<&ast::TableSampleMethod>) -> bool {
+        matches!(
+            name,
+            Some(ast::TableSampleMethod::System) | Some(ast::TableSampleMethod::Bernoulli)
+        )
+    }
+
+    /// Parse and validate bucket values
+    fn parse_bucket_values(
+        &self,
+        bucket: &ast::Value,
+        total: &ast::Value,
+    ) -> SQLPlannerResult<(f64, f64)> {
+        let (bucket_str, total_str) = match (bucket, total) {
+            (ast::Value::Number(b, _), ast::Value::Number(t, _)) => (b.clone(), t.clone()),
+            _ => unsupported_sql_err!("BUCKET values must be numeric literals"),
+        };
+
+        let bucket_num: f64 = bucket_str.parse().map_err(|_| {
+            PlannerError::invalid_operation(format!("Invalid BUCKET number: {bucket_str}"))
+        })?;
+        let total_num: f64 = total_str.parse().map_err(|_| {
+            PlannerError::invalid_operation(format!("Invalid total number: {total_str}"))
+        })?;
+
+        if total_num == 0.0 {
+            return Err(PlannerError::invalid_operation(
+                "BUCKET total must be non-zero",
+            ));
+        }
+        if bucket_num < 0.0 || total_num < 0.0 {
+            return Err(PlannerError::invalid_operation(
+                "BUCKET values must be non-negative",
+            ));
+        }
+        if bucket_num > total_num {
+            return Err(PlannerError::invalid_operation(format!(
+                "BUCKET number ({bucket_num}) cannot exceed total ({total_num})"
+            )));
+        }
+
+        Ok((bucket_num, total_num))
+    }
+
+    /// Parse the numeric value from a quantity expression
+    fn parse_quantity_value(&self, value: &ast::Expr) -> SQLPlannerResult<f64> {
+        if let ast::Expr::Value(ast::ValueWithSpan {
+            value: ast::Value::Number(num_str, _),
+            ..
+        }) = value
+        {
+            let num: f64 = num_str.parse().map_err(|_| {
+                PlannerError::invalid_operation(format!("Invalid SAMPLE quantity: {num_str}"))
+            })?;
+
+            if num < 0.0 {
+                return Err(PlannerError::invalid_operation(format!(
+                    "SAMPLE quantity must be non-negative, got: {num}"
+                )));
+            }
+
+            Ok(num)
+        } else {
+            unsupported_sql_err!("SAMPLE quantity must be a numeric literal");
+        }
+    }
+
+    /// Validate percentage (0-100)
+    fn validate_percent(&self, num: f64) -> SQLPlannerResult<()> {
+        if num > 100.0 {
+            return Err(PlannerError::invalid_operation(format!(
+                "SAMPLE percent must be between 0 and 100, got: {num}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Validate fraction (0.0-1.0)
+    fn validate_fraction(&self, num: f64) -> SQLPlannerResult<()> {
+        if num > 1.0 {
+            return Err(PlannerError::invalid_operation(format!(
+                "SAMPLE fraction must be between 0.0 and 1.0 when no unit is specified, got: {num}. Use PERCENT or ROWS unit for other ranges."
+            )));
+        }
+        Ok(())
+    }
+
+    /// Validate rows count (must be whole number)
+    fn validate_rows(&self, num: f64) -> SQLPlannerResult<()> {
+        if num.fract() != 0.0 {
+            return Err(PlannerError::invalid_operation(format!(
+                "SAMPLE ROWS quantity must be a whole number, got: {num}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Parse the REPEATABLE seed value if present
+    fn parse_sample_seed(&self, seed: Option<&TableSampleSeed>) -> SQLPlannerResult<Option<u64>> {
+        if let Some(seed_info) = seed {
             if let ast::Value::Number(seed_str, _) = &seed_info.value {
                 let seed_num: u64 = seed_str.parse().map_err(|_| {
                     PlannerError::invalid_operation(format!("Invalid SAMPLE seed: {seed_str}"))
                 })?;
-                Some(seed_num)
+                Ok(Some(seed_num))
             } else {
-                unsupported_sql_err!("SAMPLE seed must be a numeric literal");
+                unsupported_sql_err!("SAMPLE seed must be a numeric literal")
             }
         } else {
-            None
-        };
-
-        // Apply sample operation
-        plan.sample(fraction, size, with_replacement, seed_value)
-            .map_err(|e| e.into())
+            Ok(None)
+        }
     }
 
     /// Returns a normalized daft identifier from an sqlparser ObjectName

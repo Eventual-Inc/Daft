@@ -277,3 +277,54 @@ def test_spark_tablesample_bucket():
     result_100 = daft.sql("SELECT * FROM df TABLESAMPLE (BUCKET 100 OUT OF 100)", df=df)
     result_100.collect()
     assert len(result_100) == 100
+
+
+def test_sample_invalid_inputs():
+    """Test SAMPLE with invalid inputs to verify error handling."""
+    df = daft.from_pydict({"a": [1, 2, 3, 4, 5]})
+
+    # Test percent > 100
+    try:
+        result = daft.sql("SELECT * FROM df SAMPLE (150 PERCENT)", df=df)
+        result.collect()
+        assert False, "Should have raised an error"
+    except Exception as e:
+        assert "percent" in str(e).lower()
+
+    # Test fraction > 1.0 without unit
+    try:
+        result = daft.sql("SELECT * FROM df SAMPLE (2.5)", df=df)
+        result.collect()
+        assert False, "Should have raised an error"
+    except Exception as e:
+        assert "fraction" in str(e).lower() or "between 0.0 and 1.0" in str(e).lower()
+
+
+def test_tablesample_system_boundary_values():
+    """Test Postgres TABLESAMPLE SYSTEM with boundary values."""
+    df = daft.from_pydict({"a": list(range(1, 101))})
+
+    # SYSTEM (0) should return 0 rows
+    result_0 = daft.sql("SELECT * FROM df TABLESAMPLE SYSTEM (0)", df=df)
+    result_0.collect()
+    assert len(result_0) == 0
+
+    # SYSTEM (100) should return all rows
+    result_100 = daft.sql("SELECT * FROM df TABLESAMPLE SYSTEM (100)", df=df)
+    result_100.collect()
+    assert len(result_100) == 100
+
+
+def test_spark_bucket_boundary_values():
+    """Test Spark BUCKET sampling with boundary values."""
+    df = daft.from_pydict({"a": list(range(1, 101))})
+
+    # BUCKET 0 OUT OF 10 = 0%
+    result_0 = daft.sql("SELECT * FROM df TABLESAMPLE (BUCKET 0 OUT OF 10)", df=df)
+    result_0.collect()
+    assert len(result_0) == 0
+
+    # BUCKET 10 OUT OF 10 = 100%
+    result_100 = daft.sql("SELECT * FROM df TABLESAMPLE (BUCKET 10 OUT OF 10)", df=df)
+    result_100.collect()
+    assert len(result_100) == 100
