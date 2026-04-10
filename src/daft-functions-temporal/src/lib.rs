@@ -1,5 +1,7 @@
 pub mod current;
 pub mod date_arithmetic;
+pub mod date_construction;
+pub mod date_navigation;
 pub mod epoch_conversions;
 mod time;
 mod to_string;
@@ -9,6 +11,8 @@ mod unix_timestamp;
 
 use common_error::{DaftResult, ensure};
 use current::{CurrentDate, CurrentTimestamp, CurrentTimezone};
+use date_construction::{MakeDate, MakeTimestamp, MakeTimestampLtz};
+use date_navigation::{LastDay, NextDay};
 use daft_core::{
     prelude::{DataType, Field, Schema},
     series::Series,
@@ -130,5 +134,10 @@ impl FunctionModule for TemporalFunctions {
         parent.add_fn(TimestampMillis);
         parent.add_fn(TimestampMicros);
         parent.add_fn(FromUnixtime);
+        parent.add_fn(MakeDate);
+        parent.add_fn(MakeTimestamp);
+        parent.add_fn(MakeTimestampLtz);
+        parent.add_fn(LastDay);
+        parent.add_fn(NextDay);
     }
 }

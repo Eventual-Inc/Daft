@@ -1454,3 +1454,155 @@ def from_unixtime(expr: Expression, format: str | None = None) -> Expression:
     if format is not None:
         return Expression._call_builtin_scalar_fn("from_unixtime", expr, format=format)
     return Expression._call_builtin_scalar_fn("from_unixtime", expr)
+
+
+def make_date(year: Expression, month: Expression, day: Expression) -> Expression:
+    """Creates a date from year, month, and day integer components.
+
+    Invalid dates (e.g., Feb 30) return null.
+
+    Args:
+        year: integer expression for the year.
+        month: integer expression for the month (1-12).
+        day: integer expression for the day (1-31).
+
+    Returns:
+        Expression: a Date expression.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import make_date
+        >>> make_date(daft.col("y"), daft.col("m"), daft.col("d"))
+        make_date(col(y), col(m), col(d))
+    """
+    year = Expression._to_expression(year)
+    month = Expression._to_expression(month)
+    day = Expression._to_expression(day)
+    return Expression._call_builtin_scalar_fn("make_date", year, month, day)
+
+
+def make_timestamp(
+    year: Expression,
+    month: Expression,
+    day: Expression,
+    hour: Expression,
+    minute: Expression,
+    second: Expression,
+    timezone: str | None = None,
+) -> Expression:
+    """Creates a timestamp from individual date/time components.
+
+    The ``second`` parameter accepts fractional values for sub-second precision.
+    Invalid component combinations return null.
+
+    Args:
+        year: integer expression for the year.
+        month: integer expression for the month (1-12).
+        day: integer expression for the day (1-31).
+        hour: integer expression for the hour (0-23).
+        minute: integer expression for the minute (0-59).
+        second: numeric expression for the second (0-59, may include fractional part).
+        timezone: optional timezone string (e.g. ``"UTC"``). When provided the
+            returned timestamp carries this timezone metadata.
+
+    Returns:
+        Expression: a Timestamp(microseconds) expression.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import make_timestamp
+        >>> make_timestamp(daft.col("y"), daft.col("m"), daft.col("d"), daft.col("h"), daft.col("mi"), daft.col("s"))
+        make_timestamp(col(y), col(m), col(d), col(h), col(mi), col(s))
+    """
+    year = Expression._to_expression(year)
+    month = Expression._to_expression(month)
+    day = Expression._to_expression(day)
+    hour = Expression._to_expression(hour)
+    minute = Expression._to_expression(minute)
+    second = Expression._to_expression(second)
+    return Expression._call_builtin_scalar_fn(
+        "make_timestamp", year, month, day, hour, minute, second, timezone=timezone
+    )
+
+
+def make_timestamp_ltz(
+    year: Expression,
+    month: Expression,
+    day: Expression,
+    hour: Expression,
+    minute: Expression,
+    second: Expression,
+    timezone: str | None = None,
+) -> Expression:
+    """Creates a UTC timestamp from individual date/time components.
+
+    When ``timezone`` is provided, the components are interpreted in that
+    timezone and converted to UTC. Without a timezone the components are
+    treated as UTC directly.
+
+    Args:
+        year: integer expression for the year.
+        month: integer expression for the month (1-12).
+        day: integer expression for the day (1-31).
+        hour: integer expression for the hour (0-23).
+        minute: integer expression for the minute (0-59).
+        second: numeric expression for the second (0-59, may include fractional part).
+        timezone: optional source timezone string (e.g. ``"US/Eastern"``).
+
+    Returns:
+        Expression: a Timestamp(microseconds, UTC) expression.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import make_timestamp_ltz
+        >>> make_timestamp_ltz(daft.col("y"), daft.col("m"), daft.col("d"), daft.col("h"), daft.col("mi"), daft.col("s"))
+        make_timestamp_ltz(col(y), col(m), col(d), col(h), col(mi), col(s))
+    """
+    year = Expression._to_expression(year)
+    month = Expression._to_expression(month)
+    day = Expression._to_expression(day)
+    hour = Expression._to_expression(hour)
+    minute = Expression._to_expression(minute)
+    second = Expression._to_expression(second)
+    return Expression._call_builtin_scalar_fn(
+        "make_timestamp_ltz", year, month, day, hour, minute, second, timezone=timezone
+    )
+
+
+def last_day(expr: Expression) -> Expression:
+    """Returns the last day of the month for the given date or timestamp.
+
+    Args:
+        expr: a Date or Timestamp expression.
+
+    Returns:
+        Expression: a Date expression representing the last day of that month.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import last_day
+        >>> last_day(daft.col("dt"))
+        last_day(col(dt))
+    """
+    expr = Expression._to_expression(expr)
+    return Expression._call_builtin_scalar_fn("last_day", expr)
+
+
+def next_day(expr: Expression, day_of_week: str) -> Expression:
+    """Returns the next occurrence of the specified day of the week after the given date.
+
+    Args:
+        expr: a Date or Timestamp expression.
+        day_of_week: the target weekday (e.g. ``"Monday"``, ``"Mon"``).
+
+    Returns:
+        Expression: a Date expression for the next occurrence of that weekday.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import next_day
+        >>> next_day(daft.col("dt"), "Monday")
+        next_day(col(dt), lit("Monday"))
+    """
+    expr = Expression._to_expression(expr)
+    return Expression._call_builtin_scalar_fn("next_day", expr, day_of_week=day_of_week)
