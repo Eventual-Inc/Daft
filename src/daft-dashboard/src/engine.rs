@@ -10,7 +10,7 @@ use common_metrics::{QueryEndState, QueryID, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KE
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
-fn secs_from_epoch() -> f64 {
+pub(crate) fn secs_from_epoch() -> f64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()

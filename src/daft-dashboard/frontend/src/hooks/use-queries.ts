@@ -40,6 +40,7 @@ export type CanceledStatus = {
 
 export type DeadStatus = {
   status: "Dead";
+  duration_sec: number;
 };
 
 export type QueryStatus =

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { main, toHumanReadableDuration } from "@/lib/utils";
-import { Ban, CircleX, LoaderCircle } from "lucide-react";
+import { Ban, CircleX, LoaderCircle, Skull } from "lucide-react";
 import { QueryStatusName } from "@/hooks/use-queries";
 import { AnimatedFish, Naruto } from "@/components/icons";
 
@@ -87,6 +87,12 @@ const StatusIcon = ({ status }: { status: QueryStatusName }) => {
         return {
           icon: <Ban size={16} strokeWidth={3} className="text-gray-500" />,
           label: "Canceled",
+          textColor: "text-gray-500",
+        };
+      case "Dead":
+        return {
+          icon: <Skull size={16} strokeWidth={3} className="text-gray-500" />,
+          label: "Dead",
           textColor: "text-gray-500",
         };
       default:

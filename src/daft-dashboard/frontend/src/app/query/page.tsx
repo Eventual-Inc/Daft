@@ -78,7 +78,9 @@ function QueryPageInner() {
   const end_sec =
     query.state.status === "Finished" || query.state.status === "Canceled" || query.state.status === "Failed"
       ? query.state.end_sec
-      : null;
+      : query.state.status === "Dead"
+        ? query.state.marked_dead_sec
+        : null;
 
   const last_heartbeat_sec =
     query.state.status === "Executing"

@@ -108,6 +108,9 @@ export type QueryState =
     }
   | {
       status: "Dead";
+      plan_info: PlanInfo;
+      exec_info: ExecInfo;
+      marked_dead_sec: number;
     };
 
 export type QueryInfo = {

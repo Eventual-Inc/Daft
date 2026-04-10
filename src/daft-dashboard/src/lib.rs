@@ -327,7 +327,9 @@ pub async fn launch_server(
 
             for mut q in state.queries.iter_mut() {
                 let QueryState::Executing {
-                    last_heartbeat_sec, ..
+                    last_heartbeat_sec,
+                    ref plan_info,
+                    ref exec_info,
                 } = q.state
                 else {
                     continue;
@@ -338,10 +340,13 @@ pub async fn launch_server(
                         q.id,
                         SystemTime::UNIX_EPOCH + Duration::from_secs_f64(last_heartbeat_sec),
                     );
-                    q.state = QueryState::Dead {};
+                    q.state = QueryState::Dead {
+                        plan_info: plan_info.clone(),
+                        exec_info: exec_info.clone(),
+                        marked_dead_sec: engine::secs_from_epoch(),
+                    };
 
                     state.ping_clients_on_query_update(&q);
-                    // TODO actually handle Dead in frontend and state transitions
                 }
             }
         }

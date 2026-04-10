@@ -84,8 +84,9 @@ pub(crate) enum QueryStatus {
         duration_sec: f64,
         message: Option<String>,
     },
-    /* TODO(void001): Implement dead state */
-    Dead {},
+    Dead {
+        duration_sec: f64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -149,8 +150,11 @@ pub(crate) enum QueryState {
         end_sec: f64,
         message: Option<String>,
     },
-    /* TODO(void001): Implement dead state */
-    Dead {},
+    Dead {
+        plan_info: PlanInfo,
+        exec_info: ExecInfo,
+        marked_dead_sec: f64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -198,7 +202,11 @@ impl QueryInfo {
                 duration_sec: end_sec - self.start_sec,
                 message: message.clone(),
             },
-            QueryState::Dead { .. } => QueryStatus::Dead {},
+            QueryState::Dead {
+                marked_dead_sec, ..
+            } => QueryStatus::Dead {
+                duration_sec: marked_dead_sec - self.start_sec,
+            },
         }
     }
 
@@ -268,6 +276,7 @@ impl DashboardState {
                 QueryState::Executing { exec_info, .. }
                 | QueryState::Finalizing { exec_info, .. }
                 | QueryState::Finished { exec_info, .. }
+                | QueryState::Dead { exec_info, .. }
                 | QueryState::Failed {
                     exec_info: Some(exec_info),
                     ..
