@@ -29,8 +29,8 @@ use sqlparser::{
     ast::{
         self, BinaryOperator, CastKind, ColumnDef, DateTimeField, Distinct, ExcludeSelectItem,
         FunctionArg, FunctionArgExpr, GroupByExpr, Ident, ObjectName, Query, SelectItem, SetExpr,
-        Subscript, TableAlias, TableFunctionArgs, TableSample, TableSampleKind, TableSampleQuantity,
-        TableSampleUnit, TableWithJoins, TimezoneInfo, UnaryOperator, Value,
+        Subscript, TableAlias, TableFunctionArgs, TableSample, TableSampleKind,
+        TableSampleQuantity, TableSampleUnit, TableWithJoins, TimezoneInfo, UnaryOperator, Value,
         WildcardAdditionalOptions, With,
     },
     dialect::GenericDialect,
@@ -1085,6 +1085,7 @@ impl SQLPlanner<'_> {
         let TableSample {
             quantity,
             seed,
+            name,
             ..
         } = table_sample;
 
@@ -1131,13 +1132,32 @@ impl SQLPlanner<'_> {
                         size = Some(num as usize);
                     }
                     None => {
-                        // No unit specified - treat as fraction (0.0-1.0)
-                        if num > 1.0 {
-                            return Err(PlannerError::invalid_operation(format!(
-                                "SAMPLE fraction must be between 0.0 and 1.0 when no unit is specified, got: {num}. Use PERCENT or ROWS unit for other ranges."
-                            )));
+                        // No unit specified
+                        // If method is SYSTEM or BERNOULLI (Postgres style), treat as percent
+                        // Otherwise treat as fraction (0.0-1.0)
+                        let is_postgres_method = matches!(
+                            name,
+                            Some(ast::TableSampleMethod::System)
+                                | Some(ast::TableSampleMethod::Bernoulli)
+                        );
+
+                        if is_postgres_method {
+                            // Postgres TABLESAMPLE SYSTEM(n) or BERNOULLI(n) - treat as percent
+                            if num > 100.0 {
+                                return Err(PlannerError::invalid_operation(format!(
+                                    "TABLESAMPLE percent must be between 0 and 100, got: {num}"
+                                )));
+                            }
+                            fraction = Some(num / 100.0);
+                        } else {
+                            // No unit and no method - treat as fraction (0.0-1.0)
+                            if num > 1.0 {
+                                return Err(PlannerError::invalid_operation(format!(
+                                    "SAMPLE fraction must be between 0.0 and 1.0 when no unit is specified, got: {num}. Use PERCENT or ROWS unit for other ranges."
+                                )));
+                            }
+                            fraction = Some(num);
                         }
-                        fraction = Some(num);
                     }
                 }
             } else {

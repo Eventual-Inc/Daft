@@ -153,3 +153,93 @@ def test_sample_with_join():
     # JOIN adds prefixed column names
     assert "b" in result.column_names
     assert "c" in result.column_names
+
+
+def test_tablesample_system():
+    """Test Postgres TABLESAMPLE SYSTEM syntax."""
+    df = daft.from_pydict({"a": [1, 2, 3, 4, 5], "b": ["x", "y", "z", "w", "v"]})
+
+    # TABLESAMPLE SYSTEM (50) - should sample ~50% of rows
+    result = daft.sql("SELECT * FROM df TABLESAMPLE SYSTEM (50)", df=df)
+    result.collect()
+
+    # Should return approximately 50% of rows
+    assert 0 <= len(result) <= 5
+    assert result.column_names == ["a", "b"]
+
+
+def test_tablesample_bernoulli():
+    """Test Postgres TABLESAMPLE BERNOULLI syntax."""
+    df = daft.from_pydict({"a": [1, 2, 3, 4, 5], "b": ["x", "y", "z", "w", "v"]})
+
+    # TABLESAMPLE BERNOULLI (50) - should sample ~50% of rows
+    result = daft.sql("SELECT * FROM df TABLESAMPLE BERNOULLI (50)", df=df)
+    result.collect()
+
+    # Should return approximately 50% of rows
+    assert 0 <= len(result) <= 5
+    assert result.column_names == ["a", "b"]
+
+
+def test_tablesample_with_seed():
+    """Test Postgres TABLESAMPLE with seed for reproducibility."""
+    df = daft.from_pydict({"a": [1, 2, 3, 4, 5], "b": ["x", "y", "z", "w", "v"]})
+
+    # TABLESAMPLE SYSTEM with seed - should produce same results
+    result1 = daft.sql("SELECT * FROM df TABLESAMPLE SYSTEM (50) REPEATABLE (42)", df=df)
+    result2 = daft.sql("SELECT * FROM df TABLESAMPLE SYSTEM (50) REPEATABLE (42)", df=df)
+
+    result1.collect()
+    result2.collect()
+
+    # Results should be identical with same seed
+    assert result1.to_pydict() == result2.to_pydict()
+
+
+def test_postgres_tablesample_syntax_variants():
+    """Test Postgres TABLESAMPLE syntax variants from official documentation.
+    
+    Reference: https://www.postgresql.org/docs/current/tablesample-method.html
+    
+    Postgres supports:
+    - TABLESAMPLE SYSTEM (percentage)
+    - TABLESAMPLE BERNOULLI (percentage)
+    - TABLESAMPLE method_name (parameter) REPEATABLE (seed)
+    """
+    df = daft.from_pydict({
+        "id": list(range(1, 101)),
+        "value": ["x"] * 100
+    })
+
+    # Test SYSTEM method with various percentages
+    result_10 = daft.sql("SELECT * FROM df TABLESAMPLE SYSTEM (10)", df=df)
+    result_10.collect()
+    assert 0 <= len(result_10) <= 100  # ~10 rows expected
+
+    result_50 = daft.sql("SELECT * FROM df TABLESAMPLE SYSTEM (50)", df=df)
+    result_50.collect()
+    assert 0 <= len(result_50) <= 100  # ~50 rows expected
+
+    result_100 = daft.sql("SELECT * FROM df TABLESAMPLE SYSTEM (100)", df=df)
+    result_100.collect()
+    assert len(result_100) == 100  # All rows
+
+    # Test BERNOULLI method with various percentages
+    result_bernoulli_10 = daft.sql("SELECT * FROM df TABLESAMPLE BERNOULLI (10)", df=df)
+    result_bernoulli_10.collect()
+    assert 0 <= len(result_bernoulli_10) <= 100
+
+    result_bernoulli_50 = daft.sql("SELECT * FROM df TABLESAMPLE BERNOULLI (50)", df=df)
+    result_bernoulli_50.collect()
+    assert 0 <= len(result_bernoulli_50) <= 100
+
+    # Test with REPEATABLE seed for deterministic results
+    result_seed_1 = daft.sql(
+        "SELECT * FROM df TABLESAMPLE SYSTEM (30) REPEATABLE (123)", df=df
+    )
+    result_seed_2 = daft.sql(
+        "SELECT * FROM df TABLESAMPLE SYSTEM (30) REPEATABLE (123)", df=df
+    )
+    result_seed_1.collect()
+    result_seed_2.collect()
+    assert result_seed_1.to_pydict() == result_seed_2.to_pydict()
