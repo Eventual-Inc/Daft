@@ -428,7 +428,7 @@ mod tests {
     use futures::TryStreamExt;
 
     use super::*;
-    use crate::partition_store::{InProgressFlightPartitionStore, partition_ref_id};
+    use crate::partition_store::InProgressFlightPartitionStore;
 
     fn make_schema() -> Arc<daft_schema::schema::Schema> {
         Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)]))
@@ -506,7 +506,8 @@ mod tests {
 
         // Write real IPC files through the partition store.
         let partition_set = InProgressFlightPartitionStore::try_new(
-            vec![partition_ref_id(input_id, 0), partition_ref_id(input_id, 1)],
+            input_id,
+            2,
             std::slice::from_ref(&temp_dir),
             shuffle_id,
             make_schema(),
@@ -554,7 +555,8 @@ mod tests {
 
         // Create partition set but only write to one partition.
         let partition_set = InProgressFlightPartitionStore::try_new(
-            vec![partition_ref_id(1, 0), partition_ref_id(1, 1)],
+            1,
+            2,
             std::slice::from_ref(&temp_dir),
             shuffle_id,
             make_schema(),

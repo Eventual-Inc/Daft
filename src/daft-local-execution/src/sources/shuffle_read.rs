@@ -309,7 +309,7 @@ mod tests {
         prelude::{DataType, Field, Int64Array, Schema},
         series::IntoSeries,
     };
-    use daft_shuffles::partition_store::{InProgressFlightPartitionStore, partition_ref_id};
+    use daft_shuffles::partition_store::InProgressFlightPartitionStore;
     use futures::TryStreamExt;
 
     use super::*;
@@ -352,9 +352,8 @@ mod tests {
         let local_address = "grpc://local:9999".to_string();
 
         let partition_set = InProgressFlightPartitionStore::try_new(
-            (0..values.len())
-                .map(|partition_idx| partition_ref_id(input_id, partition_idx))
-                .collect(),
+            input_id,
+            values.len(),
             std::slice::from_ref(&temp_dir),
             shuffle_id,
             make_schema(),

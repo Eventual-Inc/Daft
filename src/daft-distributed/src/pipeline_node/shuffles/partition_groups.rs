@@ -57,6 +57,10 @@ pub(crate) fn flight_partition_groups_from_outputs(
             ));
         };
 
+        if output.partitions.is_empty() {
+            continue;
+        }
+
         if output.partitions.len() != num_partitions {
             return Err(DaftError::InternalError(format!(
                 "Expected {} Flight shuffle partitions, got {}",
@@ -170,6 +174,18 @@ mod tests {
             partition_groups,
             vec![vec![], vec![flight_ref(11, "grpc://worker-a:1234", 102, 7)],]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn flight_partition_groups_accept_empty_task_output_as_all_empty() -> DaftResult<()> {
+        let outputs = vec![TaskOutput::ShuffleWrite(ShuffleWriteOutput {
+            partitions: vec![],
+        })];
+
+        let partition_groups = flight_partition_groups_from_outputs(outputs, 2)?;
+
+        assert_eq!(partition_groups, vec![vec![], vec![]]);
         Ok(())
     }
 }

@@ -34,16 +34,17 @@ struct WriterTaskResult {
 type WriterTask = RuntimeTask<DaftResult<WriterTaskResult>>;
 
 struct InProgressFlightPartitionStoreState {
-    writer_senders: Option<Vec<async_channel::Sender<MicroPartition>>>,
-    writer_tasks: Vec<WriterTask>,
+    writer_senders: Option<Vec<Option<async_channel::Sender<MicroPartition>>>>,
+    writer_tasks: Vec<Option<WriterTask>>,
     error: Option<String>,
+    saw_push: bool,
 }
 
 pub struct InProgressFlightPartitionStore {
     state: Mutex<InProgressFlightPartitionStoreState>,
-    writer_senders_weak: Vec<async_channel::WeakSender<MicroPartition>>,
     expected_schema: SchemaRef,
-    partition_ref_ids: Vec<u64>,
+    input_id: u32,
+    num_partitions: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -63,7 +64,8 @@ impl RegisteredFlightPartition {
 
 impl InProgressFlightPartitionStore {
     pub fn try_new(
-        partition_ref_ids: Vec<u64>,
+        input_id: u32,
+        num_partitions: usize,
         dirs: &[String],
         shuffle_id: u64,
         expected_schema: SchemaRef,
@@ -82,41 +84,34 @@ impl InProgressFlightPartitionStore {
             std::fs::create_dir_all(dir)?;
         }
 
-        let mut writers = Vec::with_capacity(partition_ref_ids.len());
-        for partition_ref_id in &partition_ref_ids {
-            let partition_dir = get_partition_dir(&shuffle_dirs, *partition_ref_id);
+        let num_cpus = std::thread::available_parallelism().unwrap().get();
+        let mut writer_senders = Vec::with_capacity(num_partitions);
+        let mut writer_tasks = Vec::with_capacity(num_partitions);
+        for partition_idx in 0..num_partitions {
+            let partition_ref_id = partition_ref_id(input_id, partition_idx);
+            let partition_dir = get_partition_dir(&shuffle_dirs, partition_ref_id);
             if std::path::Path::new(&partition_dir).exists() {
                 std::fs::remove_dir_all(&partition_dir)?;
             }
             std::fs::create_dir_all(&partition_dir)?;
+
             let writer = make_ipc_writer(&partition_dir, SINGLE_FILE_TARGET_SIZE, compression)?;
-            writers.push(writer);
+            let (tx, rx) = async_channel::bounded(num_cpus * 2);
+            let task = get_io_runtime(true).spawn(async move { writer_task(rx, writer).await });
+            writer_senders.push(Some(tx));
+            writer_tasks.push(Some(task));
         }
-
-        let num_cpus = std::thread::available_parallelism().unwrap().get();
-        let (writer_tasks, writer_senders): (Vec<_>, Vec<_>) = writers
-            .into_iter()
-            .map(|writer| {
-                let (tx, rx) = async_channel::bounded(num_cpus * 2);
-                let task = get_io_runtime(true).spawn(async move { writer_task(rx, writer).await });
-                (task, tx)
-            })
-            .unzip();
-
-        let weak_senders = writer_senders
-            .iter()
-            .map(|sender| sender.downgrade())
-            .collect();
 
         Ok(Self {
             state: Mutex::new(InProgressFlightPartitionStoreState {
                 writer_senders: Some(writer_senders),
                 writer_tasks,
                 error: None,
+                saw_push: false,
             }),
-            writer_senders_weak: weak_senders,
             expected_schema,
-            partition_ref_ids,
+            input_id,
+            num_partitions,
         })
     }
 
@@ -124,22 +119,39 @@ impl InProgressFlightPartitionStore {
         &self,
         partitioned_data: Vec<MicroPartition>,
     ) -> DaftResult<()> {
-        if partitioned_data.len() != self.writer_senders_weak.len() {
+        let mut state = self.state.lock().await;
+        if let Some(error) = &state.error {
+            return Err(DaftError::InternalError(error.clone()));
+        }
+        if state.writer_senders.is_none() {
+            return Err(DaftError::InternalError(
+                "Flight partition store has been closed".to_string(),
+            ));
+        }
+        state.saw_push = true;
+
+        if partitioned_data.len() != self.num_partitions {
             return Err(DaftError::ValueError(format!(
                 "Expected {} partitions in flight partition store, got {}",
-                self.writer_senders_weak.len(),
+                self.num_partitions,
                 partitioned_data.len()
             )));
         }
 
-        let send_futures = partitioned_data
+        let mut send_inputs = Vec::new();
+        for (partition_idx, partition) in partitioned_data.into_iter().enumerate() {
+            if partition.is_empty() {
+                continue;
+            }
+            let sender = self.get_writer_sender(&mut state, partition_idx)?;
+            send_inputs.push((sender, partition));
+        }
+        drop(state);
+
+        let send_futures = send_inputs
             .into_iter()
-            .zip(self.writer_senders_weak.iter())
-            .map(|(partition, weak_sender)| async move {
-                match weak_sender.upgrade() {
-                    Some(sender) => sender.send(partition).await.map_err(|e| e.to_string()),
-                    None => Err("Flight partition store has been closed".to_string()),
-                }
+            .map(|(sender, partition)| async move {
+                sender.send(partition).await.map_err(|e| e.to_string())
             });
 
         if let Err(e) = futures::future::try_join_all(send_futures).await {
@@ -161,38 +173,75 @@ impl InProgressFlightPartitionStore {
             .take()
             .expect("writer_senders should be present");
         let writer_tasks = std::mem::take(&mut state.writer_tasks);
-
+        let saw_push = state.saw_push;
         let close_result = Self::close_internal(writer_senders, writer_tasks).await;
         if let Err(err) = close_result {
             state.error = Some(err.to_string());
             return Err(err);
         }
 
+        if !saw_push {
+            return Ok(vec![]);
+        }
+
         Ok(close_result
             .unwrap()
             .into_iter()
-            .zip(self.partition_ref_ids.iter().copied())
-            .map(|(result, partition_ref_id)| RegisteredFlightPartition {
-                partition_ref_id,
-                schema: result
-                    .schema
-                    .unwrap_or_else(|| self.expected_schema.clone()),
-                file_path: result.file_path,
-                num_rows: result.total_rows_written,
-                size_bytes: result.total_bytes_written,
+            .enumerate()
+            .map(|(partition_idx, result)| {
+                let partition_ref_id = partition_ref_id(self.input_id, partition_idx);
+                match result {
+                    Some(result) => RegisteredFlightPartition {
+                        partition_ref_id,
+                        schema: result
+                            .schema
+                            .unwrap_or_else(|| self.expected_schema.clone()),
+                        file_path: result.file_path,
+                        num_rows: result.total_rows_written,
+                        size_bytes: result.total_bytes_written,
+                    },
+                    None => RegisteredFlightPartition {
+                        partition_ref_id,
+                        schema: self.expected_schema.clone(),
+                        file_path: None,
+                        num_rows: 0,
+                        size_bytes: 0,
+                    },
+                }
             })
             .collect())
     }
 
+    fn get_writer_sender(
+        &self,
+        state: &mut InProgressFlightPartitionStoreState,
+        partition_idx: usize,
+    ) -> DaftResult<async_channel::Sender<MicroPartition>> {
+        let writer_senders = state
+            .writer_senders
+            .as_mut()
+            .expect("writer_senders should be present before close");
+        writer_senders[partition_idx]
+            .clone()
+            .ok_or_else(|| DaftError::InternalError("Flight partition writer missing".to_string()))
+    }
+
     async fn close_internal(
-        writer_senders: Vec<async_channel::Sender<MicroPartition>>,
-        writer_tasks: Vec<WriterTask>,
-    ) -> DaftResult<Vec<WriterTaskResult>> {
+        writer_senders: Vec<Option<async_channel::Sender<MicroPartition>>>,
+        writer_tasks: Vec<Option<WriterTask>>,
+    ) -> DaftResult<Vec<Option<WriterTaskResult>>> {
         drop(writer_senders);
-        let results = futures::future::try_join_all(writer_tasks)
-            .await?
-            .into_iter()
-            .collect::<DaftResult<Vec<_>>>()?;
+        let results =
+            futures::future::try_join_all(writer_tasks.into_iter().map(|task| async move {
+                match task {
+                    Some(task) => {
+                        let result = task.await??;
+                        Ok::<Option<WriterTaskResult>, DaftError>(Some(result))
+                    }
+                    None => Ok::<Option<WriterTaskResult>, DaftError>(None),
+                }
+            }))
+            .await?;
         Ok(results)
     }
 }
@@ -289,7 +338,8 @@ mod tests {
     async fn test_flight_partition_set_basic() -> DaftResult<()> {
         let temp_dir = make_temp_dir();
         let partitions = InProgressFlightPartitionStore::try_new(
-            vec![partition_ref_id(7, 0), partition_ref_id(7, 1)],
+            7,
+            2,
             std::slice::from_ref(&temp_dir),
             9,
             make_schema(),
@@ -317,7 +367,8 @@ mod tests {
     async fn test_flight_partition_set_empty_finalize_uses_expected_schema() -> DaftResult<()> {
         let temp_dir = make_temp_dir();
         let partitions = InProgressFlightPartitionStore::try_new(
-            vec![partition_ref_id(1, 0)],
+            1,
+            1,
             std::slice::from_ref(&temp_dir),
             2,
             make_schema(),
@@ -325,10 +376,35 @@ mod tests {
         )?;
 
         let finalized = partitions.close().await?;
-        assert_eq!(finalized.len(), 1);
+        assert_eq!(finalized.len(), 0);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_flight_partition_set_empty_push_returns_dense_empty_refs() -> DaftResult<()> {
+        let temp_dir = make_temp_dir();
+        let partitions = InProgressFlightPartitionStore::try_new(
+            1,
+            2,
+            std::slice::from_ref(&temp_dir),
+            2,
+            make_schema(),
+            None,
+        )?;
+
+        partitions
+            .push_partitioned_data(vec![
+                MicroPartition::empty(Some(make_schema())),
+                MicroPartition::empty(Some(make_schema())),
+            ])
+            .await?;
+
+        let finalized = partitions.close().await?;
+        assert_eq!(finalized.len(), 2);
         assert_eq!(finalized[0].schema.names(), vec!["ints"]);
         assert!(finalized[0].file_path.is_none());
         assert_eq!(finalized[0].num_rows, 0);
+        assert!(finalized[1].file_path.is_none());
 
         Ok(())
     }

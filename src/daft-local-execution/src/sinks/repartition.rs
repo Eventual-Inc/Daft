@@ -10,8 +10,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
 use daft_shuffles::{
-    partition_store::{InProgressFlightPartitionStore, partition_ref_id},
-    server::flight_server::ShuffleFlightServer,
+    partition_store::InProgressFlightPartitionStore, server::flight_server::ShuffleFlightServer,
 };
 use itertools::Itertools;
 use tracing::{Span, instrument};
@@ -419,11 +418,9 @@ impl BlockingSink for RepartitionSink {
                 let partition_set = match partitions.entry(input_id) {
                     std::collections::hash_map::Entry::Occupied(e) => e.get().clone(),
                     std::collections::hash_map::Entry::Vacant(e) => {
-                        let partition_ref_ids = (0..*num_partitions)
-                            .map(|partition_idx| partition_ref_id(input_id, partition_idx))
-                            .collect();
                         let partition_set = Arc::new(InProgressFlightPartitionStore::try_new(
-                            partition_ref_ids,
+                            input_id,
+                            *num_partitions,
                             shuffle_dirs,
                             *shuffle_id,
                             schema.clone(),
