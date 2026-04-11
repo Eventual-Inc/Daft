@@ -27,7 +27,7 @@ class FragmentIndexHandler:
         column: str,
         index_type: str,
         name: str,
-        fragment_uuid: str,
+        index_uuid: str,
         replace: bool,
         **kwargs: Any,
     ) -> None:
@@ -35,7 +35,7 @@ class FragmentIndexHandler:
         self.column = column
         self.index_type = index_type
         self.name = name
-        self.fragment_uuid = fragment_uuid
+        self.index_uuid = index_uuid
         self.replace = replace
         self.kwargs = kwargs
 
@@ -51,7 +51,7 @@ class FragmentIndexHandler:
             index_type=self.index_type,
             name=self.name,
             replace=self.replace,
-            fragment_uuid=self.fragment_uuid,
+            index_uuid=self.index_uuid,
             fragment_ids=fragment_ids,
             **self.kwargs,
         )
@@ -127,9 +127,8 @@ def create_scalar_index_internal(
         existing_indices = []
         try:
             existing_indices = lance_ds.list_indices()
-        except Exception:
-            # If we can't check existing indices, continue
-            pass
+        except Exception as e:
+            logger.warning("Could not fetch existing indices for removal; old index may not be cleaned up: %s", e)
         existing_names = {idx["name"] for idx in existing_indices}
         if name in existing_names:
             raise ValueError(f"Index with name '{name}' already exists. Set replace=True to replace it.")
@@ -180,7 +179,7 @@ def create_scalar_index_internal(
         column=column,
         index_type=index_type,
         name=name,
-        fragment_uuid=index_id,
+        index_uuid=index_id,
         replace=replace,
         **kwargs,
     )
@@ -208,9 +207,30 @@ def create_scalar_index_internal(
         fragment_ids=set(fragment_ids_to_use),
         index_version=0,
     )
+
+    # When replacing, find and remove existing indices with the same name
+    removed_indices = []
+    if replace:
+        try:
+            existing_indices = lance_ds.list_indices()
+            for idx in existing_indices:
+                if idx["name"] == name:
+                    removed_indices.append(
+                        lance.Index(
+                            uuid=idx["uuid"],
+                            name=idx["name"],
+                            fields=[lance_ds.schema.get_field_index(f) for f in idx["fields"]],
+                            dataset_version=idx.get("dataset_version", lance_ds.version),
+                            fragment_ids=idx.get("fragment_ids", set()),
+                            index_version=0,
+                        )
+                    )
+        except Exception as e:
+            logger.warning("Could not fetch existing indices for removal; old index may not be cleaned up: %s", e)
+
     create_index_op = lance.LanceOperation.CreateIndex(
         new_indices=[index],
-        removed_indices=[],
+        removed_indices=removed_indices,
     )
 
     # Commit the index operation atomically

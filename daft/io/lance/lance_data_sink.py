@@ -118,8 +118,10 @@ class LanceDataSink(DataSink[list[LanceFragmentMetadata]]):
         try:
             return lance_module.dataset(self._table_uri, storage_options=self._storage_options)
         except (ValueError, FileNotFoundError, OSError) as e:
-            # Check if this is specifically a "dataset not found" error
-            if "not found" in str(e).lower() or "does not exist" in str(e).lower():
+            err_msg = str(e).lower()
+            # Check if this is specifically a "dataset not found" error or a "not a directory" error
+            # (e.g. when the target path points to a file instead of a directory)
+            if "not found" in err_msg or "does not exist" in err_msg or "not a directory" in err_msg:
                 if self._mode == "append":
                     raise ValueError("Cannot append to non-existent Lance dataset.")
                 return None
