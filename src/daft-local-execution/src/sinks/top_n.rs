@@ -7,12 +7,11 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
+    sinks::blocking_sink::BlockingSinkOutput,
 };
 
 /// Parameters for the TopN that both the state and sinker need

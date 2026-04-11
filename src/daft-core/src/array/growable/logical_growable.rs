@@ -79,6 +79,7 @@ impl_logical_growable!(LogicalTimestampGrowable, TimestampType);
 impl_logical_growable!(LogicalDurationGrowable, DurationType);
 impl_logical_growable!(LogicalDateGrowable, DateType);
 impl_logical_growable!(LogicalTimeGrowable, TimeType);
+impl_logical_growable!(LogicalUuidGrowable, UuidType);
 impl_logical_growable!(LogicalEmbeddingGrowable, EmbeddingType);
 impl_logical_growable!(LogicalFixedShapeImageGrowable, FixedShapeImageType);
 impl_logical_growable!(LogicalFixedShapeTensorGrowable, FixedShapeTensorType);

@@ -9,6 +9,7 @@ pub mod ops;
 mod serdes;
 mod struct_array;
 mod union_array;
+pub mod uuid_array;
 pub mod values;
 
 use arrow::{
@@ -20,6 +21,7 @@ pub use fixed_size_list_array::FixedSizeListArray;
 pub use list_array::ListArray;
 pub use struct_array::StructArray;
 pub use union_array::UnionArray;
+pub use uuid_array::UuidArray;
 mod boolean;
 pub mod prelude;
 use std::{marker::PhantomData, sync::Arc};

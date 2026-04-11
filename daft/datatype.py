@@ -573,6 +573,11 @@ class DataType:
 
     @datatype_constructor
     @classmethod
+    def uuid(cls) -> DataType:
+        """Create a UUID DataType: A 16-byte universally unique identifier."""
+        return cls._from_pydatatype(PyDataType.uuid())
+
+    @classmethod
     def null(cls) -> DataType:
         """Creates the Null DataType: Always the ``Null`` value."""
         return cls._from_pydatatype(PyDataType.null())
@@ -1153,6 +1158,16 @@ class DataType:
             >>> assert dtype.is_fixed_size_binary()
         """
         return self._dtype.is_fixed_size_binary()
+
+    def is_uuid(self) -> builtins.bool:
+        """Check if this is a UUID type.
+
+        Examples:
+            >>> import daft
+            >>> dtype = daft.DataType.uuid()
+            >>> assert dtype.is_uuid()
+        """
+        return self._dtype.is_uuid()
 
     def is_string(self) -> builtins.bool:
         """Check if this is a string type.

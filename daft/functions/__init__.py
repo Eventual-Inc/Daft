@@ -67,6 +67,14 @@ from .datetime import (
     current_date,
     current_timestamp,
     current_timezone,
+    date_add,
+    date_sub,
+    date_diff,
+    date_from_unix_date,
+    timestamp_seconds,
+    timestamp_millis,
+    timestamp_micros,
+    from_unixtime,
 )
 from .distance import cosine_distance, dot_product, euclidean_distance
 from .similarity import (
@@ -232,7 +240,7 @@ from .str import (
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
 from .audio import audio_metadata, resample
-from .video import video_metadata, video_keyframes
+from .video import video_metadata, video_keyframes, video_frames
 from .window import (
     row_number,
     rank,
@@ -297,6 +305,10 @@ __all__ = [
     "current_timestamp",
     "current_timezone",
     "date",
+    "date_add",
+    "date_diff",
+    "date_from_unix_date",
+    "date_sub",
     "date_trunc",
     "day",
     "day_of_month",
@@ -328,6 +340,7 @@ __all__ = [
     "find",
     "floor",
     "format",
+    "from_unixtime",
     "get",
     "guess_mime_type",
     "hash",
@@ -448,6 +461,9 @@ __all__ = [
     "tan",
     "tanh",
     "time",
+    "timestamp_micros",
+    "timestamp_millis",
+    "timestamp_seconds",
     "to_camel_case",
     "to_date",
     "to_datetime",
@@ -482,6 +498,7 @@ __all__ = [
     "value_counts",
     "var",
     "video_file",
+    "video_frames",
     "video_keyframes",
     "video_metadata",
     "week_of_year",

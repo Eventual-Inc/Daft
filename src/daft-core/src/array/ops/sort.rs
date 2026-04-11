@@ -12,7 +12,7 @@ use super::as_arrow::AsArrow;
 use crate::prelude::PythonArray;
 use crate::{
     array::{
-        DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray,
+        DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray, UuidArray,
         ops::arrow::sort::primitive::{
             common::multi_column_idx_sort, indices::indices_sorted_unstable_by, sort::sort_by,
         },
@@ -608,6 +608,13 @@ impl DurationArray {
 }
 
 impl TimestampArray {
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
+        let new_array = self.physical.sort(descending, nulls_first)?;
+        Ok(Self::new(self.field.clone(), new_array))
+    }
+}
+
+impl UuidArray {
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
         let new_array = self.physical.sort(descending, nulls_first)?;
         Ok(Self::new(self.field.clone(), new_array))
