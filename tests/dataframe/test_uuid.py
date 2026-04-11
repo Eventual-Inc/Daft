@@ -12,7 +12,7 @@ def test_uuid_column_generation(make_df) -> None:
     df = make_df(data).with_column("uuid", uuid()).collect()
 
     assert len(df) == 200
-    assert df.schema()["uuid"].dtype == DataType.string()
+    assert df.schema()["uuid"].dtype == DataType.uuid()
 
     values = df.to_pydict()["uuid"]
     assert len(set(values)) == 200
@@ -24,7 +24,7 @@ def test_uuid_empty_table(make_df) -> None:
     data = {"a": []}
     df = make_df(data).with_column("uuid", uuid()).collect()
     assert len(df) == 0
-    assert df.schema()["uuid"].dtype == DataType.string()
+    assert df.schema()["uuid"].dtype == DataType.uuid()
     assert df.to_pydict()["uuid"] == []
 
 
@@ -33,8 +33,8 @@ def test_uuid_with_multiple_columns(make_df) -> None:
     df = make_df(data).with_column("u1", uuid()).with_column("u2", uuid()).collect()
 
     assert len(df) == 200
-    assert df.schema()["u1"].dtype == DataType.string()
-    assert df.schema()["u2"].dtype == DataType.string()
+    assert df.schema()["u1"].dtype == DataType.uuid()
+    assert df.schema()["u2"].dtype == DataType.uuid()
 
     uuid_re = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
     values1 = df.to_pydict()["u1"]
@@ -51,8 +51,8 @@ def test_uuid_with_nested_expression(make_df) -> None:
     df = make_df(data).with_columns({"u": uuid(), "u_fmt": format("{}", uuid())}).collect()
 
     assert len(df) == 50
-    assert df.schema()["u"].dtype == DataType.string()
-    assert df.schema()["u_fmt"].dtype == DataType.string()
+    assert df.schema()["u"].dtype == DataType.uuid()
+    assert df.schema()["u_fmt"].dtype == DataType.uuid()
 
     pydict = df.to_pydict()
     uuid_re = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -66,8 +66,8 @@ def test_uuid_in_select(make_df) -> None:
     df = make_df(data).select("a", u1=uuid(), u2=uuid()).collect()
 
     assert len(df) == 50
-    assert df.schema()["u1"].dtype == DataType.string()
-    assert df.schema()["u2"].dtype == DataType.string()
+    assert df.schema()["u1"].dtype == DataType.uuid()
+    assert df.schema()["u2"].dtype == DataType.uuid()
 
     pydict = df.to_pydict()
     assert len(set(pydict["u1"])) == 50
@@ -83,8 +83,8 @@ def test_uuid_in_filter_does_not_error(make_df) -> None:
 
 def test_uuid_in_aggregation_does_not_error(make_df) -> None:
     data = {"key": ["a", "b", "a"], "value": [1, 2, 3]}
-    df = make_df(data).groupby("key").agg(uuid().min().alias("u")).collect()
-    assert df.schema()["u"].dtype == DataType.string()
+    df = make_df(data).groupby("key").agg(uuid().alias("u")).collect()
+    assert df.schema()["u"].dtype == DataType.uuid()
 
 
 def test_uuid_in_join_keys_does_not_error(make_df) -> None:
@@ -94,8 +94,8 @@ def test_uuid_in_join_keys_does_not_error(make_df) -> None:
         make_df(left_data)
         .join(
             make_df(right_data),
-            left_on=format("{}-{}", col("key"), uuid()),
-            right_on=format("{}-{}", col("key"), uuid()),
+            left_on=format("{}-{}", col("key"), uuid().cast(DataType.string())),
+            right_on=format("{}-{}", col("key"), uuid().cast(DataType.string())),
             how="inner",
         )
         .collect()
@@ -109,9 +109,9 @@ def test_uuid_chained_with_column_calls_are_distinct(make_df) -> None:
     data = {"foo": [1, 2, 3]}
     df = make_df(data).with_column("uuid", uuid()).with_column("u2", uuid()).with_column("u3", uuid()).collect()
 
-    assert df.schema()["uuid"].dtype == DataType.string()
-    assert df.schema()["u2"].dtype == DataType.string()
-    assert df.schema()["u3"].dtype == DataType.string()
+    assert df.schema()["uuid"].dtype == DataType.uuid()
+    assert df.schema()["u2"].dtype == DataType.uuid()
+    assert df.schema()["u3"].dtype == DataType.uuid()
 
     pydict = df.to_pydict()
     assert any(v2 != v3 for v2, v3 in zip(pydict["u2"], pydict["u3"]))

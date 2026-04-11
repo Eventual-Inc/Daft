@@ -18,7 +18,7 @@ import daft
 from daft.api_annotations import APITypeError
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
-from tests.conftest import UuidType
+from tests.conftest import DaftUuidType
 
 
 class MyObj:
@@ -196,6 +196,20 @@ def test_create_dataframe_arrow(valid_data: list[dict[str, float]], multiple) ->
     assert df.to_arrow() == expected
 
 
+@pytest.mark.skipif(
+    not hasattr(pa, "uuid"),
+    reason="Arrow version doesn't support the uuid extension type.",
+)
+def test_create_dataframe_arrow_uuid(valid_data: list[dict[str, float]]) -> None:
+    pydict = {"uuid": [uuid.uuid4().bytes for _ in range(len(valid_data))]}
+    pa_schema = pa.schema([pa.field("uuid", pa.uuid())])
+    t = pa.Table.from_pydict(pydict, schema=pa_schema)
+    df = daft.from_arrow(t)
+    assert set(df.column_names) == {"uuid"}
+    assert df.schema()["uuid"].dtype == DataType.uuid()
+    assert df.to_arrow() == t
+
+
 def test_create_dataframe_arrow_tensor_canonical(valid_data: list[dict[str, float]]) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     shape = (2, 2)
@@ -213,7 +227,7 @@ def test_create_dataframe_arrow_tensor_canonical(valid_data: list[dict[str, floa
     assert df.to_arrow() == expected
 
 
-def test_create_dataframe_arrow_extension_type(valid_data: list[dict[str, float]], uuid_ext_type: UuidType) -> None:
+def test_create_dataframe_arrow_extension_type(valid_data: list[dict[str, float]], uuid_ext_type: DaftUuidType) -> None:
     pydict = {k: [item[k] for item in valid_data] for k in valid_data[0].keys()}
     storage = pa.array([f"{i}".encode() for i in range(len(valid_data))])
     pydict["obj"] = pa.ExtensionArray.from_storage(uuid_ext_type, storage)

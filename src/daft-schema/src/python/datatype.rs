@@ -174,6 +174,11 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn uuid() -> PyResult<Self> {
+        Ok(DataType::Uuid.into())
+    }
+
+    #[staticmethod]
     pub fn string() -> PyResult<Self> {
         Ok(DataType::Utf8.into())
     }
@@ -438,6 +443,10 @@ impl PyDataType {
 
     pub fn is_fixed_size_binary(&self) -> bool {
         self.dtype.is_fixed_size_binary()
+    }
+
+    pub fn is_uuid(&self) -> bool {
+        self.dtype.is_uuid()
     }
 
     pub fn is_string(&self) -> bool {

@@ -46,6 +46,7 @@ macro_rules! with_match_daft_types {
             DataType::UInt8 => __with_ty__! { UInt8Type },
             DataType::Unknown => unimplemented!("array for unknown datatype not implemented"),
             DataType::Utf8 => __with_ty__! { Utf8Type },
+            DataType::Uuid => __with_ty__! { UuidType },
             #[cfg(feature = "python")]
             DataType::Python => __with_ty__! { PythonType },
             DataType::File(MediaType::Unknown) => __with_ty__! { UnknownFileType },
