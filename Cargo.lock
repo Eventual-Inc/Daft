@@ -2718,6 +2718,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
  "chrono",
+ "chrono-tz",
  "common-error",
  "daft-core",
  "daft-dsl",
