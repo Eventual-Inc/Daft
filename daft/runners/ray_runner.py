@@ -615,7 +615,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                     query_id,
                     PyQueryMetadata(
                         output_schema._schema,
-                        builder.repr_json(),
+                        unoptimized_plan_json,
                         "Ray (Flotilla)",
                         ray_dashboard_url,
                         entrypoint,
