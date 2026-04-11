@@ -133,6 +133,11 @@ const LastHeartbeat = ({
     return () => clearInterval(interval);
   }, []);
 
+  // Note this is may be inaccurate if the browser's and dashboard server's
+  // clocks are out of sync, since currentTime uses the browser's clock whereas
+  // last_heartbeat_sec uses the server's clock.
+  // However it should be unaffected by time zone differences since both timestamps
+  // are just seconds-since-epoch.
   const ago = Math.round(currentTime / 1000 - last_heartbeat_sec);
 
   if (ago < 10) return null;
