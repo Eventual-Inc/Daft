@@ -250,14 +250,16 @@ impl GroupedAggregateSink {
     pub fn new(
         aggregations: &[BoundAggExpr],
         group_by: &[BoundExpr],
+        aliases: &[Option<Arc<str>>],
         input_schema: &SchemaRef,
         cfg: &DaftExecutionConfig,
     ) -> DaftResult<Self> {
         let (partial_agg_exprs, final_agg_exprs, final_projections) =
             daft_local_plan::agg::populate_aggregation_stages_bound(
                 aggregations,
-                input_schema,
+                aliases,
                 group_by,
+                input_schema,
             )?;
 
         // MapGroups aggregations cannot be decomposed into partial / final stages and

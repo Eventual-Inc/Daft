@@ -365,20 +365,24 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::Aggregate(aggregate) => {
                 let input_schema = aggregate.input.schema();
                 let group_by = BoundExpr::bind_all(&aggregate.groupby, &input_schema)?;
-                let aggregations = aggregate
+                let (aggregations, aliases) = aggregate
                     .aggregations
                     .iter()
                     .map(|expr| {
-                        let agg_expr = extract_agg_expr(expr)?;
-                        BoundAggExpr::try_new(agg_expr, &aggregate.input.schema())
+                        let (agg_expr, alias) = extract_agg_expr(expr)?;
+                        Ok((
+                            BoundAggExpr::try_new(agg_expr, &aggregate.input.schema())?,
+                            alias,
+                        ))
                     })
-                    .collect::<DaftResult<Vec<_>>>()?;
+                    .collect::<DaftResult<(Vec<_>, Vec<_>)>>()?;
 
                 let input_node = self.curr_node.pop().unwrap();
                 self.gen_agg_nodes(
                     input_node,
                     group_by.clone(),
                     aggregations,
+                    aliases,
                     aggregate.output_schema.clone(),
                     group_by,
                 )?
@@ -584,6 +588,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     input_node,
                     group_by_with_pivot,
                     vec![aggregation.clone()],
+                    vec![None],
                     output_schema,
                     group_by.clone(),
                 )?;

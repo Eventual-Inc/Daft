@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_core::prelude::*;
-use daft_dsl::{AggExpr, Expr, ExprRef, lit, unresolved_col};
+use daft_dsl::{AggExpr, Expr, ExprRef, lit};
 use sqlparser::ast::{FunctionArg, FunctionArgExpr};
 
 use super::SQLModule;
@@ -54,6 +54,7 @@ impl SQLFunction for AggExpr {
     fn docstrings(&self, alias: &str) -> String {
         match self {
             Self::Count(_, _) => static_docs::COUNT_DOCSTRING.to_string(),
+            Self::CountRows => static_docs::COUNT_DOCSTRING.to_string(),
             Self::CountDistinct(_) => static_docs::COUNT_DISTINCT_DOCSTRING.to_string(),
             Self::Sum(_) => static_docs::SUM_DOCSTRING.to_string(),
             Self::Product(_) => static_docs::PRODUCT_DOCSTRING.to_string(),
@@ -70,6 +71,7 @@ impl SQLFunction for AggExpr {
 
     fn arg_names(&self) -> &'static [&'static str] {
         match self {
+            Self::CountRows => &[],
             Self::Count(_, _)
             | Self::CountDistinct(_)
             | Self::Sum(_)
@@ -89,16 +91,7 @@ impl SQLFunction for AggExpr {
 fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
     Ok(match inputs {
         [FunctionArg::Unnamed(FunctionArgExpr::Wildcard)] => match &planner.current_plan {
-            Some(plan) => {
-                let schema = plan.schema();
-                let pushdown_col = schema
-                    .min_estimated_size_column()
-                    .map(|name| name.to_string())
-                    .unwrap_or_else(|| schema[0].name.to_string());
-                unresolved_col(pushdown_col)
-                    .count(daft_core::count_mode::CountMode::All)
-                    .alias("count")
-            }
+            Some(_plan) => Arc::new(Expr::Agg(AggExpr::CountRows)).alias("count"),
             None => unsupported_sql_err!("Wildcard is not supported in this context"),
         },
         [FunctionArg::Unnamed(FunctionArgExpr::QualifiedWildcard(name))] => {
@@ -106,16 +99,13 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
 
             match &planner.current_plan {
                 Some(plan) => {
-                    if let Some(schema) =
-                        plan.plan.clone().get_schema_for_alias(&ident.to_string())?
+                    if plan
+                        .plan
+                        .clone()
+                        .get_schema_for_alias(&ident.to_string())?
+                        .is_some()
                     {
-                        let pushdown_col = schema
-                            .min_estimated_size_column()
-                            .map(|name| name.to_string())
-                            .unwrap_or_else(|| schema[0].name.to_string());
-                        unresolved_col(pushdown_col)
-                            .count(daft_core::count_mode::CountMode::All)
-                            .alias("count")
+                        Arc::new(Expr::Agg(AggExpr::CountRows)).alias("count")
                     } else {
                         table_not_found_err!(ident.to_string())
                     }
@@ -131,16 +121,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
                 Some(Literal::Null) => lit(0).alias("count"),
                 // in SQL, any count(<non null literal>) is functionally the same as count(*)
                 Some(_) => match &planner.current_plan {
-                    Some(plan) => {
-                        let schema = plan.schema();
-                        let pushdown_col = schema
-                            .min_estimated_size_column()
-                            .map(|name| name.to_string())
-                            .unwrap_or_else(|| schema[0].name.to_string());
-                        unresolved_col(pushdown_col)
-                            .count(daft_core::count_mode::CountMode::All)
-                            .alias("count")
-                    }
+                    Some(_plan) => Arc::new(Expr::Agg(AggExpr::CountRows)).alias("count"),
                     None => {
                         unsupported_sql_err!("count(<literal>) is not supported in this context")
                     }
@@ -156,6 +137,7 @@ fn handle_count(inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResul
 fn to_expr(expr: &AggExpr, args: &[ExprRef]) -> SQLPlannerResult<ExprRef> {
     match expr {
         AggExpr::Count(_, _) => unreachable!("count should be handled by by this point"),
+        AggExpr::CountRows => unsupported_sql_err!("count_rows"),
         AggExpr::CountDistinct(_) => {
             ensure!(args.len() == 1, "count_distinct takes exactly one argument");
             Ok(args[0].clone().count_distinct())

@@ -314,13 +314,19 @@ impl RecordBatch {
             ));
         }
 
-        let child_exprs = agg_expr
-            .as_ref()
-            .children()
-            .into_iter()
-            .map(BoundExpr::new_unchecked)
-            .collect::<Vec<_>>();
-        let sources = self.eval_expression_list(&child_exprs)?;
+        let sources = if matches!(agg_expr.as_ref(), AggExpr::CountRows) {
+            let placeholder = Series::full_null("", &DataType::Null, total_rows);
+            Self::from_nonempty_columns(vec![placeholder])?
+        } else {
+            let child_exprs = agg_expr
+                .as_ref()
+                .children()
+                .into_iter()
+                .map(BoundExpr::new_unchecked)
+                .collect::<Vec<_>>();
+            self.eval_expression_list(&child_exprs)?
+        };
+
         // Check if we can initialize an incremental state
         match create_window_agg_state(&sources, agg_expr, total_rows)? {
             Some(agg_state) => {

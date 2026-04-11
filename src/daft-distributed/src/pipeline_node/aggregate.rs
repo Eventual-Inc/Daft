@@ -33,6 +33,7 @@ pub(crate) struct AggregateNode {
     context: PipelineNodeContext,
     group_by: Vec<BoundExpr>,
     aggs: Vec<BoundAggExpr>,
+    aliases: Vec<Option<Arc<str>>>,
     child: DistributedPipelineNode,
 }
 
@@ -64,6 +65,7 @@ impl AggregateNode {
         plan_config: &PlanConfig,
         group_by: Vec<BoundExpr>,
         aggs: Vec<BoundAggExpr>,
+        aliases: Vec<Option<Arc<str>>>,
         output_schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
@@ -87,6 +89,7 @@ impl AggregateNode {
             context,
             group_by,
             aggs,
+            aliases,
             child,
         }
     }
@@ -139,6 +142,7 @@ impl PipelineNodeImpl for AggregateNode {
                 LocalPhysicalPlan::ungrouped_aggregate(
                     input,
                     self_clone.aggs.clone(),
+                    self_clone.aliases.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
                     LocalNodeContext::new(Some(self_clone.node_id() as usize)),
@@ -148,6 +152,7 @@ impl PipelineNodeImpl for AggregateNode {
                     input,
                     self_clone.aggs.clone(),
                     self_clone.group_by.clone(),
+                    self_clone.aliases.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
                     LocalNodeContext::new(Some(self_clone.node_id() as usize)),
@@ -174,6 +179,7 @@ struct GroupByAggSplit {
 fn split_groupby_aggs(
     group_by: &[BoundExpr],
     aggs: &[BoundAggExpr],
+    aliases: &[Option<Arc<str>>],
     partition_by: &[BoundExpr],
     input_schema: &Schema,
 ) -> DaftResult<GroupByAggSplit> {
@@ -184,8 +190,9 @@ fn split_groupby_aggs(
         final_exprs,
     ) = daft_local_plan::agg::populate_aggregation_stages_bound_with_schema(
         aggs,
-        input_schema,
+        aliases,
         group_by,
+        input_schema,
     )?;
     let first_stage_schema = Arc::new(first_stage_schema);
     let second_stage_schema = Arc::new(second_stage_schema);
@@ -263,12 +270,14 @@ impl LogicalPlanToPipelineNodeTranslator {
         };
 
         let node_id = self.get_next_pipeline_node_id();
+        let aliases = vec![None; aggregations.len()];
         Ok(DistributedPipelineNode::new(
             Arc::new(AggregateNode::new(
                 node_id,
                 &self.plan_config,
                 group_by,
                 aggregations,
+                aliases,
                 output_schema,
                 shuffle,
             )) as Arc<dyn PipelineNodeImpl>,
@@ -286,12 +295,14 @@ impl LogicalPlanToPipelineNodeTranslator {
     ) -> DaftResult<DistributedPipelineNode> {
         let num_partitions = input_node.config().clustering_spec.num_partitions();
         let node_id = self.get_next_pipeline_node_id();
+        let first_stage_aliases = vec![None; split_details.first_stage_aggs.len()];
         let initial_agg = DistributedPipelineNode::new(
             Arc::new(AggregateNode::new(
                 node_id,
                 &self.plan_config,
                 split_details.first_stage_group_by,
                 split_details.first_stage_aggs,
+                first_stage_aliases,
                 split_details.first_stage_schema.clone(),
                 input_node,
             )) as Arc<dyn PipelineNodeImpl>,
@@ -324,12 +335,14 @@ impl LogicalPlanToPipelineNodeTranslator {
 
         // Third stage re-agg to compute the final result
         let node_id = self.get_next_pipeline_node_id();
+        let second_stage_aliases = vec![None; split_details.second_stage_aggs.len()];
         let final_aggregation = DistributedPipelineNode::new(
             Arc::new(AggregateNode::new(
                 node_id,
                 &self.plan_config,
                 split_details.second_stage_group_by,
                 split_details.second_stage_aggs,
+                second_stage_aliases,
                 split_details.second_stage_schema.clone(),
                 shuffle,
             )) as Arc<dyn PipelineNodeImpl>,
@@ -365,6 +378,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         input_node: DistributedPipelineNode,
         group_by: Vec<BoundExpr>,
         aggregations: Vec<BoundAggExpr>,
+        aliases: Vec<Option<Arc<str>>>,
         output_schema: SchemaRef,
         partition_by: Vec<BoundExpr>,
     ) -> DaftResult<DistributedPipelineNode> {
@@ -376,6 +390,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                     &self.plan_config,
                     group_by,
                     aggregations,
+                    aliases,
                     output_schema,
                     input_node,
                 )) as Arc<dyn PipelineNodeImpl>,
@@ -386,6 +401,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         let split_details = split_groupby_aggs(
             &group_by,
             &aggregations,
+            &aliases,
             &partition_by,
             &input_node.config().schema,
         )?;

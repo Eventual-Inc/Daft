@@ -53,7 +53,11 @@ pub struct AggregateSink {
 }
 
 impl AggregateSink {
-    pub fn new(aggregations: &[BoundAggExpr], input_schema: &SchemaRef) -> DaftResult<Self> {
+    pub fn new(
+        aggregations: &[BoundAggExpr],
+        aliases: &[Option<Arc<str>>],
+        input_schema: &SchemaRef,
+    ) -> DaftResult<Self> {
         let aggregate_name = if aggregations.len() == 1 {
             aggregations[0].as_ref().agg_name()
         } else {
@@ -63,8 +67,9 @@ impl AggregateSink {
         let (sink_agg_exprs, finalize_agg_exprs, final_projections) =
             daft_local_plan::agg::populate_aggregation_stages_bound(
                 aggregations,
-                input_schema,
+                aliases,
                 &[],
+                input_schema,
             )?;
 
         Ok(Self {

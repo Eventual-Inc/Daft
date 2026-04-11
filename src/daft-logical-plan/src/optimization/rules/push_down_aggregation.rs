@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{count_mode::CountMode, prelude::Schema};
-use daft_dsl::{AggExpr, Expr, ExprRef};
+use daft_dsl::{AggExpr, Expr, ExprRef, resolved_col};
 
 use crate::{
     LogicalPlan, logical_plan::Aggregate, ops::Source as LogicalSource,
@@ -34,7 +34,7 @@ impl OptimizerRule for PushDownAggregation {
             {
                 if groupby.is_empty()
                     && aggregations.len() == 1
-                    && let Some(count_mode) = is_count_expr(&aggregations[0])
+                    && let Some(count_mode) = count_pushdown_mode(&aggregations[0])
                 {
                     // Only handle global aggregation with no GROUP BY and a single aggregation expression
                     match input.as_ref() {
@@ -61,7 +61,7 @@ impl OptimizerRule for PushDownAggregation {
                                         external_info.pushdowns.filters.is_none()
                                     };
                                     let can_pushdown = scan_op.supports_count_pushdown()
-                                        && is_count_mode_supported(count_mode)
+                                        && is_count_mode_supported(&count_mode)
                                         && is_remaining_filters;
 
                                     if can_pushdown {
@@ -83,9 +83,12 @@ impl OptimizerRule for PushDownAggregation {
                                         // Scan operators may produce partial counts over multiple scan tasks (e.g., distributed parquet reads), so we still need to sum them.
                                         let new_aggregate = Aggregate::try_new(
                                             new_source,
-                                            vec![Arc::new(Expr::Agg(AggExpr::Sum(count_expr(
-                                                &aggregations[0],
-                                            )?)))],
+                                            vec![Arc::new(Expr::Agg(AggExpr::Sum(
+                                                sum_partial_count_column(
+                                                    &aggregations[0],
+                                                    &input.schema(),
+                                                )?,
+                                            )))],
                                             groupby.clone(),
                                         )?
                                         .into();
@@ -109,21 +112,19 @@ impl OptimizerRule for PushDownAggregation {
     }
 }
 
-// Check if expression is count aggregation
-fn is_count_expr(expr: &ExprRef) -> Option<&CountMode> {
+/// Returns the count mode for pushdown when `expr` is `count` or `count_rows`.
+fn count_pushdown_mode(expr: &ExprRef) -> Option<CountMode> {
     match expr.as_ref() {
-        Expr::Agg(AggExpr::Count(_, count_mode)) => Some(count_mode),
+        Expr::Agg(AggExpr::Count(_, count_mode)) => Some(*count_mode),
+        Expr::Agg(AggExpr::CountRows) => Some(CountMode::All),
         _ => None,
     }
 }
 
-fn count_expr(expr: &ExprRef) -> DaftResult<ExprRef> {
-    match expr.as_ref() {
-        Expr::Agg(AggExpr::Count(expr, _)) => Ok(expr.clone()),
-        _ => Err(DaftError::InternalError(
-            "Tried to get count expression from non-count expression".to_string(),
-        )),
-    }
+/// Column reference to the partial count produced by the scan (same name as `expr.to_field(input_schema)`).
+fn sum_partial_count_column(expr: &ExprRef, input_schema: &Schema) -> DaftResult<ExprRef> {
+    let field = expr.to_field(input_schema)?;
+    Ok(resolved_col(field.name))
 }
 
 // Check if the count mode is supported for pushdown
@@ -188,6 +189,12 @@ mod tests {
 
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
+    }
+
+    #[test]
+    fn count_pushdown_mode_includes_count_rows() {
+        let expr = Arc::new(Expr::Agg(AggExpr::CountRows));
+        assert_eq!(super::count_pushdown_mode(&expr), Some(CountMode::All));
     }
 
     #[test]

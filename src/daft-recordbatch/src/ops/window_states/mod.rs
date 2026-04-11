@@ -46,6 +46,17 @@ pub fn create_window_agg_state(
                 *mode,
             ))))
         }
+        AggExpr::CountRows => {
+            let [source] = sources.columns() else {
+                unreachable!("count_rows should only have one placeholder input")
+            };
+
+            Ok(Some(Box::new(CountWindowState::new(
+                source.as_materialized_series(),
+                total_length,
+                CountMode::All,
+            ))))
+        }
         // TODO: Implement once proper behavior regarding NaNs is decided
         // AggExpr::Min(_) => Ok(Some(Box::new(MinMaxWindowState::new(source, total_length, true)))),
         // AggExpr::Max(_) => Ok(Some(Box::new(MinMaxWindowState::new(source, total_length, false)))),

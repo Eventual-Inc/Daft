@@ -82,6 +82,11 @@ pub fn dense_rank() -> PyResult<PyExpr> {
     Ok(expr.into())
 }
 
+#[pyfunction]
+pub fn count_rows() -> PyExpr {
+    PyExpr::from(Expr::count_rows())
+}
+
 #[allow(clippy::too_many_arguments)]
 #[pyfunction(signature = (
     years=None,
