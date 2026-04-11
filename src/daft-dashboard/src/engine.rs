@@ -692,7 +692,6 @@ async fn query_end(
                 message: args.error_message,
             }
         }
-        QueryEndState::Dead => todo!(),
     };
 
     state.ping_clients_on_query_update(query_info.value());

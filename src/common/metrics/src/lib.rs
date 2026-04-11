@@ -34,7 +34,6 @@ pub enum QueryEndState {
     Finished,
     Canceled,
     Failed,
-    Dead,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

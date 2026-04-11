@@ -174,8 +174,6 @@ class EventLogSubscriber(Subscriber):
                 payload["error_message"] = event.result.error_message
         elif event.result.end_state == QueryEndState.Canceled:
             payload["status"] = "canceled"
-        else:
-            payload["status"] = "dead"
 
         self._write_event(event.query_id, "query_ended", payload)
         self._clear_query_state(event.query_id)

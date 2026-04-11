@@ -2460,12 +2460,10 @@ class StatType(Enum):
     FLOAT = 3
     DURATION = 5
 
-# TODO(samstokes): Implement Dead state
 class QueryEndState(Enum):
     Finished = 0
     Canceled = 1
     Failed = 2
-    Dead = 3
 
 class PyQueryMetadata:
     output_schema: PySchema
