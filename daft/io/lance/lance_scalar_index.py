@@ -127,9 +127,8 @@ def create_scalar_index_internal(
         existing_indices = []
         try:
             existing_indices = lance_ds.list_indices()
-        except Exception:
-            # If we can't check existing indices, continue
-            pass
+        except Exception as e:
+            logger.warning("Could not fetch existing indices for removal; old index may not be cleaned up: %s", e)
         existing_names = {idx["name"] for idx in existing_indices}
         if name in existing_names:
             raise ValueError(f"Index with name '{name}' already exists. Set replace=True to replace it.")
@@ -221,14 +220,13 @@ def create_scalar_index_internal(
                             uuid=idx["uuid"],
                             name=idx["name"],
                             fields=[lance_ds.schema.get_field_index(f) for f in idx["fields"]],
-                            dataset_version=lance_ds.version,
+                            dataset_version=idx.get("dataset_version", lance_ds.version),
                             fragment_ids=idx.get("fragment_ids", set()),
                             index_version=0,
                         )
                     )
-        except Exception:
-            # If we can't check existing indices, continue without removing
-            pass
+        except Exception as e:
+            logger.warning("Could not fetch existing indices for removal; old index may not be cleaned up: %s", e)
 
     create_index_op = lance.LanceOperation.CreateIndex(
         new_indices=[index],
