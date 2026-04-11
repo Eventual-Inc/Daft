@@ -1037,8 +1037,8 @@ def test_next_day() -> None:
     df = daft.from_pydict({"dt": [date(2021, 1, 1), date(2021, 1, 1), date(2021, 1, 1)]})
     results = {}
     for dow in ["Monday", "Friday", "Sunday"]:
-        tmp = df.with_column("nd", next_day(col("dt"), dow))
-        results[dow] = tmp.to_pydict()["nd"]
+        tmp = df.with_column("next_d", next_day(col("dt"), dow))
+        results[dow] = tmp.to_pydict()["next_d"]
     assert results["Monday"] == [date(2021, 1, 4)] * 3  # next Mon
     assert results["Friday"] == [date(2021, 1, 8)] * 3  # next Fri (not same day)
     assert results["Sunday"] == [date(2021, 1, 3)] * 3  # next Sun
@@ -1055,5 +1055,5 @@ def test_date_construction_sql() -> None:
     result = daft.sql("SELECT last_day(make_date(y, m, d)) as ld FROM df").to_pydict()
     assert result["ld"] == [date(2021, 1, 31)]
 
-    result = daft.sql("SELECT next_day(make_date(y, m, d), 'Monday') as nd FROM df").to_pydict()
-    assert result["nd"] == [date(2021, 1, 18)]
+    result = daft.sql("SELECT next_day(make_date(y, m, d), 'Monday') as next_d FROM df").to_pydict()
+    assert result["next_d"] == [date(2021, 1, 18)]
