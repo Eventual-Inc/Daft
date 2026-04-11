@@ -979,18 +979,14 @@ def test_make_date_invalid() -> None:
 
 
 def test_make_timestamp() -> None:
-    df = daft.from_pydict(
-        {"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [30], "s": [45.0]}
-    )
+    df = daft.from_pydict({"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [30], "s": [45.0]})
     df = df.with_column("ts", make_timestamp(col("y"), col("m"), col("d"), col("h"), col("mi"), col("s")))
     result = df.to_pydict()
     assert result["ts"] == [datetime(2021, 1, 1, 12, 30, 45)]
 
 
 def test_make_timestamp_with_timezone() -> None:
-    df = daft.from_pydict(
-        {"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [0], "s": [0.0]}
-    )
+    df = daft.from_pydict({"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [0], "s": [0.0]})
     df = df.with_column(
         "ts", make_timestamp(col("y"), col("m"), col("d"), col("h"), col("mi"), col("s"), timezone="UTC")
     )
@@ -1002,18 +998,14 @@ def test_make_timestamp_with_timezone() -> None:
 
 
 def test_make_timestamp_ltz() -> None:
-    df = daft.from_pydict(
-        {"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [0], "s": [0.0]}
-    )
+    df = daft.from_pydict({"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [0], "s": [0.0]})
     df = df.with_column("ts", make_timestamp_ltz(col("y"), col("m"), col("d"), col("h"), col("mi"), col("s")))
     result = df.to_pydict()
     assert result["ts"] == [datetime(2021, 1, 1, 12, 0, 0, tzinfo=timezone.utc)]
 
 
 def test_make_timestamp_ltz_with_timezone() -> None:
-    df = daft.from_pydict(
-        {"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [0], "s": [0.0]}
-    )
+    df = daft.from_pydict({"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [0], "s": [0.0]})
     df = df.with_column(
         "ts", make_timestamp_ltz(col("y"), col("m"), col("d"), col("h"), col("mi"), col("s"), timezone="US/Eastern")
     )
@@ -1026,9 +1018,7 @@ def test_make_timestamp_ltz_with_timezone() -> None:
 
 
 def test_last_day() -> None:
-    df = daft.from_pydict(
-        {"dt": [date(2021, 1, 15), date(2021, 2, 10), date(2020, 2, 10), date(2021, 4, 1)]}
-    )
+    df = daft.from_pydict({"dt": [date(2021, 1, 15), date(2021, 2, 10), date(2020, 2, 10), date(2021, 4, 1)]})
     df = df.with_column("last", last_day(col("dt")))
     result = df.to_pydict()
     assert result["last"] == [

@@ -1555,7 +1555,9 @@ def make_timestamp_ltz(
     Examples:
         >>> import daft
         >>> from daft.functions import make_timestamp_ltz
-        >>> make_timestamp_ltz(daft.col("y"), daft.col("m"), daft.col("d"), daft.col("h"), daft.col("mi"), daft.col("s"))
+        >>> make_timestamp_ltz(
+        ...     daft.col("y"), daft.col("m"), daft.col("d"), daft.col("h"), daft.col("mi"), daft.col("s")
+        ... )
         make_timestamp_ltz(col(y), col(m), col(d), col(h), col(mi), col(s))
     """
     year = Expression._to_expression(year)
