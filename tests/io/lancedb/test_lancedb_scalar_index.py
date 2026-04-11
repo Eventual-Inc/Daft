@@ -197,7 +197,7 @@ class TestDistributedIndexing:
 
         with pytest.raises(
             NotImplementedError,
-            match=r'Received INVALID',
+            match=r"Received INVALID",
         ):
             create_scalar_index(
                 uri=dataset_uri,
