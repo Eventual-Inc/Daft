@@ -13,6 +13,44 @@ if TYPE_CHECKING:
     from pyiceberg.table import Table as PyIcebergTable
 
 
+def _resolve_metadata_location(location: str) -> str:
+    """Resolve an Iceberg table location to a metadata file path.
+
+    If the location already points to a ``.metadata.json`` file, it is returned
+    as-is.  Otherwise, we treat it as a table root directory and attempt to read
+    ``<location>/metadata/version-hint.text`` (the standard Iceberg version-hint
+    file) to derive the metadata file path.
+
+    This provides built-in support for ``version-hint.text`` regardless of which
+    PyIceberg version is installed.
+    """
+    if location.endswith(".metadata.json"):
+        return location
+
+    import os
+
+    from pyiceberg.io import load_file_io
+
+    # Try version-hint.text (Iceberg spec standard)
+    version_hint_path = os.path.join(location, "metadata", "version-hint.text")
+    io = load_file_io(properties={}, location=version_hint_path)
+    try:
+        input_file = io.new_input(version_hint_path)
+        with input_file.open() as f:
+            content = f.read().decode("utf-8").strip()
+    except FileNotFoundError:
+        # No version-hint file found; return the original location and let
+        # pyiceberg handle it (it may raise its own error).
+        return location
+
+    if content.endswith(".metadata.json"):
+        return os.path.join(location, "metadata", content)
+    elif content.isnumeric():
+        return os.path.join(location, "metadata", f"v{content}.metadata.json")
+    else:
+        return os.path.join(location, "metadata", f"{content}.metadata.json")
+
+
 def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> IOConfig | None:
     """Property keys defined here: https://github.com/apache/iceberg-python/blob/main/pyiceberg/io/__init__.py."""
     from daft.io import AzureConfig, GCSConfig, IOConfig, S3Config
@@ -61,9 +99,11 @@ def read_iceberg(
     """Create a DataFrame from an Iceberg table.
 
     Args:
-        table (str or pyiceberg.table.Table): A path to an Iceberg metadata file (supports remote URLs to object stores
-            such as ``s3://`` or ``gs://``) or a [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table)
-            created using the PyIceberg library.
+        table (str or pyiceberg.table.Table): A path to an Iceberg metadata file, an Iceberg table location
+            (directory), or a [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table)
+            created using the PyIceberg library. Supports remote URLs to object stores such as ``s3://`` or ``gs://``.
+            When a table location is provided (i.e. a path that does not end in ``.metadata.json``), the metadata
+            is resolved via ``<location>/metadata/version-hint.text``.
         snapshot_id (int, optional): Snapshot ID of the table to query
         io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
 
@@ -90,14 +130,18 @@ def read_iceberg(
         >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
         >>> df = daft.read_iceberg("s3://bucket/path/to/iceberg/metadata.json", io_config=io_config)
         >>> df.show()
+
+        Read an Iceberg table from a table location (uses version-hint.text):
+        >>> df = daft.read_iceberg("/path/to/iceberg/table")
+        >>> df.show()
     """
     from pyiceberg.table import StaticTable
 
     from daft.io.iceberg.iceberg_scan import IcebergScanOperator
 
-    # support for read_iceberg('path/to/metadata.json')
+    # support for read_iceberg('path/to/table') and read_iceberg('path/to/metadata.json')
     if isinstance(table, str):
-        table = StaticTable.from_metadata(metadata_location=table)
+        table = StaticTable.from_metadata(metadata_location=_resolve_metadata_location(table))
 
     io_config = (
         _convert_iceberg_file_io_properties_to_io_config(table.io.properties) if io_config is None else io_config

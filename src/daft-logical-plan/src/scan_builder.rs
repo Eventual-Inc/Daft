@@ -404,10 +404,15 @@ pub fn iceberg_scan<T: AsRef<str>>(
     use pyo3::IntoPyObjectExt;
     let storage_config: StorageConfig = io_config.unwrap_or_default().into();
     let scan_operator = Python::attach(|py| -> DaftResult<ScanOperatorHandle> {
+        // Resolve table location to metadata file path via version-hint.text
+        let iceberg_module = PyModule::import(py, "daft.io.iceberg._iceberg")?;
+        let resolve_fn = iceberg_module.getattr("_resolve_metadata_location")?;
+        let resolved_location = resolve_fn.call1((metadata_location.as_ref(),))?;
+
         let iceberg_table_module = PyModule::import(py, "pyiceberg.table")?;
         let iceberg_static_table = iceberg_table_module.getattr("StaticTable")?;
         let iceberg_table =
-            iceberg_static_table.call_method1("from_metadata", (metadata_location.as_ref(),))?;
+            iceberg_static_table.call_method1("from_metadata", (resolved_location,))?;
         let iceberg_scan_module = PyModule::import(py, "daft.io.iceberg.iceberg_scan")?;
         let iceberg_scan_class = iceberg_scan_module.getattr("IcebergScanOperator")?;
         let iceberg_scan = iceberg_scan_class
