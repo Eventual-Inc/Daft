@@ -324,9 +324,9 @@ class Session:
             identifier = Identifier.from_str(identifier)
 
         if len(identifier) >= 2 and self.has_catalog(identifier[0]):
-            catalog = self.get_catalog(identifier[0])
+            cat = self.get_catalog(identifier[0])
             identifier = identifier.drop(1)
-            return catalog.create_table(identifier, source, properties)
+            return cat.create_table(identifier, source, properties)
 
         if not (catalog := self.current_catalog()):
             # TODO relax this constraint by joining with the catalog name
@@ -355,9 +355,9 @@ class Session:
             identifier = Identifier.from_str(identifier)
 
         if len(identifier) >= 2 and self.has_catalog(identifier[0]):
-            catalog = self.get_catalog(identifier[0])
+            cat = self.get_catalog(identifier[0])
             identifier = identifier.drop(1)
-            return catalog.create_table_if_not_exists(identifier, source, properties)
+            return cat.create_table_if_not_exists(identifier, source, properties)
 
         if not (catalog := self.current_catalog()):
             # TODO relax this constraint by joining with the catalog name
@@ -429,9 +429,9 @@ class Session:
             identifier = Identifier.from_str(identifier)
 
         if len(identifier) >= 2 and self.has_catalog(identifier[0]):
-            catalog = self.get_catalog(identifier[0])
+            cat = self.get_catalog(identifier[0])
             identifier = identifier.drop(1)
-            return catalog.drop_table(identifier)
+            return cat.drop_table(identifier)
 
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot drop a table without a current catalog")
