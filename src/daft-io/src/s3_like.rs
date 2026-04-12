@@ -562,8 +562,6 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
         use aws_smithy_runtime_api::client::http::SharedHttpClient;
 
         fn default_client() -> SharedHttpClient {
-            use std::sync::OnceLock;
-
             use aws_smithy_http_client::{
                 Connector,
                 proxy::ProxyConfig,
@@ -574,19 +572,14 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
             };
 
             let proxy_config = ProxyConfig::from_env();
-            let cached: OnceLock<SharedHttpConnector> = OnceLock::new();
 
             http_client_fn(move |settings: &HttpConnectorSettings, _components| {
-                cached
-                    .get_or_init(|| {
-                        let connector = Connector::builder()
-                            .tls_provider(Provider::Rustls(CryptoMode::AwsLc))
-                            .proxy_config(proxy_config.clone())
-                            .connector_settings(settings.clone())
-                            .build();
-                        SharedHttpConnector::new(connector)
-                    })
-                    .clone()
+                let connector = Connector::builder()
+                    .tls_provider(Provider::Rustls(CryptoMode::AwsLc))
+                    .proxy_config(proxy_config.clone())
+                    .connector_settings(settings.clone())
+                    .build();
+                SharedHttpConnector::new(connector)
             })
         }
 
