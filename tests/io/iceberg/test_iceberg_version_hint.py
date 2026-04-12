@@ -84,6 +84,14 @@ class TestResolveMetadataLocation:
         result = _resolve_metadata_location(str(tmp_path))
         assert result == str(tmp_path)
 
+    def test_empty_version_hint_returns_original(self, tmp_path):
+        metadata_dir, _ = _create_iceberg_table(tmp_path)
+        with open(os.path.join(metadata_dir, "version-hint.text"), "w") as f:
+            f.write("   \n")
+
+        result = _resolve_metadata_location(str(tmp_path))
+        assert result == str(tmp_path)
+
 
 class TestReadIcebergVersionHint:
     def test_read_iceberg_with_table_location(self, tmp_path):

@@ -1,6 +1,7 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
+import posixpath
 from typing import TYPE_CHECKING, Any, Union
 
 from daft import context, runners
@@ -27,12 +28,10 @@ def _resolve_metadata_location(location: str) -> str:
     if location.endswith(".metadata.json"):
         return location
 
-    import os
-
     from pyiceberg.io import load_file_io
 
     # Try version-hint.text (Iceberg spec standard)
-    version_hint_path = os.path.join(location, "metadata", "version-hint.text")
+    version_hint_path = posixpath.join(location, "metadata", "version-hint.text")
     io = load_file_io(properties={}, location=version_hint_path)
     try:
         input_file = io.new_input(version_hint_path)
@@ -43,12 +42,14 @@ def _resolve_metadata_location(location: str) -> str:
         # pyiceberg handle it (it may raise its own error).
         return location
 
+    if not content:
+        return location
     if content.endswith(".metadata.json"):
-        return os.path.join(location, "metadata", content)
+        return posixpath.join(location, "metadata", content)
     elif content.isnumeric():
-        return os.path.join(location, "metadata", f"v{content}.metadata.json")
+        return posixpath.join(location, "metadata", f"v{content}.metadata.json")
     else:
-        return os.path.join(location, "metadata", f"{content}.metadata.json")
+        return posixpath.join(location, "metadata", f"{content}.metadata.json")
 
 
 def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> IOConfig | None:
