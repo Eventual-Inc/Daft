@@ -96,7 +96,8 @@ impl ExecutionStats {
             types.append_value(node_info.node_type.to_string());
             categories.append_value(node_info.node_category.to_string());
             duration_values.append_value((stat_snapshot.duration_us() / 1000) as i64);
-            for (name, value) in stat_snapshot.to_stats() {
+            // Assume that the first value is the duration
+            for (name, value) in stat_snapshot.to_stats().into_iter().skip(1) {
                 stats.keys().append_value(name);
                 let values = stats.values();
                 let (value, unit) = value.into_f64_and_unit();

@@ -299,7 +299,7 @@ impl MapArray {
                         format!("{}: {}", key_str, values.str_value(i))
                     })
                     .collect();
-                Ok(format!("{{{}}}", pairs.join(", ")))
+                Ok(pairs.join("\n"))
             }
         }
     }
@@ -456,7 +456,7 @@ impl StructArray {
                     let fields_to_strs = fields
                         .iter()
                         .zip(self.children.iter())
-                        .map(|(f, s)| Ok(format!("{}: {},\n", f.name.as_ref(), s.str_value(idx))))
+                        .map(|(f, s)| Ok(format!("{}: {}, ", f.name.as_ref(), s.str_value(idx))))
                         .collect::<DaftResult<Vec<_>>>()?;
                     let mut result = "{".to_string();
                     for line in fields_to_strs {

@@ -38,7 +38,12 @@ pub(crate) struct RepartitionNode {
 }
 
 impl RepartitionNode {
-    const NODE_NAME: &'static str = "Repartition";
+    fn node_name(repartition_spec: &RepartitionSpec, backend: &DistributedShuffleBackend) -> String {
+        format!("{} Repartition ({})", repartition_spec.var_name(), match backend {
+            DistributedShuffleBackend::Ray => "Ray",
+            DistributedShuffleBackend::Flight(_) => "Flight",
+        })
+    }
 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -54,7 +59,7 @@ impl RepartitionNode {
             plan_config.query_idx,
             plan_config.query_id.clone(),
             node_id,
-            Arc::from(Self::NODE_NAME),
+            Arc::from(Self::node_name(&repartition_spec, &backend)),
             NodeType::Repartition,
             NodeCategory::BlockingSink,
         );
@@ -83,7 +88,7 @@ impl RepartitionNode {
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         let outputs = local_shuffle_write_node
-            .task_outputs(
+            .submit_to_scheduler(
                 scheduler_handle.clone(),
                 self.context.query_idx,
                 task_id_counter,
@@ -168,15 +173,10 @@ impl PipelineNodeImpl for RepartitionNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let backend_name = match self.shuffle_backend.backend() {
-            DistributedShuffleBackend::Ray => "RayShuffle",
-            DistributedShuffleBackend::Flight(_) => "FlightShuffle",
-        };
-        let mut res = vec![format!(
-            "{backend_name}: {}",
-            self.repartition_spec.var_name()
-        )];
+        let backend_name = Self::node_name(&self.repartition_spec, &self.shuffle_backend.backend());
+        let mut res = vec![format!("{}:", backend_name)];
         res.extend(self.repartition_spec.multiline_display());
+        res.push(format!("Actual Num Partitions = {}", self.shuffle_backend.num_partitions()));
         res
     }
 }

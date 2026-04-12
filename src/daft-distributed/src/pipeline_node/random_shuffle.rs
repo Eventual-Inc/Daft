@@ -115,7 +115,7 @@ impl RandomShuffleNode {
     ) -> DaftResult<()> {
         let num_partitions = self.child.config().clustering_spec.num_partitions();
         let outputs = input_node
-            .task_outputs(
+            .submit_to_scheduler(
                 scheduler_handle.clone(),
                 self.context.query_idx,
                 task_id_counter.clone(),
