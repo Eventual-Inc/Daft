@@ -563,12 +563,30 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
 
         fn default_client() -> SharedHttpClient {
             use aws_smithy_http_client::{
-                Builder,
+                Connector,
+                proxy::ProxyConfig,
                 tls::{Provider, rustls_provider::CryptoMode},
             };
-            Builder::new()
-                .tls_provider(Provider::Rustls(CryptoMode::AwsLc))
-                .build_https()
+            use aws_smithy_runtime_api::client::http::{
+                HttpConnectorSettings, SharedHttpConnector, http_client_fn,
+            };
+            use std::sync::OnceLock;
+
+            let proxy_config = ProxyConfig::from_env();
+            let cached: OnceLock<SharedHttpConnector> = OnceLock::new();
+
+            http_client_fn(move |settings: &HttpConnectorSettings, _components| {
+                cached
+                    .get_or_init(|| {
+                        let connector = Connector::builder()
+                            .tls_provider(Provider::Rustls(CryptoMode::AwsLc))
+                            .proxy_config(proxy_config.clone())
+                            .connector_settings(settings.clone())
+                            .build();
+                        SharedHttpConnector::new(connector)
+                    })
+                    .clone()
+            })
         }
 
         fn no_verify_hostname_client() -> SharedHttpClient {
