@@ -29,8 +29,7 @@ use crate::{
 
 type ColumnWriterFuture = dyn Future<Output = DaftResult<ArrowColumnChunk>> + Send;
 
-/// Writer properties for the native Parquet path: physical Parquet encoding plus
-/// [`ARROW:schema`](parquet::arrow::ARROW_SCHEMA_META_KEY) so Arrow extension metadata round-trips.
+/// Construct writer properties for the native Parquet writer
 fn native_parquet_writer_properties(arrow_schema: &arrow_schema::Schema) -> WriterProperties {
     let mut props = WriterProperties::builder()
         .set_writer_version(WriterVersion::PARQUET_1_0)
@@ -40,25 +39,7 @@ fn native_parquet_writer_properties(arrow_schema: &arrow_schema::Schema) -> Writ
     props
 }
 
-/// Helper function to check if we support writing a specific data type to Parquet
-fn native_parquet_field_supported(field: &arrow_schema::Field) -> bool {
-    // TODO: Newer versions of parquet support Duration, but we don't write
-    // the arrow schema metadata to Parquet, so we can't support it yet.
-    // Similarly, we don't support TimestampTz or Extension
-    match field.data_type() {
-        arrow_schema::DataType::Duration(_) => false,
-        arrow_schema::DataType::Timestamp(_, tz) => tz.is_none(),
-        arrow_schema::DataType::List(field)
-        | arrow_schema::DataType::FixedSizeList(field, _)
-        | arrow_schema::DataType::Map(field, _) => native_parquet_field_supported(field.as_ref()),
-        arrow_schema::DataType::Struct(fields) => fields
-            .iter()
-            .all(|field| native_parquet_field_supported(field.as_ref())),
-        _ => true,
-    }
-}
-
-/// Helper function that checks if we support native writes given the file format, root directory, and schema.
+/// Helper function that checks if we support native writes given the file format, path, and schema.
 pub(crate) fn native_parquet_writer_supported(
     root_dir: &str,
     file_schema: &SchemaRef,
@@ -71,14 +52,6 @@ pub(crate) fn native_parquet_writer_supported(
     let Ok(arrow_schema) = file_schema.to_arrow() else {
         return Ok(false);
     };
-
-    if arrow_schema
-        .fields()
-        .iter()
-        .any(|field| !native_parquet_field_supported(field.as_ref()))
-    {
-        return Ok(false);
-    }
 
     let writer_properties = native_parquet_writer_properties(&arrow_schema);
     Ok(ArrowSchemaConverter::new()

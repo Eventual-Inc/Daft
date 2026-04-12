@@ -57,11 +57,15 @@ from daft.context import execution_config_ctx
         ),
     ],
 )
-def test_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype):
+@pytest.mark.parametrize("native_parquet_writer", [True, False])
+def test_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype, native_parquet_writer):
     before = daft.from_arrow(pa.table({"foo": pa.array(data, type=pa_type)}))
     before = before.concat(before)
-    before.write_parquet(str(tmp_path))
-    after = daft.read_parquet(str(tmp_path))
+
+    with execution_config_ctx(native_parquet_writer=native_parquet_writer):
+        before.write_parquet(str(tmp_path))
+        after = daft.read_parquet(str(tmp_path))
+
     assert before.schema()["foo"].dtype == expected_dtype
     assert after.schema()["foo"].dtype == expected_dtype
     assert before.to_arrow() == after.to_arrow()
@@ -92,11 +96,16 @@ def test_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype):
         ),
     ],
 )
-def test_roundtrip_temporal_arrow_types(tmp_path, data, pa_type, expected_dtype):
+@pytest.mark.parametrize("native_parquet_writer", [True, False])
+def test_roundtrip_temporal_arrow_types(tmp_path, data, pa_type, expected_dtype, native_parquet_writer: bool):
+    """Includes naive and zoned timestamps; native writer preserves tz via ARROW:schema."""
     before = daft.from_arrow(pa.table({"foo": pa.array(data, type=pa_type)}))
     before = before.concat(before)
-    before.write_parquet(str(tmp_path))
-    after = daft.read_parquet(str(tmp_path))
+
+    with execution_config_ctx(native_parquet_writer=native_parquet_writer):
+        before.write_parquet(str(tmp_path))
+        after = daft.read_parquet(str(tmp_path))
+
     assert before.schema()["foo"].dtype == expected_dtype
     assert after.schema()["foo"].dtype == expected_dtype
     assert before.to_arrow() == after.to_arrow()
