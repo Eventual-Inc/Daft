@@ -208,8 +208,13 @@ class OpenLineageSubscriber(Subscriber):
 if __name__ == "__main__":
     subscriber = OpenLineageSubscriber(
         namespace="local",
+        # Jobs will be named `daft_query_0`, `daft_query_1`, etc.
         name_prefix="daft_query",
+        # Connect to the OpenLineage server via one of the connection protocols provided by the openlineage-python library
+        # In tests, I used a local server running on localhost:9000
         transport=HttpTransport(config=HttpConfig(url="http://localhost:9000")),
     )
+    # Include at the top of your scripts
     daft.attach_subscriber("openlineage", subscriber)
+
     daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]}).with_column("z", daft.col("x") + daft.col("y")).collect()
