@@ -1,6 +1,8 @@
 pub(crate) mod assets;
 pub(crate) mod client;
 pub mod engine;
+pub(crate) mod events;
+pub(crate) mod import;
 #[cfg(feature = "python")]
 pub mod python;
 pub(crate) mod state;
@@ -29,11 +31,54 @@ use tower_http::{
 };
 use tracing::Level;
 
-use crate::state::{DashboardState, GLOBAL_DASHBOARD_STATE};
+use crate::{
+    import::import_event_log,
+    state::{DashboardState, GLOBAL_DASHBOARD_STATE},
+};
 
 // NOTE(void001): default listen to all ipv4 address, which pose a security risk in production environment
 pub const DEFAULT_SERVER_ADDR: Ipv4Addr = Ipv4Addr::UNSPECIFIED;
 pub const DEFAULT_SERVER_PORT: u16 = 3238;
+
+#[derive(Debug, Clone)]
+pub struct ServerOptions {
+    addr: IpAddr,
+    port: u16,
+    event_log_path: Option<String>,
+}
+
+impl ServerOptions {
+    pub fn new(addr: IpAddr, port: u16) -> Self {
+        Self {
+            addr,
+            port,
+            event_log_path: None,
+        }
+    }
+
+    pub fn addr(&self) -> IpAddr {
+        self.addr
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    pub fn with_event_log(mut self, path: Option<String>) -> Self {
+        self.event_log_path.clone_from(&path);
+        self
+    }
+}
+
+impl Default for ServerOptions {
+    fn default() -> Self {
+        Self {
+            addr: IpAddr::V4(DEFAULT_SERVER_ADDR),
+            port: DEFAULT_SERVER_PORT,
+            event_log_path: None,
+        }
+    }
+}
 
 fn generate_interactive_html(
     record_batch: &RecordBatch,
@@ -278,10 +323,18 @@ async fn ping() -> StatusCode {
 }
 
 pub async fn launch_server(
-    addr: IpAddr,
-    port: u16,
+    options: ServerOptions,
     shutdown_fn: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
+    // Import event log file if provided
+    if let Some(path) = options.event_log_path.as_ref()
+        && let Err(err) = import_event_log(path, GLOBAL_DASHBOARD_STATE.clone())
+    {
+        eprintln!(
+            "WARNING: failed to import event log from {path}: {err}. continuing without imported events"
+        );
+    }
+
     let app = Router::new()
         .nest("/engine", engine::routes())
         .nest("/client", client::routes())
@@ -308,6 +361,8 @@ pub async fn launch_server(
         .with_state(GLOBAL_DASHBOARD_STATE.clone());
 
     // Start the server
+    let addr = options.addr;
+    let port = options.port;
     let listener = TcpListener::bind((addr, port)).await?;
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_fn)

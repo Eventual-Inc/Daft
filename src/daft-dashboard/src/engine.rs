@@ -40,12 +40,20 @@ async fn query_start(
     Path(query_id): Path<QueryID>,
     Json(args): Json<StartQueryArgs>,
 ) -> StatusCode {
+    apply_query_start(&state, query_id, args)
+}
+
+pub(crate) fn apply_query_start(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: StartQueryArgs,
+) -> StatusCode {
     if state.queries.contains_key(&query_id) {
         return StatusCode::BAD_REQUEST;
     }
 
     let query_info = QueryInfo {
-        id: query_id.clone().into(),
+        id: query_id.clone(),
         start_sec: args.start_sec,
         unoptimized_plan: args.unoptimized_plan,
         runner: args
@@ -61,11 +69,11 @@ async fn query_start(
 
     state.queries.insert(query_id.clone(), query_info);
 
-    // Ping clients
     let Some(query_info) = state.queries.get(&query_id) else {
         tracing::error!("Query `{}` not found", query_id);
         return StatusCode::BAD_REQUEST;
     };
+
     state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
 }
@@ -80,6 +88,14 @@ async fn plan_start(
     State(state): State<Arc<DashboardState>>,
     Path(query_id): Path<QueryID>,
     Json(args): Json<PlanStartArgs>,
+) -> StatusCode {
+    apply_plan_start(&state, query_id, args)
+}
+
+pub(crate) fn apply_plan_start(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: PlanStartArgs,
 ) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
@@ -110,6 +126,14 @@ async fn plan_end(
     State(state): State<Arc<DashboardState>>,
     Path(query_id): Path<QueryID>,
     Json(args): Json<PlanEndArgs>,
+) -> StatusCode {
+    apply_plan_end(&state, query_id, args)
+}
+
+pub(crate) fn apply_plan_end(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: PlanEndArgs,
 ) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
@@ -188,6 +212,14 @@ async fn exec_start(
     Path(query_id): Path<QueryID>,
     Json(args): Json<ExecStartArgs>,
 ) -> StatusCode {
+    apply_exec_start(&state, query_id, args)
+}
+
+pub(crate) fn apply_exec_start(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: ExecStartArgs,
+) -> StatusCode {
     tracing::info!("Received exec_start for query {}", query_id);
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
@@ -245,6 +277,15 @@ async fn exec_op_start(
     State(state): State<Arc<DashboardState>>,
     Path((query_id, op_id)): Path<(QueryID, usize)>,
 ) -> StatusCode {
+    apply_operator_start(&state, query_id, op_id, secs_from_epoch())
+}
+
+pub(crate) fn apply_operator_start(
+    state: &DashboardState,
+    query_id: QueryID,
+    operator_id: usize,
+    timestamp: f64,
+) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
         tracing::error!("Query {} not found in exec_op_start", query_id);
@@ -255,11 +296,11 @@ async fn exec_op_start(
         return StatusCode::OK;
     };
 
-    if let Some(op) = exec_info.operators.get_mut(&op_id) {
+    if let Some(op) = exec_info.operators.get_mut(&operator_id) {
         op.status = OperatorStatus::Executing;
-        op.start_sec = Some(secs_from_epoch());
+        op.start_sec = Some(timestamp);
     } else {
-        tracing::warn!("Operator {} not found for query {}", op_id, query_id);
+        tracing::warn!("Operator {} not found for query {}", operator_id, query_id);
     }
 
     state.ping_clients_on_operator_update(query_info.value());
@@ -269,6 +310,15 @@ async fn exec_op_start(
 async fn exec_op_end(
     State(state): State<Arc<DashboardState>>,
     Path((query_id, op_id)): Path<(QueryID, usize)>,
+) -> StatusCode {
+    apply_operator_end(&state, query_id, op_id, secs_from_epoch())
+}
+
+pub(crate) fn apply_operator_end(
+    state: &DashboardState,
+    query_id: QueryID,
+    operator_id: usize,
+    timestamp: f64,
 ) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
@@ -280,11 +330,11 @@ async fn exec_op_end(
         return StatusCode::OK;
     };
 
-    if let Some(op) = exec_info.operators.get_mut(&op_id) {
+    if let Some(op) = exec_info.operators.get_mut(&operator_id) {
         op.status = OperatorStatus::Finished;
-        op.end_sec = Some(secs_from_epoch());
+        op.end_sec = Some(timestamp);
     } else {
-        tracing::warn!("Operator {} not found for query {}", op_id, query_id);
+        tracing::warn!("Operator {} not found for query {}", operator_id, query_id);
     }
 
     state.ping_clients_on_operator_update(query_info.value());
@@ -385,6 +435,14 @@ async fn exec_emit_stats(
     Path(query_id): Path<QueryID>,
     Json(args): Json<ExecEmitStatsArgsRecv>,
 ) -> StatusCode {
+    apply_emit_stats(&state, query_id, args)
+}
+
+pub(crate) fn apply_emit_stats(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: ExecEmitStatsArgsRecv,
+) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
         tracing::error!("Query {} not found in exec_emit_stats", query_id);
@@ -452,6 +510,14 @@ async fn exec_end(
     Path(query_id): Path<QueryID>,
     Json(args): Json<ExecEndArgs>,
 ) -> StatusCode {
+    apply_exec_end(&state, query_id, args)
+}
+
+pub(crate) fn apply_exec_end(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: ExecEndArgs,
+) -> StatusCode {
     tracing::info!("Received exec_end for query {}", query_id);
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
@@ -511,6 +577,14 @@ async fn query_end(
     State(state): State<Arc<DashboardState>>,
     Path(query_id): Path<QueryID>,
     Json(args): Json<FinalizeArgs>,
+) -> StatusCode {
+    apply_query_end(&state, query_id, args)
+}
+
+pub(crate) fn apply_query_end(
+    state: &DashboardState,
+    query_id: QueryID,
+    args: FinalizeArgs,
 ) -> StatusCode {
     let query_info = state.queries.get_mut(&query_id);
     let Some(mut query_info) = query_info else {
