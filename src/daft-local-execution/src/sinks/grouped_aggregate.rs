@@ -286,7 +286,11 @@ impl GroupedAggregateSink {
             // the data by the group keys and then run the original MapGroups
             // aggregation once per partition in `finalize`.
             Some(AggStrategy::PartitionOnly)
-        } else if partial_agg_exprs.is_empty() && !final_agg_exprs.is_empty() {
+        } else if aggregations.len() == 1
+            && matches!(aggregations[0].as_ref(), daft_dsl::AggExpr::List { .. })
+        {
+            // Optimization: Use partition-only for list-aggregations cause
+            // pre-agging doesn't help much since we're not reducing data
             Some(AggStrategy::PartitionOnly)
         } else {
             None
