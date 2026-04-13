@@ -7,6 +7,10 @@ use daft_dsl::{
 };
 use daft_functions_temporal::{
     current::{CurrentDate, CurrentTimestamp, CurrentTimezone},
+    date_arithmetic::{DateAdd, DateDiff, DateSub},
+    epoch_conversions::{
+        DateFromUnixDate, FromUnixtime, TimestampMicros, TimestampMillis, TimestampSeconds,
+    },
     truncate::Truncate,
 };
 use sqlparser::ast;
@@ -27,6 +31,14 @@ impl SQLModule for SQLModuleTemporal {
         parent.add_fn("current_date", SQLCurrentDate);
         parent.add_fn("current_timestamp", SQLCurrentTimestamp);
         parent.add_fn("current_timezone", SQLCurrentTimezone);
+        parent.add_fn("date_add", SQLDateAdd);
+        parent.add_fn("date_sub", SQLDateSub);
+        parent.add_fn("date_diff", SQLDateDiff);
+        parent.add_fn("date_from_unix_date", SQLDateFromUnixDate);
+        parent.add_fn("timestamp_seconds", SQLTimestampSeconds);
+        parent.add_fn("timestamp_millis", SQLTimestampMillis);
+        parent.add_fn("timestamp_micros", SQLTimestampMicros);
+        parent.add_fn("from_unixtime", SQLFromUnixtime);
     }
 }
 
@@ -189,5 +201,256 @@ impl SQLFunction for SQLCurrentTimezone {
 
     fn arg_names(&self) -> &'static [&'static str] {
         &[]
+    }
+}
+
+// --- Two-arg temporal SQL functions ---
+
+pub struct SQLDateAdd;
+
+impl SQLFunction for SQLDateAdd {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!("date_add expects 2 arguments, got {}", inputs.len());
+        }
+        let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let days = planner.plan_function_arg(&inputs[1])?.into_inner();
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(DateAdd)),
+            inputs: FunctionArgs::new_unchecked(vec![
+                FunctionArg::unnamed(input),
+                FunctionArg::unnamed(days),
+            ]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Adds a number of days to a date.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "days"]
+    }
+}
+
+pub struct SQLDateSub;
+
+impl SQLFunction for SQLDateSub {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!("date_sub expects 2 arguments, got {}", inputs.len());
+        }
+        let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let days = planner.plan_function_arg(&inputs[1])?.into_inner();
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(DateSub)),
+            inputs: FunctionArgs::new_unchecked(vec![
+                FunctionArg::unnamed(input),
+                FunctionArg::unnamed(days),
+            ]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Subtracts a number of days from a date.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "days"]
+    }
+}
+
+pub struct SQLDateDiff;
+
+impl SQLFunction for SQLDateDiff {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!("date_diff expects 2 arguments, got {}", inputs.len());
+        }
+        let end_date = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let start_date = planner.plan_function_arg(&inputs[1])?.into_inner();
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(DateDiff)),
+            inputs: FunctionArgs::new_unchecked(vec![
+                FunctionArg::unnamed(end_date),
+                FunctionArg::unnamed(start_date),
+            ]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Returns the number of days between two dates.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["end_date", "start_date"]
+    }
+}
+
+// --- One-arg epoch conversion SQL functions ---
+
+pub struct SQLDateFromUnixDate;
+
+impl SQLFunction for SQLDateFromUnixDate {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 1 {
+            invalid_operation_err!(
+                "date_from_unix_date expects 1 argument, got {}",
+                inputs.len()
+            );
+        }
+        let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(DateFromUnixDate)),
+            inputs: FunctionArgs::new_unchecked(vec![FunctionArg::unnamed(input)]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Converts days since epoch to a date.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["days"]
+    }
+}
+
+pub struct SQLTimestampSeconds;
+
+impl SQLFunction for SQLTimestampSeconds {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 1 {
+            invalid_operation_err!("timestamp_seconds expects 1 argument, got {}", inputs.len());
+        }
+        let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(TimestampSeconds)),
+            inputs: FunctionArgs::new_unchecked(vec![FunctionArg::unnamed(input)]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Creates a timestamp from seconds since epoch.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["seconds"]
+    }
+}
+
+pub struct SQLTimestampMillis;
+
+impl SQLFunction for SQLTimestampMillis {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 1 {
+            invalid_operation_err!("timestamp_millis expects 1 argument, got {}", inputs.len());
+        }
+        let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(TimestampMillis)),
+            inputs: FunctionArgs::new_unchecked(vec![FunctionArg::unnamed(input)]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Creates a timestamp from milliseconds since epoch.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["millis"]
+    }
+}
+
+pub struct SQLTimestampMicros;
+
+impl SQLFunction for SQLTimestampMicros {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 1 {
+            invalid_operation_err!("timestamp_micros expects 1 argument, got {}", inputs.len());
+        }
+        let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(TimestampMicros)),
+            inputs: FunctionArgs::new_unchecked(vec![FunctionArg::unnamed(input)]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Creates a timestamp from microseconds since epoch.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["micros"]
+    }
+}
+
+pub struct SQLFromUnixtime;
+
+impl SQLFunction for SQLFromUnixtime {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.is_empty() || inputs.len() > 2 {
+            invalid_operation_err!(
+                "from_unixtime expects 1 or 2 arguments, got {}",
+                inputs.len()
+            );
+        }
+        let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let mut args = vec![FunctionArg::unnamed(input)];
+        if inputs.len() == 2 {
+            let format = planner.plan_function_arg(&inputs[1])?.into_inner();
+            args.push(FunctionArg::unnamed(format));
+        }
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(FromUnixtime)),
+            inputs: FunctionArgs::new_unchecked(args),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Converts unix timestamp (seconds) to a formatted string.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["seconds", "format"]
     }
 }
