@@ -105,12 +105,6 @@ function QueryPageInner() {
 
         <div className="flex justify-end gap-2">
           <Link
-            href={`/query/timeline?id=${queryId}`}
-            className={`${main.className} text-xs px-3 py-1 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors`}
-          >
-            Timeline (Gantt) →
-          </Link>
-          <Link
             href={`/query/sparklines?id=${queryId}`}
             className={`${main.className} text-xs px-3 py-1 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors`}
           >
