@@ -48,13 +48,15 @@ impl Distinct {
         } else {
             self.input.schema().len()
         };
-        let approx_column_ndv = 1.0 - (1.0 - APPROX_COLUMN_NDV_SELECTIVITY) * (num_columns as f64);
+        let approx_column_ndv =
+            (1.0 - APPROX_COLUMN_NDV_SELECTIVITY).mul_add(-(num_columns as f64), 1.0);
 
         // TODO(desmond): We can simply use NDVs here. For now, do a naive estimation.
         let input_stats = self.input.materialized_stats();
         let est_bytes_per_row =
             input_stats.approx_stats.size_bytes / (input_stats.approx_stats.num_rows.max(1));
-        let est_distinct_values = ((input_stats.approx_stats.num_rows as f64) * approx_column_ndv) as usize;
+        let est_distinct_values =
+            ((input_stats.approx_stats.num_rows as f64) * approx_column_ndv) as usize;
         let acc_selectivity = if input_stats.approx_stats.num_rows == 0 {
             0.0
         } else {

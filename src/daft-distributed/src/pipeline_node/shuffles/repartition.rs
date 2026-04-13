@@ -38,11 +38,18 @@ pub(crate) struct RepartitionNode {
 }
 
 impl RepartitionNode {
-    fn node_name(repartition_spec: &RepartitionSpec, backend: &DistributedShuffleBackend) -> String {
-        format!("{} Repartition ({})", repartition_spec.var_name(), match backend {
-            DistributedShuffleBackend::Ray => "Ray",
-            DistributedShuffleBackend::Flight(_) => "Flight",
-        })
+    fn node_name(
+        repartition_spec: &RepartitionSpec,
+        backend: &DistributedShuffleBackend,
+    ) -> String {
+        format!(
+            "{} Repartition ({})",
+            repartition_spec.var_name(),
+            match backend {
+                DistributedShuffleBackend::Ray => "Ray",
+                DistributedShuffleBackend::Flight(_) => "Flight",
+            }
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -173,10 +180,13 @@ impl PipelineNodeImpl for RepartitionNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let backend_name = Self::node_name(&self.repartition_spec, &self.shuffle_backend.backend());
+        let backend_name = Self::node_name(&self.repartition_spec, self.shuffle_backend.backend());
         let mut res = vec![format!("{}:", backend_name)];
         res.extend(self.repartition_spec.multiline_display());
-        res.push(format!("Actual Num Partitions = {}", self.shuffle_backend.num_partitions()));
+        res.push(format!(
+            "Actual Num Partitions = {}",
+            self.shuffle_backend.num_partitions()
+        ));
         res
     }
 }
