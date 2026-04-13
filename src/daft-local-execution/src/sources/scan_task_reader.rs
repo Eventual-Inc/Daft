@@ -99,14 +99,28 @@ async fn read_parquet(
     if let Some(aggregation) = &scan_task.pushdowns.aggregation
         && let Expr::Agg(AggExpr::Count(_, _)) = aggregation.as_ref()
     {
-        daft_parquet::read::stream_parquet_count_pushdown(
-            url,
-            io_client,
-            Some(io_stats),
-            cfg.field_id_mapping.clone(),
-            aggregation,
-        )
-        .await
+        if let Some(predicate) = &scan_task.pushdowns.filters {
+            // Filtered count: read only filter columns, apply filter, count surviving rows.
+            daft_parquet::read::stream_parquet_filtered_count(
+                url,
+                io_client,
+                Some(io_stats),
+                cfg.field_id_mapping.clone(),
+                predicate.clone(),
+                aggregation,
+            )
+            .await
+        } else {
+            // Unfiltered count: read only parquet metadata.
+            daft_parquet::read::stream_parquet_count_pushdown(
+                url,
+                io_client,
+                Some(io_stats),
+                cfg.field_id_mapping.clone(),
+                aggregation,
+            )
+            .await
+        }
     } else {
         let parquet_chunk_size = cfg.chunk_size.or(Some(chunk_size));
         let inference_options =
