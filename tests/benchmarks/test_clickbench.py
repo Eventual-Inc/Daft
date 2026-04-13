@@ -39,7 +39,7 @@ def clickbench_hits_df():
     )
 
 
-CLICKBENCH_CODSPEED_QUERY_IDS = (0, 1, 2, 3, 4, 6, 7, 19, 36, 37, 38, 39, 40, 41, 42)
+CLICKBENCH_CODSPEED_QUERY_IDS = (0, 1, 2, 3, 4, 6, 7, 19, 36, 37, 38, 40, 41, 42)
 
 
 @pytest.mark.skipif(
