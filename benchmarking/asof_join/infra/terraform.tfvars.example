@@ -1,0 +1,11 @@
+# Copy this file to terraform.tfvars and fill in your own values.
+# terraform.tfvars is gitignored and never committed.
+
+aws_region           = "us-west-2"
+ami_id               = ""   # Amazon Linux 2023 AMI for your region
+instance_type        = "r7i.xlarge"
+key_name             = ""   # Name of your EC2 key pair
+security_group_id    = ""   # Security group ID that allows inbound SSH
+iam_instance_profile = ""   # IAM instance profile
+root_volume_gb       = 100
+owner_tag            = ""   # Your name, for the Owner tag on the instance
