@@ -29,7 +29,6 @@ import pathlib
 import statistics
 import subprocess
 import sys
-import tempfile
 import time
 from typing import Any
 
@@ -136,6 +135,9 @@ def _run_system(
         peak_rss = None
         if res.get("status") == "ok" and rss_rows:
             peak_rss = _peak_rss_in_window(rss_rows, res["start_ts"], res["end_ts"])
+        elif res.get("status") != "ok" and rss_rows:
+            # Process was killed externally; use max RSS across the full trace.
+            peak_rss = max(float(r["rss_gb"]) for r in rss_rows)
         out.append(
             {
                 "run": run_i,
@@ -233,8 +235,10 @@ def main() -> None:
         left_path = paths["left"]
         right_path = paths["right"]
 
-    results_dir = pathlib.Path(tempfile.mkdtemp(prefix="asof_join_bench_"))
+    results_dir = pathlib.Path.home() / "asof_join_results"
+    results_dir.mkdir(exist_ok=True)
     output_csv = results_dir / "results.csv"
+    output_csv.unlink(missing_ok=True)
 
     logger.info("Scale:       %s | Systems: %s", args.scale, systems)
     logger.info("Left:        %s", left_path)
