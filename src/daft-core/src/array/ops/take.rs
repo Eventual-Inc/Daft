@@ -39,6 +39,7 @@ impl_logicalarray_take!(DateArray);
 impl_logicalarray_take!(TimeArray);
 impl_logicalarray_take!(DurationArray);
 impl_logicalarray_take!(TimestampArray);
+impl_logicalarray_take!(UuidArray);
 impl_logicalarray_take!(EmbeddingArray);
 impl_logicalarray_take!(ImageArray);
 impl_logicalarray_take!(FixedShapeImageArray);

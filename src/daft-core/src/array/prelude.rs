@@ -1,4 +1,4 @@
-pub use super::{DataArray, FixedSizeListArray, ListArray, StructArray};
+pub use super::{DataArray, FixedSizeListArray, ListArray, StructArray, UuidArray};
 // Import logical array types
 pub use crate::datatypes::logical::{
     DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, FixedShapeSparseTensorArray,

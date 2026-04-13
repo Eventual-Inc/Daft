@@ -57,16 +57,16 @@ def uuid() -> Expression:
     (e.g. two separate columns) are independent and will produce different values.
 
     Returns:
-        Expression (String Expression): An expression that generates UUID strings.
+        Expression (UUID Expression): An expression that generates UUID values.
 
     Examples:
         >>> import daft
         >>> from daft.functions import uuid
         >>> df = daft.from_pydict({"foo": [1, 2, 3]})
         >>> df = df.with_column("u1", uuid()).with_column("u2", uuid())
-        >>> df.schema()["u1"].dtype == daft.DataType.string()
+        >>> df.schema()["u1"].dtype == daft.DataType.uuid()
         True
-        >>> df.schema()["u2"].dtype == daft.DataType.string()
+        >>> df.schema()["u2"].dtype == daft.DataType.uuid()
         True
     """
     return Expression._call_builtin_scalar_fn("uuid")

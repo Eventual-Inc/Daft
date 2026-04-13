@@ -2434,6 +2434,7 @@ dependencies = [
  "serde",
  "sketches-ddsketch",
  "smallvec",
+ "uuid",
  "xxhash-rust",
 ]
 

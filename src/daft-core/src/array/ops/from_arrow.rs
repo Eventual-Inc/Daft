@@ -309,6 +309,7 @@ impl FromArrow for LogicalArray<TimeType> {
     }
 }
 impl_logical_from_arrow!(DurationType);
+impl_logical_from_arrow!(UuidType);
 impl_logical_from_arrow!(ImageType);
 impl_logical_from_arrow!(TimestampType);
 impl_logical_from_arrow!(TensorType);
