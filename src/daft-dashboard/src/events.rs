@@ -22,6 +22,9 @@ pub struct QueryStarted {
     pub runner: Option<String>,
     pub entrypoint: Option<String>,
     pub dashboard_url: Option<String>,
+    pub daft_version: Option<String>,
+    pub runner_version: Option<String>,
+    pub python_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

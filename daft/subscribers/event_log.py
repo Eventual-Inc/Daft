@@ -152,14 +152,20 @@ class EventLogSubscriber(Subscriber):
 
     def on_query_started(self, event: QueryStarted) -> None:
         self._query_starts[event.query_id] = _mono_ms()
+        payload = {
+            "plan": event.metadata.unoptimized_plan,
+            "runner": event.metadata.runner,
+            "entrypoint": event.metadata.entrypoint,
+            "daft_version": event.metadata.daft_version,
+            "python_version": event.metadata.python_version,
+        }
+        if event.metadata.ray_version is not None:
+            payload["runner_version"] = event.metadata.ray_version
+
         self._write_event(
             event.query_id,
             "query_started",
-            {
-                "plan": event.metadata.unoptimized_plan,
-                "runner": event.metadata.runner,
-                "entrypoint": event.metadata.entrypoint,
-            },
+            payload,
         )
 
     def on_query_finished(self, event: QueryFinished) -> None:

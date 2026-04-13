@@ -136,6 +136,9 @@ fn import_event(event: &Event, state: &DashboardState) -> Result<(), EventLogErr
                 runner: e.runner.clone(),
                 ray_dashboard_url: e.dashboard_url.clone(),
                 entrypoint: e.entrypoint.clone(),
+                daft_version: e.daft_version.clone(),
+                ray_version: e.runner_version.clone(),
+                python_version: e.python_version.clone(),
             },
         ),
         Event::OptimizationStarted(e) => apply_plan_start(
