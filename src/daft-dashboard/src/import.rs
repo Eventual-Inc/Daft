@@ -10,7 +10,7 @@ use std::{
 };
 
 use axum::http::StatusCode;
-use common_metrics::{QueryEndState, Stat};
+use common_metrics::Stat;
 
 use crate::{
     engine::{
@@ -19,7 +19,7 @@ use crate::{
         apply_operator_end, apply_operator_start, apply_plan_end, apply_plan_start,
         apply_query_end, apply_query_start,
     },
-    events::{Event, MetricValue, QueryEndStatus},
+    events::{Event, MetricValue},
     state::DashboardState,
 };
 
@@ -53,15 +53,6 @@ impl From<io::Error> for EventLogError {
 impl From<serde_json::Error> for EventLogError {
     fn from(err: serde_json::Error) -> Self {
         Self::Json(err)
-    }
-}
-
-fn parse_query_end_state(status: &QueryEndStatus) -> QueryEndState {
-    match status {
-        QueryEndStatus::Ok => QueryEndState::Finished,
-        QueryEndStatus::Canceled => QueryEndState::Canceled,
-        QueryEndStatus::Failed => QueryEndState::Failed,
-        QueryEndStatus::Dead => QueryEndState::Dead,
     }
 }
 
@@ -196,7 +187,7 @@ fn import_event(event: &Event, state: &DashboardState) -> Result<(), EventLogErr
             e.query_id.clone().into(),
             FinalizeArgs {
                 end_sec: e.timestamp,
-                end_state: parse_query_end_state(&e.status),
+                end_state: e.state.clone(),
                 error_message: e.error_message.clone(),
                 results: None,
             },

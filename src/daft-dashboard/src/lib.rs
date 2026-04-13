@@ -326,6 +326,15 @@ pub async fn launch_server(
     options: ServerOptions,
     shutdown_fn: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
+    // Import event log file if provided
+    if let Some(path) = options.event_log_path.as_ref()
+        && let Err(err) = import_event_log(path, GLOBAL_DASHBOARD_STATE.clone())
+    {
+        eprintln!(
+            "WARNING: failed to import event log from {path}: {err}. continuing without imported events"
+        );
+    }
+
     let app = Router::new()
         .nest("/engine", engine::routes())
         .nest("/client", client::routes())
@@ -355,15 +364,6 @@ pub async fn launch_server(
     let addr = options.addr;
     let port = options.port;
     let listener = TcpListener::bind((addr, port)).await?;
-
-    if let Some(path) = options.event_log_path.as_ref()
-        && let Err(err) = import_event_log(path, GLOBAL_DASHBOARD_STATE.clone())
-    {
-        eprintln!(
-            "WARNING: failed to import event log from {path}: {err}. continuing without imported events"
-        );
-    }
-
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_fn)
         .await

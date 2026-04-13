@@ -24,9 +24,13 @@ if TYPE_CHECKING:
         Stats,
     )
 
+from typing import TYPE_CHECKING
+
 from daft.context import get_context
-from daft.daft import QueryEndState
 from daft.subscribers.abc import Subscriber
+
+if TYPE_CHECKING:
+    from daft.daft import QueryEndState
 
 _EVENT_LOG_ALIAS = "_daft_event_log"
 _DEFAULT_EVENT_LOG_DIR = Path("~/.daft/events").expanduser()
@@ -167,17 +171,7 @@ class EventLogSubscriber(Subscriber):
         payload: dict[str, Any] = {}
         if duration_ms is not None:
             payload["duration_ms"] = round(duration_ms)
-
-        if event.result.end_state == QueryEndState.Finished:
-            payload["status"] = "ok"
-        elif event.result.end_state == QueryEndState.Failed:
-            payload["status"] = "failed"
-            if event.result.error_message:
-                payload["error_message"] = event.result.error_message
-        elif event.result.end_state == QueryEndState.Canceled:
-            payload["status"] = "canceled"
-        else:
-            payload["status"] = "dead"
+        payload["state"] = query_state_str(event.result.end_state)
 
         self._write_event(event.query_id, "query_ended", payload)
         self._clear_query_state(event.query_id)
@@ -272,6 +266,10 @@ class EventLogSubscriber(Subscriber):
             payload["duration_ms"] = round(duration_ms)
 
         self._write_event(event.query_id, "execution_ended", payload)
+
+
+def query_state_str(state: QueryEndState) -> str:
+    return state.__str__().removeprefix("QueryEndState.")
 
 
 _EVENT_LOG_SUBSCRIBER: EventLogSubscriber | None = None

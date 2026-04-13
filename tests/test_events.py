@@ -83,7 +83,7 @@ def test_event_log_subscriber_writes_query_lifecycle_events(tmp_path):
 
     query_ended = events[-1]
     assert query_ended["query_id"] == query_id
-    assert query_ended["status"] == "ok"
+    assert query_ended["state"] == "Finished"
     assert query_ended["duration_ms"] >= 0
 
 

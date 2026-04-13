@@ -1,17 +1,10 @@
+/// Event protocol under construction - expect breaking changes to
+/// both the log file format and Rust types
 use std::collections::HashMap;
 
-use common_metrics::{BYTES_READ_KEY, BYTES_WRITTEN_KEY, DURATION_KEY};
+use common_metrics::{BYTES_READ_KEY, BYTES_WRITTEN_KEY, DURATION_KEY, QueryEndState};
 use serde::{Deserialize, de::Deserializer};
 use serde_json::Value;
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum QueryEndStatus {
-    Ok,
-    Failed,
-    Canceled,
-    Dead,
-}
 
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
@@ -35,7 +28,7 @@ pub struct QueryStarted {
 pub struct QueryEnded {
     pub query_id: String,
     pub timestamp: f64,
-    pub status: QueryEndStatus,
+    pub state: QueryEndState,
     pub error_message: Option<String>,
 }
 
