@@ -8,7 +8,7 @@ use self::logical::{DurationArray, ImageArray, MapArray};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{ListArray, StructArray},
+    array::{ListArray, StructArray, UuidArray},
     datatypes::{
         logical::{DateArray, FixedShapeImageArray, TimeArray, TimestampArray},
         *,
@@ -90,6 +90,10 @@ impl Series {
     }
 
     pub fn fixed_size_binary(&self) -> DaftResult<&FixedSizeBinaryArray> {
+        self.downcast()
+    }
+
+    pub fn uuid(&self) -> DaftResult<&UuidArray> {
         self.downcast()
     }
 

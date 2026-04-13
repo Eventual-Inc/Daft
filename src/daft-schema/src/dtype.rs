@@ -90,6 +90,9 @@ pub enum DataType {
     /// Opaque binary data of fixed size. Enum parameter specifies the number of bytes per value.
     FixedSizeBinary(usize),
 
+    /// A UUID (Universally Unique Identifier) represented as a 16-byte value.
+    Uuid,
+
     /// A variable-length UTF-8 encoded string whose offsets are represented as [`i64`].
     Utf8,
 
@@ -171,6 +174,7 @@ impl Display for DataType {
             Self::Interval => write!(f, "Interval"),
             Self::Binary => write!(f, "Binary"),
             Self::FixedSizeBinary(size) => write!(f, "Binary[{size}]"),
+            Self::Uuid => write!(f, "UUID"),
             Self::Utf8 => write!(f, "String"),
             Self::FixedSizeList(child_dtype, size) => write!(f, "List[{child_dtype}; {size}]"),
             Self::List(child_dtype) => write!(f, "List[{child_dtype}]"),
@@ -323,6 +327,7 @@ impl DataType {
         match self {
             Date => Int32,
             Duration(_) | Timestamp(..) | Time(_) => Int64,
+            Uuid => FixedSizeBinary(16),
 
             List(child_dtype) => List(Box::new(child_dtype.to_physical())),
             FixedSizeList(child_dtype, size) => {
@@ -664,6 +669,11 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_uuid(&self) -> bool {
+        matches!(self, Self::Uuid)
+    }
+
+    #[inline]
     pub fn is_fixed_size_list(&self) -> bool {
         matches!(self, Self::FixedSizeList(..))
     }
@@ -790,6 +800,7 @@ impl DataType {
                 | Self::Time(..)
                 | Self::Timestamp(..)
                 | Self::Duration(..)
+                | Self::Uuid
                 | Self::Embedding(..)
                 | Self::Image(..)
                 | Self::FixedShapeImage(..)

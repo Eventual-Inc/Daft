@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from daft.datatype import MediaType
 from daft.dependencies import av, pil_image
 from daft.file import File
-from daft.file.typing import VideoMetadata
+from daft.file.typing import VideoFrameData, VideoMetadata
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -97,10 +97,39 @@ class VideoFile(File):
 
     def keyframes(self, start_time: float = 0, end_time: float | None = None) -> Iterator[PIL.Image.Image]:
         """Lazy iterator of keyframes as PIL Images within time range."""
+        for frame in self.frames(start_time=start_time, end_time=end_time, is_key_frame=True):
+            yield frame["data"]
+
+    def frames(
+        self,
+        start_time: float = 0,
+        end_time: float | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        is_key_frame: bool | None = None,
+    ) -> Iterator[VideoFrameData]:
+        """Lazy iterator of all decoded frames with metadata within time range.
+
+        Mirrors the per-frame schema of ``daft.read_video_frames()``.
+
+        Args:
+            start_time: Start of the time range in seconds. Defaults to 0.
+            end_time: End of the time range in seconds. Defaults to None (end of video).
+            width: Optional target width for resizing frames. Must be provided with ``height``.
+            height: Optional target height for resizing frames. Must be provided with ``width``.
+            is_key_frame: If True, emit only keyframes. If False, emit only non-keyframes.
+                If None, emit all decoded frames.
+
+        Yields:
+            VideoFrameData dicts with keys: frame_index, frame_time, frame_time_base,
+            frame_pts, frame_dts, frame_duration, is_key_frame, data (PIL Image).
+        """
         if not pil_image.module_available():
             raise ImportError(
-                "The 'pillow' module is required for keyframes. Install it with `pip install daft[video]`."
+                "The 'pillow' module is required for frame decoding. Install it with `pip install daft[video]`."
             )
+        if (width is None) != (height is None):
+            raise ValueError("Both width and height must be specified together for resizing.")
         with self.open() as f:
             with av.open(f) as container:
                 video = next(
@@ -109,21 +138,54 @@ class VideoFile(File):
                 )
                 if video is None:
                     raise ValueError("No video stream found")
+
+                if is_key_frame:
+                    video.codec_context.skip_frame = "NONKEY"
+
                 # Seek to start time
                 if start_time > 0 and video.time_base:
                     seek_timestamp = int(start_time / float(video.time_base))
                     container.seek(seek_timestamp, stream=video)
 
-                # skip non keyframes
-                video.codec_context.skip_frame = "NONKEY"
+                time_base = float(video.time_base) if video.time_base else None
+                fps = float(video.average_rate) if video.average_rate else None
+                if fps is None and video.guessed_rate:
+                    fps = float(video.guessed_rate)
+                start_pts = video.start_time or 0
+                frame_index: int = 0
                 for frame in container.decode(video):
-                    # Check start time (seek might land on a keyframe before start_time)
-                    if frame.time and frame.time < start_time:
+                    # Skip frames before start_time (seek may land earlier)
+                    if frame.time is not None and frame.time < start_time:
+                        frame_index += 1
                         continue
 
-                    # Check end time if specified
+                    # Stop at end_time
                     if end_time is not None:
-                        if frame.time and frame.time > end_time:
+                        if frame.time is not None and frame.time > end_time:
                             break
 
-                    yield frame.to_image()
+                    if is_key_frame is False and frame.key_frame:
+                        frame_index += 1
+                        continue
+
+                    # Resize if requested
+                    output_frame = frame
+                    if width is not None and height is not None:
+                        output_frame = frame.reformat(width=width, height=height)
+
+                    current_frame_index = frame_index
+                    if frame.pts is not None and time_base is not None and fps is not None:
+                        current_frame_index = int(round((frame.pts - start_pts) * time_base * fps))
+
+                    yield VideoFrameData(
+                        frame_index=current_frame_index,
+                        frame_time=frame.time,
+                        frame_time_base=str(frame.time_base) if frame.time_base else None,
+                        frame_pts=frame.pts,
+                        frame_dts=frame.dts,
+                        frame_duration=frame.duration,
+                        is_key_frame=frame.key_frame,
+                        data=output_frame.to_image(),
+                    )
+
+                    frame_index += 1

@@ -62,7 +62,7 @@ def read_warc(
     storage_config = StorageConfig(multithreaded_io, io_config)
 
     schema = {
-        "WARC-Record-ID": DataType.string(),
+        "WARC-Record-ID": DataType.uuid(),
         "WARC-Target-URI": DataType.string(),
         "WARC-Type": DataType.string(),
         "WARC-Date": DataType.timestamp(TimeUnit.ns(), timezone="Etc/UTC"),

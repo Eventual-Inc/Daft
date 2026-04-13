@@ -1,18 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { main } from "@/lib/utils";
 import { ExecutingState, OperatorInfo, PhysicalPlanNode } from "./types";
 import {
   getStatusIcon,
   formatStatValue,
   formatDuration,
+  statNumericValue,
   ROWS_IN_STAT_KEY,
   ROWS_OUT_STAT_KEY,
+  BYTES_IN_STAT_KEY,
+  BYTES_OUT_STAT_KEY,
   DURATION_US_STAT_KEY,
 } from "./stats-utils";
 import ProgressTable from "./progress-table";
 import TreeLayout from "./tree-layout";
+import EdgeLabel from "./edge-label";
 import { getHeatmapStyle, FINISHED_STYLE } from "./tree-colors";
 
 function getCpuSec(operator?: OperatorInfo): number {
@@ -136,7 +140,7 @@ function PhysicalNodeCard({
 
   return (
     <div
-      className="border-2 rounded-lg px-4 py-2.5 cursor-pointer
+      className="border-solid rounded-lg px-4 py-2.5 cursor-pointer
         hover:brightness-125 transition-all min-w-[180px] max-w-[320px]"
       style={cardStyle}
       onClick={() => setExpanded(!expanded)}
@@ -233,6 +237,37 @@ export default function PhysicalPlanTree({
     ...Object.values(operators).map(getCpuSec),
   );
 
+  const maxBytes = useMemo(() => {
+    let m = 0;
+    for (const op of Object.values(operators)) {
+      const out = statNumericValue(op.stats[BYTES_OUT_STAT_KEY]);
+      if (out > m) m = out;
+    }
+    return m;
+  }, [operators]);
+
+  const renderEdge = useCallback(
+    (
+      _parent: PhysicalPlanNode,
+      child: PhysicalPlanNode,
+      position: "single" | "branch",
+    ) => {
+      const childOp = operators[child.id];
+      const bytesOut = childOp ? statNumericValue(childOp.stats[BYTES_OUT_STAT_KEY]) : 0;
+      const bytesIn = childOp ? statNumericValue(childOp.stats[BYTES_IN_STAT_KEY]) : 0;
+      const amplification = bytesIn > 0 ? bytesOut / bytesIn : 0;
+      return (
+        <EdgeLabel
+          bytes={bytesOut}
+          amplification={amplification}
+          maxBytes={maxBytes}
+          position={position}
+        />
+      );
+    },
+    [operators, maxBytes],
+  );
+
   return (
     <div className="bg-zinc-900 h-full flex flex-col">
       {/* View toggle */}
@@ -295,6 +330,7 @@ export default function PhysicalPlanTree({
                   />
                 );
               }}
+              renderEdge={renderEdge}
             />
           </div>
         ) : viewMode === "json" && plan ? (

@@ -200,6 +200,9 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                 BlockingSinkOutput::Partitions(partitions) => {
                     for partition in partitions {
                         per_input.runtime_stats.add_rows_out(partition.len() as u64);
+                        per_input
+                            .runtime_stats
+                            .add_bytes_out(partition.size_bytes() as u64);
                         let _ = output_tx
                             .send(PipelineMessage::Morsel {
                                 input_id,
@@ -316,6 +319,9 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                         }
                     };
                     per_input.runtime_stats.add_rows_in(partition.len() as u64);
+                    per_input
+                        .runtime_stats
+                        .add_bytes_in(partition.size_bytes() as u64);
                     per_input.pending.push_back(partition);
                     per_input.flush_pending(&mut tasks, &op, &task_spawner, input_id)?;
                 }

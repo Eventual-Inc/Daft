@@ -24,6 +24,8 @@ pub struct FilterStats {
     duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
+    bytes_in: Counter,
+    bytes_out: Counter,
     selectivity: Gauge,
     node_kv: Vec<KeyValue>,
 }
@@ -35,6 +37,8 @@ impl FilterStats {
             duration_us: meter.duration_us_metric(),
             rows_in: meter.rows_in_metric(),
             rows_out: meter.rows_out_metric(),
+            bytes_in: meter.bytes_in_metric(),
+            bytes_out: meter.bytes_out_metric(),
             selectivity: meter.f64_gauge("selectivity"),
             node_kv,
         }
@@ -59,6 +63,10 @@ impl RuntimeStats for FilterStats {
         self.rows_in.add(snapshot.rows_in, self.node_kv.as_slice());
         self.rows_out
             .add(snapshot.rows_out, self.node_kv.as_slice());
+        self.bytes_in
+            .add(snapshot.bytes_in, self.node_kv.as_slice());
+        self.bytes_out
+            .add(snapshot.bytes_out, self.node_kv.as_slice());
 
         let selectivity = Self::selectivity(snapshot.rows_in, snapshot.rows_out);
         self.selectivity
@@ -74,6 +82,8 @@ impl RuntimeStats for FilterStats {
             rows_in,
             rows_out,
             selectivity,
+            bytes_in: self.bytes_in.load(Ordering::SeqCst),
+            bytes_out: self.bytes_out.load(Ordering::SeqCst),
         })
     }
 }

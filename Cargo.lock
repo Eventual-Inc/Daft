@@ -2434,6 +2434,7 @@ dependencies = [
  "serde",
  "sketches-ddsketch",
  "smallvec",
+ "uuid",
  "xxhash-rust",
 ]
 
@@ -2953,7 +2954,6 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "opentelemetry",
- "parking_lot 0.12.5",
  "pin-project",
  "pyo3",
  "pyo3-async-runtimes",

@@ -55,6 +55,7 @@ pub enum NodeType {
     // Join Operators
     HashJoin,
     SortMergeJoin,
+    AsofJoin,
     CrossJoin,
     // Specific to distributed only
     BroadcastJoin,

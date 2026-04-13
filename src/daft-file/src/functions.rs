@@ -250,6 +250,43 @@ impl ScalarUDF for AudioFile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct FilePath;
+
+#[typetag::serde]
+impl ScalarUDF for FilePath {
+    fn name(&self) -> &'static str {
+        "file_path"
+    }
+
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
+        let UnaryArg { input } = args.try_into()?;
+
+        with_match_file_types!(input.data_type(), |$P| {
+            let s = input.file::<$P>()?;
+            let url_series = s.physical.get("url")?;
+            Ok(url_series.rename(s.name()))
+        })
+    }
+
+    fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+        let UnaryArg { input } = args.try_into()?;
+        let input = input.to_field(schema)?;
+
+        match &input.dtype {
+            DataType::File(_) => Ok(Field::new(input.name, DataType::Utf8)),
+            _ => Err(DaftError::TypeError(format!(
+                "Expected File type for 'file_path' function, got: {}",
+                input.dtype
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Size;
 
 #[typetag::serde]

@@ -202,6 +202,7 @@ impl PushDownLimit {
                         Ok(Transformed::yes(new_plan))
                     }
                     LogicalPlan::Join(_)
+                    | LogicalPlan::AsofJoin(_)
                     | LogicalPlan::Filter(_)
                     | LogicalPlan::Distinct(_)
                     | LogicalPlan::Offset(_)

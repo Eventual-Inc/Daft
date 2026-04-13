@@ -109,6 +109,7 @@ pub enum LocalPhysicalPlan {
     RepartitionWrite(RepartitionWrite),
     ShuffleRead(ShuffleRead),
     SortMergeJoin(SortMergeJoin),
+    AsofJoin(AsofJoin),
     #[cfg(feature = "python")]
     DistributedActorPoolProject(DistributedActorPoolProject),
     VLLMProject(VLLMProject),
@@ -157,6 +158,7 @@ impl LocalPhysicalPlan {
             | Self::HashJoin(HashJoin { stats_state, .. })
             | Self::CrossJoin(CrossJoin { stats_state, .. })
             | Self::SortMergeJoin(SortMergeJoin { stats_state, .. })
+            | Self::AsofJoin(AsofJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
             | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
@@ -206,6 +208,7 @@ impl LocalPhysicalPlan {
             | Self::HashJoin(HashJoin { context, .. })
             | Self::CrossJoin(CrossJoin { context, .. })
             | Self::SortMergeJoin(SortMergeJoin { context, .. })
+            | Self::AsofJoin(AsofJoin { context, .. })
             | Self::PhysicalWrite(PhysicalWrite { context, .. })
             | Self::CommitWrite(CommitWrite { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
@@ -803,6 +806,32 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn asof_join(
+        left: LocalPhysicalPlanRef,
+        right: LocalPhysicalPlanRef,
+        left_by: Vec<BoundExpr>,
+        right_by: Vec<BoundExpr>,
+        left_on: BoundExpr,
+        right_on: BoundExpr,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::AsofJoin(AsofJoin {
+            left,
+            right,
+            left_by,
+            right_by,
+            left_on,
+            right_on,
+            schema,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
     pub(crate) fn concat(
         input: LocalPhysicalPlanRef,
         other: LocalPhysicalPlanRef,
@@ -1013,6 +1042,7 @@ impl LocalPhysicalPlan {
             | Self::HashJoin(HashJoin { schema, .. })
             | Self::CrossJoin(CrossJoin { schema, .. })
             | Self::SortMergeJoin(SortMergeJoin { schema, .. })
+            | Self::AsofJoin(AsofJoin { schema, .. })
             | Self::Explode(Explode { schema, .. })
             | Self::Unpivot(Unpivot { schema, .. })
             | Self::Concat(Concat { schema, .. })
@@ -1106,6 +1136,7 @@ impl LocalPhysicalPlan {
             Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
                 vec![left.clone(), right.clone()]
             }
+            Self::AsofJoin(AsofJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { input, .. }) => vec![input.clone()],
             #[cfg(feature = "python")]
@@ -1603,6 +1634,9 @@ impl LocalPhysicalPlan {
                         "LocalPhysicalPlan::with_new_children: SortMergeJoin should have 2 children"
                     )
                 }
+                Self::AsofJoin(_) => {
+                    panic!("LocalPhysicalPlan::with_new_children: AsofJoin should have 2 children")
+                }
                 Self::Concat(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children")
                 }
@@ -1659,6 +1693,26 @@ impl LocalPhysicalPlan {
                     left_on.clone(),
                     right_on.clone(),
                     *join_type,
+                    schema.clone(),
+                    stats_state.clone(),
+                    context.clone(),
+                ),
+                Self::AsofJoin(AsofJoin {
+                    left_by,
+                    right_by,
+                    left_on,
+                    right_on,
+                    schema,
+                    stats_state,
+                    context,
+                    ..
+                }) => Self::asof_join(
+                    new_left.clone(),
+                    new_right.clone(),
+                    left_by.clone(),
+                    right_by.clone(),
+                    left_on.clone(),
+                    right_on.clone(),
                     schema.clone(),
                     stats_state.clone(),
                     context.clone(),
@@ -1982,6 +2036,20 @@ pub struct SortMergeJoin {
     pub left_on: Vec<BoundExpr>,
     pub right_on: Vec<BoundExpr>,
     pub join_type: JoinType,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct AsofJoin {
+    pub left: LocalPhysicalPlanRef,
+    pub right: LocalPhysicalPlanRef,
+    pub left_by: Vec<BoundExpr>,
+    pub right_by: Vec<BoundExpr>,
+    pub left_on: BoundExpr,
+    pub right_on: BoundExpr,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
