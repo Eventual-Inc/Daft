@@ -75,11 +75,15 @@ def test_event_log_subscriber_writes_query_lifecycle_events(tmp_path):
 
     events = _load_events(tmp_path / query_id / "events.jsonl")
     event_names = [event["event"] for event in events]
-    assert event_names == ["event_log_started", "query_started", "plan_unoptimized", "query_ended"]
+    assert event_names == ["event_log_started", "query_started", "query_ended"]
+
+    query_started = events[1]
+    assert query_started["query_id"] == query_id
+    assert query_started["plan"] == metadata.unoptimized_plan
 
     query_ended = events[-1]
     assert query_ended["query_id"] == query_id
-    assert query_ended["status"] == "ok"
+    assert query_ended["state"] == "Finished"
     assert query_ended["duration_ms"] >= 0
 
 
@@ -111,8 +115,9 @@ def test_event_log_subscriber_preserves_optimization_lifecycle_schema(tmp_path):
 
     events = _load_events(tmp_path / query_id / "events.jsonl")
     event_names = [event["event"] for event in events]
-    assert event_names == ["event_log_started", "optimization_started", "optimization_ended", "plan_optimized"]
+    assert event_names == ["event_log_started", "optimization_started", "optimization_ended"]
     assert events[2]["duration_ms"] >= 0
+    assert events[2]["plan"] == '{"nodes":{}}'
 
 
 def test_on_query_end_clears_stale_timing_state_for_failed_query(tmp_path):
