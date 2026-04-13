@@ -94,6 +94,6 @@ class GlueTestTable(GlueTable):
     def write(self, df: DataFrame, mode: Literal['append'] | Literal['overwrite'] = "append", **options) -> None:
         raise NotImplementedError
 
-gc = load_glue("my_glue_catalog", region="us-west-2")
+gc = load_glue("my_glue_catalog", region_name="us-west-2")
 gc._table_impls.append(GlueTestTable) # !! REGISTER GLUE TEST TABLE !!
 ```
