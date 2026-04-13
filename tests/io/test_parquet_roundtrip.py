@@ -13,6 +13,7 @@ import pytest
 import daft
 from daft import DataType, Series, TimeUnit
 from daft.context import execution_config_ctx
+from tests.conftest import get_tests_daft_runner_name
 
 
 @pytest.mark.parametrize(
@@ -195,6 +196,10 @@ def test_roundtrip_uuid_type(tmp_path, native_parquet_writer: bool) -> None:
     assert before.to_arrow() == after.to_arrow()
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="pyarrow extension types aren't supported on Ray clusters.",
+)
 @pytest.mark.parametrize("native_parquet_writer", [True, False])
 def test_roundtrip_arrow_extension_type(tmp_path, uuid_ext_type, native_parquet_writer: bool) -> None:
     """Parquet write/read preserves a registered Arrow extension column (storage + extension name)."""
