@@ -249,7 +249,7 @@ impl RecordBatch {
                 let mut growable =
                     make_growable(name, lcol.data_type(), vec![lcol, rcol], false, lcol.len());
 
-                for (li, ri) in lidx.into_iter().zip(ridx.into_iter()) {
+                for (li, ri) in lidx.iter().zip(ridx.iter()) {
                     match (li, ri) {
                         (Some(i), _) => growable.extend(0, i as usize, 1),
                         (None, Some(i)) => growable.extend(1, i as usize, 1),

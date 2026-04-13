@@ -8,30 +8,29 @@ use daft_core::{
 };
 use hashbrown::{HashMap, hash_map::RawEntryMut};
 
-use super::{ArrowTableEntry, IndicesMapper, Probeable, ProbeableBuilder};
+use super::{ArrowTableEntry, IndicesMapper, ProbeContent, Probeable, ProbeableBuilder};
 use crate::RecordBatch;
 
-pub struct ProbeTable {
+pub struct ProbeTable<T: ProbeContent> {
     schema: SchemaRef,
-    hash_table: HashMap<IndexHash, Vec<u64>, IdentityBuildHasher>,
+    hash_table: HashMap<IndexHash, T, IdentityBuildHasher>,
     tables: Vec<ArrowTableEntry>,
     nulls_equal: Vec<bool>,
     nans_equal: Vec<bool>,
 }
 
-impl ProbeTable {
+impl<T: ProbeContent> ProbeTable<T> {
     // Use the leftmost 28 bits for the table index and the rightmost 36 bits for the row number
     const TABLE_IDX_SHIFT: usize = 36;
     const LOWER_MASK: u64 = (1 << Self::TABLE_IDX_SHIFT) - 1;
 
-    const DEFAULT_SIZE: usize = 20;
+    const DEFAULT_SIZE: usize = 32;
 
     pub(crate) fn new(schema: SchemaRef, null_equal_aware: Option<&Vec<bool>>) -> DaftResult<Self> {
-        let hash_table =
-            HashMap::<IndexHash, Vec<u64>, IdentityBuildHasher>::with_capacity_and_hasher(
-                Self::DEFAULT_SIZE,
-                Default::default(),
-            );
+        let hash_table = HashMap::<IndexHash, T, IdentityBuildHasher>::with_capacity_and_hasher(
+            Self::DEFAULT_SIZE,
+            Default::default(),
+        );
         if let Some(null_equal_aware) = null_equal_aware
             && null_equal_aware.len() != schema.len()
         {
@@ -54,12 +53,12 @@ impl ProbeTable {
         })
     }
 
-    fn probe<'a>(
-        &'a self,
-        input: &'a RecordBatch,
-    ) -> DaftResult<impl Iterator<Item = Option<&'a [u64]>> + 'a> {
-        assert_eq!(self.schema.len(), input.schema.len());
-        assert!(
+    fn probe(
+        &self,
+        input: RecordBatch,
+    ) -> DaftResult<impl Iterator<Item = Option<T::ProbeOutput<'_>>>> {
+        debug_assert_eq!(self.schema.len(), input.schema.len());
+        debug_assert!(
             self.schema
                 .into_iter()
                 .zip(input.schema.fields())
@@ -94,8 +93,10 @@ impl ProbeTable {
         #[allow(clippy::needless_collect)]
         let hash_vec: Vec<Option<u64>> = hashes.iter().collect();
 
-        Ok(Box::new(hash_vec.into_iter().enumerate().map(
-            move |(idx, h)| match h {
+        Ok(hash_vec
+            .into_iter()
+            .enumerate()
+            .map(move |(idx, h)| match h {
                 Some(h) => {
                     if let Some((_, indices)) = self.hash_table.raw_entry().from_hash(h, |other| {
                         h == other.hash && {
@@ -104,25 +105,24 @@ impl ProbeTable {
                             comparators[other_table_idx](other_row_idx, idx)
                         }
                     }) {
-                        Some(indices.as_slice())
+                        Some(indices.probe_out())
                     } else {
                         None
                     }
                 }
                 None => None,
-            },
-        )))
+            }))
     }
 
     fn add_table(&mut self, table: &RecordBatch) -> DaftResult<()> {
         // we have to cast to the join key schema
-        assert_eq!(table.schema, self.schema);
+        debug_assert_eq!(table.schema, self.schema);
         let hashes = table.hash_rows()?;
         let table_idx = self.tables.len();
         let table_offset = table_idx << Self::TABLE_IDX_SHIFT;
 
-        assert!(table_idx < (1 << (64 - Self::TABLE_IDX_SHIFT)));
-        assert!(table.len() < (1 << Self::TABLE_IDX_SHIFT));
+        debug_assert!(table_idx < (1 << (64 - Self::TABLE_IDX_SHIFT)));
+        debug_assert!(table.len() < (1 << Self::TABLE_IDX_SHIFT));
         let current_arrays = table
             .columns
             .iter()
@@ -163,17 +163,19 @@ impl ProbeTable {
             });
             match entry {
                 RawEntryMut::Vacant(entry) => {
+                    let mut val = T::default();
+                    val.add_row(idx as u64);
                     entry.insert_hashed_nocheck(
                         *h,
                         IndexHash {
                             idx: idx as u64,
                             hash: *h,
                         },
-                        vec![idx as u64],
+                        val,
                     );
                 }
                 RawEntryMut::Occupied(mut entry) => {
-                    entry.get_mut().push(idx as u64);
+                    entry.get_mut().add_row(idx as u64);
                 }
             }
         }
@@ -181,11 +183,12 @@ impl ProbeTable {
     }
 }
 
-impl Probeable for ProbeTable {
-    fn probe_indices<'a>(&'a self, table: &'a RecordBatch) -> DaftResult<IndicesMapper<'a>> {
+impl<T: ProbeContent> Probeable for ProbeTable<T> {
+    fn probe_indices(&'_ self, table: RecordBatch) -> DaftResult<IndicesMapper<'_>> {
         let iter = self.probe(table)?;
+        let converted_iter = iter.map(|opt| T::to_indices(opt));
         Ok(IndicesMapper::new(
-            Box::new(iter),
+            Box::new(converted_iter),
             Self::TABLE_IDX_SHIFT,
             Self::LOWER_MASK,
         ))
@@ -193,16 +196,22 @@ impl Probeable for ProbeTable {
 
     fn probe_exists<'a>(
         &'a self,
-        table: &'a RecordBatch,
+        table: RecordBatch,
     ) -> DaftResult<Box<dyn Iterator<Item = bool> + 'a>> {
         let iter = self.probe(table)?;
-        Ok(Box::new(iter.map(|indices| indices.is_some())))
+        Ok(Box::new(iter.map(|output| output.is_some())))
     }
 }
 
-pub struct ProbeTableBuilder(pub ProbeTable);
+pub struct ProbeTableBuilder<T: ProbeContent>(pub ProbeTable<T>);
 
-impl ProbeableBuilder for ProbeTableBuilder {
+impl<T: ProbeContent> ProbeTableBuilder<T> {
+    pub fn new(schema: SchemaRef, null_equal_aware: Option<&Vec<bool>>) -> DaftResult<Self> {
+        Ok(Self(ProbeTable::new(schema, null_equal_aware)?))
+    }
+}
+
+impl<T: ProbeContent> ProbeableBuilder for ProbeTableBuilder<T> {
     fn add_table(&mut self, table: &RecordBatch) -> DaftResult<()> {
         self.0.add_table(table)
     }
