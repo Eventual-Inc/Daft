@@ -1090,7 +1090,8 @@ impl SQLPlanner<'_> {
         } = table_sample;
 
         // Parse sampling parameters
-        let (fraction, size) = self.parse_sample_quantity(quantity.as_ref(), name.as_ref(), bucket.as_ref())?;
+        let (fraction, size) =
+            self.parse_sample_quantity(quantity.as_ref(), name.as_ref(), bucket.as_ref())?;
 
         // Parse seed if present
         let seed_value = self.parse_sample_seed(seed.as_ref())?;

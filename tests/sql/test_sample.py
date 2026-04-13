@@ -198,18 +198,15 @@ def test_tablesample_with_seed():
 
 def test_postgres_tablesample_syntax_variants():
     """Test Postgres TABLESAMPLE syntax variants from official documentation.
-    
+
     Reference: https://www.postgresql.org/docs/current/tablesample-method.html
-    
+
     Postgres supports:
     - TABLESAMPLE SYSTEM (percentage)
     - TABLESAMPLE BERNOULLI (percentage)
     - TABLESAMPLE method_name (parameter) REPEATABLE (seed)
     """
-    df = daft.from_pydict({
-        "id": list(range(1, 101)),
-        "value": ["x"] * 100
-    })
+    df = daft.from_pydict({"id": list(range(1, 101)), "value": ["x"] * 100})
 
     # Test SYSTEM method with various percentages
     result_10 = daft.sql("SELECT * FROM df TABLESAMPLE SYSTEM (10)", df=df)
@@ -234,12 +231,8 @@ def test_postgres_tablesample_syntax_variants():
     assert 0 <= len(result_bernoulli_50) <= 100
 
     # Test with REPEATABLE seed for deterministic results
-    result_seed_1 = daft.sql(
-        "SELECT * FROM df TABLESAMPLE SYSTEM (30) REPEATABLE (123)", df=df
-    )
-    result_seed_2 = daft.sql(
-        "SELECT * FROM df TABLESAMPLE SYSTEM (30) REPEATABLE (123)", df=df
-    )
+    result_seed_1 = daft.sql("SELECT * FROM df TABLESAMPLE SYSTEM (30) REPEATABLE (123)", df=df)
+    result_seed_2 = daft.sql("SELECT * FROM df TABLESAMPLE SYSTEM (30) REPEATABLE (123)", df=df)
     result_seed_1.collect()
     result_seed_2.collect()
     assert result_seed_1.to_pydict() == result_seed_2.to_pydict()
@@ -247,16 +240,13 @@ def test_postgres_tablesample_syntax_variants():
 
 def test_spark_tablesample_bucket():
     """Test Spark TABLESAMPLE BUCKET syntax.
-    
+
     Reference: https://spark.apache.org/docs/latest/sql-ref-syntax-qry-select-sampling.html
-    
+
     Spark supports: TABLESAMPLE (BUCKET x OUT OF y)
     This samples approximately x/y fraction of the table.
     """
-    df = daft.from_pydict({
-        "id": list(range(1, 101)),
-        "value": ["x"] * 100
-    })
+    df = daft.from_pydict({"id": list(range(1, 101)), "value": ["x"] * 100})
 
     # BUCKET 4 OUT OF 10 = 40%
     result_40 = daft.sql("SELECT * FROM df TABLESAMPLE (BUCKET 4 OUT OF 10)", df=df)
