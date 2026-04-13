@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import platform
 import sys
 import time
 from collections.abc import Generator, Iterable, Iterator
@@ -14,6 +15,7 @@ from typing import TYPE_CHECKING, Any, cast
 import pyarrow as pa  # noqa: TID253
 import ray.experimental  # noqa: TID253
 
+import daft
 from daft.context import get_context
 from daft.daft import DistributedPhysicalPlan, PyExecutionStats, RayPartitionRef
 from daft.daft import PyRecordBatch as _PyRecordBatch
@@ -30,8 +32,6 @@ if TYPE_CHECKING:
 
     import dask
     import dask.dataframe
-
-    import daft
 
 
 logger = logging.getLogger(__name__)
@@ -614,7 +614,14 @@ class RayRunner(Runner[ray.ObjectRef]):
                 ctx._notify_query_start(
                     query_id,
                     PyQueryMetadata(
-                        output_schema._schema, unoptimized_plan_json, "Ray (Flotilla)", ray_dashboard_url, entrypoint
+                        output_schema._schema,
+                        unoptimized_plan_json,
+                        "Ray (Flotilla)",
+                        ray_dashboard_url,
+                        entrypoint,
+                        python_version=platform.python_version(),
+                        daft_version=daft.get_version(),
+                        ray_version=ray.__version__,
                     ),
                 )
                 ctx._notify_optimization_start(query_id)

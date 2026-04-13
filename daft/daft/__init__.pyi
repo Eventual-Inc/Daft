@@ -2476,6 +2476,9 @@ class PyQueryMetadata:
     runner: str
     ray_dashboard_url: str | None
     entrypoint: str | None
+    python_version: str | None
+    daft_version: str | None
+    ray_version: str | None
 
     def __init__(
         self,
@@ -2484,6 +2487,9 @@ class PyQueryMetadata:
         runner: str,
         ray_dashboard_url: str | None = None,
         entrypoint: str | None = None,
+        python_version: str | None = None,
+        daft_version: str | None = None,
+        ray_version: str | None = None,
     ) -> None: ...
 
 class PyQueryResult:

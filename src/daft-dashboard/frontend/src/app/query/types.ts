@@ -116,6 +116,9 @@ export type QueryInfo = {
   runner: string;
   ray_dashboard_url?: string;
   entrypoint?: string;
+  python_version?: string;
+  daft_version?: string;
+  ray_version?: string;
   state: QueryState;
 };
 

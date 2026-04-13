@@ -24,6 +24,9 @@ pub struct QueryMetadata {
     pub runner: String,
     pub ray_dashboard_url: Option<String>,
     pub entrypoint: Option<String>,
+    pub python_version: Option<String>,
+    pub daft_version: Option<String>,
+    pub ray_version: Option<String>,
 }
 
 #[derive(Debug, Clone)]
