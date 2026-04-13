@@ -49,8 +49,11 @@ impl ScalarUDF for Factorial {
 }
 
 fn compute_factorial(n: f64) -> f64 {
-    if n.is_nan() || n < 0.0 || n != n.floor() {
+    if n.is_nan() || n < 0.0 || n.is_infinite() || n != n.floor() {
         return f64::NAN;
+    }
+    if n > 170.0 {
+        return f64::INFINITY;
     }
     let n = n as u64;
     let mut result: f64 = 1.0;
