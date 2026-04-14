@@ -630,8 +630,8 @@ class RayRunner(Runner[ray.ObjectRef]):
                 ctx._notify_optimization_start(query_id)
                 ctx._notify_optimization_end(query_id, builder.repr_json())
                 ctx._notify_exec_start(query_id, physical_plan_json)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to send notifications: %s", e)
 
             heartbeat = Heartbeat(HEARTBEAT_INTERVAL_SEC, ctx, query_id)
             heartbeat.start()
@@ -652,8 +652,6 @@ class RayRunner(Runner[ray.ObjectRef]):
                     yield result
             except StopIteration as e:
                 stats: PyExecutionStats = e.value
-            finally:
-                heartbeat.stop()
 
             # Mark all operators as finished to clean up the Dashboard UI before notify_exec_end
             try:
@@ -667,14 +665,14 @@ class RayRunner(Runner[ray.ObjectRef]):
                         ctx._notify_exec_operator_end(query_id, node["id"])
 
                 notify_end(plan_dict)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to send operator end notifications: %s", e)
 
             try:
                 ctx._notify_exec_end(query_id)
-            except Exception:
-                pass
-            ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Finished, "Query finished"))
+                ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Finished, "Query finished"))
+            except Exception as e:
+                logger.warning("Failed to send query end notifications: %s", e)
 
         except GeneratorExit:
             # Generator was abandoned (e.g. .show() breaking out early). Match NativeRunner so
@@ -697,6 +695,9 @@ class RayRunner(Runner[ray.ObjectRef]):
             err_msg = f"General Exception raised: {e}"
             ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, err_msg))
             raise e
+        finally:
+            if heartbeat is not None:
+                heartbeat.stop()
 
         return ExecutionMetadata._from_runner_output(stats, query_id, physical_plan_json)
 

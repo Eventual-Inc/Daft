@@ -24,7 +24,7 @@ class Heartbeat:
         self.ctx = ctx
         self.query_id = query_id
         self.stop_event = threading.Event()
-        self.heart = threading.Thread(target=self._beat)
+        self.heart = threading.Thread(target=self._beat, daemon=True)
 
     def start(self) -> None:
         """Start the heartbeat in a background thread."""
@@ -35,6 +35,6 @@ class Heartbeat:
             self.ctx._notify_query_heartbeat(self.query_id)
 
     def stop(self) -> None:
-        """Stop sending heartbeats."""
+        """Stop sending heartbeats. Call this before process exit to ensure all heartbeats are fully sent."""
         self.stop_event.set()
         self.heart.join()

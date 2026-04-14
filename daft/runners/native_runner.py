@@ -113,24 +113,35 @@ class NativeRunner(Runner[MicroPartition]):
                     daft_version=daft_version,
                 ),
             )
-            ctx._notify_optimization_start(query_id)
         except Exception as e:
-            logger.warning("Failed to send notifications: %s", e)
-            pass
+            logger.warning("Failed to send query start notification: %s", e)
 
         # Start heartbeat right after query_start so dead detection covers
         # the entire lifecycle including optimization and setup.
         heartbeat = Heartbeat(HEARTBEAT_INTERVAL_SEC, ctx, query_id)
         heartbeat.start()
 
-        # Optimize the logical plan.
+        try:
+            return self._optimize_and_execute(builder, query_id)
+        finally:
+            heartbeat.stop()
+
+    def _optimize_and_execute(
+        self, builder: LogicalPlanBuilder, query_id: str
+    ) -> Generator[LocalMaterializedResult, None, ExecutionMetadata]:
+        ctx = get_context()
+
+        try:
+            ctx._notify_optimization_start(query_id)
+        except Exception as e:
+            logger.warning("Failed to send optimization start notification: %s", e)
+
         builder = builder.optimize(ctx.daft_execution_config)
 
         try:
             ctx._notify_optimization_end(query_id, builder.repr_json())
         except Exception as e:
             logger.warning("Failed to send optimization end notification: %s", e)
-            pass
 
         psets = {
             k: [v.micropartition()._micropartition for v in v.values()]
@@ -150,8 +161,8 @@ class NativeRunner(Runner[MicroPartition]):
                 result = next(results_gen)
                 try:
                     ctx._notify_result_out(query_id, result.partition())
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Failed to send result out notification: %s", e)
                 yield result
         except GeneratorExit:
             # Generator was abandoned (e.g., .show() breaking out early after collecting
@@ -181,8 +192,6 @@ class NativeRunner(Runner[MicroPartition]):
             query_result = PyQueryResult(QueryEndState.Failed, err_msg)
             ctx._notify_query_end(query_id, query_result)
             raise e
-        finally:
-            heartbeat.stop()
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
