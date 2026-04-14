@@ -108,6 +108,7 @@ pub enum LocalPhysicalPlan {
     // Flotilla Only Nodes
     IntoPartitions(IntoPartitions),
     RepartitionWrite(RepartitionWrite),
+    RepartitionWriteWithSentinel(RepartitionWriteWithSentinel),
     ShuffleRead(ShuffleRead),
     SortMergeJoin(SortMergeJoin),
     AsofJoin(AsofJoin),
@@ -164,6 +165,10 @@ impl LocalPhysicalPlan {
             | Self::CommitWrite(CommitWrite { stats_state, .. })
             | Self::IntoPartitions(IntoPartitions { stats_state, .. })
             | Self::RepartitionWrite(RepartitionWrite { stats_state, .. })
+            | Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel {
+                stats_state,
+                ..
+            })
             | Self::ShuffleRead(ShuffleRead { stats_state, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { stats_state, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { stats_state, .. })
@@ -214,6 +219,9 @@ impl LocalPhysicalPlan {
             | Self::CommitWrite(CommitWrite { context, .. })
             | Self::IntoPartitions(IntoPartitions { context, .. })
             | Self::RepartitionWrite(RepartitionWrite { context, .. })
+            | Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel {
+                context, ..
+            })
             | Self::ShuffleRead(ShuffleRead { context, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { context, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { context, .. })
@@ -1008,6 +1016,30 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn repartition_write_with_sentinel(
+        input: LocalPhysicalPlanRef,
+        num_partitions: usize,
+        schema: SchemaRef,
+        backend: RepartitionWriteBackend,
+        repartition_spec: RepartitionSpec,
+        sentinel_sort_keys: Vec<BoundExpr>,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel {
+            input,
+            num_partitions,
+            schema,
+            backend,
+            repartition_spec,
+            sentinel_sort_keys,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
     pub fn shuffle_read(
         source_id: SourceId,
         schema: SchemaRef,
@@ -1069,6 +1101,9 @@ impl LocalPhysicalPlan {
             Self::DistributedActorPoolProject(DistributedActorPoolProject { schema, .. }) => schema,
             Self::IntoPartitions(IntoPartitions { schema, .. }) => schema,
             Self::RepartitionWrite(RepartitionWrite { schema, .. }) => schema,
+            Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel { schema, .. }) => {
+                schema
+            }
             Self::ShuffleRead(ShuffleRead { schema, .. }) => schema,
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
@@ -1152,6 +1187,9 @@ impl LocalPhysicalPlan {
             }
             Self::IntoPartitions(IntoPartitions { input, .. }) => vec![input.clone()],
             Self::RepartitionWrite(RepartitionWrite { input, .. }) => vec![input.clone()],
+            Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel { input, .. }) => {
+                vec![input.clone()]
+            }
             Self::ShuffleRead(ShuffleRead { .. }) => vec![], // No input children
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
             Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
@@ -1620,6 +1658,24 @@ impl LocalPhysicalPlan {
                     schema.clone(),
                     backend.clone(),
                     repartition_spec.clone(),
+                    StatsState::NotMaterialized,
+                    context.clone(),
+                ),
+                Self::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel {
+                    num_partitions,
+                    schema,
+                    backend,
+                    repartition_spec,
+                    sentinel_sort_keys,
+                    context,
+                    ..
+                }) => Self::repartition_write_with_sentinel(
+                    new_child.clone(),
+                    *num_partitions,
+                    schema.clone(),
+                    backend.clone(),
+                    repartition_spec.clone(),
+                    sentinel_sort_keys.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
@@ -2234,6 +2290,18 @@ pub struct RepartitionWrite {
     pub schema: SchemaRef,
     pub backend: RepartitionWriteBackend,
     pub repartition_spec: RepartitionSpec,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RepartitionWriteWithSentinel {
+    pub input: LocalPhysicalPlanRef,
+    pub num_partitions: usize,
+    pub schema: SchemaRef,
+    pub backend: RepartitionWriteBackend,
+    pub repartition_spec: RepartitionSpec,
+    pub sentinel_sort_keys: Vec<BoundExpr>,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
