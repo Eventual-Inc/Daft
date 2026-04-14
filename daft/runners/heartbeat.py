@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import threading
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from daft.context import DaftContext
+
+logger = logging.getLogger(__name__)
 
 
 class Heartbeat:
@@ -32,9 +35,13 @@ class Heartbeat:
 
     def _beat(self) -> None:
         while not self.stop_event.wait(self.interval):
-            self.ctx._notify_query_heartbeat(self.query_id)
+            try:
+                self.ctx._notify_query_heartbeat(self.query_id)
+            except Exception as e:
+                logger.debug("Failed to send heartbeat notification: %s", e)
 
     def stop(self) -> None:
         """Stop sending heartbeats. Call this before process exit to ensure all heartbeats are fully sent."""
         self.stop_event.set()
-        self.heart.join()
+        if self.heart.ident is not None:
+            self.heart.join()
