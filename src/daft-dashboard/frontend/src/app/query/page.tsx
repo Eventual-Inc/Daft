@@ -82,7 +82,14 @@ function QueryPageInner() {
         ? query.state.marked_dead_sec
         : null;
 
-  const last_heartbeat_sec = query.last_heartbeat_sec;
+  const isActive =
+    query.state.status === "Pending" ||
+    query.state.status === "Optimizing" ||
+    query.state.status === "Setup" ||
+    query.state.status === "Executing";
+  const last_heartbeat_sec = isActive || query.state.status === "Dead"
+    ? query.last_heartbeat_sec
+    : null;
 
   return (
     <div className="h-full flex flex-col">
