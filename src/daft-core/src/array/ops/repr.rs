@@ -1,5 +1,6 @@
 use common_display::table_display::StrValue;
 use common_error::DaftResult;
+use itertools::Itertools as _;
 
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
@@ -456,14 +457,9 @@ impl StructArray {
                     let fields_to_strs = fields
                         .iter()
                         .zip(self.children.iter())
-                        .map(|(f, s)| Ok(format!("{}: {}, ", f.name.as_ref(), s.str_value(idx))))
-                        .collect::<DaftResult<Vec<_>>>()?;
-                    let mut result = "{".to_string();
-                    for line in fields_to_strs {
-                        result += &line;
-                    }
-                    result += "}";
-                    Ok(result)
+                        .map(|(f, s)| format!("{}: {}", f.name.as_ref(), s.str_value(idx)))
+                        .join(", ");
+                    Ok(format!("{{{fields_to_strs}}}"))
                 }
                 dt => unreachable!("StructArray must have Struct dtype, but found: {}", dt),
             }

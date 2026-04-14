@@ -716,11 +716,11 @@ def map_get(expr: Expression, key: Expression) -> Expression:
         │ ---                ┆ ---   │
         │ Map[String: Int64] ┆ Int64 │
         ╞════════════════════╪═══════╡
-        │ {"a": 1}           ┆ 1     │
+        │ "a": 1             ┆ 1     │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
         │ {}                 ┆ None  │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ {"b": 2}           ┆ None  │
+        │ "b": 2             ┆ None  │
         ╰────────────────────┴───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
