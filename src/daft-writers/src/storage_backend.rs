@@ -156,3 +156,59 @@ impl StorageBackend for ObjectStorageBackend {
         upload_task.await?
     }
 }
+
+#[cfg(feature = "python")]
+pub(crate) struct GravitinoStorageBackend;
+
+#[cfg(feature = "python")]
+impl GravitinoStorageBackend {
+    pub(crate) fn parse_gravitino_url_and_config(
+        root_dir: &str,
+        io_config: IOConfig,
+    ) -> DaftResult<(String, Option<IOConfig>)> {
+        let root_dir_owned = root_dir.to_string();
+
+        let runtime = get_io_runtime(true);
+
+        runtime.block_within_async_context(async move {
+            Self::parse_url_and_config(&root_dir_owned, io_config).await
+        })?
+    }
+
+    async fn parse_url_and_config(
+        root_dir: &str,
+        io_config: IOConfig,
+    ) -> DaftResult<(String, Option<IOConfig>)> {
+        let io_client = get_io_client(true, Arc::new(io_config))?;
+        let source = io_client.get_source(root_dir).await?;
+        let any = source.as_any_arc();
+
+        if let Ok(gravitino_source) = any.downcast::<daft_io::gravitino::GravitinoSource>() {
+            let (source_path, io_config) =
+                gravitino_source.resolve_url_and_config(root_dir).await?;
+            let (_, target_root_dir) = daft_io::parse_url(&source_path)?;
+            let target_url = url::Url::parse(target_root_dir.as_ref()).map_err(|_| {
+                DaftError::InternalError(format!(
+                    "Invalid target path: {}",
+                    target_root_dir.as_ref()
+                ))
+            })?;
+            let scheme = target_url.scheme();
+
+            if scheme == "gvfs" {
+                // Prevent circular nesting of gvfs protocol
+                Err(DaftError::InternalError(format!(
+                    "Resolved target path '{}' still uses the gvfs:// scheme, which would cause circular nesting",
+                    target_root_dir.as_ref()
+                )))
+            } else {
+                Ok((target_root_dir.to_string(), Some(io_config)))
+            }
+        } else {
+            Err(DaftError::InternalError(format!(
+                "The source {} does not support gvfs",
+                root_dir
+            )))
+        }
+    }
+}

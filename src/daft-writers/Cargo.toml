@@ -22,6 +22,7 @@ parking_lot = {workspace = true}
 parquet = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 tokio = {workspace = true}
+url = {workspace = true}
 urlencoding = "2.1.3"
 uuid = {workspace = true, features = ["v4"]}
 

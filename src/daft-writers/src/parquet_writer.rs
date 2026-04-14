@@ -102,7 +102,7 @@ pub(crate) fn create_native_parquet_writer(
         source if source.supports_native_writer() => {
             let ObjectPath { scheme, .. } = daft_io::utils::parse_object_url(root_dir.as_ref())?;
             let io_config = io_config.ok_or_else(|| {
-                DaftError::InternalError("IO config is required for S3 writes".to_string())
+                DaftError::InternalError("IO config is required for object writes".to_string())
             })?;
             let storage_backend = ObjectStorageBackend::new(scheme, io_config);
             Ok(Box::new(ParquetWriter::new(
