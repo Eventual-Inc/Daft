@@ -94,6 +94,15 @@ impl RecordBatch {
             )));
         }
 
+        let right_cols_to_drop = get_right_cols_to_drop(right_by, left_on, right_on, |e| {
+            match e.inner().unwrap_alias().0.as_ref() {
+                Expr::Column(_) => Some(e.inner().unwrap_alias().0.name().to_string()),
+                _ => None,
+            }
+        });
+        let join_schema = infer_asof_join_schema(&self.schema, &right.schema, &right_cols_to_drop)?;
+
+        // Build sort keys: [by_keys..., on_key]
         let left_sort_keys = left_by
             .iter()
             .cloned()
@@ -104,39 +113,73 @@ impl RecordBatch {
             .cloned()
             .chain(std::iter::once(right_on.clone()))
             .collect::<Vec<_>>();
+        let num_sort_keys = left_sort_keys.len();
+        let ascending = vec![false; num_sort_keys];
+        let nulls_first = vec![false; num_sort_keys];
 
-        let left = self.sort(
-            left_sort_keys.as_slice(),
-            std::iter::repeat_n(false, left_sort_keys.len())
-                .collect::<Vec<_>>()
-                .as_slice(),
-            std::iter::repeat_n(false, left_sort_keys.len())
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )?;
-        let right = right.sort(
-            right_sort_keys.as_slice(),
-            std::iter::repeat_n(false, right_sort_keys.len())
-                .collect::<Vec<_>>()
-                .as_slice(),
-            std::iter::repeat_n(false, right_sort_keys.len())
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )?;
+        if !left_by.is_empty() {
+            // Hash-partition both sides by the "by" keys into many small
+            // buckets, then sort each bucket by [by, on] and merge. Sorting
+            // many small arrays is much faster than one global sort.
+            // Scale bucket count with data size: target ~50K rows per bucket.
+            let total_rows = self.len() + right.len();
+            let num_buckets = (total_rows / 50_000).clamp(64, 1024);
+            let left_parts = self.partition_by_hash(left_by, num_buckets)?;
+            let right_parts = right.partition_by_hash(right_by, num_buckets)?;
 
-        let left_key_table = left.eval_expression_list(left_sort_keys.as_slice())?;
-        let right_key_table = right.eval_expression_list(right_sort_keys.as_slice())?;
+            let mut result_parts = Vec::with_capacity(num_buckets);
+            for (lpart, rpart) in left_parts.iter().zip(right_parts.iter()) {
+                if lpart.is_empty() {
+                    continue;
+                }
+
+                let lsorted = lpart.sort(&left_sort_keys, &ascending, &nulls_first)?;
+                let rsorted = if rpart.is_empty() {
+                    rpart.clone()
+                } else {
+                    rpart.sort(&right_sort_keys, &ascending, &nulls_first)?
+                };
+
+                let left_key = lsorted.eval_expression_list(&left_sort_keys)?;
+                let right_key = rsorted.eval_expression_list(&right_sort_keys)?;
+                let (left_key, right_key) = match_types_for_tables(&left_key, &right_key)?;
+
+                let (lidx, ridx) = asof_join::asof_join_backward(&left_key, &right_key)?;
+
+                let num_rows = lidx.len();
+                let mut join_series = Vec::with_capacity(join_schema.len());
+
+                for field in self.schema.as_ref() {
+                    join_series.push(get_column_by_name(&lsorted, &field.name)?.take(&lidx)?);
+                }
+                for field in right.schema.as_ref() {
+                    if !right_cols_to_drop.contains(field.name.as_ref()) {
+                        join_series.push(get_column_by_name(&rsorted, &field.name)?.take(&ridx)?);
+                    }
+                }
+
+                result_parts.push(Self::new_with_size(
+                    join_schema.clone(),
+                    join_series,
+                    num_rows,
+                )?);
+            }
+
+            if result_parts.is_empty() {
+                return Ok(Self::empty(Some(join_schema)));
+            }
+            return Self::concat(result_parts.as_slice());
+        }
+
+        // No "by" keys: sort both sides by the "on" key and merge directly.
+        let left = self.sort(&left_sort_keys, &ascending, &nulls_first)?;
+        let right = right.sort(&right_sort_keys, &ascending, &nulls_first)?;
+
+        let left_key_table = left.eval_expression_list(&left_sort_keys)?;
+        let right_key_table = right.eval_expression_list(&right_sort_keys)?;
         let (left_key_table, right_key_table) =
             match_types_for_tables(&left_key_table, &right_key_table)?;
         let (lidx, ridx) = asof_join::asof_join_backward(&left_key_table, &right_key_table)?;
-
-        let right_cols_to_drop = get_right_cols_to_drop(right_by, left_on, right_on, |e| {
-            match e.inner().unwrap_alias().0.as_ref() {
-                Expr::Column(_) => Some(e.inner().unwrap_alias().0.name().to_string()),
-                _ => None,
-            }
-        });
-        let join_schema = infer_asof_join_schema(&left.schema, &right.schema, &right_cols_to_drop)?;
 
         let num_rows = lidx.len();
         let mut join_series = Vec::with_capacity(join_schema.len());
