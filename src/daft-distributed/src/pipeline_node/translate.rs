@@ -1,7 +1,7 @@
 use core::panic;
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_metrics::Meter;
 use common_partitioning::PartitionRef;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
@@ -496,10 +496,10 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
 
                 self.translate_join(join, left_node, right_node)?
             }
-            LogicalPlan::AsofJoin(_) => {
-                return Err(DaftError::not_implemented(
-                    "ASOF join is not yet supported on the Ray runner; use the native runner (DAFT_RUNNER=native).",
-                ));
+            LogicalPlan::AsofJoin(asof_join) => {
+                let right_node = self.curr_node.pop().unwrap();
+                let left_node = self.curr_node.pop().unwrap();
+                self.translate_asof_join(asof_join, left_node, right_node)?
             }
             LogicalPlan::Sort(sort) => {
                 let sort_by = BoundExpr::bind_all(&sort.sort_by, &sort.input.schema())?;
