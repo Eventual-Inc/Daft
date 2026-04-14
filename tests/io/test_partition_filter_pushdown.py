@@ -278,3 +278,102 @@ def test_year_gt_is_relaxed_to_gteq():
     assert pushdowns.partition_filters is not None, "Expected a partition filter to be pushed down"
     result = extract_comparison(pushdowns.partition_filters)
     assert result["op"] == "greater_than_or_equal", f"Year Gt must be relaxed to GtEq, got op={result['op']}"
+
+
+# ---------------------------------------------------------------------------
+# Identity partition predicates must survive when combined with ScalarFn predicates
+# ---------------------------------------------------------------------------
+
+
+def _build_df_and_capture_multi_col(
+    columns: list[tuple[str, DataType]],
+    partition_fields: list[PartitionField],
+    filter_expr,
+) -> Pushdowns:
+    """Build a DataFrame with multiple columns, apply filter_expr, collect, and return captured pushdowns."""
+    source_schema = Schema._from_field_name_and_types(columns)
+    source = _CapturePushdownsDataSource(source_schema, partition_fields)
+    df = source.read().filter(filter_expr)
+    df.collect()
+    assert len(source.captured_pushdowns) == 1, "Expected exactly one call to get_tasks"
+    return source.captured_pushdowns[0]
+
+
+def _collect_ops(tree: dict, ops: list[str] | None = None) -> list[str]:
+    """Recursively collect all comparison operator names from an extracted predicate tree."""
+    if ops is None:
+        ops = []
+    op = tree.get("op")
+    if op in ("and", "or"):
+        _collect_ops(tree["left"], ops)
+        _collect_ops(tree["right"], ops)
+    elif op is not None:
+        ops.append(op)
+    return ops
+
+
+def test_identity_partition_pred_preserved_with_scalar_fn_sibling():
+    """Regression: identity partition predicates must not be dropped when a sibling predicate contains a ScalarFn.
+
+    Before the fix, `source_col < '5' AND source_col > cast(abs(1) as string)` would
+    only push down the ScalarFn predicate as a partition filter, losing the simple
+    `source_col < '5'` predicate entirely.
+    """
+    pfield = _make_identity_partition_field("source_col", "source_col", DataType.string())
+    pushdowns = _build_df_and_capture_multi_col(
+        columns=[("source_col", DataType.string()), ("user_id", DataType.int32())],
+        partition_fields=[pfield],
+        filter_expr="source_col < '5' and source_col > cast(abs(1) as string)",
+    )
+
+    assert pushdowns.partition_filters is not None, "Expected partition filters to be pushed down, but got None"
+    result = extract_comparison(pushdowns.partition_filters)
+    ops = _collect_ops(result)
+    assert len(ops) >= 2, f"Expected at least 2 comparison predicates in partition_filters, got {len(ops)}: {result}"
+
+
+def test_two_identity_lit_predicates_both_pushed_down():
+    """Two simple literal comparisons on an identity-partitioned column must both appear in partition_filters."""
+    pfield = _make_identity_partition_field("source_col", "source_col", DataType.string())
+    pushdowns = _build_df_and_capture_multi_col(
+        columns=[("source_col", DataType.string())],
+        partition_fields=[pfield],
+        filter_expr=(col("source_col") < lit("5")) & (col("source_col") > lit("1")),
+    )
+
+    assert pushdowns.partition_filters is not None, "Expected partition filters to be pushed down, but got None"
+    result = extract_comparison(pushdowns.partition_filters)
+    assert result["op"] == "and", f"Expected top-level 'and', got: {result['op']}"
+    ops = _collect_ops(result)
+    assert "less_than" in ops, f"Expected 'less_than' in partition filters, got ops: {ops}"
+    assert "greater_than" in ops, f"Expected 'greater_than' in partition filters, got ops: {ops}"
+
+
+def test_identity_pred_with_cast_sibling_both_pushed_down():
+    """An identity partition predicate combined with a cast-containing predicate must both survive."""
+    pfield = _make_identity_partition_field("source_col", "source_col", DataType.string())
+    pushdowns = _build_df_and_capture_multi_col(
+        columns=[("source_col", DataType.string())],
+        partition_fields=[pfield],
+        filter_expr="source_col < '5' and source_col > cast(1 as string)",
+    )
+
+    assert pushdowns.partition_filters is not None, "Expected partition filters to be pushed down, but got None"
+    result = extract_comparison(pushdowns.partition_filters)
+    ops = _collect_ops(result)
+    assert len(ops) >= 2, f"Expected at least 2 comparison predicates in partition_filters, got {len(ops)}: {result}"
+
+
+def test_identity_pred_with_scalar_fn_both_directions():
+    """Swapped order: ScalarFn predicate first, then simple lit predicate must both appear."""
+    pfield = _make_identity_partition_field("source_col", "source_col", DataType.string())
+    pushdowns = _build_df_and_capture_multi_col(
+        columns=[("source_col", DataType.string()), ("user_id", DataType.int32())],
+        partition_fields=[pfield],
+        filter_expr="source_col > cast(abs(1) as string) and source_col < '5'",
+    )
+
+    assert pushdowns.partition_filters is not None, "Expected partition filters to be pushed down, but got None"
+    result = extract_comparison(pushdowns.partition_filters)
+    ops = _collect_ops(result)
+    assert len(ops) >= 2, f"Expected at least 2 comparison predicates in partition_filters, got {len(ops)}: {result}"
