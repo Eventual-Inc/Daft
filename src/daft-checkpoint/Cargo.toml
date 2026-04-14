@@ -5,19 +5,38 @@ version.workspace = true
 
 [dependencies]
 async-trait = {workspace = true}
+bytes = {workspace = true}
+chrono = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 futures = {workspace = true}
+serde = {workspace = true}
 snafu = {workspace = true}
 uuid = {workspace = true}
 
+[dependencies.serde_json]
+optional = true
+workspace = true
+
+[dependencies.daft-io]
+optional = true
+path = "../daft-io"
+default-features = false
+
+[dependencies.daft-recordbatch]
+optional = true
+path = "../daft-recordbatch"
+default-features = false
+
 [features]
+s3 = ["daft-io", "daft-recordbatch", "serde_json"]
 test-utils = []
 
 [dev-dependencies]
-daft-checkpoint = {path = ".", features = ["test-utils"]}
+daft-checkpoint = {path = ".", features = ["test-utils", "s3"]}
 daft-core = {path = "../daft-core", default-features = false}
 futures = {workspace = true}
+tempfile = "3"
 tokio = {workspace = true, features = ["rt", "macros"]}
 
 [lints]
