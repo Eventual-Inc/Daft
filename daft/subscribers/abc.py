@@ -16,6 +16,7 @@ from daft.subscribers.events import (
     OptimizationStarted,
     ProcessStats,
     QueryFinished,
+    QueryHeartbeat,
     QueryStarted,
     ResultProduced,
     Stats,
@@ -47,6 +48,10 @@ class Subscriber(ABC):
     @on_event.register
     def _(self, event: QueryStarted) -> None:
         self.on_query_started(event)
+
+    @on_event.register
+    def _(self, event: QueryHeartbeat) -> None:
+        self.on_query_heartbeat(event)
 
     @on_event.register
     def _(self, event: QueryFinished) -> None:
@@ -102,6 +107,10 @@ class Subscriber(ABC):
 
     def on_query_started(self, event: QueryStarted) -> None:
         """Called when starting the run for a new query."""
+        pass
+
+    def on_query_heartbeat(self, event: QueryHeartbeat) -> None:
+        """Called regularly while a query is running."""
         pass
 
     def on_query_finished(self, event: QueryFinished) -> None:
