@@ -3362,6 +3362,7 @@ dependencies = [
  "arrow-json",
  "arrow-schema 57.3.0",
  "async-trait",
+ "bytes",
  "chrono",
  "chrono-tz",
  "common-daft-config",

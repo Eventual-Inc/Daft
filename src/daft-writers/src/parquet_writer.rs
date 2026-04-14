@@ -10,7 +10,7 @@ use daft_recordbatch::RecordBatch;
 #[allow(deprecated)]
 use parquet::{
     arrow::{
-        ArrowSchemaConverter,
+        ArrowSchemaConverter, add_encoded_arrow_schema_to_metadata,
         arrow_writer::{ArrowColumnChunk, ArrowLeafColumn, compute_leaves, get_column_writers},
     },
     basic::Compression,
@@ -29,30 +29,17 @@ use crate::{
 
 type ColumnWriterFuture = dyn Future<Output = DaftResult<ArrowColumnChunk>> + Send;
 
-/// Helper function to check if we support writing a specific data type to Parquet.
-fn native_parquet_field_supported(field: &arrow_schema::Field) -> bool {
-    // TODO: Include extension info in parquet metadata
-    if field.extension_type_name().is_some() {
-        return false;
-    }
-
-    // TODO: Newer versions of parquet support Duration, but we don't write
-    // the arrow schema metadata to Parquet, so we can't support it yet.
-    // Similarly, we don't support TimestampTz or Extension
-    match field.data_type() {
-        arrow_schema::DataType::Duration(_) => false,
-        arrow_schema::DataType::Timestamp(_, tz) => tz.is_none(),
-        arrow_schema::DataType::List(field)
-        | arrow_schema::DataType::FixedSizeList(field, _)
-        | arrow_schema::DataType::Map(field, _) => native_parquet_field_supported(field.as_ref()),
-        arrow_schema::DataType::Struct(fields) => fields
-            .iter()
-            .all(|field| native_parquet_field_supported(field.as_ref())),
-        _ => true,
-    }
+/// Construct writer properties for the native Parquet writer
+fn native_parquet_writer_properties(arrow_schema: &arrow_schema::Schema) -> WriterProperties {
+    let mut props = WriterProperties::builder()
+        .set_writer_version(WriterVersion::PARQUET_1_0)
+        .set_compression(Compression::SNAPPY)
+        .build();
+    add_encoded_arrow_schema_to_metadata(arrow_schema, &mut props);
+    props
 }
 
-/// Helper function that checks if we support native writes given the file format, root directory, and schema.
+/// Helper function that checks if we support native writes given the file format, path, and schema.
 pub(crate) fn native_parquet_writer_supported(
     root_dir: &str,
     file_schema: &SchemaRef,
@@ -66,20 +53,7 @@ pub(crate) fn native_parquet_writer_supported(
         return Ok(false);
     };
 
-    if arrow_schema
-        .fields()
-        .iter()
-        .any(|field| !native_parquet_field_supported(field.as_ref()))
-    {
-        return Ok(false);
-    }
-
-    let writer_properties = Arc::new(
-        WriterProperties::builder()
-            .set_writer_version(WriterVersion::PARQUET_1_0)
-            .set_compression(Compression::SNAPPY)
-            .build(),
-    );
+    let writer_properties = native_parquet_writer_properties(&arrow_schema);
     Ok(ArrowSchemaConverter::new()
         .with_coerce_types(writer_properties.coerce_types())
         .convert(&arrow_schema)
@@ -105,14 +79,8 @@ pub(crate) fn create_native_parquet_writer(
 
     // TODO(desmond): Explore configurations such data page size limit, writer version, etc. Parquet format v2
     // could be interesting but has much less support in the ecosystem (including ourselves).
-    let writer_properties = Arc::new(
-        WriterProperties::builder()
-            .set_writer_version(WriterVersion::PARQUET_1_0)
-            .set_compression(Compression::SNAPPY)
-            .build(),
-    );
-
     let arrow_schema = Arc::new(schema.to_arrow()?.into());
+    let writer_properties = native_parquet_writer_properties(&arrow_schema);
 
     let parquet_schema = ArrowSchemaConverter::new()
         .with_coerce_types(writer_properties.coerce_types())
@@ -124,7 +92,7 @@ pub(crate) fn create_native_parquet_writer(
             let storage_backend = FileStorageBackend {};
             Ok(Box::new(ParquetWriter::new(
                 filename,
-                writer_properties,
+                Arc::new(writer_properties),
                 arrow_schema,
                 parquet_schema,
                 partition_values.cloned(),
@@ -139,7 +107,7 @@ pub(crate) fn create_native_parquet_writer(
             let storage_backend = ObjectStorageBackend::new(scheme, io_config);
             Ok(Box::new(ParquetWriter::new(
                 filename,
-                writer_properties,
+                Arc::new(writer_properties),
                 arrow_schema,
                 parquet_schema,
                 partition_values.cloned(),
@@ -414,5 +382,70 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
 
     fn bytes_per_file(&self) -> Vec<usize> {
         vec![self.total_bytes_written]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use arrow_array::RecordBatch;
+    use bytes::Bytes;
+    use parquet::{
+        arrow::{ARROW_SCHEMA_META_KEY, ArrowWriter, parquet_to_arrow_schema},
+        file::reader::{FileReader, SerializedFileReader},
+    };
+
+    use super::*;
+
+    #[test]
+    fn native_parquet_writer_properties_embeds_arrow_schema_metadata() {
+        let daft_schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Uuid)]));
+        assert!(native_parquet_writer_supported("file:///tmp", &daft_schema).unwrap());
+
+        let arrow_schema = daft_schema.to_arrow().expect("Conversion should pass");
+        assert!(
+            arrow_schema
+                .field(0)
+                .extension_type_name()
+                .is_some_and(|n| n == "arrow.uuid")
+        );
+
+        let props = native_parquet_writer_properties(&arrow_schema);
+        let kv = props
+            .key_value_metadata()
+            .expect("expected key_value_metadata");
+        assert!(kv.iter().any(|entry| entry.key == ARROW_SCHEMA_META_KEY));
+    }
+
+    #[test]
+    fn parquet_file_round_trips_extension_metadata() {
+        let daft_schema = Schema::new(vec![Field::new("id", DataType::Uuid)]);
+        let arrow_schema = Arc::new(daft_schema.to_arrow().unwrap());
+        let expected_ext = arrow_schema
+            .field(0)
+            .extension_type_name()
+            .map(str::to_string);
+
+        let props = native_parquet_writer_properties(&arrow_schema);
+        let mut buffer = Vec::new();
+        {
+            let mut writer = ArrowWriter::try_new(&mut buffer, arrow_schema.clone(), Some(props))
+                .expect("ArrowWriter::try_new");
+            let batch = RecordBatch::new_empty(arrow_schema);
+            writer.write(&batch).expect("write empty batch");
+            writer.close().expect("close writer");
+        }
+
+        let reader = SerializedFileReader::new(Bytes::from(buffer)).expect("read parquet");
+        let file_meta = reader.metadata().file_metadata();
+        let inferred =
+            parquet_to_arrow_schema(file_meta.schema_descr(), file_meta.key_value_metadata())
+                .expect("parquet_to_arrow_schema");
+
+        assert_eq!(
+            inferred.field(0).extension_type_name().map(str::to_string),
+            expected_ext
+        );
     }
 }

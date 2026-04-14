@@ -28,6 +28,10 @@ uuid = {workspace = true, features = ["v4"]}
 [features]
 python = ["dep:pyo3", "common-file-formats/python", "common-error/python", "daft-dsl/python", "daft-io/python", "daft-logical-plan/python", "daft-micropartition/python"]
 
+[dev-dependencies]
+arrow-array = {workspace = true}
+bytes = {workspace = true}
+
 [lints]
 workspace = true
 
