@@ -118,6 +118,8 @@ class NativeRunner(Runner[MicroPartition]):
             logger.warning("Failed to send notifications: %s", e)
             pass
 
+        # Start heartbeat right after query_start so dead detection covers
+        # the entire lifecycle including optimization and setup.
         heartbeat = Heartbeat(HEARTBEAT_INTERVAL_SEC, ctx, query_id)
         heartbeat.start()
 
