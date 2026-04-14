@@ -139,6 +139,15 @@ pub fn rewrite_predicate_for_partitioning(
             needs_filter_op_preds.push(e.clone());
         } else if all_data_keys || all_part_keys && any_non_identity_part_keys {
             data_preds.push(e.clone());
+        } else if all_part_keys {
+            // Pure partition-column predicates with identity transforms: these will be
+            // extracted as partition-only filters in the second phase below, but we must
+            // also keep them in `data_preds` so they survive Filter-node reconstruction
+            // when other sibling predicates land in `needing_filter_op` (e.g. predicates
+            // containing ScalarFn). Without this, a subsequent optimizer pass would
+            // re-derive partition filters from the rebuilt Filter node and lose these
+            // predicates.
+            data_preds.push(e.clone());
         }
     }
     if pfields.is_empty() {
