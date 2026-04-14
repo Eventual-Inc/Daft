@@ -140,6 +140,8 @@ class NativeRunner(Runner[MicroPartition]):
             {"query_id": query_id},
         )
 
+        # TODO(samstokes) in rare circumstances this may fire a heartbeat before
+        # the exec_start notification, which may confuse subscribers. e.g.
         heartbeat = Heartbeat(HEARTBEAT_INTERVAL_SEC, ctx, query_id)
         heartbeat.start()
 
