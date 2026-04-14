@@ -689,13 +689,10 @@ class TestAsofJoinDistributed:
         [(4, 2), (2, 4), (8, 2), (2, 8)],
     )
     def test_asymmetric_partition_counts(self, make_df, left_partitions, right_partitions, with_default_morsel_size):
-        """Left and right have different partition counts.
+        """Left and right are both hash-partitioned on the by-key with different partition counts.
 
-        Exercises the partition-leniency arms in gen_asof_join_nodes:
-          (true, false, a, b) if a >= b * leniency => a
-          (false, true, a, b) if b >= a * leniency => b
-        Both sides are pre-partitioned on the by-key with different counts, so the
-        executor must reconcile the mismatch via the leniency logic or repartition.
+        Exercises the (true, true, a, b) => max(a, b) arm in gen_asof_join_nodes, where both
+        sides are already hash-partitioned on 'entity' but with mismatched counts.
         """
         left = make_df(
             {
@@ -714,6 +711,51 @@ class TestAsofJoinDistributed:
             },
             repartition=right_partitions,
             repartition_columns=["entity"],
+        )
+        result = left.join_asof(right, on="ts", by="entity").sort(["entity", "ts"])
+        assert result.to_pydict() == {
+            "entity": ["A", "A", "B", "B", "C", "C", "D", "D"],
+            "ts": [10, 20, 10, 20, 10, 20, 10, 20],
+            "v": [1, 5, 2, 6, 3, 7, 4, 8],
+            # A@10: right A@5=100; A@20: right A@18=500
+            # B@10: right B@8=200; B@20: right B@8=200 (22 is future)
+            # C@10: no right C<=10 -> None; C@20: right C@12=300
+            # D@10: no right D<=10 -> None; D@20: right D@15=400
+            "w": [100, 500, 200, 200, None, 300, None, 400],
+        }
+
+    @pytest.mark.parametrize(
+        "left_partitions,right_partitions,hash_partition_left",
+        [(4, 2, True), (2, 4, True), (4, 2, False), (2, 4, False)],
+    )
+    def test_one_side_not_hash_partitioned(
+        self, make_df, left_partitions, right_partitions, hash_partition_left, with_default_morsel_size
+    ):
+        """One side is hash-partitioned on the by-key; the other has a Random clustering spec.
+
+        Exercises the leniency arms in gen_asof_join_nodes:
+          (true, false, a, b) if a >= b * leniency => a  (keep left's count, repartition right)
+          (false, true, a, b) if b >= a * leniency => b  (keep right's count, repartition left)
+        The randomly-partitioned side (no repartition_columns) gets a Random clustering spec,
+        so is_left/right_hash_partitioned differ and the leniency arms are reached.
+        """
+        left = make_df(
+            {
+                "entity": ["A", "B", "C", "D", "A", "B", "C", "D"],
+                "ts": [10, 10, 10, 10, 20, 20, 20, 20],
+                "v": [1, 2, 3, 4, 5, 6, 7, 8],
+            },
+            repartition=left_partitions,
+            repartition_columns=["entity"] if hash_partition_left else [],
+        )
+        right = make_df(
+            {
+                "entity": ["A", "B", "C", "D", "A", "B", "C", "D"],
+                "ts": [5, 8, 12, 15, 18, 22, 25, 28],
+                "w": [100, 200, 300, 400, 500, 600, 700, 800],
+            },
+            repartition=right_partitions,
+            repartition_columns=[] if hash_partition_left else ["entity"],
         )
         result = left.join_asof(right, on="ts", by="entity").sort(["entity", "ts"])
         assert result.to_pydict() == {

@@ -60,7 +60,6 @@ impl AsofJoinNode {
         );
         let partition_cols = left_by
             .iter()
-            .chain(right_by.iter())
             .map(BoundExpr::inner)
             .cloned()
             .collect::<Vec<_>>();
