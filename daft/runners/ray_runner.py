@@ -697,8 +697,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, err_msg))
             raise e
         finally:
-            if heartbeat is not None:
-                heartbeat.stop()
+            heartbeat.stop()
 
         return ExecutionMetadata._from_runner_output(stats, query_id, physical_plan_json)
 
