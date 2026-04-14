@@ -633,6 +633,9 @@ class RayRunner(Runner[ray.ObjectRef]):
             except Exception:
                 pass
 
+            heartbeat = Heartbeat(HEARTBEAT_INTERVAL_SEC, ctx, query_id)
+            heartbeat.start()
+
             if self.flotilla_plan_runner is None:
                 self.flotilla_plan_runner = FlotillaRunner()
 
@@ -640,9 +643,6 @@ class RayRunner(Runner[ray.ObjectRef]):
             result_gen = self.flotilla_plan_runner.stream_plan(
                 distributed_plan, self._part_set_cache.get_all_partition_sets()
             )
-
-            heartbeat = Heartbeat(HEARTBEAT_INTERVAL_SEC, ctx, query_id)
-            heartbeat.start()
 
             try:
                 while True:

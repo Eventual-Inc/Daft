@@ -82,10 +82,7 @@ function QueryPageInner() {
         ? query.state.marked_dead_sec
         : null;
 
-  const last_heartbeat_sec =
-    query.state.status === "Executing" || query.state.status === "Dead"
-      ? query.state.last_heartbeat_sec
-      : null;
+  const last_heartbeat_sec = query.last_heartbeat_sec;
 
   return (
     <div className="h-full flex flex-col">
@@ -247,7 +244,7 @@ function QueryPageInner() {
             </TabsTrigger>
             <TabsTrigger
               value="optimized-plan"
-              disabled={!("plan_info" in query.state)}
+              disabled={!("plan_info" in query.state && query.state.plan_info)}
             >
               Optimized Plan
             </TabsTrigger>
@@ -268,15 +265,14 @@ function QueryPageInner() {
             className="mt-4 flex-1 overflow-auto"
           >
             <div className="bg-zinc-900 h-full">
-              {query.state.status === "Pending" ||
-                query.state.status === "Optimizing" ? (
+              {"exec_info" in query.state && query.state.exec_info !== null ? (
+                <PhysicalPlanTree exec_state={query.state as ExecutingState} />
+              ) : (
                 <div className="p-8 text-center">
                   <p className={`${main.className} text-zinc-400`}>
-                    Execution not yet started
+                    No execution data available
                   </p>
                 </div>
-              ) : (
-                <PhysicalPlanTree exec_state={query.state as ExecutingState} />
               )}
             </div>
           </TabsContent>
@@ -294,7 +290,7 @@ function QueryPageInner() {
             ) : (
               <PlanVisualizer
                 planJson={
-                  "plan_info" in query.state
+                  "plan_info" in query.state && query.state.plan_info
                     ? query.state.plan_info.optimized_plan
                     : ""
                 }

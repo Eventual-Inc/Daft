@@ -118,6 +118,9 @@ class NativeRunner(Runner[MicroPartition]):
             logger.warning("Failed to send notifications: %s", e)
             pass
 
+        heartbeat = Heartbeat(HEARTBEAT_INTERVAL_SEC, ctx, query_id)
+        heartbeat.start()
+
         # Optimize the logical plan.
         builder = builder.optimize(ctx.daft_execution_config)
 
@@ -139,9 +142,6 @@ class NativeRunner(Runner[MicroPartition]):
             ctx,
             {"query_id": query_id},
         )
-
-        heartbeat = Heartbeat(HEARTBEAT_INTERVAL_SEC, ctx, query_id)
-        heartbeat.start()
 
         try:
             while True:

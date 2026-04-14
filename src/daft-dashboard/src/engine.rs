@@ -61,6 +61,7 @@ pub(crate) fn apply_query_start(
     let query_info = QueryInfo {
         id: query_id.clone(),
         start_sec: args.start_sec,
+        last_heartbeat_sec: secs_from_epoch(),
         unoptimized_plan: args.unoptimized_plan,
         runner: args
             .runner
@@ -101,25 +102,11 @@ async fn query_heartbeat(
         return StatusCode::BAD_REQUEST;
     };
 
-    match &mut query_info.state {
-        QueryState::Executing {
-            last_heartbeat_sec, ..
-        } => {
-            // Record the dashboard server's clock as the heartbeat even though
-            // the request includes a timestamp according to the runner's clock,
-            // because we care about how *recent* the heartbeat is, and we don't
-            // have the runner's *current* clock to compare against.
-            *last_heartbeat_sec = secs_from_epoch();
-        }
-        _ => {
-            tracing::error!(
-                "Got heartbeat for query `{}` in state {:?} (only expected while executing)",
-                query_id,
-                query_info.state
-            );
-            return StatusCode::BAD_REQUEST;
-        }
-    }
+    // Record the dashboard server's clock as the heartbeat even though
+    // the request includes a timestamp according to the runner's clock,
+    // because we care about how *recent* the heartbeat is, and we don't
+    // have the runner's *current* clock to compare against.
+    query_info.last_heartbeat_sec = secs_from_epoch();
 
     state.ping_clients_on_query_update(query_info.value());
 
@@ -289,7 +276,6 @@ pub(crate) fn apply_exec_start(
                     physical_plan: args.physical_plan.clone(),
                     operators: parse_physical_plan(&args.physical_plan),
                 },
-                last_heartbeat_sec: secs_from_epoch(),
             };
 
             if let QueryState::Executing { exec_info, .. } = &mut query_info.state {
@@ -586,7 +572,6 @@ pub(crate) fn apply_exec_end(
     let QueryState::Executing {
         mut exec_info,
         plan_info,
-        last_heartbeat_sec: _,
     } = query_info.state.clone()
     else {
         unreachable!();
@@ -655,7 +640,6 @@ pub(crate) fn apply_query_end(
         QueryState::Executing {
             exec_info,
             plan_info,
-            last_heartbeat_sec: _,
         } => (
             Some(plan_info.clone()),
             Some(exec_info.clone()),
@@ -781,25 +765,35 @@ pub(crate) async fn mark_dead_queries(state: Arc<DashboardState>) {
         - DEAD_QUERY_THRESHOLD_SEC;
 
     for mut q in state.queries.iter_mut() {
-        let QueryState::Executing {
-            last_heartbeat_sec,
-            ref plan_info,
-            ref exec_info,
-        } = q.state
-        else {
+        // Only check active queries (not already terminal)
+        let is_active = matches!(
+            q.state,
+            QueryState::Pending
+                | QueryState::Optimizing { .. }
+                | QueryState::Setup { .. }
+                | QueryState::Executing { .. }
+        );
+        if !is_active {
             continue;
-        };
-        if last_heartbeat_sec < dead_threshold {
+        }
+        if q.last_heartbeat_sec < dead_threshold {
             tracing::error!(
                 "Marking query {} as dead, last heartbeat {:?}",
                 q.id,
-                SystemTime::UNIX_EPOCH + Duration::from_secs_f64(last_heartbeat_sec),
+                SystemTime::UNIX_EPOCH + Duration::from_secs_f64(q.last_heartbeat_sec),
             );
+            let (plan_info, exec_info) = match &q.state {
+                QueryState::Setup { plan_info, .. } => (Some(plan_info.clone()), None),
+                QueryState::Executing {
+                    plan_info,
+                    exec_info,
+                } => (Some(plan_info.clone()), Some(exec_info.clone())),
+                _ => (None, None),
+            };
             q.state = QueryState::Dead {
-                plan_info: plan_info.clone(),
-                exec_info: exec_info.clone(),
+                plan_info,
+                exec_info,
                 marked_dead_sec: secs_from_epoch(),
-                last_heartbeat_sec,
             };
 
             state.ping_clients_on_query_update(&q);

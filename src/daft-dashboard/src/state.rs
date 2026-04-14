@@ -123,7 +123,6 @@ pub(crate) enum QueryState {
     Executing {
         plan_info: PlanInfo,
         exec_info: ExecInfo,
-        last_heartbeat_sec: f64,
     },
     Finalizing {
         plan_info: PlanInfo,
@@ -151,10 +150,9 @@ pub(crate) enum QueryState {
         message: Option<String>,
     },
     Dead {
-        plan_info: PlanInfo,
-        exec_info: ExecInfo,
+        plan_info: Option<PlanInfo>,
+        exec_info: Option<ExecInfo>,
         marked_dead_sec: f64,
-        last_heartbeat_sec: f64,
     },
 }
 
@@ -162,6 +160,7 @@ pub(crate) enum QueryState {
 pub(crate) struct QueryInfo {
     pub id: QueryID,
     pub start_sec: f64,
+    pub last_heartbeat_sec: f64,
     pub unoptimized_plan: QueryPlan,
     pub runner: String,
     pub ray_dashboard_url: Option<String>,
@@ -277,12 +276,15 @@ impl DashboardState {
                 QueryState::Executing { exec_info, .. }
                 | QueryState::Finalizing { exec_info, .. }
                 | QueryState::Finished { exec_info, .. }
-                | QueryState::Dead { exec_info, .. }
                 | QueryState::Failed {
                     exec_info: Some(exec_info),
                     ..
                 }
                 | QueryState::Canceled {
+                    exec_info: Some(exec_info),
+                    ..
+                }
+                | QueryState::Dead {
                     exec_info: Some(exec_info),
                     ..
                 } => {
