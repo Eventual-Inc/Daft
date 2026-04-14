@@ -156,6 +156,15 @@ pub(crate) enum QueryState {
     },
 }
 
+impl QueryState {
+    pub(crate) fn is_active(&self) -> bool {
+        matches!(
+            self,
+            Self::Pending | Self::Optimizing { .. } | Self::Setup { .. } | Self::Executing { .. }
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct QueryInfo {
     pub id: QueryID,
@@ -172,6 +181,10 @@ pub(crate) struct QueryInfo {
 }
 
 impl QueryInfo {
+    pub fn is_active(&self) -> bool {
+        self.state.is_active()
+    }
+
     pub fn status(&self) -> QueryStatus {
         match &self.state {
             QueryState::Pending => QueryStatus::Pending {

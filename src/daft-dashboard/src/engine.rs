@@ -764,18 +764,9 @@ pub(crate) async fn mark_dead_queries(state: Arc<DashboardState>) {
         .as_secs_f64()
         - DEAD_QUERY_THRESHOLD_SEC;
 
-    for mut q in state.queries.iter_mut() {
-        // Only check active queries (not already terminal)
-        let is_active = matches!(
-            q.state,
-            QueryState::Pending
-                | QueryState::Optimizing { .. }
-                | QueryState::Setup { .. }
-                | QueryState::Executing { .. }
-        );
-        if !is_active {
-            continue;
-        }
+    // Only check active queries (not already terminal)
+    let active_queries = state.queries.iter_mut().filter(|q| q.is_active());
+    for mut q in active_queries {
         if q.last_heartbeat_sec < dead_threshold {
             tracing::error!(
                 "Marking query {} as dead, last heartbeat {:?}",
