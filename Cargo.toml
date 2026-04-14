@@ -151,6 +151,11 @@ inherits = "release"
 lto = 'thin'
 strip = "none"  # dont strip
 
+# LLVM's SLP vectorizer takes 75+ min on this crate at opt-level=3.
+# opt-level=2 disables it, bringing compile time down to ~15s.
+[profile.release.package.daft-parquet]
+opt-level = 2
+
 [profile.release-lto]
 codegen-units = 1
 inherits = "release"
