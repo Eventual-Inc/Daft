@@ -105,7 +105,7 @@ jobs:
       uses: PyO3/maturin-action@v1
       with:
         target: x86_64
-        args: --profile ${{ inputs.use_lto && 'release-lto' || 'release' }} --out dist
+        args: -i python${{ env.PYTHON_VERSION }} --profile ${{ inputs.use_lto && 'release-lto' || 'release' }} --out dist
       env:
         GITHUB_ACTIONS: true
 
@@ -116,7 +116,7 @@ jobs:
         target: x86_64
         manylinux: 2_24
         # only produce sdist for linux x86 to avoid multiple copies
-        args: --profile ${{ inputs.use_lto && 'release-lto' || 'release' }} --out dist --sdist
+        args: -i python${{ env.PYTHON_VERSION }} --profile ${{ inputs.use_lto && 'release-lto' || 'release' }} --out dist --sdist
       env:
         GITHUB_ACTIONS: true
 
@@ -127,7 +127,7 @@ jobs:
         target: aarch64-unknown-linux-gnu
         manylinux: 2_24
         # only produce sdist for linux x86 to avoid multiple copies
-        args: --profile ${{ inputs.use_lto && 'release-lto' || 'release' }} --out dist --sdist
+        args: -i python${{ env.PYTHON_VERSION }} --profile ${{ inputs.use_lto && 'release-lto' || 'release' }} --out dist --sdist
         before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
       env:
         GITHUB_ACTIONS: true
@@ -137,7 +137,7 @@ jobs:
       uses: PyO3/maturin-action@v1
       with:
         target: aarch64
-        args: --profile ${{ inputs.use_lto && 'release-lto' || 'release' }} --out dist
+        args: -i python${{ env.PYTHON_VERSION }} --profile ${{ inputs.use_lto && 'release-lto' || 'release' }} --out dist
       env:
         RUSTFLAGS: -Ctarget-cpu=apple-m1
         CFLAGS: -mtune=apple-m1
