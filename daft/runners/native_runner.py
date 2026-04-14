@@ -122,7 +122,7 @@ class NativeRunner(Runner[MicroPartition]):
         heartbeat.start()
 
         try:
-            return self._optimize_and_execute(builder, query_id)
+            return (yield from self._optimize_and_execute(builder, query_id))
         finally:
             heartbeat.stop()
 
