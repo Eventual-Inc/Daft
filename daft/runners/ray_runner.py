@@ -592,6 +592,8 @@ class RayRunner(Runner[ray.ObjectRef]):
         if dashboard_url:
             logger.info("Daft Dashboard: %s/query/%s", dashboard_url, query_id)
 
+        heartbeat = Heartbeat(HEARTBEAT_INTERVAL_SEC, ctx, query_id)
+
         try:
             # Optimize the logical plan.
             builder = builder.optimize(daft_execution_config)
@@ -633,7 +635,6 @@ class RayRunner(Runner[ray.ObjectRef]):
             except Exception as e:
                 logger.warning("Failed to send notifications: %s", e)
 
-            heartbeat = Heartbeat(HEARTBEAT_INTERVAL_SEC, ctx, query_id)
             heartbeat.start()
 
             if self.flotilla_plan_runner is None:
