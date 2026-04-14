@@ -10,6 +10,7 @@ pub(crate) mod state;
 use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
+    time::Duration,
 };
 
 use axum::{
@@ -360,6 +361,16 @@ pub async fn launch_server(
         )
         .with_state(GLOBAL_DASHBOARD_STATE.clone());
 
+    let mut reaper_ticker = tokio::time::interval(Duration::from_secs(10));
+
+    let reaper = tokio::spawn(async move {
+        loop {
+            reaper_ticker.tick().await;
+
+            engine::mark_dead_queries(GLOBAL_DASHBOARD_STATE.clone()).await;
+        }
+    });
+
     // Start the server
     let addr = options.addr;
     let port = options.port;
@@ -368,6 +379,8 @@ pub async fn launch_server(
         .with_graceful_shutdown(shutdown_fn)
         .await
         .unwrap();
+
+    reaper.abort();
 
     Ok(())
 }

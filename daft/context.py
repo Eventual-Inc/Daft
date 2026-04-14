@@ -68,6 +68,9 @@ class DaftContext:
     def _notify_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
         self._ctx.notify_query_start(query_id, metadata)
 
+    def _notify_query_heartbeat(self, query_id: str) -> None:
+        self._ctx.notify_query_heartbeat(query_id)
+
     def _notify_query_end(self, query_id: str, query_result: PyQueryResult) -> None:
         """Notifies the query end to the subscribers. Exceptions from subscribers are logged and ignored."""
         self._ctx.notify_query_end(query_id, query_result)

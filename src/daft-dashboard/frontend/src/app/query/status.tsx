@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { main, toHumanReadableDuration } from "@/lib/utils";
-import { Ban, CircleX, LoaderCircle } from "lucide-react";
+import { main, toHumanReadableDuration, toHumanReadableDate } from "@/lib/utils";
+import { Ban, CircleX, LoaderCircle, Skull } from "lucide-react";
 import { QueryStatusName } from "@/hooks/use-queries";
 import { AnimatedFish, Naruto } from "@/components/icons";
 
@@ -89,6 +89,12 @@ const StatusIcon = ({ status }: { status: QueryStatusName }) => {
           label: "Canceled",
           textColor: "text-gray-500",
         };
+      case "Dead":
+        return {
+          icon: <Skull size={16} strokeWidth={3} className="text-gray-500" />,
+          label: "Dead",
+          textColor: "text-gray-500",
+        };
       default:
         return {
           icon: (
@@ -114,14 +120,53 @@ const StatusIcon = ({ status }: { status: QueryStatusName }) => {
   );
 };
 
+const LastHeartbeat = ({
+  last_heartbeat_sec,
+}: {
+  last_heartbeat_sec: number;
+}) => {
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Note this is may be inaccurate if the browser's and dashboard server's
+  // clocks are out of sync, since currentTime uses the browser's clock whereas
+  // last_heartbeat_sec uses the server's clock.
+  // However it should be unaffected by time zone differences since both timestamps
+  // are just seconds-since-epoch.
+  const ago = Math.round(currentTime / 1000 - last_heartbeat_sec);
+
+  if (ago < 10) return null;
+
+  if (ago > 30) {
+    return (
+      <div className={`${main.className} text-xs font-mono text-red-400`}>
+        Query unresponsive (last heartbeat: {toHumanReadableDate(last_heartbeat_sec)})
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${main.className} text-xs font-mono text-zinc-500`}>
+      Last heartbeat: {toHumanReadableDuration(ago)} ago
+    </div>
+  );
+};
+
 export function Status({
   status,
   start_sec,
   end_sec,
+  last_heartbeat_sec,
 }: {
   status: QueryStatusName;
   start_sec: number;
   end_sec: number | null;
+  last_heartbeat_sec: number | null;
 }) {
   return (
     <div className="flex flex-col items-center justify-center h-full space-y-4">
@@ -135,6 +180,9 @@ export function Status({
       ) : (
         <Timer start_sec={start_sec} />
       )}
+      {last_heartbeat_sec ? (
+        <LastHeartbeat last_heartbeat_sec={last_heartbeat_sec} />
+      ) : null}
     </div>
   );
 }

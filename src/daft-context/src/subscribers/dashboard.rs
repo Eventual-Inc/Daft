@@ -214,7 +214,8 @@ impl DashboardSubscriber {
         }
     }
 
-    // event handlers
+    // ---- event handlers ----
+
     fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
         if self.is_worker() {
             return Ok(());
@@ -237,6 +238,21 @@ impl DashboardSubscriber {
                 python_version: metadata.python_version.clone(),
                 daft_version: metadata.daft_version.clone(),
                 ray_version: metadata.ray_version.clone(),
+            },
+        );
+        Ok(())
+    }
+
+    fn on_query_heartbeat(&self, query_id: QueryID) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.enqueue_json(
+            format!("engine/query/{}/heartbeat", query_id),
+            "query_heartbeat",
+            &daft_dashboard::engine::QueryHeartbeatArgs {
+                timestamp_sec: secs_from_epoch(),
             },
         );
         Ok(())
@@ -477,6 +493,9 @@ impl Subscriber for DashboardSubscriber {
         match event {
             Event::QueryStart(e) => {
                 self.on_query_start(e.header.query_id, e.metadata)?;
+            }
+            Event::QueryHeartbeat(e) => {
+                self.on_query_heartbeat(e.header.query_id)?;
             }
             Event::QueryEnd(e) => {
                 self.on_query_end(e.header.query_id, e.result)?;

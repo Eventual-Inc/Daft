@@ -14,7 +14,7 @@ use crate::{
         events::{
             ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorStartEvent,
             OptimizationCompleteEvent, OptimizationStartEvent, ProcessStatsEvent, QueryEndEvent,
-            QueryStartEvent, ResultOutEvent, StatsEvent,
+            QueryHeartbeatEvent, QueryStartEvent, ResultOutEvent, StatsEvent,
         },
     },
 };
@@ -70,6 +70,12 @@ fn build_query_started(py: Python<'_>, event: &QueryStartEvent) -> PyResult<Py<P
             event.header.query_id.to_string(),
             PyQueryMetadata::from(event.metadata.clone()),
         ))
+        .map(Into::into)
+}
+
+fn build_query_heartbeat(py: Python<'_>, event: &QueryHeartbeatEvent) -> PyResult<Py<PyAny>> {
+    event_class(py, "QueryHeartbeat")?
+        .call1((event.header.query_id.to_string(),))
         .map(Into::into)
 }
 
@@ -162,6 +168,7 @@ fn build_result_produced(py: Python<'_>, event: &ResultOutEvent) -> PyResult<Py<
 fn build_py_event(py: Python<'_>, event: Event) -> PyResult<Py<PyAny>> {
     match event {
         Event::QueryStart(event) => build_query_started(py, &event),
+        Event::QueryHeartbeat(event) => build_query_heartbeat(py, &event),
         Event::QueryEnd(event) => build_query_finished(py, &event),
         Event::OptimizationStart(event) => build_optimization_started(py, &event),
         Event::OptimizationComplete(event) => build_optimization_completed(py, &event),

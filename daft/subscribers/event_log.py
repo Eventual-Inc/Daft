@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         OptimizationStarted,
         ProcessStats,
         QueryFinished,
+        QueryHeartbeat,
         QueryStarted,
         ResultProduced,
         Stats,
@@ -167,6 +168,10 @@ class EventLogSubscriber(Subscriber):
             "query_started",
             payload,
         )
+
+    def on_query_heartbeat(self, event: QueryHeartbeat) -> None:
+        """Don't log out heartbeats, too verbose."""
+        pass
 
     def on_query_finished(self, event: QueryFinished) -> None:
         duration_ms = event.duration_ms
