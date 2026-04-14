@@ -71,12 +71,12 @@ def _generate_table(n_rows: int, seed: int) -> pa.Table:
     # Pick N_CLUSTERS anchor timestamps uniformly across the time range, then
     # assign each row to one cluster and apply random jitter so timestamps
     # cluster around the anchors rather than being spread uniformly.
+    # Data is intentionally left unsorted.
     centers = rng.integers(0, TS_MAX, size=N_CLUSTERS, dtype=np.int64)
     assignments = rng.integers(0, N_CLUSTERS, size=n_rows, dtype=np.int32)
     jitter = rng.integers(-CLUSTER_WIDTH, CLUSTER_WIDTH, size=n_rows, dtype=np.int64)
 
-    # Sort ascending so the output Parquet files are pre-sorted on ts.
-    ts = np.sort(np.clip(centers[assignments] + jitter, 0, TS_MAX - 1))
+    ts = np.clip(centers[assignments] + jitter, 0, TS_MAX - 1)
 
     # Sample entities with Zipf-skewed probabilities so high-frequency entities
     # dominate, stressing skew handling in the join.

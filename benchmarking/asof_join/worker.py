@@ -29,8 +29,8 @@ def _init(system: str):
         import pandas as pd
 
         def run(left_path: str, right_path: str) -> int:
-            left = pd.read_parquet(left_path)
-            right = pd.read_parquet(right_path)
+            left = pd.read_parquet(left_path).sort_values("ts")
+            right = pd.read_parquet(right_path).sort_values("ts")
             result = pd.merge_asof(left, right, on="ts", by="entity", suffixes=("", "_right"))
             return len(result)
 
@@ -40,8 +40,8 @@ def _init(system: str):
         import polars as pl
 
         def run(left_path: str, right_path: str) -> int:
-            left = pl.read_parquet(left_path)
-            right = pl.read_parquet(right_path)
+            left = pl.read_parquet(left_path).sort("ts")
+            right = pl.read_parquet(right_path).sort("ts")
             result = left.join_asof(right, on="ts", by="entity", suffix="_right")
             return len(result)
 
