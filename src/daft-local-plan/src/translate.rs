@@ -506,6 +506,7 @@ fn translate_helper(
                     right_by,
                     left_on,
                     right_on,
+                    None,
                     asof_join.output_schema.clone(),
                     asof_join.stats_state.clone(),
                     LocalNodeContext::default(),

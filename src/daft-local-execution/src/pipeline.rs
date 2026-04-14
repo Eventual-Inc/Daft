@@ -1248,6 +1248,7 @@ fn physical_plan_to_pipeline(
             right_by,
             left_on,
             right_on,
+            right_sentinel,
             stats_state,
             context,
             ..
@@ -1260,6 +1261,7 @@ fn physical_plan_to_pipeline(
                 right_by.clone(),
                 left_on.clone(),
                 right_on.clone(),
+                right_sentinel.clone(),
                 left.schema().clone(),
                 right.schema().clone(),
             );
