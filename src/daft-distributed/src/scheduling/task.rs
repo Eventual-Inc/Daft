@@ -328,6 +328,12 @@ impl SwordfishTaskBuilder {
         self.plan_fingerprint
     }
 
+    /// Access the local physical plan for test inspection.
+    #[cfg(test)]
+    pub fn plan(&self) -> &LocalPhysicalPlanRef {
+        &self.plan
+    }
+
     /// Fold an additional value into the plan fingerprint.
     /// Use this when a node produces plans that differ by some parameter
     /// (e.g., limit value, partition offset).
