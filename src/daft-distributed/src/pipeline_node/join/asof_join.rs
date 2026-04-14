@@ -137,6 +137,7 @@ impl PipelineNodeImpl for AsofJoinNode {
                                 self.right_by.clone(),
                                 self.left_on.clone(),
                                 self.right_on.clone(),
+                                None,
                                 self.config.schema.clone(),
                                 StatsState::NotMaterialized,
                                 LocalNodeContext::new(Some(self.node_id() as usize)),
