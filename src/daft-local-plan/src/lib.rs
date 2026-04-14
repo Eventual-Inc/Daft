@@ -20,9 +20,7 @@ pub use plan::{
 #[cfg(feature = "python")]
 pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject, LanceWrite};
 #[cfg(feature = "python")]
-pub use python::{
-    PyFlightShufflePartitionRef, PyLocalPhysicalPlan, PyShuffleWriteInfo, register_modules,
-};
+pub use python::{PyFlightShufflePartitionRef, PyLocalPhysicalPlan, register_modules};
 pub use results::ExecutionStats;
 use serde::{Deserialize, Serialize};
 pub use translate::translate;

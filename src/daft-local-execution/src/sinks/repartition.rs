@@ -354,6 +354,7 @@ impl BlockingSink for RepartitionSink {
                                     .into_iter()
                                     .map(|partition| {
                                         ShufflePartitionMetadata::with_partition_ref_id(
+                                            shuffle_id,
                                             partition.partition_ref_id,
                                             partition.num_rows,
                                             partition.size_bytes,

@@ -687,12 +687,17 @@ impl PyResultReceiver {
             drop(result_guard);
 
             let shuffle_metadata = execution_result.into_shuffle_metadata().await;
-            let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
+            let (finish_future, shuffle_address) = {
+                let mut executor = executor.lock().unwrap();
+                let shuffle_address = executor.shuffle_address();
+                let finish_future = executor.try_finish(fingerprint, input_id)?;
+                (finish_future, shuffle_address)
+            };
             let stats = finish_future.await?;
             Python::attach(|py| {
                 let py_metadata = shuffle_metadata
                     .as_ref()
-                    .map(|metadata| metadata.to_pyobject(py))
+                    .map(|metadata| metadata.to_pyobject(py, shuffle_address.as_deref()))
                     .transpose()?;
                 Ok((PyExecutionStats::from(stats), py_metadata)
                     .into_pyobject(py)?
