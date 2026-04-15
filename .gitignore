@@ -68,6 +68,13 @@ site
 *.swp
 *.swo
 
+# Terraform — account-specific values, never commit
+terraform.tfvars
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+
 # AGENT Prompting Templates
 AGENTS.md
 CLAUDE.local.md
