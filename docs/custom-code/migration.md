@@ -114,13 +114,23 @@ The following parameters stay the same between the legacy and new APIs:
 - **return_dtype**
 - **batch_size**
 - **use_process**
+- **ray_options**
 
 For these parameters, here's what you can do with the new API:
 
 - **concurrency**: The new API offers a `max_concurrency` parameter instead, which guarantees that at most `max_concurrency` instances of the UDF will be running at any given time, instead of exactly `concurrency` instances.
-- **num_gpus**: The new API offers a `gpus` parameter which has the same effect as `num_gpus`. This parameter is supported in `@daft.cls`.
-- **num_cpus**: The new API currently does not have an equivalent parameter for `num_cpus`. If you are using `num_cpus` to limit the number of instances of the UDF that can run at any given time, consider using `max_concurrency` instead.
-- **memory_bytes**: The new API currently does not have an equivalent parameter for `memory_bytes`. If you are using `memory_bytes` to limit the number of instances of the UDF that can run at any given time, consider using `max_concurrency` instead.
+- **num_cpus**: The new API offers a `cpus` parameter on `@daft.func`, `@daft.func.batch`, and `@daft.cls` with the same placement semantics. Fractional values (e.g. `0.5`) are supported.
+- **num_gpus**: The new API offers a `gpus` parameter on `@daft.func`, `@daft.func.batch`, and `@daft.cls` with the same placement semantics. Fractional values up to 1.0 are supported.
+- **memory_bytes**: The new API currently does not have a first-class `memory_bytes` parameter. On the Ray runner, you can still pass memory-based placement via `ray_options={"memory": ...}`. If you were using `memory_bytes` primarily to limit concurrency, consider using `max_concurrency` instead.
+
+### New parameters (no legacy equivalent)
+
+The new API adds two parameters for controlling error handling that had no equivalent in `@daft.udf`:
+
+- **max_retries**: Retry failing calls with exponential backoff (100 ms → 60 s, ±25% jitter). Also honors `daft.ai.utils.RetryAfterError` for rate-limit-aware retries.
+- **on_error**: `"raise"` (default), `"log"`, or `"ignore"`. Controls behavior once retries are exhausted — `"log"` and `"ignore"` emit `None` for the failing row so the query keeps running.
+
+Both are available on `@daft.func`, `@daft.func.batch`, `@daft.cls`, `@daft.method`, and `@daft.method.batch`. See the [Resources, Concurrency, and Error Handling](func.md#resources-concurrency-and-error-handling) section for details.
 
 ## New Features
 
@@ -172,6 +182,6 @@ async def my_api_call(prompt: str) -> str:
 
 ## Known Limitations
 
-- Specifying granular CPU and memory resource requests is not yet supported in the new API. We found that the behavior of the `num_cpus` and `memory_bytes` parameters in the legacy API were unclear, and that they were largely used to control the concurrency of the UDF. In those cases, consider using `max_concurrency` instead.
+- The new API does not yet expose a first-class `memory_bytes` parameter. On the Ray runner, memory-based placement is still reachable through `ray_options={"memory": ...}`. If you were using `memory_bytes` primarily to bound concurrency, prefer `max_concurrency`.
 
 If you have any questions or feedback about the new UDF API, please submit an [issue on GitHub](https://github.com/Eventual-Inc/Daft/issues) or reach out to us on [Slack](https://join.slack.com/t/dist-data/shared_invite/zt-3rh9jr9iv-tmmTNOlQpfvhEy2NTMWS_w).

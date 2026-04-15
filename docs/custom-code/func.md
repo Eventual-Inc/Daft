@@ -400,6 +400,69 @@ expr = multiply(df["x"], df["y"])
 result = multiply(5, 10)  # Returns 50
 ```
 
+## Resources, Concurrency, and Error Handling
+
+`@daft.func`, `@daft.func.batch`, `@daft.cls`, and `@daft.method` share a common set of parameters for requesting resources, controlling concurrency, and handling errors. You do **not** need `@daft.cls` to request a GPU — it works on `@daft.func` too. Use `@daft.cls` only when you need to amortize expensive initialization (model load, connection setup) across rows.
+
+| Parameter | Type | Default | Applies to |
+|---|---|---|---|
+| `cpus` | `float \| None` | `None` (engine decides) | `func`, `func.batch`, `cls` |
+| `gpus` | `float` | `0` | `func`, `func.batch`, `cls` |
+| `use_process` | `bool \| None` | `None` (auto) | `func`, `func.batch`, `cls` |
+| `max_concurrency` | `int \| None` | `None` | `func` (async only), `func.batch`, `cls` |
+| `batch_size` | `int \| None` | `None` | `func.batch`, `method.batch` |
+| `max_retries` | `int \| None` | `None` (no retries) | `func`, `func.batch`, `cls`, `method`, `method.batch` |
+| `on_error` | `"raise" \| "log" \| "ignore"` | `"raise"` | same as `max_retries` |
+| `ray_options` | `dict[str, Any] \| None` | `None` | `func`, `func.batch`, `cls` |
+
+### `cpus` and `gpus`
+
+Declare per-instance resource requests. The engine uses these for placement and (for `gpus`) for GPU isolation via `CUDA_VISIBLE_DEVICES`.
+
+```python
+# Single-GPU inference — no class needed if init is cheap
+@daft.func(gpus=1)
+def classify(image_bytes: bytes) -> str:
+    import torch
+    # model is loaded per-row here; prefer @daft.cls if init is expensive
+    return run_model(image_bytes)
+```
+
+- `cpus` accepts fractional values (e.g. `0.5`).
+- `gpus` accepts fractional values **up to 1.0** (e.g. `0.5` to pack two workers onto one GPU). Values above 1.0 must be integers.
+
+If model initialization is expensive, prefer `@daft.cls` so the GPU-resident model is loaded once per worker. See the [GPU guide](gpu.md) for patterns.
+
+### `use_process`
+
+Runs each worker instance in a subprocess instead of a thread. Use this when your function is not thread-safe, holds the GIL heavily, or when you need hard isolation (e.g. a separate CUDA context per worker). The default (`None`) lets Daft pick at runtime based on observed performance.
+
+### `max_retries` and `on_error`
+
+Control what happens when a row raises an exception.
+
+- `max_retries=N` retries failing calls up to `N` times with exponential backoff starting at 100 ms, doubling each attempt, capped at 60 s, with ±25% jitter. If the raised exception is a `daft.ai.utils.RetryAfterError`, the specified retry-after delay is honored instead of the default backoff.
+- `on_error` decides what to do after retries are exhausted:
+    - `"raise"` (default) — fail the query.
+    - `"log"` — log the exception and emit `None` for that row.
+    - `"ignore"` — silently emit `None` for that row.
+
+```python
+@daft.func(max_retries=3, on_error="log")
+def call_flaky_api(url: str) -> str:
+    import requests
+    return requests.get(url).text
+```
+
+Both parameters work on sync, async, batch, and method variants.
+
+### `ray_options`
+
+Forwarded to the Ray actor when running on the Ray runner (e.g. `{"resources": {"TPU": 1}}`, `{"runtime_env": {...}}`, `{"scheduling_strategy": ...}`). Setting `num_cpus`, `num_gpus`, or `memory` here raises an error — use the `cpus` / `gpus` parameters instead.
+
+!!! note "Memory-based placement"
+    Daft does not currently expose a first-class `memory_bytes` parameter on `@daft.func` / `@daft.cls`. If you need memory-based placement on Ray, pass it through `ray_options={"memory": ...}`.
+
 ## Advanced Features
 
 ### Unnesting Struct Returns
