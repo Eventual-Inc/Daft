@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import atexit
 import json
+import os
+import socket
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -61,7 +63,7 @@ class EventLogSubscriber(Subscriber):
     one JSON object per line with ``event``, ``ts``, and event-specific fields.
     """
 
-    def __init__(self, log_dir: str | Path) -> None:
+    def __init__(self, log_dir: str | Path, role: str = "driver") -> None:
         self._log_dir = Path(log_dir).expanduser().resolve()
         self._log_dir.mkdir(parents=True, exist_ok=True)
         self._closed = False
@@ -72,6 +74,12 @@ class EventLogSubscriber(Subscriber):
         self._optimization_starts: dict[str, float] = {}
         self._exec_starts: dict[str, float] = {}
         self._operator_starts: dict[tuple[str, int], float] = {}
+
+        # Per-process identity tags. Attached to every record so consumers can
+        # demultiplex interleaved output from driver + workers.
+        self._role = role
+        self._hostname = socket.gethostname()
+        self._pid = os.getpid()
 
     def _clear_query_state(self, query_id: str) -> None:
         """Remove any leftover timing state for the given query."""
@@ -124,15 +132,22 @@ class EventLogSubscriber(Subscriber):
         )
 
     def _write_event(self, query_id: str, event_name: str, payload: dict[str, Any]) -> None:
-        query_file = self._get_query_file(query_id)
-        if query_file is None:
-            return
         record: dict[str, Any] = {
             "event": event_name,
             "timestamp": _epoch_now(),
             "query_id": query_id,
+            "role": self._role,
+            "hostname": self._hostname,
+            "pid": self._pid,
         }
         record.update(payload)
+        self._emit_record(query_id, record)
+
+    def _emit_record(self, query_id: str, record: dict[str, Any]) -> None:
+        """Write a record to its sink. Default: per-query JSONL file. Subclasses override."""
+        query_file = self._get_query_file(query_id)
+        if query_file is None:
+            return
         try:
             query_file.write(json.dumps(record, default=_json_default) + "\n")
         except OSError:
@@ -277,6 +292,41 @@ class EventLogSubscriber(Subscriber):
             payload["duration_ms"] = round(duration_ms)
 
         self._write_event(event.query_id, "execution_ended", payload)
+
+
+class RemoteEventLogSubscriber(EventLogSubscriber):
+    """Event log subscriber that ships records to a centralized Ray actor sink
+    instead of writing to a local file.
+
+    Used on flotilla workers (and optionally the driver) to aggregate events
+    from every process into a single per-query JSONL file on the head node.
+    """
+
+    def __init__(self, sink_actor: Any, role: str) -> None:
+        # Intentionally bypass parent __init__ — this subscriber never touches
+        # the local filesystem, so there is no log_dir to create.
+        self._log_dir = None  # type: ignore[assignment]
+        self._closed = False
+        self._query_files = {}
+        self._query_starts = {}
+        self._optimization_starts = {}
+        self._exec_starts = {}
+        self._operator_starts = {}
+        self._role = role
+        self._hostname = socket.gethostname()
+        self._pid = os.getpid()
+        self._sink = sink_actor
+
+    def _emit_record(self, query_id: str, record: dict[str, Any]) -> None:
+        if self._closed:
+            return
+        try:
+            self._sink.append.remote(record)
+        except Exception:
+            pass  # sink unreachable; drop event rather than failing the query
+
+    def close(self) -> None:
+        self._closed = True
 
 
 def query_state_str(state: QueryEndState) -> str:

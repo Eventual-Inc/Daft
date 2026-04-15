@@ -33,7 +33,8 @@ from daft.runners.partitioning import (
     PartitionSet,
 )
 from daft.runners.profiler import profile
-from daft.subscribers.event_log import enable_event_log
+from daft.subscribers.event_log import RemoteEventLogSubscriber
+from daft.subscribers.event_log_sink import create_or_get_sink, get_sink
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Generator
@@ -119,9 +120,13 @@ class RaySwordfishActor:
     def __init__(self, num_cpus: int, num_gpus: int) -> None:
         os.environ["DAFT_FLOTILLA_WORKER"] = "1"  # TODO: Remove once fixed DashboardSubscriber
 
-        event_log_dir = os.environ.get("DAFT_EVENT_LOG_DIR")
-        if event_log_dir:
-            enable_event_log(event_log_dir)
+        if os.environ.get("DAFT_EVENT_LOG_DIR"):
+            sink = get_sink(_get_ray_job_id_for_actor_naming())
+            if sink is not None:
+                get_context().attach_subscriber(
+                    "_daft_event_log_remote",
+                    RemoteEventLogSubscriber(sink, role="worker"),
+                )
 
         if num_gpus > 0:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
@@ -582,6 +587,15 @@ class FlotillaRunner:
     def __init__(self) -> None:
         head_node_id = get_head_node_id()
         dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
+
+        event_log_dir = os.environ.get("DAFT_EVENT_LOG_DIR")
+        if event_log_dir:
+            create_or_get_sink(
+                event_log_dir,
+                _get_ray_job_id_for_actor_naming(),
+                head_node_id,
+            )
+
         self.runner = RemoteFlotillaRunner.options(  # type: ignore
             name=get_flotilla_runner_actor_name(),
             namespace=FLOTILLA_RUNNER_NAMESPACE,
