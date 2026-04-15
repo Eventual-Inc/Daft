@@ -48,6 +48,11 @@ python = [
   "daft-context/python"
 ]
 
+[dev-dependencies]
+arrow = {workspace = true}
+daft-core = {path = "../daft-core", default-features = false}
+daft-local-execution = {path = "../daft-local-execution", default-features = false}
+
 [lints]
 workspace = true
 
