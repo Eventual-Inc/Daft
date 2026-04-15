@@ -125,17 +125,10 @@ class RaySwordfishActor:
     def __init__(self, num_cpus: int, num_gpus: int, is_head: bool = False) -> None:
         os.environ["DAFT_FLOTILLA_WORKER"] = "1"  # TODO: Remove once fixed DashboardSubscriber
 
-        if os.environ.get("DAFT_EVENT_LOG_DIR"):
-            sink = get_sink(_get_ray_job_id_for_actor_naming())
-            if sink is not None:
-                get_context().attach_subscriber(
-                    "_daft_event_log_remote",
-                    RemoteEventLogSubscriber(
-                        sink,
-                        component="swordfish_worker",
-                        node_role="head" if is_head else "worker",
-                    ),
-                )
+        _attach_event_log_subscriber_if_configured(
+            component="swordfish_worker",
+            node_role="head" if is_head else "worker",
+        )
 
         if num_gpus > 0:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
@@ -410,6 +403,22 @@ def _get_worker_startup_timeout() -> int:
     return get_context().daft_execution_config.worker_startup_timeout
 
 
+def _attach_event_log_subscriber_if_configured(component: str, node_role: str) -> None:
+    """Attach a RemoteEventLogSubscriber to this process's context if the sink is reachable.
+
+    No-op unless ``DAFT_EVENT_LOG_DIR`` is set and the sink actor exists.
+    """
+    if not os.environ.get("DAFT_EVENT_LOG_DIR"):
+        return
+    sink = get_sink(_get_ray_job_id_for_actor_naming())
+    if sink is None:
+        return
+    get_context().attach_subscriber(
+        "_daft_event_log_remote",
+        RemoteEventLogSubscriber(sink, component=component, node_role=node_role),
+    )
+
+
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
     actors = []
     for node in ray.nodes():
@@ -483,17 +492,10 @@ class RemoteFlotillaRunner:
             except Exception:
                 pass
 
-        if os.environ.get("DAFT_EVENT_LOG_DIR"):
-            sink = get_sink(_get_ray_job_id_for_actor_naming())
-            if sink is not None:
-                get_context().attach_subscriber(
-                    "_daft_event_log_remote",
-                    RemoteEventLogSubscriber(
-                        sink,
-                        component="flotilla_runner",
-                        node_role="head",
-                    ),
-                )
+        _attach_event_log_subscriber_if_configured(
+            component="flotilla_runner",
+            node_role="head",
+        )
 
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
