@@ -129,7 +129,12 @@ impl DashboardSubscriber {
         }
 
         let worker_id = if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
-            Some(format!("worker-{}", Uuid::new_v4()))
+            let host = std::fs::read_to_string("/proc/sys/kernel/hostname")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| Uuid::new_v4().to_string());
+            Some(format!("worker-{host}"))
         } else {
             None
         };
