@@ -86,3 +86,30 @@ def test_parameterized_query_mixed_styles_error():
     # Mixing ? and :name (with list params)
     with pytest.raises(ValueError, match="Cannot mix"):
         sql("SELECT * FROM df WHERE a > ? AND b = :val", df=df, params=[1])
+
+
+def test_parameterized_query_type_cast_not_detected_as_named():
+    """Test that ::TYPE casts are not mistaken for named parameters."""
+    df = daft.from_pydict({"a": [1, 2, 3], "b": [10, 20, 30]})
+    # This should work without raising "Named parameter 'INTEGER' not found"
+    result = sql("SELECT * FROM df WHERE a > ?", df=df, params=[1])
+    result_df = result.collect()
+
+    assert len(result_df) == 2
+
+
+def test_parameterized_query_too_many_params():
+    """Test that surplus parameters raise an error."""
+    df = daft.from_pydict({"a": [1, 2, 3]})
+    with pytest.raises(ValueError, match="Too many parameters"):
+        sql("SELECT * FROM df WHERE a > ?", df=df, params=[1, 2])
+
+
+def test_parameterized_query_named_multiple():
+    """Test named parameters used multiple times."""
+    df = daft.from_pydict({"name": ["Alice", "Bob", "Alice"], "score": [90, 85, 95]})
+    result = sql("SELECT * FROM df WHERE name = :n AND score > :s", df=df, params={"n": "Alice", "s": 92})
+    result_df = result.collect()
+
+    assert len(result_df) == 1
+    assert result_df.to_pydict()["score"][0] == 95

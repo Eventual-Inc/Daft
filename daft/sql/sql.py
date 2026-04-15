@@ -38,13 +38,13 @@ def _apply_parameters(sql: str, params: Sequence[Any] | dict[str, Any]) -> str:
                 raise ValueError(f"Named parameter '{param_name}' not found in parameters")
             return _format_sql_value(params[param_name])
 
-        return re.sub(r":(\w+)", replace_named, sql)
+        return re.sub(r"(?<!:):(\w+)", replace_named, sql)
 
     # Handle positional parameters (? and $n style)
     if isinstance(params, (list, tuple)):
         has_dollar = bool(re.search(r"\$\d+", sql))
         has_question = "?" in sql
-        has_named = bool(re.search(r":\w+", sql))
+        has_named = bool(re.search(r"(?<!:):\w+", sql))
 
         style_count = sum([has_dollar, has_question, has_named])
         if style_count > 1:
@@ -73,7 +73,16 @@ def _apply_parameters(sql: str, params: Sequence[Any] | dict[str, Any]) -> str:
             except StopIteration:
                 raise ValueError("Not enough parameters provided for '?' placeholders")
 
-        return re.sub(r"\?", replace_question, sql)
+        result = re.sub(r"\?", replace_question, sql)
+
+        # Check for unused parameters
+        try:
+            next(param_iter)
+            raise ValueError("Too many parameters provided for '?' placeholders")
+        except StopIteration:
+            pass
+
+        return result
 
     raise ValueError(f"Unsupported parameter type: {type(params)}. Expected list, tuple, or dict.")
 
@@ -232,7 +241,7 @@ def sql(
 
         >>> import daft
         >>> df = daft.from_pydict({"name": ["Alice", "Bob", "Charlie"], "age": [25, 30, 35]})
-        >>> result = daft.sql("SELECT * FROM df WHERE age > ? AND name LIKE ?", [28, "C%"])
+        >>> result = daft.sql("SELECT * FROM df WHERE age > ? AND name LIKE ?", params=[28, "C%"])
         >>> result.show()
         ╭─────────┬───────╮
         │ name    ┆ age   │
@@ -246,7 +255,7 @@ def sql(
 
         Use positional parameters with `$1`, `$2`:
 
-        >>> result = daft.sql("SELECT * FROM df WHERE age > $1 AND name = $2", [25, "Alice"])
+        >>> result = daft.sql("SELECT * FROM df WHERE age >= $1 AND name = $2", params=[25, "Alice"])
         >>> result.show()
         ╭───────┬──────╮
         │ name  ┆ age  │
@@ -260,7 +269,7 @@ def sql(
 
         Use named parameters with `:name`:
 
-        >>> result = daft.sql("SELECT * FROM df WHERE age > :age AND name = :name", {"age": 25, "name": "Alice"})
+        >>> result = daft.sql("SELECT * FROM df WHERE age >= :age AND name = :name", params={"age": 25, "name": "Alice"})
         >>> result.show()
         ╭───────┬──────╮
         │ name  ┆ age  │
