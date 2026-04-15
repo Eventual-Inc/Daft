@@ -527,6 +527,22 @@ async fn read_json_single_into_stream(
                 .context(super::JoinSnafu {});
             Ok((Box::pin(once(async move { Ok(inner) })), schema))
         }
+        b'{' if buf.len() > 1 && matches!(buf[1], b'\n' | b'\r') => {
+            let schema_clone = schema.clone();
+            let inner: Context<JoinHandle<Result<RecordBatch, DaftError>>, JoinSnafu, _> =
+                tokio::spawn(async move {
+                    let (send, recv) = tokio::sync::oneshot::channel();
+                    let mut buf = Vec::new();
+                    reader.read_to_end(&mut buf).await?;
+                    let daft_schema = Schema::try_from(schema_clone)?;
+                    let chunk = read_json_array_impl(&buf, daft_schema, None);
+                    let _ = send.send(chunk);
+
+                    recv.await.context(super::OneShotRecvSnafu {})?
+                })
+                .context(super::JoinSnafu {});
+            Ok((Box::pin(once(async move { Ok(inner) })), schema))
+        }
         b'{' => {
             let read_stream =
                 read_into_line_chunk_stream(reader, convert_options.limit, chunk_size);

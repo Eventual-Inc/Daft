@@ -134,7 +134,6 @@ pub(crate) async fn read_json_schema_single(
         None => reader,
     };
 
-    // Defer skip-empty handling to infer_schema to avoid duplicate fill_buf.
     let arrow_schema =
         infer_schema(reader, None, max_bytes, parse_options.skip_empty_files).await?;
     let schema: Schema = arrow_schema.try_into()?;
@@ -150,8 +149,6 @@ async fn infer_schema<R>(
 where
     R: tokio::io::AsyncBufRead + Unpin + Send,
 {
-    let max_records = max_rows.unwrap_or(usize::MAX);
-    let mut total_bytes = 0;
     use tokio::io::AsyncReadExt;
     let buf = reader.fill_buf().await?;
 
@@ -179,7 +176,21 @@ where
             let inferred_schema = infer_records_schema(&parsed_record).context(ArrowSnafu);
             Ok(inferred_schema?)
         }
+        b'{' if buf.len() > 1 && matches!(buf[1], b'\n' | b'\r') => {
+            let mut buf = Vec::new();
+            reader.read_to_end(&mut buf).await?;
+
+            let parsed_record = crate::deserializer::to_value(&mut buf).map_err(|e| {
+                super::Error::JsonDeserializationError {
+                    string: e.to_string(),
+                }
+            })?;
+            let inferred_schema = infer_records_schema(&parsed_record).context(ArrowSnafu);
+            Ok(inferred_schema?)
+        }
         b'{' => {
+            let max_records = max_rows.unwrap_or(usize::MAX);
+            let mut total_bytes = 0;
             let max_bytes = max_bytes.unwrap_or(usize::MAX);
 
             // Stream of unparsed JSON string records.
@@ -479,6 +490,32 @@ mod tests {
                 Field::new("petalWidth", DataType::Float64),
                 Field::new("species", DataType::Utf8),
             ])
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_json_schema_local_formatted_json() -> DaftResult<()> {
+        let file = format!(
+            "{}/test/iris_tiny_formatted.json",
+            env!("CARGO_MANIFEST_DIR"),
+        );
+
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+        let io_client = Arc::new(IOClient::new(io_config.into())?);
+
+        let schema = read_json_schema(file.as_ref(), None, None, io_client, None).await?;
+        assert_eq!(
+            schema,
+            Schema::new(vec![
+                Field::new("sepalLength", DataType::Float64),
+                Field::new("sepalWidth", DataType::Float64),
+                Field::new("petalLength", DataType::Float64),
+                Field::new("petalWidth", DataType::Float64),
+                Field::new("species", DataType::Utf8),
+            ]),
         );
 
         Ok(())
