@@ -568,22 +568,26 @@ class RayRunner(Runner[ray.ObjectRef]):
         # Notify query start
         ray_dashboard_url = None
         if os.environ.get("RAY_DISABLE_DASHBOARD") != "1":
-            try:
-                if ray.is_initialized():
-                    ray_dashboard_url = ray.worker.get_dashboard_url()
-                    if ray_dashboard_url:
-                        if not ray_dashboard_url.startswith("http"):
-                            ray_dashboard_url = f"http://{ray_dashboard_url}"
+            # Allow override for hosted environments where the Ray dashboard
+            # is exposed via an authenticated ingress proxy.
+            ray_dashboard_url = os.environ.get("DAFT_RAY_DASHBOARD_URL")
+            if not ray_dashboard_url:
+                try:
+                    if ray.is_initialized():
+                        ray_dashboard_url = ray.worker.get_dashboard_url()
+                        if ray_dashboard_url:
+                            if not ray_dashboard_url.startswith("http"):
+                                ray_dashboard_url = f"http://{ray_dashboard_url}"
 
-                        # Try to append Job ID
-                        try:
-                            job_id = ray.get_runtime_context().get_job_id()
-                            if job_id:
-                                ray_dashboard_url = f"{ray_dashboard_url}/#/jobs/{job_id}"
-                        except Exception:
-                            pass
-            except Exception:
-                pass
+                            # Try to append Job ID
+                            try:
+                                job_id = ray.get_runtime_context().get_job_id()
+                                if job_id:
+                                    ray_dashboard_url = f"{ray_dashboard_url}/#/jobs/{job_id}"
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
 
         entrypoint = "python " + " ".join(sys.argv)
         dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
