@@ -4,7 +4,7 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
-    response::{Sse, sse::Event},
+    response::{Html, Sse, sse::Event},
     routing::get,
 };
 use common_metrics::QueryID;
@@ -210,6 +210,48 @@ async fn get_query_results(
     }
 }
 
+async fn dump_process_stats(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+) -> Result<Html<String>, StatusCode> {
+    let query = state.queries.get(&query_id).ok_or(StatusCode::NOT_FOUND)?;
+
+    let exec_info = match &query.state {
+        QueryState::Executing { exec_info, .. }
+        | QueryState::Finalizing { exec_info, .. }
+        | QueryState::Finished { exec_info, .. } => Some(exec_info),
+        QueryState::Failed {
+            exec_info: Some(exec_info),
+            ..
+        }
+        | QueryState::Canceled {
+            exec_info: Some(exec_info),
+            ..
+        } => Some(exec_info),
+        _ => None,
+    };
+
+    let body = match exec_info {
+        Some(exec_info) => serde_json::to_string_pretty(&exec_info.process_stats)
+            .unwrap_or_else(|e| format!("(serialize error: {e})")),
+        None => "(no exec info yet)".to_string(),
+    };
+
+    let html = format!(
+        "<!doctype html>\n\
+<html><head>\n\
+<meta http-equiv=\"refresh\" content=\"1\">\n\
+<title>process_stats {query_id}</title>\n\
+<style>body{{font-family:monospace;background:#111;color:#eee;padding:1em}}pre{{white-space:pre-wrap}}</style>\n\
+</head><body>\n\
+<h3>process_stats for query <code>{query_id}</code></h3>\n\
+<pre>{body}</pre>\n\
+</body></html>"
+    );
+
+    Ok(Html(html))
+}
+
 pub(crate) fn routes() -> Router<Arc<DashboardState>> {
     Router::new()
         .route("/queries", get(get_query_summaries))
@@ -217,4 +259,8 @@ pub(crate) fn routes() -> Router<Arc<DashboardState>> {
         .route("/query/{query_id}", get(get_query))
         .route("/query/{query_id}/subscribe", get(subscribe_query_updates))
         .route("/query/{query_id}/results", get(get_query_results))
+        .route(
+            "/query/{query_id}/process_stats_dump",
+            get(dump_process_stats),
+        )
 }
