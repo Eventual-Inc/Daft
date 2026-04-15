@@ -312,6 +312,7 @@ def test_identity_partition_pred_preserved_with_scalar_fn_sibling():
 
     assert pushdowns.partition_filters is not None, "Expected partition filters to be pushed down, but got None"
     result = extract_comparison(pushdowns.partition_filters)
+    ops = _collect_ops(result)
     assert "less_than" in ops, f"Expected 'less_than' in partition_filters, got ops: {ops}"
     assert "greater_than" in ops, f"Expected 'greater_than' in partition_filters, got ops: {ops}"
 
@@ -363,5 +364,8 @@ def test_identity_pred_with_scalar_fn_both_directions():
         filter_expr="source_col > cast(abs(1) as string) and source_col < '5'",
     )
 
+    assert pushdowns.partition_filters is not None, "Expected partition filters to be pushed down, but got None"
+    result = extract_comparison(pushdowns.partition_filters)
+    ops = _collect_ops(result)
     assert "greater_than" in ops, f"Expected 'greater_than' in partition_filters, got ops: {ops}"
     assert "less_than" in ops, f"Expected 'less_than' in partition_filters, got ops: {ops}"
