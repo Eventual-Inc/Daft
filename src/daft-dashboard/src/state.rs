@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::{
         Arc, LazyLock,
         atomic::{AtomicUsize, Ordering},
@@ -56,7 +56,7 @@ pub(crate) struct ExecInfo {
     pub exec_start_sec: f64,
     pub physical_plan: QueryPlan,
     pub operators: OperatorInfos,
-    pub process_stats: HashMap<String, Vec<(f64, HashMap<String, Stat>)>>,
+    pub process_stats: HashMap<String, VecDeque<(f64, HashMap<String, Stat>)>>,
     // TODO: Logs
 }
 

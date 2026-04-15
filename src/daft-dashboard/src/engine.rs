@@ -522,14 +522,25 @@ async fn exec_process_stats(
     };
 
     if let Some(exec_info) = exec_info {
-        exec_info
-            .process_stats
-            .entry(source_id)
-            .or_default()
-            .push((timestamp_sec, stats));
+        let max = process_stats_max_samples();
+        let entry = exec_info.process_stats.entry(source_id).or_default();
+        while entry.len() >= max {
+            entry.pop_front();
+        }
+        entry.push_back((timestamp_sec, stats));
     }
 
     StatusCode::OK
+}
+
+const DEFAULT_PROCESS_STATS_MAX_SAMPLES: usize = 5000;
+
+fn process_stats_max_samples() -> usize {
+    std::env::var("DAFT_DASHBOARD_PROCESS_STATS_MAX_SAMPLES")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(DEFAULT_PROCESS_STATS_MAX_SAMPLES)
 }
 
 pub(crate) fn apply_emit_stats(
