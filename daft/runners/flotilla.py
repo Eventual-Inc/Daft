@@ -406,17 +406,21 @@ def _get_worker_startup_timeout() -> int:
 def _attach_event_log_subscriber_if_configured(component: str, node_role: str) -> None:
     """Attach a RemoteEventLogSubscriber to this process's context if the sink is reachable.
 
-    No-op unless ``DAFT_EVENT_LOG_DIR`` is set and the sink actor exists.
+    No-op unless ``DAFT_EVENT_LOG_DIR`` is set and the sink actor exists. Any
+    failure is swallowed so event-log setup cannot break actor initialization.
     """
     if not os.environ.get("DAFT_EVENT_LOG_DIR"):
         return
-    sink = get_sink(_get_ray_job_id_for_actor_naming())
-    if sink is None:
-        return
-    get_context().attach_subscriber(
-        "_daft_event_log_remote",
-        RemoteEventLogSubscriber(sink, component=component, node_role=node_role),
-    )
+    try:
+        sink = get_sink(_get_ray_job_id_for_actor_naming())
+        if sink is None:
+            return
+        get_context().attach_subscriber(
+            "_daft_event_log_remote",
+            RemoteEventLogSubscriber(sink, component=component, node_role=node_role),
+        )
+    except Exception:
+        pass
 
 
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:

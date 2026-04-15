@@ -102,7 +102,7 @@ def get_sink(job_id: str | None) -> Any | None:
     name = get_sink_actor_name(job_id)
     try:
         return ray.get_actor(name, namespace=SINK_ACTOR_NAMESPACE)
-    except ValueError:
+    except Exception:
         return None
 
 

@@ -71,6 +71,10 @@ class EventLogSubscriber(Subscriber):
     ) -> None:
         self._log_dir = Path(log_dir).expanduser().resolve()
         self._log_dir.mkdir(parents=True, exist_ok=True)
+        self._init_subscriber_state(component=component, node_role=node_role)
+
+    def _init_subscriber_state(self, component: str, node_role: str) -> None:
+        """Initialize all non-log-dir state shared by this class and subclasses."""
         self._closed = False
         self._query_files: dict[str, TextIOWrapper] = {}
 
@@ -311,19 +315,10 @@ class RemoteEventLogSubscriber(EventLogSubscriber):
     """
 
     def __init__(self, sink_actor: Any, component: str, node_role: str) -> None:
-        # Intentionally bypass parent __init__ — this subscriber never touches
-        # the local filesystem, so there is no log_dir to create.
+        # Skip parent __init__ — no log_dir to create — but reuse the shared
+        # state init so future fields added there apply here automatically.
         self._log_dir = None  # type: ignore[assignment]
-        self._closed = False
-        self._query_files = {}
-        self._query_starts = {}
-        self._optimization_starts = {}
-        self._exec_starts = {}
-        self._operator_starts = {}
-        self._component = component
-        self._node_role = node_role
-        self._hostname = socket.gethostname()
-        self._pid = os.getpid()
+        self._init_subscriber_state(component=component, node_role=node_role)
         self._sink = sink_actor
 
     def _emit_record(self, query_id: str, record: dict[str, Any]) -> None:
