@@ -1,4 +1,6 @@
 pub(crate) mod stats;
+#[cfg(test)]
+mod tests;
 
 use std::{
     collections::HashMap,

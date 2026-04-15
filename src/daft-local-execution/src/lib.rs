@@ -28,7 +28,7 @@ use common_error::{DaftError, DaftResult};
 use common_runtime::{JoinSet, RuntimeRef, RuntimeTask};
 use console::style;
 use resource_manager::MemoryManager;
-pub use run::ExecutionEngineResult;
+pub use run::{ExecutionEngineResult, execute_local_plan};
 use runtime_stats::RuntimeStatsManagerHandle;
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};
 use tracing::Instrument;

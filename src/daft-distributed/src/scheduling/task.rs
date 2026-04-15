@@ -595,6 +595,7 @@ pub(super) mod tests {
         cancel_notifier: Arc<Mutex<Option<OneshotSender<()>>>>,
         sleep_duration: Option<std::time::Duration>,
         failure: Option<MockTaskFailure>,
+        execution_stats: Option<ExecutionStats>,
     }
 
     #[derive(Debug, Clone)]
@@ -616,6 +617,7 @@ pub(super) mod tests {
         cancel_notifier: Arc<Mutex<Option<OneshotSender<()>>>>,
         sleep_duration: Option<Duration>,
         failure: Option<MockTaskFailure>,
+        execution_stats: Option<ExecutionStats>,
     }
 
     impl Default for MockTaskBuilder {
@@ -646,6 +648,7 @@ pub(super) mod tests {
                 cancel_notifier: Arc::new(Mutex::new(None)),
                 sleep_duration: None,
                 failure: None,
+                execution_stats: None,
             }
         }
 
@@ -687,6 +690,11 @@ pub(super) mod tests {
             self
         }
 
+        pub fn with_execution_stats(mut self, stats: ExecutionStats) -> Self {
+            self.execution_stats = Some(stats);
+            self
+        }
+
         /// Build the MockTask
         pub fn build(self) -> MockTask {
             MockTask {
@@ -699,6 +707,7 @@ pub(super) mod tests {
                 cancel_notifier: self.cancel_notifier,
                 sleep_duration: self.sleep_duration,
                 failure: self.failure,
+                execution_stats: self.execution_stats,
             }
         }
     }
@@ -768,7 +777,9 @@ pub(super) mod tests {
                 }
                 TaskStatus::Success {
                     result: task.task_result,
-                    stats: ExecutionStats::new("".into(), vec![]),
+                    stats: task
+                        .execution_stats
+                        .unwrap_or_else(|| ExecutionStats::new("".into(), vec![])),
                 }
             }
         }

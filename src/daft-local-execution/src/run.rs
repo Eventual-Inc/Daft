@@ -576,6 +576,86 @@ impl Drop for NativeExecutor {
     }
 }
 
+/// Execute a local physical plan in-process and return results + execution statistics.
+///
+/// This provides a simple interface for running a plan without the full NativeExecutor
+/// machinery. It must be called from within a tokio runtime context (e.g. `#[tokio::test]`).
+///
+/// Returns the collected output partitions and the execution statistics.
+pub async fn execute_local_plan(
+    plan: &LocalPhysicalPlanRef,
+    config: std::sync::Arc<DaftExecutionConfig>,
+    inputs: HashMap<SourceId, Input>,
+) -> DaftResult<(Vec<daft_micropartition::MicroPartition>, ExecutionStats)> {
+    use crate::pipeline::{BuilderContext, PipelineMessage};
+    use tokio::runtime::Handle;
+
+    let handle = Handle::current();
+    let query_id = QueryID::from("");
+
+    let ctx = BuilderContext::new();
+    let (pipeline, input_senders) =
+        crate::pipeline::translate_physical_plan_to_pipeline(plan, &config, &ctx)?;
+
+    let stats_manager = RuntimeStatsManager::try_new(
+        &handle,
+        &pipeline,
+        vec![],
+        query_id,
+        false, // not a flotilla worker
+    )?;
+    let stats_handle = stats_manager.handle();
+
+    let input_id: daft_local_plan::InputId = 0;
+
+    // Send inputs to the pipeline sources.
+    for (key, plan_input) in inputs {
+        if let Some(sender) = input_senders.get(&key) {
+            let _ = sender.send(input_id, plan_input);
+        }
+    }
+    // Drop senders to signal EOF.
+    drop(input_senders);
+
+    // Start the pipeline.
+    let memory_manager = get_or_init_memory_manager();
+    let mut runtime_handle =
+        ExecutionRuntimeContext::new(memory_manager.clone(), stats_handle.clone());
+    let mut output_receiver = pipeline.start(true, &mut runtime_handle)?;
+
+    // Collect output partitions.
+    let mut partitions = Vec::new();
+    loop {
+        tokio::select! {
+            Some(join_result) = runtime_handle.join_next() => {
+                join_result?;
+            }
+            msg = output_receiver.recv() => {
+                match msg {
+                    Some(PipelineMessage::Morsel { partition, .. }) => {
+                        partitions.push(partition);
+                    }
+                    Some(PipelineMessage::ShuffleMetadata { .. }) => {}
+                    Some(PipelineMessage::Flush(_)) => {}
+                    None => {
+                        // Pipeline finished.
+                        runtime_handle.shutdown().await?;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    stats_manager.finish(common_metrics::QueryEndState::Finished).await;
+
+    let stats = stats_handle
+        .take_input_snapshot(input_id)
+        .await
+        .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![]));
+    Ok((partitions, stats))
+}
+
 pub struct ExecutionEngineResult {
     receiver: crate::channel::UnboundedReceiver<ExecutionEngineResultItem>,
     shuffle_metadata: Option<ShuffleMetadata>,
