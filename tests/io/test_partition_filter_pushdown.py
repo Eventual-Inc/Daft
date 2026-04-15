@@ -312,8 +312,8 @@ def test_identity_partition_pred_preserved_with_scalar_fn_sibling():
 
     assert pushdowns.partition_filters is not None, "Expected partition filters to be pushed down, but got None"
     result = extract_comparison(pushdowns.partition_filters)
-    ops = _collect_ops(result)
-    assert len(ops) >= 2, f"Expected at least 2 comparison predicates in partition_filters, got {len(ops)}: {result}"
+    assert "less_than" in ops, f"Expected 'less_than' in partition_filters, got ops: {ops}"
+    assert "greater_than" in ops, f"Expected 'greater_than' in partition_filters, got ops: {ops}"
 
 
 def test_two_identity_lit_predicates_both_pushed_down():
