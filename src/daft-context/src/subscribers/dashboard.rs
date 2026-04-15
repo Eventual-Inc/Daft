@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::subscribers::{
     Event, QueryMetadata, QueryResult, Subscriber,
-    events::{OperatorEndEvent, OperatorStartEvent, StatsEvent},
+    events::{OperatorEndEvent, OperatorStartEvent, ProcessStatsEvent, StatsEvent},
 };
 
 const TOTAL_ROWS: usize = 10;
@@ -459,6 +459,30 @@ impl DashboardSubscriber {
         );
         Ok(())
     }
+
+    fn on_process_stats(&self, event: &ProcessStatsEvent) -> DaftResult<()> {
+        let query_id = event.header.query_id.clone();
+        let source_id = self
+            .worker_id
+            .clone()
+            .unwrap_or_else(|| "driver".to_string());
+
+        self.enqueue_json(
+            format!("engine/query/{}/exec/process_stats", query_id),
+            "exec_process_stats",
+            &daft_dashboard::engine::ExecProcessStatsArgsSend {
+                source_id,
+                timestamp_sec: event.header.timestamp_epoch_secs,
+                stats: event
+                    .stats
+                    .0
+                    .iter()
+                    .map(|(name, stat)| (name.to_string(), stat.clone()))
+                    .collect(),
+            },
+        );
+        Ok(())
+    }
 }
 
 impl Drop for DashboardSubscriber {
@@ -521,7 +545,9 @@ impl Subscriber for DashboardSubscriber {
             Event::Stats(e) => {
                 self.on_stats(&e)?;
             }
-            Event::ProcessStats(_e) => {}
+            Event::ProcessStats(e) => {
+                self.on_process_stats(&e)?;
+            }
             Event::ResultOut(e) => {
                 if let Some(result) = &e.data {
                     self.on_result_out(e.header.query_id.clone(), result.clone())?;

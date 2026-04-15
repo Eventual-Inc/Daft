@@ -390,6 +390,14 @@ pub struct ExecEmitStatsArgsRecv {
     pub stats: Vec<(usize, HashMap<String, Stat>)>,
 }
 
+#[derive(Clone, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct ExecProcessStatsArgsSend {
+    pub source_id: String,
+    pub timestamp_sec: f64,
+    pub stats: HashMap<String, Stat>,
+}
+
 fn merge_stats_map(dst: &mut HashMap<String, Stat>, src: HashMap<String, Stat>) {
     for (name, stat) in src {
         dst.entry(name)
