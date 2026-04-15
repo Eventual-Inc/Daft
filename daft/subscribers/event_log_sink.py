@@ -33,6 +33,20 @@ class EventLogSink:
     One file per query: ``<log_dir>/<query_id>/events.jsonl``. Records from
     multiple processes interleave but carry role/hostname/pid so consumers can
     demultiplex.
+
+    Lifecycle:
+      - Created (or fetched) by ``FlotillaRunner.__init__`` via
+        ``create_or_get_sink`` when ``DAFT_EVENT_LOG_DIR`` is set. The actor is
+        named per Ray job and scoped to the ``daft`` namespace, so every
+        process in the same job shares a single sink.
+      - Pinned to the head node (``NodeAffinitySchedulingStrategy``, soft=False)
+        so the JSONL files land on a well-known host.
+      - Declared ``lifetime="detached"`` so it survives the driver transiently
+        disconnecting; both the driver and remote flotilla/swordfish actors
+        look it up by name via ``get_sink``.
+      - Torn down via ``teardown_sink`` registered with ``atexit`` in
+        ``FlotillaRunner``: it flushes open files and ``ray.kill``s the actor.
+        Teardown is best-effort and idempotent; Ray cluster shutdown may race.
     """
 
     def __init__(self, log_dir: str) -> None:
@@ -48,9 +62,14 @@ class EventLogSink:
         if f is None:
             return
         try:
-            f.write(json.dumps(record, default=_json_default) + "\n")
-        except OSError:
-            pass
+            line = json.dumps(record, default=_json_default)
+        except (TypeError, ValueError) as e:
+            logger.warning("EventLogSink: failed to serialize record for query %s: %s", query_id, e)
+            return
+        try:
+            f.write(line + "\n")
+        except OSError as e:
+            logger.warning("EventLogSink: failed to write record for query %s: %s", query_id, e)
 
     def _get_file(self, query_id: str) -> TextIOWrapper | None:
         existing = self._files.get(query_id)

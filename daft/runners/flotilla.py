@@ -122,13 +122,20 @@ class RaySwordfishActor:
     It is a stateless, async actor, and can run multiple plans concurrently and is able to retry itself and it's tasks.
     """
 
-    def __init__(self, num_cpus: int, num_gpus: int, is_head: bool = False) -> None:
+    def __init__(
+        self,
+        num_cpus: int,
+        num_gpus: int,
+        is_head: bool = False,
+        event_log_dir: str | None = None,
+    ) -> None:
         os.environ["DAFT_FLOTILLA_WORKER"] = "1"  # TODO: Remove once fixed DashboardSubscriber
 
-        _attach_event_log_subscriber_if_configured(
-            component="swordfish_worker",
-            node_role="head" if is_head else "worker",
-        )
+        if event_log_dir:
+            _attach_remote_event_log_subscriber(
+                component="swordfish_worker",
+                node_role="head" if is_head else "worker",
+            )
 
         if num_gpus > 0:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
@@ -403,14 +410,13 @@ def _get_worker_startup_timeout() -> int:
     return get_context().daft_execution_config.worker_startup_timeout
 
 
-def _attach_event_log_subscriber_if_configured(component: str, node_role: str) -> None:
-    """Attach a RemoteEventLogSubscriber to this process's context if the sink is reachable.
+def _attach_remote_event_log_subscriber(component: str, node_role: str) -> None:
+    """Attach a RemoteEventLogSubscriber to this process's context.
 
-    No-op unless ``DAFT_EVENT_LOG_DIR`` is set and the sink actor exists. Any
-    failure is swallowed so event-log setup cannot break actor initialization.
+    Looks up the per-job event log sink actor and wires a subscriber that
+    ships events to it. No-op if the sink does not exist. Failures are logged
+    (not raised) so event-log setup cannot break actor initialization.
     """
-    if not os.environ.get("DAFT_EVENT_LOG_DIR"):
-        return
     try:
         sink = get_sink(_get_ray_job_id_for_actor_naming())
         if sink is None:
@@ -419,11 +425,12 @@ def _attach_event_log_subscriber_if_configured(component: str, node_role: str) -
             "_daft_event_log_remote",
             RemoteEventLogSubscriber(sink, component=component, node_role=node_role),
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to attach remote event log subscriber: %s", e)
 
 
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
+    event_log_dir = os.environ.get("DAFT_EVENT_LOG_DIR")
     actors = []
     for node in ray.nodes():
         if (
@@ -434,6 +441,8 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             and node["Resources"]["memory"] > 0
             and node["NodeID"] not in existing_worker_ids
         ):
+            # `node:__internal_head__` is Ray's internal resource key tagging the head node;
+            # not in public Ray docs but stable and relied on by Ray's own autoscaler/GCS code.
             is_head = node["Resources"].get("node:__internal_head__", 0) == 1
             actor = RaySwordfishActor.options(  # type: ignore
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
@@ -444,6 +453,7 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
                 num_cpus=int(node["Resources"]["CPU"]),
                 num_gpus=int(node["Resources"].get("GPU", 0)),
                 is_head=is_head,
+                event_log_dir=event_log_dir,
             )
             actors.append((node, actor))
 
@@ -484,7 +494,11 @@ def try_autoscale(bundles: list[dict[str, int]]) -> None:
 
 @ray.remote(num_cpus=0)
 class RemoteFlotillaRunner:
-    def __init__(self, dashboard_url: str | None = None) -> None:
+    def __init__(
+        self,
+        dashboard_url: str | None = None,
+        event_log_dir: str | None = None,
+    ) -> None:
         if dashboard_url:
             os.environ["DAFT_DASHBOARD_URL"] = dashboard_url
             try:
@@ -496,10 +510,11 @@ class RemoteFlotillaRunner:
             except Exception:
                 pass
 
-        _attach_event_log_subscriber_if_configured(
-            component="flotilla_runner",
-            node_role="head",
-        )
+        if event_log_dir:
+            _attach_remote_event_log_subscriber(
+                component="flotilla_runner",
+                node_role="head",
+            )
 
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
@@ -626,8 +641,6 @@ class FlotillaRunner:
         runner_env_vars: dict[str, str] = {}
         if dashboard_url:
             runner_env_vars["DAFT_DASHBOARD_URL"] = dashboard_url
-        if event_log_dir:
-            runner_env_vars["DAFT_EVENT_LOG_DIR"] = event_log_dir
 
         self.runner = RemoteFlotillaRunner.options(  # type: ignore
             name=get_flotilla_runner_actor_name(),
@@ -642,7 +655,7 @@ class FlotillaRunner:
                 if head_node_id
                 else None
             ),
-        ).remote(dashboard_url=dashboard_url)
+        ).remote(dashboard_url=dashboard_url, event_log_dir=event_log_dir)
 
     def stream_plan(
         self,
