@@ -524,7 +524,9 @@ async fn exec_process_stats(
     if let Some(exec_info) = exec_info {
         exec_info
             .process_stats
-            .insert(source_id, (timestamp_sec, stats));
+            .entry(source_id)
+            .or_default()
+            .push((timestamp_sec, stats));
     }
 
     StatusCode::OK

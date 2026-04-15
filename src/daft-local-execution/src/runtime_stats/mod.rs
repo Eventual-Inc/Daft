@@ -369,7 +369,6 @@ impl RuntimeStatsManager {
                     _ = interval.tick() => {
                         if let Some(ps) = &mut process_stats {
                             let ps_stats = ps.sample();
-                            eprintln!("[daft process stats] query_id={} {:?}", query_id, ps_stats);
                             let event = Event::ProcessStats(ProcessStatsEvent {
                                 header: event_header(query_id.clone()),
                                 stats: ps_stats,
