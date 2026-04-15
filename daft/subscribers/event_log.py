@@ -63,7 +63,12 @@ class EventLogSubscriber(Subscriber):
     one JSON object per line with ``event``, ``ts``, and event-specific fields.
     """
 
-    def __init__(self, log_dir: str | Path, role: str = "driver") -> None:
+    def __init__(
+        self,
+        log_dir: str | Path,
+        component: str = "driver",
+        node_role: str = "head",
+    ) -> None:
         self._log_dir = Path(log_dir).expanduser().resolve()
         self._log_dir.mkdir(parents=True, exist_ok=True)
         self._closed = False
@@ -77,7 +82,8 @@ class EventLogSubscriber(Subscriber):
 
         # Per-process identity tags. Attached to every record so consumers can
         # demultiplex interleaved output from driver + workers.
-        self._role = role
+        self._component = component
+        self._node_role = node_role
         self._hostname = socket.gethostname()
         self._pid = os.getpid()
 
@@ -136,7 +142,8 @@ class EventLogSubscriber(Subscriber):
             "event": event_name,
             "timestamp": _epoch_now(),
             "query_id": query_id,
-            "role": self._role,
+            "component": self._component,
+            "node_role": self._node_role,
             "hostname": self._hostname,
             "pid": self._pid,
         }
@@ -295,14 +302,15 @@ class EventLogSubscriber(Subscriber):
 
 
 class RemoteEventLogSubscriber(EventLogSubscriber):
-    """Event log subscriber that ships records to a centralized Ray actor sink
+    """Event log subscriber that ships records to a centralized Ray actor sink.
+
     instead of writing to a local file.
 
     Used on flotilla workers (and optionally the driver) to aggregate events
     from every process into a single per-query JSONL file on the head node.
     """
 
-    def __init__(self, sink_actor: Any, role: str) -> None:
+    def __init__(self, sink_actor: Any, component: str, node_role: str) -> None:
         # Intentionally bypass parent __init__ — this subscriber never touches
         # the local filesystem, so there is no log_dir to create.
         self._log_dir = None  # type: ignore[assignment]
@@ -312,7 +320,8 @@ class RemoteEventLogSubscriber(EventLogSubscriber):
         self._optimization_starts = {}
         self._exec_starts = {}
         self._operator_starts = {}
-        self._role = role
+        self._component = component
+        self._node_role = node_role
         self._hostname = socket.gethostname()
         self._pid = os.getpid()
         self._sink = sink_actor
