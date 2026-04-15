@@ -873,7 +873,7 @@ def test_factorial() -> None:
     table = MicroPartition.from_pydict({"a": [0, 1, 2, 3, 4, 5, 10, None]})
     result = table.eval_expression_list([factorial(col("a")).alias("result")])
     values = result.get_column_by_name("result").to_pylist()
-    expected = [1.0, 1.0, 2.0, 6.0, 24.0, 120.0, 3628800.0, None]
+    expected = [1, 1, 2, 6, 24, 120, 3628800, None]
     assert values == expected
 
 
@@ -883,7 +883,25 @@ def test_factorial_negative() -> None:
     table = MicroPartition.from_pydict({"a": [-1, -5]})
     result = table.eval_expression_list([factorial(col("a")).alias("result")])
     values = result.get_column_by_name("result").to_pylist()
-    assert all(math.isnan(v) for v in values)
+    assert values == [None, None]
+
+
+def test_factorial_overflow() -> None:
+    from daft.functions import factorial
+
+    table = MicroPartition.from_pydict({"a": [20, 21, 100]})
+    result = table.eval_expression_list([factorial(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [2432902008176640000, None, None]
+
+
+def test_factorial_non_integer() -> None:
+    from daft.functions import factorial
+
+    table = MicroPartition.from_pydict({"a": [3.5, 2.1]})
+    result = table.eval_expression_list([factorial(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [None, None]
 
 
 def test_factorial_bad_input() -> None:
