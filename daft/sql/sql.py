@@ -94,6 +94,7 @@ def _format_sql_value(value: Any) -> str:
     if isinstance(value, bool):
         return "TRUE" if value else "FALSE"
     if isinstance(value, (int, float)):
+        return str(value)
     # String and other types - wrap in single quotes, escaping internal quotes
     escaped = str(value).replace("'", "''")
     return f"'{escaped}'"
