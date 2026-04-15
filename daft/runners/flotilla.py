@@ -33,6 +33,7 @@ from daft.runners.partitioning import (
     PartitionSet,
 )
 from daft.runners.profiler import profile
+from daft.subscribers.event_log import enable_event_log
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Generator
@@ -117,6 +118,11 @@ class RaySwordfishActor:
 
     def __init__(self, num_cpus: int, num_gpus: int) -> None:
         os.environ["DAFT_FLOTILLA_WORKER"] = "1"  # TODO: Remove once fixed DashboardSubscriber
+
+        event_log_dir = os.environ.get("DAFT_EVENT_LOG_DIR")
+        if event_log_dir:
+            enable_event_log(event_log_dir)
+
         if num_gpus > 0:
             os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
