@@ -32,7 +32,7 @@ def _apply_parameters(sql: str, params: Sequence[Any] | dict[str, Any]) -> str:
     # Handle named parameters (:name style)
     if isinstance(params, dict):
 
-        def replace_named(match: re.Match) -> str:
+        def replace_named(match: re.Match[str]) -> str:
             param_name = match.group(1)
             if param_name not in params:
                 raise ValueError(f"Named parameter '{param_name}' not found in parameters")
@@ -56,7 +56,7 @@ def _apply_parameters(sql: str, params: Sequence[Any] | dict[str, Any]) -> str:
         # Handle $1, $2, $3... style
         if has_dollar:
 
-            def replace_indexed(match: re.Match) -> str:
+            def replace_indexed(match: re.Match[str]) -> str:
                 index = int(match.group(1)) - 1
                 if index < 0 or index >= len(params):
                     raise ValueError(f"Positional parameter ${match.group(1)} out of range")
@@ -67,7 +67,7 @@ def _apply_parameters(sql: str, params: Sequence[Any] | dict[str, Any]) -> str:
         # Handle ? style (sequential)
         param_iter = iter(params)
 
-        def replace_question(match: re.Match) -> str:
+        def replace_question(match: re.Match[str]) -> str:
             try:
                 return _format_sql_value(next(param_iter))
             except StopIteration:
