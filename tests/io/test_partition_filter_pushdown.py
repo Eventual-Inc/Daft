@@ -334,12 +334,18 @@ def test_two_identity_lit_predicates_both_pushed_down():
 
 
 def test_identity_pred_with_cast_sibling_both_pushed_down():
-    """An identity partition predicate combined with a cast-containing predicate must both survive."""
+    """An identity partition predicate combined with a ScalarFn-containing predicate must both survive.
+
+    Uses cast(abs(1) as string) instead of cast(1 as string) because the latter has no column
+    references and may be constant-folded to a literal before rewrite_predicate_for_partitioning
+    runs, which would make both conjuncts plain identity predicates and never trigger the
+    ScalarFn/has_udf code path.
+    """
     pfield = _make_identity_partition_field("source_col", "source_col", DataType.string())
     pushdowns = _build_df_and_capture(
-        columns=[("source_col", DataType.string())],
+        columns=[("source_col", DataType.string()), ("user_id", DataType.int32())],
         partition_fields=[pfield],
-        filter_expr="source_col < '5' and source_col > cast(1 as string)",
+        filter_expr="source_col < '5' and source_col > cast(abs(1) as string)",
     )
 
     assert pushdowns.partition_filters is not None, "Expected partition filters to be pushed down, but got None"
