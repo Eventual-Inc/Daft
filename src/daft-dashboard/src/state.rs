@@ -56,6 +56,7 @@ pub(crate) struct ExecInfo {
     pub exec_start_sec: f64,
     pub physical_plan: QueryPlan,
     pub operators: OperatorInfos,
+    pub process_stats: HashMap<String, (f64, HashMap<String, Stat>)>,
     // TODO: Logs
 }
 
