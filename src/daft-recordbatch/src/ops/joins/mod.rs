@@ -288,6 +288,9 @@ impl RecordBatch {
     }
 }
 
+/// Builds a mapping from each left key index to its matching right key index.
+///
+/// Both `left_keys` and `right_keys` must contain **unique** rows (no duplicate key values).
 pub fn build_left_to_right_map(
     left_keys: &RecordBatch,
     right_keys: &RecordBatch,
