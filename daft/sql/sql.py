@@ -49,8 +49,7 @@ def _apply_parameters(sql: str, params: Sequence[Any] | dict[str, Any]) -> str:
         style_count = sum([has_dollar, has_question, has_named])
         if style_count > 1:
             raise ValueError(
-                "Cannot mix parameter styles. Use only one of: "
-                "? (auto-incremented), $n (positional), or :name (named)."
+                "Cannot mix parameter styles. Use only one of: ? (auto-incremented), $n (positional), or :name (named)."
             )
 
         # Handle $1, $2, $3... style
@@ -270,7 +269,9 @@ def sql(
 
         Use named parameters with `:name`:
 
-        >>> result = daft.sql("SELECT * FROM df WHERE age >= :age AND name = :name", params={"age": 25, "name": "Alice"})
+        >>> result = daft.sql(
+        ...     "SELECT * FROM df WHERE age >= :age AND name = :name", params={"age": 25, "name": "Alice"}
+        ... )
         >>> result.show()
         ╭───────┬──────╮
         │ name  ┆ age  │
