@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import logging
 import os
 import shutil
@@ -34,7 +35,11 @@ from daft.runners.partitioning import (
 )
 from daft.runners.profiler import profile
 from daft.subscribers.event_log import RemoteEventLogSubscriber
-from daft.subscribers.event_log_sink import create_or_get_sink, get_sink
+from daft.subscribers.event_log_sink import (
+    create_or_get_sink,
+    get_sink,
+    teardown_sink,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, AsyncIterator, Generator
@@ -590,11 +595,9 @@ class FlotillaRunner:
 
         event_log_dir = os.environ.get("DAFT_EVENT_LOG_DIR")
         if event_log_dir:
-            create_or_get_sink(
-                event_log_dir,
-                _get_ray_job_id_for_actor_naming(),
-                head_node_id,
-            )
+            sink_job_id = _get_ray_job_id_for_actor_naming()
+            create_or_get_sink(event_log_dir, sink_job_id, head_node_id)
+            atexit.register(teardown_sink, sink_job_id)
 
         self.runner = RemoteFlotillaRunner.options(  # type: ignore
             name=get_flotilla_runner_actor_name(),

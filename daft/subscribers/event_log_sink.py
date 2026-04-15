@@ -28,8 +28,7 @@ def _json_default(obj: object) -> object:
 
 @ray.remote(num_cpus=0)
 class EventLogSink:
-    """Ray actor that receives event records from driver and workers and writes
-    them to a merged per-query JSONL file on the head node's disk.
+    """Ray actor that writes received event records to per-query JSONL files.
 
     One file per query: ``<log_dir>/<query_id>/events.jsonl``. Records from
     multiple processes interleave but carry role/hostname/pid so consumers can
@@ -96,7 +95,7 @@ def create_or_get_sink(
             node_id=head_node_id,
             soft=False,
         )
-    return EventLogSink.options(**options).remote(log_dir)
+    return EventLogSink.options(**options).remote(log_dir)  # type: ignore[attr-defined]
 
 
 def get_sink(job_id: str | None) -> Any | None:
@@ -107,10 +106,30 @@ def get_sink(job_id: str | None) -> Any | None:
         return None
 
 
+def teardown_sink(job_id: str | None, timeout_sec: float = 5.0) -> None:
+    """Flush and kill the sink actor for the given job. Idempotent.
+
+    Safe to register via ``atexit``. Swallows errors because teardown is
+    best-effort; Ray cluster teardown may race with this.
+    """
+    sink = get_sink(job_id)
+    if sink is None:
+        return
+    try:
+        ray.get(sink.shutdown.remote(), timeout=timeout_sec)
+    except Exception:
+        pass
+    try:
+        ray.kill(sink)
+    except Exception:
+        pass
+
+
 __all__ = [
-    "EventLogSink",
     "SINK_ACTOR_NAMESPACE",
+    "EventLogSink",
     "create_or_get_sink",
     "get_sink",
     "get_sink_actor_name",
+    "teardown_sink",
 ]
