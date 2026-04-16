@@ -674,6 +674,54 @@ fn replace_column_with_semantic_id_aggexpr(
                 })
             }
         }
+        AggExpr::AggFn { handle, inputs } => {
+            let transforms = inputs
+                .iter()
+                .map(|e| replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema))
+                .collect::<Vec<_>>();
+            if transforms.iter().all(|e| !e.transformed) {
+                Transformed::no(AggExpr::AggFn { handle, inputs })
+            } else {
+                Transformed::yes(AggExpr::AggFn {
+                    handle,
+                    inputs: transforms.iter().map(|t| t.data.clone()).collect(),
+                })
+            }
+        }
+        AggExpr::AggFnBlock { handle, inputs } => {
+            let transforms = inputs
+                .iter()
+                .map(|e| replace_column_with_semantic_id(e.clone(), subexprs_to_replace, schema))
+                .collect::<Vec<_>>();
+            if transforms.iter().all(|e| !e.transformed) {
+                Transformed::no(AggExpr::AggFnBlock { handle, inputs })
+            } else {
+                Transformed::yes(AggExpr::AggFnBlock {
+                    handle,
+                    inputs: transforms.iter().map(|t| t.data.clone()).collect(),
+                })
+            }
+        }
+        AggExpr::AggFnCombine {
+            handle,
+            partial,
+            return_field,
+        } => {
+            let t = replace_column_with_semantic_id(partial.clone(), subexprs_to_replace, schema);
+            if !t.transformed {
+                Transformed::no(AggExpr::AggFnCombine {
+                    handle,
+                    partial,
+                    return_field,
+                })
+            } else {
+                Transformed::yes(AggExpr::AggFnCombine {
+                    handle,
+                    partial: t.data,
+                    return_field,
+                })
+            }
+        }
     }
 }
 

@@ -61,6 +61,7 @@ impl AggStrategy {
         for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
             let state = state.get_or_insert_default();
             state.partially_aggregated.push(p);
+            Self::try_eager_combine(state, params)?;
         }
         Ok(())
     }
@@ -84,6 +85,7 @@ impl AggStrategy {
                 )?;
                 state.partially_aggregated.push(aggregated);
                 state.unaggregated_size = 0;
+                Self::try_eager_combine(state, params)?;
             } else {
                 state.unaggregated_size += p.len();
                 state.unaggregated.push(p);
@@ -104,6 +106,27 @@ impl AggStrategy {
             state.unaggregated_size += p.len();
             state.unaggregated.push(p);
         }
+        Ok(())
+    }
+
+    /// Stage-1 map-side combine: mirrors Ray's `HashShuffleAggregator.compact`.
+    /// When enough partial partitions have accumulated per bucket, folds them
+    /// into one, reducing the binary-state volume shipped to stage 2.
+    fn try_eager_combine(
+        state: &mut SinglePartitionAggregateState,
+        params: &GroupedAggregateParams,
+    ) -> DaftResult<()> {
+        let needs_combine = params
+            .final_agg_exprs
+            .iter()
+            .any(|e| matches!(e.as_ref(), daft_dsl::AggExpr::AggFnCombine { .. }));
+        if !needs_combine || state.partially_aggregated.len() < PARTIAL_AGG_COMBINE_THRESHOLD {
+            return Ok(());
+        }
+        let partitions = std::mem::take(&mut state.partially_aggregated);
+        let concated = MicroPartition::concat(partitions)?;
+        let combined = concated.agg(&params.final_agg_exprs, &params.final_group_by)?;
+        state.partially_aggregated = vec![combined];
         Ok(())
     }
 }
@@ -227,6 +250,11 @@ impl GroupedAggregateState {
     }
 }
 
+/// How many accumulated partial-aggregate partitions (per hash-bucket) to allow
+/// before eagerly combining them with `call_agg_combine`.  Only active when
+/// `AggFn` expressions are present.  Mirrors Ray's `compact` threshold.
+const PARTIAL_AGG_COMBINE_THRESHOLD: usize = 4;
+
 struct GroupedAggregateParams {
     // The original aggregations and group by expressions
     original_aggregations: Vec<BoundAggExpr>,
@@ -260,13 +288,23 @@ impl GroupedAggregateSink {
                 group_by,
             )?;
 
-        // MapGroups aggregations cannot be decomposed into partial / final stages and
-        // must see the full group in a single pass. Detect this case so that we force
-        // a partition-only strategy and run the original aggregations during the
-        // final aggregation step.
+        // AggFn cannot be mixed with MapGroups: MapGroups forces the PartitionOnly strategy
+        // which runs `original_aggregations` in the finalize step.  Since AggFn no longer
+        // has a single-pass fallback, mixing the two would hit the "AggFn must be decomposed"
+        // error at runtime.  Reject the combination upfront with a clear message.
         let has_map_groups = aggregations
             .iter()
             .any(|agg| matches!(agg.as_ref(), daft_dsl::AggExpr::MapGroups { .. }));
+        let has_agg_fn = aggregations
+            .iter()
+            .any(|agg| matches!(agg.as_ref(), daft_dsl::AggExpr::AggFn { .. }));
+        if has_map_groups && has_agg_fn {
+            return Err(common_error::DaftError::ValueError(
+                "Cannot mix MapGroups (Python UDFs) and extension aggregations (AggFn) \
+                 in the same aggregation; split them into separate operations."
+                    .to_string(),
+            ));
+        }
 
         let final_group_by = if !partial_agg_exprs.is_empty() {
             group_by

@@ -305,3 +305,175 @@ impl RecordBatch {
         self.take(&indices_as_arr)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_error::DaftResult;
+    use daft_core::prelude::*;
+    use daft_dsl::{
+        AggExpr,
+        expr::bound_expr::{BoundAggExpr, BoundExpr},
+        functions::{AggFn, AggFnHandle},
+        unresolved_col,
+    };
+
+    use crate::{GroupIndices, RecordBatch, ops::get_column_by_name};
+
+    /// A sum UDAF that exercises the full three-stage pipeline.
+    ///
+    /// Accumulator encoding: one i64 serialized as 8 little-endian bytes.
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct TestSumAgg;
+
+    fn encode_i64s(name: &str, values: &[i64]) -> Series {
+        let byte_rows: Vec<Option<Vec<u8>>> = values
+            .iter()
+            .map(|v| Some(v.to_le_bytes().to_vec()))
+            .collect();
+        BinaryArray::from_iter(name, byte_rows.iter().map(|b| b.as_deref())).into_series()
+    }
+
+    fn decode_i64s(series: &Series) -> Vec<i64> {
+        let binary = series.binary().unwrap();
+        (0..binary.len())
+            .map(|i| {
+                binary
+                    .get(i)
+                    .map_or(0, |b| i64::from_le_bytes(b.try_into().unwrap()))
+            })
+            .collect()
+    }
+
+    #[typetag::serde(name = "TestSumAgg")]
+    impl AggFn for TestSumAgg {
+        fn name(&self) -> &'static str {
+            "test_sum"
+        }
+
+        fn get_return_field(&self, inputs: &[Field], _schema: &Schema) -> DaftResult<Field> {
+            Ok(inputs[0].clone())
+        }
+
+        fn call_agg_block(
+            &self,
+            inputs: Vec<Series>,
+            groups: Option<&GroupIndices>,
+        ) -> DaftResult<Series> {
+            let partial = inputs[0].sum(groups)?;
+            let values = partial
+                .i64()?
+                .into_iter()
+                .map(|v| v.unwrap_or(0))
+                .collect::<Vec<_>>();
+            Ok(encode_i64s(partial.name(), &values))
+        }
+
+        fn call_agg_combine(&self, a: &[u8], b: &[u8]) -> DaftResult<Vec<u8>> {
+            let sum_a = i64::from_le_bytes(a.try_into().unwrap());
+            let sum_b = i64::from_le_bytes(b.try_into().unwrap());
+            Ok((sum_a + sum_b).to_le_bytes().to_vec())
+        }
+
+        fn call_agg_finalize(&self, state: Series, return_field: &Field) -> DaftResult<Series> {
+            let values = decode_i64s(&state);
+            Ok(Int64Array::from_vec(&return_field.name, values).into_series())
+        }
+    }
+
+    fn make_handle() -> AggFnHandle {
+        AggFnHandle::new(Arc::new(TestSumAgg))
+    }
+
+    fn partial_col_name() -> String {
+        format!("{}({})", "test_sum", "x")
+    }
+
+    fn bound_block(rb: &RecordBatch) -> BoundAggExpr {
+        BoundAggExpr::try_new(
+            AggExpr::AggFnBlock {
+                handle: make_handle(),
+                inputs: vec![unresolved_col("x")],
+            },
+            &rb.schema,
+        )
+        .unwrap()
+    }
+
+    fn bound_combine(schema: &daft_core::prelude::SchemaRef) -> BoundAggExpr {
+        let return_field = Field::new("x", DataType::Int64);
+        BoundAggExpr::try_new(
+            AggExpr::AggFnCombine {
+                handle: make_handle(),
+                partial: unresolved_col(&*partial_col_name()),
+                return_field,
+            },
+            schema,
+        )
+        .unwrap()
+    }
+
+    // Global (no groups): block-agg then combine+finalize, result is 1+2+3 = 6.
+    #[test]
+    fn test_agg_fn_global() -> DaftResult<()> {
+        let rb = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_vec("x", vec![1i64, 2, 3]).into_series(),
+        ])?;
+
+        // Stage 1: AggFnBlock — one binary row (sum of all rows).
+        let intermediate = rb.agg_global(&[bound_block(&rb)])?;
+        assert_eq!(intermediate.len(), 1);
+
+        // Stage 2: AggFnCombine — combine (no-op, one group) + finalize.
+        let result = intermediate.agg_global(&[bound_combine(&intermediate.schema)])?;
+        assert_eq!(result.len(), 1);
+        let col = get_column_by_name(&result, "x")?;
+        assert_eq!(col.i64()?.get(0), Some(6i64));
+        Ok(())
+    }
+
+    // Grouped: two groups summed across two simulated shards, then merged.
+    #[test]
+    fn test_agg_fn_grouped() -> DaftResult<()> {
+        let shard1 = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_vec("x", vec![1i64, 2, 10]).into_series(),
+            Utf8Array::from_slice("g", &["a", "a", "b"]).into_series(),
+        ])?;
+        let shard2 = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_vec("x", vec![3i64, 20]).into_series(),
+            Utf8Array::from_slice("g", &["a", "b"]).into_series(),
+        ])?;
+
+        let bound_g_s1 = BoundExpr::try_new(unresolved_col("g"), &shard1.schema)?;
+        let bound_g_s2 = BoundExpr::try_new(unresolved_col("g"), &shard2.schema)?;
+
+        // Stage 1: AggFnBlock per shard.
+        let partial1 = shard1.agg(&[bound_block(&shard1)], &[bound_g_s1])?;
+        let partial2 = shard2.agg(&[bound_block(&shard2)], &[bound_g_s2])?;
+
+        // Concat the two partial results (simulates shuffle merge).
+        let merged = RecordBatch::concat(&[partial1, partial2])?;
+
+        // Stage 2: AggFnCombine — combine partial states per group, then finalize.
+        let bound_g_m = BoundExpr::try_new(unresolved_col("g"), &merged.schema)?;
+        let result = merged.agg(&[bound_combine(&merged.schema)], &[bound_g_m])?;
+        assert_eq!(result.len(), 2);
+
+        let g_col = get_column_by_name(&result, "g")?;
+        let x_col = get_column_by_name(&result, "x")?;
+        let mut pairs: Vec<(String, i64)> = (0..result.len())
+            .map(|i| {
+                Ok::<_, common_error::DaftError>((
+                    g_col.utf8()?.get(i).unwrap().to_string(),
+                    x_col.i64()?.get(i).unwrap(),
+                ))
+            })
+            .collect::<DaftResult<_>>()?;
+        pairs.sort();
+
+        // a: 1+2+3=6, b: 10+20=30
+        assert_eq!(pairs, vec![("a".into(), 6i64), ("b".into(), 30i64)]);
+        Ok(())
+    }
+}

@@ -101,6 +101,61 @@ fn validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
     Ok(())
 }
 
+/// Framework-side fold for `AggFnCombine`.
+///
+/// Mirrors Ray's `_combine_aggregated_blocks` loop: for each group, reduces
+/// the partial `Binary` states produced by `call_agg_block` into a single
+/// state by calling `call_agg_combine` N-1 times (left fold).
+///
+/// Returns a `Binary`-typed [`Series`] with one combined state per group
+/// (or one state total for the ungrouped case).
+fn fold_agg_states(
+    handle: &daft_dsl::functions::AggFnHandle,
+    states: &Series,
+    groups: Option<&GroupIndices>,
+) -> DaftResult<Series> {
+    let binary = states.binary()?;
+    let name = states.name();
+
+    match groups {
+        None => {
+            let mut acc: Option<Vec<u8>> = None;
+            for i in 0..binary.len() {
+                if let Some(state) = binary.get(i) {
+                    acc = Some(match acc {
+                        None => state.to_vec(),
+                        Some(a) => handle.call_agg_combine(&a, state)?,
+                    });
+                }
+            }
+            let result = acc.unwrap_or_default();
+            Ok(
+                BinaryArray::from_iter(name, std::iter::once(Some(result.as_slice())))
+                    .into_series(),
+            )
+        }
+        Some(groups) => {
+            let mut group_results: Vec<Option<Vec<u8>>> = Vec::with_capacity(groups.len());
+            for indices in groups {
+                let mut acc: Option<Vec<u8>> = None;
+                for &row_idx in indices {
+                    if let Some(state) = binary.get(row_idx as usize) {
+                        acc = Some(match acc {
+                            None => state.to_vec(),
+                            Some(a) => handle.call_agg_combine(&a, state)?,
+                        });
+                    }
+                }
+                group_results.push(acc);
+            }
+            Ok(
+                BinaryArray::from_iter(name, group_results.iter().map(|s| s.as_deref()))
+                    .into_series(),
+            )
+        }
+    }
+}
+
 impl RecordBatch {
     /// Create a new [`RecordBatch`] and handle broadcasting of any unit-length columns
     ///
@@ -720,6 +775,27 @@ impl RecordBatch {
             AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
             )),
+            AggExpr::AggFn { .. } => Err(DaftError::InternalError(
+                "AggFn must be decomposed into AggFnBlock + AggFnCombine by the planner \
+                 before execution; do not call eval_agg_expression with a raw AggFn"
+                    .to_string(),
+            )),
+            AggExpr::AggFnBlock { handle, inputs } => {
+                let evaled_inputs: Vec<Series> = inputs
+                    .iter()
+                    .map(|e| self.eval_agg_child(e))
+                    .collect::<DaftResult<_>>()?;
+                handle.call_agg_block(evaled_inputs, groups)
+            }
+            AggExpr::AggFnCombine {
+                handle,
+                partial,
+                return_field,
+            } => {
+                let evaled_partial = self.eval_agg_child(partial)?;
+                let combined = fold_agg_states(handle, &evaled_partial, groups)?;
+                handle.call_agg_finalize(combined, return_field)
+            }
         }
     }
 

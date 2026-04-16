@@ -1,5 +1,5 @@
 use common_error::DaftResult;
-use daft_core::prelude::{CountMode, DataType, Schema};
+use daft_core::prelude::{CountMode, DataType, Field, Schema};
 use daft_dsl::{
     AggExpr, ApproxPercentileParams, ExprRef, SketchType, bound_col,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
@@ -334,6 +334,30 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 // or to the final projection list here. The grouped aggregate sinks
                 // will call `agg()` with the original MapGroups expression when
                 // `partial_agg_exprs` is empty.
+            }
+            AggExpr::AggFn { handle, inputs } => {
+                let input_fields: Vec<Field> = inputs
+                    .iter()
+                    .map(|e| e.to_field(schema))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let return_field = handle.get_return_field(&input_fields, schema)?;
+
+                let partial_col = first_stage!(AggExpr::AggFnBlock {
+                    handle: handle.clone(),
+                    inputs: inputs.clone(),
+                });
+                let final_col = second_stage!(AggExpr::AggFnCombine {
+                    handle: handle.clone(),
+                    partial: partial_col,
+                    return_field,
+                });
+                final_stage(final_col);
+            }
+            AggExpr::AggFnBlock { .. } | AggExpr::AggFnCombine { .. } => {
+                return Err(common_error::DaftError::InternalError(
+                    "AggFnBlock / AggFnCombine must not appear in the top-level aggregation list"
+                        .to_string(),
+                ));
             }
             // Only necessary for Flotilla
             AggExpr::ApproxSketch(expr, sketch_type) => {

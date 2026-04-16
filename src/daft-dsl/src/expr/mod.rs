@@ -37,8 +37,8 @@ use super::functions::FunctionExpr;
 use crate::{
     expr::bound_expr::BoundExpr,
     functions::{
-        BuiltinScalarFn, FUNCTION_REGISTRY, FunctionArg, FunctionArgs, FunctionEvaluator,
-        function_display_without_formatter, function_semantic_id,
+        AggFnHandle, BuiltinScalarFn, FUNCTION_REGISTRY, FunctionArg, FunctionArgs,
+        FunctionEvaluator, function_display_without_formatter, function_semantic_id,
         python::{LegacyPythonUDF, RuntimePyObject},
         scalar::{ScalarFn, scalar_function_semantic_id},
         sketch::{HashableVecPercentiles, SketchExpr},
@@ -457,6 +457,29 @@ pub enum AggExpr {
         func: MapGroupsFn,
         inputs: Vec<ExprRef>,
     },
+
+    #[display("{handle}({})", inputs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "))]
+    AggFn {
+        handle: AggFnHandle,
+        inputs: Vec<ExprRef>,
+    },
+
+    /// Planner-internal step 1: produces a `Binary` column of serialized
+    /// accumulator states (one per group) from one input block.
+    #[display("{handle}.__block({})", inputs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "))]
+    AggFnBlock {
+        handle: AggFnHandle,
+        inputs: Vec<ExprRef>,
+    },
+
+    /// Planner-internal step 2: folds the `Binary` partial states from
+    /// `AggFnBlock` per group and produces the final typed output.
+    #[display("{handle}.__combine({partial})")]
+    AggFnCombine {
+        handle: AggFnHandle,
+        partial: ExprRef,
+        return_field: Field,
+    },
 }
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -557,6 +580,9 @@ impl AggExpr {
             Self::Concat(_, _) => "Concat",
             Self::Skew(_) => "Skew",
             Self::MapGroups { .. } => "Map Groups",
+            Self::AggFn { .. } => "Extension Agg",
+            Self::AggFnBlock { .. } => "Extension Agg (Block)",
+            Self::AggFnCombine { .. } => "Extension Agg (Combine)",
         }
     }
 
@@ -583,6 +609,9 @@ impl AggExpr {
             | Self::Concat(expr, _)
             | Self::Skew(expr) => expr.name(),
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
+            Self::AggFn { handle, .. }
+            | Self::AggFnBlock { handle, .. }
+            | Self::AggFnCombine { handle, .. } => handle.name(),
         }
     }
 
@@ -682,6 +711,28 @@ impl AggExpr {
                 FieldID::new(format!("{child_id}.local_skew()"))
             }
             Self::MapGroups { func, inputs } => func.semantic_id(inputs, schema),
+            Self::AggFn { handle, inputs } => {
+                let inputs_str = inputs
+                    .iter()
+                    .map(|e| e.semantic_id(schema).id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                FieldID::new(format!("AggFn_{}({inputs_str})", handle.name()))
+            }
+            Self::AggFnBlock { handle, inputs } => {
+                let inputs_str = inputs
+                    .iter()
+                    .map(|e| e.semantic_id(schema).id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                FieldID::new(format!("AggFnBlock_{}({inputs_str})", handle.name()))
+            }
+            Self::AggFnCombine {
+                handle, partial, ..
+            } => {
+                let partial_id = partial.semantic_id(schema).id;
+                FieldID::new(format!("AggFnCombine_{}({partial_id})", handle.name()))
+            }
         }
     }
 
@@ -708,11 +759,16 @@ impl AggExpr {
             | Self::Concat(expr, _)
             | Self::Skew(expr) => vec![expr.clone()],
             Self::MapGroups { func: _, inputs } => inputs.clone(),
+            Self::AggFn { inputs, .. } | Self::AggFnBlock { inputs, .. } => inputs.clone(),
+            Self::AggFnCombine { partial, .. } => vec![partial.clone()],
         }
     }
 
     pub fn with_new_children(&self, mut children: Vec<ExprRef>) -> Self {
-        if let Self::MapGroups { func: _, inputs } = &self {
+        if let Self::MapGroups { func: _, inputs }
+        | Self::AggFn { inputs, .. }
+        | Self::AggFnBlock { inputs, .. } = &self
+        {
             assert_eq!(children.len(), inputs.len());
         } else {
             assert_eq!(children.len(), 1);
@@ -738,6 +794,26 @@ impl AggExpr {
             Self::MapGroups { func, inputs: _ } => Self::MapGroups {
                 func: func.with_new_children(children.clone()),
                 inputs: children,
+            },
+            Self::AggFn { handle, inputs: _ } => Self::AggFn {
+                handle: handle.clone(),
+                inputs: children,
+            },
+            Self::AggFnBlock { handle, inputs: _ } => Self::AggFnBlock {
+                handle: handle.clone(),
+                inputs: children,
+            },
+            Self::AggFnCombine {
+                handle,
+                partial: _,
+                return_field,
+            } => Self::AggFnCombine {
+                handle: handle.clone(),
+                partial: children
+                    .into_iter()
+                    .next()
+                    .expect("AggFnCombine needs 1 child"),
+                return_field: return_field.clone(),
             },
             Self::ApproxPercentile(ApproxPercentileParams {
                 percentiles,
@@ -905,6 +981,29 @@ impl AggExpr {
             }
 
             Self::MapGroups { func, inputs } => func.to_field(inputs.as_slice(), schema),
+            Self::AggFn { handle, inputs } => {
+                let input_fields: Vec<Field> = inputs
+                    .iter()
+                    .map(|e| e.to_field(schema))
+                    .collect::<DaftResult<_>>()?;
+                handle.get_return_field(&input_fields, schema)
+            }
+            Self::AggFnBlock { handle, inputs } => {
+                // Produces a Binary column of serialized accumulator bytes.
+                // Include input field names in the column name to avoid collisions
+                // when the same handle is used on different columns in one aggregation
+                // (e.g. `my_agg(a), my_agg(b)` would both produce "my_agg" otherwise).
+                let inputs_str = inputs
+                    .iter()
+                    .map(|e| e.to_field(schema).map(|f| f.name.to_string()))
+                    .collect::<DaftResult<Vec<_>>>()?
+                    .join(", ");
+                Ok(Field::new(
+                    format!("{}({})", handle.name(), inputs_str),
+                    DataType::Binary,
+                ))
+            }
+            Self::AggFnCombine { return_field, .. } => Ok(return_field.clone()),
         }
     }
 }
