@@ -1,5 +1,6 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{any::Any, collections::HashMap, sync::Arc};
 
+use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;
 use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
@@ -20,6 +21,18 @@ use crate::{FlightShufflePartitionRef, Input};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyFlightShufflePartitionRef {
     pub inner: FlightShufflePartitionRef,
+}
+
+impl Partition for PyFlightShufflePartitionRef {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn size_bytes(&self) -> usize {
+        self.inner.size_bytes
+    }
+    fn num_rows(&self) -> usize {
+        self.inner.num_rows
+    }
 }
 
 impl_bincode_py_state_serialization!(PyFlightShufflePartitionRef);

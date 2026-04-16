@@ -24,9 +24,7 @@ enum RayTaskResultInner {
         // We want to remove this once we get rid of
         // assumption of materialized output-> inmemoryscan
         output_kind: PyTaskOutputKind,
-        // We want to reduce this to just "PartitionRef",
-        // but we can only do this once we can generalize the task output kind
-        partitions: Vec<PyTaskPartitionRef>,
+        partitions: Vec<PartitionRef>,
         stats_serialized: Vec<u8>,
     },
     WorkerDied(),
@@ -45,12 +43,6 @@ pub(crate) enum PyTaskOutputKind {
     ShuffleWrite,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) enum PyTaskPartitionRef {
-    Ray(RayPartitionRef),
-    Flight(PyFlightShufflePartitionRef),
-}
-
 #[pymethods]
 impl RayTaskResult {
     #[staticmethod]
@@ -63,7 +55,7 @@ impl RayTaskResult {
                 output_kind: PyTaskOutputKind::Materialized,
                 partitions: ray_part_refs
                     .into_iter()
-                    .map(PyTaskPartitionRef::Ray)
+                    .map(|partition| Arc::new(partition) as PartitionRef)
                     .collect(),
                 stats_serialized,
             },
@@ -80,7 +72,7 @@ impl RayTaskResult {
                 output_kind: PyTaskOutputKind::ShuffleWrite,
                 partitions: shuffle_part_refs
                     .into_iter()
-                    .map(PyTaskPartitionRef::Ray)
+                    .map(|partition| Arc::new(partition) as PartitionRef)
                     .collect(),
                 stats_serialized,
             },
@@ -97,7 +89,7 @@ impl RayTaskResult {
                 output_kind: PyTaskOutputKind::ShuffleWrite,
                 partitions: shuffle_part_refs
                     .into_iter()
-                    .map(PyTaskPartitionRef::Flight)
+                    .map(|partition| Arc::new(partition) as PartitionRef)
                     .collect(),
                 stats_serialized,
             },
@@ -127,17 +119,7 @@ impl RayTaskResult {
             } => (
                 Self::type_object(py).getattr(pyo3::intern!(py, "success_materialized"))?,
                 (
-                    partitions
-                        .iter()
-                        .map(|partition| match partition {
-                            PyTaskPartitionRef::Ray(ray_part_ref) => Ok(ray_part_ref.clone()),
-                            PyTaskPartitionRef::Flight(_) => {
-                                Err(pyo3::exceptions::PyRuntimeError::new_err(
-                                    "Materialized task results cannot contain Flight shuffle refs",
-                                ))
-                            }
-                        })
-                        .collect::<PyResult<Vec<_>>>()?,
+                    partition_refs_to_ray_py(partitions)?,
                     stats_serialized.clone(),
                 )
                     .into_pyobject(py)?
@@ -148,31 +130,25 @@ impl RayTaskResult {
                 partitions,
                 stats_serialized,
             } => {
-                let all_ray = partitions
-                    .iter()
-                    .all(|partition| matches!(partition, PyTaskPartitionRef::Ray(_)));
-                let all_flight = partitions
-                    .iter()
-                    .all(|partition| matches!(partition, PyTaskPartitionRef::Flight(_)));
+                let all_ray = partitions.iter().all(|partition| {
+                    partition
+                        .as_any()
+                        .downcast_ref::<RayPartitionRef>()
+                        .is_some()
+                });
+                let all_flight = partitions.iter().all(|partition| {
+                    partition
+                        .as_any()
+                        .downcast_ref::<PyFlightShufflePartitionRef>()
+                        .is_some()
+                });
 
                 if all_flight {
                     (
                         Self::type_object(py)
                             .getattr(pyo3::intern!(py, "success_shuffle_flight"))?,
                         (
-                            partitions
-                                .iter()
-                                .map(|partition| match partition {
-                                    PyTaskPartitionRef::Flight(flight_part_ref) => {
-                                        Ok(flight_part_ref.clone())
-                                    }
-                                    PyTaskPartitionRef::Ray(_) => {
-                                        Err(pyo3::exceptions::PyRuntimeError::new_err(
-                                            "Shuffle task results cannot mix Ray and Flight refs",
-                                        ))
-                                    }
-                                })
-                                .collect::<PyResult<Vec<_>>>()?,
+                            partition_refs_to_flight_py(partitions)?,
                             stats_serialized.clone(),
                         )
                             .into_pyobject(py)?
@@ -182,19 +158,7 @@ impl RayTaskResult {
                     (
                         Self::type_object(py).getattr(pyo3::intern!(py, "success_shuffle_ray"))?,
                         (
-                            partitions
-                                .iter()
-                                .map(|partition| match partition {
-                                    PyTaskPartitionRef::Ray(ray_part_ref) => {
-                                        Ok(ray_part_ref.clone())
-                                    }
-                                    PyTaskPartitionRef::Flight(_) => {
-                                        Err(pyo3::exceptions::PyRuntimeError::new_err(
-                                            "Shuffle task results cannot mix Ray and Flight refs",
-                                        ))
-                                    }
-                                })
-                                .collect::<PyResult<Vec<_>>>()?,
+                            partition_refs_to_ray_py(partitions)?,
                             stats_serialized.clone(),
                         )
                             .into_pyobject(py)?
@@ -219,6 +183,39 @@ impl RayTaskResult {
     }
 }
 
+fn partition_refs_to_ray_py(partitions: &[PartitionRef]) -> PyResult<Vec<RayPartitionRef>> {
+    partitions
+        .iter()
+        .map(|p| {
+            p.as_any()
+                .downcast_ref::<RayPartitionRef>()
+                .cloned()
+                .ok_or_else(|| {
+                    pyo3::exceptions::PyRuntimeError::new_err(
+                        "expected RayPartitionRef in materialized task result",
+                    )
+                })
+        })
+        .collect()
+}
+
+fn partition_refs_to_flight_py(
+    partitions: &[PartitionRef],
+) -> PyResult<Vec<PyFlightShufflePartitionRef>> {
+    partitions
+        .iter()
+        .map(|p| {
+            p.as_any()
+                .downcast_ref::<PyFlightShufflePartitionRef>()
+                .cloned()
+                .ok_or_else(|| {
+                    pyo3::exceptions::PyRuntimeError::new_err(
+                        "expected FlightShufflePartitionRef in shuffle task result",
+                    )
+                })
+        })
+        .collect()
+}
 /// TaskHandle that wraps a Python RaySwordfishTaskHandle
 pub(crate) struct RayTaskResultHandle {
     task_context: TaskContext,
@@ -283,27 +280,8 @@ impl TaskResultHandle for RayTaskResultHandle {
                     let stats: ExecutionStats = ExecutionStats::decode(&stats_serialized);
                     match output_kind {
                         PyTaskOutputKind::Materialized => {
-                            let materialized_partitions = match partitions
-                                .into_iter()
-                                .map(|partition| match partition {
-                                    PyTaskPartitionRef::Ray(ray_part_ref) => {
-                                        Ok(Arc::new(ray_part_ref) as PartitionRef)
-                                    }
-                                    PyTaskPartitionRef::Flight(_) => {
-                                        Err(common_error::DaftError::InternalError(
-                                            "Expected materialized task output to only contain RayPartitionRef values"
-                                                .to_string(),
-                                        ))
-                                    }
-                                })
-                                .collect::<common_error::DaftResult<Vec<_>>>()
-                            {
-                                Ok(materialized_partitions) => materialized_partitions,
-                                Err(error) => return TaskStatus::Failed { error },
-                            };
-
                             let materialized_output = MaterializedOutput::new(
-                                materialized_partitions,
+                                partitions.clone(),
                                 worker_id.clone(),
                                 ip_address.clone(),
                                 task_id,
@@ -315,27 +293,44 @@ impl TaskResultHandle for RayTaskResultHandle {
                             }
                         }
                         PyTaskOutputKind::ShuffleWrite => {
-                            let shuffle_output = ShuffleWriteOutput::new(
-                                partitions
-                                    .into_iter()
-                                    .map(|partition| match partition {
-                                        PyTaskPartitionRef::Ray(ray_part_ref) => {
-                                            ShufflePartitionRef::Ray(
-                                                Arc::new(ray_part_ref) as PartitionRef
-                                            )
+                            let shuffle_partitions = partitions
+                                .iter()
+                                .map(|partition| {
+                                    let flight_partition = partition
+                                        .as_any()
+                                        .downcast_ref::<PyFlightShufflePartitionRef>(
+                                    );
+                                    let ray_partition =
+                                        partition.as_any().downcast_ref::<RayPartitionRef>();
+                                    match (flight_partition, ray_partition) {
+                                        (Some(flight_partition), None) => {
+                                            Ok(ShufflePartitionRef::Flight(flight_partition.clone().into()))
                                         }
-                                        PyTaskPartitionRef::Flight(py_ref) => {
-                                            ShufflePartitionRef::from(py_ref)
+                                        (None, Some(ray_partition)) => {
+                                            Ok(ShufflePartitionRef::Ray(Arc::new(ray_partition.clone())))
                                         }
-                                    })
-                                    .collect(),
-                                worker_id.clone(),
-                                task_id,
-                            );
+                                        _ => Err(pyo3::exceptions::PyRuntimeError::new_err(
+                                                "expected FlightShufflePartitionRef or RayPartitionRef in shuffle task result",
+                                            )),
+                                    }
+                                })
+                                .collect::<PyResult<Vec<_>>>();
 
-                            TaskStatus::Success {
-                                result: TaskOutput::ShuffleWrite(shuffle_output),
-                                stats,
+                            if let Ok(shuffle_partitions) = shuffle_partitions {
+                                let shuffle_output = ShuffleWriteOutput::new(
+                                    shuffle_partitions,
+                                    worker_id.clone(),
+                                    task_id,
+                                );
+
+                                TaskStatus::Success {
+                                    result: TaskOutput::ShuffleWrite(shuffle_output),
+                                    stats,
+                                }
+                            } else {
+                                TaskStatus::Failed {
+                                    error: shuffle_partitions.err().unwrap().into(),
+                                }
                             }
                         }
                     }

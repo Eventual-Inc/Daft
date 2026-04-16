@@ -2986,6 +2986,7 @@ dependencies = [
  "common-error",
  "common-io-config",
  "common-metrics",
+ "common-partitioning",
  "common-py-serde",
  "common-resource-request",
  "common-treenode",
