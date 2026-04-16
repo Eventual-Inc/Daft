@@ -285,6 +285,7 @@ impl BlockingSink for RepartitionSink {
                                 })?;
                                 Ok(BlockingSinkOutput::ShuffleMetadata(ShuffleMetadata {
                                     partitions: metadata,
+                                    sentinels: None,
                                 }))
                             }
                             #[cfg(not(feature = "python"))]
@@ -331,6 +332,7 @@ impl BlockingSink for RepartitionSink {
                                         ShufflePartitionMetadata::new(num_rows, size_bytes)
                                     })
                                     .collect(),
+                                sentinels: None,
                             }))
                         },
                         Span::current(),
