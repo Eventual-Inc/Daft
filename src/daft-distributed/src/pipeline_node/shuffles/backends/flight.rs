@@ -13,7 +13,7 @@ use crate::{
     utils::channel::Sender,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct FlightShuffleBackendConfig {
     pub(crate) shuffle_id: u64,
     pub(crate) shuffle_dirs: Vec<String>,

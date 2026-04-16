@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
-use daft_local_plan::RepartitionWriteBackend;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_schema::schema::SchemaRef;
 
@@ -10,9 +9,7 @@ use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
         TaskBuilderStream,
-        shuffles::backends::{
-            DistributedShuffleBackend, ShuffleBackend, ShuffleBackendWriteConfig,
-        },
+        shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -67,7 +64,7 @@ impl RepartitionNode {
             config,
             context: context.clone(),
             repartition_spec,
-            shuffle_backend: ShuffleBackend::new(&context, schema, num_partitions, backend),
+            shuffle_backend: ShuffleBackend::new(&context, schema, backend),
             num_partitions,
             child,
         }
@@ -115,23 +112,12 @@ impl PipelineNodeImpl for RepartitionNode {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let self_arc = self.clone();
         self.shuffle_backend.register_cleanup(plan_context);
-        let local_shuffle_write_node =
-            self.shuffle_backend
-                .build_write_stage(ShuffleBackendWriteConfig {
-                    input_node,
-                    producer: self.clone(),
-                    backend: match self.shuffle_backend.backend() {
-                        DistributedShuffleBackend::Ray => RepartitionWriteBackend::Ray,
-                        DistributedShuffleBackend::Flight(backend) => {
-                            RepartitionWriteBackend::Flight {
-                                shuffle_id: backend.shuffle_id,
-                                shuffle_dirs: backend.shuffle_dirs.clone(),
-                                compression: backend.compression.clone(),
-                            }
-                        }
-                    },
-                    repartition_spec: self.repartition_spec.clone(),
-                });
+        let local_shuffle_write_node = self.shuffle_backend.build_write_stage(
+            self.clone(),
+            input_node,
+            self.num_partitions,
+            self.repartition_spec.clone(),
+        );
 
         let (result_tx, result_rx) = create_channel(1);
 

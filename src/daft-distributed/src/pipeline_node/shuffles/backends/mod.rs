@@ -29,17 +29,9 @@ pub(crate) enum DistributedShuffleBackend {
     Flight(FlightShuffleBackendConfig),
 }
 
-pub(crate) struct ShuffleBackendWriteConfig {
-    pub(crate) input_node: TaskBuilderStream,
-    pub(crate) producer: Arc<dyn PipelineNodeImpl>,
-    pub(crate) backend: RepartitionWriteBackend,
-    pub(crate) repartition_spec: RepartitionSpec,
-}
-
 pub(crate) struct ShuffleBackend {
     backend: DistributedShuffleBackend,
     schema: SchemaRef,
-    num_partitions: usize,
     node_id: NodeID,
 }
 
@@ -47,12 +39,10 @@ impl ShuffleBackend {
     pub(crate) fn new(
         context: &PipelineNodeContext,
         schema: SchemaRef,
-        num_partitions: usize,
         backend: DistributedShuffleBackend,
     ) -> Self {
         Self {
             schema,
-            num_partitions,
             node_id: context.node_id,
             backend: match backend {
                 DistributedShuffleBackend::Ray => DistributedShuffleBackend::Ray,
@@ -80,23 +70,34 @@ impl ShuffleBackend {
         }
     }
 
-    pub(crate) fn build_write_stage(&self, config: ShuffleBackendWriteConfig) -> TaskBuilderStream {
-        let num_partitions = self.num_partitions;
+    pub(crate) fn build_write_stage(
+        &self,
+        producer: Arc<dyn PipelineNodeImpl>,
+        input_node: TaskBuilderStream,
+        num_partitions: usize,
+        repartition_spec: RepartitionSpec,
+    ) -> TaskBuilderStream {
         let schema = self.schema.clone();
         let node_id = self.node_id;
-        config
-            .input_node
-            .pipeline_instruction(config.producer, move |input| {
-                LocalPhysicalPlan::repartition_write(
-                    input,
-                    num_partitions,
-                    schema.clone(),
-                    config.backend.clone(),
-                    config.repartition_spec.clone(),
-                    StatsState::NotMaterialized,
-                    LocalNodeContext::new(Some(node_id as usize)),
-                )
-            })
+        let repartition_backend = match self.backend.clone() {
+            DistributedShuffleBackend::Ray => RepartitionWriteBackend::Ray,
+            DistributedShuffleBackend::Flight(backend) => RepartitionWriteBackend::Flight {
+                shuffle_id: backend.shuffle_id,
+                shuffle_dirs: backend.shuffle_dirs.clone(),
+                compression: backend.compression,
+            },
+        };
+        input_node.pipeline_instruction(producer, move |input| {
+            LocalPhysicalPlan::repartition_write(
+                input,
+                num_partitions,
+                schema.clone(),
+                repartition_backend.clone(),
+                repartition_spec.clone(),
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(node_id as usize)),
+            )
+        })
     }
 
     pub(crate) async fn emit_read_tasks(
