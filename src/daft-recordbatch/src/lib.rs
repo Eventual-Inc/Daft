@@ -709,7 +709,10 @@ impl RecordBatch {
         agg_expr: &BoundAggExpr,
         groups: Option<&GroupIndices>,
     ) -> DaftResult<Series> {
-        if let AggExpr::AggFnReduce { handle, partial, .. } = agg_expr.as_ref() {
+        if let AggExpr::AggFnReduce {
+            handle, partial, ..
+        } = agg_expr.as_ref()
+        {
             let evaled_partial = self.eval_agg_child(partial)?;
             fold_agg_states(handle, &evaled_partial, groups)
         } else {

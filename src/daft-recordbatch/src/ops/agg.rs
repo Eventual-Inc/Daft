@@ -129,9 +129,7 @@ impl RecordBatch {
                     .iter()
                     .map(|c| c.as_materialized_series().clone())
                     .collect();
-                Self::from_nonempty_columns(
-                    [groupkeys_series.as_slice(), &grouped_cols].concat(),
-                )
+                Self::from_nonempty_columns([groupkeys_series.as_slice(), &grouped_cols].concat())
             }
         }
     }
@@ -593,7 +591,11 @@ mod tests {
         let combined = merged.agg_combine_only(&[bound_combine(&merged.schema)], &[])?;
         assert_eq!(combined.len(), 1);
         let col = get_column_by_name(&combined, &partial_col_name())?;
-        assert_eq!(col.data_type(), &DataType::Binary, "should remain Binary after combine-only");
+        assert_eq!(
+            col.data_type(),
+            &DataType::Binary,
+            "should remain Binary after combine-only"
+        );
 
         // Now finalize — result should be 1+2+3 = 6 typed as Int64.
         let final_result = combined.agg_global(&[bound_combine(&combined.schema)])?;
@@ -619,16 +621,17 @@ mod tests {
         let merged = RecordBatch::concat(&[partial1, partial2])?;
 
         let bound_g_m = BoundExpr::try_new(unresolved_col("g"), &merged.schema)?;
-        let combined =
-            merged.agg_combine_only(&[bound_combine(&merged.schema)], &[bound_g_m.clone()])?;
+        let combined = merged.agg_combine_only(
+            &[bound_combine(&merged.schema)],
+            std::slice::from_ref(&bound_g_m),
+        )?;
         assert_eq!(combined.len(), 2);
         let partial_col = get_column_by_name(&combined, &partial_col_name())?;
         assert_eq!(partial_col.data_type(), &DataType::Binary);
 
         // Finalize the combined state — a: 10+20=30, b: 1+2=3.
         let bound_g_c = BoundExpr::try_new(unresolved_col("g"), &combined.schema)?;
-        let final_result =
-            combined.agg(&[bound_combine(&combined.schema)], &[bound_g_c])?;
+        let final_result = combined.agg(&[bound_combine(&combined.schema)], &[bound_g_c])?;
         let g_col = get_column_by_name(&final_result, "g")?;
         let x_col = get_column_by_name(&final_result, "x")?;
         let mut pairs: Vec<(String, i64)> = (0..final_result.len())

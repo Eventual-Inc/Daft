@@ -530,11 +530,10 @@ mod tests {
                 None => {
                     let sum: i64 = col.i64()?.into_iter().map(|v| v.unwrap_or(0)).sum();
                     let bytes = sum.to_le_bytes().to_vec();
-                    Ok(BinaryArray::from_iter(
-                        &col_name,
-                        std::iter::once(Some(bytes.as_slice())),
+                    Ok(
+                        BinaryArray::from_iter(&col_name, std::iter::once(Some(bytes.as_slice())))
+                            .into_series(),
                     )
-                    .into_series())
                 }
                 Some(groups) => {
                     let sums: Vec<Option<Vec<u8>>> = groups
@@ -547,8 +546,10 @@ mod tests {
                             Some(sum.to_le_bytes().to_vec())
                         })
                         .collect();
-                    Ok(BinaryArray::from_iter(&col_name, sums.iter().map(|b| b.as_deref()))
-                        .into_series())
+                    Ok(
+                        BinaryArray::from_iter(&col_name, sums.iter().map(|b| b.as_deref()))
+                            .into_series(),
+                    )
                 }
             }
         }

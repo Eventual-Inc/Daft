@@ -36,11 +36,19 @@ impl MicroPartition {
             None => {
                 let empty_table = RecordBatch::empty(Some(self.schema.clone()));
                 let combined = empty_table.agg_combine_only(to_agg, group_by)?;
-                Ok(Self::new_loaded(combined.schema.clone(), vec![combined].into(), None))
+                Ok(Self::new_loaded(
+                    combined.schema.clone(),
+                    vec![combined].into(),
+                    None,
+                ))
             }
             Some(t) => {
                 let combined = t.agg_combine_only(to_agg, group_by)?;
-                Ok(Self::new_loaded(combined.schema.clone(), vec![combined].into(), None))
+                Ok(Self::new_loaded(
+                    combined.schema.clone(),
+                    vec![combined].into(),
+                    None,
+                ))
             }
         }
     }
