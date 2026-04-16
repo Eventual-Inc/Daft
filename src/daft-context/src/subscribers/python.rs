@@ -50,6 +50,7 @@ fn build_operator_started(py: Python<'_>, event: &OperatorStartEvent) -> PyResul
             event.header.query_id.to_string(),
             event.operator.node_id,
             event.operator.name.as_ref(),
+            event.operator.origin_node_id,
         ))
         .map(Into::into)
 }
@@ -60,6 +61,7 @@ fn build_operator_finished(py: Python<'_>, event: &OperatorEndEvent) -> PyResult
             event.header.query_id.to_string(),
             event.operator.node_id,
             event.operator.name.as_ref(),
+            event.operator.origin_node_id,
         ))
         .map(Into::into)
 }
