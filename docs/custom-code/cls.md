@@ -147,26 +147,6 @@ df = df.select(
 )
 ```
 
-#### Per-method error handling
-
-`@daft.method` and `@daft.method.batch` accept `max_retries` and `on_error` to override the class-level defaults for a single method. This is useful when one method calls a flaky external API but other methods should hard-fail on bugs:
-
-```python
-@daft.cls
-class EnrichmentPipeline:
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-
-    # Retry flaky API calls and tolerate final failures
-    @daft.method(max_retries=3, on_error="log")
-    def enrich_from_api(self, x: str) -> str:
-        return fetch(x, self.api_key)
-
-    # No retry — pure-Python postprocessing should fail loudly on bugs
-    def postprocess(self, x: str) -> str:
-        return x.strip().lower()
-```
-
 ### Method Variants
 
 Like `@daft.func`, methods support multiple execution patterns:

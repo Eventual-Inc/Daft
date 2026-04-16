@@ -411,7 +411,7 @@ result = multiply(5, 10)  # Returns 50
 | `use_process` | `bool \| None` | `None` (auto) | `func`, `func.batch`, `cls` |
 | `max_concurrency` | `int \| None` | `None` | `func` (async only), `func.batch`, `cls` |
 | `batch_size` | `int \| None` | `None` | `func.batch`, `method.batch` |
-| `max_retries` | `int \| None` | `None` (no retries) | `func`, `func.batch`, `cls`, `method`, `method.batch` |
+| `max_retries` | `int \| None` | `None` (no retries) | `func`, `func.batch`, `cls` |
 | `on_error` | `"raise" \| "log" \| "ignore"` | `"raise"` | same as `max_retries` |
 | `ray_options` | `dict[str, Any] \| None` | `None` | `func`, `func.batch`, `cls` |
 
@@ -454,7 +454,10 @@ def call_flaky_api(url: str) -> str:
     return requests.get(url).text
 ```
 
-Both parameters work on sync, async, batch, and method variants.
+Both parameters work on sync, async, and batch variants. On `@daft.cls`, set them at the class level — they apply to every method.
+
+!!! note "Per-method retry overrides"
+    `@daft.method` and `@daft.method.batch` accept `max_retries` and `on_error` keyword arguments in their signatures, but those values are currently dropped: the class-level setting always wins. Until that's fixed, configure `max_retries` / `on_error` on the `@daft.cls` decorator. Tracked in [#6710](https://github.com/Eventual-Inc/Daft/issues/6710).
 
 ### `ray_options`
 

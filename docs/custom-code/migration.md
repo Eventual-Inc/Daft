@@ -130,7 +130,7 @@ The new API adds two parameters for controlling error handling that had no equiv
 - **max_retries**: Retry failing calls with exponential backoff (100 ms → 60 s, ±25% jitter). Also honors `daft.ai.utils.RetryAfterError` for rate-limit-aware retries.
 - **on_error**: `"raise"` (default), `"log"`, or `"ignore"`. Controls behavior once retries are exhausted — `"log"` and `"ignore"` emit `None` for the failing row so the query keeps running.
 
-Both are available on `@daft.func`, `@daft.func.batch`, `@daft.cls`, `@daft.method`, and `@daft.method.batch`. See the [Resources, Concurrency, and Error Handling](func.md#resources-concurrency-and-error-handling) section for details.
+Both are available on `@daft.func`, `@daft.func.batch`, and `@daft.cls`. (`@daft.method` / `@daft.method.batch` accept the kwargs but currently ignore them — set the class-level value on `@daft.cls` instead.) See the [Resources, Concurrency, and Error Handling](func.md#resources-concurrency-and-error-handling) section for details.
 
 ## New Features
 
