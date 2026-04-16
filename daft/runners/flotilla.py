@@ -166,8 +166,11 @@ class RaySwordfishActor:
         **inputs: (
             Input | list[ray.ObjectRef]
         ),  # PyMicroPartitions are separated from Inputs because they are Ray ObjectRefs, which will be resolved by Ray.
-    ) -> RayTaskResult:
-        """Run a plan on swordfish and return a task result."""
+    ) -> tuple[
+        list[RayPartitionRef] | list[FlightShufflePartitionRef],
+        bytes,
+    ]:
+        """Run a plan on swordfish and return raw refs + stats."""
         # We import PyDaftContext inside the function because PyDaftContext is not serializable.
         from daft.daft import PyDaftContext
 
@@ -201,7 +204,7 @@ class RaySwordfishActor:
 
             stats, shuffle_metadata = await result_handle.try_finish_with_shuffle_metadata()
             if shuffle_metadata is None:
-                return RayTaskResult.success_materialized(materialized_refs, stats.encode())
+                return materialized_refs, stats.encode()
 
             if materialized_refs:
                 raise ValueError("Shuffle write plans should not produce materialized partitions")
@@ -209,12 +212,7 @@ class RaySwordfishActor:
             if not shuffle_metadata:
                 raise ValueError("Expected shuffle metadata to be present")
 
-            if isinstance(shuffle_metadata[0], FlightShufflePartitionRef):
-                flight_metadata = cast("list[FlightShufflePartitionRef]", shuffle_metadata)
-                return RayTaskResult.success_shuffle_flight(flight_metadata, stats.encode())
-
-            ray_refs = cast("list[RayPartitionRef]", shuffle_metadata)
-            return RayTaskResult.success_shuffle_ray(ray_refs, stats.encode())
+            return shuffle_metadata, stats.encode()
 
 
 @ray.remote  # type: ignore[untyped-decorator]
@@ -261,13 +259,19 @@ class RaySwordfishTaskHandle:
 
     async def _get_result(self) -> RayTaskResult:
         try:
-            return await self.result_handle
+            refs, stats = await self.result_handle
         except (ray.exceptions.ActorDiedError, ray.exceptions.ActorUnschedulableError):
             return RayTaskResult.worker_died()
         except ray.exceptions.ActorUnavailableError:
             return RayTaskResult.worker_unavailable()
         except Exception as e:
             raise e
+        if refs and isinstance(refs[0], FlightShufflePartitionRef):
+            return RayTaskResult.success_flight(
+                cast("list[FlightShufflePartitionRef]", refs),
+                stats,
+            )
+        return RayTaskResult.success_ray(cast("list[RayPartitionRef]", refs), stats)
 
     async def get_result(self) -> RayTaskResult:
         self.task = asyncio.create_task(self._get_result())
