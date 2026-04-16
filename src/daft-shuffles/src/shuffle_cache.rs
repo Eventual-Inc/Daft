@@ -239,6 +239,7 @@ async fn writer_task(
     mut writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
 ) -> DaftResult<WriterTaskResult> {
     let io_runtime = get_io_runtime(true);
+    let writer_path = writer.path();
     let mut schema = None;
     let mut total_rows_written = 0;
     let mut total_bytes_written = 0;
@@ -253,9 +254,16 @@ async fn writer_task(
                 writer.write(partition).await?;
                 DaftResult::Ok(writer)
             })
-            .await??;
+            .await?
+            .map_err(|e| match &writer_path {
+                Some(p) => e.with_context(format!("writing {p}")),
+                None => e,
+            })?;
     }
-    let file_path_tables = writer.close().await?;
+    let file_path_tables = writer.close().await.map_err(|e| match &writer_path {
+        Some(p) => e.with_context(format!("writing {p}")),
+        None => e,
+    })?;
 
     let file_paths = file_path_tables
         .into_iter()

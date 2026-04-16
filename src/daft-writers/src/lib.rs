@@ -76,6 +76,11 @@ pub trait AsyncFileWriter: Send + Sync {
 
     /// Return the number of bytes written for each file.
     fn bytes_per_file(&self) -> Vec<usize>;
+
+    /// Return the file path this writer is writing to, if known.
+    fn path(&self) -> Option<String> {
+        None
+    }
 }
 
 /// This trait is used to abstract the creation of a `FileWriter`

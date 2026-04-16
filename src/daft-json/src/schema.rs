@@ -67,6 +67,7 @@ pub async fn read_json_schema(
         None,
     )
     .await
+    .map_err(|e| e.with_context(format!("reading {uri}")))
 }
 
 pub async fn read_json_schema_bulk(
@@ -95,6 +96,7 @@ pub async fn read_json_schema_bulk(
                         None,
                     )
                     .await
+                    .map_err(|e| e.with_context(format!("reading {owned_string}")))
                 })
             }));
             task_stream

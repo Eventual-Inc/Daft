@@ -100,6 +100,10 @@ impl AsyncFileWriter for IPCWriter {
     fn bytes_per_file(&self) -> Vec<usize> {
         vec![self.bytes_written]
     }
+
+    fn path(&self) -> Option<String> {
+        Some(self.file_path.clone())
+    }
 }
 
 pub struct IPCWriterFactory {

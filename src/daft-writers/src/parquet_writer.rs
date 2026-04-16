@@ -383,6 +383,10 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
     fn bytes_per_file(&self) -> Vec<usize> {
         vec![self.total_bytes_written]
     }
+
+    fn path(&self) -> Option<String> {
+        Some(self.filename.to_string_lossy().to_string())
+    }
 }
 
 #[cfg(test)]

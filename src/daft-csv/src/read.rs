@@ -64,6 +64,7 @@ pub fn read_csv(
             max_chunks_in_flight,
         )
         .await
+        .map_err(|e| e.with_context(format!("reading {uri}")))
     })
 }
 
@@ -102,6 +103,7 @@ pub fn read_csv_bulk(
                     max_chunks_in_flight,
                 )
                 .await
+                .map_err(|e| e.with_context(format!("reading {uri}")))
             })
             .context(super::JoinSnafu {})
         }));

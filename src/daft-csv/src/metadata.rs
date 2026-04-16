@@ -67,6 +67,7 @@ pub async fn read_csv_schema(
         io_stats,
     )
     .await
+    .map_err(|e| e.with_context(format!("reading {uri}")))
 }
 
 pub async fn read_csv_schema_bulk(
@@ -92,6 +93,7 @@ pub async fn read_csv_schema_bulk(
                     owned_io_stats,
                 )
                 .await
+                .map_err(|e| e.with_context(format!("reading {owned_string}")))
             })
         }));
         task_stream
