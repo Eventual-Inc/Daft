@@ -46,7 +46,7 @@ use crate::{
     join::{
         AsofJoinOperator, CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator,
     },
-    shuffle_metadata::ShuffleMetadata,
+    run::ShuffleRef,
     sinks::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
@@ -85,7 +85,7 @@ pub enum PipelineMessage {
     },
     ShuffleMetadata {
         input_id: InputId,
-        metadata: ShuffleMetadata,
+        metadata: ShuffleRef,
     },
     /// Flush signal for a specific input_id - indicates that input is finished
     Flush(InputId),
@@ -1484,7 +1484,7 @@ fn physical_plan_to_pipeline(
                     shuffle_dirs,
                     compression,
                 } => {
-                    let (shuffle_server, _) = ctx
+                    let (shuffle_server, shuffle_address) = ctx
                         .shuffle_server()
                         .expect("Flight shuffle server must be initialized for Flight repartition plans when using flight_shuffle algorithm");
                     let repartition_sink = RepartitionSink::try_new_flight(
@@ -1495,6 +1495,7 @@ fn physical_plan_to_pipeline(
                         shuffle_dirs.clone(),
                         compression.clone(),
                         shuffle_server,
+                        shuffle_address,
                     )
                     .with_context(|_| PipelineCreationSnafu {
                         plan_name: physical_plan.name(),

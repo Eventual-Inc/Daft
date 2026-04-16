@@ -11,6 +11,7 @@ use common_metrics::{QueryEndState, QueryID};
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
+use daft_distributed::python::ray::RayPartitionRef;
 use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
@@ -24,7 +25,7 @@ use tokio_util::sync::CancellationToken;
 use {
     common_daft_config::PyDaftExecutionConfig,
     daft_context::python::PyDaftContext,
-    daft_local_plan::python::PyExecutionStats,
+    daft_local_plan::python::{PyExecutionStats, PyFlightShufflePartitionRef},
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
     pyo3::{
@@ -41,12 +42,17 @@ use crate::{
     },
     resource_manager::get_or_init_memory_manager,
     runtime_stats::{RuntimeStatsManager, RuntimeStatsManagerHandle},
-    shuffle_metadata::ShuffleMetadata,
 };
 
 enum ExecutionEngineResultItem {
     Partition(MicroPartition),
-    ShuffleMetadata(ShuffleMetadata),
+    ShuffleMetadata(ShuffleRef),
+}
+
+#[derive(Debug)]
+pub(crate) enum ShuffleRef {
+    Ray(Vec<RayPartitionRef>),
+    Flight(Vec<PyFlightShufflePartitionRef>),
 }
 
 /// Global tokio runtime shared by all NativeExecutor instances
@@ -594,7 +600,7 @@ impl Drop for NativeExecutor {
 
 pub struct ExecutionEngineResult {
     receiver: crate::channel::UnboundedReceiver<ExecutionEngineResultItem>,
-    shuffle_metadata: Option<ShuffleMetadata>,
+    shuffle_metadata: Option<ShuffleRef>,
 }
 
 impl ExecutionEngineResult {
@@ -610,7 +616,7 @@ impl ExecutionEngineResult {
         None
     }
 
-    async fn into_shuffle_metadata(mut self) -> Option<ShuffleMetadata> {
+    async fn into_shuffle_metadata(mut self) -> Option<ShuffleRef> {
         while let Some(item) = self.receiver.recv().await {
             if let ExecutionEngineResultItem::ShuffleMetadata(metadata) = item {
                 self.shuffle_metadata = Some(metadata);
@@ -687,18 +693,18 @@ impl PyResultReceiver {
             drop(result_guard);
 
             let shuffle_metadata = execution_result.into_shuffle_metadata().await;
-            let (finish_future, shuffle_address) = {
-                let mut executor = executor.lock().unwrap();
-                let shuffle_address = executor.shuffle_address();
-                let finish_future = executor.try_finish(fingerprint, input_id)?;
-                (finish_future, shuffle_address)
-            };
+            let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
             let stats = finish_future.await?;
             Python::attach(|py| {
-                let py_metadata = shuffle_metadata
-                    .as_ref()
-                    .map(|metadata| metadata.to_pyobject(py, shuffle_address.as_deref()))
-                    .transpose()?;
+                let py_metadata = match shuffle_metadata {
+                    None => py.None(),
+                    Some(ShuffleRef::Ray(ray_refs)) => {
+                        ray_refs.into_pyobject(py)?.unbind().into_any()
+                    }
+                    Some(ShuffleRef::Flight(flight_refs)) => {
+                        flight_refs.into_pyobject(py)?.unbind().into_any()
+                    }
+                };
                 Ok((PyExecutionStats::from(stats), py_metadata)
                     .into_pyobject(py)?
                     .unbind())

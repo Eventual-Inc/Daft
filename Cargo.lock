@@ -2938,6 +2938,7 @@ dependencies = [
  "daft-context",
  "daft-core",
  "daft-csv",
+ "daft-distributed",
  "daft-dsl",
  "daft-functions-list",
  "daft-functions-uri",

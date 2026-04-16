@@ -207,20 +207,13 @@ class RaySwordfishActor:
                 raise ValueError("Shuffle write plans should not produce materialized partitions")
 
             if not shuffle_metadata:
-                return RayTaskResult.success_shuffle_ray([], stats.encode())
+                raise ValueError("Expected shuffle metadata to be present")
 
             if isinstance(shuffle_metadata[0], FlightShufflePartitionRef):
                 flight_metadata = cast("list[FlightShufflePartitionRef]", shuffle_metadata)
                 return RayTaskResult.success_shuffle_flight(flight_metadata, stats.encode())
 
-            ray_refs: list[RayPartitionRef] = []
-            ray_metadata = cast("list[tuple[object | None, int | None, int, int]]", shuffle_metadata)
-            for object_ref, partition_ref_id, num_rows, size_bytes in ray_metadata:
-                if object_ref is None:
-                    raise ValueError("Expected Ray shuffle metadata to include object refs")
-                if partition_ref_id is not None:
-                    raise ValueError("Expected Ray shuffle metadata to not include partition ref ids")
-                ray_refs.append(RayPartitionRef(object_ref, int(num_rows), int(size_bytes)))
+            ray_refs = cast("list[RayPartitionRef]", shuffle_metadata)
             return RayTaskResult.success_shuffle_ray(ray_refs, stats.encode())
 
 

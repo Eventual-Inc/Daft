@@ -357,7 +357,7 @@ impl TaskResultHandle for RayTaskResultHandle {
 
 #[pyclass(module = "daft.daft", name = "RayPartitionRef", frozen, from_py_object)]
 #[derive(Debug, Clone)]
-pub(crate) struct RayPartitionRef {
+pub struct RayPartitionRef {
     pub object_ref: Arc<Py<PyAny>>,
     pub num_rows: usize,
     pub size_bytes: usize,
