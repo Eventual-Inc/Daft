@@ -79,8 +79,8 @@ Next, let's also **extract the URL and score**:
 ```python
 df = df.select(
     df["embedding"],
-    df["meta"].struct.get("url"),
-    df["meta"].struct.get("question_score"),
+    df["meta"]["url"],
+    df["meta"]["question_score"],
 )
 ```
 
