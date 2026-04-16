@@ -8,7 +8,7 @@ use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_metrics::Meter;
 use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
-use daft_local_plan::python::{PyExecutionStats, PyFlightShufflePartitionRef};
+use daft_local_plan::python::{PyExecutionStats, PyFlightPartitionRef};
 use daft_logical_plan::PyLogicalPlanBuilder;
 use dashboard::DashboardStatisticsSubscriber;
 use futures::StreamExt;
@@ -272,7 +272,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDistributedPhysicalPlanRunner>()?;
     parent.add_class::<RaySwordfishTask>()?;
     parent.add_class::<RayPartitionRef>()?;
-    parent.add_class::<PyFlightShufflePartitionRef>()?;
+    parent.add_class::<PyFlightPartitionRef>()?;
     parent.add_class::<RaySwordfishWorker>()?;
     parent.add_class::<RayTaskResult>()?;
     Ok(())

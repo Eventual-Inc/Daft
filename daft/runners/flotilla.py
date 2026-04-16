@@ -13,7 +13,7 @@ from daft.context import get_context
 from daft.daft import (
     DistributedPhysicalPlan,
     DistributedPhysicalPlanRunner,
-    FlightShufflePartitionRef,
+    FlightPartitionRef,
     Input,
     LocalPhysicalPlan,
     NativeExecutor,
@@ -167,7 +167,7 @@ class RaySwordfishActor:
             Input | list[ray.ObjectRef]
         ),  # PyMicroPartitions are separated from Inputs because they are Ray ObjectRefs, which will be resolved by Ray.
     ) -> tuple[
-        list[RayPartitionRef] | list[FlightShufflePartitionRef],
+        list[RayPartitionRef] | list[FlightPartitionRef],
         bytes,
     ]:
         """Run a plan on swordfish and return raw refs + stats."""
@@ -266,9 +266,9 @@ class RaySwordfishTaskHandle:
             return RayTaskResult.worker_unavailable()
         except Exception as e:
             raise e
-        if refs and isinstance(refs[0], FlightShufflePartitionRef):
+        if refs and isinstance(refs[0], FlightPartitionRef):
             return RayTaskResult.success_flight(
-                cast("list[FlightShufflePartitionRef]", refs),
+                cast("list[FlightPartitionRef]", refs),
                 stats,
             )
         return RayTaskResult.success_ray(cast("list[RayPartitionRef]", refs), stats)

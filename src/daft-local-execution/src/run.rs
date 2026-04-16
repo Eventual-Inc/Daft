@@ -25,7 +25,7 @@ use tokio_util::sync::CancellationToken;
 use {
     common_daft_config::PyDaftExecutionConfig,
     daft_context::python::PyDaftContext,
-    daft_local_plan::python::{PyExecutionStats, PyFlightShufflePartitionRef},
+    daft_local_plan::python::{PyExecutionStats, PyFlightPartitionRef},
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
     pyo3::{
@@ -46,13 +46,13 @@ use crate::{
 
 enum ExecutionEngineResultItem {
     Partition(MicroPartition),
-    ShuffleMetadata(ShuffleRef),
+    ShuffleMetadata(ShufflePartitionRefs),
 }
 
 #[derive(Debug)]
-pub(crate) enum ShuffleRef {
+pub(crate) enum ShufflePartitionRefs {
     Ray(Vec<RayPartitionRef>),
-    Flight(Vec<PyFlightShufflePartitionRef>),
+    Flight(Vec<PyFlightPartitionRef>),
 }
 
 /// Global tokio runtime shared by all NativeExecutor instances
@@ -600,7 +600,7 @@ impl Drop for NativeExecutor {
 
 pub struct ExecutionEngineResult {
     receiver: crate::channel::UnboundedReceiver<ExecutionEngineResultItem>,
-    shuffle_metadata: Option<ShuffleRef>,
+    shuffle_metadata: Option<ShufflePartitionRefs>,
 }
 
 impl ExecutionEngineResult {
@@ -616,7 +616,7 @@ impl ExecutionEngineResult {
         None
     }
 
-    async fn into_shuffle_metadata(mut self) -> Option<ShuffleRef> {
+    async fn into_shuffle_metadata(mut self) -> Option<ShufflePartitionRefs> {
         while let Some(item) = self.receiver.recv().await {
             if let ExecutionEngineResultItem::ShuffleMetadata(metadata) = item {
                 self.shuffle_metadata = Some(metadata);
@@ -678,10 +678,10 @@ impl PyResultReceiver {
             Python::attach(|py| {
                 let py_metadata = match shuffle_metadata {
                     None => py.None(),
-                    Some(ShuffleRef::Ray(ray_refs)) => {
+                    Some(ShufflePartitionRefs::Ray(ray_refs)) => {
                         ray_refs.into_pyobject(py)?.unbind().into_any()
                     }
-                    Some(ShuffleRef::Flight(flight_refs)) => {
+                    Some(ShufflePartitionRefs::Flight(flight_refs)) => {
                         flight_refs.into_pyobject(py)?.unbind().into_any()
                     }
                 };

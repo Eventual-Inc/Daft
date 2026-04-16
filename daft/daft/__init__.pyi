@@ -2240,7 +2240,7 @@ class RayPartitionRef:
 
     def __init__(self, object_ref: ray.ObjectRef, num_rows: int, size_bytes: int): ...
 
-class FlightShufflePartitionRef:
+class FlightPartitionRef:
     shuffle_id: int
     server_address: str
     partition_ref_id: int
@@ -2269,7 +2269,7 @@ class RayTaskResult:
     @staticmethod
     def success_ray(ray_part_refs: list[RayPartitionRef], stats: bytes) -> RayTaskResult: ...
     @staticmethod
-    def success_flight(shuffle_part_refs: list[FlightShufflePartitionRef], stats: bytes) -> RayTaskResult: ...
+    def success_flight(shuffle_part_refs: list[FlightPartitionRef], stats: bytes) -> RayTaskResult: ...
     @staticmethod
     def worker_died() -> RayTaskResult: ...
     @staticmethod
@@ -2301,7 +2301,7 @@ class PyResultReceiver:
         self,
     ) -> tuple[
         PyExecutionStats,
-        list[RayPartitionRef] | list[FlightShufflePartitionRef] | None,
+        list[RayPartitionRef] | list[FlightPartitionRef] | None,
     ]: ...
 
 class LocalPhysicalPlan:

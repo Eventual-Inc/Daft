@@ -1,6 +1,6 @@
 use common_error::DaftResult;
 use daft_local_plan::{
-    FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, PyFlightShufflePartitionRef,
+    FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, PyFlightPartitionRef,
     ShuffleReadBackend,
 };
 use daft_logical_plan::stats::StatsState;
@@ -46,7 +46,7 @@ pub(crate) async fn emit_read_tasks(
             .map(|partition| {
                 partition
                     .as_any()
-                    .downcast_ref::<PyFlightShufflePartitionRef>()
+                    .downcast_ref::<PyFlightPartitionRef>()
                     .expect("expected flight partition ref")
                     .inner
                     .clone()

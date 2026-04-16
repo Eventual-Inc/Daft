@@ -10,20 +10,20 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use crate::{ExecutionStats, LocalPhysicalPlanRef, translate};
-use crate::{FlightShufflePartitionRef, Input};
+use crate::{FlightPartitionRef, Input};
 
 #[pyclass(
     module = "daft.daft",
-    name = "FlightShufflePartitionRef",
+    name = "FlightPartitionRef",
     frozen,
     from_py_object
 )]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PyFlightShufflePartitionRef {
-    pub inner: FlightShufflePartitionRef,
+pub struct PyFlightPartitionRef {
+    pub inner: FlightPartitionRef,
 }
 
-impl Partition for PyFlightShufflePartitionRef {
+impl Partition for PyFlightPartitionRef {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -35,10 +35,10 @@ impl Partition for PyFlightShufflePartitionRef {
     }
 }
 
-impl_bincode_py_state_serialization!(PyFlightShufflePartitionRef);
+impl_bincode_py_state_serialization!(PyFlightPartitionRef);
 
 #[pymethods]
-impl PyFlightShufflePartitionRef {
+impl PyFlightPartitionRef {
     #[new]
     pub fn new(
         shuffle_id: u64,
@@ -48,7 +48,7 @@ impl PyFlightShufflePartitionRef {
         size_bytes: usize,
     ) -> Self {
         Self {
-            inner: FlightShufflePartitionRef {
+            inner: FlightPartitionRef {
                 shuffle_id,
                 server_address,
                 partition_ref_id,
@@ -84,14 +84,14 @@ impl PyFlightShufflePartitionRef {
     }
 }
 
-impl From<FlightShufflePartitionRef> for PyFlightShufflePartitionRef {
-    fn from(inner: FlightShufflePartitionRef) -> Self {
+impl From<FlightPartitionRef> for PyFlightPartitionRef {
+    fn from(inner: FlightPartitionRef) -> Self {
         Self { inner }
     }
 }
 
-impl From<PyFlightShufflePartitionRef> for FlightShufflePartitionRef {
-    fn from(py_ref: PyFlightShufflePartitionRef) -> Self {
+impl From<PyFlightPartitionRef> for FlightPartitionRef {
+    fn from(py_ref: PyFlightPartitionRef) -> Self {
         py_ref.inner
     }
 }
@@ -217,7 +217,7 @@ impl From<ExecutionStats> for PyExecutionStats {
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_class::<PyFlightShufflePartitionRef>()?;
+    parent.add_class::<PyFlightPartitionRef>()?;
     parent.add_class::<PyLocalPhysicalPlan>()?;
     parent.add_class::<PyInput>()?;
     parent.add_class::<PyExecutionStats>()?;

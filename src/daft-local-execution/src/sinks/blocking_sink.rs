@@ -25,7 +25,7 @@ use crate::{
         PipelineNode, next_event,
     },
     resource_manager::MemoryManager,
-    run::ShuffleRef,
+    run::ShufflePartitionRefs,
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 
@@ -33,7 +33,7 @@ pub(crate) type BlockingSinkSinkResult<Op> =
     OperatorOutput<DaftResult<<Op as BlockingSink>::State>>;
 pub(crate) enum BlockingSinkOutput {
     Partitions(Vec<MicroPartition>),
-    ShuffleMetadata(ShuffleRef),
+    ShuffleMetadata(ShufflePartitionRefs),
 }
 pub(crate) type BlockingSinkFinalizeResult = OperatorOutput<DaftResult<BlockingSinkOutput>>;
 

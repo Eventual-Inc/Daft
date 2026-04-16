@@ -10,7 +10,7 @@ use common_metrics::ops::NodeType;
 use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
-use daft_local_plan::{FlightShufflePartitionRef, FlightShuffleReadInput, InputId};
+use daft_local_plan::{FlightPartitionRef, FlightShuffleReadInput, InputId};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_shuffles::{client::FlightClientManager, server::flight_server::ShuffleFlightServer};
@@ -135,7 +135,7 @@ impl ShuffleReadSource {
 async fn fetch_partition_refs(
     client_manager: FlightClientManager,
     local_server: Option<&(Arc<ShuffleFlightServer>, String)>,
-    refs: &[FlightShufflePartitionRef],
+    refs: &[FlightPartitionRef],
     schema: SchemaRef,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let refs: Vec<_> = refs
@@ -218,7 +218,7 @@ async fn fetch_partition_refs(
 async fn forward_partition_refs(
     client_manager: FlightClientManager,
     local_server: Option<(Arc<ShuffleFlightServer>, String)>,
-    refs: Vec<FlightShufflePartitionRef>,
+    refs: Vec<FlightPartitionRef>,
     schema: SchemaRef,
     sender: Sender<PipelineMessage>,
     input_id: InputId,
@@ -343,11 +343,7 @@ mod tests {
     /// and return the server + registered partition refs.
     async fn setup_local_server(
         values: &[&[i64]],
-    ) -> (
-        Arc<ShuffleFlightServer>,
-        Vec<FlightShufflePartitionRef>,
-        u64,
-    ) {
+    ) -> (Arc<ShuffleFlightServer>, Vec<FlightPartitionRef>, u64) {
         let temp_dir = make_temp_dir();
         let shuffle_id = 99;
         let input_id = 1;
@@ -372,9 +368,9 @@ mod tests {
             registered.push(writer.close().await.unwrap());
         }
 
-        let refs: Vec<FlightShufflePartitionRef> = registered
+        let refs: Vec<FlightPartitionRef> = registered
             .iter()
-            .map(|p| FlightShufflePartitionRef {
+            .map(|p| FlightPartitionRef {
                 shuffle_id,
                 server_address: local_address.clone(),
                 partition_ref_id: p.partition_ref_id,
@@ -397,14 +393,14 @@ mod tests {
     -> DaftResult<()> {
         let schema = make_schema();
         let refs = vec![
-            FlightShufflePartitionRef {
+            FlightPartitionRef {
                 shuffle_id: 11,
                 server_address: "grpc://worker-a:1234".to_string(),
                 partition_ref_id: 101,
                 num_rows: 0,
                 size_bytes: 100,
             },
-            FlightShufflePartitionRef {
+            FlightPartitionRef {
                 shuffle_id: 11,
                 server_address: "grpc://worker-b:1234".to_string(),
                 partition_ref_id: 102,
@@ -537,7 +533,7 @@ mod tests {
         let local_address = "grpc://local:9999".to_string();
 
         // Re-tag one ref as "remote" by pointing it at the gRPC address.
-        let remote_ref = FlightShufflePartitionRef {
+        let remote_ref = FlightPartitionRef {
             server_address: grpc_address,
             ..local_refs.pop().unwrap()
         };

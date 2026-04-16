@@ -46,7 +46,7 @@ use crate::{
     join::{
         AsofJoinOperator, CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator,
     },
-    run::ShuffleRef,
+    run::ShufflePartitionRefs,
     sinks::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
@@ -85,7 +85,7 @@ pub enum PipelineMessage {
     },
     ShuffleMetadata {
         input_id: InputId,
-        metadata: ShuffleRef,
+        metadata: ShufflePartitionRefs,
     },
     /// Flush signal for a specific input_id - indicates that input is finished
     Flush(InputId),

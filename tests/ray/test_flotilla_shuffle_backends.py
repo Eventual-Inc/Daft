@@ -50,8 +50,8 @@ def test_ray_task_result_is_pickleable_for_materialized_and_shuffle_outputs():
     pickle.loads(pickle.dumps(materialized))
 
     flight_refs = [
-        flotilla.FlightShufflePartitionRef(17, "grpc://127.0.0.1:9000", 101, 4, 40),
-        flotilla.FlightShufflePartitionRef(17, "grpc://127.0.0.1:9000", 102, 5, 50),
+        flotilla.FlightPartitionRef(17, "grpc://127.0.0.1:9000", 101, 4, 40),
+        flotilla.FlightPartitionRef(17, "grpc://127.0.0.1:9000", 102, 5, 50),
     ]
     shuffle = flotilla.RayTaskResult.success_shuffle_flight(flight_refs, b"stats")
     pickle.loads(pickle.dumps(shuffle))

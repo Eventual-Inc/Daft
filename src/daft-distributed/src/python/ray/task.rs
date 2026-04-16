@@ -3,7 +3,7 @@ use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 use common_daft_config::PyDaftExecutionConfig;
 use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::{
-    ExecutionStats, PyFlightShufflePartitionRef, PyLocalPhysicalPlan, SourceId, python::PyInput,
+    ExecutionStats, PyFlightPartitionRef, PyLocalPhysicalPlan, SourceId, python::PyInput,
 };
 use pyo3::{Bound, IntoPyObject, Py, PyAny, PyResult, PyTypeInfo, Python, pyclass, pymethods};
 
@@ -48,7 +48,7 @@ impl RayTaskResult {
 
     #[staticmethod]
     fn success_flight(
-        shuffle_part_refs: Vec<PyFlightShufflePartitionRef>,
+        shuffle_part_refs: Vec<PyFlightPartitionRef>,
         stats_serialized: Vec<u8>,
     ) -> Self {
         Self {
@@ -145,7 +145,7 @@ impl TaskResultHandle for RayTaskResultHandle {
                             .is_some()
                             || partition
                                 .as_any()
-                                .downcast_ref::<PyFlightShufflePartitionRef>()
+                                .downcast_ref::<PyFlightPartitionRef>()
                                 .is_some()
                     });
                     // Task outputs are expected to be transport refs we can route in downstream nodes.

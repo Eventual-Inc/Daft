@@ -8,7 +8,7 @@ use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_distributed::python::ray::RayPartitionRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::python::PyFlightShufflePartitionRef;
+use daft_local_plan::python::PyFlightPartitionRef;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
 use daft_shuffles::{
@@ -24,7 +24,7 @@ use super::blocking_sink::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
-    run::ShuffleRef,
+    run::ShufflePartitionRefs,
 };
 
 pub(crate) struct RayRepartitionState {
@@ -294,9 +294,9 @@ impl BlockingSink for RepartitionSink {
                                     }
                                     Ok(())
                                 })?;
-                                Ok(BlockingSinkOutput::ShuffleMetadata(ShuffleRef::Ray(
-                                    partition_refs,
-                                )))
+                                Ok(BlockingSinkOutput::ShuffleMetadata(
+                                    ShufflePartitionRefs::Ray(partition_refs),
+                                ))
                             }
                             #[cfg(not(feature = "python"))]
                             {
@@ -341,20 +341,22 @@ impl BlockingSink for RepartitionSink {
                             local_server
                                 .register_shuffle_partitions(shuffle_id, finalized.clone())
                                 .await?;
-                            Ok(BlockingSinkOutput::ShuffleMetadata(ShuffleRef::Flight(
-                                finalized
-                                    .into_iter()
-                                    .map(|partition| {
-                                        PyFlightShufflePartitionRef::new(
-                                            shuffle_id,
-                                            shuffle_address.clone(),
-                                            partition.partition_ref_id,
-                                            partition.num_rows,
-                                            partition.size_bytes,
-                                        )
-                                    })
-                                    .collect(),
-                            )))
+                            Ok(BlockingSinkOutput::ShuffleMetadata(
+                                ShufflePartitionRefs::Flight(
+                                    finalized
+                                        .into_iter()
+                                        .map(|partition| {
+                                            PyFlightPartitionRef::new(
+                                                shuffle_id,
+                                                shuffle_address.clone(),
+                                                partition.partition_ref_id,
+                                                partition.num_rows,
+                                                partition.size_bytes,
+                                            )
+                                        })
+                                        .collect(),
+                                ),
+                            ))
                         },
                         Span::current(),
                     )

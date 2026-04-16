@@ -8,7 +8,7 @@ mod translate;
 use daft_micropartition::MicroPartitionRef;
 use daft_scan::ScanTaskRef;
 pub use plan::{
-    AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShufflePartitionRef,
+    AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightPartitionRef,
     FlightShuffleReadInput, GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches,
     IntoPartitions, Limit, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,
     MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, PlaceholderScan, Project,
@@ -20,7 +20,7 @@ pub use plan::{
 #[cfg(feature = "python")]
 pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject, LanceWrite};
 #[cfg(feature = "python")]
-pub use python::{PyFlightShufflePartitionRef, PyLocalPhysicalPlan, register_modules};
+pub use python::{PyFlightPartitionRef, PyLocalPhysicalPlan, register_modules};
 pub use results::ExecutionStats;
 use serde::{Deserialize, Serialize};
 pub use translate::translate;

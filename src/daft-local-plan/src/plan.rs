@@ -2219,7 +2219,7 @@ pub enum ShuffleReadBackend {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FlightShufflePartitionRef {
+pub struct FlightPartitionRef {
     pub shuffle_id: u64,
     pub server_address: String,
     pub partition_ref_id: u64,
@@ -2249,5 +2249,5 @@ pub struct ShuffleRead {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlightShuffleReadInput {
-    pub refs: Vec<FlightShufflePartitionRef>,
+    pub refs: Vec<FlightPartitionRef>,
 }
