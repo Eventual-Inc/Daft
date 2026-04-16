@@ -43,9 +43,9 @@ mod aggregate;
 mod concat;
 mod distinct;
 mod explode;
-pub(crate) mod filter;
+mod filter;
 mod glob_scan_source;
-pub(crate) mod in_memory_source;
+mod in_memory_source;
 mod into_batches;
 mod into_partitions;
 mod join;
@@ -60,7 +60,7 @@ mod sample;
 mod scan_source;
 mod shuffles;
 mod sink;
-pub(crate) mod sort;
+mod sort;
 mod top_n;
 mod translate;
 mod udf;
@@ -510,6 +510,13 @@ impl Stream for TaskBuilderStream {
         self.task_builder_stream.poll_next_unpin(cx)
     }
 }
+
+#[cfg(test)]
+pub(crate) use filter::FilterNode;
+#[cfg(test)]
+pub(crate) use in_memory_source::InMemorySourceNode;
+#[cfg(test)]
+pub(crate) use sort::SortNode;
 
 #[cfg(test)]
 pub(crate) mod tests {

@@ -19,13 +19,8 @@ use daft_schema::{
 use futures::StreamExt;
 
 use crate::{
-    pipeline_node::{
-        DistributedPipelineNode,
-        filter::FilterNode,
-        in_memory_source::InMemorySourceNode,
-        sort::SortNode,
-    },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
+    pipeline_node::{DistributedPipelineNode, FilterNode, InMemorySourceNode, SortNode},
+    plan::{PlanConfig, PlanExecutionContext},
     scheduling::{
         local_worker::LocalSwordfishWorkerManager,
         scheduler::spawn_scheduler_actor,
