@@ -66,9 +66,9 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                         .map(|input| input.alias(name.clone()))
                         .collect(),
                 },
-                AggExpr::AggFnBlock { .. } | AggExpr::AggFnCombine { .. } => {
+                AggExpr::AggFnMap { .. } | AggExpr::AggFnReduce { .. } => {
                     unreachable!(
-                        "AggFnBlock / AggFnCombine are planner-internal expressions \
+                        "AggFnMap / AggFnReduce are planner-internal expressions \
                          and must not appear in a user-level alias context"
                     )
                 }

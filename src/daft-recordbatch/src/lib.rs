@@ -101,11 +101,9 @@ fn validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
     Ok(())
 }
 
-/// Framework-side fold for `AggFnCombine`.
-///
-/// Mirrors Ray's `_combine_aggregated_blocks` loop: for each group, reduces
-/// the partial `Binary` states produced by `call_agg_block` into a single
-/// state by calling `call_agg_combine` N-1 times (left fold).
+/// Framework-side fold for `AggFnReduce`: for each group, left-folds the
+/// partial `Binary` states produced by `call_agg_block` into a single state
+/// by calling `call_agg_combine` N-1 times.
 ///
 /// Returns a `Binary`-typed [`Series`] with one combined state per group
 /// (or one state total for the ungrouped case).
@@ -776,18 +774,18 @@ impl RecordBatch {
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
             )),
             AggExpr::AggFn { .. } => Err(DaftError::InternalError(
-                "AggFn must be decomposed into AggFnBlock + AggFnCombine by the planner \
+                "AggFn must be decomposed into AggFnMap + AggFnReduce by the planner \
                  before execution; do not call eval_agg_expression with a raw AggFn"
                     .to_string(),
             )),
-            AggExpr::AggFnBlock { handle, inputs } => {
+            AggExpr::AggFnMap { handle, inputs } => {
                 let evaled_inputs: Vec<Series> = inputs
                     .iter()
                     .map(|e| self.eval_agg_child(e))
                     .collect::<DaftResult<_>>()?;
                 handle.call_agg_block(evaled_inputs, groups)
             }
-            AggExpr::AggFnCombine {
+            AggExpr::AggFnReduce {
                 handle,
                 partial,
                 return_field,

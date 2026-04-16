@@ -109,9 +109,8 @@ impl AggStrategy {
         Ok(())
     }
 
-    /// Stage-1 map-side combine: mirrors Ray's `HashShuffleAggregator.compact`.
-    /// When enough partial partitions have accumulated per bucket, folds them
-    /// into one, reducing the binary-state volume shipped to stage 2.
+    /// Map-side combine: when enough partial partitions have accumulated per
+    /// bucket, folds them into one to reduce binary-state volume before stage 2.
     fn try_eager_combine(
         state: &mut SinglePartitionAggregateState,
         params: &GroupedAggregateParams,
@@ -119,7 +118,7 @@ impl AggStrategy {
         let needs_combine = params
             .final_agg_exprs
             .iter()
-            .any(|e| matches!(e.as_ref(), daft_dsl::AggExpr::AggFnCombine { .. }));
+            .any(|e| matches!(e.as_ref(), daft_dsl::AggExpr::AggFnReduce { .. }));
         if !needs_combine || state.partially_aggregated.len() < PARTIAL_AGG_COMBINE_THRESHOLD {
             return Ok(());
         }
@@ -250,9 +249,9 @@ impl GroupedAggregateState {
     }
 }
 
-/// How many accumulated partial-aggregate partitions (per hash-bucket) to allow
-/// before eagerly combining them with `call_agg_combine`.  Only active when
-/// `AggFn` expressions are present.  Mirrors Ray's `compact` threshold.
+/// How many partial-aggregate partitions may accumulate per hash-bucket before
+/// an eager map-side combine is triggered.  Only active when `AggFn` expressions
+/// are present.
 const PARTIAL_AGG_COMBINE_THRESHOLD: usize = 4;
 
 struct GroupedAggregateParams {
@@ -288,10 +287,9 @@ impl GroupedAggregateSink {
                 group_by,
             )?;
 
-        // AggFn cannot be mixed with MapGroups: MapGroups forces the PartitionOnly strategy
-        // which runs `original_aggregations` in the finalize step.  Since AggFn no longer
-        // has a single-pass fallback, mixing the two would hit the "AggFn must be decomposed"
-        // error at runtime.  Reject the combination upfront with a clear message.
+        // MapGroups cannot be decomposed into partial/final stages — it must see the full
+        // group in one pass, so it always uses PartitionOnly.  AggFn has no single-pass
+        // path, so the two cannot coexist in the same aggregation.
         let has_map_groups = aggregations
             .iter()
             .any(|agg| matches!(agg.as_ref(), daft_dsl::AggExpr::MapGroups { .. }));

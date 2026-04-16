@@ -392,7 +392,7 @@ mod tests {
 
     fn bound_block(rb: &RecordBatch) -> BoundAggExpr {
         BoundAggExpr::try_new(
-            AggExpr::AggFnBlock {
+            AggExpr::AggFnMap {
                 handle: make_handle(),
                 inputs: vec![unresolved_col("x")],
             },
@@ -404,7 +404,7 @@ mod tests {
     fn bound_combine(schema: &daft_core::prelude::SchemaRef) -> BoundAggExpr {
         let return_field = Field::new("x", DataType::Int64);
         BoundAggExpr::try_new(
-            AggExpr::AggFnCombine {
+            AggExpr::AggFnReduce {
                 handle: make_handle(),
                 partial: unresolved_col(&*partial_col_name()),
                 return_field,
@@ -421,11 +421,11 @@ mod tests {
             Int64Array::from_vec("x", vec![1i64, 2, 3]).into_series(),
         ])?;
 
-        // Stage 1: AggFnBlock — one binary row (sum of all rows).
+        // Stage 1: AggFnMap — one binary row (sum of all rows).
         let intermediate = rb.agg_global(&[bound_block(&rb)])?;
         assert_eq!(intermediate.len(), 1);
 
-        // Stage 2: AggFnCombine — combine (no-op, one group) + finalize.
+        // Stage 2: AggFnReduce — combine (no-op, one group) + finalize.
         let result = intermediate.agg_global(&[bound_combine(&intermediate.schema)])?;
         assert_eq!(result.len(), 1);
         let col = get_column_by_name(&result, "x")?;
@@ -448,14 +448,14 @@ mod tests {
         let bound_g_s1 = BoundExpr::try_new(unresolved_col("g"), &shard1.schema)?;
         let bound_g_s2 = BoundExpr::try_new(unresolved_col("g"), &shard2.schema)?;
 
-        // Stage 1: AggFnBlock per shard.
+        // Stage 1: AggFnMap per shard.
         let partial1 = shard1.agg(&[bound_block(&shard1)], &[bound_g_s1])?;
         let partial2 = shard2.agg(&[bound_block(&shard2)], &[bound_g_s2])?;
 
         // Concat the two partial results (simulates shuffle merge).
         let merged = RecordBatch::concat(&[partial1, partial2])?;
 
-        // Stage 2: AggFnCombine — combine partial states per group, then finalize.
+        // Stage 2: AggFnReduce — combine partial states per group, then finalize.
         let bound_g_m = BoundExpr::try_new(unresolved_col("g"), &merged.schema)?;
         let result = merged.agg(&[bound_combine(&merged.schema)], &[bound_g_m])?;
         assert_eq!(result.len(), 2);

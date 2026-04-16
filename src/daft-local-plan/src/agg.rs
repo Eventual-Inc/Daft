@@ -342,20 +342,20 @@ pub fn populate_aggregation_stages_bound_with_schema(
                     .collect::<DaftResult<Vec<_>>>()?;
                 let return_field = handle.get_return_field(&input_fields, schema)?;
 
-                let partial_col = first_stage!(AggExpr::AggFnBlock {
+                let partial_col = first_stage!(AggExpr::AggFnMap {
                     handle: handle.clone(),
                     inputs: inputs.clone(),
                 });
-                let final_col = second_stage!(AggExpr::AggFnCombine {
+                let final_col = second_stage!(AggExpr::AggFnReduce {
                     handle: handle.clone(),
                     partial: partial_col,
                     return_field,
                 });
                 final_stage(final_col);
             }
-            AggExpr::AggFnBlock { .. } | AggExpr::AggFnCombine { .. } => {
+            AggExpr::AggFnMap { .. } | AggExpr::AggFnReduce { .. } => {
                 return Err(common_error::DaftError::InternalError(
-                    "AggFnBlock / AggFnCombine must not appear in the top-level aggregation list"
+                    "AggFnMap / AggFnReduce must not appear in the top-level aggregation list"
                         .to_string(),
                 ));
             }

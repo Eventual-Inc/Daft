@@ -11,20 +11,19 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 ///
 /// Registered with `typetag::serde` so that plan serialization/deserialization works.
 ///
-/// Follows Ray's `AggregateFnV2` pattern with three mandatory stages:
+/// Three mandatory stages:
 ///
 /// ```text
-/// Block Aggregation:  call_agg_block(inputs, groups) → Binary Series
-///                         One serialized accumulator state per group,
-///                         produced independently per block.
-///                     ↓  [binary columns travel through Arrow pipeline]
-/// Combine:            call_agg_combine(&[u8], &[u8]) → Vec<u8>    (binary, associative)
-///                         Called by the framework N-1 times per group to fold
-///                         partial states into one.  Equivalent to Ray's `combine`.
-///                     ↓
-/// Finalize:           call_agg_finalize(states, return_field) → typed Series
-///                         Called once with the one-state-per-group Binary Series.
-///                         Equivalent to Ray's `finalize`.
+/// Map:     call_agg_block(inputs, groups) → Binary Series
+///              One serialized accumulator state per group,
+///              produced independently per block.
+///          ↓  [binary columns travel through Arrow pipeline]
+/// Combine: call_agg_combine(&[u8], &[u8]) → Vec<u8>    (binary, associative)
+///              Called by the framework N-1 times per group to fold
+///              partial states into one.
+///          ↓
+/// Reduce:  call_agg_finalize(states, return_field) → typed Series
+///              Called once with the one-state-per-group Binary Series.
 /// ```
 ///
 /// All three methods are required — there is no single-pass fallback.
@@ -33,8 +32,6 @@ pub trait AggFn: Send + Sync {
     fn name(&self) -> &'static str;
     fn get_return_field(&self, inputs: &[Field], schema: &Schema) -> DaftResult<Field>;
 
-    /// Block Aggregation (Ray's `aggregate_block`).
-    ///
     /// Process `inputs` for one block and return a `Binary`-typed [`Series`]
     /// containing one serialized accumulator state per group.
     fn call_agg_block(
@@ -43,9 +40,7 @@ pub trait AggFn: Send + Sync {
         groups: Option<&daft_core::array::ops::GroupIndices>,
     ) -> DaftResult<Series>;
 
-    /// Combine two accumulator states (Ray's `combine`).
-    ///
-    /// Merges exactly two serialized states into one.  Must be **associative**
+    /// Merge two serialized accumulator states into one.  Must be **associative**
     /// (and ideally commutative) so that the framework can fold partial states
     /// in any order or tree-reduce them in parallel.
     ///
@@ -53,8 +48,6 @@ pub trait AggFn: Send + Sync {
     /// partial states produced by `call_agg_block` across all blocks.
     fn call_agg_combine(&self, a: &[u8], b: &[u8]) -> DaftResult<Vec<u8>>;
 
-    /// Finalize (Ray's `finalize`).
-    ///
     /// Receives a `Binary`-typed [`Series`] with one combined accumulator per
     /// group and returns the final typed output column.
     ///
