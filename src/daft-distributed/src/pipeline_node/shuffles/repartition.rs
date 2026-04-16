@@ -5,20 +5,13 @@ use common_metrics::ops::{NodeCategory, NodeType};
 use daft_local_plan::RepartitionWriteBackend;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_schema::schema::SchemaRef;
-use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
         TaskBuilderStream,
-        shuffles::{
-            backends::{
-                DistributedShuffleBackend, ShuffleBackend, ShuffleBackendReadSpec,
-                ShuffleBackendWriteConfig,
-            },
-            partition_groups::{
-                flight_partition_groups_from_outputs, ray_partition_groups_from_outputs,
-            },
+        shuffles::backends::{
+            DistributedShuffleBackend, ShuffleBackend, ShuffleBackendWriteConfig,
         },
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -26,7 +19,10 @@ use crate::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
-    utils::channel::{Sender, create_channel},
+    utils::{
+        channel::{Sender, create_channel},
+        transpose::transpose_materialized_outputs_from_stream,
+    },
 };
 
 pub(crate) struct RepartitionNode {
@@ -34,6 +30,7 @@ pub(crate) struct RepartitionNode {
     context: PipelineNodeContext,
     repartition_spec: RepartitionSpec,
     shuffle_backend: ShuffleBackend,
+    num_partitions: usize,
     child: DistributedPipelineNode,
 }
 
@@ -71,6 +68,7 @@ impl RepartitionNode {
             context: context.clone(),
             repartition_spec,
             shuffle_backend: ShuffleBackend::new(&context, schema, num_partitions, backend),
+            num_partitions,
             child,
         }
     }
@@ -82,32 +80,17 @@ impl RepartitionNode {
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
-        let outputs = local_shuffle_write_node
-            .materialize(
-                scheduler_handle.clone(),
-                self.context.query_idx,
-                task_id_counter,
-            )
-            .try_collect::<Vec<_>>()
-            .await?;
+        let outputs = local_shuffle_write_node.materialize(
+            scheduler_handle.clone(),
+            self.context.query_idx,
+            task_id_counter,
+        );
 
-        let read_spec = match self.shuffle_backend.backend() {
-            DistributedShuffleBackend::Ray => ShuffleBackendReadSpec::Ray {
-                partition_groups: ray_partition_groups_from_outputs(
-                    outputs,
-                    self.shuffle_backend.num_partitions(),
-                )?,
-            },
-            DistributedShuffleBackend::Flight(_) => ShuffleBackendReadSpec::Flight {
-                partition_groups: flight_partition_groups_from_outputs(
-                    outputs,
-                    self.shuffle_backend.num_partitions(),
-                )?,
-            },
-        };
+        let transposed_outputs =
+            transpose_materialized_outputs_from_stream(outputs, self.num_partitions).await?;
 
         self.shuffle_backend
-            .emit_read_tasks(read_spec, self.as_ref(), result_tx)
+            .emit_read_tasks(transposed_outputs, self.as_ref(), result_tx)
             .await
     }
 }

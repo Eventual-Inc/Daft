@@ -6,7 +6,9 @@ use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
 use crate::{
-    pipeline_node::{NodeID, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream},
+    pipeline_node::{
+        MaterializedOutput, NodeID, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+    },
     plan::PlanExecutionContext,
     scheduling::task::SwordfishTaskBuilder,
     utils::channel::Sender,
@@ -16,7 +18,6 @@ mod flight;
 mod ray;
 
 pub(crate) use flight::FlightShuffleBackendConfig;
-use flight::FlightShuffleReadSpec;
 
 fn make_shuffle_id(context: &PipelineNodeContext) -> u64 {
     ((context.query_idx as u64) << 32) | (context.node_id as u64)
@@ -70,10 +71,6 @@ impl ShuffleBackend {
         &self.backend
     }
 
-    pub(crate) fn num_partitions(&self) -> usize {
-        self.num_partitions
-    }
-
     pub(crate) fn register_cleanup(&self, plan_context: &mut PlanExecutionContext) {
         match &self.backend {
             DistributedShuffleBackend::Ray => {}
@@ -104,12 +101,12 @@ impl ShuffleBackend {
 
     pub(crate) async fn emit_read_tasks(
         &self,
-        read_spec: ShuffleBackendReadSpec,
+        partition_groups: Vec<Vec<MaterializedOutput>>,
         node: &dyn PipelineNodeImpl,
         result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
-        match (&self.backend, read_spec) {
-            (DistributedShuffleBackend::Ray, ShuffleBackendReadSpec::Ray { partition_groups }) => {
+        match &self.backend {
+            DistributedShuffleBackend::Ray => {
                 ray::emit_read_tasks(
                     self.node_id,
                     self.schema.clone(),
@@ -119,40 +116,16 @@ impl ShuffleBackend {
                 )
                 .await
             }
-            (
-                DistributedShuffleBackend::Flight(_),
-                ShuffleBackendReadSpec::Flight { partition_groups },
-            ) => {
-                let read_spec: FlightShuffleReadSpec =
-                    flight::read_spec_from_partition_groups(partition_groups);
+            DistributedShuffleBackend::Flight(_) => {
                 flight::emit_read_tasks(
                     self.node_id,
                     self.schema.clone(),
-                    read_spec,
+                    partition_groups,
                     node,
                     result_tx,
                 )
                 .await
             }
-            (DistributedShuffleBackend::Ray, ShuffleBackendReadSpec::Flight { .. }) => {
-                Err(common_error::DaftError::InternalError(
-                    "Expected Ray shuffle read spec".to_string(),
-                ))
-            }
-            (DistributedShuffleBackend::Flight(_), ShuffleBackendReadSpec::Ray { .. }) => {
-                Err(common_error::DaftError::InternalError(
-                    "Expected Flight shuffle read spec".to_string(),
-                ))
-            }
         }
     }
-}
-
-pub(crate) enum ShuffleBackendReadSpec {
-    Ray {
-        partition_groups: Vec<Vec<common_partitioning::PartitionRef>>,
-    },
-    Flight {
-        partition_groups: Vec<Vec<daft_local_plan::FlightShufflePartitionRef>>,
-    },
 }
