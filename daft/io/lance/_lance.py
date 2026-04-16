@@ -404,20 +404,26 @@ def create_scalar_index(
     max_concurrency: int | None = None,
     **kwargs: Any,
 ) -> None:
-    """Build a distributed scalar index using Daft's distributed execution.
+    """Build a scalar index, using Daft distributed execution when supported.
 
-    This function distributes the index building process across multiple Daft workers,
-    with each worker building indices for a subset of fragments. The indices are then
-    merged and committed as a single index.
+    For scalar index types that support distributed metadata merge, this function
+    distributes index building across multiple Daft workers, with each worker
+    building indices for a subset of fragments. The partial indices are then
+    merged and committed as a single index. Other scalar index types fall back
+    to Lance's single-node ``create_scalar_index`` implementation.
+
+    ``FTS`` is normalized to ``INVERTED`` before building (same Lance inverted
+    full-text index type); it follows the same distributed path as ``INVERTED``.
 
     Args:
         uri: The URI of the Lance table (supports remote URLs to object stores such as `s3://` or `gs://`)
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
         column: Column name to index
         index_type: Type of index to build.
-            For distributed execution this supports "INVERTED", "FTS", and "BTREE".
-            Other scalar index types supported by Lance (for example "BITMAP", "NGRAM", "ZONEMAP",
-            "LABEL_LIST", "BLOOMFILTER") are passed through to Lance's scalar index implementation.
+            Distributed execution supports "INVERTED" and "BTREE". ``FTS`` is
+            treated as ``INVERTED``. Other scalar index types supported by Lance
+            (for example "BITMAP", "NGRAM", "ZONEMAP", "LABEL_LIST", "BLOOMFILTER")
+            fall back to Lance's single-node ``create_scalar_index`` implementation.
         name: Name of the index (generated if None).
         replace: Whether to replace an existing index with the same name. Defaults to True.
         storage_options: Storage options for the dataset.
@@ -456,7 +462,8 @@ def create_scalar_index(
         ...     "s3://my-bucket/dataset/", column="text_content", index_type="INVERTED", max_concurrency=8
         ... )
 
-        Create a FTS (Full-Text Search) index:
+        Create a full-text index via ``FTS`` (normalized to ``INVERTED``, same as
+        passing ``index_type="INVERTED"`` for the distributed workflow):
         >>> daft.io.lance.create_scalar_index("s3://my-bucket/dataset/", column="document", index_type="FTS")
 
         Create a BTREE index for numeric or string columns:
