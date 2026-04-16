@@ -664,35 +664,15 @@ impl PyResultReceiver {
         let input_id = self.input_id;
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             // Take the result to drop the receiver
-            let mut result = result.lock().await;
-            let _ = result
-                .take()
-                .expect("PyResultReceiver.try_finish() should not be called more than once.");
-            drop(result);
+            let result =
+                {
+                    result.lock().await.take().expect(
+                        "PyResultReceiver.try_finish() should not be called more than once.",
+                    )
+                };
 
             // Delegate to NativeExecutor::try_finish
-            let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
-            let stats = finish_future.await?;
-            Ok(PyExecutionStats::from(stats))
-        })
-    }
-
-    fn try_finish_with_shuffle_metadata<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let result = self.result.clone();
-        let executor = self.executor.clone();
-        let fingerprint = self.fingerprint;
-        let input_id = self.input_id;
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut result_guard = result.lock().await;
-            let execution_result = result_guard
-                .take()
-                .expect("PyResultReceiver.try_finish_with_shuffle_metadata() should not be called more than once.");
-            drop(result_guard);
-
-            let shuffle_metadata = execution_result.into_shuffle_metadata().await;
+            let shuffle_metadata = result.into_shuffle_metadata().await;
             let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
             let stats = finish_future.await?;
             Python::attach(|py| {

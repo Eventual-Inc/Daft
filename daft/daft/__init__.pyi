@@ -2297,8 +2297,7 @@ class PyExecutionStats:
 class PyResultReceiver:
     def __aiter__(self) -> PyResultReceiver: ...
     async def __anext__(self) -> PyMicroPartition | None: ...
-    async def try_finish(self) -> PyExecutionStats: ...
-    async def try_finish_with_shuffle_metadata(
+    async def try_finish(
         self,
     ) -> tuple[
         PyExecutionStats,

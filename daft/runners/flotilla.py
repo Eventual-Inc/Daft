@@ -202,7 +202,7 @@ class RaySwordfishActor:
                     )
                 )
 
-            stats, shuffle_metadata = await result_handle.try_finish_with_shuffle_metadata()
+            stats, shuffle_metadata = await result_handle.try_finish()
             if shuffle_metadata is None:
                 return materialized_refs, stats.encode()
 
