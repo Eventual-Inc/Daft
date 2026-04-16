@@ -66,7 +66,10 @@ impl ScanOperator for DummyScanOperator {
     fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskRef>> {
         Ok((0..self.num_scan_tasks)
             .map(|i| {
-                let metadata = self.num_rows_per_task.map(|n| TableMetadata { length: n });
+                let metadata = self.num_rows_per_task.map(|n| TableMetadata {
+                    length: n,
+                    size_bytes: None,
+                });
                 Arc::new(ScanTask::new(
                     vec![ScanSource {
                         size_bytes: None,
