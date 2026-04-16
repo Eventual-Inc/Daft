@@ -409,11 +409,18 @@ result = multiply(5, 10)  # Returns 50
 | `cpus` | `float \| None` | `None` (engine decides) | `func`, `func.batch`, `cls` |
 | `gpus` | `float` | `0` | `func`, `func.batch`, `cls` |
 | `use_process` | `bool \| None` | `None` (auto) | `func`, `func.batch`, `cls` |
-| `max_concurrency` | `int \| None` | `None` | `func` (async only), `func.batch`, `cls` |
+| `max_concurrency` | `int \| None` | `None` | `func` (async only), `func.batch` (async only), `cls` |
 | `batch_size` | `int \| None` | `None` | `func.batch`, `method.batch` |
 | `max_retries` | `int \| None` | `None` (no retries) | `func`, `func.batch`, `cls` |
 | `on_error` | `"raise" \| "log" \| "ignore"` | `"raise"` | same as `max_retries` |
 | `ray_options` | `dict[str, Any] \| None` | `None` | `func`, `func.batch`, `cls` |
+
+### `max_concurrency`
+
+`max_concurrency` controls two different things depending on where it's set:
+
+- On `@daft.func` / `@daft.func.batch`: it caps the number of **concurrent coroutines** and only applies to `async` functions. Setting it on a sync function raises. For sync functions, reach for `@daft.cls` if you need actor-pool concurrency.
+- On `@daft.cls`: it caps the number of **concurrent actor instances** for sync methods, or **concurrent coroutines** for async methods.
 
 ### `cpus` and `gpus`
 
@@ -463,8 +470,8 @@ Both parameters work on sync, async, and batch variants. On `@daft.cls`, set the
 
 Forwarded to the Ray actor when running on the Ray runner (e.g. `{"resources": {"TPU": 1}}`, `{"runtime_env": {...}}`, `{"scheduling_strategy": ...}`). Setting `num_cpus`, `num_gpus`, or `memory` here raises an error — use the `cpus` / `gpus` parameters instead.
 
-!!! note "Memory-based placement"
-    Daft does not currently expose a first-class `memory_bytes` parameter on `@daft.func` / `@daft.cls`. If you need memory-based placement on Ray, pass it through `ray_options={"memory": ...}`.
+!!! warning "No memory-based placement on the new API"
+    The new `@daft.func` / `@daft.cls` API has no parameter for memory-based placement: `cpus` / `gpus` are the only placement knobs today. `ray_options={"memory": ...}` is explicitly rejected, and the resulting error message refers to a `memory_bytes` argument that does not exist. If you relied on `memory_bytes` in the legacy `@daft.udf` API mostly to cap concurrency, use `max_concurrency` instead. Tracked in [#6711](https://github.com/Eventual-Inc/Daft/issues/6711).
 
 ## Advanced Features
 

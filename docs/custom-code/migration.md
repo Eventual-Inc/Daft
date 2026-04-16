@@ -121,7 +121,7 @@ For these parameters, here's what you can do with the new API:
 - **concurrency**: The new API offers a `max_concurrency` parameter instead, which guarantees that at most `max_concurrency` instances of the UDF will be running at any given time, instead of exactly `concurrency` instances.
 - **num_cpus**: The new API offers a `cpus` parameter on `@daft.func`, `@daft.func.batch`, and `@daft.cls` with the same placement semantics. Fractional values (e.g. `0.5`) are supported.
 - **num_gpus**: The new API offers a `gpus` parameter on `@daft.func`, `@daft.func.batch`, and `@daft.cls` with the same placement semantics. Fractional values up to 1.0 are supported.
-- **memory_bytes**: The new API currently does not have a first-class `memory_bytes` parameter. On the Ray runner, you can still pass memory-based placement via `ray_options={"memory": ...}`. If you were using `memory_bytes` primarily to limit concurrency, consider using `max_concurrency` instead.
+- **memory_bytes**: The new API currently has no replacement for `memory_bytes`. `ray_options={"memory": ...}` is explicitly rejected (see [#6711](https://github.com/Eventual-Inc/Daft/issues/6711)). If you were using `memory_bytes` primarily to limit concurrency, use `max_concurrency` instead.
 
 ### New parameters (no legacy equivalent)
 
@@ -182,6 +182,6 @@ async def my_api_call(prompt: str) -> str:
 
 ## Known Limitations
 
-- The new API does not yet expose a first-class `memory_bytes` parameter. On the Ray runner, memory-based placement is still reachable through `ray_options={"memory": ...}`. If you were using `memory_bytes` primarily to bound concurrency, prefer `max_concurrency`.
+- The new API does not yet expose a `memory_bytes` parameter, and `ray_options={"memory": ...}` is explicitly rejected ([#6711](https://github.com/Eventual-Inc/Daft/issues/6711)). If you were using `memory_bytes` primarily to bound concurrency, prefer `max_concurrency`. If you need true memory-based placement on Ray, you'll need to stay on `@daft.udf` until this is resolved.
 
 If you have any questions or feedback about the new UDF API, please submit an [issue on GitHub](https://github.com/Eventual-Inc/Daft/issues) or reach out to us on [Slack](https://join.slack.com/t/dist-data/shared_invite/zt-3rh9jr9iv-tmmTNOlQpfvhEy2NTMWS_w).
