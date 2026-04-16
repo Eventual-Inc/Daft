@@ -783,7 +783,15 @@ impl RecordBatch {
                     .iter()
                     .map(|e| self.eval_agg_child(e))
                     .collect::<DaftResult<_>>()?;
-                handle.call_agg_block(evaled_inputs, groups)
+                let inputs_str = evaled_inputs
+                    .iter()
+                    .map(|s| s.name())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let expected_name = format!("{}({})", handle.name(), inputs_str);
+                handle
+                    .call_agg_block(evaled_inputs, groups)?
+                    .rename(&expected_name)
             }
             AggExpr::AggFnReduce {
                 handle,
