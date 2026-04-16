@@ -147,7 +147,7 @@ def json_load_warc_headers(x: str) -> WarcHeaders:
 
 
 df_lang = df_sample.with_column("warc_headers", json_load_warc_headers(col("warc_headers"))).with_column(
-    "language", col("warc_headers")["WARC-Identified-Content-Language"]
+    "language", col("warc_headers").get("WARC-Identified-Content-Language")
 )
 
 df_lang.select("warc_content", "language").show()
@@ -372,13 +372,13 @@ df = (
     .drop_null(col("text"))
     # extract the language & filter english pages only
     .with_column("warc_headers", json_load_warc_headers(col("warc_headers")))
-    .with_column("language", col("warc_headers")["WARC-Identified-Content-Language"])
+    .with_column("language", col("warc_headers").get("WARC-Identified-Content-Language"))
     .where(col("language") == "eng")
     # chunk text into sentences
     .into_batches(batch_size=EMBEDDING_BATCH_SIZE * 10)
     .with_column("sentences", chunker(col("text")))
-    .with_column("text", col("sentences")["text"])
-    .with_column("chunk_id", col("sentences")["chunk_id"])
+    .with_column("text", col("sentences").get("text"))
+    .with_column("chunk_id", col("sentences").get("chunk_id"))
     .exclude("sentences")
     # perform text embedding using the GPU
     .into_batches(batch_size=EMBEDDING_BATCH_SIZE)
