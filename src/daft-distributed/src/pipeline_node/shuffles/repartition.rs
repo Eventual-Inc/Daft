@@ -83,7 +83,7 @@ impl RepartitionNode {
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         let outputs = local_shuffle_write_node
-            .task_outputs(
+            .materialize(
                 scheduler_handle.clone(),
                 self.context.query_idx,
                 task_id_counter,

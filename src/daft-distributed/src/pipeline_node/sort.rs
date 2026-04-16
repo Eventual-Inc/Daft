@@ -22,8 +22,7 @@ use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, TaskOutput,
-        shuffles::partition_groups::ray_partition_groups_from_outputs,
+        PipelineNodeContext, shuffles::partition_groups::ray_partition_groups_from_outputs,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -375,8 +374,7 @@ impl SortNode {
             .await?
             .into_iter()
             .flatten()
-            .map(TaskOutput::into_materialized)
-            .collect::<DaftResult<Vec<_>>>()?;
+            .collect::<Vec<_>>();
 
         // Compute partition boundaries from samples
         let boundaries = get_partition_boundaries_from_samples(

@@ -8,7 +8,7 @@ use super::{
     worker::{Worker, WorkerId},
 };
 use crate::{
-    pipeline_node::TaskOutput,
+    pipeline_node::MaterializedOutput,
     scheduling::task::{TaskContext, TaskResourceRequest},
     utils::channel::OneshotSender,
 };
@@ -42,14 +42,14 @@ fn pending_tasks_in_priority_order<T: Task>(
 
 pub(crate) struct PendingTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Option<TaskOutput>>>,
+    result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: CancellationToken,
 }
 
 impl<T: Task> PendingTask<T> {
     pub fn new(
         task: T,
-        result_tx: OneshotSender<DaftResult<Option<TaskOutput>>>,
+        result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
@@ -71,7 +71,7 @@ impl<T: Task> PendingTask<T> {
         self,
     ) -> (
         T,
-        OneshotSender<DaftResult<Option<TaskOutput>>>,
+        OneshotSender<DaftResult<Option<MaterializedOutput>>>,
         CancellationToken,
     ) {
         (self.task, self.result_tx, self.cancel_token)
@@ -111,7 +111,7 @@ impl<T: Task> Ord for PendingTask<T> {
 
 pub(super) struct ScheduledTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Option<TaskOutput>>>,
+    result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: CancellationToken,
     worker_id: WorkerId,
 }
@@ -144,7 +144,7 @@ impl<T: Task> ScheduledTask<T> {
     ) -> (
         WorkerId,
         T,
-        OneshotSender<DaftResult<Option<TaskOutput>>>,
+        OneshotSender<DaftResult<Option<MaterializedOutput>>>,
         CancellationToken,
     ) {
         (self.worker_id, self.task, self.result_tx, self.cancel_token)
