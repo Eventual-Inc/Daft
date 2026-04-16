@@ -8,11 +8,8 @@ use daft_core::{
     utils::supertype::try_get_supertype,
 };
 use daft_dsl::{
-    Expr,
     expr::bound_expr::BoundExpr,
-    join::{
-        get_common_join_cols, get_right_cols_to_drop, infer_asof_join_schema, infer_join_schema,
-    },
+    join::{get_common_join_cols, infer_asof_join_schema, infer_join_schema},
 };
 use hash_join::hash_semi_anti_join;
 
@@ -84,7 +81,7 @@ impl RecordBatch {
     pub fn asof_join(
         &self,
         right: &Self,
-        right_by: &[BoundExpr],
+        right_cols_to_drop: &HashSet<String>,
         left_on: &BoundExpr,
         right_on: &BoundExpr,
     ) -> DaftResult<Self> {
@@ -97,13 +94,7 @@ impl RecordBatch {
             match_types_for_tables(&left_key_table, &right_key_table)?;
         let (lidx, ridx) = asof_join::asof_join_backward(&left_key_table, &right_key_table)?;
 
-        let right_cols_to_drop = get_right_cols_to_drop(right_by, left_on, right_on, |e| {
-            match e.inner().unwrap_alias().0.as_ref() {
-                Expr::Column(_) => Some(e.inner().unwrap_alias().0.name().to_string()),
-                _ => None,
-            }
-        });
-        let join_schema = infer_asof_join_schema(&left.schema, &right.schema, &right_cols_to_drop)?;
+        let join_schema = infer_asof_join_schema(&left.schema, &right.schema, right_cols_to_drop)?;
 
         let num_rows = lidx.len();
         let mut join_series = Vec::with_capacity(join_schema.len());

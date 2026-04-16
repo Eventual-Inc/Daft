@@ -155,7 +155,7 @@ impl MicroPartition {
         };
 
         if left_by.is_empty() {
-            let joined = RecordBatch::asof_join(&lt, &rt, right_by, left_on, right_on)?;
+            let joined = RecordBatch::asof_join(&lt, &rt, &right_cols_to_drop, left_on, right_on)?;
             return Ok(Self::new_loaded(join_schema, Arc::new(vec![joined]), None));
         }
 
@@ -173,7 +173,13 @@ impl MicroPartition {
                     Some(r_idx) => &right_groups[r_idx],
                     None => &empty_right,
                 };
-                RecordBatch::asof_join(left_group, right_group, right_by, left_on, right_on)
+                RecordBatch::asof_join(
+                    left_group,
+                    right_group,
+                    &right_cols_to_drop,
+                    left_on,
+                    right_on,
+                )
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
