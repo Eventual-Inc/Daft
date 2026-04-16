@@ -1,6 +1,5 @@
-use std::{any::Any, collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
-use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;
 use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
@@ -8,93 +7,9 @@ use daft_recordbatch::python::PyRecordBatch;
 use pyo3::{prelude::*, types::PyDict};
 use serde::{Deserialize, Serialize};
 
+use crate::Input;
 #[cfg(feature = "python")]
 use crate::{ExecutionStats, LocalPhysicalPlanRef, translate};
-use crate::{FlightPartitionRef, Input};
-
-#[pyclass(
-    module = "daft.daft",
-    name = "FlightPartitionRef",
-    frozen,
-    from_py_object
-)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PyFlightPartitionRef {
-    pub inner: FlightPartitionRef,
-}
-
-impl Partition for PyFlightPartitionRef {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn size_bytes(&self) -> usize {
-        self.inner.size_bytes
-    }
-    fn num_rows(&self) -> usize {
-        self.inner.num_rows
-    }
-}
-
-impl_bincode_py_state_serialization!(PyFlightPartitionRef);
-
-#[pymethods]
-impl PyFlightPartitionRef {
-    #[new]
-    pub fn new(
-        shuffle_id: u64,
-        server_address: String,
-        partition_ref_id: u64,
-        num_rows: usize,
-        size_bytes: usize,
-    ) -> Self {
-        Self {
-            inner: FlightPartitionRef {
-                shuffle_id,
-                server_address,
-                partition_ref_id,
-                num_rows,
-                size_bytes,
-            },
-        }
-    }
-
-    #[getter]
-    pub fn shuffle_id(&self) -> u64 {
-        self.inner.shuffle_id
-    }
-
-    #[getter]
-    pub fn server_address(&self) -> String {
-        self.inner.server_address.clone()
-    }
-
-    #[getter]
-    pub fn partition_ref_id(&self) -> u64 {
-        self.inner.partition_ref_id
-    }
-
-    #[getter]
-    pub fn num_rows(&self) -> usize {
-        self.inner.num_rows
-    }
-
-    #[getter]
-    pub fn size_bytes(&self) -> usize {
-        self.inner.size_bytes
-    }
-}
-
-impl From<FlightPartitionRef> for PyFlightPartitionRef {
-    fn from(inner: FlightPartitionRef) -> Self {
-        Self { inner }
-    }
-}
-
-impl From<PyFlightPartitionRef> for FlightPartitionRef {
-    fn from(py_ref: PyFlightPartitionRef) -> Self {
-        py_ref.inner
-    }
-}
 
 #[pyclass(module = "daft.daft", name = "LocalPhysicalPlan")]
 #[derive(Debug, Serialize, Deserialize)]
@@ -217,7 +132,6 @@ impl From<ExecutionStats> for PyExecutionStats {
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    parent.add_class::<PyFlightPartitionRef>()?;
     parent.add_class::<PyLocalPhysicalPlan>()?;
     parent.add_class::<PyInput>()?;
     parent.add_class::<PyExecutionStats>()?;

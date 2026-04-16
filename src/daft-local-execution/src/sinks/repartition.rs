@@ -6,11 +6,10 @@ use std::{
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
-use daft_distributed::python::ray::RayPartitionRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::python::PyFlightPartitionRef;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
+use daft_partition_refs::{PyFlightPartitionRef, RayPartitionRef};
 use daft_shuffles::{
     partition_store::{InProgressFlightPartitionWriter, partition_ref_id},
     server::flight_server::ShuffleFlightServer,

@@ -8,8 +8,9 @@ use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_metrics::Meter;
 use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
-use daft_local_plan::python::{PyExecutionStats, PyFlightPartitionRef};
+use daft_local_plan::python::PyExecutionStats;
 use daft_logical_plan::PyLogicalPlanBuilder;
+use daft_partition_refs::RayPartitionRef;
 use dashboard::DashboardStatisticsSubscriber;
 use futures::StreamExt;
 use progress_bar::FlotillaProgressBar;
@@ -24,8 +25,8 @@ use crate::{
         viz_distributed_pipeline_mermaid,
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
-    python::ray::{RayPartitionRef, RayTaskResult},
-    statistics::{StatisticsManager, StatisticsManagerRef, StatisticsSubscriber},
+    python::ray::RayTaskResult,
+    statistics::{StatisticsManagerRef, StatisticsSubscriber},
 };
 
 #[pyclass(frozen)]
@@ -271,8 +272,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDistributedPhysicalPlan>()?;
     parent.add_class::<PyDistributedPhysicalPlanRunner>()?;
     parent.add_class::<RaySwordfishTask>()?;
-    parent.add_class::<RayPartitionRef>()?;
-    parent.add_class::<PyFlightPartitionRef>()?;
     parent.add_class::<RaySwordfishWorker>()?;
     parent.add_class::<RayTaskResult>()?;
     Ok(())

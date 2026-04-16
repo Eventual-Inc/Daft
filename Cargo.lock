@@ -2278,6 +2278,7 @@ dependencies = [
  "daft-micropartition",
  "daft-minhash",
  "daft-parquet",
+ "daft-partition-refs",
  "daft-recordbatch",
  "daft-runners",
  "daft-scan",
@@ -2539,6 +2540,7 @@ dependencies = [
  "daft-local-plan",
  "daft-logical-plan",
  "daft-micropartition",
+ "daft-partition-refs",
  "daft-recordbatch",
  "daft-scan",
  "daft-schema",
@@ -2938,7 +2940,6 @@ dependencies = [
  "daft-context",
  "daft-core",
  "daft-csv",
- "daft-distributed",
  "daft-dsl",
  "daft-functions-list",
  "daft-functions-uri",
@@ -2949,6 +2950,7 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-parquet",
+ "daft-partition-refs",
  "daft-recordbatch",
  "daft-scan",
  "daft-shuffles",
@@ -2987,7 +2989,6 @@ dependencies = [
  "common-error",
  "common-io-config",
  "common-metrics",
- "common-partitioning",
  "common-py-serde",
  "common-resource-request",
  "common-treenode",
@@ -2997,6 +2998,7 @@ dependencies = [
  "daft-functions-list",
  "daft-logical-plan",
  "daft-micropartition",
+ "daft-partition-refs",
  "daft-recordbatch",
  "daft-scan",
  "indexmap",
@@ -3120,6 +3122,16 @@ dependencies = [
  "tango-bench",
  "tokio",
  "tokio-stream",
+]
+
+[[package]]
+name = "daft-partition-refs"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-partitioning",
+ "common-py-serde",
+ "pyo3",
+ "serde",
 ]
 
 [[package]]

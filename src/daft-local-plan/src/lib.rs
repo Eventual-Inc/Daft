@@ -8,19 +8,18 @@ mod translate;
 use daft_micropartition::MicroPartitionRef;
 use daft_scan::ScanTaskRef;
 pub use plan::{
-    AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightPartitionRef,
-    FlightShuffleReadInput, GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches,
-    IntoPartitions, Limit, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,
-    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, PlaceholderScan, Project,
-    RepartitionWrite, RepartitionWriteBackend, Sample, SamplingMethod, ShuffleRead,
-    ShuffleReadBackend, Sort, SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot,
-    VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
-    WindowPartitionOnly,
+    AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
+    GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, IntoPartitions, Limit,
+    LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, MonotonicallyIncreasingId,
+    PhysicalScan, PhysicalWrite, Pivot, PlaceholderScan, Project, RepartitionWrite,
+    RepartitionWriteBackend, Sample, SamplingMethod, ShuffleRead, ShuffleReadBackend, Sort,
+    SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
+    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 #[cfg(feature = "python")]
 pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject, LanceWrite};
 #[cfg(feature = "python")]
-pub use python::{PyFlightPartitionRef, PyLocalPhysicalPlan, register_modules};
+pub use python::{PyLocalPhysicalPlan, register_modules};
 pub use results::ExecutionStats;
 use serde::{Deserialize, Serialize};
 pub use translate::translate;

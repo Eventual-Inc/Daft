@@ -1,9 +1,9 @@
 use common_error::DaftResult;
 use daft_local_plan::{
-    FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, PyFlightPartitionRef,
-    ShuffleReadBackend,
+    FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend,
 };
 use daft_logical_plan::stats::StatsState;
+use daft_partition_refs::PyFlightPartitionRef;
 use daft_schema::schema::SchemaRef;
 
 use crate::{

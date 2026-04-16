@@ -23,6 +23,7 @@ use daft_logical_plan::{
     partitioning::RepartitionSpec,
     stats::{PlanStats, StatsState},
 };
+use daft_partition_refs::FlightPartitionRef;
 use daft_scan::{Pushdowns, SourceConfig};
 use serde::{Deserialize, Serialize};
 
@@ -2216,15 +2217,6 @@ pub enum RepartitionWriteBackend {
 pub enum ShuffleReadBackend {
     Ray,
     Flight,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FlightPartitionRef {
-    pub shuffle_id: u64,
-    pub server_address: String,
-    pub partition_ref_id: u64,
-    pub num_rows: usize,
-    pub size_bytes: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

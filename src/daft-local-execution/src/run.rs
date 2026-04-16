@@ -11,10 +11,10 @@ use common_metrics::{QueryEndState, QueryID};
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
-use daft_distributed::python::ray::RayPartitionRef;
 use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
+use daft_partition_refs::RayPartitionRef;
 use daft_shuffles::server::flight_server::{
     FlightServerConnectionHandle, ShuffleFlightServer, start_server_loop,
 };
@@ -25,9 +25,10 @@ use tokio_util::sync::CancellationToken;
 use {
     common_daft_config::PyDaftExecutionConfig,
     daft_context::python::PyDaftContext,
-    daft_local_plan::python::{PyExecutionStats, PyFlightPartitionRef},
+    daft_local_plan::python::PyExecutionStats,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
+    daft_partition_refs::PyFlightPartitionRef,
     pyo3::{
         Bound, IntoPyObject, PyAny, PyRef, PyResult, Python, pyclass, pymethods, sync::MutexExt,
     },
