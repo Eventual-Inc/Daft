@@ -5,8 +5,8 @@ use daft_core::{
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
-    functions::{scalar::ScalarFn, FunctionArgs, ScalarUDF, UnaryArg},
     ExprRef,
+    functions::{FunctionArgs, ScalarUDF, UnaryArg, scalar::ScalarFn},
 };
 use serde::{Deserialize, Serialize};
 
@@ -35,9 +35,9 @@ impl ScalarUDF for Factorial {
     ) -> DaftResult<Field> {
         let UnaryArg { input } = inputs.try_into()?;
         let field = input.to_field(schema)?;
-        if !field.dtype.is_numeric() {
+        if !field.dtype.is_integer() {
             return Err(DaftError::TypeError(format!(
-                "Expected input to factorial to be numeric, got {}",
+                "Expected input to factorial to be integer, got {}",
                 field.dtype
             )));
         }
@@ -49,35 +49,23 @@ impl ScalarUDF for Factorial {
     }
 }
 
-fn compute_factorial(n: f64) -> Option<i64> {
-    if n.is_nan() || n < 0.0 || n.is_infinite() || n.fract() != 0.0 {
+fn compute_factorial(n: i64) -> Option<i64> {
+    if !(0..=20).contains(&n) {
         return None;
     }
-    if n > 20.0 {
-        return None;
-    }
-    let n = n as u64;
     let mut result: i64 = 1;
     for i in 2..=n {
-        result *= i as i64;
+        result *= i;
     }
     Some(result)
 }
 
 fn factorial_impl(s: Series) -> DaftResult<Series> {
-    let casted = if s.data_type() == &DataType::Float64 {
-        s
-    } else {
-        s.cast(&DataType::Float64)?
-    };
-    let f64_arr = casted.f64().unwrap();
-    let field = Field::new(f64_arr.name(), DataType::Int64);
-    let result = Int64Array::from_iter(
-        field,
-        f64_arr
-            .iter()
-            .map(|v| v.and_then(|&n| compute_factorial(n))),
-    );
+    let casted = s.cast(&DataType::Int64)?;
+    let i64_arr = casted.i64().unwrap();
+    let field = Field::new(i64_arr.name(), DataType::Int64);
+    let result =
+        Int64Array::from_iter(field, i64_arr.iter().map(|v| v.and_then(compute_factorial)));
     Ok(result.into_series())
 }
 

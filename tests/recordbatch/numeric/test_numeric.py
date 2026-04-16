@@ -895,20 +895,19 @@ def test_factorial_overflow() -> None:
     assert values == [2432902008176640000, None, None]
 
 
-def test_factorial_non_integer() -> None:
+def test_factorial_float_input() -> None:
     from daft.functions import factorial
 
     table = MicroPartition.from_pydict({"a": [3.5, 2.1]})
-    result = table.eval_expression_list([factorial(col("a")).alias("result")])
-    values = result.get_column_by_name("result").to_pylist()
-    assert values == [None, None]
+    with pytest.raises(ValueError, match="Expected input to factorial to be integer"):
+        table.eval_expression_list([factorial(col("a"))])
 
 
 def test_factorial_bad_input() -> None:
     from daft.functions import factorial
 
     table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
-    with pytest.raises(ValueError, match="Expected input to factorial to be numeric"):
+    with pytest.raises(ValueError, match="Expected input to factorial to be integer"):
         table.eval_expression_list([factorial(col("a"))])
 
 
