@@ -77,6 +77,10 @@ impl AsyncFileWriter for LanceWriter {
         vec![self.bytes_written]
     }
 
+    fn path(&self) -> Option<String> {
+        Some(self.lance_info.path.clone())
+    }
+
     async fn close(&mut self) -> DaftResult<Self::Result> {
         self.is_closed = true;
         Ok(std::mem::take(&mut self.results))

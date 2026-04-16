@@ -165,6 +165,10 @@ impl AsyncFileWriter for TargetFileSizeWriter {
         self.bytes_per_file.clone()
     }
 
+    fn path(&self) -> Option<String> {
+        self.current_writer.path()
+    }
+
     async fn close(&mut self) -> DaftResult<Self::Result> {
         if self.current_in_memory_bytes_written > 0
             && let Some(result) = self.current_writer.close().await?

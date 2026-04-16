@@ -575,6 +575,7 @@ async fn stream_scan_task(
     }
     let source = scan_task.sources.first().unwrap();
     let url = source.get_path();
+    let read_ctx = format!("reading {url}");
     let io_config = Arc::new(
         scan_task
             .storage_config
@@ -595,10 +596,11 @@ async fn stream_scan_task(
         maintain_order,
         chunk_size,
     )
-    .await?;
+    .await
+    .map_err(|e| e.with_context(&read_ctx))?;
 
     Ok(table_stream.map(move |table| {
-        let table = table?;
+        let table = table.map_err(|e| e.with_context(&read_ctx))?;
         #[allow(deprecated)]
         let casted_table = table.cast_to_schema_with_fill(
             scan_task.materialized_schema().as_ref(),

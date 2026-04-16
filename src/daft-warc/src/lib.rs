@@ -452,6 +452,7 @@ pub fn read_warc_bulk(
                     max_chunks_in_flight,
                 )
                 .await
+                .map_err(|e| e.with_context(format!("reading {uri}")))
             })
             .context(JoinSnafu {})
         }));

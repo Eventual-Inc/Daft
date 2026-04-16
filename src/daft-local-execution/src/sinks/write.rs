@@ -165,8 +165,15 @@ impl BlockingSink for WriteSink {
         spawner
             .spawn(
                 async move {
-                    let write_result = state.writer.write(input).await?;
+                    let write_result = state.writer.write(input).await.map_err(|e| match state
+                        .writer
+                        .path()
+                    {
+                        Some(p) => e.with_context(format!("writing {p}")),
+                        None => e,
+                    })?;
                     runtime_stats.add_write_result(write_result);
+
                     Ok(state)
                 },
                 Span::current(),
@@ -186,7 +193,16 @@ impl BlockingSink for WriteSink {
                 async move {
                     let mut results = vec![];
                     for mut state in states {
-                        results.extend(state.writer.close().await?);
+                        let close_result =
+                            state
+                                .writer
+                                .close()
+                                .await
+                                .map_err(|e| match state.writer.path() {
+                                    Some(p) => e.with_context(format!("writing {p}")),
+                                    None => e,
+                                })?;
+                        results.extend(close_result);
                     }
                     let mp = MicroPartition::new_loaded(file_schema, results.into(), None);
                     Ok(BlockingSinkOutput::Partitions(vec![mp]))

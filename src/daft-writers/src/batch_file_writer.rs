@@ -137,4 +137,8 @@ impl<B: StorageBackend + Send + Sync, W: Send + Sync + 'static> AsyncFileWriter
     fn bytes_per_file(&self) -> Vec<usize> {
         vec![self.bytes_written()]
     }
+
+    fn path(&self) -> Option<String> {
+        Some(self.filename.to_string_lossy().to_string())
+    }
 }

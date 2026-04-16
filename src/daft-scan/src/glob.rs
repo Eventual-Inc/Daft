@@ -218,7 +218,8 @@ impl GlobScanOperator {
                         },
                         field_id_mapping.clone(),
                     )
-                    .await?;
+                    .await
+                    .map_err(|e| e.with_context(format!("reading {first_filepath}")))?;
                     let first_metadata = Some((
                         first_filepath.clone(),
                         TableMetadata {
@@ -252,7 +253,8 @@ impl GlobScanOperator {
                         io_client.clone(),
                         Some(io_stats.clone()),
                     )
-                    .await?;
+                    .await
+                    .map_err(|e| e.with_context(format!("reading {first_filepath}")))?;
                     (schema, None, first_filepath)
                 }
                 FileFormatConfig::Json(json_config) => {
@@ -267,7 +269,8 @@ impl GlobScanOperator {
                         io_client.clone(),
                         Some(io_stats.clone()),
                     )
-                    .await?;
+                    .await
+                    .map_err(|e| e.with_context(format!("reading {first_filepath}")))?;
 
                     if json_config.skip_empty_files && first_schema.fields().is_empty() {
                         // If first file is empty and skipping is enabled, re-run full glob to find first non-empty JSON file.
@@ -290,7 +293,8 @@ impl GlobScanOperator {
                                 io_client.clone(),
                                 Some(io_stats.clone()),
                             )
-                            .await?;
+                            .await
+                            .map_err(|e| e.with_context(format!("reading {filepath}")))?;
                             if !schema.fields().is_empty() {
                                 chosen_schema = Some(schema);
                                 chosen_path = Some(filepath);

@@ -203,6 +203,10 @@ impl AsyncFileWriter for TargetBatchWriter {
         self.writer.bytes_per_file()
     }
 
+    fn path(&self) -> Option<String> {
+        self.writer.path()
+    }
+
     async fn close(&mut self) -> DaftResult<Self::Result> {
         if let Some(leftovers) = self.buffer.pop_all()? {
             self.writer.write(leftovers).await?;

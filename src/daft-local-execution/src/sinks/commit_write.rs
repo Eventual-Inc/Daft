@@ -111,8 +111,16 @@ impl BlockingSink for CommitWriteSink {
                                     vec![empty_rb].into(),
                                     None,
                                 );
-                                writer.write(empty_mp).await?;
-                                if let Some(rb) = writer.close().await? {
+                                writer.write(empty_mp).await
+                                    .map_err(|e| match writer.path() {
+                                        Some(p) => e.with_context(format!("writing {p}")),
+                                        None => e,
+                                    })?;
+                                if let Some(rb) = writer.close().await
+                                    .map_err(|e| match writer.path() {
+                                        Some(p) => e.with_context(format!("writing {p}")),
+                                        None => e,
+                                    })? {
                                     written_file_path_record_batches.push(rb);
                                 }
                             }

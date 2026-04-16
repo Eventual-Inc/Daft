@@ -11,6 +11,7 @@ pub struct PyArrowWriter {
     py_writer: pyo3::Py<pyo3::PyAny>,
     is_closed: bool,
     bytes_written: usize,
+    root_dir: String,
 }
 
 impl PyArrowWriter {
@@ -50,6 +51,7 @@ impl PyArrowWriter {
                 py_writer: py_writer.into(),
                 is_closed: false,
                 bytes_written: 0,
+                root_dir: root_dir.to_string(),
             })
         })
     }
@@ -98,6 +100,7 @@ impl PyArrowWriter {
                 py_writer: py_writer.into(),
                 is_closed: false,
                 bytes_written: 0,
+                root_dir: root_dir.to_string(),
             })
         })
     }
@@ -141,6 +144,7 @@ impl PyArrowWriter {
                 py_writer: py_writer.into(),
                 is_closed: false,
                 bytes_written: 0,
+                root_dir: root_dir.to_string(),
             })
         })
     }
@@ -182,6 +186,7 @@ impl PyArrowWriter {
                 py_writer: py_writer.into(),
                 is_closed: false,
                 bytes_written: 0,
+                root_dir: root_dir.to_string(),
             })
         })
     }
@@ -218,6 +223,10 @@ impl AsyncFileWriter for PyArrowWriter {
 
     fn bytes_per_file(&self) -> Vec<usize> {
         vec![self.bytes_written]
+    }
+
+    fn path(&self) -> Option<String> {
+        Some(self.root_dir.clone())
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
