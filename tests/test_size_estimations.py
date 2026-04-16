@@ -160,9 +160,9 @@ def test_canonical_files_in_s3(path):
 @pytest.mark.parametrize(
     "inflation_factor,expected_size_bytes",
     [
-        (1.0, "Approx size bytes = 174.70 K"),
-        (2.0, "Approx size bytes = 349.40 K"),
-        (3.0, "Approx size bytes = 524.11 K"),
+        (1.0, "~174.70 K"),
+        (2.0, "~349.40 K"),
+        (3.0, "~524.11 K"),
     ],
 )
 def test_csv_config_affects_estimations(tmpdir, inflation_factor, expected_size_bytes):
@@ -194,9 +194,9 @@ def test_csv_config_affects_estimations(tmpdir, inflation_factor, expected_size_
 @pytest.mark.parametrize(
     "inflation_factor,expected_size_bytes",
     [
-        (1.0, "Approx size bytes = 272.35 K"),
-        (2.0, "Approx size bytes = 544.71 K"),
-        (3.0, "Approx size bytes = 817.06 K"),
+        (1.0, "~272.35 K"),
+        (2.0, "~544.71 K"),
+        (3.0, "~817.06 K"),
     ],
 )
 def test_json_config_affects_estimations(tmpdir, inflation_factor, expected_size_bytes):

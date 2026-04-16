@@ -80,11 +80,11 @@ impl HashRepartitionConfig {
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push(format!("Num partitions = {:?}", self.num_partitions));
         res.push(format!(
             "By = {}",
             self.by.iter().map(|e| e.to_string()).join(", ")
         ));
+        res.push(format!("Num partitions = {:?}", self.num_partitions));
         res
     }
 }

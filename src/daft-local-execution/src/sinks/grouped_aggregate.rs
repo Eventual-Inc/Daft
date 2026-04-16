@@ -286,7 +286,11 @@ impl GroupedAggregateSink {
             // the data by the group keys and then run the original MapGroups
             // aggregation once per partition in `finalize`.
             Some(AggStrategy::PartitionOnly)
-        } else if partial_agg_exprs.is_empty() && !final_agg_exprs.is_empty() {
+        } else if aggregations.len() == 1
+            && matches!(aggregations[0].as_ref(), daft_dsl::AggExpr::List { .. })
+        {
+            // Optimization: Use partition-only for list-aggregations cause
+            // pre-agging doesn't help much since we're not reducing data
             Some(AggStrategy::PartitionOnly)
         } else {
             None
@@ -413,7 +417,17 @@ impl BlockingSink for GroupedAggregateSink {
     }
 
     fn name(&self) -> NodeName {
-        "GroupedAggregate".into()
+        if self.grouped_aggregate_params.original_aggregations.len() == 1 {
+            format!(
+                "GroupBy-{}",
+                self.grouped_aggregate_params.original_aggregations[0]
+                    .as_ref()
+                    .agg_name()
+            )
+            .into()
+        } else {
+            "GroupBy-Agg".into()
+        }
     }
 
     fn op_type(&self) -> NodeType {
@@ -422,18 +436,19 @@ impl BlockingSink for GroupedAggregateSink {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut display = vec![];
+        display.push("GroupBy Aggregate:".to_string());
         display.push(format!(
-            "GroupedAggregate: {}",
+            "Group By: {}",
             self.grouped_aggregate_params
-                .original_aggregations
+                .group_by
                 .iter()
                 .map(|e| e.to_string())
                 .join(", ")
         ));
         display.push(format!(
-            "Group by: {}",
+            "Aggregations: {}",
             self.grouped_aggregate_params
-                .group_by
+                .original_aggregations
                 .iter()
                 .map(|e| e.to_string())
                 .join(", ")

@@ -56,17 +56,11 @@ def to_struct(*fields: Expression, **named_fields: Expression) -> Expression:
         │ ---                          │
         │ Struct[a: String, b2: Int64] │
         ╞══════════════════════════════╡
-        │ {a: a,                       │
-        │ b2: 2,                       │
-        │ }                            │
+        │ {a: a, b2: 2}                │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {a: b,                       │
-        │ b2: 4,                       │
-        │ }                            │
+        │ {a: b, b2: 4}                │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ {a: c,                       │
-        │ b2: 6,                       │
-        │ }                            │
+        │ {a: c, b2: 6}                │
         ╰──────────────────────────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)

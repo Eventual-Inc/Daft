@@ -479,7 +479,7 @@ impl TaskBuilderStream {
         materialize_all_pipeline_outputs(stream, scheduler_handle, None)
     }
 
-    pub fn task_outputs(
+    pub fn submit_to_scheduler(
         self,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         query_idx: QueryIdx,

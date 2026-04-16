@@ -36,6 +36,9 @@ def _unique_cc_file_paths(paths_url: str, io_config: IOConfig | None) -> DataFra
     # *just* the unique parts of each file
     paths = paths.explode("url")
 
+    # filter out any text / metadata files
+    paths = paths.where(~col("url").endswith(".txt"))
+
     return paths
 
 
