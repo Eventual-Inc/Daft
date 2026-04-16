@@ -263,8 +263,7 @@ class EventLogSubscriber(Subscriber):
         self._operator_starts[(query_id, node_id)] = _mono_ms()
 
         payload: dict[str, Any] = {"node_id": node_id, "name": event.name}
-        # if they are equal it's a distributed node or it's a native runner
-        if event.origin_node_id is not None and event.node_id != event.origin_node_id:
+        if event.origin_node_id is not None:
             payload["origin_node_id"] = event.origin_node_id
 
         self._write_event(
@@ -303,8 +302,7 @@ class EventLogSubscriber(Subscriber):
         if duration_ms is not None:
             payload["duration_ms"] = duration_ms
 
-        # if they are equal it's a distributed node or it's a native runner
-        if event.origin_node_id is not None and event.node_id != event.origin_node_id:
+        if event.origin_node_id is not None:
             payload["origin_node_id"] = event.origin_node_id
 
         self._write_event(query_id, "operator_ended", payload)
