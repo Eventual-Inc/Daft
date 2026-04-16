@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use super::field::PyField;
 use crate::{
     dtype::DataType, field::Field, image_mode::ImageMode, media_type::MediaType,
-    time_unit::TimeUnit,
+    time_unit::TimeUnit, union_mode::UnionMode,
 };
 
 #[pyclass(from_py_object)]
@@ -350,6 +350,30 @@ impl PyDataType {
         Ok(DataType::File(ff).into())
     }
 
+    #[staticmethod]
+    pub fn union(
+        fields: IndexMap<String, Self>,
+        type_ids: Vec<i8>,
+        mode: UnionMode,
+    ) -> PyResult<Self> {
+        if type_ids.len() != fields.len() {
+            return Err(PyValueError::new_err(format!(
+                "The number of type IDs ({}) must match the number of fields ({})",
+                type_ids.len(),
+                fields.len()
+            )));
+        }
+        Ok(DataType::Union(
+            fields
+                .into_iter()
+                .map(|(name, dtype)| Field::new(name, dtype.dtype))
+                .collect::<Vec<Field>>(),
+            type_ids,
+            mode,
+        )
+        .into())
+    }
+
     pub fn to_arrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         match &self.dtype {
@@ -525,6 +549,10 @@ impl PyDataType {
         self.dtype.is_file()
     }
 
+    pub fn is_union(&self) -> bool {
+        self.dtype.is_union()
+    }
+
     pub fn fixed_size(&self) -> PyResult<usize> {
         self.dtype
             .fixed_size()
@@ -601,6 +629,36 @@ impl PyDataType {
             .value_type()
             .map(|dtype| dtype.clone().into())
             .map_err(|e| PyAttributeError::new_err(e.to_string()))
+    }
+
+    pub fn union_mode(&self) -> PyResult<UnionMode> {
+        match &self.dtype {
+            DataType::Union(_, _, mode) => Ok(mode.clone()),
+            _ => Err(PyAttributeError::new_err(format!(
+                "DataType {:?} does not have a `union_mode` property",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn type_ids(&self) -> PyResult<Vec<i8>> {
+        match &self.dtype {
+            DataType::Union(_, ids, _) => Ok(ids.clone()),
+            _ => Err(PyAttributeError::new_err(format!(
+                "DataType {:?} does not have a `type_ids` property",
+                self.dtype
+            ))),
+        }
+    }
+
+    pub fn union_fields(&self) -> PyResult<Vec<PyField>> {
+        match &self.dtype {
+            DataType::Union(fields, _, _) => Ok(fields.iter().map(|f| f.clone().into()).collect()),
+            _ => Err(PyAttributeError::new_err(format!(
+                "DataType {:?} does not have a `union_fields` property",
+                self.dtype
+            ))),
+        }
     }
 
     pub fn is_equal(&self, other: Bound<PyAny>) -> PyResult<bool> {
