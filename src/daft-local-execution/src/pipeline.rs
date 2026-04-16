@@ -20,9 +20,10 @@ use daft_local_plan::{
     AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
     GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext,
     LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
-    RepartitionWrite, RepartitionWriteBackend, Sample, ShuffleReadBackend, Sort, SortMergeJoin,
-    SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
-    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
+    RepartitionWrite, RepartitionWriteBackend, RepartitionWriteWithSentinel, Sample,
+    ShuffleReadBackend, Sort, SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate,
+    Unpivot, VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
+    WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -56,6 +57,7 @@ use crate::{
         into_partitions::IntoPartitionsSink,
         pivot::PivotSink,
         repartition::RepartitionSink,
+        repartition_with_sentinel::RepartitionWithSentinelSink,
         sort::SortSink,
         top_n::TopNSink,
         window_order_by_only::WindowOrderByOnlySink,
@@ -1512,8 +1514,42 @@ fn physical_plan_to_pipeline(
                 }
             }
         }
-        LocalPhysicalPlan::RepartitionWriteWithSentinel(_) => {
-            unimplemented!("RepartitionWriteWithSentinel pipeline node is not yet implemented")
+        LocalPhysicalPlan::RepartitionWriteWithSentinel(RepartitionWriteWithSentinel {
+            input,
+            num_partitions,
+            schema,
+            backend,
+            repartition_spec,
+            sentinel_sort_keys,
+            stats_state,
+            context,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            match backend {
+                RepartitionWriteBackend::Ray => {
+                    let sink = RepartitionWithSentinelSink::new_ray(
+                        repartition_spec.clone(),
+                        *num_partitions,
+                        schema.clone(),
+                        sentinel_sort_keys.clone(),
+                    );
+                    BlockingSinkNode::new(
+                        Arc::new(sink),
+                        child_node,
+                        stats_state.clone(),
+                        ctx,
+                        context,
+                    )
+                    .boxed()
+                }
+                RepartitionWriteBackend::Flight { .. } => {
+                    unimplemented!(
+                        "RepartitionWriteWithSentinel does not support Flight backend: \
+                         sentinel tracking is only used in the Ray distributed execution path"
+                    )
+                }
+            }
         }
         LocalPhysicalPlan::ShuffleRead(daft_local_plan::ShuffleRead {
             source_id,
