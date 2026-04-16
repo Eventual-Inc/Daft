@@ -143,6 +143,8 @@ pub(crate) async fn get_partition_boundaries_from_samples(
     Ok(boundaries)
 }
 
+// Non-Python builds are only used in Rust-only test runs (`cargo test`).
+// Production always enables the python feature.
 #[cfg(not(feature = "python"))]
 pub(crate) async fn get_partition_boundaries_from_samples(
     samples: Vec<MaterializedOutput>,

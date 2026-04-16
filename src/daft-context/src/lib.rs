@@ -276,6 +276,8 @@ pub fn get_context() -> DaftContext {
     }
 }
 
+// Non-Python builds are only used in Rust-only test runs (`cargo test`).
+// Production always enables the python feature.
 #[cfg(not(feature = "python"))]
 pub fn get_context() -> DaftContext {
     match DAFT_CONTEXT.get() {

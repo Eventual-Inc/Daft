@@ -11,7 +11,8 @@ pub(crate) struct ShufflePartitionMetadata {
     #[cfg(feature = "python")]
     pub object_ref: Option<Py<PyAny>>,
     /// In non-Python (local) mode, the actual partition data is kept here
-    /// instead of being put into Ray's object store.
+    /// instead of being put into Ray's object store. Only exercised by
+    /// Rust-only test runs.
     #[cfg(not(feature = "python"))]
     pub data: Option<std::sync::Arc<daft_micropartition::MicroPartition>>,
     pub num_rows: usize,

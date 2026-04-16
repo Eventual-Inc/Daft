@@ -577,6 +577,7 @@ impl Drop for NativeExecutor {
 }
 
 /// Result of running a local plan. Either regular partitions or shuffle output.
+/// Used by distributed execution test infrastructure (LocalSwordfishWorker).
 pub enum LocalPlanOutput {
     /// Regular morsel partitions (e.g. from scan, filter, sort, project).
     Partitions(Vec<daft_micropartition::MicroPartition>),
@@ -586,8 +587,9 @@ pub enum LocalPlanOutput {
 
 /// Execute a local physical plan in-process and return results + execution statistics.
 ///
-/// This provides a simple interface for running a plan without the full NativeExecutor
-/// machinery. It must be called from within a tokio runtime context (e.g. `#[tokio::test]`).
+/// Used by distributed execution test infrastructure (LocalSwordfishWorker) to run
+/// SwordfishTask local plans without Ray. Must be called from within a tokio runtime
+/// context (e.g. `#[tokio::test]`).
 ///
 /// Returns the output (partitions or shuffle data) and execution statistics.
 pub async fn execute_local_plan(

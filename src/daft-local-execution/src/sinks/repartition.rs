@@ -287,6 +287,7 @@ impl BlockingSink for RepartitionSink {
                                     partitions: metadata,
                                 }))
                             }
+                            // Non-Python path: only exercised by Rust-only test runs.
                             #[cfg(not(feature = "python"))]
                             {
                                 use crate::shuffle_metadata::ShufflePartitionMetadata;
