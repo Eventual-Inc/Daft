@@ -91,25 +91,34 @@ fn predicate_x_gt_2() -> BoundExpr {
     BoundExpr::new_unchecked(gt_expr)
 }
 
-/// Helper: Build an InMemorySource → Sort pipeline with a single partition.
+/// Helper: Build an InMemorySource → Sort pipeline.
 fn build_sort_pipeline(
-    partition: Arc<MicroPartition>,
+    partitions: Vec<Arc<MicroPartition>>,
     meter: &Meter,
 ) -> DistributedPipelineNode {
     let plan_config = test_plan_config();
     let schema = test_schema();
     let cache_key = "test-data".to_string();
 
+    let total_rows: usize = partitions.iter().map(|p| p.len()).sum();
+    let total_bytes: usize = partitions.iter().map(|p| p.size_bytes()).sum();
+    let num_partitions = partitions.len();
+
+    let partition_refs: Vec<PartitionRef> = partitions
+        .into_iter()
+        .map(|p| p as PartitionRef)
+        .collect();
+
     let mut psets: HashMap<String, Vec<PartitionRef>> = HashMap::new();
-    psets.insert(cache_key.clone(), vec![partition.clone() as PartitionRef]);
+    psets.insert(cache_key.clone(), partition_refs);
 
     let info = InMemoryInfo {
         source_schema: schema.clone(),
         cache_key,
         cache_entry: None,
-        num_partitions: 1,
-        size_bytes: partition.size_bytes(),
-        num_rows: partition.len(),
+        num_partitions,
+        size_bytes: total_bytes,
+        num_rows: total_rows,
         clustering_spec: None,
         source_stage_id: None,
     };
@@ -284,7 +293,7 @@ async fn run_pipeline_and_get_stats(
 async fn test_sort_single_partition_stats() -> DaftResult<()> {
     let meter = Meter::test_scope("test_sort_stats");
     let partition = make_partition(&[5, 3, 1, 4, 2]);
-    let pipeline = build_sort_pipeline(partition, &meter);
+    let pipeline = build_sort_pipeline(vec![partition], &meter);
 
     let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
 
@@ -412,6 +421,63 @@ async fn test_filter_stats_multi_partition() -> DaftResult<()> {
             );
         }
         other => panic!("Expected Filter snapshot, got: {:?}", other),
+    }
+
+    Ok(())
+}
+
+/// Test: Multi-partition sort produces correct phase-filtered aggregated stats.
+///
+/// With multiple input partitions, the sort goes through all three phases:
+/// 1. Sample phase — samples data from each partition
+/// 2. Repartition phase — range-repartitions based on sampled boundaries
+/// 3. Final sort phase — sorts each repartitioned partition
+///
+/// SortStats should:
+/// - Count duration from ALL phases (sample + repartition + final-sort)
+/// - Count rows ONLY from FINAL_SORT_PHASE Default snapshots
+/// - Ignore sample/repartition phase rows to avoid double-counting
+///
+/// This test exercises the REAL interaction: produce_tasks() drives the sort
+/// node's execution_loop, the LocalSwordfishWorker executes all intermediate
+/// and final tasks, and the StatisticsManager aggregates via the real SortStats.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_sort_multi_partition_stats() -> DaftResult<()> {
+    let meter = Meter::test_scope("test_sort_multi");
+
+    // Create 3 partitions with different data — total 9 rows.
+    let p1 = make_partition(&[5, 3, 1]);
+    let p2 = make_partition(&[4, 2, 6]);
+    let p3 = make_partition(&[9, 7, 8]);
+    let pipeline = build_sort_pipeline(vec![p1, p2, p3], &meter);
+
+    let stats = run_pipeline_and_get_stats(&pipeline, &meter).await?;
+
+    // Find the sort node's stats (node_id = 1).
+    let sort_stats = stats
+        .iter()
+        .find(|(info, _)| info.node_origin_id == 1)
+        .expect("Sort node stats should be present");
+
+    match &sort_stats.1 {
+        StatSnapshot::Default(snapshot) => {
+            // Sort processes all 9 rows through the final sort phase.
+            // rows_in and rows_out should equal 9 (sort doesn't drop rows).
+            assert_eq!(
+                snapshot.rows_in, 9,
+                "Multi-partition sort should report 9 rows_in (only from final-sort phase)"
+            );
+            assert_eq!(
+                snapshot.rows_out, 9,
+                "Multi-partition sort should report 9 rows_out (only from final-sort phase)"
+            );
+            // Duration should include contributions from all phases (sample + repartition + final-sort).
+            assert!(
+                snapshot.cpu_us > 0,
+                "Sort should report non-zero duration aggregated from all phases"
+            );
+        }
+        other => panic!("Expected Default snapshot for sort, got: {:?}", other),
     }
 
     Ok(())

@@ -145,13 +145,40 @@ pub(crate) async fn get_partition_boundaries_from_samples(
 
 #[cfg(not(feature = "python"))]
 pub(crate) async fn get_partition_boundaries_from_samples(
-    _samples: Vec<MaterializedOutput>,
-    _partition_by: &[BoundExpr],
-    _descending: Vec<bool>,
-    _nulls_first: Vec<bool>,
-    _num_partitions: usize,
+    samples: Vec<MaterializedOutput>,
+    partition_by: &[BoundExpr],
+    descending: Vec<bool>,
+    nulls_first: Vec<bool>,
+    num_partitions: usize,
 ) -> DaftResult<RecordBatch> {
-    unimplemented!("Distributed range partitioning requires Python feature to be enabled")
+    use daft_micropartition::MicroPartition;
+
+    // Extract partition refs and downcast to MicroPartition.
+    let micro_partitions: Vec<MicroPartition> = samples
+        .into_iter()
+        .flat_map(|mo| mo.into_inner().0)
+        .map(|pr| {
+            pr.as_any()
+                .downcast_ref::<MicroPartition>()
+                .ok_or_else(|| {
+                    common_error::DaftError::InternalError(
+                        "Expected MicroPartition in local mode".to_string(),
+                    )
+                })
+                .cloned()
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
+
+    // Concat all samples, sort by the partition columns, then compute quantiles.
+    let merged = MicroPartition::concat(micro_partitions)?;
+    let sorted = merged.sort(partition_by, &descending, &nulls_first)?;
+    let boundaries = sorted.quantiles(num_partitions)?;
+
+    boundaries.concat_or_get()?.ok_or_else(|| {
+        common_error::DaftError::InternalError(
+            "No boundaries found for range partitioning".to_string(),
+        )
+    })
 }
 
 /// Creates sample tasks from materialized outputs, projecting the specified columns.

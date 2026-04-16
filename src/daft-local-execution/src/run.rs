@@ -576,17 +576,25 @@ impl Drop for NativeExecutor {
     }
 }
 
+/// Result of running a local plan. Either regular partitions or shuffle output.
+pub enum LocalPlanOutput {
+    /// Regular morsel partitions (e.g. from scan, filter, sort, project).
+    Partitions(Vec<daft_micropartition::MicroPartition>),
+    /// Repartition/shuffle output: each inner Vec is one output partition bucket.
+    Shuffle(Vec<Vec<std::sync::Arc<daft_micropartition::MicroPartition>>>),
+}
+
 /// Execute a local physical plan in-process and return results + execution statistics.
 ///
 /// This provides a simple interface for running a plan without the full NativeExecutor
 /// machinery. It must be called from within a tokio runtime context (e.g. `#[tokio::test]`).
 ///
-/// Returns the collected output partitions and the execution statistics.
+/// Returns the output (partitions or shuffle data) and execution statistics.
 pub async fn execute_local_plan(
     plan: &LocalPhysicalPlanRef,
     config: std::sync::Arc<DaftExecutionConfig>,
     inputs: HashMap<SourceId, Input>,
-) -> DaftResult<(Vec<daft_micropartition::MicroPartition>, ExecutionStats)> {
+) -> DaftResult<(LocalPlanOutput, ExecutionStats)> {
     use crate::pipeline::{BuilderContext, PipelineMessage};
     use tokio::runtime::Handle;
 
@@ -623,8 +631,9 @@ pub async fn execute_local_plan(
         ExecutionRuntimeContext::new(memory_manager.clone(), stats_handle.clone());
     let mut output_receiver = pipeline.start(true, &mut runtime_handle)?;
 
-    // Collect output partitions.
+    // Collect output.
     let mut partitions = Vec::new();
+    let mut shuffle_metadata = None;
     loop {
         tokio::select! {
             Some(join_result) = runtime_handle.join_next() => {
@@ -635,7 +644,9 @@ pub async fn execute_local_plan(
                     Some(PipelineMessage::Morsel { partition, .. }) => {
                         partitions.push(partition);
                     }
-                    Some(PipelineMessage::ShuffleMetadata { .. }) => {}
+                    Some(PipelineMessage::ShuffleMetadata { metadata, .. }) => {
+                        shuffle_metadata = Some(metadata);
+                    }
                     Some(PipelineMessage::Flush(_)) => {}
                     None => {
                         // Pipeline finished.
@@ -653,7 +664,33 @@ pub async fn execute_local_plan(
         .take_input_snapshot(input_id)
         .await
         .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![]));
-    Ok((partitions, stats))
+
+    let output = if let Some(metadata) = shuffle_metadata {
+        // Convert shuffle metadata to partition vectors.
+        // In non-Python mode, each ShufflePartitionMetadata carries the actual data.
+        let mut shuffle_partitions = Vec::new();
+        for partition_meta in metadata.partitions {
+            #[cfg(not(feature = "python"))]
+            {
+                if let Some(data) = partition_meta.data {
+                    shuffle_partitions.push(vec![data]);
+                } else {
+                    shuffle_partitions.push(vec![]);
+                }
+            }
+            #[cfg(feature = "python")]
+            {
+                // In Python mode, partition data is in Ray — we only have metadata.
+                let _ = partition_meta;
+                shuffle_partitions.push(vec![]);
+            }
+        }
+        LocalPlanOutput::Shuffle(shuffle_partitions)
+    } else {
+        LocalPlanOutput::Partitions(partitions)
+    };
+
+    Ok((output, stats))
 }
 
 pub struct ExecutionEngineResult {

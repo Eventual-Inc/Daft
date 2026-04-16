@@ -289,7 +289,23 @@ impl BlockingSink for RepartitionSink {
                             }
                             #[cfg(not(feature = "python"))]
                             {
-                                unreachable!("RepartitionSink requires python feature")
+                                use crate::shuffle_metadata::ShufflePartitionMetadata;
+
+                                let metadata = partitions
+                                    .into_iter()
+                                    .map(|p| {
+                                        let num_rows = p.len();
+                                        let size_bytes = p.size_bytes();
+                                        ShufflePartitionMetadata::with_data(
+                                            Arc::new(p),
+                                            num_rows,
+                                            size_bytes,
+                                        )
+                                    })
+                                    .collect();
+                                Ok(BlockingSinkOutput::ShuffleMetadata(ShuffleMetadata {
+                                    partitions: metadata,
+                                }))
                             }
                         },
                         Span::current(),
