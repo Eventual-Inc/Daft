@@ -17,6 +17,8 @@ pub trait RuntimeStats: Send + Sync + 'static {
     fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot);
     /// Returns the accumulated stats.
     fn export_snapshot(&self) -> StatSnapshot;
+    /// Increment the number of tasks originated from this distributed node's `origin_node_id`.
+    fn add_num_tasks(&self, num_tasks: u64);
 }
 pub type RuntimeStatsRef = Arc<dyn RuntimeStats>;
 
@@ -75,12 +77,17 @@ impl RuntimeNodeManager {
                 self.dec_active_tasks();
                 self.completed_tasks.add(1, self.node_kv.as_slice());
 
+                let mut originated_here = false;
                 for (node_info, snapshot) in &stats.nodes {
                     // Local nodes are associated to this node through the node_origin_id
                     if self.node_info.node_origin_id == node_info.node_origin_id {
+                        originated_here = true;
                         self.runtime_stats
                             .handle_worker_node_stats(node_info, snapshot);
                     }
+                }
+                if originated_here {
+                    self.runtime_stats.add_num_tasks(1);
                 }
             }
             TaskEvent::Failed { .. } => {
@@ -102,6 +109,7 @@ pub struct BaseCounters {
     rows_out: Counter,
     bytes_in: Counter,
     bytes_out: Counter,
+    num_tasks: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -114,6 +122,7 @@ impl BaseCounters {
             rows_out: meter.rows_out_metric(),
             bytes_in: meter.bytes_in_metric(),
             bytes_out: meter.bytes_out_metric(),
+            num_tasks: meter.num_tasks_metric(),
             node_kv,
         }
     }
@@ -138,6 +147,10 @@ impl BaseCounters {
         self.bytes_out.add(v, self.node_kv.as_slice());
     }
 
+    pub fn add_num_tasks(&self, v: u64) {
+        self.num_tasks.add(v, self.node_kv.as_slice());
+    }
+
     pub fn export_default_snapshot(&self) -> StatSnapshot {
         StatSnapshot::Default(DefaultSnapshot {
             cpu_us: self.duration_us.load(Ordering::Relaxed),
@@ -145,6 +158,7 @@ impl BaseCounters {
             rows_out: self.rows_out.load(Ordering::Relaxed),
             bytes_in: self.bytes_in.load(Ordering::Relaxed),
             bytes_out: self.bytes_out.load(Ordering::Relaxed),
+            num_tasks: self.num_tasks.load(Ordering::Relaxed),
         })
     }
 }
@@ -178,5 +192,9 @@ impl RuntimeStats for DefaultRuntimeStats {
 
     fn export_snapshot(&self) -> StatSnapshot {
         self.base.export_default_snapshot()
+    }
+
+    fn add_num_tasks(&self, num_tasks: u64) {
+        self.base.add_num_tasks(num_tasks);
     }
 }

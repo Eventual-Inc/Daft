@@ -40,6 +40,7 @@ pub struct BroadcastJoinStats {
     build_bytes_inserted: Counter,
     probe_bytes_in: Counter,
     probe_bytes_out: Counter,
+    num_tasks: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -77,6 +78,7 @@ impl BroadcastJoinStats {
                 None,
                 Some(Cow::Borrowed(UNIT_BYTES)),
             ),
+            num_tasks: meter.num_tasks_metric(),
             node_kv: key_values_from_context(context),
         }
     }
@@ -118,7 +120,12 @@ impl RuntimeStats for BroadcastJoinStats {
             build_bytes_inserted: self.build_bytes_inserted.load(Ordering::SeqCst),
             probe_bytes_in: self.probe_bytes_in.load(Ordering::SeqCst),
             probe_bytes_out: self.probe_bytes_out.load(Ordering::SeqCst),
+            num_tasks: self.num_tasks.load(Ordering::SeqCst),
         })
+    }
+
+    fn add_num_tasks(&self, num_tasks: u64) {
+        self.num_tasks.add(num_tasks, self.node_kv.as_slice());
     }
 }
 

@@ -50,6 +50,7 @@ pub(crate) struct AsyncUdfRuntimeStats {
     rows_out: Counter,
     bytes_in: Counter,
     bytes_out: Counter,
+    num_tasks: Counter,
     custom_counters: Mutex<HashMap<Arc<str>, Counter>>,
 }
 
@@ -64,6 +65,7 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
             rows_out: meter.rows_out_metric(),
             bytes_in: meter.bytes_in_metric(),
             bytes_out: meter.bytes_out_metric(),
+            num_tasks: meter.num_tasks_metric(),
             custom_counters: Mutex::new(HashMap::new()),
             node_kv,
         }
@@ -82,6 +84,7 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
                 .collect(),
             bytes_in: self.bytes_in.load(ordering),
             bytes_out: self.bytes_out.load(ordering),
+            num_tasks: self.num_tasks.load(ordering),
         })
     }
 
@@ -103,6 +106,10 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
 
     fn add_bytes_out(&self, bytes: u64) {
         self.bytes_out.add(bytes, self.node_kv.as_slice());
+    }
+
+    fn add_num_tasks(&self, num_tasks: u64) {
+        self.num_tasks.add(num_tasks, self.node_kv.as_slice());
     }
 }
 

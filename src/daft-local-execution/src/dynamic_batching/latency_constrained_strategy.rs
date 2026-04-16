@@ -307,6 +307,7 @@ mod tests {
         }
         fn add_bytes_in(&self, _bytes: u64) {}
         fn add_bytes_out(&self, _bytes: u64) {}
+        fn add_num_tasks(&self, _num_tasks: u64) {}
     }
 
     fn create_strategy() -> LatencyConstrainedBatchingStrategy {
