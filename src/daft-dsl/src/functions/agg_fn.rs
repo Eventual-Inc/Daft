@@ -60,14 +60,6 @@ pub trait AggFn: Send + Sync {
 ///
 /// `Hash` and `PartialEq` compare by function name only, matching the
 /// expression-identity semantics used elsewhere in the planner.
-///
-/// **Name uniqueness requirement**: Because equality and hashing are based
-/// solely on `AggFn::name()`, two handles with the same name are considered
-/// identical by the planner's expression deduplication (`IndexSet`).
-/// Registering two distinct `AggFn` implementations under the same name
-/// will cause one to silently shadow the other in intermediate aggregation
-/// stages.  Ensure that every `AggFn` implementation returns a globally
-/// unique name (e.g. include the crate/module prefix).
 #[derive(Clone)]
 pub struct AggFnHandle(pub Arc<dyn AggFn>);
 
