@@ -87,6 +87,55 @@ impl RecordBatch {
         Self::from_nonempty_columns([groupkeys_series.as_slice(), &grouped_cols].concat())
     }
 
+    /// Runs a combine-only pass over `to_agg` on partially-aggregated data.
+    ///
+    /// - [`AggExpr::AggFnReduce`]: calls `call_agg_combine` N-1 times per group,
+    ///   returning a `Binary` column — identical schema to stage-1 (`AggFnMap`) output.
+    /// - All other expressions: evaluated normally (they are associative, so the result
+    ///   is a valid intermediate state for a subsequent [`Self::agg`] call).
+    ///
+    /// Intended for the map-side eager combine in `GroupedAggregateSink`.
+    pub fn agg_combine_only(
+        &self,
+        to_agg: &[BoundAggExpr],
+        group_by: &[BoundExpr],
+    ) -> DaftResult<Self> {
+        match group_by.len() {
+            0 => {
+                let cols = to_agg
+                    .iter()
+                    .map(|e| self.eval_agg_expression_combine_only(e, None))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                Self::from_nonempty_columns(cols)
+            }
+            _ => {
+                let groupby_table = self.eval_expression_list(group_by)?;
+                let (groupkey_indices, groupvals_indices) = groupby_table.make_groups()?;
+                let groupkeys_table = {
+                    let indices_as_arr = UInt64Array::from_vec("", groupkey_indices);
+                    groupby_table.take(&indices_as_arr)?
+                };
+                let group_idx_input = if groupvals_indices.len() == 1 {
+                    None
+                } else {
+                    Some(&groupvals_indices)
+                };
+                let grouped_cols = to_agg
+                    .iter()
+                    .map(|e| self.eval_agg_expression_combine_only(e, group_idx_input))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let groupkeys_series: Vec<Series> = groupkeys_table
+                    .columns
+                    .iter()
+                    .map(|c| c.as_materialized_series().clone())
+                    .collect();
+                Self::from_nonempty_columns(
+                    [groupkeys_series.as_slice(), &grouped_cols].concat(),
+                )
+            }
+        }
+    }
+
     #[cfg(feature = "python")]
     pub fn map_groups(
         &self,
@@ -414,26 +463,33 @@ mod tests {
         .unwrap()
     }
 
-    // Global (no groups): block-agg then combine+finalize, result is 1+2+3 = 6.
+    // Global: two batches (one with a null). Null=0 per TestSumAgg, so 1+null+2+3 = 6.
     #[test]
     fn test_agg_fn_global() -> DaftResult<()> {
-        let rb = RecordBatch::from_nonempty_columns(vec![
-            Int64Array::from_vec("x", vec![1i64, 2, 3]).into_series(),
+        let rb1 = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_iter(
+                Arc::new(Field::new("x", DataType::Int64)),
+                [Some(1i64), None, Some(2i64)],
+            )
+            .into_series(),
+        ])?;
+        let rb2 = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_vec("x", vec![3i64]).into_series(),
         ])?;
 
-        // Stage 1: AggFnMap — one binary row (sum of all rows).
-        let intermediate = rb.agg_global(&[bound_block(&rb)])?;
-        assert_eq!(intermediate.len(), 1);
+        let partial1 = rb1.agg_global(&[bound_block(&rb1)])?;
+        let partial2 = rb2.agg_global(&[bound_block(&rb2)])?;
+        let merged = RecordBatch::concat(&[partial1, partial2])?;
+        assert_eq!(merged.len(), 2);
 
-        // Stage 2: AggFnReduce — combine (no-op, one group) + finalize.
-        let result = intermediate.agg_global(&[bound_combine(&intermediate.schema)])?;
+        let result = merged.agg_global(&[bound_combine(&merged.schema)])?;
         assert_eq!(result.len(), 1);
         let col = get_column_by_name(&result, "x")?;
         assert_eq!(col.i64()?.get(0), Some(6i64));
         Ok(())
     }
 
-    // Grouped: two groups summed across two simulated shards, then merged.
+    // Three shards (shard3 has null in group "a"). Null=0, so a=1+2+3+null=6, b=10+20+5=35.
     #[test]
     fn test_agg_fn_grouped() -> DaftResult<()> {
         let shard1 = RecordBatch::from_nonempty_columns(vec![
@@ -444,18 +500,26 @@ mod tests {
             Int64Array::from_vec("x", vec![3i64, 20]).into_series(),
             Utf8Array::from_slice("g", &["a", "b"]).into_series(),
         ])?;
+        let shard3 = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_iter(
+                Arc::new(Field::new("x", DataType::Int64)),
+                [None::<i64>, Some(5i64)],
+            )
+            .into_series(),
+            Utf8Array::from_slice("g", &["a", "b"]).into_series(),
+        ])?;
 
         let bound_g_s1 = BoundExpr::try_new(unresolved_col("g"), &shard1.schema)?;
         let bound_g_s2 = BoundExpr::try_new(unresolved_col("g"), &shard2.schema)?;
+        let bound_g_s3 = BoundExpr::try_new(unresolved_col("g"), &shard3.schema)?;
 
-        // Stage 1: AggFnMap per shard.
         let partial1 = shard1.agg(&[bound_block(&shard1)], &[bound_g_s1])?;
         let partial2 = shard2.agg(&[bound_block(&shard2)], &[bound_g_s2])?;
+        let partial3 = shard3.agg(&[bound_block(&shard3)], &[bound_g_s3])?;
 
-        // Concat the two partial results (simulates shuffle merge).
-        let merged = RecordBatch::concat(&[partial1, partial2])?;
+        // Simulates shuffle merge: all partial states land in one reduce step.
+        let merged = RecordBatch::concat(&[partial1, partial2, partial3])?;
 
-        // Stage 2: AggFnReduce — combine partial states per group, then finalize.
         let bound_g_m = BoundExpr::try_new(unresolved_col("g"), &merged.schema)?;
         let result = merged.agg(&[bound_combine(&merged.schema)], &[bound_g_m])?;
         assert_eq!(result.len(), 2);
@@ -472,8 +536,111 @@ mod tests {
             .collect::<DaftResult<_>>()?;
         pairs.sort();
 
-        // a: 1+2+3=6, b: 10+20=30
-        assert_eq!(pairs, vec![("a".into(), 6i64), ("b".into(), 30i64)]);
+        assert_eq!(pairs, vec![("a".into(), 6i64), ("b".into(), 35i64)]);
+        Ok(())
+    }
+
+    // Verifies the deserialized handle produces the same pipeline results as the original.
+    #[test]
+    fn test_agg_fn_handle_serde_roundtrip() -> DaftResult<()> {
+        let original = make_handle();
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: AggFnHandle = serde_json::from_str(&json).unwrap();
+        assert_eq!(original.name(), restored.name());
+
+        let rb = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_vec("x", vec![4i64, 5, 6]).into_series(),
+        ])?;
+        let block_expr = BoundAggExpr::try_new(
+            AggExpr::AggFnMap {
+                handle: restored.clone(),
+                inputs: vec![unresolved_col("x")],
+            },
+            &rb.schema,
+        )
+        .unwrap();
+        let partial = rb.agg_global(&[block_expr])?;
+
+        let return_field = Field::new("x", DataType::Int64);
+        let reduce_expr = BoundAggExpr::try_new(
+            AggExpr::AggFnReduce {
+                handle: restored,
+                partial: unresolved_col(&*partial_col_name()),
+                return_field,
+            },
+            &partial.schema,
+        )
+        .unwrap();
+        let result = partial.agg_global(&[reduce_expr])?;
+        let col = get_column_by_name(&result, "x")?;
+        assert_eq!(col.i64()?.get(0), Some(15i64)); // 4+5+6
+        Ok(())
+    }
+
+    #[test]
+    fn test_agg_combine_only_preserves_binary() -> DaftResult<()> {
+        let rb1 = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_vec("x", vec![1i64, 2]).into_series(),
+        ])?;
+        let rb2 = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_vec("x", vec![3i64]).into_series(),
+        ])?;
+        let partial1 = rb1.agg_global(&[bound_block(&rb1)])?;
+        let partial2 = rb2.agg_global(&[bound_block(&rb2)])?;
+        let merged = RecordBatch::concat(&[partial1, partial2])?;
+        assert_eq!(merged.len(), 2);
+
+        let combined = merged.agg_combine_only(&[bound_combine(&merged.schema)], &[])?;
+        assert_eq!(combined.len(), 1);
+        let col = get_column_by_name(&combined, &partial_col_name())?;
+        assert_eq!(col.data_type(), &DataType::Binary, "should remain Binary after combine-only");
+
+        // Now finalize — result should be 1+2+3 = 6 typed as Int64.
+        let final_result = combined.agg_global(&[bound_combine(&combined.schema)])?;
+        let x = get_column_by_name(&final_result, "x")?;
+        assert_eq!(x.i64()?.get(0), Some(6i64));
+        Ok(())
+    }
+
+    #[test]
+    fn test_agg_combine_only_grouped() -> DaftResult<()> {
+        let shard1 = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_vec("x", vec![10i64, 1]).into_series(),
+            Utf8Array::from_slice("g", &["a", "b"]).into_series(),
+        ])?;
+        let shard2 = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_vec("x", vec![20i64, 2]).into_series(),
+            Utf8Array::from_slice("g", &["a", "b"]).into_series(),
+        ])?;
+
+        let bound_g = |rb: &RecordBatch| BoundExpr::try_new(unresolved_col("g"), &rb.schema);
+        let partial1 = shard1.agg(&[bound_block(&shard1)], &[bound_g(&shard1)?])?;
+        let partial2 = shard2.agg(&[bound_block(&shard2)], &[bound_g(&shard2)?])?;
+        let merged = RecordBatch::concat(&[partial1, partial2])?;
+
+        let bound_g_m = BoundExpr::try_new(unresolved_col("g"), &merged.schema)?;
+        let combined =
+            merged.agg_combine_only(&[bound_combine(&merged.schema)], &[bound_g_m.clone()])?;
+        assert_eq!(combined.len(), 2);
+        let partial_col = get_column_by_name(&combined, &partial_col_name())?;
+        assert_eq!(partial_col.data_type(), &DataType::Binary);
+
+        // Finalize the combined state — a: 10+20=30, b: 1+2=3.
+        let bound_g_c = BoundExpr::try_new(unresolved_col("g"), &combined.schema)?;
+        let final_result =
+            combined.agg(&[bound_combine(&combined.schema)], &[bound_g_c])?;
+        let g_col = get_column_by_name(&final_result, "g")?;
+        let x_col = get_column_by_name(&final_result, "x")?;
+        let mut pairs: Vec<(String, i64)> = (0..final_result.len())
+            .map(|i| {
+                Ok::<_, common_error::DaftError>((
+                    g_col.utf8()?.get(i).unwrap().to_string(),
+                    x_col.i64()?.get(i).unwrap(),
+                ))
+            })
+            .collect::<DaftResult<_>>()?;
+        pairs.sort();
+        assert_eq!(pairs, vec![("a".into(), 30i64), ("b".into(), 3i64)]);
         Ok(())
     }
 }

@@ -2965,6 +2965,7 @@ dependencies = [
  "pyo3",
  "pyo3-async-runtimes",
  "rand 0.9.2",
+ "serde",
  "serde_json",
  "smallvec",
  "snafu",
@@ -2974,6 +2975,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tracing",
+ "typetag",
 ]
 
 [[package]]

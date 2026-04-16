@@ -27,6 +27,24 @@ impl MicroPartition {
         }
     }
 
+    pub fn agg_combine_only(
+        &self,
+        to_agg: &[BoundAggExpr],
+        group_by: &[BoundExpr],
+    ) -> DaftResult<Self> {
+        match self.concat_or_get()? {
+            None => {
+                let empty_table = RecordBatch::empty(Some(self.schema.clone()));
+                let combined = empty_table.agg_combine_only(to_agg, group_by)?;
+                Ok(Self::new_loaded(combined.schema.clone(), vec![combined].into(), None))
+            }
+            Some(t) => {
+                let combined = t.agg_combine_only(to_agg, group_by)?;
+                Ok(Self::new_loaded(combined.schema.clone(), vec![combined].into(), None))
+            }
+        }
+    }
+
     pub fn dedup(&self, columns: &[BoundExpr]) -> DaftResult<Self> {
         if columns.is_empty() {
             return Err(DaftError::ValueError(

@@ -701,6 +701,22 @@ impl RecordBatch {
         }
     }
 
+    /// Like [`eval_agg_expression`] but stops before `call_agg_finalize` for
+    /// [`AggExpr::AggFnReduce`], keeping the `Binary` column type.  Output schema
+    /// matches stage-1 (`AggFnMap`) output — valid input for a subsequent full `agg()`.
+    pub(crate) fn eval_agg_expression_combine_only(
+        &self,
+        agg_expr: &BoundAggExpr,
+        groups: Option<&GroupIndices>,
+    ) -> DaftResult<Series> {
+        if let AggExpr::AggFnReduce { handle, partial, .. } = agg_expr.as_ref() {
+            let evaled_partial = self.eval_agg_child(partial)?;
+            fold_agg_states(handle, &evaled_partial, groups)
+        } else {
+            self.eval_agg_expression(agg_expr, groups)
+        }
+    }
+
     fn eval_agg_expression(
         &self,
         agg_expr: &BoundAggExpr,
@@ -789,9 +805,9 @@ impl RecordBatch {
                     .collect::<Vec<_>>()
                     .join(", ");
                 let expected_name = format!("{}({})", handle.name(), inputs_str);
-                handle
+                Ok(handle
                     .call_agg_block(evaled_inputs, groups)?
-                    .rename(&expected_name)
+                    .rename(&expected_name))
             }
             AggExpr::AggFnReduce {
                 handle,
