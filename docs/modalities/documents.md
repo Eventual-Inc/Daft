@@ -42,9 +42,9 @@ df = (
             tools=[{"type": "web_search"}],
             return_format=SearchResults,
             provider="openai",
-            unnest=True,
         ),
     )
+    .select(daft.col("path"), unnest(daft.col("results")))
 )
 results = df.to_pydict()
 print(results)
