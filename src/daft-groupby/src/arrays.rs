@@ -66,6 +66,19 @@ where
         group_indices.push(group_index);
     }
 
+    eprintln!(
+        "sample_indices memory usage: {} bytes",
+        sample_indices.len() * std::mem::size_of::<u64>()
+    );
+
+    let mut contents = group_indices.len() * std::mem::size_of::<VecIndices>();
+    for group in &group_indices {
+        if group.spilled() {
+            contents += group.len() * std::mem::size_of::<u64>();
+        }
+    }
+    eprintln!("group_indices memory usage: {} bytes", contents);
+
     Ok((sample_indices, group_indices))
 }
 

@@ -28,11 +28,19 @@ macro_rules! impl_daft_list_agg {
             for g in groups {
                 offsets.push(offsets.last().unwrap() + g.len() as i64);
             }
+            eprintln!(
+                "offsets memory usage: {} bytes",
+                offsets.len() * std::mem::size_of::<i64>()
+            );
 
             let idxs = groups
                 .iter()
                 .flat_map(|g| g.iter().copied())
                 .collect::<Vec<_>>();
+            eprintln!(
+                "idxs memory usage: {} bytes",
+                idxs.len() * std::mem::size_of::<u64>()
+            );
             let child_series = self.take(&UInt64Array::from_vec("", idxs))?;
             let list_field = self.field().to_list_field();
 
