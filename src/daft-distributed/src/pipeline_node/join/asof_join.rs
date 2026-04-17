@@ -332,8 +332,8 @@ impl AsofJoinNode {
                 num_partitions,
             )?;
 
-        // Merge sentinels: for each partition j, pick the max row across all worker candidates,
-        // then forward-fill Nones from the previous partition.
+        // Merge sentinels: for each partition j, pick the single globally max (by..., on)
+        // row across all worker candidates, then forward-fill Nones from the previous partition.
         let mut global_sentinels: Vec<Option<RecordBatch>> = Vec::with_capacity(num_partitions);
         for candidates in sentinel_candidates_per_partition {
             let valid: Vec<RecordBatch> = candidates.into_iter().flatten().collect();
@@ -341,7 +341,7 @@ impl AsofJoinNode {
                 None
             } else {
                 let combined = RecordBatch::concat(&valid)?;
-                record_batch_max(&combined, &right_composite_key)?
+                record_batch_max_composite(&combined, &right_composite_key)?
             };
             global_sentinels.push(global_sentinel);
         }
@@ -471,24 +471,27 @@ impl PipelineNodeImpl for AsofJoinNode {
     }
 }
 
-/// Find the row with the maximum value of `sort_keys` in `batch` using a linear O(n) scan.
-/// Returns `None` if `batch` is empty.
-fn record_batch_max(
+/// Find the single row with the lexicographically maximum composite key `(by..., on)` in
+/// `batch`. Returns `None` if `batch` is empty.
+///
+/// `composite_keys` is `[by_keys..., on_key]` sorted ascending — the max row is the one
+/// that sorts last under `(by ASC..., on ASC)`.
+fn record_batch_max_composite(
     batch: &RecordBatch,
-    sort_keys: &[BoundExpr],
+    composite_keys: &[BoundExpr],
 ) -> DaftResult<Option<RecordBatch>> {
-    let len = batch.len();
-    if len == 0 {
+    if batch.is_empty() {
         return Ok(None);
     }
-    let evaluated: Vec<_> = sort_keys
+
+    let cols: Vec<_> = composite_keys
         .iter()
         .map(|k| batch.eval_expression(k))
         .collect::<DaftResult<_>>()?;
-    let descending = vec![true; sort_keys.len()];
-    let nulls_first = vec![false; sort_keys.len()];
-    let cmp = build_multi_array_compare(&evaluated, &descending, &nulls_first)?;
-    let max_idx = (1..len).fold(0usize, |best, i| {
+    let descending = vec![false; composite_keys.len()];
+    let nulls_first = vec![false; composite_keys.len()];
+    let cmp = build_multi_array_compare(&cols, &descending, &nulls_first)?;
+    let max_idx = (1..batch.len()).fold(0usize, |best, i| {
         if cmp(i, best) == Ordering::Greater {
             i
         } else {
