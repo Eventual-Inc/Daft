@@ -1,4 +1,5 @@
 pub mod agg;
+pub mod agg_fn;
 pub mod function_args;
 #[cfg(test)]
 mod macro_tests;
@@ -17,6 +18,7 @@ use std::{
     sync::{Arc, LazyLock, RwLock},
 };
 
+pub use agg_fn::{AggFn, AggFnHandle};
 use common_error::DaftResult;
 use daft_core::prelude::*;
 pub use function_args::{FunctionArg, FunctionArgs, UnaryArg};

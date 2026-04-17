@@ -41,6 +41,9 @@ python = [
   "daft-functions-list/python"
 ]
 
+[dev-dependencies]
+typetag = {workspace = true}
+
 [lints]
 workspace = true
 
