@@ -18,13 +18,15 @@ pub(super) struct Dispatcher<W: Worker> {
     // Mapping of joinset task id to the scheduled task
     // The scheduled task is kept here so that we can reschedule the task if it fails
     joinset_id_to_task: HashMap<JoinSetId, ScheduledTask<W::Task>>,
+    statistics_manager: StatisticsManagerRef,
 }
 
 impl<W: Worker> Dispatcher<W> {
-    pub fn new() -> Self {
+    pub fn new(statistics_manager: StatisticsManagerRef) -> Self {
         Self {
             task_result_joinset: JoinSet::new(),
             joinset_id_to_task: HashMap::new(),
+            statistics_manager,
         }
     }
 
@@ -69,7 +71,6 @@ impl<W: Worker> Dispatcher<W> {
     pub async fn await_completed_tasks(
         &mut self,
         worker_manager: &Arc<dyn WorkerManager<Worker = W>>,
-        statistics_manager: &StatisticsManagerRef,
     ) -> DaftResult<Vec<PendingTask<W::Task>>> {
         let mut failed_tasks = Vec::new();
         let mut task_results = Vec::new();
@@ -101,7 +102,8 @@ impl<W: Worker> Dispatcher<W> {
                 // Always mark the task as finished regardless of the result
                 worker_manager.mark_task_finished(task.task_context(), worker_id.clone());
                 // Send the event to the statistics manager
-                statistics_manager.handle_event((task.task_context(), &task_result).into())?;
+                self.statistics_manager
+                    .handle_event((task.task_context(), &task_result).into())?;
 
                 match task_result {
                     Ok(task_status) => match task_status {
@@ -201,7 +203,10 @@ mod tests {
         let workers = setup_workers(worker_configs);
         let worker_manager: Arc<dyn WorkerManager<Worker = MockWorker>> =
             Arc::new(MockWorkerManager::new(workers));
-        (Dispatcher::new(), worker_manager)
+        (
+            Dispatcher::new(StatisticsManagerRef::default()),
+            worker_manager,
+        )
     }
 
     fn unwrap_materialized(result: Option<TaskOutput>) -> crate::pipeline_node::MaterializedOutput {
@@ -227,9 +232,7 @@ mod tests {
         dispatcher.dispatch_tasks(scheduled_tasks, &worker_manager)?;
 
         // Wait for task completion
-        let failed_tasks = dispatcher
-            .await_completed_tasks(&worker_manager, &StatisticsManagerRef::default())
-            .await?;
+        let failed_tasks = dispatcher.await_completed_tasks(&worker_manager).await?;
         assert!(failed_tasks.is_empty());
 
         let result = submitted_task.await?;
@@ -269,9 +272,7 @@ mod tests {
 
         // Wait for all tasks to complete
         while dispatcher.has_running_tasks() {
-            let failed_tasks = dispatcher
-                .await_completed_tasks(&worker_manager, &StatisticsManagerRef::default())
-                .await?;
+            let failed_tasks = dispatcher.await_completed_tasks(&worker_manager).await?;
             assert!(failed_tasks.is_empty());
         }
 
@@ -326,9 +327,7 @@ mod tests {
         let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id)];
         dispatcher.dispatch_tasks(scheduled_tasks, &worker_manager)?;
 
-        let failed_tasks = dispatcher
-            .await_completed_tasks(&worker_manager, &StatisticsManagerRef::default())
-            .await?;
+        let failed_tasks = dispatcher.await_completed_tasks(&worker_manager).await?;
         assert!(failed_tasks.is_empty());
 
         let result = submitted_task.await;
@@ -357,9 +356,7 @@ mod tests {
         let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id)];
         dispatcher.dispatch_tasks(scheduled_tasks, &worker_manager)?;
 
-        let failed_tasks = dispatcher
-            .await_completed_tasks(&worker_manager, &StatisticsManagerRef::default())
-            .await?;
+        let failed_tasks = dispatcher.await_completed_tasks(&worker_manager).await?;
         assert!(failed_tasks.is_empty());
 
         let result = submitted_task.await;
@@ -390,9 +387,7 @@ mod tests {
         let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id.clone())];
         dispatcher.dispatch_tasks(scheduled_tasks, &worker_manager)?;
 
-        let failed_tasks = dispatcher
-            .await_completed_tasks(&worker_manager, &StatisticsManagerRef::default())
-            .await?;
+        let failed_tasks = dispatcher.await_completed_tasks(&worker_manager).await?;
 
         // Task should be returned as a failed task that needs rescheduling
         assert_eq!(failed_tasks.len(), 1);
@@ -430,9 +425,7 @@ mod tests {
         let scheduled_tasks = vec![ScheduledTask::new(schedulable_task, worker_id.clone())];
         dispatcher.dispatch_tasks(scheduled_tasks, &worker_manager)?;
 
-        let failed_tasks = dispatcher
-            .await_completed_tasks(&worker_manager, &StatisticsManagerRef::default())
-            .await?;
+        let failed_tasks = dispatcher.await_completed_tasks(&worker_manager).await?;
 
         // Task should be returned as a failed task that needs rescheduling
         assert_eq!(failed_tasks.len(), 1);
@@ -514,9 +507,7 @@ mod tests {
         // Wait for all tasks to complete and collect failed tasks
         let mut all_failed_tasks = Vec::new();
         while dispatcher.has_running_tasks() {
-            let failed_tasks = dispatcher
-                .await_completed_tasks(&worker_manager, &StatisticsManagerRef::default())
-                .await?;
+            let failed_tasks = dispatcher.await_completed_tasks(&worker_manager).await?;
             all_failed_tasks.extend(failed_tasks);
         }
 
