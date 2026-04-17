@@ -30,8 +30,8 @@ with sess:
     df = daft.from_pydict({"lat": [37.7749], "lng": [-122.4194]})
     df = df.select(
         daft_h3.h3_latlng_to_cell(col("lat"), col("lng"), 7).alias("cell"),
-    ).collect()
-    df = df.select(daft_h3.h3_cell_to_str(col("cell")).alias("hex")).collect()
+    )
+    df = df.select(daft_h3.h3_cell_to_str(col("cell")).alias("hex"))
     df.show()
 ```
 
