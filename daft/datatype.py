@@ -1608,6 +1608,7 @@ for _simple_name in (
     "date",
     "interval",
     "python",
+    "uuid",
 ):
     _DATATYPE_CONSTRUCTOR_SET.add(_simple_name)
     setattr(DataType, _simple_name, DataType._from_pydatatype(getattr(PyDataType, _simple_name)()))

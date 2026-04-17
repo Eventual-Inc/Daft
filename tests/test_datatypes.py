@@ -411,6 +411,7 @@ _SIMPLE_TYPES = [
     ("date", DataType.date()),
     ("interval", DataType.interval()),
     ("python", DataType.python()),
+    ("uuid", DataType.uuid()),
 ]
 
 
@@ -435,16 +436,52 @@ def test_datatype_property_hash_consistency(name, expected):
 
 def test_datatype_property_isinstance():
     """Property access returns a real DataType instance."""
-    for name in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64",
-                 "float32", "float64", "string", "bool", "binary", "null", "date", "interval", "python"):
+    for name in (
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "float32",
+        "float64",
+        "string",
+        "bool",
+        "binary",
+        "null",
+        "date",
+        "interval",
+        "python",
+        "uuid",
+    ):
         prop = getattr(DataType, name)
         assert isinstance(prop, DataType), f"DataType.{name} property access should return DataType instance"
 
 
 def test_datatype_property_call_is_same_instance():
     """DataType.int64() returns the same singleton instance as DataType.int64."""
-    for name in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64",
-                 "float32", "float64", "string", "bool", "binary", "null", "date", "interval", "python"):
+    for name in (
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "float32",
+        "float64",
+        "string",
+        "bool",
+        "binary",
+        "null",
+        "date",
+        "interval",
+        "python",
+        "uuid",
+    ):
         prop = getattr(DataType, name)
         call = getattr(DataType, name)()
         assert prop is call, f"DataType.{name}() should return the same instance as DataType.{name}"
@@ -520,6 +557,7 @@ def test_datatype_property_repr():
         ("date", "Date"),
         ("interval", "Interval"),
         ("python", "Python"),
+        ("uuid", "Uuid"),
     ]
     for name, expected_repr in repr_checks:
         prop = getattr(DataType, name)
@@ -546,6 +584,7 @@ def test_datatype_property_call_returns_datatype():
         "date",
         "interval",
         "python",
+        "uuid",
     ]
     for name in type_names:
         result = getattr(DataType, name)()
