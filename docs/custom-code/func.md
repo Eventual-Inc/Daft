@@ -400,6 +400,57 @@ expr = multiply(df["x"], df["y"])
 result = multiply(5, 10)  # Returns 50
 ```
 
+## Resources, Concurrency, and Error Handling
+
+`@daft.func` and `@daft.func.batch` accept a common set of keyword arguments for concurrency control, scheduling, and error handling:
+
+```python
+@daft.func(
+    cpus=2,            # Each invocation needs 2 CPUs
+    gpus=1,            # Each invocation needs 1 GPU
+    use_process=True,  # Run the function in a subprocess instead of a thread
+    max_retries=3,     # Retry a failing invocation up to 3 times with backoff
+    on_error="log",    # On final failure, log the exception and emit None
+)
+def call_flaky_api(url: str) -> str:
+    import requests
+    return requests.get(url).text
+```
+
+### `cpus` and `gpus`
+
+`cpus` and `gpus` are used for concurrency control and scheduling — not placement. Daft uses them to decide how many invocations of your function can run in parallel on a given machine.
+
+If you annotate a function with `cpus=2` and it runs on a machine with 4 CPUs, Daft runs at most 2 invocations in parallel on that machine. `gpus` works the same way: `@daft.func(gpus=1)` on a machine with 2 GPUs means at most 2 concurrent invocations.
+
+Both accept fractional values (e.g. `cpus=0.5`, `gpus=0.5`). `gpus` values above 1.0 must be integers.
+
+### `max_concurrency`
+
+`max_concurrency` controls the maximum number of concurrent invocations of an async `@daft.func` or `@daft.func.batch`. It does not apply to synchronous (non-async) UDFs — setting it on a sync function raises.
+
+```python
+@daft.func(max_concurrency=10)
+async def fetch_url(url: str) -> str:
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            return await response.text()
+```
+
+### `use_process`
+
+Runs the function in a subprocess instead of a thread on the main process. Use this when your function is not thread-safe or holds the GIL heavily. The default (`None`) lets Daft pick at runtime based on observed performance.
+
+### `max_retries` and `on_error`
+
+Control what happens when a function invocation raises an exception.
+
+- `max_retries=N` retries failing invocations up to `N` times with exponential backoff starting at 100 ms, doubling each attempt, capped at 60 s, with ±25% jitter. If the raised exception is a `daft.ai.utils.RetryAfterError`, the specified retry-after delay is honored instead of the default backoff.
+- `on_error` decides what to do after retries are exhausted:
+    - `"raise"` (default) — fail the query.
+    - `"log"` — log the exception and emit `None` for that invocation.
+    - `"ignore"` — silently emit `None` for that invocation.
+
 ## Advanced Features
 
 ### Unnesting Struct Returns
