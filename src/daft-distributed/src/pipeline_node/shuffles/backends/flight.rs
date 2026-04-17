@@ -3,6 +3,7 @@ use daft_local_plan::{
     FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend,
 };
 use daft_logical_plan::stats::StatsState;
+#[cfg(feature = "python")]
 use daft_partition_refs::PyFlightPartitionRef;
 use daft_schema::schema::SchemaRef;
 
@@ -44,12 +45,20 @@ pub(crate) async fn emit_read_tasks(
             .into_iter()
             .flat_map(|output| output.into_inner().0)
             .map(|partition| {
-                partition
-                    .as_any()
-                    .downcast_ref::<PyFlightPartitionRef>()
-                    .expect("expected flight partition ref")
-                    .inner
-                    .clone()
+                #[cfg(feature = "python")]
+                {
+                    partition
+                        .as_any()
+                        .downcast_ref::<PyFlightPartitionRef>()
+                        .expect("expected flight partition ref")
+                        .inner
+                        .clone()
+                }
+                #[cfg(not(feature = "python"))]
+                {
+                    let _ = partition;
+                    unreachable!("Flight shuffle backend requires python feature")
+                }
             })
             .collect::<Vec<_>>();
 

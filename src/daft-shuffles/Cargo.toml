@@ -15,9 +15,6 @@ futures = {workspace = true}
 tokio = {workspace = true, features = ["fs", "io-util"]}
 tonic = {workspace = true}
 
-[dev-dependencies]
-arrow = {workspace = true}
-
 [lints]
 workspace = true
 

@@ -3263,7 +3263,6 @@ dependencies = [
 name = "daft-shuffles"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow",
  "arrow-flight",
  "arrow-ipc",
  "arrow-schema 57.3.0",

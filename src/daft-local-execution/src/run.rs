@@ -14,7 +14,6 @@ use daft_context::{DaftContext, Subscriber};
 use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
-use daft_partition_refs::RayPartitionRef;
 use daft_shuffles::server::flight_server::{
     FlightServerConnectionHandle, ShuffleFlightServer, start_server_loop,
 };
@@ -28,7 +27,7 @@ use {
     daft_local_plan::python::PyExecutionStats,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    daft_partition_refs::PyFlightPartitionRef,
+    daft_partition_refs::{PyFlightPartitionRef, RayPartitionRef},
     pyo3::{
         Bound, IntoPyObject, PyAny, PyRef, PyResult, Python, pyclass, pymethods, sync::MutexExt,
     },
@@ -52,7 +51,9 @@ enum ExecutionEngineResultItem {
 
 #[derive(Debug)]
 pub(crate) enum ShufflePartitionRefs {
+    #[cfg(feature = "python")]
     Ray(Vec<RayPartitionRef>),
+    #[cfg(feature = "python")]
     Flight(Vec<PyFlightPartitionRef>),
 }
 
