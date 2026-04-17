@@ -302,6 +302,11 @@ impl<T: Task> SubmittableTask<T> {
     }
 
     #[cfg(test)]
+    pub fn into_task(self) -> T {
+        self.task
+    }
+
+    #[cfg(test)]
     pub fn task_only(task: T) -> Self {
         let cancel_token = CancellationToken::new();
         Self {

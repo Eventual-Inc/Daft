@@ -576,6 +576,125 @@ impl Drop for NativeExecutor {
     }
 }
 
+/// Result of running a local plan. Either regular partitions or shuffle output.
+/// Used by distributed execution test infrastructure (LocalSwordfishWorker).
+pub enum LocalPlanOutput {
+    /// Regular morsel partitions (e.g. from scan, filter, sort, project).
+    Partitions(Vec<daft_micropartition::MicroPartition>),
+    /// Repartition/shuffle output: each inner Vec is one output partition bucket.
+    Shuffle(Vec<Vec<std::sync::Arc<daft_micropartition::MicroPartition>>>),
+}
+
+/// Execute a local physical plan in-process and return results + execution statistics.
+///
+/// Used by distributed execution test infrastructure (LocalSwordfishWorker) to run
+/// SwordfishTask local plans without Ray. Must be called from within a tokio runtime
+/// context (e.g. `#[tokio::test]`).
+///
+/// Returns the output (partitions or shuffle data) and execution statistics.
+pub async fn execute_local_plan(
+    plan: &LocalPhysicalPlanRef,
+    config: std::sync::Arc<DaftExecutionConfig>,
+    inputs: HashMap<SourceId, Input>,
+) -> DaftResult<(LocalPlanOutput, ExecutionStats)> {
+    use crate::pipeline::{BuilderContext, PipelineMessage};
+    use tokio::runtime::Handle;
+
+    let handle = Handle::current();
+    let query_id = QueryID::from("");
+
+    let ctx = BuilderContext::new();
+    let (pipeline, input_senders) =
+        crate::pipeline::translate_physical_plan_to_pipeline(plan, &config, &ctx)?;
+
+    let stats_manager = RuntimeStatsManager::try_new(
+        &handle,
+        &pipeline,
+        vec![],
+        query_id,
+        false, // not a flotilla worker
+    )?;
+    let stats_handle = stats_manager.handle();
+
+    let input_id: daft_local_plan::InputId = 0;
+
+    // Send inputs to the pipeline sources.
+    for (key, plan_input) in inputs {
+        if let Some(sender) = input_senders.get(&key) {
+            let _ = sender.send(input_id, plan_input);
+        }
+    }
+    // Drop senders to signal EOF.
+    drop(input_senders);
+
+    // Start the pipeline.
+    let memory_manager = get_or_init_memory_manager();
+    let mut runtime_handle =
+        ExecutionRuntimeContext::new(memory_manager.clone(), stats_handle.clone());
+    let mut output_receiver = pipeline.start(true, &mut runtime_handle)?;
+
+    // Collect output.
+    let mut partitions = Vec::new();
+    let mut shuffle_metadata = None;
+    loop {
+        tokio::select! {
+            Some(join_result) = runtime_handle.join_next() => {
+                join_result?;
+            }
+            msg = output_receiver.recv() => {
+                match msg {
+                    Some(PipelineMessage::Morsel { partition, .. }) => {
+                        partitions.push(partition);
+                    }
+                    Some(PipelineMessage::ShuffleMetadata { metadata, .. }) => {
+                        shuffle_metadata = Some(metadata);
+                    }
+                    Some(PipelineMessage::Flush(_)) => {}
+                    None => {
+                        // Pipeline finished.
+                        runtime_handle.shutdown().await?;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    stats_manager.finish(common_metrics::QueryEndState::Finished).await;
+
+    let stats = stats_handle
+        .take_input_snapshot(input_id)
+        .await
+        .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![]));
+
+    let output = if let Some(metadata) = shuffle_metadata {
+        // Convert shuffle metadata to partition vectors.
+        // In non-Python mode, each ShufflePartitionMetadata carries the actual data.
+        let mut shuffle_partitions = Vec::new();
+        for partition_meta in metadata.partitions {
+            #[cfg(not(feature = "python"))]
+            {
+                if let Some(data) = partition_meta.data {
+                    shuffle_partitions.push(vec![data]);
+                } else {
+                    shuffle_partitions.push(vec![]);
+                }
+            }
+            #[cfg(feature = "python")]
+            {
+                // In Python mode, partition data is in Ray — we only have metadata.
+                let _ = partition_meta;
+                shuffle_partitions.push(vec![]);
+            }
+        }
+        LocalPlanOutput::Shuffle(shuffle_partitions)
+    } else {
+        LocalPlanOutput::Partitions(partitions)
+    };
+
+    Ok((output, stats))
+}
+
 pub struct ExecutionEngineResult {
     receiver: crate::channel::UnboundedReceiver<ExecutionEngineResultItem>,
     shuffle_metadata: Option<ShuffleMetadata>,

@@ -512,6 +512,13 @@ impl Stream for TaskBuilderStream {
 }
 
 #[cfg(test)]
+pub(crate) use filter::FilterNode;
+#[cfg(test)]
+pub(crate) use in_memory_source::InMemorySourceNode;
+#[cfg(test)]
+pub(crate) use sort::SortNode;
+
+#[cfg(test)]
 pub(crate) mod tests {
     use std::sync::Arc;
 

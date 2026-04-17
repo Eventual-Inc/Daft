@@ -283,9 +283,26 @@ pub fn get_context() -> DaftContext {
     }
 }
 
+// Non-Python builds are only used in Rust-only test runs (`cargo test`).
+// Production always enables the python feature.
 #[cfg(not(feature = "python"))]
 pub fn get_context() -> DaftContext {
-    unimplemented!()
+    match DAFT_CONTEXT.get() {
+        Some(ctx) => ctx.clone(),
+        None => {
+            let state = ContextState {
+                config: Config::from_env(),
+                subscribers: HashMap::new(),
+            };
+            let state = RwLock::new(state);
+            let state = Arc::new(state);
+            let ctx = DaftContext { state };
+
+            // If another thread already set the context, use theirs.
+            let _ = DAFT_CONTEXT.set(ctx.clone());
+            DAFT_CONTEXT.get().unwrap().clone()
+        }
+    }
 }
 
 #[cfg(feature = "python")]

@@ -57,7 +57,7 @@ pub(crate) struct PlanExecutionContext {
 }
 
 impl PlanExecutionContext {
-    fn new(query_idx: QueryIdx, scheduler_handle: SchedulerHandle<SwordfishTask>) -> Self {
+    pub(crate) fn new(query_idx: QueryIdx, scheduler_handle: SchedulerHandle<SwordfishTask>) -> Self {
         let joinset = JoinSet::new();
         Self {
             query_idx,
