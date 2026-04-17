@@ -94,10 +94,7 @@ df = df.select(classifier(df["images"]))
 - `max_concurrency`: Maximum number of concurrent instances across all workers.
 - `max_retries`: Number of retry attempts for failing calls (exponential backoff starting at 100 ms, ±25% jitter, capped at 60 s).
 - `on_error`: `"raise"` (default), `"log"`, or `"ignore"`. Controls behavior once retries are exhausted.
-- `ray_options`: Extra options forwarded to the Ray actor (e.g. `{"resources": {"TPU": 1}}`). Setting `num_cpus`, `num_gpus`, or `memory` here is rejected — use `cpus`/`gpus` instead.
 - `name_override`: Display name for the UDF in plans and progress bars.
-
-See the shared [Resources, Concurrency, and Error Handling](func.md#resources-concurrency-and-error-handling) section on the `@daft.func` page for full details on these parameters.
 
 ### Using `@daft.method`
 

@@ -19,8 +19,8 @@
         * [Files and URLs](modalities/files.md)
         * [Embeddings](modalities/embeddings.md)
         * [Custom Modalities](modalities/custom.md)
-    * Scale Custom Python Code
-        * [New UDF Overview](custom-code/index.md)
+    * User Defined Functions
+        * [Overview](custom-code/index.md)
         * [Functions](custom-code/func.md)
         * [Classes & Methods](custom-code/cls.md)
         * [Working with GPUs](custom-code/gpu.md)

@@ -402,76 +402,54 @@ result = multiply(5, 10)  # Returns 50
 
 ## Resources, Concurrency, and Error Handling
 
-`@daft.func`, `@daft.func.batch`, `@daft.cls`, and `@daft.method` share a common set of parameters for requesting resources, controlling concurrency, and handling errors. You do **not** need `@daft.cls` to request a GPU — it works on `@daft.func` too. Use `@daft.cls` only when you need to amortize expensive initialization (model load, connection setup) across rows.
-
-| Parameter | Type | Default | Applies to |
-|---|---|---|---|
-| `cpus` | `float \| None` | `None` (engine decides) | `func`, `func.batch`, `cls` |
-| `gpus` | `float` | `0` | `func`, `func.batch`, `cls` |
-| `use_process` | `bool \| None` | `None` (auto) | `func`, `func.batch`, `cls` |
-| `max_concurrency` | `int \| None` | `None` | `func` (async only), `func.batch` (async only), `cls` |
-| `batch_size` | `int \| None` | `None` | `func.batch`, `method.batch` |
-| `max_retries` | `int \| None` | `None` (no retries) | `func`, `func.batch`, `cls` |
-| `on_error` | `"raise" \| "log" \| "ignore"` | `"raise"` | same as `max_retries` |
-| `ray_options` | `dict[str, Any] \| None` | `None` | `func`, `func.batch`, `cls` |
-
-### `max_concurrency`
-
-`max_concurrency` controls two different things depending on where it's set:
-
-- On `@daft.func` / `@daft.func.batch`: it caps the number of **concurrent coroutines** and only applies to `async` functions. Setting it on a sync function raises. For sync functions, reach for `@daft.cls` if you need actor-pool concurrency.
-- On `@daft.cls`: it caps the number of **concurrent actor instances** for sync methods, or **concurrent coroutines** for async methods.
-
-### `cpus` and `gpus`
-
-Declare per-instance resource requests. The engine uses these for placement and (for `gpus`) for GPU isolation via `CUDA_VISIBLE_DEVICES`.
+`@daft.func` and `@daft.func.batch` accept a common set of keyword arguments for concurrency control, scheduling, and error handling:
 
 ```python
-# Single-GPU inference — no class needed if init is cheap
-@daft.func(gpus=1)
-def classify(image_bytes: bytes) -> str:
-    import torch
-    # model is loaded per-row here; prefer @daft.cls if init is expensive
-    return run_model(image_bytes)
-```
-
-- `cpus` accepts fractional values (e.g. `0.5`).
-- `gpus` accepts fractional values **up to 1.0** (e.g. `0.5` to pack two workers onto one GPU). Values above 1.0 must be integers.
-
-If model initialization is expensive, prefer `@daft.cls` so the GPU-resident model is loaded once per worker. See the [GPU guide](gpu.md) for patterns.
-
-### `use_process`
-
-Runs each worker instance in a subprocess instead of a thread. Use this when your function is not thread-safe, holds the GIL heavily, or when you need hard isolation (e.g. a separate CUDA context per worker). The default (`None`) lets Daft pick at runtime based on observed performance.
-
-### `max_retries` and `on_error`
-
-Control what happens when a row raises an exception.
-
-- `max_retries=N` retries failing calls up to `N` times with exponential backoff starting at 100 ms, doubling each attempt, capped at 60 s, with ±25% jitter. If the raised exception is a `daft.ai.utils.RetryAfterError`, the specified retry-after delay is honored instead of the default backoff.
-- `on_error` decides what to do after retries are exhausted:
-    - `"raise"` (default) — fail the query.
-    - `"log"` — log the exception and emit `None` for that row.
-    - `"ignore"` — silently emit `None` for that row.
-
-```python
-@daft.func(max_retries=3, on_error="log")
+@daft.func(
+    cpus=2,            # Each invocation needs 2 CPUs
+    gpus=1,            # Each invocation needs 1 GPU
+    use_process=True,  # Run the function in a subprocess instead of a thread
+    max_retries=3,     # Retry a failing invocation up to 3 times with backoff
+    on_error="log",    # On final failure, log the exception and emit None
+)
 def call_flaky_api(url: str) -> str:
     import requests
     return requests.get(url).text
 ```
 
-Both parameters work on sync, async, and batch variants. On `@daft.cls`, set them at the class level — they apply to every method.
+### `cpus` and `gpus`
 
-!!! note "Per-method retry overrides"
-    `@daft.method` and `@daft.method.batch` accept `max_retries` and `on_error` keyword arguments in their signatures, but those values are currently dropped: the class-level setting always wins. Until that's fixed, configure `max_retries` / `on_error` on the `@daft.cls` decorator. Tracked in [#6710](https://github.com/Eventual-Inc/Daft/issues/6710).
+`cpus` and `gpus` are used for concurrency control and scheduling — not placement. Daft uses them to decide how many invocations of your function can run in parallel on a given machine.
 
-### `ray_options`
+If you annotate a function with `cpus=2` and it runs on a machine with 4 CPUs, Daft runs at most 2 invocations in parallel on that machine. `gpus` works the same way: `@daft.func(gpus=1)` on a machine with 2 GPUs means at most 2 concurrent invocations.
 
-Forwarded to the Ray actor when running on the Ray runner (e.g. `{"resources": {"TPU": 1}}`, `{"runtime_env": {...}}`, `{"scheduling_strategy": ...}`). Setting `num_cpus`, `num_gpus`, or `memory` here raises an error — use the `cpus` / `gpus` parameters instead.
+Both accept fractional values (e.g. `cpus=0.5`, `gpus=0.5`). `gpus` values above 1.0 must be integers.
 
-!!! warning "No memory-based placement on the new API"
-    The new `@daft.func` / `@daft.cls` API has no parameter for memory-based placement: `cpus` / `gpus` are the only placement knobs today. `ray_options={"memory": ...}` is explicitly rejected, and the resulting error message refers to a `memory_bytes` argument that does not exist. If you relied on `memory_bytes` in the legacy `@daft.udf` API mostly to cap concurrency, use `max_concurrency` instead. Tracked in [#6711](https://github.com/Eventual-Inc/Daft/issues/6711).
+### `max_concurrency`
+
+`max_concurrency` controls the maximum number of concurrent invocations of an async `@daft.func` or `@daft.func.batch`. It does not apply to synchronous (non-async) UDFs — setting it on a sync function raises.
+
+```python
+@daft.func(max_concurrency=10)
+async def fetch_url(url: str) -> str:
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            return await response.text()
+```
+
+### `use_process`
+
+Runs the function in a subprocess instead of a thread on the main process. Use this when your function is not thread-safe or holds the GIL heavily. The default (`None`) lets Daft pick at runtime based on observed performance.
+
+### `max_retries` and `on_error`
+
+Control what happens when a function invocation raises an exception.
+
+- `max_retries=N` retries failing invocations up to `N` times with exponential backoff starting at 100 ms, doubling each attempt, capped at 60 s, with ±25% jitter. If the raised exception is a `daft.ai.utils.RetryAfterError`, the specified retry-after delay is honored instead of the default backoff.
+- `on_error` decides what to do after retries are exhausted:
+    - `"raise"` (default) — fail the query.
+    - `"log"` — log the exception and emit `None` for that invocation.
+    - `"ignore"` — silently emit `None` for that invocation.
 
 ## Advanced Features
 

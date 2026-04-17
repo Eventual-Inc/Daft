@@ -1,32 +1,8 @@
 # Working with GPUs
 
-Daft exposes GPU placement through a single parameter — `gpus` — on both `@daft.func` and `@daft.cls`. You do not need a class to run on the GPU. Use `@daft.func(gpus=...)` when initialization is cheap, and reach for `@daft.cls` only when you need to amortize an expensive setup step (like loading a model) across many rows.
+For GPU work, always reach for `@daft.cls`: it initializes your model once in `__init__` and reuses it across rows, so the expensive model load is amortized over the whole query. Request a GPU with the `gpus` parameter on the class decorator.
 
-## Requesting a GPU with `@daft.func`
-
-The simplest GPU-backed function: decorate, ask for a GPU, and let Daft handle placement and `CUDA_VISIBLE_DEVICES`.
-
-```python
-import daft
-
-@daft.func(gpus=1)
-def embed(text: str) -> list[float]:
-    import torch
-    from sentence_transformers import SentenceTransformer
-
-    # NOTE: loaded per-row here — fine for quick demos, but prefer @daft.cls below
-    model = SentenceTransformer("all-MiniLM-L6-v2").cuda()
-    return model.encode(text).tolist()
-
-df = daft.from_pydict({"text": ["hello", "world"]})
-df = df.select(embed(df["text"]))
-```
-
-Use `@daft.func.batch(gpus=1, batch_size=32)` for vectorized inference where the model accepts a batch of inputs at once.
-
-## Amortizing model load with `@daft.cls`
-
-Loading a model per row is almost never what you want. `@daft.cls` initializes the class once per worker, so the GPU-resident model stays loaded across rows.
+## Basic pattern
 
 ```python
 import daft
@@ -47,9 +23,11 @@ df = daft.from_pydict({"text": ["hello", "world", "daft"]})
 df = df.select(embedder.encode(df["text"]))
 ```
 
-## Packing multiple workers per GPU
+The class is initialized once per Python worker; the model stays resident on the GPU for the whole query.
 
-`gpus` accepts fractional values up to 1.0. This is useful when a single worker cannot saturate the GPU — for example, a small model with a lot of preprocessing overhead.
+## Packing multiple invocations per GPU
+
+`gpus` accepts fractional values up to 1.0. Use this when a single invocation cannot saturate the GPU — for example, a small model with meaningful preprocessing overhead.
 
 ```python
 @daft.cls(gpus=0.5, max_concurrency=2)
@@ -63,9 +41,93 @@ class SmallModel:
         return self.model(x.to_arrow().to_numpy())
 ```
 
-With `gpus=0.5` and `max_concurrency=2`, two workers share one physical GPU. Daft still isolates `CUDA_VISIBLE_DEVICES` per worker, so device ordinals stay consistent inside each worker.
+With `gpus=0.5` and `max_concurrency=2`, two instances share one physical GPU. Daft isolates `CUDA_VISIBLE_DEVICES` per process, so device ordinals stay consistent inside each instance.
 
 Values above 1.0 must be integers (e.g. `gpus=2` for model parallelism across two GPUs).
+
+## Examples by model family
+
+### Sentence embeddings (Sentence Transformers)
+
+```python
+@daft.cls(gpus=1)
+class SentenceEmbedder:
+    def __init__(self, model_name: str = "BAAI/bge-large-en-v1.5"):
+        from sentence_transformers import SentenceTransformer
+        self.model = SentenceTransformer(model_name, device="cuda")
+
+    @daft.method.batch(return_dtype=DataType.list(DataType.float32()), batch_size=128)
+    def embed(self, text: Series) -> list[list[float]]:
+        return self.model.encode(text.to_pylist(), batch_size=128).tolist()
+```
+
+### Image classification / CLIP (Transformers)
+
+```python
+@daft.cls(gpus=1)
+class CLIPScorer:
+    def __init__(self, model_name: str = "openai/clip-vit-base-patch32"):
+        import torch
+        from transformers import CLIPModel, CLIPProcessor
+        self.model = CLIPModel.from_pretrained(model_name).to("cuda").eval()
+        self.processor = CLIPProcessor.from_pretrained(model_name)
+        self.torch = torch
+
+    @daft.method.batch(return_dtype=DataType.list(DataType.float32()), batch_size=32)
+    def embed_images(self, image_bytes: Series) -> list[list[float]]:
+        from io import BytesIO
+        from PIL import Image
+
+        images = [Image.open(BytesIO(b)).convert("RGB") for b in image_bytes.to_pylist()]
+        inputs = self.processor(images=images, return_tensors="pt").to("cuda")
+        with self.torch.no_grad():
+            features = self.model.get_image_features(**inputs)
+        return features.cpu().tolist()
+```
+
+### Text generation (vLLM)
+
+For production-grade LLM inference, Daft ships a built-in vLLM integration — see [AI Functions › Prompt](../ai-functions/prompt.md). For smaller custom generation tasks:
+
+```python
+@daft.cls(gpus=1)
+class Generator:
+    def __init__(self, model_name: str = "Qwen/Qwen2.5-1.5B-Instruct"):
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_name, torch_dtype=torch.bfloat16, device_map="cuda"
+        ).eval()
+        self.torch = torch
+
+    @daft.method(return_dtype=DataType.string())
+    def generate(self, prompt: str) -> str:
+        inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")
+        with self.torch.no_grad():
+            output = self.model.generate(**inputs, max_new_tokens=128)
+        return self.tokenizer.decode(output[0], skip_special_tokens=True)
+```
+
+### Whisper (audio transcription)
+
+```python
+@daft.cls(gpus=1)
+class Whisper:
+    def __init__(self, model_name: str = "openai/whisper-large-v3"):
+        import torch
+        from transformers import pipeline
+        self.pipe = pipeline(
+            "automatic-speech-recognition",
+            model=model_name,
+            torch_dtype=torch.float16,
+            device="cuda",
+        )
+
+    @daft.method(return_dtype=DataType.string())
+    def transcribe(self, audio_path: str) -> str:
+        return self.pipe(audio_path)["text"]
+```
 
 ## Choosing a batch size
 
@@ -86,5 +148,3 @@ GPU inference can fail for reasons unrelated to your code — OOM, transient dri
 class Model:
     ...
 ```
-
-See the shared [Resources, Concurrency, and Error Handling](func.md#resources-concurrency-and-error-handling) section for the full parameter reference.
