@@ -557,7 +557,7 @@ def test_datatype_property_repr():
         ("date", "Date"),
         ("interval", "Interval"),
         ("python", "Python"),
-        ("uuid", "Uuid"),
+        ("uuid", "UUID"),
     ]
     for name, expected_repr in repr_checks:
         prop = getattr(DataType, name)
