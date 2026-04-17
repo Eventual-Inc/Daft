@@ -240,6 +240,7 @@ from .str import (
     replace,
     regexp_replace,
     find,
+    strip_html,
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
@@ -464,6 +465,7 @@ __all__ = [
     "strftime",
     "string_agg",
     "strip",
+    "strip_html",
     "substr",
     "sum",
     "tan",

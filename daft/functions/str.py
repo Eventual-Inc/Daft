@@ -1410,6 +1410,51 @@ def regexp_replace(
     return Expression._call_builtin_scalar_fn("regexp_replace", expr, pattern, replacement)
 
 
+def strip_html(expr: Expression, separator: str = "\n") -> Expression:
+    r"""Strips HTML tags from a string, returning plain text.
+
+    Content inside ``<script>`` and ``<style>`` tags (including the content itself) is
+    removed entirely.  Block-level elements such as ``<p>``, ``<div>``, ``<br>``,
+    ``<h1>``-``<h6>``, and ``<li>`` are separated by ``separator``.  HTML entities
+    (e.g. ``&amp;``, ``&nbsp;``) are decoded automatically.
+
+    Args:
+        expr: A String expression containing HTML text.
+        separator: String inserted between block-level elements (default: ``"\n"``).
+            Use ``" "`` for a single space or ``""`` for no separator.
+
+    Returns:
+        Expression: A String expression with HTML stripped and plain text preserved.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import strip_html
+        >>> df = daft.from_pydict(
+        ...     {
+        ...         "html": [
+        ...             "<p>Hello <b>world</b></p>",
+        ...             "<div>foo<script>alert(1)</script>bar</div>",
+        ...             "<h1>Title</h1><p>Body &amp; more</p>",
+        ...         ]
+        ...     }
+        ... )
+        >>> df.with_column("text", strip_html(df["html"])).show()  # doctest: +SKIP
+        ╭────────────────────────────────────────────┬────────────────────╮
+        │ html                                       ┆ text               │
+        │ ---                                        ┆ ---                │
+        │ String                                     ┆ String             │
+        ╞════════════════════════════════════════════╪════════════════════╡
+        │ <p>Hello <b>world</b></p>                  ┆ Hello world        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ <div>foo<script>alert(1)</script>bar</div> ┆ foobar             │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ <h1>Title</h1><p>Body &amp; more</p>       ┆ Title              │
+        │                                            ┆ Body & more        │
+        ╰────────────────────────────────────────────┴────────────────────╯
+    """
+    return Expression._call_builtin_scalar_fn("strip_html", expr, separator=separator)
+
+
 def find(expr: Expression, substr: str | Expression) -> Expression:
     """Returns the index of the first occurrence of the substring in each string.
 
