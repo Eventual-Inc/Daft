@@ -21,18 +21,15 @@ pip install daft-h3
 import daft
 import daft_h3
 from daft import col
-from daft.session import Session
 
-sess = Session()
-sess.load_extension(daft_h3)
+daft.load_extension(daft_h3)
 
-with sess:
-    df = daft.from_pydict({"lat": [37.7749], "lng": [-122.4194]})
-    df = df.select(
-        daft_h3.h3_latlng_to_cell(col("lat"), col("lng"), 7).alias("cell"),
-    )
-    df = df.select(daft_h3.h3_cell_to_str(col("cell")).alias("hex"))
-    df.show()
+df = daft.from_pydict({"lat": [37.7749], "lng": [-122.4194]})
+df = df.select(
+    daft_h3.h3_latlng_to_cell(col("lat"), col("lng"), 7).alias("cell"),
+)
+df = df.select(daft_h3.h3_cell_to_str(col("cell")).alias("hex"))
+df.show()
 ```
 
 See the [daft-h3 README](https://github.com/gweaverbiodev/daft-h3#readme) for the full list of functions and behavior details.
