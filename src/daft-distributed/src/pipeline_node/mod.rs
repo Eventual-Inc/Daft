@@ -19,7 +19,7 @@ use common_metrics::{
 };
 use common_partitioning::PartitionRef;
 use common_treenode::ConcreteTreeNode;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, Sentinels};
 use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, stream::BoxStream};
@@ -233,9 +233,32 @@ impl ShuffleWriteOutput {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub(crate) struct ShuffleWriteWithSentinelOutput {
+    pub partitions: Vec<ShufflePartitionRef>,
+    pub sentinels: Sentinels,
+}
+
+impl ShuffleWriteWithSentinelOutput {
+    pub fn new(
+        partitions: Vec<ShufflePartitionRef>,
+        sentinels: Sentinels,
+        _worker_id: WorkerId,
+        _task_id: TaskID,
+    ) -> Self {
+        Self {
+            partitions,
+            sentinels,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub(crate) enum TaskOutput {
     Materialized(MaterializedOutput),
     ShuffleWrite(ShuffleWriteOutput),
+    ShuffleWriteWithSentinel(ShuffleWriteWithSentinelOutput),
 }
 
 impl TaskOutput {
@@ -244,6 +267,10 @@ impl TaskOutput {
             Self::Materialized(materialized_output) => Ok(materialized_output),
             Self::ShuffleWrite(_) => Err(common_error::DaftError::InternalError(
                 "Expected materialized task output but received shuffle write output".to_string(),
+            )),
+            Self::ShuffleWriteWithSentinel(_) => Err(common_error::DaftError::InternalError(
+                "Expected materialized task output but received shuffle write with sentinel output"
+                    .to_string(),
             )),
         }
     }

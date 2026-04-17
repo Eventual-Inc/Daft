@@ -3001,6 +3001,7 @@ dependencies = [
  "log",
  "pyo3",
  "serde",
+ "serde_bytes",
  "serde_json",
  "strum",
 ]
@@ -7142,6 +7143,16 @@ dependencies = [
  "half",
  "marrow",
  "serde",
+]
+
+[[package]]
+name = "serde_bytes"
+version = "0.11.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5d440709e79d88e51ac01c4b72fc6cb7314017bb7da9eeff678aa94c10e3ea8"
+dependencies = [
+ "serde",
+ "serde_core",
 ]
 
 [[package]]

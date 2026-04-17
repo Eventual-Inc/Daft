@@ -21,7 +21,7 @@ pub use plan::{
 pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject, LanceWrite};
 #[cfg(feature = "python")]
 pub use python::{PyLocalPhysicalPlan, PyShuffleWriteInfo, register_modules};
-pub use results::ExecutionStats;
+pub use results::{ExecutionStats, Sentinels};
 use serde::{Deserialize, Serialize};
 pub use translate::translate;
 

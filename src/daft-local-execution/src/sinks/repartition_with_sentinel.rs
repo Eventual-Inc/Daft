@@ -256,7 +256,7 @@ impl BlockingSink for RepartitionWithSentinelSink {
                                 })?;
                                 Ok(BlockingSinkOutput::ShuffleMetadata(ShuffleMetadata {
                                     partitions: metadata,
-                                    sentinels: Some(sentinels),
+                                    sentinels: Some(daft_local_plan::Sentinels::from(sentinels)),
                                 }))
                             }
                             #[cfg(not(feature = "python"))]
