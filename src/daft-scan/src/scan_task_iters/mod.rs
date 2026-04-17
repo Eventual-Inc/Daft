@@ -121,11 +121,15 @@ impl MergeByFileSize<'_> {
             return false;
         }
 
-        let child_matches_accumulator = other.partition_spec() == accumulator.partition_spec()
-            && other.source_config == accumulator.source_config
+        // Partition schema compatibility is ensured via generated_fields (checked in
+        // ScanTask::merge). Per-source partition_spec values (e.g. file_path_column) differ
+        // per file by design; the executor calls scan_task.split() before reading, so each
+        // single-source task always gets its own partition_spec applied correctly.
+        let child_matches_accumulator = other.source_config == accumulator.source_config
             && other.schema == accumulator.schema
             && other.storage_config == accumulator.storage_config
-            && other.pushdowns == accumulator.pushdowns;
+            && other.pushdowns == accumulator.pushdowns
+            && other.generated_fields == accumulator.generated_fields;
 
         // Merge only if the resultant accumulator is smaller than the targeted upper bound
         let sum_smaller_than_max_size_bytes = if let (Some(child_bytes), Some(accumulator_bytes)) = (
