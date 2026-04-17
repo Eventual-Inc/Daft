@@ -5,6 +5,7 @@
     Native extensions are experimental and may change in future releases.
 
 > Please see the [prompt](#prompt) if you want help generating an extension.
+> Looking for extensions you can install today? See [Community Extensions](community.md).
 
 This document is a guide for authoring Daft native extensions in Rust.
 Daft supports native Rust extensions by leveraging a stable C ABI based on the

@@ -56,7 +56,8 @@
         * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
     * Extensions
-        * [Extensions](extensions/index.md)
+        * [Community Extensions](extensions/community.md)
+        * [Authoring Guide](extensions/index.md)
     * Scaling Out and Deployment
         * [Distributed Execution](distributed/index.md)
         * [Running on Kubernetes](distributed/kubernetes.md)
