@@ -93,3 +93,31 @@ def test_read_json_sparse_column_with_schema_hints(tmp_path):
     res = df_with_hint.where(daft.col("sound").not_null()).collect()
     assert len(res) == 1
     assert res.to_pydict()["sound"][0] == "hello"
+
+
+def test_read_formatted_json_document(tmp_path):
+    f = tmp_path / "record.json"
+    f.write_text('{\n  "a": 1,\n  "b": "hello"\n}\n', encoding="utf-8")
+
+    df = daft.read_json(str(f))
+    result = df.collect().to_pydict()
+    assert result == {"a": [1], "b": ["hello"]}
+
+
+def test_read_formatted_json_document_multiple_files(tmp_path):
+    for i in range(3):
+        f = tmp_path / f"record_{i}.json"
+        f.write_text(f'{{\n  "a": {i},\n  "b": "val_{i}"\n}}\n', encoding="utf-8")
+
+    df = daft.read_json(str(tmp_path))
+    result = df.collect()
+    assert result.count_rows() == 3
+
+
+def test_read_jsonl_dot_json_extension_still_works(tmp_path):
+    f = tmp_path / "data.json"
+    f.write_text('{"a": 1, "b": "x"}\n{"a": 2, "b": "y"}\n', encoding="utf-8")
+
+    df = daft.read_json(str(f))
+    result = df.collect().to_pydict()
+    assert result == {"a": [1, 2], "b": ["x", "y"]}
