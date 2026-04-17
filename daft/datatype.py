@@ -4,7 +4,7 @@ import threading
 import typing
 import warnings
 from types import GenericAlias, UnionType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from packaging.version import parse
 
@@ -121,76 +121,7 @@ class TimeUnit:
         return f"TimeUnit({self.__str__()})"
 
 
-# Names of no-arg DataType factory methods that support property-style access.
-_SIMPLE_TYPE_NAMES: frozenset[str] = frozenset(
-    {
-        "int8",
-        "int16",
-        "int32",
-        "int64",
-        "uint8",
-        "uint16",
-        "uint32",
-        "uint64",
-        "float32",
-        "float64",
-        "string",
-        "bool",
-        "binary",
-        "null",
-        "date",
-        "interval",
-        "python",
-    }
-)
-
-
-class _DataTypeMeta(type):
-    """Metaclass that intercepts attribute access on DataType for simple type names.
-
-    This allows ``DataType.int64`` (without parentheses) to return a
-    ``_DataTypePropertyResult`` while keeping the original ``@classmethod``
-    definitions intact for mypy.
-    """
-
-    def __getattribute__(cls, name: str) -> Any:
-        if name in _SIMPLE_TYPE_NAMES:
-            method = type.__getattribute__(cls, name)
-            if callable(method):
-                return _DataTypePropertyResult(method())
-        return type.__getattribute__(cls, name)
-
-
-class _DataTypePropertyResult:
-    """Wrapper holding a DataType that is also callable, enabling both property and method access."""
-
-    def __init__(self, dtype: DataType):
-        self._pydtype = dtype._dtype if isinstance(dtype, DataType) else dtype
-
-    @property
-    def _dtype(self) -> PyDataType:
-        return self._pydtype
-
-    def __call__(self) -> DataType:
-        return DataType._from_pydatatype(self._pydtype)
-
-    def __repr__(self) -> str:
-        return repr(DataType._from_pydatatype(self._pydtype))
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, _DataTypePropertyResult):
-            return self._pydtype.is_equal(other._pydtype)
-        if isinstance(other, DataType):
-            return self._pydtype.is_equal(other._dtype)
-        return False
-
-    def __hash__(self) -> int:
-        return self._pydtype.__hash__()
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._dtype, name)
-
-
+# Names of DataType factory methods, used by DataType.constructors().
 _DATATYPE_CONSTRUCTOR_SET: set[str] = set()
 
 
@@ -204,7 +135,7 @@ def datatype_constructor(obj: Any) -> Any:
     return obj
 
 
-class DataType(metaclass=_DataTypeMeta):
+class DataType:
     """A Daft DataType defines the type of all the values in an Expression or DataFrame column."""
 
     _dtype: PyDataType
@@ -214,6 +145,31 @@ class DataType(metaclass=_DataTypeMeta):
             "We do not support creating a DataType via __init__ "
             "use a creator method like DataType.int32() or use DataType.from_arrow_type(pa_type)"
         )
+
+    def __call__(self) -> DataType:
+        """Allow DataType instances to be called as no-ops, enabling both ``DataType.int64`` and ``DataType.int64()``."""
+        return self
+
+    # These are defined as class-level instances at module bottom via setattr for singleton behavior.
+    # The TYPE_CHECKING stubs below tell mypy about their types.
+    if TYPE_CHECKING:
+        int8: ClassVar[DataType]
+        int16: ClassVar[DataType]
+        int32: ClassVar[DataType]
+        int64: ClassVar[DataType]
+        uint8: ClassVar[DataType]
+        uint16: ClassVar[DataType]
+        uint32: ClassVar[DataType]
+        uint64: ClassVar[DataType]
+        float32: ClassVar[DataType]
+        float64: ClassVar[DataType]
+        string: ClassVar[DataType]
+        bool: ClassVar[DataType]
+        binary: ClassVar[DataType]
+        null: ClassVar[DataType]
+        date: ClassVar[DataType]
+        interval: ClassVar[DataType]
+        python: ClassVar[DataType]
 
     @classmethod
     def infer_from_type(cls, t: type | GenericAlias | UnionType) -> DataType:
@@ -556,112 +512,9 @@ class DataType(metaclass=_DataTypeMeta):
         dt._dtype = pydt
         return dt
 
-    # Simple type constructors that take no arguments.
-    # The _DataTypeMeta metaclass intercepts attribute access so that
-    # ``DataType.int64`` (without parentheses) returns a _DataTypePropertyResult,
-    # while ``DataType.int64()`` calls the classmethod normally.
-
-    @datatype_constructor
-    @classmethod
-    def int8(cls) -> DataType:
-        """Create an 8-bit integer DataType."""
-        return cls._from_pydatatype(PyDataType.int8())
-
-    @datatype_constructor
-    @classmethod
-    def int16(cls) -> DataType:
-        """Create an 16-bit integer DataType."""
-        return cls._from_pydatatype(PyDataType.int16())
-
-    @datatype_constructor
-    @classmethod
-    def int32(cls) -> DataType:
-        """Create an 32-bit integer DataType."""
-        return cls._from_pydatatype(PyDataType.int32())
-
-    @datatype_constructor
-    @classmethod
-    def int64(cls) -> DataType:
-        """Create an 64-bit integer DataType."""
-        return cls._from_pydatatype(PyDataType.int64())
-
-    @datatype_constructor
-    @classmethod
-    def uint8(cls) -> DataType:
-        """Create an unsigned 8-bit integer DataType."""
-        return cls._from_pydatatype(PyDataType.uint8())
-
-    @datatype_constructor
-    @classmethod
-    def uint16(cls) -> DataType:
-        """Create an unsigned 16-bit integer DataType."""
-        return cls._from_pydatatype(PyDataType.uint16())
-
-    @datatype_constructor
-    @classmethod
-    def uint32(cls) -> DataType:
-        """Create an unsigned 32-bit integer DataType."""
-        return cls._from_pydatatype(PyDataType.uint32())
-
-    @datatype_constructor
-    @classmethod
-    def uint64(cls) -> DataType:
-        """Create an unsigned 64-bit integer DataType."""
-        return cls._from_pydatatype(PyDataType.uint64())
-
-    @datatype_constructor
-    @classmethod
-    def float32(cls) -> DataType:
-        """Create a 32-bit float DataType."""
-        return cls._from_pydatatype(PyDataType.float32())
-
-    @datatype_constructor
-    @classmethod
-    def float64(cls) -> DataType:
-        """Create a 64-bit float DataType."""
-        return cls._from_pydatatype(PyDataType.float64())
-
-    @datatype_constructor
-    @classmethod
-    def string(cls) -> DataType:
-        """Create a String DataType: A string of UTF8 characters."""
-        return cls._from_pydatatype(PyDataType.string())
-
-    @datatype_constructor
-    @classmethod
-    def bool(cls) -> DataType:
-        """Create the Boolean DataType: Either ``True`` or ``False``."""
-        return cls._from_pydatatype(PyDataType.bool())
-
-    @datatype_constructor
-    @classmethod
-    def binary(cls) -> DataType:
-        """Create a Binary DataType: A string of bytes."""
-        return cls._from_pydatatype(PyDataType.binary())
-
-    @datatype_constructor
-    @classmethod
-    def null(cls) -> DataType:
-        """Creates the Null DataType: Always the ``Null`` value."""
-        return cls._from_pydatatype(PyDataType.null())
-
-    @datatype_constructor
-    @classmethod
-    def date(cls) -> DataType:
-        """Create a Date DataType: A date with a year, month and day."""
-        return cls._from_pydatatype(PyDataType.date())
-
-    @datatype_constructor
-    @classmethod
-    def interval(cls) -> DataType:
-        """Interval DataType."""
-        return cls._from_pydatatype(PyDataType.interval())
-
-    @datatype_constructor
-    @classmethod
-    def python(cls) -> DataType:
-        """Create a Python DataType: a type which refers to an arbitrary Python object."""
-        return cls._from_pydatatype(PyDataType.python())
+    # Simple type constructors that take no arguments - exposed as class-level singletons.
+    # DataType.int64 is a real DataType instance; DataType.int64() calls __call__ and returns itself.
+    # This makes isinstance(DataType.int64, DataType) True everywhere.
 
     @datatype_constructor
     @classmethod
@@ -1589,8 +1442,6 @@ class DataType(metaclass=_DataTypeMeta):
         return self._dtype.__repr__()
 
     def __eq__(self, other: object) -> builtins.bool:
-        if isinstance(other, _DataTypePropertyResult):
-            return self._dtype.is_equal(other._pydtype)
         return isinstance(other, DataType) and self._dtype.is_equal(other._dtype)
 
     def __reduce__(self) -> tuple[Callable[[PyDataType], DataType], tuple[PyDataType]]:
@@ -1632,3 +1483,30 @@ def get_super_ext_type() -> type[pa.ExtensionType]:
     _ensure_registered_super_ext_type()
     assert _STATIC_DAFT_EXTENSION is not None
     return _STATIC_DAFT_EXTENSION
+
+
+# Create singleton instances for simple no-arg DataType constructors.
+# This allows both ``DataType.int64`` (property) and ``DataType.int64()`` (call) to work,
+# and isinstance(DataType.int64, DataType) is True everywhere.
+for _simple_name in (
+    "int8",
+    "int16",
+    "int32",
+    "int64",
+    "uint8",
+    "uint16",
+    "uint32",
+    "uint64",
+    "float32",
+    "float64",
+    "string",
+    "bool",
+    "binary",
+    "null",
+    "date",
+    "interval",
+    "python",
+):
+    _DATATYPE_CONSTRUCTOR_SET.add(_simple_name)
+    setattr(DataType, _simple_name, DataType._from_pydatatype(getattr(PyDataType, _simple_name)()))
+del _simple_name

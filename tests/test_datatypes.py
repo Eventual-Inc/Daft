@@ -433,6 +433,39 @@ def test_datatype_property_hash_consistency(name, expected):
     assert hash(prop) == hash(expected)
 
 
+def test_datatype_property_isinstance():
+    """Property access returns a real DataType instance."""
+    for name in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64",
+                 "float32", "float64", "string", "bool", "binary", "null", "date", "interval", "python"):
+        prop = getattr(DataType, name)
+        assert isinstance(prop, DataType), f"DataType.{name} property access should return DataType instance"
+
+
+def test_datatype_property_call_is_same_instance():
+    """DataType.int64() returns the same singleton instance as DataType.int64."""
+    for name in ("int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64",
+                 "float32", "float64", "string", "bool", "binary", "null", "date", "interval", "python"):
+        prop = getattr(DataType, name)
+        call = getattr(DataType, name)()
+        assert prop is call, f"DataType.{name}() should return the same instance as DataType.{name}"
+
+
+def test_datatype_schema_from_field_name_and_types():
+    """Schema accepts property-style DataType values."""
+    from daft.schema import Schema
+
+    schema = Schema._from_field_name_and_types([("id", DataType.int64), ("name", DataType.string)])
+    assert schema["id"].dtype == DataType.int64
+    assert schema["name"].dtype == DataType.string
+
+
+def test_datatype_infer_with_property():
+    """DataType._infer handles property-style DataType values."""
+    result = DataType._infer(DataType.int64)
+    assert result == DataType.int64
+    assert isinstance(result, DataType)
+
+
 def test_datatype_property_set_dedup():
     """Verify property access and method calls deduplicate correctly in sets."""
     # Same type via property and calls should deduplicate to 1
