@@ -2273,6 +2273,10 @@ class RayTaskResult:
     @staticmethod
     def ray_shuffle_success(shuffle_part_refs: list[RayPartitionRef], stats: bytes) -> RayTaskResult: ...
     @staticmethod
+    def ray_shuffle_with_sentinel_success(
+        shuffle_part_refs: list[RayPartitionRef], sentinels: bytes, stats: bytes
+    ) -> RayTaskResult: ...
+    @staticmethod
     def flight_shuffle_success(shuffle_part_refs: list[FlightShufflePartitionRef], stats: bytes) -> RayTaskResult: ...
     @staticmethod
     def worker_died() -> RayTaskResult: ...
@@ -2305,6 +2309,9 @@ class PyResultReceiver:
     async def try_finish_with_shuffle_metadata(
         self,
     ) -> tuple[PyExecutionStats, list[tuple[object | None, int, int]] | None]: ...
+    async def try_finish_with_shuffle_metadata_and_sentinels(
+        self,
+    ) -> tuple[PyExecutionStats, list[tuple[object | None, int, int]] | None, bytes | None]: ...
 
 class ShuffleWriteInfo:
     @property
