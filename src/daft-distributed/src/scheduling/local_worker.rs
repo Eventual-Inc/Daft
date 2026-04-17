@@ -1,3 +1,9 @@
+//! Test-only worker that executes `SwordfishTask`s in-process via the local
+//! execution pipeline, producing real `ExecutionStats` without needing Ray.
+//!
+//! This entire module is gated behind `#[cfg(test)]` at the parent
+//! `scheduling/mod.rs`, so it never compiles into production builds.
+
 use std::{
     collections::HashMap,
     future::Future,
