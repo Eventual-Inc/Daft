@@ -26,7 +26,7 @@ use crate::{
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
     python::ray::RayTaskResult,
-    statistics::{StatisticsManagerRef, StatisticsSubscriber},
+    statistics::{StatisticsManager, StatisticsManagerRef, StatisticsSubscriber},
 };
 
 #[pyclass(frozen)]
