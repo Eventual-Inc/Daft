@@ -117,6 +117,7 @@ impl AsofJoinNode {
     /// row (if any) directly into the plan payload.
     async fn create_and_submit_join_task(
         self: &Arc<Self>,
+        partition_idx: u32,
         left_partition_group: Vec<PartitionRef>,
         right_partition_group: Vec<PartitionRef>,
         right_sentinel: Option<RecordBatch>,
@@ -152,6 +153,7 @@ impl AsofJoinNode {
         );
 
         let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
+            .extend_fingerprint(partition_idx)
             .with_psets(self.left.node_id(), left_partition_group)
             .with_psets(self.right.node_id(), right_partition_group);
 
@@ -186,7 +188,7 @@ impl AsofJoinNode {
                 .flat_map(|mo| mo.into_inner().0)
                 .collect::<Vec<_>>();
             return self
-                .create_and_submit_join_task(left_refs, right_refs, None, result_tx)
+                .create_and_submit_join_task(0, left_refs, right_refs, None, result_tx)
                 .await;
         }
 
@@ -365,6 +367,7 @@ impl AsofJoinNode {
                 global_sentinels[i - 1].clone()
             };
             self.create_and_submit_join_task(
+                i as u32,
                 left_partition_group,
                 right_partition_group,
                 sentinel,
@@ -414,7 +417,7 @@ impl AsofJoinNode {
                 .flat_map(|o| o.partitions().iter().cloned())
                 .collect();
             return self
-                .create_and_submit_join_task(all_left, vec![], None, &result_tx)
+                .create_and_submit_join_task(0, all_left, vec![], None, &result_tx)
                 .await;
         }
 
