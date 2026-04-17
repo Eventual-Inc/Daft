@@ -512,10 +512,6 @@ class DataType:
         dt._dtype = pydt
         return dt
 
-    # Simple type constructors that take no arguments - exposed as class-level singletons.
-    # DataType.int64 is a real DataType instance; DataType.int64() calls __call__ and returns itself.
-    # This makes isinstance(DataType.int64, DataType) True everywhere.
-
     @datatype_constructor
     @classmethod
     def fixed_size_binary(cls, size: int) -> DataType:
