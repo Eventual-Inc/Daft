@@ -38,6 +38,7 @@ pub mod scan_state;
 pub mod scan_task_iters;
 mod sharder;
 mod source_config;
+pub mod statistics;
 pub use expr_rewriter::{PredicateGroups, rewrite_predicate_for_partitioning};
 pub use partitioning::{PartitionField, PartitionTransform};
 pub use pushdowns::{Pushdowns, SupportsPushdownFilters};
@@ -49,9 +50,10 @@ pub mod test_utils;
 
 // Re-export source module for DataSource and DataSourceTask traits.
 pub use source::{
-    DataSource, DataSourceRef, DataSourceStatistics, DataSourceTask, DataSourceTaskRef,
-    DataSourceTaskStream, Precision, ReadOptions, RecordBatchStream, ShimSourceTask,
+    DataSource, DataSourceRef, DataSourceTask, DataSourceTaskRef, DataSourceTaskStream,
+    ReadOptions, RecordBatchStream, ShimSourceTask,
 };
+pub use statistics::{Precision, Statistics};
 
 #[cfg(feature = "python")]
 pub mod python;
