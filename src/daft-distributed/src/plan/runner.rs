@@ -15,6 +15,7 @@ use crate::{
         DistributedPipelineNode, MaterializedOutput, TaskBuilderStream,
         materialize::materialize_all_pipeline_outputs,
     },
+    plan::DistributedPhysicalPlan,
     scheduling::{
         scheduler::{SchedulerHandle, spawn_scheduler_actor},
         task::{SwordfishTask, TaskID},
@@ -87,6 +88,16 @@ pub(crate) struct PlanConfig {
     pub query_idx: QueryIdx,
     pub query_id: QueryID,
     pub config: Arc<DaftExecutionConfig>,
+}
+
+impl From<&DistributedPhysicalPlan> for PlanConfig {
+    fn from(plan: &DistributedPhysicalPlan) -> Self {
+        Self {
+            query_idx: plan.idx(),
+            query_id: plan.query_id(),
+            config: plan.execution_config().clone(),
+        }
+    }
 }
 
 impl PlanConfig {

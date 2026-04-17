@@ -241,13 +241,16 @@ impl PyDistributedPhysicalPlanRunner {
 
         let query_idx = plan.plan.idx();
         let query_id = plan.plan.query_id();
-        let config = plan.plan.execution_config().clone();
         let logical_plan = plan.plan.logical_plan().clone();
-        let plan_config = PlanConfig::new(query_idx, query_id.clone(), config);
 
         let meter = Meter::query_scope(query_id, "daft.execution.distributed");
-        let pipeline_node =
-            logical_plan_to_pipeline_node(plan_config, logical_plan, Arc::new(psets), &meter)?;
+
+        let pipeline_node = logical_plan_to_pipeline_node(
+            (&plan.plan).into(),
+            logical_plan,
+            Arc::new(psets),
+            &meter,
+        )?;
 
         let statistics_manager =
             StatisticsManager::from_pipeline_node(&pipeline_node, subscribers, &meter)?;
