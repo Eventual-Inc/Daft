@@ -74,13 +74,20 @@ def create_scalar_index_internal(
 ) -> None:
     """Internal implementation of distributed scalar index creation.
 
-    Supports INVERTED, FTS, and BTREE index types and runs as a 3-phase workflow:
-    Phase 1: Fragment-parallel processing using Daft distributed execution
-    Phase 2: Index metadata merging
-    Phase 3: Atomic index creation and commit
+    INVERTED and BTREE use a 3-phase distributed workflow (fragment-parallel build,
+    merge_index_metadata, then commit). ``FTS`` is normalized to ``INVERTED`` (same Lance
+    index); see Lance Rust/Python bindings: ``INVERTED`` and ``FTS`` map to the same
+    inverted full-text index type.
     """
     if not column:
         raise ValueError("Column name cannot be empty")
+
+    index_type = index_type.upper()
+    if index_type == "FTS":
+        logger.info(
+            "index_type FTS maps to INVERTED for scalar index creation (equivalent Lance index type).",
+        )
+        index_type = "INVERTED"
 
     # Validate column exists and has correct type
     try:
@@ -95,9 +102,9 @@ def create_scalar_index_internal(
         value_type = field.type.value_type
 
     match index_type:
-        case "INVERTED" | "FTS":
+        case "INVERTED":
             if not pa.types.is_string(value_type) and not pa.types.is_large_string(value_type):
-                raise TypeError(f"Column {column} must be string type for INVERTED or FTS index, got {value_type}")
+                raise TypeError(f"Column {column} must be string type for INVERTED index, got {value_type}")
         case "BTREE":
             if (
                 not pa.types.is_integer(value_type)
@@ -107,7 +114,7 @@ def create_scalar_index_internal(
                 raise TypeError(f"Column {column} must be numeric or string type for BTREE index, got {value_type}")
         case _:
             logger.warning(
-                "Distributed indexing currently only supports 'INVERTED', 'FTS', and 'BTREE' index types, not '%s'. So we are falling back to single-threaded index creation.",
+                "Distributed indexing currently only supports 'INVERTED' and 'BTREE' index types, not '%s'. So we are falling back to single-threaded index creation.",
                 index_type,
             )
             lance_ds.create_scalar_index(
