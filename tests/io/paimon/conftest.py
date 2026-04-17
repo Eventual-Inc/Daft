@@ -5,6 +5,11 @@ import pytest
 
 pypaimon = pytest.importorskip("pypaimon")
 
+# Apply pypaimon patch for complex types before any writes
+from daft.io.paimon.paimon_write import _patch_pypaimon_stats_for_complex_types
+
+_patch_pypaimon_stats_for_complex_types()
+
 
 @pytest.fixture(scope="function")
 def local_paimon_catalog(tmp_path):
