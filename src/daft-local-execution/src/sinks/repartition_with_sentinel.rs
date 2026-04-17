@@ -54,24 +54,24 @@ enum RepartitionWithSentinelBackend {
     },
 }
 
-/// Find the row with the maximum value of `sort_keys` in `batch` using a linear scan.
-/// Returns `None` if `batch` is empty.
-fn record_batch_max(
+/// Find the single row with the lexicographically maximum composite key `(by..., on)` in
+/// `batch`.
+fn record_batch_max_composite(
     batch: &RecordBatch,
-    sort_keys: &[BoundExpr],
+    composite_keys: &[BoundExpr],
 ) -> DaftResult<Option<RecordBatch>> {
-    let len = batch.len();
-    if len == 0 {
+    if batch.is_empty() {
         return Ok(None);
     }
-    let evaluated: Vec<_> = sort_keys
+
+    let cols: Vec<_> = composite_keys
         .iter()
         .map(|k| batch.eval_expression(k))
         .collect::<DaftResult<_>>()?;
-    let descending = vec![true; sort_keys.len()];
-    let nulls_first = vec![false; sort_keys.len()];
-    let cmp = build_multi_array_compare(&evaluated, &descending, &nulls_first)?;
-    let max_idx = (1..len).fold(0usize, |best, i| {
+    let descending = vec![false; composite_keys.len()];
+    let nulls_first = vec![false; composite_keys.len()];
+    let cmp = build_multi_array_compare(&cols, &descending, &nulls_first)?;
+    let max_idx = (1..batch.len()).fold(0usize, |best, i| {
         if cmp(i, best) == Ordering::Greater {
             i
         } else {
@@ -82,16 +82,16 @@ fn record_batch_max(
     Ok(Some(batch.take(&idx)?))
 }
 
-/// Find the row with the maximum value of `sort_keys` across all record batches in `partition`.
-/// Returns `None` if the partition is empty.
+/// Find the single globally maximum composite-key row across all record batches in
+/// `partition`. Returns `None` if the partition is empty.
 fn compute_partition_max(
     partition: &MicroPartition,
-    sort_keys: &[BoundExpr],
+    composite_keys: &[BoundExpr],
 ) -> DaftResult<Option<RecordBatch>> {
     let batches = partition.record_batches();
     let candidates: Vec<RecordBatch> = batches
         .iter()
-        .filter_map(|b| record_batch_max(b, sort_keys).transpose())
+        .filter_map(|b| record_batch_max_composite(b, composite_keys).transpose())
         .collect::<DaftResult<_>>()?;
     if candidates.is_empty() {
         return Ok(None);
@@ -99,9 +99,8 @@ fn compute_partition_max(
     if candidates.len() == 1 {
         return Ok(Some(candidates.into_iter().next().unwrap()));
     }
-    // Find the max among per-batch candidates (at most `batches.len()` rows).
     let combined = RecordBatch::concat(&candidates.iter().collect::<Vec<_>>())?;
-    record_batch_max(&combined, sort_keys)
+    record_batch_max_composite(&combined, composite_keys)
 }
 
 pub struct RepartitionWithSentinelSink {
