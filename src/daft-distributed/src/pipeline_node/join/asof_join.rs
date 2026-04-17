@@ -404,9 +404,20 @@ impl AsofJoinNode {
             .try_collect::<Vec<_>>()
             .await?;
 
-        if left_materialized.is_empty() || right_materialized.is_empty() {
+        if left_materialized.is_empty() {
             return Ok(());
         }
+
+        if right_materialized.is_empty() {
+            let all_left: Vec<PartitionRef> = left_materialized
+                .iter()
+                .flat_map(|o| o.partitions().iter().cloned())
+                .collect();
+            return self
+                .create_and_submit_join_task(all_left, vec![], None, &result_tx)
+                .await;
+        }
+
         self.range_shuffle_and_join(
             left_materialized,
             right_materialized,
