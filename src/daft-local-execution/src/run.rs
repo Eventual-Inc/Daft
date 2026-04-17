@@ -11,7 +11,9 @@ use common_metrics::{QueryEndState, QueryID};
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
-use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, SourceId, translate};
+use daft_local_plan::{
+    ExecutionStats, Input, InputId, LocalPhysicalPlanRef, Sentinels, SourceId, translate,
+};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use daft_shuffles::server::flight_server::{
@@ -602,6 +604,21 @@ impl ExecutionEngineResult {
         }
         self.shuffle_metadata
     }
+
+    async fn into_shuffle_metadata_and_sentinels(
+        mut self,
+    ) -> (Option<ShuffleMetadata>, Option<Sentinels>) {
+        while let Some(item) = self.receiver.recv().await {
+            if let ExecutionEngineResultItem::ShuffleMetadata(metadata) = item {
+                self.shuffle_metadata = Some(metadata);
+            }
+        }
+        let sentinels = self
+            .shuffle_metadata
+            .as_mut()
+            .and_then(|m| m.sentinels.take());
+        (self.shuffle_metadata, sentinels)
+    }
 }
 
 #[cfg_attr(
@@ -679,6 +696,38 @@ impl PyResultReceiver {
                     .map(|metadata| metadata.to_pyobject(py))
                     .transpose()?;
                 Ok((PyExecutionStats::from(stats), py_metadata)
+                    .into_pyobject(py)?
+                    .unbind())
+            })
+        })
+    }
+
+    fn try_finish_with_shuffle_metadata_and_sentinels<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let result = self.result.clone();
+        let executor = self.executor.clone();
+        let fingerprint = self.fingerprint;
+        let input_id = self.input_id;
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut result_guard = result.lock().await;
+            let execution_result = result_guard
+                .take()
+                .expect("PyResultReceiver.try_finish_with_shuffle_metadata_and_sentinels() should not be called more than once.");
+            drop(result_guard);
+
+            let (shuffle_metadata, sentinels) =
+                execution_result.into_shuffle_metadata_and_sentinels().await;
+            let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
+            let stats = finish_future.await?;
+            Python::attach(|py| {
+                let py_metadata = shuffle_metadata
+                    .as_ref()
+                    .map(|metadata| metadata.to_pyobject(py))
+                    .transpose()?;
+                let sentinel_bytes = sentinels.map(|s| s.encode());
+                Ok((PyExecutionStats::from(stats), py_metadata, sentinel_bytes)
                     .into_pyobject(py)?
                     .unbind())
             })

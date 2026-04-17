@@ -55,7 +55,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 ShufflePlanMetadata = list[tuple[object | None, int, int]]
-ShufflePlanResult = tuple[str, ShufflePlanMetadata, bytes]
+ShufflePlanResult = tuple[str, ShufflePlanMetadata, bytes | None, bytes]
 ShuffleWriteInfoLike: TypeAlias = "ShuffleWriteInfo | tuple[str, int, int]"
 
 
@@ -237,13 +237,22 @@ class RaySwordfishActor:
                 context,
                 False,
             )
-            stats, shuffle_metadata = await result_handle.try_finish_with_shuffle_metadata()
+            if backend == "ray_with_sentinel":
+                (
+                    stats,
+                    shuffle_metadata,
+                    sentinel_bytes,
+                ) = await result_handle.try_finish_with_shuffle_metadata_and_sentinels()
+            else:
+                stats, shuffle_metadata = await result_handle.try_finish_with_shuffle_metadata()
+                sentinel_bytes = None
             if shuffle_metadata is None:
                 raise ValueError("Shuffle plan did not return shuffle metadata")
 
             return (
                 backend,
                 [(object_ref, int(num_rows), int(size_bytes)) for object_ref, num_rows, size_bytes in shuffle_metadata],
+                sentinel_bytes,
                 stats.encode(),
             )
 
@@ -296,13 +305,19 @@ class RaySwordfishTaskHandle:
     async def _get_result(self) -> RayTaskResult:
         try:
             if self.shuffle_write_info is not None:
-                backend, refs, stats = await self.result_handle
-                if backend == "ray":
+                backend, refs, sentinel_bytes, stats = await self.result_handle
+                if backend in ("ray", "ray_with_sentinel"):
                     ray_refs: list[RayPartitionRef] = []
                     for object_ref, num_rows, size_bytes in refs:
                         if object_ref is None:
                             raise ValueError("Expected Ray shuffle metadata to include object refs")
                         ray_refs.append(RayPartitionRef(object_ref, num_rows, size_bytes))
+                    if sentinel_bytes is not None:
+                        return RayTaskResult.ray_shuffle_with_sentinel_success(
+                            ray_refs,
+                            sentinel_bytes,
+                            stats,
+                        )
                     return RayTaskResult.ray_shuffle_success(
                         ray_refs,
                         stats,

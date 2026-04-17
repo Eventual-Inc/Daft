@@ -91,6 +91,16 @@ impl PyLocalPhysicalPlan {
                     }
                 }
             }
+            LocalPhysicalPlan::RepartitionWriteWithSentinel(repartition_write) => {
+                match &repartition_write.backend {
+                    RepartitionWriteBackend::Ray => Some(PyShuffleWriteInfo {
+                        backend: "ray_with_sentinel".to_string(),
+                        shuffle_id: 0,
+                        num_partitions: repartition_write.num_partitions,
+                    }),
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }
