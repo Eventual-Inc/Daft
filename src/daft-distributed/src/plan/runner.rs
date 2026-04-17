@@ -1,30 +1,26 @@
-use std::{
-    collections::HashMap,
-    sync::{
-        Arc,
-        atomic::{AtomicU32, Ordering},
-    },
+use std::sync::{
+    Arc,
+    atomic::{AtomicU32, Ordering},
 };
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
-use common_metrics::{Meter, QueryID};
-use common_partitioning::PartitionRef;
+use common_metrics::QueryID;
 use common_runtime::{JoinSet, create_join_set};
 use futures::{Stream, StreamExt};
 
-use super::{DistributedPhysicalPlan, PlanResult, QueryIdx};
+use super::{PlanResult, QueryIdx};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, TaskBuilderStream,
-        logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
+        materialize::materialize_all_pipeline_outputs,
     },
     scheduling::{
         scheduler::{SchedulerHandle, spawn_scheduler_actor},
         task::{SwordfishTask, TaskID},
         worker::{Worker, WorkerManager},
     },
-    statistics::{StatisticsManager, StatisticsSubscriber},
+    statistics::StatisticsManagerRef,
     utils::{
         channel::{Sender, create_channel},
         runtime::get_or_init_runtime,
@@ -139,7 +135,33 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         Self { worker_manager }
     }
 
-    async fn execute_plan(
+    pub fn run_plan(
+        self: &Arc<Self>,
+        query_idx: QueryIdx,
+        pipeline_node: DistributedPipelineNode,
+        statistics_manager: StatisticsManagerRef,
+    ) -> DaftResult<PlanResult> {
+        let runtime = get_or_init_runtime();
+        let (result_sender, result_receiver) = create_channel(1);
+        let this = self.clone();
+        let joinset = runtime.block_on_current_thread(async move {
+            let mut joinset = create_join_set();
+            let scheduler_handle = spawn_scheduler_actor(
+                self.worker_manager.clone(),
+                &mut joinset,
+                statistics_manager,
+            );
+
+            joinset.spawn(async move {
+                this.run_plan_impl(pipeline_node, query_idx, scheduler_handle, result_sender)
+                    .await
+            });
+            joinset
+        });
+        Ok(PlanResult::new(joinset, result_receiver))
+    }
+
+    async fn run_plan_impl(
         &self,
         pipeline_node: DistributedPipelineNode,
         query_idx: QueryIdx,
@@ -168,48 +190,5 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         }
 
         Ok(())
-    }
-
-    pub fn run_plan(
-        self: &Arc<Self>,
-        plan: &DistributedPhysicalPlan,
-        psets: HashMap<String, Vec<PartitionRef>>,
-        subscribers: Vec<Box<dyn StatisticsSubscriber>>,
-    ) -> DaftResult<PlanResult> {
-        let query_idx = plan.idx();
-        let query_id = plan.query_id();
-        let config = plan.execution_config().clone();
-        let logical_plan = plan.logical_plan().clone();
-        let plan_config = PlanConfig::new(query_idx, query_id.clone(), config);
-
-        let meter = Meter::query_scope(query_id, "daft.execution.distributed");
-        let pipeline_node =
-            logical_plan_to_pipeline_node(plan_config, logical_plan, Arc::new(psets), &meter)?;
-        let statistics_manager =
-            StatisticsManager::from_pipeline_node(&pipeline_node, subscribers, &meter)?;
-
-        let runtime = get_or_init_runtime();
-        let (result_sender, result_receiver) = create_channel(1);
-        let this = self.clone();
-        let statistics_manager_clone = statistics_manager.clone();
-        let joinset = runtime.block_on_current_thread(async move {
-            let mut joinset = create_join_set();
-            let scheduler_handle = spawn_scheduler_actor(
-                self.worker_manager.clone(),
-                &mut joinset,
-                statistics_manager.clone(),
-            );
-
-            joinset.spawn(async move {
-                this.execute_plan(pipeline_node, query_idx, scheduler_handle, result_sender)
-                    .await
-            });
-            joinset
-        });
-        Ok(PlanResult::new(
-            joinset,
-            result_receiver,
-            statistics_manager_clone,
-        ))
     }
 }
