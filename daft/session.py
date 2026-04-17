@@ -312,6 +312,12 @@ class Session:
             raise ValueError("Cannot create a namespace without a current catalog")
         return catalog.create_namespace_if_not_exists(identifier)
 
+    def _resolve_catalog(self, identifier: Identifier) -> tuple[Catalog, Identifier] | None:
+        """If the identifier is catalog-qualified, return (catalog, remainder)."""
+        if len(identifier) >= 2 and self.has_catalog(identifier[0]):
+            return self.get_catalog(identifier[0]), identifier.drop(1)
+        return None
+
     def create_table(self, identifier: Identifier | str, source: Schema | DataFrame, **properties: Any) -> Table:
         """Creates a table in the current catalog.
 
@@ -320,12 +326,16 @@ class Session:
         Returns:
             Table: the newly created table instance.
         """
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.create_table(identifier, source, properties)
+
         if not (catalog := self.current_catalog()):
             # TODO relax this constraint by joining with the catalog name
             raise ValueError("Cannot create a table without a current catalog")
-
-        if isinstance(identifier, str):
-            identifier = Identifier.from_str(identifier)
 
         if len(identifier) == 1:
             if ns := self.current_namespace():
@@ -346,12 +356,16 @@ class Session:
         Returns:
             Table: the newly created instance, or the existing table instance.
         """
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.create_table_if_not_exists(identifier, source, properties)
+
         if not (catalog := self.current_catalog()):
             # TODO relax this constraint by joining with the catalog name
             raise ValueError("Cannot create a table without a current catalog")
-
-        if isinstance(identifier, str):
-            identifier = Identifier.from_str(identifier)
 
         if len(identifier) == 1:
             if ns := self.current_namespace():
@@ -415,6 +429,13 @@ class Session:
         Args:
             identifier (Identifier|str): table identifier
         """
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.drop_table(identifier)
+
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot drop a table without a current catalog")
         # TODO join the identifier with the current namespace

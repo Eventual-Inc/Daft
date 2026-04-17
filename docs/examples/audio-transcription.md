@@ -152,7 +152,7 @@ def transcribe(file: daft.File) -> str:
     return result['text']
 
 # Create dataframe from all flac files in directory
-df = daft.from_glob_paths("./LibriSpeech/dev-clean/**/*.flac")
+df = daft.from_glob_path("./LibriSpeech/dev-clean/**/*.flac")
 
 # Process all files
 df = df.select(

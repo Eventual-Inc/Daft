@@ -1,4 +1,5 @@
 mod agg;
+mod asof_join;
 mod concat;
 mod distinct;
 mod explode;
@@ -28,6 +29,7 @@ mod vllm;
 mod window;
 
 pub use agg::Aggregate;
+pub use asof_join::AsofJoin;
 pub use concat::Concat;
 pub use distinct::Distinct;
 pub use explode::Explode;

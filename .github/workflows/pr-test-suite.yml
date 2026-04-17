@@ -329,16 +329,21 @@ jobs:
         npm ci
         npm run build
 
-      # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
+    # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
       run: |
         source .venv/bin/activate
-        maturin build --release --compatibility linux --out dist
+        maturin build --release --compatibility linux --out dist --timings=html -Z unstable-options
     - name: Upload wheels
       uses: actions/upload-artifact@v7
       with:
         name: wheels-${{ matrix.python-version }}
         path: dist
+    - name: Upload timings
+      uses: actions/upload-artifact@v7
+      with:
+        name: timings-${{ matrix.python-version }}
+        path: target/cargo-timings/
 
   integration-test-tpch:
     runs-on: ubuntu-latest
@@ -1292,7 +1297,7 @@ jobs:
     - name: Run benchmarks
       uses: CodSpeedHQ/action@v4
       with:
-        run: source .venv/bin/activate; pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py tests/benchmarks/test_json_reads.py -m benchmark --codspeed
+        run: source .venv/bin/activate; pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py tests/benchmarks/test_json_reads.py tests/benchmarks/test_clickbench.py -m benchmark --codspeed
         mode: "simulation"
       env:
         DAFT_RUNNER: native
@@ -1309,7 +1314,7 @@ jobs:
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] Benchmark Local TPCH <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+                  "text": ":rotating_light: [CI] Benchmarks (TPCH / ClickBench / reads) <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
                 }
               }
             ]
@@ -1425,6 +1430,36 @@ jobs:
       run: cargo +stable install cargo-machete@0.7.0 --locked
     - name: Run Machete
       run: cargo machete --with-metadata
+
+  rust-dependency-budget:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - name: Compare Cargo.lock to base (external crates budget)
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        set -euo pipefail
+        git show "${BASE_SHA}:Cargo.lock" > /tmp/base-Cargo.lock
+        python3 .github/ci-scripts/rust_lockfile_diff.py \
+          --base ${BASE_SHA} \
+          --head ${GITHUB_SHA} \
+          --base-lockfile /tmp/base-Cargo.lock \
+          --head-lockfile Cargo.lock \
+          --max-new 25 \
+          --markdown-summary | tee rust_dep_report.md >> "$GITHUB_STEP_SUMMARY"
+    - name: Post sticky PR comment
+      uses: marocchino/sticky-pull-request-comment@v2
+      with:
+        header: rust-dependency-budget
+        path: rust_dep_report.md
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   doctests:
     runs-on: ubuntu-latest

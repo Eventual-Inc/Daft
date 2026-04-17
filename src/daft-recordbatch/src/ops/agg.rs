@@ -1,8 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::{
-    array::ops::{IntoGroups, IntoUniqueIdxs},
-    prelude::*,
-};
+use daft_core::prelude::*;
 use daft_dsl::{
     AggExpr,
     expr::{
@@ -12,6 +9,7 @@ use daft_dsl::{
     operator_metrics::NoopMetricsCollector,
     python_udf::PyScalarFn,
 };
+use daft_groupby::{IntoGroups, IntoUniqueIdxs};
 
 use super::inline_agg::can_inline_agg;
 use crate::RecordBatch;
@@ -141,7 +139,7 @@ impl RecordBatch {
                             let evaluated_grouped_col = {
                                 // Convert group indices to Series
                                 let indices_as_arr =
-                                    UInt64Array::from_vec("", groupval_indices.clone());
+                                    UInt64Array::from_vec("", groupval_indices.to_vec());
 
                                 // Take each input Series by the group indices
                                 let input_groups = evaluated_inputs
@@ -228,7 +226,7 @@ impl RecordBatch {
                         .map(|(groupkey_index, groupval_indices)| {
                             // Convert group indices to Series
                             let indices_as_arr =
-                                UInt64Array::from_vec("", groupval_indices.clone());
+                                UInt64Array::from_vec("", groupval_indices.to_vec());
 
                             // Take each input Series by the group indices
                             let input_groups = evaluated_inputs

@@ -5,8 +5,9 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, JOIN_BUILD_ROWS_INSERTED_KEY, JOIN_PROBE_ROWS_IN_KEY, JOIN_PROBE_ROWS_OUT_KEY, Meter,
-    StatSnapshot, UNIT_ROWS,
+    Counter, JOIN_BUILD_BYTES_INSERTED_KEY, JOIN_BUILD_ROWS_INSERTED_KEY, JOIN_PROBE_BYTES_IN_KEY,
+    JOIN_PROBE_BYTES_OUT_KEY, JOIN_PROBE_ROWS_IN_KEY, JOIN_PROBE_ROWS_OUT_KEY, Meter, StatSnapshot,
+    UNIT_BYTES, UNIT_ROWS,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::{JoinSnapshot, StatSnapshotImpl as _},
 };
@@ -36,6 +37,9 @@ pub struct BroadcastJoinStats {
     build_rows_inserted: Counter,
     probe_rows_in: Counter,
     probe_rows_out: Counter,
+    build_bytes_inserted: Counter,
+    probe_bytes_in: Counter,
+    probe_bytes_out: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -58,12 +62,32 @@ impl BroadcastJoinStats {
                 None,
                 Some(Cow::Borrowed(UNIT_ROWS)),
             ),
+            build_bytes_inserted: meter.u64_counter_with_desc_and_unit(
+                JOIN_BUILD_BYTES_INSERTED_KEY,
+                None,
+                Some(Cow::Borrowed(UNIT_BYTES)),
+            ),
+            probe_bytes_in: meter.u64_counter_with_desc_and_unit(
+                JOIN_PROBE_BYTES_IN_KEY,
+                None,
+                Some(Cow::Borrowed(UNIT_BYTES)),
+            ),
+            probe_bytes_out: meter.u64_counter_with_desc_and_unit(
+                JOIN_PROBE_BYTES_OUT_KEY,
+                None,
+                Some(Cow::Borrowed(UNIT_BYTES)),
+            ),
             node_kv: key_values_from_context(context),
         }
     }
 
     pub fn set_build_rows_inserted(&self, rows: u64) {
         self.build_rows_inserted.add(rows, self.node_kv.as_slice());
+    }
+
+    pub fn set_build_bytes_inserted(&self, bytes: u64) {
+        self.build_bytes_inserted
+            .add(bytes, self.node_kv.as_slice());
     }
 }
 
@@ -79,6 +103,10 @@ impl RuntimeStats for BroadcastJoinStats {
             .add(snapshot.probe_rows_in, self.node_kv.as_slice());
         self.probe_rows_out
             .add(snapshot.probe_rows_out, self.node_kv.as_slice());
+        self.probe_bytes_in
+            .add(snapshot.probe_bytes_in, self.node_kv.as_slice());
+        self.probe_bytes_out
+            .add(snapshot.probe_bytes_out, self.node_kv.as_slice());
     }
 
     fn export_snapshot(&self) -> StatSnapshot {
@@ -87,6 +115,9 @@ impl RuntimeStats for BroadcastJoinStats {
             build_rows_inserted: self.build_rows_inserted.load(Ordering::SeqCst),
             probe_rows_in: self.probe_rows_in.load(Ordering::SeqCst),
             probe_rows_out: self.probe_rows_out.load(Ordering::SeqCst),
+            build_bytes_inserted: self.build_bytes_inserted.load(Ordering::SeqCst),
+            probe_bytes_in: self.probe_bytes_in.load(Ordering::SeqCst),
+            probe_bytes_out: self.probe_bytes_out.load(Ordering::SeqCst),
         })
     }
 }
@@ -180,8 +211,14 @@ impl BroadcastJoinNode {
             .iter()
             .map(|output| output.num_rows())
             .sum::<usize>();
+        let build_bytes = materialized_broadcast_data
+            .iter()
+            .map(|output| output.size_bytes())
+            .sum::<usize>();
         self.runtime_stats
             .set_build_rows_inserted(build_rows as u64);
+        self.runtime_stats
+            .set_build_bytes_inserted(build_bytes as u64);
 
         let (materialized_broadcast_data_plan, broadcast_psets) =
             MaterializedOutput::into_in_memory_scan_with_psets(

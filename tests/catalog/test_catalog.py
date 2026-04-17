@@ -290,3 +290,53 @@ def test_catalog_create_and_get_function():
 
     func = _function_catalog.get_function("double_fn")
     assert func is not None
+
+
+def test_create_table_catalog_qualified():
+    """Test that create_table routes to the correct catalog when using a catalog-qualified identifier."""
+    from daft.session import Session
+
+    catalog = MockCatalog()
+    sess = Session()
+    sess.attach_catalog(catalog, alias="my_cat")
+
+    schema = Schema.from_pydict({"a": dt.int64()})
+    sess.create_table("my_cat.my_schema.my_table", schema)
+
+    # The table should exist in the catalog with the catalog prefix stripped
+    t = catalog.get_table("my_schema.my_table")
+    assert t is not None
+    assert t.name == "my_schema.my_table"
+
+
+def test_create_table_if_not_exists_catalog_qualified():
+    """Test that create_table_if_not_exists routes to the correct catalog when using a catalog-qualified identifier."""
+    from daft.session import Session
+
+    catalog = MockCatalog()
+    sess = Session()
+    sess.attach_catalog(catalog, alias="my_cat")
+
+    schema = Schema.from_pydict({"a": dt.int64()})
+    t1 = sess.create_table_if_not_exists("my_cat.my_schema.my_table", schema)
+    t2 = sess.create_table_if_not_exists("my_cat.my_schema.my_table", schema)
+
+    assert t1 is not None
+    assert t2 is not None
+    assert t1.name == t2.name
+
+
+def test_drop_table_catalog_qualified():
+    """Test that drop_table routes to the correct catalog when using a catalog-qualified identifier."""
+    from daft.session import Session
+
+    catalog = MockCatalog()
+    sess = Session()
+    sess.attach_catalog(catalog, alias="my_cat")
+
+    schema = Schema.from_pydict({"a": dt.int64()})
+    sess.create_table("my_cat.my_schema.my_table", schema)
+    assert catalog.has_table("my_schema.my_table")
+
+    sess.drop_table("my_cat.my_schema.my_table")
+    assert not catalog.has_table("my_schema.my_table")

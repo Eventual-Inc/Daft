@@ -17,6 +17,7 @@ use common_py_serde::PyObjectWrapper;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{
     datatypes::IntervalValue,
@@ -40,6 +41,8 @@ pub enum Literal {
     Utf8(String),
     /// A raw binary array
     Binary(Vec<u8>),
+    /// A UUID (Universally Unique Identifier) represented as 16 bytes
+    Uuid(Uuid),
     /// A 8-bit signed integer number.
     Int8(i8),
     /// A 8-bit unsigned integer number.
@@ -128,6 +131,7 @@ impl Hash for Literal {
             Self::Boolean(bool) => bool.hash(state),
             Self::Utf8(s) => s.hash(state),
             Self::Binary(arr) => arr.hash(state),
+            Self::Uuid(uuid) => uuid.hash(state),
             Self::Int8(n) => n.hash(state),
             Self::UInt8(n) => n.hash(state),
             Self::Int16(n) => n.hash(state),
@@ -210,6 +214,7 @@ impl Display for Literal {
             Self::Boolean(val) => write!(f, "{val}"),
             Self::Utf8(val) => write!(f, "\"{val}\""),
             Self::Binary(val) => write!(f, "Binary[{}]", val.len()),
+            Self::Uuid(val) => write!(f, "Uuid({})", val),
             Self::Int8(val) => write!(f, "{val}"),
             Self::UInt8(val) => write!(f, "{val}"),
             Self::Int16(val) => write!(f, "{val}"),
@@ -302,6 +307,7 @@ impl Literal {
             Self::Boolean(_) => DataType::Boolean,
             Self::Utf8(_) => DataType::Utf8,
             Self::Binary(_) => DataType::Binary,
+            Self::Uuid(_) => DataType::Uuid,
             Self::Int8(_) => DataType::Int8,
             Self::UInt8(_) => DataType::UInt8,
             Self::Int16(_) => DataType::Int16,
@@ -426,6 +432,7 @@ impl Literal {
                 display_timestamp(*val, tu, tz).replace('T', " ")
             ),
             Self::Decimal(..)
+            | Self::Uuid(..)
             | Self::List(..)
             | Self::Time(..)
             | Self::Binary(..)
@@ -614,6 +621,7 @@ impl Literal {
             Self::Python(_) => std::mem::size_of::<PyObjectWrapper>(),
             Self::Struct(entries) => entries.iter().map(|(k, v)| k.len() + v.size_bytes()).sum(),
             Self::File(f) => std::mem::size_of_val(f),
+            Self::Uuid(_) => 16,
             Self::Tensor { data, shape } => {
                 data.size_bytes() + shape.len() * std::mem::size_of::<u64>()
             }

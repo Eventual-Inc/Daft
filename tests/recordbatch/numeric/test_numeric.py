@@ -843,3 +843,97 @@ def test_table_shift_right_syntactic_sugar() -> None:
     table = MicroPartition.from_pydict({"a": [1, 2, 4]})
     shift_table = table.eval_expression_list([col("a").shift_right(1)])
     assert [1 >> 1, 2 >> 1, 4 >> 1] == shift_table.get_column_by_name("a").to_pylist()
+
+
+def test_e() -> None:
+    from daft.functions import e
+
+    table = MicroPartition.from_pydict({"a": [1, 2, 3]})
+    result = table.eval_expression_list([e().alias("e")])
+    values = result.get_column_by_name("e").to_pylist()
+    assert len(values) == 3
+    for v in values:
+        assert v == pytest.approx(math.e, rel=1e-10)
+
+
+def test_pi() -> None:
+    from daft.functions import pi
+
+    table = MicroPartition.from_pydict({"a": [1, 2, 3]})
+    result = table.eval_expression_list([pi().alias("pi")])
+    values = result.get_column_by_name("pi").to_pylist()
+    assert len(values) == 3
+    for v in values:
+        assert v == pytest.approx(math.pi, rel=1e-10)
+
+
+def test_factorial() -> None:
+    from daft.functions import factorial
+
+    table = MicroPartition.from_pydict({"a": [0, 1, 2, 3, 4, 5, 10, None]})
+    result = table.eval_expression_list([factorial(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    expected = [1, 1, 2, 6, 24, 120, 3628800, None]
+    assert values == expected
+
+
+def test_factorial_negative() -> None:
+    from daft.functions import factorial
+
+    table = MicroPartition.from_pydict({"a": [-1, -5]})
+    result = table.eval_expression_list([factorial(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [None, None]
+
+
+def test_factorial_overflow() -> None:
+    from daft.functions import factorial
+
+    table = MicroPartition.from_pydict({"a": [20, 21, 100]})
+    result = table.eval_expression_list([factorial(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [2432902008176640000, None, None]
+
+
+def test_factorial_float_input() -> None:
+    from daft.functions import factorial
+
+    table = MicroPartition.from_pydict({"a": [3.5, 2.1]})
+    with pytest.raises(ValueError, match="Expected input to factorial to be integer"):
+        table.eval_expression_list([factorial(col("a"))])
+
+
+def test_factorial_bad_input() -> None:
+    from daft.functions import factorial
+
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+    with pytest.raises(ValueError, match="Expected input to factorial to be integer"):
+        table.eval_expression_list([factorial(col("a"))])
+
+
+def test_hypot() -> None:
+    from daft.functions import hypot
+
+    table = MicroPartition.from_pydict({"a": [3.0, 5.0, 0.0, None], "b": [4.0, 12.0, 0.0, None]})
+    result = table.eval_expression_list([hypot(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    expected = [5.0, 13.0, 0.0, None]
+    assert values == expected
+
+
+def test_hypot_integers() -> None:
+    from daft.functions import hypot
+
+    table = MicroPartition.from_pydict({"a": [3, 5], "b": [4, 12]})
+    result = table.eval_expression_list([hypot(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    expected = [5.0, 13.0]
+    assert values == expected
+
+
+def test_hypot_bad_input() -> None:
+    from daft.functions import hypot
+
+    table = MicroPartition.from_pydict({"a": ["a", "b"], "b": ["c", "d"]})
+    with pytest.raises(ValueError, match="Expected inputs to hypot to be numeric"):
+        table.eval_expression_list([hypot(col("a"), col("b"))])

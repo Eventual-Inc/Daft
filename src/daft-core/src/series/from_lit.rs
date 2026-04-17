@@ -247,6 +247,12 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
 
             DurationArray::new(field, physical).into_series()
         }
+        DataType::Uuid => {
+            let data = values.map(|(i, lit)| unwrap_inner!(lit, i, Literal::Uuid(uuid) => uuid));
+            let physical = FixedSizeBinaryArray::from_iter("literal", data, 16);
+
+            UuidArray::new(field, physical).into_series()
+        }
         DataType::List(ref child_dtype) => {
             let data = values
                 .map(|(i, lit)| {
@@ -436,7 +442,8 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
         | DataType::FixedShapeImage(..)
         | DataType::FixedShapeTensor(..)
         | DataType::FixedShapeSparseTensor(..)
-        | DataType::Unknown => unreachable!("Literal should never have data type: {dtype}"),
+        | DataType::Unknown
+        | DataType::Union(..) => unreachable!("Literal should never have data type: {dtype}"),
     };
 
     let s = if downcasted != dtype {

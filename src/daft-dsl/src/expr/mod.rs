@@ -391,6 +391,7 @@ impl MapGroupsFn {
 }
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[allow(clippy::large_enum_variant)]
 pub enum AggExpr {
     #[display("count({_0}, {_1})")]
     Count(ExprRef, CountMode),
@@ -2089,6 +2090,7 @@ impl Expr {
             Self::ScalarFn(ScalarFn::Builtin(func)) => match func.name() {
                 "struct" => "struct", // FIXME: make struct its own expr variant
                 "monotonically_increasing_id" => "monotonically_increasing_id", // Special case for functions with no inputs
+                "uuid" => "",
                 _ => func.inputs.first().unwrap().name(),
             },
             Self::BinaryOp {

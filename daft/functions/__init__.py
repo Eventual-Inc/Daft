@@ -67,6 +67,14 @@ from .datetime import (
     current_date,
     current_timestamp,
     current_timezone,
+    date_add,
+    date_sub,
+    date_diff,
+    date_from_unix_date,
+    timestamp_seconds,
+    timestamp_millis,
+    timestamp_micros,
+    from_unixtime,
 )
 from .distance import cosine_distance, dot_product, euclidean_distance
 from .similarity import (
@@ -75,7 +83,7 @@ from .similarity import (
     jaccard_similarity,
 )
 
-from .file_ import file, file_size, video_file, audio_file, guess_mime_type
+from .file_ import file, file_path, file_size, video_file, audio_file, guess_mime_type
 
 from .image import (
     resize,
@@ -134,10 +142,14 @@ from .misc import (
 from .numeric import (
     abs,
     ceil,
+    e,
     floor,
+    factorial,
     clip,
+    hypot,
     sign,
     negate,
+    pi,
     round,
     sqrt,
     cbrt,
@@ -232,7 +244,7 @@ from .str import (
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
 from .audio import audio_metadata, resample
-from .video import video_metadata, video_keyframes
+from .video import video_metadata, video_keyframes, video_frames
 from .window import (
     row_number,
     rank,
@@ -297,6 +309,10 @@ __all__ = [
     "current_timestamp",
     "current_timezone",
     "date",
+    "date_add",
+    "date_diff",
+    "date_from_unix_date",
+    "date_sub",
     "date_trunc",
     "day",
     "day_of_month",
@@ -310,6 +326,7 @@ __all__ = [
     "deserialize",
     "dot_product",
     "download",
+    "e",
     "embed_image",
     "embed_text",
     "encode",
@@ -320,17 +337,21 @@ __all__ = [
     "exp",
     "explode",
     "expm1",
+    "factorial",
     "file",
+    "file_path",
     "file_size",
     "fill_nan",
     "fill_null",
     "find",
     "floor",
     "format",
+    "from_unixtime",
     "get",
     "guess_mime_type",
     "hash",
     "hour",
+    "hypot",
     "ilike",
     "image_attribute",
     "image_channel",
@@ -399,6 +420,7 @@ __all__ = [
     "partition_months",
     "partition_years",
     "pearson_correlation",
+    "pi",
     "pow",
     "power",
     "product",
@@ -447,6 +469,9 @@ __all__ = [
     "tan",
     "tanh",
     "time",
+    "timestamp_micros",
+    "timestamp_millis",
+    "timestamp_seconds",
     "to_camel_case",
     "to_date",
     "to_datetime",
@@ -481,6 +506,7 @@ __all__ = [
     "value_counts",
     "var",
     "video_file",
+    "video_frames",
     "video_keyframes",
     "video_metadata",
     "week_of_year",

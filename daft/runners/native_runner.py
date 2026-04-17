@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import platform
 import sys
 from typing import TYPE_CHECKING
 
+import daft
 from daft.context import get_context
 from daft.daft import (
     FileFormatConfig,
@@ -21,6 +23,7 @@ from daft.filesystem import glob_path_with_stats
 from daft.naming import generate_query_name
 from daft.recordbatch import MicroPartition
 from daft.runners import runner_io
+from daft.runners.heartbeat import Heartbeat
 from daft.runners.partitioning import (
     LocalMaterializedResult,
     LocalPartitionSet,
@@ -34,6 +37,8 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Iterator
 
     from daft.logical.builder import LogicalPlanBuilder
+
+HEARTBEAT_INTERVAL_SEC = 10.0
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +94,8 @@ class NativeRunner(Runner[MicroPartition]):
         output_schema = builder.schema()
 
         entrypoint = "python " + " ".join(sys.argv)
+        python_version = platform.python_version()
+        daft_version = daft.get_version()
 
         try:
             # Try to send notifications, but don't fail the query if they fail
@@ -102,21 +109,39 @@ class NativeRunner(Runner[MicroPartition]):
                     "Native (Swordfish)",
                     ray_dashboard_url=None,
                     entrypoint=entrypoint,
+                    python_version=python_version,
+                    daft_version=daft_version,
                 ),
             )
+        except Exception as e:
+            logger.warning("Failed to send query start notification: %s", e)
+
+        # Start heartbeat right after query_start so dead detection covers
+        # the entire lifecycle including optimization and setup.
+        heartbeat = Heartbeat(HEARTBEAT_INTERVAL_SEC, ctx, query_id)
+        heartbeat.start()
+
+        try:
+            return (yield from self._optimize_and_execute(builder, query_id))
+        finally:
+            heartbeat.stop()
+
+    def _optimize_and_execute(
+        self, builder: LogicalPlanBuilder, query_id: str
+    ) -> Generator[LocalMaterializedResult, None, ExecutionMetadata]:
+        ctx = get_context()
+
+        try:
             ctx._notify_optimization_start(query_id)
         except Exception as e:
-            logger.warning("Failed to send notifications: %s", e)
-            pass
+            logger.warning("Failed to send optimization start notification: %s", e)
 
-        # Optimize the logical plan.
         builder = builder.optimize(ctx.daft_execution_config)
 
         try:
             ctx._notify_optimization_end(query_id, builder.repr_json())
         except Exception as e:
             logger.warning("Failed to send optimization end notification: %s", e)
-            pass
 
         psets = {
             k: [v.micropartition()._micropartition for v in v.values()]
@@ -136,8 +161,8 @@ class NativeRunner(Runner[MicroPartition]):
                 result = next(results_gen)
                 try:
                     ctx._notify_result_out(query_id, result.partition())
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Failed to send result out notification: %s", e)
                 yield result
         except GeneratorExit:
             # Generator was abandoned (e.g., .show() breaking out early after collecting

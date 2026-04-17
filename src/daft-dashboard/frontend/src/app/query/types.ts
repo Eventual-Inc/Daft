@@ -107,15 +107,22 @@ export type QueryState =
     }
   | {
       status: "Dead";
+      plan_info: PlanInfo | null;
+      exec_info: ExecInfo | null;
+      marked_dead_sec: number;
     };
 
 export type QueryInfo = {
   id: string;
   start_sec: number;
+  last_heartbeat_sec: number;
   unoptimized_plan: string;
   runner: string;
   ray_dashboard_url?: string;
   entrypoint?: string;
+  python_version?: string;
+  daft_version?: string;
+  ray_version?: string;
   state: QueryState;
 };
 

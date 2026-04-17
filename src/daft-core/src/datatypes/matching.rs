@@ -46,11 +46,13 @@ macro_rules! with_match_daft_types {
             DataType::UInt8 => __with_ty__! { UInt8Type },
             DataType::Unknown => unimplemented!("array for unknown datatype not implemented"),
             DataType::Utf8 => __with_ty__! { Utf8Type },
+            DataType::Uuid => __with_ty__! { UuidType },
             #[cfg(feature = "python")]
             DataType::Python => __with_ty__! { PythonType },
             DataType::File(MediaType::Unknown) => __with_ty__! { UnknownFileType },
             DataType::File(MediaType::Video) => __with_ty__! { VideoFileType },
             DataType::File(MediaType::Audio) => __with_ty__! { AudioFileType },
+            DataType::Union(..) => __with_ty__! { UnionType },
 
 
             // NOTE: We should not implement a default for match here, because this is meant to be
@@ -95,6 +97,7 @@ macro_rules! with_match_physical_daft_types {
             DataType::Interval => __with_ty__! { IntervalType },
             #[cfg(feature = "python")]
             DataType::Python => __with_ty__! { PythonType },
+            DataType::Union(..) => __with_ty__! { UnionType },
 
             _ => panic!("{:?} not implemented for with_match_physical_daft_types", $key_type)
         }
