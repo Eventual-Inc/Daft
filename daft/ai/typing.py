@@ -9,6 +9,13 @@ from daft.datatype import DataType
 if TYPE_CHECKING:
     from typing import Literal
 
+    from daft.dependencies import np
+
+    Embedding: TypeAlias = np.typing.NDArray[Any]
+    Image: TypeAlias = np.typing.NDArray[Any]
+else:
+    Embedding: TypeAlias = Any
+    Image: TypeAlias = Any
 
 Options = dict[str, Any]
 
@@ -149,17 +156,6 @@ class Descriptor(ABC, Generic[T]):
         from daft.utils import from_dict
 
         return from_dict(UDFOptions, self.get_options())
-
-
-# temp definition to defer complexity of a more generic embedding type to later PRs
-if TYPE_CHECKING:
-    from daft.dependencies import np
-
-    Embedding: TypeAlias = np.typing.NDArray[Any]
-    Image: TypeAlias = np.typing.NDArray[Any]
-else:
-    Embedding: TypeAlias = Any
-    Image: TypeAlias = Any
 
 
 @dataclass

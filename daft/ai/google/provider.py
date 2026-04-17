@@ -40,11 +40,19 @@ class GoogleProvider(Provider):
     def name(self) -> str:
         return self._name
 
-    def get_text_embedder(
+    # ------------------------------------------------------------------
+    # Google Text Embedder
+    # ------------------------------------------------------------------
+
+    def get_text_embedder_descriptor(
         self, model: str | None = None, dimensions: int | None = None, **options: Any
     ) -> TextEmbedderDescriptor:
-        # TODO: Implement GoogleTextEmbedderDescriptor
+        # TODO: Implement Google text embedder
         raise NotImplementedError("Google text embedder not implemented yet")
+
+    # ------------------------------------------------------------------
+    # Google Prompter
+    # ------------------------------------------------------------------
 
     def get_prompter(
         self,
