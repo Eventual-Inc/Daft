@@ -43,7 +43,6 @@ pub(crate) trait WorkerManager: Send + Sync {
     fn mark_worker_died(&self, worker_id: WorkerId);
     fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>>;
     fn try_autoscale(&self, resource_requests: Vec<TaskResourceRequest>) -> DaftResult<()>;
-    fn clear_flight_shuffles(&self, shuffle_ids: &[u64]) -> DaftResult<()>;
     #[allow(dead_code)]
     fn shutdown(&self) -> DaftResult<()>;
 }
@@ -59,22 +58,13 @@ pub(crate) mod tests {
     #[derive(Clone)]
     pub struct MockWorkerManager {
         workers: Arc<Mutex<HashMap<WorkerId, MockWorker>>>,
-        clear_flight_shuffle_calls: Arc<Mutex<Vec<Vec<u64>>>>,
     }
 
     impl MockWorkerManager {
         pub fn new(workers: HashMap<WorkerId, MockWorker>) -> Self {
             Self {
                 workers: Arc::new(Mutex::new(workers)),
-                clear_flight_shuffle_calls: Arc::new(Mutex::new(Vec::new())),
             }
-        }
-
-        pub fn clear_flight_shuffle_calls(&self) -> Vec<Vec<u64>> {
-            self.clear_flight_shuffle_calls
-                .lock()
-                .expect("Failed to lock clear_flight_shuffle_calls")
-                .clone()
         }
     }
 
@@ -144,14 +134,6 @@ pub(crate) mod tests {
                     MockWorker::new(new_worker_id, 1.0, 0.0),
                 );
             }
-            Ok(())
-        }
-
-        fn clear_flight_shuffles(&self, shuffle_ids: &[u64]) -> DaftResult<()> {
-            self.clear_flight_shuffle_calls
-                .lock()
-                .expect("Failed to lock clear_flight_shuffle_calls")
-                .push(shuffle_ids.to_vec());
             Ok(())
         }
 

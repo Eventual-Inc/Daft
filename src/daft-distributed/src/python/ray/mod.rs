@@ -25,22 +25,3 @@ pub(crate) async fn clear_shuffle_dirs_on_all_nodes(shuffle_dirs: Vec<String>) -
 
     Ok(())
 }
-
-pub(crate) async fn clear_flight_shuffle_state_on_workers(
-    workers: Vec<Py<PyAny>>,
-    shuffle_ids: Vec<u64>,
-) -> DaftResult<()> {
-    common_runtime::python::execute_python_coroutine_noreturn(move |py| {
-        let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
-
-        let coroutine = flotilla_module.call_method1(
-            pyo3::intern!(py, "clear_flight_shuffle_state_on_workers"),
-            (workers, shuffle_ids),
-        )?;
-
-        Ok(coroutine)
-    })
-    .await?;
-
-    Ok(())
-}

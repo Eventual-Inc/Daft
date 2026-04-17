@@ -5,7 +5,7 @@ use std::{collections::HashMap, sync::Arc};
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_recordbatch::RecordBatch;
-use futures::stream::BoxStream;
+use futures::{StreamExt, stream::BoxStream};
 use tokio::sync::Mutex;
 
 use crate::client::flight_client::ShuffleFlightClient;
@@ -20,7 +20,7 @@ impl FlightClientManager {
         Self::default()
     }
 
-    pub async fn fetch_record_batches(
+    pub async fn fetch_partition(
         &self,
         shuffle_id: u64,
         server_address: &str,
@@ -39,11 +39,13 @@ impl FlightClientManager {
                 .clone()
         };
 
-        client
+        let stream = client
             .lock()
             .await
-            .get_record_batches(shuffle_id, partition_ref_ids, schema)
-            .await
+            .get_partition(shuffle_id, partition_ref_ids, schema)
+            .await?
+            .boxed();
+        Ok(stream)
     }
 }
 

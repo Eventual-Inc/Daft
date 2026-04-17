@@ -1,3 +1,3 @@
 pub mod client;
-pub mod partition_store;
 pub mod server;
+pub mod shuffle_cache;

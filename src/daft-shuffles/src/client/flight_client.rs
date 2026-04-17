@@ -9,12 +9,14 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_recordbatch::RecordBatch;
 use daft_schema::field::FieldRef;
-use futures::{FutureExt, Stream, StreamExt, stream::BoxStream};
+use futures::{FutureExt, Stream, StreamExt};
 use tonic::transport::Endpoint;
 
 #[allow(clippy::large_enum_variant)]
 enum ClientState {
+    // The address of the flight server
     Uninitialized(String),
+    // The address of the flight server and the flight client
     Initialized(String, FlightClient),
 }
 
@@ -50,16 +52,14 @@ impl ShuffleFlightClient {
         }
     }
 
-    pub async fn get_record_batches(
+    /// Get a stream of RecordBatches from a remote shuffle server
+    /// Note, this function should not take long, since the actual data transfer is done in the stream.
+    pub async fn get_partition(
         &mut self,
         shuffle_id: u64,
         partition_ref_ids: &[u64],
         schema: SchemaRef,
-    ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-        if partition_ref_ids.is_empty() {
-            return Ok(futures::stream::empty().boxed());
-        }
-
+    ) -> DaftResult<FlightRecordBatchStreamToDaftRecordBatchStream> {
         let ticket = Ticket::new(format!(
             "{}:{}",
             shuffle_id,
@@ -79,8 +79,9 @@ impl ShuffleFlightClient {
                 .into(),
             )
         })?;
-
-        Ok(FlightRecordBatchStreamToDaftRecordBatchStream::new(stream, schema).boxed())
+        Ok(FlightRecordBatchStreamToDaftRecordBatchStream::new(
+            stream, schema,
+        ))
     }
 }
 
@@ -100,7 +101,7 @@ impl FlightRecordBatchStreamToDaftRecordBatchStream {
             fields: schema
                 .fields()
                 .iter()
-                .map(|field| Arc::new(field.clone()))
+                .map(|f| Arc::new(f.clone()))
                 .collect(),
         }
     }
@@ -116,7 +117,8 @@ impl Stream for FlightRecordBatchStreamToDaftRecordBatchStream {
             return Poll::Ready(None);
         }
 
-        match this.stream.next().poll_unpin(cx) {
+        let batch = this.stream.next().poll_unpin(cx);
+        match batch {
             Poll::Ready(Some(Ok(batch))) => {
                 let columns = this
                     .fields
@@ -137,48 +139,5 @@ impl Stream for FlightRecordBatchStreamToDaftRecordBatchStream {
             }
             Poll::Pending => Poll::Pending,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use arrow::{
-        array::{ArrayRef, Int64Array},
-        record_batch::RecordBatch as ArrowRecordBatch,
-    };
-    use arrow_flight::encode::FlightDataEncoderBuilder;
-    use daft_core::prelude::{DataType, Field, Schema};
-    use futures::{TryStreamExt, stream};
-
-    use super::*;
-
-    fn make_schema() -> SchemaRef {
-        Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)]))
-    }
-
-    fn make_batch() -> ArrowRecordBatch {
-        ArrowRecordBatch::try_from_iter(vec![(
-            "a",
-            Arc::new(Int64Array::from(vec![1_i64, 2, 3])) as ArrayRef,
-        )])
-        .unwrap()
-    }
-
-    #[tokio::test]
-    async fn record_batch_stream_decodes_arrow_batches() -> DaftResult<()> {
-        let schema = make_schema();
-        let stream = FlightDataEncoderBuilder::new().build(stream::iter(vec![Ok(make_batch())]));
-        let stream = FlightRecordBatchStream::new_from_flight_data(stream);
-
-        let batches: Vec<RecordBatch> =
-            FlightRecordBatchStreamToDaftRecordBatchStream::new(stream, schema)
-                .try_collect()
-                .await?;
-
-        assert_eq!(batches.len(), 1);
-        assert_eq!(batches[0].len(), 3);
-        Ok(())
     }
 }

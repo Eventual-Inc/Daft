@@ -29,7 +29,7 @@ pub(crate) fn register_cleanup(
         .iter()
         .map(|base_dir| format!("{}/daft_shuffle/{}", base_dir, backend.shuffle_id))
         .collect();
-    plan_context.register_flight_shuffle_cleanup(backend.shuffle_id, shuffle_dirs_to_register);
+    plan_context.register_shuffle_dirs(shuffle_dirs_to_register);
 }
 
 pub(crate) async fn emit_read_tasks(

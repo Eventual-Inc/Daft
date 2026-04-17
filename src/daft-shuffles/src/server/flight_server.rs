@@ -1,8 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    pin::Pin,
-    sync::Arc,
-};
+use std::{collections::HashMap, pin::Pin, sync::Arc};
 
 use arrow_flight::{
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
@@ -23,7 +19,7 @@ use tonic::{Request, Response, Status, transport::Server};
 use super::stream::FlightDataStreamReader;
 use crate::{
     client::flight_client::FlightRecordBatchStreamToDaftRecordBatchStream,
-    partition_store::RegisteredFlightPartition,
+    shuffle_cache::PartitionCache,
 };
 
 struct ParsedTicket {
@@ -36,6 +32,7 @@ impl ParsedTicket {
         let ticket_str = String::from_utf8(ticket.ticket.to_vec())
             .map_err(|e| Status::invalid_argument(e.to_string()))?;
 
+        // Ticket format: "shuffle_id:partition_ref_ids" where partition_ref_ids is comma-separated list of u64s
         let parts: Vec<&str> = ticket_str.splitn(2, ':').collect();
         if parts.len() < 2 {
             return Err(Status::invalid_argument(
@@ -55,11 +52,6 @@ impl ParsedTicket {
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        if partition_ref_ids.is_empty() {
-            return Err(Status::invalid_argument(
-                "At least one partition ref id must be provided",
-            ));
-        }
 
         Ok(Self {
             shuffle_id,
@@ -76,7 +68,7 @@ struct FlightPartitionKey {
 
 #[derive(Clone, Default)]
 pub struct ShuffleFlightServer {
-    shuffle_partitions: Arc<Mutex<HashMap<FlightPartitionKey, RegisteredFlightPartition>>>,
+    shuffle_partitions: Arc<Mutex<HashMap<FlightPartitionKey, PartitionCache>>>,
 }
 
 impl ShuffleFlightServer {
@@ -87,7 +79,7 @@ impl ShuffleFlightServer {
     pub async fn register_shuffle_partitions(
         &self,
         shuffle_id: u64,
-        partitions: Vec<RegisteredFlightPartition>,
+        partitions: Vec<PartitionCache>,
     ) -> DaftResult<()> {
         let mut shuffle_partitions = self.shuffle_partitions.lock().await;
         for partition in partitions {
@@ -102,37 +94,49 @@ impl ShuffleFlightServer {
         Ok(())
     }
 
-    pub async fn clear_shuffle(&self, shuffle_id: u64) -> bool {
-        let mut shuffle_partitions = self.shuffle_partitions.lock().await;
-        let len_before = shuffle_partitions.len();
-        shuffle_partitions.retain(|key, _| key.shuffle_id != shuffle_id);
-        len_before != shuffle_partitions.len()
-    }
-
-    pub async fn clear_shuffles(&self, shuffle_ids: &[u64]) -> usize {
-        let mut shuffle_partitions = self.shuffle_partitions.lock().await;
-        let shuffle_ids: HashSet<u64> = shuffle_ids.iter().copied().collect();
-        let mut removed_shuffle_ids = HashSet::new();
-        shuffle_partitions.retain(|key, _| {
-            let should_remove = shuffle_ids.contains(&key.shuffle_id);
-            if should_remove {
-                removed_shuffle_ids.insert(key.shuffle_id);
-            }
-            !should_remove
-        });
-        removed_shuffle_ids.len()
-    }
-
-    /// Read partition data directly from disk, bypassing the gRPC stack.
-    /// Used when the shuffle reader runs on the same node as the shuffle server.
-    pub async fn read_local_partitions(
+    async fn get_shuffle_file_paths(
         &self,
         shuffle_id: u64,
         partition_ref_ids: &[u64],
-        schema: SchemaRef,
+    ) -> Option<(Vec<String>, SchemaRef)> {
+        let partitions = self.shuffle_partitions.lock().await;
+
+        let schema = partitions
+            .get(&FlightPartitionKey {
+                shuffle_id,
+                partition_ref_id: *partition_ref_ids
+                    .first()
+                    .expect("Expected at least one partition"),
+            })
+            .expect("No partitions found")
+            .schema
+            .clone();
+
+        let file_paths = partition_ref_ids
+            .iter()
+            .filter_map(|partition_ref_id| {
+                partitions
+                    .get(&FlightPartitionKey {
+                        shuffle_id,
+                        partition_ref_id: *partition_ref_id,
+                    })
+                    .map(|p| p.file_paths.clone())
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+
+        Some((file_paths, schema))
+    }
+
+    /// Get partition data in-process (no gRPC). Returns a stream of Daft RecordBatches.
+    /// Used when the reader runs on the same node as the shuffle server.
+    pub async fn get_partition_local(
+        &self,
+        shuffle_id: u64,
+        partition_ref_ids: &[u64],
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-        let partitions = self
-            .get_shuffle_partitions(shuffle_id, partition_ref_ids)
+        let (file_paths, schema) = self
+            .get_shuffle_file_paths(shuffle_id, partition_ref_ids)
             .await
             .ok_or_else(|| {
                 DaftError::ValueError(format!(
@@ -141,16 +145,8 @@ impl ShuffleFlightServer {
                 ))
             })?;
 
-        let file_paths: Vec<String> = partitions
-            .into_iter()
-            .filter_map(|p| if p.has_data() { p.file_path } else { None })
-            .collect();
-
-        if file_paths.is_empty() {
-            return Ok(futures::stream::empty().boxed());
-        }
-
-        let stream = futures::stream::iter(file_paths)
+        let file_path_stream = futures::stream::iter(file_paths);
+        let flight_data_stream = file_path_stream
             .then(move |file_path| {
                 let schema = schema.clone();
                 async move {
@@ -170,35 +166,17 @@ impl ShuffleFlightServer {
                     let flight_data =
                         futures::stream::once(async { Ok(flight_schema) }).chain(reader);
 
+                    // Doing some shenanigans here to reuse existing code
+                    // TODO: Refactor this to get Arrow RecordBatchStream directly using async IO
                     let arrow_stream = FlightRecordBatchStream::new_from_flight_data(flight_data);
-                    Ok::<_, DaftError>(FlightRecordBatchStreamToDaftRecordBatchStream::new(
-                        arrow_stream,
-                        schema,
-                    ))
+                    let daft_stream =
+                        FlightRecordBatchStreamToDaftRecordBatchStream::new(arrow_stream, schema);
+                    Ok::<_, DaftError>(daft_stream)
                 }
             })
             .try_flatten();
 
-        Ok(stream.boxed())
-    }
-
-    async fn get_shuffle_partitions(
-        &self,
-        shuffle_id: u64,
-        partition_ref_ids: &[u64],
-    ) -> Option<Vec<RegisteredFlightPartition>> {
-        let partitions = self.shuffle_partitions.lock().await;
-        partition_ref_ids
-            .iter()
-            .map(|partition_ref_id| {
-                partitions
-                    .get(&FlightPartitionKey {
-                        shuffle_id,
-                        partition_ref_id: *partition_ref_id,
-                    })
-                    .cloned()
-            })
-            .collect()
+        Ok(Box::pin(flight_data_stream))
     }
 }
 
@@ -259,53 +237,44 @@ impl FlightService for ShuffleFlightServer {
         let ticket = request.into_inner();
         let ticket = ParsedTicket::from_ticket(&ticket)?;
 
-        let partitions = self
-            .get_shuffle_partitions(ticket.shuffle_id, &ticket.partition_ref_ids)
+        let (file_paths, schema) = self
+            .get_shuffle_file_paths(ticket.shuffle_id, &ticket.partition_ref_ids)
             .await
             .ok_or_else(|| {
                 Status::not_found(format!(
-                    "Shuffle partition refs not found for shuffle {} refs {:?}",
+                    "Shuffle partitions not found for shuffle {} refs {:?}",
                     ticket.shuffle_id, ticket.partition_ref_ids
                 ))
             })?;
-        let schema = partitions
-            .first()
-            .expect("expected at least one shuffle partition")
-            .schema
-            .to_arrow()
-            .map_err(|e| Status::internal(format!("Error converting schema to arrow: {}", e)))?;
 
-        let partition_stream = futures::stream::iter(partitions)
-            .then(|partition| async move {
-                let data_stream = if let Some(file_path) = partition.file_path.clone() {
-                    let file = tokio::fs::File::open(file_path)
-                        .await
-                        .map_err(|e| Status::internal(format!("Error opening file: {}", e)))?;
-                    let reader = FlightDataStreamReader::try_new(BufReader::new(file))
-                        .await
-                        .map_err(|e| {
-                            Status::internal(format!("Error creating flight data reader: {}", e))
-                        })?;
+        let file_path_stream = futures::stream::iter(file_paths);
+        let flight_data_stream = file_path_stream
+            .then(|file_path| async move {
+                let file = tokio::fs::File::open(file_path)
+                    .await
+                    .map_err(|e| Status::internal(format!("Error opening file: {}", e)))?;
+                let reader = FlightDataStreamReader::try_new(BufReader::new(file))
+                    .await
+                    .map_err(|e| {
+                        Status::internal(format!("Error creating flight data reader: {}", e))
+                    })?;
+                Ok::<_, Status>(
                     reader
                         .into_stream()
-                        .map_err(|e| Status::internal(e.to_string()))
-                        .boxed()
-                } else {
-                    futures::stream::empty::<Result<FlightData, Status>>().boxed()
-                };
-
-                Ok::<_, Status>(data_stream)
+                        .map_err(|e| Status::internal(e.to_string())),
+                )
             })
             .try_flatten();
 
         let options = IpcWriteOptions::default();
-        let flight_schema = SchemaAsIpc::new(&schema, &options).into();
-        let flight_data: Pin<Box<dyn Stream<Item = Result<FlightData, Status>> + Send + 'static>> =
-            Box::pin(
-                futures::stream::once(async move { Ok(flight_schema) }).chain(partition_stream),
-            );
+        let arrow_schema = schema
+            .to_arrow()
+            .map_err(|e| Status::internal(format!("Error converting schema to arrow: {}", e)))?;
+        let flight_schema = SchemaAsIpc::new(&arrow_schema, &options).into();
+        let flight_data =
+            futures::stream::once(async { Ok(flight_schema) }).chain(flight_data_stream);
 
-        Ok(Response::new(flight_data))
+        Ok(Response::new(Box::pin(flight_data)))
     }
 
     async fn do_put(
@@ -410,199 +379,5 @@ pub fn start_server_loop(
         port,
         shutdown_signal: Some(shutdown_tx),
         server_task: Some(server_task),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{
-        sync::Arc,
-        time::{SystemTime, UNIX_EPOCH},
-    };
-
-    use daft_core::{
-        prelude::{DataType, Field, Int64Array, Schema},
-        series::IntoSeries,
-    };
-    use daft_micropartition::MicroPartition;
-    use futures::TryStreamExt;
-
-    use super::*;
-    use crate::partition_store::{InProgressFlightPartitionWriter, partition_ref_id};
-
-    fn make_schema() -> Arc<daft_schema::schema::Schema> {
-        Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)]))
-    }
-
-    fn make_partition(partition_ref_id: u64) -> RegisteredFlightPartition {
-        RegisteredFlightPartition {
-            partition_ref_id,
-            schema: make_schema(),
-            file_path: None,
-            num_rows: 0,
-            size_bytes: 0,
-        }
-    }
-
-    fn make_mp(values: &[i64]) -> MicroPartition {
-        let rb = daft_recordbatch::RecordBatch::from_nonempty_columns(vec![
-            Int64Array::from_values("a", values.iter().copied()).into_series(),
-        ])
-        .unwrap();
-        MicroPartition::new_loaded(make_schema(), Arc::new(vec![rb]), None)
-    }
-
-    fn make_temp_dir() -> String {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("daft-flight-server-test-{unique}"));
-        std::fs::create_dir_all(&path).unwrap();
-        path.to_string_lossy().to_string()
-    }
-
-    #[tokio::test]
-    async fn clear_shuffle_removes_registered_partitions() {
-        let server = ShuffleFlightServer::new();
-        server
-            .register_shuffle_partitions(11, vec![make_partition(101), make_partition(102)])
-            .await
-            .unwrap();
-
-        assert!(
-            server
-                .get_shuffle_partitions(11, &[101, 102])
-                .await
-                .is_some()
-        );
-        assert!(server.clear_shuffle(11).await);
-        assert!(!server.clear_shuffle(11).await);
-        assert!(server.get_shuffle_partitions(11, &[101]).await.is_none());
-    }
-
-    #[tokio::test]
-    async fn clear_shuffles_counts_removed_shuffles() {
-        let server = ShuffleFlightServer::new();
-        server
-            .register_shuffle_partitions(11, vec![make_partition(101)])
-            .await
-            .unwrap();
-        server
-            .register_shuffle_partitions(12, vec![make_partition(201)])
-            .await
-            .unwrap();
-
-        assert_eq!(server.clear_shuffles(&[11, 12, 99]).await, 2);
-        assert!(server.get_shuffle_partitions(11, &[101]).await.is_none());
-        assert!(server.get_shuffle_partitions(12, &[201]).await.is_none());
-    }
-
-    #[tokio::test]
-    async fn read_local_partitions_reads_ipc_from_disk() {
-        let temp_dir = make_temp_dir();
-        let shuffle_id = 42;
-        let input_id = 7;
-
-        // Write real IPC files through the partition store.
-        let writer_0 = InProgressFlightPartitionWriter::try_new(
-            partition_ref_id(input_id, 0),
-            std::slice::from_ref(&temp_dir),
-            shuffle_id,
-            make_schema(),
-            None,
-        )
-        .unwrap();
-        writer_0.push(make_mp(&[10, 20, 30])).await.unwrap();
-        let writer_1 = InProgressFlightPartitionWriter::try_new(
-            partition_ref_id(input_id, 1),
-            std::slice::from_ref(&temp_dir),
-            shuffle_id,
-            make_schema(),
-            None,
-        )
-        .unwrap();
-        writer_1.push(make_mp(&[40])).await.unwrap();
-        let registered = vec![
-            writer_0.close().await.unwrap(),
-            writer_1.close().await.unwrap(),
-        ];
-
-        // Register them with the flight server.
-        let server = ShuffleFlightServer::new();
-        let ref_ids: Vec<u64> = registered.iter().map(|p| p.partition_ref_id).collect();
-        server
-            .register_shuffle_partitions(shuffle_id, registered)
-            .await
-            .unwrap();
-
-        // Read back via the local disk path (no gRPC involved).
-        let stream = server
-            .read_local_partitions(shuffle_id, &ref_ids, make_schema())
-            .await
-            .unwrap();
-        let batches: Vec<RecordBatch> = stream.try_collect().await.unwrap();
-
-        let total_rows: usize = batches.iter().map(|b| b.len()).sum();
-        assert_eq!(total_rows, 4);
-
-        let all_values: Vec<i64> = batches
-            .iter()
-            .flat_map(|b| {
-                let col = b.get_column(0).i64().unwrap();
-                (0..b.len()).map(move |i| col.get(i).unwrap())
-            })
-            .collect();
-        assert_eq!(all_values, vec![10, 20, 30, 40]);
-    }
-
-    #[tokio::test]
-    async fn read_local_partitions_skips_empty_partitions() {
-        let temp_dir = make_temp_dir();
-        let shuffle_id = 43;
-
-        // Create partition set but only write to one partition.
-        let writer_0 = InProgressFlightPartitionWriter::try_new(
-            partition_ref_id(1, 0),
-            std::slice::from_ref(&temp_dir),
-            shuffle_id,
-            make_schema(),
-            None,
-        )
-        .unwrap();
-        writer_0.push(make_mp(&[100])).await.unwrap();
-        let writer_1 = InProgressFlightPartitionWriter::try_new(
-            partition_ref_id(1, 1),
-            std::slice::from_ref(&temp_dir),
-            shuffle_id,
-            make_schema(),
-            None,
-        )
-        .unwrap();
-        writer_1
-            .push(MicroPartition::empty(Some(make_schema())))
-            .await
-            .unwrap();
-        let registered = vec![
-            writer_0.close().await.unwrap(),
-            writer_1.close().await.unwrap(),
-        ];
-
-        let server = ShuffleFlightServer::new();
-        let ref_ids: Vec<u64> = registered.iter().map(|p| p.partition_ref_id).collect();
-        server
-            .register_shuffle_partitions(shuffle_id, registered)
-            .await
-            .unwrap();
-
-        let stream = server
-            .read_local_partitions(shuffle_id, &ref_ids, make_schema())
-            .await
-            .unwrap();
-        let batches: Vec<RecordBatch> = stream.try_collect().await.unwrap();
-
-        // Only the non-empty partition's data should appear.
-        let total_rows: usize = batches.iter().map(|b| b.len()).sum();
-        assert_eq!(total_rows, 1);
     }
 }

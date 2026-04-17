@@ -1491,7 +1491,6 @@ fn physical_plan_to_pipeline(
                         *num_partitions,
                         *shuffle_id,
                         repartition_spec.clone(),
-                        schema.clone(),
                         shuffle_dirs.clone(),
                         compression.clone(),
                         shuffle_server,
@@ -1535,7 +1534,11 @@ fn physical_plan_to_pipeline(
             ShuffleReadBackend::Flight => {
                 let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
                 input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
-                let source = ShuffleReadSource::new(rx, schema.clone(), cfg, ctx.shuffle_server());
+                let (local_server, local_address) = ctx.shuffle_server().expect(
+                    "Flight shuffle server must be initialized for Flight shuffle read plans",
+                );
+                let source =
+                    ShuffleReadSource::new(rx, local_server, local_address, schema.clone(), cfg);
                 SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
             }
         },

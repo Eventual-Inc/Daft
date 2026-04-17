@@ -11,8 +11,8 @@ use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::{PyFlightPartitionRef, RayPartitionRef};
 use daft_shuffles::{
-    partition_store::{InProgressFlightPartitionWriter, partition_ref_id},
     server::flight_server::ShuffleFlightServer,
+    shuffle_cache::{InProgressShuffleCache, partition_ref_id},
 };
 use itertools::Itertools;
 use tracing::{Span, instrument};
@@ -43,7 +43,7 @@ impl RayRepartitionState {
 }
 
 pub(crate) struct FlightRepartitionState {
-    partitions: Arc<Vec<Arc<InProgressFlightPartitionWriter>>>,
+    partitions: Arc<Vec<Arc<InProgressShuffleCache>>>,
 }
 
 pub(crate) enum RepartitionState {
@@ -60,13 +60,13 @@ enum RepartitionBackend {
         num_partitions: usize,
         shuffle_id: u64,
         repartition_spec: RepartitionSpec,
-        schema: SchemaRef,
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
         local_server: Arc<ShuffleFlightServer>,
         shuffle_address: String,
+        target_in_memory_size_per_partition: usize,
         // Only accessed from the single-threaded event loop; Mutex is just for Sync.
-        partitions: Mutex<HashMap<InputId, Arc<Vec<Arc<InProgressFlightPartitionWriter>>>>>,
+        partitions: Mutex<HashMap<InputId, Arc<Vec<Arc<InProgressShuffleCache>>>>>,
     },
 }
 
@@ -95,22 +95,24 @@ impl RepartitionSink {
         num_partitions: usize,
         shuffle_id: u64,
         repartition_spec: RepartitionSpec,
-        schema: SchemaRef,
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
         local_server: Arc<ShuffleFlightServer>,
         shuffle_address: String,
     ) -> DaftResult<Self> {
+        const TARGET_TOTAL_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 2000;
         Ok(Self {
             backend: RepartitionBackend::Flight {
                 num_partitions,
                 shuffle_id,
                 repartition_spec,
-                schema,
                 shuffle_dirs,
                 compression,
                 local_server,
                 shuffle_address,
+                target_in_memory_size_per_partition: (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES
+                    / num_partitions)
+                    .clamp(1024 * 1024 * 8, 1024 * 1024 * 128),
                 partitions: Mutex::new(HashMap::new()),
             },
             num_partitions,
@@ -198,13 +200,10 @@ impl BlockingSink for RepartitionSink {
                                 None => input.partition_by_random(num_partitions, 0)?,
                             };
                             let mut push_futures = Vec::new();
-                            for (writer, partition) in
+                            for (cache, partition) in
                                 state.partitions.iter().zip(partitioned.into_iter())
                             {
-                                if partition.is_empty() {
-                                    continue;
-                                }
-                                push_futures.push(writer.push(partition));
+                                push_futures.push(cache.push_data(partition));
                             }
                             futures::future::try_join_all(push_futures).await?;
                             Ok(RepartitionState::Flight(state))
@@ -427,9 +426,9 @@ impl BlockingSink for RepartitionSink {
             })),
             RepartitionBackend::Flight {
                 num_partitions,
-                schema,
                 shuffle_dirs,
                 shuffle_id,
+                target_in_memory_size_per_partition,
                 compression,
                 partitions,
                 ..
@@ -441,11 +440,11 @@ impl BlockingSink for RepartitionSink {
                         let partition_set = Arc::new(
                             (0..*num_partitions)
                                 .map(|partition_idx| {
-                                    Ok(Arc::new(InProgressFlightPartitionWriter::try_new(
+                                    Ok(Arc::new(InProgressShuffleCache::try_new(
                                         partition_ref_id(input_id, partition_idx),
                                         shuffle_dirs,
                                         *shuffle_id,
-                                        schema.clone(),
+                                        *target_in_memory_size_per_partition,
                                         compression.as_deref(),
                                     )?))
                                 })

@@ -90,15 +90,6 @@ async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str]) -> Non
     )
 
 
-async def clear_flight_shuffle_state_on_workers(workers: list[RaySwordfishActorHandle], shuffle_ids: list[int]) -> None:
-    if not shuffle_ids:
-        return
-
-    await asyncio.gather(
-        *[worker.actor_handle.clear_flight_shuffles.remote(shuffle_ids) for worker in workers],
-    )
-
-
 @ray.remote
 class RaySwordfishActor:
     """RaySwordfishActor is a ray actor that runs local physical plans on swordfish.
@@ -135,9 +126,6 @@ class RaySwordfishActor:
         if address is None:
             raise RuntimeError("Flotilla worker should have started a Flight shuffle server")
         return address
-
-    def clear_flight_shuffles(self, shuffle_ids: list[int]) -> int:
-        return self.native_executor.clear_flight_shuffles(shuffle_ids)
 
     async def _resolve_inputs(
         self,
@@ -311,9 +299,6 @@ class RaySwordfishActorHandle:
 
     def shutdown(self) -> None:
         ray.kill(self.actor_handle)
-
-    def clear_flight_shuffles(self, shuffle_ids: list[int]) -> int:
-        return ray.get(self.actor_handle.clear_flight_shuffles.remote(shuffle_ids))
 
 
 def _get_worker_startup_timeout() -> int:

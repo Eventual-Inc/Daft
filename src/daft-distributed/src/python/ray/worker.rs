@@ -95,10 +95,6 @@ impl RaySwordfishWorker {
             .call_method0(py, pyo3::intern!(py, "shutdown"))
             .expect("Failed to shutdown RaySwordfishWorker");
     }
-
-    pub fn ray_worker_handle(&self, py: Python<'_>) -> Py<PyAny> {
-        self.ray_worker_handle.as_ref().clone_ref(py)
-    }
 }
 
 impl Worker for RaySwordfishWorker {
