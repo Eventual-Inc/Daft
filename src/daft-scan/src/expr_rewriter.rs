@@ -99,6 +99,14 @@ pub fn rewrite_predicate_for_partitioning(
     // Predicates that only reference data columns (no partition column references) or only reference partition columns
     // but involve non-identity transformations.
     let mut data_preds: Vec<ExprRef> = vec![];
+    // Pure partition-column predicates with identity transforms. These are normally handled
+    // exclusively via `partition_only_filter` (extracted in the second phase below). However,
+    // when sibling predicates land in `needs_filter_op_preds` (e.g. predicates containing
+    // ScalarFn), the optimizer rebuilds a Filter node from only those predicates, and a
+    // subsequent pass would re-derive partition filters from that rebuilt node — losing these
+    // identity partition predicates. To prevent that, we conditionally merge them into
+    // `needs_filter_op_preds` after the classification loop so they survive in the Filter node.
+    let mut identity_part_preds: Vec<ExprRef> = vec![];
     for e in data_split {
         let mut all_data_keys = true;
         let mut all_part_keys = true;
@@ -139,7 +147,16 @@ pub fn rewrite_predicate_for_partitioning(
             needs_filter_op_preds.push(e.clone());
         } else if all_data_keys || all_part_keys && any_non_identity_part_keys {
             data_preds.push(e.clone());
+        } else if all_part_keys {
+            identity_part_preds.push(e.clone());
         }
+    }
+    // When there are sibling predicates that require a dedicated Filter op (e.g. containing
+    // ScalarFn or UDFs), we must preserve identity partition predicates in that Filter node.
+    // Otherwise, the rebuilt Filter would only contain the `needing_filter_op` predicates,
+    // and a subsequent optimizer pass would fail to re-derive these partition filters.
+    if !needs_filter_op_preds.is_empty() {
+        needs_filter_op_preds.extend(identity_part_preds);
     }
     if pfields.is_empty() {
         return Ok(PredicateGroups::new(
