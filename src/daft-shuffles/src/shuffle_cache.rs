@@ -26,7 +26,6 @@ pub fn partition_ref_id(input_id: u32, partition_idx: usize) -> u64 {
 // Result of a writer task
 struct WriterTaskResult {
     schema: Option<SchemaRef>,
-    #[allow(unused)]
     bytes_per_file: Vec<usize>,
     total_rows_written: usize,
     total_bytes_written: usize,
@@ -42,6 +41,7 @@ struct InProgressShuffleCacheState {
 
 pub struct InProgressShuffleCache {
     state: Mutex<InProgressShuffleCacheState>,
+    writer_sender_weak: async_channel::WeakSender<MicroPartition>,
     partition_ref_id: u64,
 }
 
@@ -78,9 +78,19 @@ impl InProgressShuffleCache {
         std::fs::create_dir_all(&partition_dir)?;
 
         let writer = make_ipc_writer(&partition_dir, target_filesize, compression)?;
+
+        Self::try_new_with_writer(writer, partition_ref_id)
+    }
+
+    fn try_new_with_writer(
+        writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
+        partition_ref_id: u64,
+    ) -> DaftResult<Self> {
         let num_cpus = std::thread::available_parallelism().unwrap().get();
         let (tx, rx) = async_channel::bounded(num_cpus * 2);
         let task = get_io_runtime(true).spawn(async move { writer_task(rx, writer).await });
+
+        let writer_sender_weak = tx.downgrade();
 
         Ok(Self {
             state: Mutex::new(InProgressShuffleCacheState {
@@ -88,25 +98,23 @@ impl InProgressShuffleCache {
                 writer_task: Some(task),
                 error: None,
             }),
+            writer_sender_weak,
             partition_ref_id,
         })
     }
 
     /// Push single partition data to the writer.
-    pub async fn push_data(&self, partition: MicroPartition) -> DaftResult<()> {
-        let sender = {
-            let state = self.state.lock().await;
-            if let Some(error) = &state.error {
-                return Err(DaftError::InternalError(error.clone()));
+    pub async fn push_partition_data(&self, partition: MicroPartition) -> DaftResult<()> {
+        let send_future = async move {
+            match self.writer_sender_weak.upgrade() {
+                Some(sender) => sender.send(partition).await.map_err(|e| e.to_string()),
+                None => Err("Shuffle cache has been closed".to_string()),
             }
-            state.writer_sender.clone().ok_or_else(|| {
-                DaftError::InternalError("Shuffle cache has been closed".to_string())
-            })?
         };
 
-        if let Err(e) = sender.send(partition).await {
+        if let Err(e) = send_future.await {
             self.close().await?;
-            return Err(DaftError::InternalError(e.to_string()));
+            return Err(DaftError::InternalError(e));
         }
 
         Ok(())
@@ -138,6 +146,7 @@ impl InProgressShuffleCache {
                 schema: result.schema.unwrap_or_else(|| {
                     panic!("No schema found in shuffle cache, this should never happen");
                 }),
+                bytes_per_file: result.bytes_per_file,
                 file_paths: result.file_paths,
                 num_rows: result.total_rows_written,
                 size_bytes: result.total_bytes_written,
@@ -219,13 +228,204 @@ async fn writer_task(
 pub struct PartitionCache {
     pub partition_ref_id: u64,
     pub schema: SchemaRef,
+    pub bytes_per_file: Vec<usize>,
     pub file_paths: Vec<String>,
     pub num_rows: usize,
     pub size_bytes: usize,
 }
 
-impl PartitionCache {
-    pub fn has_data(&self) -> bool {
-        !self.file_paths.is_empty() && self.num_rows > 0 && self.size_bytes > 0
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use daft_writers::test::{
+        DummyWriterFactory, FailingWriterFactory, make_dummy_mp,
+        make_dummy_target_file_size_writer_factory,
+    };
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_shuffle_cache_basic() -> DaftResult<()> {
+        // Create dummy writer for testing
+        let dummy_writer_factory = DummyWriterFactory {};
+        let dummy_writer_factory =
+            make_dummy_target_file_size_writer_factory(100, 1.0, Arc::new(dummy_writer_factory));
+        let writer = dummy_writer_factory.create_writer(0, None)?;
+
+        // Create the cache with dummy writers
+        let cache = InProgressShuffleCache::try_new_with_writer(writer, 0)?;
+
+        // Create and push some partitions
+        // Since we have 1 partition, all data goes to partition 0
+        let mp1 = make_dummy_mp(100);
+        let mp2 = make_dummy_mp(200);
+
+        cache.push_partition_data(mp1).await?;
+        cache.push_partition_data(mp2).await?;
+
+        // Close the cache and verify results
+        let partition_cache = cache.close().await?;
+
+        // We should have 3 file paths because we wrote 300 bytes and the target filesize is 100
+        assert_eq!(partition_cache.file_paths.len(), 3);
+
+        // Check that bytes were distributed
+        let total_bytes: usize = partition_cache.bytes_per_file.iter().sum();
+
+        // We should have recorded bytes for our two micropartitions
+        assert!(total_bytes == 300);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_shuffle_cache_with_empty_partitions() -> DaftResult<()> {
+        let dummy_writer_factory = DummyWriterFactory {};
+        let dummy_writer_factory =
+            make_dummy_target_file_size_writer_factory(100, 1.0, Arc::new(dummy_writer_factory));
+        let writer = dummy_writer_factory.create_writer(0, None)?;
+
+        let cache = InProgressShuffleCache::try_new_with_writer(writer, 0)?;
+
+        // Push 1000 empty partitions
+        for _ in 0..1000 {
+            let empty_partition = make_dummy_mp(0);
+            cache.push_partition_data(empty_partition).await?;
+        }
+
+        let partition_cache = cache.close().await?;
+
+        // Even though we pushed empty partitions, we should still have the schema
+        assert!(partition_cache.schema.names() == vec!["ints"]);
+        assert_eq!(partition_cache.file_paths.len(), 0);
+        assert!(
+            partition_cache
+                .file_paths
+                .iter()
+                .all(|paths| paths.is_empty()),
+            "All partitions should have no file paths: {:?}",
+            partition_cache.file_paths
+        );
+
+        Ok(())
+    }
+    #[tokio::test]
+    async fn test_shuffle_cache_with_failing_writer() -> DaftResult<()> {
+        // Create failing writers for testing
+        // First writer fails on write
+        let failing_writer_factory = FailingWriterFactory::new_fail_on_write();
+        let failing_writer_factory =
+            make_dummy_target_file_size_writer_factory(100, 1.0, Arc::new(failing_writer_factory));
+        let writer = failing_writer_factory.create_writer(0, None)?;
+
+        // Create the cache with writers
+        let cache = InProgressShuffleCache::try_new_with_writer(writer, 0)?;
+
+        let mut found_failure = false;
+        // Technically, we can calculate the max number of iterations before failure, based on number of tasks and channel sizes,
+        // but 100 should be good enough based on our testing environment.
+        let num_iterations = 100;
+        for _ in 0..num_iterations {
+            let partition = make_dummy_mp(100);
+            if let Err(err) = cache.push_partition_data(partition).await {
+                // Verify the error message
+                let error_message = err.to_string();
+                assert!(
+                    error_message.contains("Intentional failure in FailingWriter::write"),
+                    "Error message should mention write failure: {}",
+                    error_message
+                );
+                found_failure = true;
+                break;
+            }
+        }
+
+        // Assert that the loop did not complete
+        assert!(
+            found_failure,
+            "Expected failure before completing all pushes, num_iterations: {}",
+            num_iterations
+        );
+
+        // Assert that another push will fail
+        let partition = make_dummy_mp(100);
+        let result = cache.push_partition_data(partition).await;
+        assert!(result.is_err());
+        let error_message = result.unwrap_err().to_string();
+        assert!(
+            error_message.contains("Intentional failure in FailingWriter::write"),
+            "Error message should mention write failure: {}",
+            error_message
+        );
+
+        // Try that closing the cache will fail
+        let result = cache.close().await;
+        assert!(result.is_err());
+        let error_message = result.unwrap_err().to_string();
+        assert!(
+            error_message.contains("Intentional failure in FailingWriter::write"),
+            "Error message should mention write failure: {}",
+            error_message
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_shuffle_cache_with_failing_writer_on_close() -> DaftResult<()> {
+        // Create failing writers for testing
+
+        // First writer fails on close
+        let failing_writer_factory = FailingWriterFactory::new_fail_on_close();
+        let failing_writer_factory =
+            make_dummy_target_file_size_writer_factory(100, 1.0, Arc::new(failing_writer_factory));
+        let writer = failing_writer_factory.create_writer(0, None)?;
+
+        // Create the cache with writers
+        let cache = InProgressShuffleCache::try_new_with_writer(writer, 0)?;
+
+        // Create and push a partition
+        let partitions = vec![make_dummy_mp(100), make_dummy_mp(100)];
+
+        for partition in partitions {
+            // This should succeed since the failure happens on close
+            cache.push_partition_data(partition).await?;
+        }
+
+        // When we close, we should get an error
+        let result = cache.close().await;
+        assert!(result.is_err());
+
+        // Verify the error message
+        let error_message = result.unwrap_err().to_string();
+        assert!(
+            error_message.contains("Intentional failure in FailingWriter::close"),
+            "Error message should mention close failure: {}",
+            error_message
+        );
+
+        // Try that another push will fail
+        let partition = make_dummy_mp(100);
+        let result = cache.push_partition_data(partition).await;
+        assert!(result.is_err());
+        let error_message = result.unwrap_err().to_string();
+        assert!(
+            error_message.contains("Intentional failure in FailingWriter::close"),
+            "Error message should mention close failure: {}",
+            error_message
+        );
+
+        // Try that closing the cache will fail
+        let result = cache.close().await;
+        assert!(result.is_err());
+        let error_message = result.unwrap_err().to_string();
+        assert!(
+            error_message.contains("Intentional failure in FailingWriter::close"),
+            "Error message should mention close failure: {}",
+            error_message
+        );
+
+        Ok(())
     }
 }

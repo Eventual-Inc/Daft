@@ -203,7 +203,7 @@ impl BlockingSink for RepartitionSink {
                             for (cache, partition) in
                                 state.partitions.iter().zip(partitioned.into_iter())
                             {
-                                push_futures.push(cache.push_data(partition));
+                                push_futures.push(cache.push_partition_data(partition));
                             }
                             futures::future::try_join_all(push_futures).await?;
                             Ok(RepartitionState::Flight(state))
