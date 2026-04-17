@@ -182,6 +182,7 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
 
         let runtime_stats = self.get_or_create_stats(input_id);
         runtime_stats.add_duration_us(elapsed.as_micros() as u64);
+        runtime_stats.add_num_tasks(1);
         self.batch_manager
             .record_completion(runtime_stats.as_ref(), result.len(), elapsed);
         runtime_stats.add_rows_out(result.len() as u64);
