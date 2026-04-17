@@ -36,6 +36,7 @@ use pyo3::{Py, prelude::*};
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
+use crate::pipeline::InputId;
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::{
@@ -440,6 +441,7 @@ impl IntermediateOperator for UdfOperator {
         mut state: Self::State,
         runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
+        _input_id: InputId,
     ) -> IntermediateOpExecuteResult<Self> {
         let memory_request = self.memory_request;
         let params = self.params.clone();

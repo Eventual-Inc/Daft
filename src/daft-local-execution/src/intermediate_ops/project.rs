@@ -15,6 +15,7 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
+use crate::pipeline::InputId;
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::{
@@ -152,6 +153,7 @@ impl IntermediateOperator for ProjectOperator {
         state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
+        _input_id: InputId,
     ) -> IntermediateOpExecuteResult<Self> {
         let projection = self.projection.clone();
         let num_parallel_exprs = self.parallel_exprs;
