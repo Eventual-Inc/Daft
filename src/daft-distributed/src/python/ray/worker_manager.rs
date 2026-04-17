@@ -17,6 +17,9 @@ use crate::scheduling::{
 
 const REFRESH_INTERVAL_SECS: Duration = Duration::from_secs(5);
 const DEFAULT_AUTOSCALE_INTERVAL_SECS: u64 = 5;
+// Environment variable Ray itself reads to configure its autoscaler reconciliation period.
+// We read the same variable so our rate-limit matches Ray's actual cycle length.
+const RAY_AUTOSCALER_UPDATE_INTERVAL_ENV: &str = "AUTOSCALER_UPDATE_INTERVAL_S";
 
 struct RayWorkerManagerState {
     ray_workers: HashMap<WorkerId, RaySwordfishWorker>,
@@ -78,7 +81,7 @@ impl RayWorkerManager {
                 max_resources_requested: ResourceRequest::default(),
                 last_autoscale_request_time: None,
                 autoscale_interval_secs: Duration::from_secs(
-                    std::env::var("AUTOSCALER_UPDATE_INTERVAL_S")
+                    std::env::var(RAY_AUTOSCALER_UPDATE_INTERVAL_ENV)
                         .ok()
                         .and_then(|val| val.parse::<u64>().ok())
                         .unwrap_or(DEFAULT_AUTOSCALE_INTERVAL_SECS),
