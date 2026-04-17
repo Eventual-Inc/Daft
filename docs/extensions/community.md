@@ -35,7 +35,4 @@ with sess:
     df.show()
 ```
 
-Currently provides `h3_latlng_to_cell`, `h3_cell_to_lat`, `h3_cell_to_lng`,
-`h3_cell_to_str`, `h3_str_to_cell`, `h3_cell_resolution`, `h3_cell_is_valid`,
-`h3_cell_parent`, and `h3_grid_distance`. Cell-input functions accept both
-`UInt64` and `Utf8` (hex string) columns; output type matches input.
+See the [daft-h3 README](https://github.com/gweaverbiodev/daft-h3#readme) for the full list of functions and behavior details.
