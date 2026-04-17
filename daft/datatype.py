@@ -170,6 +170,7 @@ class DataType:
         date: ClassVar[DataType]
         interval: ClassVar[DataType]
         python: ClassVar[DataType]
+        uuid: ClassVar[DataType]
 
     @classmethod
     def infer_from_type(cls, t: type | GenericAlias | UnionType) -> DataType:
@@ -519,17 +520,6 @@ class DataType:
         if not isinstance(size, int) or size <= 0:
             raise ValueError("The size for a fixed-size binary must be a positive integer, but got: ", size)
         return cls._from_pydatatype(PyDataType.fixed_size_binary(size))
-
-    @datatype_constructor
-    @classmethod
-    def uuid(cls) -> DataType:
-        """Create a UUID DataType: A 16-byte universally unique identifier."""
-        return cls._from_pydatatype(PyDataType.uuid())
-
-    @classmethod
-    def null(cls) -> DataType:
-        """Creates the Null DataType: Always the ``Null`` value."""
-        return cls._from_pydatatype(PyDataType.null())
 
     @datatype_constructor
     @classmethod
