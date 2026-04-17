@@ -1,4 +1,4 @@
-use daft_recordbatch::RecordBatch;
+use daft_local_plan::Sentinels;
 #[cfg(feature = "python")]
 use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, Python};
 
@@ -6,7 +6,7 @@ use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, Python};
 pub(crate) struct ShuffleMetadata {
     pub partitions: Vec<ShufflePartitionMetadata>,
     #[allow(dead_code)]
-    pub sentinels: Option<Vec<Option<RecordBatch>>>,
+    pub sentinels: Option<Sentinels>,
 }
 
 #[derive(Debug)]

@@ -14,6 +14,56 @@ use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct SentinelRecord(#[serde(with = "serde_bytes")] Vec<u8>);
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Sentinels(Vec<Option<SentinelRecord>>);
+
+impl From<Vec<Option<RecordBatch>>> for Sentinels {
+    fn from(batches: Vec<Option<RecordBatch>>) -> Self {
+        Self(
+            batches
+                .into_iter()
+                .map(|rb| {
+                    rb.map(|r| {
+                        SentinelRecord(
+                            r.to_ipc_stream()
+                                .expect("Failed to encode sentinel RecordBatch to IPC stream"),
+                        )
+                    })
+                })
+                .collect(),
+        )
+    }
+}
+
+impl Sentinels {
+    pub fn into_record_batches(self) -> Vec<Option<RecordBatch>> {
+        self.0
+            .into_iter()
+            .map(|s| {
+                s.map(|sr| {
+                    RecordBatch::from_ipc_stream(&sr.0)
+                        .expect("Failed to decode sentinel RecordBatch from IPC stream")
+                })
+            })
+            .collect()
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        bincode::serde::encode_to_vec(self, bincode::config::legacy())
+            .expect("Failed to encode Sentinels")
+    }
+
+    pub fn decode(bytes: &[u8]) -> Self {
+        let (sentinels, _): (Self, usize) =
+            bincode::serde::decode_from_slice(bytes, bincode::config::legacy())
+                .expect("Failed to decode Sentinels");
+        sentinels
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionStats {
     pub query_id: QueryID,
     pub query_plan: Option<serde_json::Value>,

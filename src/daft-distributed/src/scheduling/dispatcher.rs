@@ -213,6 +213,7 @@ mod tests {
         match result.expect("expected task output") {
             TaskOutput::Materialized(materialized_output) => materialized_output,
             TaskOutput::ShuffleWrite(_) => panic!("expected materialized output"),
+            TaskOutput::ShuffleWriteWithSentinel(_) => panic!("expected materialized output"),
         }
     }
 
