@@ -190,17 +190,17 @@ class RaySwordfishActor:
                     )
                 )
 
-            stats, shuffle_metadata = await result_handle.try_finish()
-            if shuffle_metadata is None:
+            shuffle_partition_refs, stats = await result_handle.try_finish()
+            if shuffle_partition_refs is None:
                 return materialized_refs, stats.encode()
 
             if materialized_refs:
                 raise ValueError("Shuffle write plans should not produce materialized partitions")
 
-            if not shuffle_metadata:
+            if not shuffle_partition_refs:
                 raise ValueError("Expected shuffle metadata to be present")
 
-            return shuffle_metadata, stats.encode()
+            return shuffle_partition_refs, stats.encode()
 
 
 @ray.remote  # type: ignore[untyped-decorator]
@@ -247,19 +247,19 @@ class RaySwordfishTaskHandle:
 
     async def _get_result(self) -> RayTaskResult:
         try:
-            refs, stats = await self.result_handle
+            shuffle_partition_refs, stats = await self.result_handle
         except (ray.exceptions.ActorDiedError, ray.exceptions.ActorUnschedulableError):
             return RayTaskResult.worker_died()
         except ray.exceptions.ActorUnavailableError:
             return RayTaskResult.worker_unavailable()
         except Exception as e:
             raise e
-        if refs and isinstance(refs[0], FlightPartitionRef):
+        if shuffle_partition_refs and isinstance(shuffle_partition_refs[0], FlightPartitionRef):
             return RayTaskResult.success_flight(
-                cast("list[FlightPartitionRef]", refs),
+                cast("list[FlightPartitionRef]", shuffle_partition_refs),
                 stats,
             )
-        return RayTaskResult.success_ray(cast("list[RayPartitionRef]", refs), stats)
+        return RayTaskResult.success_ray(cast("list[RayPartitionRef]", shuffle_partition_refs), stats)
 
     async def get_result(self) -> RayTaskResult:
         self.task = asyncio.create_task(self._get_result())

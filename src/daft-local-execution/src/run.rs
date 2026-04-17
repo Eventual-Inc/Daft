@@ -482,7 +482,7 @@ impl NativeExecutor {
                 }
                 Ok(ExecutionEngineResult {
                     receiver: result_rx,
-                    shuffle_metadata: None,
+                    shuffle_partition_refs: None,
                 })
             }
             .boxed(),
@@ -586,7 +586,7 @@ impl Drop for NativeExecutor {
 
 pub struct ExecutionEngineResult {
     receiver: crate::channel::UnboundedReceiver<ExecutionEngineResultItem>,
-    shuffle_metadata: Option<ShufflePartitionRefs>,
+    shuffle_partition_refs: Option<ShufflePartitionRefs>,
 }
 
 impl ExecutionEngineResult {
@@ -595,20 +595,20 @@ impl ExecutionEngineResult {
             match item {
                 ExecutionEngineResultItem::Partition(partition) => return Some(partition),
                 ExecutionEngineResultItem::ShuffleMetadata(metadata) => {
-                    self.shuffle_metadata = Some(metadata);
+                    self.shuffle_partition_refs = Some(metadata);
                 }
             }
         }
         None
     }
 
-    async fn into_shuffle_metadata(mut self) -> Option<ShufflePartitionRefs> {
+    async fn into_shuffle_partition_refs(mut self) -> Option<ShufflePartitionRefs> {
         while let Some(item) = self.receiver.recv().await {
             if let ExecutionEngineResultItem::ShuffleMetadata(metadata) = item {
-                self.shuffle_metadata = Some(metadata);
+                self.shuffle_partition_refs = Some(metadata);
             }
         }
-        self.shuffle_metadata
+        self.shuffle_partition_refs
     }
 }
 
@@ -658,11 +658,11 @@ impl PyResultReceiver {
                 };
 
             // Delegate to NativeExecutor::try_finish
-            let shuffle_metadata = result.into_shuffle_metadata().await;
+            let shuffle_partition_refs = result.into_shuffle_partition_refs().await;
             let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
             let stats = finish_future.await?;
             Python::attach(|py| {
-                let py_metadata = match shuffle_metadata {
+                let py_shuffle_partition_refs = match shuffle_partition_refs {
                     None => py.None(),
                     Some(ShufflePartitionRefs::Ray(ray_refs)) => {
                         ray_refs.into_pyobject(py)?.unbind().into_any()
@@ -671,7 +671,7 @@ impl PyResultReceiver {
                         flight_refs.into_pyobject(py)?.unbind().into_any()
                     }
                 };
-                Ok((PyExecutionStats::from(stats), py_metadata)
+                Ok((py_shuffle_partition_refs, PyExecutionStats::from(stats))
                     .into_pyobject(py)?
                     .unbind())
             })

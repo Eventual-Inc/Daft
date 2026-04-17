@@ -1,7 +1,7 @@
 use std::{collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
-use common_partitioning::PartitionRef;
+use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::{ExecutionStats, PyLocalPhysicalPlan, SourceId, python::PyInput};
 use daft_partition_refs::{PyFlightPartitionRef, RayPartitionRef};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
@@ -14,65 +14,38 @@ use crate::{
     },
 };
 
-#[derive(Clone)]
-enum RayTaskResultInner {
-    Success {
-        partitions: Vec<PartitionRef>,
-        stats_serialized: Vec<u8>,
-    },
-    WorkerDied(),
-    WorkerUnavailable(),
-}
-
 #[pyclass(module = "daft.daft", name = "RayTaskResult", frozen, from_py_object)]
 #[derive(Clone)]
-pub(crate) struct RayTaskResult {
-    inner: RayTaskResultInner,
+pub(crate) enum RayTaskResult {
+    SuccessRay(Vec<RayPartitionRef>, Vec<u8>),
+    SuccessFlight(Vec<PyFlightPartitionRef>, Vec<u8>),
+    WorkerDied(),
+    WorkerUnavailable(),
 }
 
 #[pymethods]
 impl RayTaskResult {
     #[staticmethod]
     fn success_ray(ray_part_refs: Vec<RayPartitionRef>, stats_serialized: Vec<u8>) -> Self {
-        Self {
-            inner: RayTaskResultInner::Success {
-                partitions: ray_part_refs
-                    .into_iter()
-                    .map(|partition| Arc::new(partition) as PartitionRef)
-                    .collect(),
-                stats_serialized,
-            },
-        }
+        Self::SuccessRay(ray_part_refs, stats_serialized)
     }
 
     #[staticmethod]
     fn success_flight(
-        shuffle_part_refs: Vec<PyFlightPartitionRef>,
+        flight_part_refs: Vec<PyFlightPartitionRef>,
         stats_serialized: Vec<u8>,
     ) -> Self {
-        Self {
-            inner: RayTaskResultInner::Success {
-                partitions: shuffle_part_refs
-                    .into_iter()
-                    .map(|partition| Arc::new(partition) as PartitionRef)
-                    .collect(),
-                stats_serialized,
-            },
-        }
+        Self::SuccessFlight(flight_part_refs, stats_serialized)
     }
 
     #[staticmethod]
     fn worker_died() -> Self {
-        Self {
-            inner: RayTaskResultInner::WorkerDied(),
-        }
+        Self::WorkerDied()
     }
 
     #[staticmethod]
     fn worker_unavailable() -> Self {
-        Self {
-            inner: RayTaskResultInner::WorkerUnavailable(),
-        }
+        Self::WorkerUnavailable()
     }
 }
 
@@ -129,43 +102,30 @@ impl TaskResultHandle for RayTaskResultHandle {
             let ray_task_result = fut.await;
 
             match ray_task_result {
-                Ok(RayTaskResult {
-                    inner:
-                        RayTaskResultInner::Success {
-                            partitions,
-                            stats_serialized,
-                        },
-                }) => {
-                    let stats: ExecutionStats = ExecutionStats::decode(&stats_serialized);
-                    let all_ray_or_flight = partitions.iter().all(|partition| {
-                        partition
-                            .as_any()
-                            .downcast_ref::<RayPartitionRef>()
-                            .is_some()
-                            || partition
-                                .as_any()
-                                .downcast_ref::<PyFlightPartitionRef>()
-                                .is_some()
-                    });
-                    // Task outputs are expected to be transport refs we can route in downstream nodes.
-                    debug_assert!(
-                        all_ray_or_flight,
-                        "task output must contain ray or flight partition refs"
-                    );
-                    let materialized_output =
-                        MaterializedOutput::new(partitions, worker_id.clone(), ip_address, task_id);
-
+                Ok(RayTaskResult::SuccessRay(ray_part_refs, stats_serialized)) => {
                     TaskStatus::Success {
-                        result: materialized_output,
-                        stats,
+                        result: MaterializedOutput::new(
+                            into_partition_refs(ray_part_refs),
+                            worker_id.clone(),
+                            ip_address,
+                            task_id,
+                        ),
+                        stats: ExecutionStats::decode(&stats_serialized),
                     }
                 }
-                Ok(RayTaskResult {
-                    inner: RayTaskResultInner::WorkerDied(),
-                }) => TaskStatus::WorkerDied,
-                Ok(RayTaskResult {
-                    inner: RayTaskResultInner::WorkerUnavailable(),
-                }) => TaskStatus::WorkerUnavailable,
+                Ok(RayTaskResult::SuccessFlight(flight_part_refs, stats_serialized)) => {
+                    TaskStatus::Success {
+                        result: MaterializedOutput::new(
+                            into_partition_refs(flight_part_refs),
+                            worker_id.clone(),
+                            ip_address,
+                            task_id,
+                        ),
+                        stats: ExecutionStats::decode(&stats_serialized),
+                    }
+                }
+                Ok(RayTaskResult::WorkerDied()) => TaskStatus::WorkerDied,
+                Ok(RayTaskResult::WorkerUnavailable()) => TaskStatus::WorkerUnavailable,
                 Err(e) => TaskStatus::Failed { error: e.into() },
             }
         }
@@ -178,6 +138,13 @@ impl TaskResultHandle for RayTaskResultHandle {
                 .expect("Failed to cancel task");
         });
     }
+}
+
+fn into_partition_refs<T: Partition + 'static>(parts: Vec<T>) -> Vec<PartitionRef> {
+    parts
+        .into_iter()
+        .map(|p| Arc::new(p) as PartitionRef)
+        .collect()
 }
 
 #[pyclass(module = "daft.daft", name = "RaySwordfishTask")]

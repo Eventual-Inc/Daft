@@ -51,7 +51,7 @@ class NativeExecutor:
                 async for batch in result_handle:
                     yield batch
             finally:
-                stats, _ = await result_handle.try_finish()
+                _, stats = await result_handle.try_finish()
 
         event_loop = get_or_init_event_loop()
         async_exec = stream_results()
