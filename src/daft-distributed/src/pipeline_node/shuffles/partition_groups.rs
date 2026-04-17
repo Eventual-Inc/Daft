@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
+use daft_recordbatch::RecordBatch;
 
 use crate::pipeline_node::{ShufflePartitionRef, TaskOutput};
 
@@ -43,6 +44,61 @@ pub(crate) fn ray_partition_groups_from_outputs(
     }
 
     Ok(partition_groups)
+}
+
+#[allow(dead_code, clippy::type_complexity)]
+pub(crate) fn ray_partition_groups_and_sentinels_from_outputs(
+    outputs: Vec<TaskOutput>,
+    num_partitions: usize,
+) -> DaftResult<(Vec<Vec<PartitionRef>>, Vec<Vec<Option<RecordBatch>>>)> {
+    let mut partition_groups = (0..num_partitions).map(|_| Vec::new()).collect::<Vec<_>>();
+    let mut sentinel_candidates = (0..num_partitions).map(|_| Vec::new()).collect::<Vec<_>>();
+
+    for output in outputs {
+        let TaskOutput::ShuffleWriteWithSentinel(output) = output else {
+            return Err(DaftError::InternalError(
+                "Expected Ray shuffle write with sentinel task output".to_string(),
+            ));
+        };
+
+        if output.partitions.len() != num_partitions {
+            return Err(DaftError::InternalError(format!(
+                "Expected {} Ray shuffle partitions, got {}",
+                num_partitions,
+                output.partitions.len()
+            )));
+        }
+
+        let sentinels = output.sentinels.into_record_batches();
+        if sentinels.len() != num_partitions {
+            return Err(DaftError::InternalError(format!(
+                "Expected {} sentinels, got {}",
+                num_partitions,
+                sentinels.len()
+            )));
+        }
+
+        for (partition_idx, partition) in output.partitions.into_iter().enumerate() {
+            match partition {
+                ShufflePartitionRef::Ray(partition) => {
+                    if partition.num_rows() > 0 {
+                        partition_groups[partition_idx].push(partition);
+                    }
+                }
+                ShufflePartitionRef::Flight(_) => {
+                    return Err(DaftError::InternalError(
+                        "Expected Ray shuffle partition ref but received Flight".to_string(),
+                    ));
+                }
+            }
+        }
+
+        for (partition_idx, sentinel) in sentinels.into_iter().enumerate() {
+            sentinel_candidates[partition_idx].push(sentinel);
+        }
+    }
+
+    Ok((partition_groups, sentinel_candidates))
 }
 
 pub(crate) fn flight_server_cache_mapping_from_outputs(
