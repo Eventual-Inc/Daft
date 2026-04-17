@@ -173,6 +173,23 @@ impl AsofJoinNode {
     ) -> DaftResult<()> {
         let num_partitions = self.num_partitions;
 
+        // When num_partitions == 1, skip range shuffle entirely.
+        // get_partition_boundaries_from_samples returns empty boundaries for n=1
+        // (no splits needed), which would error with "No boundaries found".
+        if num_partitions == 1 {
+            let left_refs = left_materialized
+                .into_iter()
+                .flat_map(|mo| mo.into_inner().0)
+                .collect::<Vec<_>>();
+            let right_refs = right_materialized
+                .into_iter()
+                .flat_map(|mo| mo.into_inner().0)
+                .collect::<Vec<_>>();
+            return self
+                .create_and_submit_join_task(left_refs, right_refs, None, result_tx)
+                .await;
+        }
+
         let left_composite_key: Vec<BoundExpr> = self
             .left_by
             .iter()

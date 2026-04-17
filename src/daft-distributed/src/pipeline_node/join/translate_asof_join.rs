@@ -24,16 +24,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         let num_left_partitions = left.config().clustering_spec.num_partitions();
         let num_right_partitions = right.config().clustering_spec.num_partitions();
 
-        let (num_partitions, left, right) = if left_by.is_empty() {
-            // No by keys: gather everything into a single partition
-            let left = self.gen_gather_node(left);
-            let right = self.gen_gather_node(right);
-            (1, left, right)
-        } else {
-            // AsofJoinNode handles all repartitioning internally via range partitioning
-            let num_partitions = max(num_left_partitions, num_right_partitions);
-            (num_partitions, left, right)
-        };
+        let num_partitions = max(num_left_partitions, num_right_partitions);
 
         let node_id = self.get_next_pipeline_node_id();
         Ok(DistributedPipelineNode::new(
