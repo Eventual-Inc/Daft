@@ -442,7 +442,8 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
         | DataType::FixedShapeImage(..)
         | DataType::FixedShapeTensor(..)
         | DataType::FixedShapeSparseTensor(..)
-        | DataType::Unknown => unreachable!("Literal should never have data type: {dtype}"),
+        | DataType::Unknown
+        | DataType::Union(..) => unreachable!("Literal should never have data type: {dtype}"),
     };
 
     let s = if downcasted != dtype {

@@ -12,6 +12,11 @@ def abs(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("abs", expr)
 
 
+def e() -> Expression:
+    """Returns Euler's number (e = 2.71828...)."""
+    return Expression._call_builtin_scalar_fn("e")
+
+
 def ceil(expr: Expression) -> Expression:
     """The ceiling of a numeric expression."""
     return Expression._call_builtin_scalar_fn("ceil", expr)
@@ -191,6 +196,21 @@ def ln(expr: Expression) -> Expression:
 def log1p(expr: Expression) -> Expression:
     """The ln(expr + 1) of a numeric expression."""
     return Expression._call_builtin_scalar_fn("log1p", expr)
+
+
+def factorial(expr: Expression) -> Expression:
+    """Returns the factorial of a non-negative integer."""
+    return Expression._call_builtin_scalar_fn("factorial", expr)
+
+
+def hypot(a: Expression, b: Expression) -> Expression:
+    """Returns sqrt(a^2 + b^2), the Euclidean norm."""
+    return Expression._call_builtin_scalar_fn("hypot", a, b)
+
+
+def pi() -> Expression:
+    """Returns the mathematical constant pi (3.14159...)."""
+    return Expression._call_builtin_scalar_fn("pi")
 
 
 def pow(base: Expression, expr: Expression) -> Expression:

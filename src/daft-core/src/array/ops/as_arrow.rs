@@ -1,5 +1,5 @@
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftPrimitiveType, FixedSizeBinaryArray, IntervalArray,
         NullArray, NumericNative, Utf8Array,
@@ -97,6 +97,7 @@ impl_asarrow_logicalarray!(TimestampArray, arrow::array::Int64Array);
 impl_asarrow_nested!(ListArray, arrow::array::LargeListArray);
 impl_asarrow_nested!(FixedSizeListArray, arrow::array::FixedSizeListArray);
 impl_asarrow_nested!(StructArray, arrow::array::StructArray);
+impl_asarrow_nested!(UnionArray, arrow::array::UnionArray);
 
 #[cfg(test)]
 mod test {

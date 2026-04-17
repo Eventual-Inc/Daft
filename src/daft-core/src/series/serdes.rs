@@ -7,7 +7,7 @@ use arrow::{
 use serde::{Deserializer, de::Visitor};
 
 use crate::{
-    array::{ListArray, StructArray, ops::full::FullNull},
+    array::{ListArray, StructArray, UnionArray, ops::full::FullNull},
     datatypes::{
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
@@ -180,6 +180,34 @@ impl<'d> serde::Deserialize<'d> for Series {
 
                         let nulls = nulls.map(|v| v.bool().unwrap().to_bitmap().into());
                         Ok(StructArray::new(Arc::new(field), children, nulls).into_series())
+                    }
+                    DataType::Union(..) => {
+                        let mut all_series = map.next_value::<Vec<Option<Series>>>()?;
+                        let offsets_series = all_series
+                            .pop()
+                            .ok_or_else(|| serde::de::Error::missing_field("offsets"))?;
+
+                        let offsets = if let Some(offsets) = offsets_series {
+                            let offsets_array = offsets.i32().unwrap();
+                            Some(offsets_array.values().to_vec())
+                        } else {
+                            None
+                        };
+
+                        let ids = all_series
+                            .pop()
+                            .ok_or_else(|| serde::de::Error::missing_field("ids"))?
+                            .unwrap();
+
+                        let ids_array = ids.i8().unwrap();
+
+                        let ids = ids_array.values().to_vec();
+
+                        let children = all_series
+                            .into_iter()
+                            .map(|s| s.unwrap())
+                            .collect::<Vec<_>>();
+                        Ok(UnionArray::new(Arc::new(field), ids, children, offsets).into_series())
                     }
                     DataType::List(..) => {
                         let mut all_series = map.next_value::<Vec<Option<Series>>>()?;
