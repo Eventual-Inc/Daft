@@ -47,13 +47,7 @@ use crate::{
 
 enum ExecutionEngineResultItem {
     Partition(MicroPartition),
-    ShuffleMetadata(ShufflePartitionRefs),
-}
-
-#[derive(Debug)]
-pub(crate) enum ShufflePartitionRefs {
-    Ray(Vec<MicroPartition>),
-    Flight(Vec<FlightPartitionRef>),
+    FlightPartitionRef(FlightPartitionRef),
 }
 
 /// Global tokio runtime shared by all NativeExecutor instances
@@ -118,9 +112,13 @@ impl MessageRouter {
                     let _ = sender.send(ExecutionEngineResultItem::Partition(partition));
                 }
             }
-            PipelineMessage::ShuffleMetadata { input_id, metadata } => {
+            PipelineMessage::FlightPartitionRef {
+                input_id,
+                partition_ref,
+            } => {
                 if let Some(sender) = self.output_senders.get(&input_id) {
-                    let _ = sender.send(ExecutionEngineResultItem::ShuffleMetadata(metadata));
+                    let _ =
+                        sender.send(ExecutionEngineResultItem::FlightPartitionRef(partition_ref));
                 }
             }
         }
@@ -481,7 +479,6 @@ impl NativeExecutor {
                 }
                 Ok(ExecutionEngineResult {
                     receiver: result_rx,
-                    shuffle_partition_refs: None,
                 })
             }
             .boxed(),
@@ -585,29 +582,11 @@ impl Drop for NativeExecutor {
 
 pub struct ExecutionEngineResult {
     receiver: crate::channel::UnboundedReceiver<ExecutionEngineResultItem>,
-    shuffle_partition_refs: Option<ShufflePartitionRefs>,
 }
 
 impl ExecutionEngineResult {
-    async fn next(&mut self) -> Option<MicroPartition> {
-        while let Some(item) = self.receiver.recv().await {
-            match item {
-                ExecutionEngineResultItem::Partition(partition) => return Some(partition),
-                ExecutionEngineResultItem::ShuffleMetadata(metadata) => {
-                    self.shuffle_partition_refs = Some(metadata);
-                }
-            }
-        }
-        None
-    }
-
-    async fn into_shuffle_partition_refs(mut self) -> Option<ShufflePartitionRefs> {
-        while let Some(item) = self.receiver.recv().await {
-            if let ExecutionEngineResultItem::ShuffleMetadata(metadata) = item {
-                self.shuffle_partition_refs = Some(metadata);
-            }
-        }
-        self.shuffle_partition_refs
+    async fn next(&mut self) -> Option<ExecutionEngineResultItem> {
+        self.receiver.recv().await
     }
 }
 
@@ -638,7 +617,23 @@ impl PyResultReceiver {
                 .expect("PyResultReceiver.__anext__() should not be called after try_finish().")
                 .next()
                 .await;
-            Ok(part.map(PyMicroPartition::from))
+            Python::attach(|py| {
+                Ok(match part {
+                    None => py.None(),
+                    Some(ExecutionEngineResultItem::Partition(partition)) => {
+                        PyMicroPartition::from(partition)
+                            .into_pyobject(py)?
+                            .unbind()
+                            .into_any()
+                    }
+                    Some(ExecutionEngineResultItem::FlightPartitionRef(partition_ref)) => {
+                        PyFlightPartitionRef::from(partition_ref)
+                            .into_pyobject(py)?
+                            .unbind()
+                            .into_any()
+                    }
+                })
+            })
         })
     }
 
@@ -649,39 +644,16 @@ impl PyResultReceiver {
         let input_id = self.input_id;
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             // Take the result to drop the receiver
-            let result =
-                {
-                    result.lock().await.take().expect(
-                        "PyResultReceiver.try_finish() should not be called more than once.",
-                    )
-                };
+            let mut result = result.lock().await;
+            let _ = result
+                .take()
+                .expect("PyResultReceiver.try_finish() should not be called more than once.");
+            drop(result);
 
             // Delegate to NativeExecutor::try_finish
-            let shuffle_partition_refs = result.into_shuffle_partition_refs().await;
             let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
             let stats = finish_future.await?;
-            Python::attach(|py| {
-                let py_shuffle_partition_refs = match shuffle_partition_refs {
-                    None => py.None(),
-                    Some(ShufflePartitionRefs::Ray(partitions)) => partitions
-                        .into_iter()
-                        .map(PyMicroPartition::from)
-                        .collect::<Vec<_>>()
-                        .into_pyobject(py)?
-                        .unbind()
-                        .into_any(),
-                    Some(ShufflePartitionRefs::Flight(flight_refs)) => flight_refs
-                        .into_iter()
-                        .map(PyFlightPartitionRef::from)
-                        .collect::<Vec<_>>()
-                        .into_pyobject(py)?
-                        .unbind()
-                        .into_any(),
-                };
-                Ok((py_shuffle_partition_refs, PyExecutionStats::from(stats))
-                    .into_pyobject(py)?
-                    .unbind())
-            })
+            Ok(PyExecutionStats::from(stats))
         })
     }
 }

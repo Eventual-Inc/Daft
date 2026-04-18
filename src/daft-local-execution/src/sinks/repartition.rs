@@ -23,7 +23,6 @@ use super::blocking_sink::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
-    run::ShufflePartitionRefs,
 };
 
 pub(crate) struct RayRepartitionState {
@@ -270,9 +269,7 @@ impl BlockingSink for RepartitionSink {
                                 .unwrap()
                                 .into_iter()
                                 .collect::<DaftResult<Vec<_>>>()?;
-                            Ok(BlockingSinkOutput::ShuffleMetadata(
-                                ShufflePartitionRefs::Ray(partitions),
-                            ))
+                            Ok(BlockingSinkOutput::Partitions(partitions))
                         },
                         Span::current(),
                     )
@@ -312,19 +309,17 @@ impl BlockingSink for RepartitionSink {
                             local_server
                                 .register_shuffle_partitions(shuffle_id, finalized.clone())
                                 .await?;
-                            Ok(BlockingSinkOutput::ShuffleMetadata(
-                                ShufflePartitionRefs::Flight(
-                                    finalized
-                                        .into_iter()
-                                        .map(|partition| FlightPartitionRef {
-                                            shuffle_id,
-                                            server_address: shuffle_address.clone(),
-                                            partition_ref_id: partition.partition_ref_id,
-                                            num_rows: partition.num_rows,
-                                            size_bytes: partition.size_bytes,
-                                        })
-                                        .collect(),
-                                ),
+                            Ok(BlockingSinkOutput::FlightPartitionRefs(
+                                finalized
+                                    .into_iter()
+                                    .map(|partition| FlightPartitionRef {
+                                        shuffle_id,
+                                        server_address: shuffle_address.clone(),
+                                        partition_ref_id: partition.partition_ref_id,
+                                        num_rows: partition.num_rows,
+                                        size_bytes: partition.size_bytes,
+                                    })
+                                    .collect(),
                             ))
                         },
                         Span::current(),

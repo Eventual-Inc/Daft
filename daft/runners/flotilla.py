@@ -7,7 +7,7 @@ import os
 import shutil
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, NamedTuple
 
 from daft.context import get_context
 from daft.daft import (
@@ -39,7 +39,7 @@ from daft.subscribers.event_log_sink import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Generator
+    from collections.abc import AsyncGenerator, AsyncIterator, Generator
 
     from daft.runners.ray_runner import RayMaterializedResult
 
@@ -49,6 +49,12 @@ except ImportError:
     raise
 
 logger = logging.getLogger(__name__)
+
+
+class SwordfishTaskMetadata(NamedTuple):
+    partition_metadatas: list[PartitionMetadata]
+    stats: bytes
+    is_flight_shuffle: bool
 
 
 @ray.remote  # type: ignore[untyped-decorator]
@@ -154,11 +160,8 @@ class RaySwordfishActor:
         **inputs: (
             Input | list[ray.ObjectRef]
         ),  # PyMicroPartitions are separated from Inputs because they are Ray ObjectRefs, which will be resolved by Ray.
-    ) -> tuple[
-        list[RayPartitionRef] | list[FlightPartitionRef],
-        bytes,
-    ]:
-        """Run a plan on swordfish and return raw refs + stats."""
+    ) -> AsyncGenerator[MicroPartition | FlightPartitionRef | SwordfishTaskMetadata, None]:
+        """Run a plan on swordfish and yield partitions."""
         # We import PyDaftContext inside the function because PyDaftContext is not serializable.
         from daft.daft import PyDaftContext
 
@@ -176,44 +179,26 @@ class RaySwordfishActor:
                 context,
                 False,
             )
-
-            materialized_refs: list[RayPartitionRef] = []
+            metas = []
+            is_flight_shuffle = False
             async for partition in result_handle:
-                if partition is None:
+                if isinstance(partition, FlightPartitionRef):
+                    is_flight_shuffle = True
+                    metas.append(PartitionMetadata.from_flight_partition_ref(partition))
+                    yield partition
+                elif isinstance(partition, PyMicroPartition):
+                    mp = MicroPartition._from_pymicropartition(partition)
+                    metas.append(PartitionMetadata.from_table(mp))
+                    yield mp
+                else:
                     break
-                mp = MicroPartition._from_pymicropartition(partition)
-                materialized_refs.append(
-                    RayPartitionRef(
-                        ray.put(mp),
-                        len(mp),
-                        mp.size_bytes() or 0,
-                    )
-                )
 
-            shuffle_partition_refs, stats = await result_handle.try_finish()
-            if shuffle_partition_refs is None:
-                return materialized_refs, stats.encode()
-
-            if materialized_refs:
-                raise ValueError("Shuffle write plans should not produce materialized partitions")
-
-            if not shuffle_partition_refs:
-                raise ValueError("Expected shuffle metadata to be present")
-
-            if isinstance(shuffle_partition_refs[0], FlightPartitionRef):
-                return cast("list[FlightPartitionRef]", shuffle_partition_refs), stats.encode()
-
-            ray_shuffle_refs: list[RayPartitionRef] = []
-            for py_mp in cast("list[PyMicroPartition]", shuffle_partition_refs):
-                mp = MicroPartition._from_pymicropartition(py_mp)
-                ray_shuffle_refs.append(
-                    RayPartitionRef(
-                        ray.put(mp),
-                        len(mp),
-                        mp.size_bytes() or 0,
-                    )
-                )
-            return ray_shuffle_refs, stats.encode()
+            stats = await result_handle.try_finish()
+            yield SwordfishTaskMetadata(
+                partition_metadatas=metas,
+                stats=stats.encode(),
+                is_flight_shuffle=is_flight_shuffle,
+            )
 
 
 @ray.remote  # type: ignore[untyped-decorator]
@@ -260,19 +245,29 @@ class RaySwordfishTaskHandle:
 
     async def _get_result(self) -> RayTaskResult:
         try:
-            shuffle_partition_refs, stats = await self.result_handle
+            await self.result_handle.completed()
+            results = [result for result in self.result_handle]
+            metadata_ref = results.pop()
+            task_metadata: SwordfishTaskMetadata = await metadata_ref
+            assert len(results) == len(task_metadata.partition_metadatas)
+
+            if task_metadata.is_flight_shuffle:
+                flight_part_refs = await asyncio.gather(*results)
+                return RayTaskResult.success_flight(flight_part_refs, task_metadata.stats)
+
+            return RayTaskResult.success_ray(
+                [
+                    RayPartitionRef(result, metadata.num_rows, metadata.size_bytes or 0)
+                    for result, metadata in zip(results, task_metadata.partition_metadatas)
+                ],
+                task_metadata.stats,
+            )
         except (ray.exceptions.ActorDiedError, ray.exceptions.ActorUnschedulableError):
             return RayTaskResult.worker_died()
         except ray.exceptions.ActorUnavailableError:
             return RayTaskResult.worker_unavailable()
         except Exception as e:
             raise e
-        if shuffle_partition_refs and isinstance(shuffle_partition_refs[0], FlightPartitionRef):
-            return RayTaskResult.success_flight(
-                cast("list[FlightPartitionRef]", shuffle_partition_refs),
-                stats,
-            )
-        return RayTaskResult.success_ray(cast("list[RayPartitionRef]", shuffle_partition_refs), stats)
 
     async def get_result(self) -> RayTaskResult:
         self.task = asyncio.create_task(self._get_result())

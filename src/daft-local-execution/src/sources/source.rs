@@ -271,8 +271,10 @@ impl PipelineNode for SourceNode {
                             }
                             per_input_stats.remove(input_id);
                         }
-                        PipelineMessage::ShuffleMetadata { .. } => {
-                            unreachable!("SourceNode should not receive shuffle metadata")
+                        PipelineMessage::FlightPartitionRef { .. } => {
+                            unreachable!(
+                                "SourceNode should not receive flight partition refs from child"
+                            )
                         }
                     }
                     if destination_sender.send(msg).await.is_err() {

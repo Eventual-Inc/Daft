@@ -26,6 +26,7 @@ use daft_local_plan::{
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
+use daft_partition_refs::FlightPartitionRef;
 use daft_scan::ScanTaskRef;
 use daft_shuffles::server::flight_server::ShuffleFlightServer;
 use daft_writers::make_physical_writer_factory;
@@ -46,7 +47,6 @@ use crate::{
     join::{
         AsofJoinOperator, CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator,
     },
-    run::ShufflePartitionRefs,
     sinks::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
@@ -83,9 +83,9 @@ pub enum PipelineMessage {
         input_id: InputId,
         partition: MicroPartition,
     },
-    ShuffleMetadata {
+    FlightPartitionRef {
         input_id: InputId,
-        metadata: ShufflePartitionRefs,
+        partition_ref: FlightPartitionRef,
     },
     /// Flush signal for a specific input_id - indicates that input is finished
     Flush(InputId),
@@ -98,7 +98,7 @@ pub(crate) enum PipelineEvent<TaskResult> {
         input_id: InputId,
         partition: MicroPartition,
     },
-    ShuffleMetadata,
+    FlightPartitionRef,
     Flush(InputId),
     InputClosed,
 }
@@ -120,8 +120,8 @@ pub(crate) async fn next_event<TaskResult: Send + 'static>(
                 Some(PipelineMessage::Morsel { input_id, partition }) => {
                     Ok(Some(PipelineEvent::Morsel { input_id, partition }))
                 }
-                Some(PipelineMessage::ShuffleMetadata { .. }) => {
-                    Ok(Some(PipelineEvent::ShuffleMetadata))
+                Some(PipelineMessage::FlightPartitionRef { .. }) => {
+                    Ok(Some(PipelineEvent::FlightPartitionRef))
                 }
                 Some(PipelineMessage::Flush(input_id)) => {
                     Ok(Some(PipelineEvent::Flush(input_id)))
