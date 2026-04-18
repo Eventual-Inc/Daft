@@ -161,7 +161,6 @@ impl AsofJoinNode {
         Ok(())
     }
 
-    /// Handles the multi-partition join case.
     /// Samples both sides with the composite (by, on) key, computes range boundaries,
     /// repartitions left normally and right with sentinel tracking, merges sentinel
     /// candidates per partition, forward-fills, then dispatches join tasks.
@@ -176,8 +175,6 @@ impl AsofJoinNode {
         let num_partitions = self.num_partitions;
 
         // When num_partitions == 1, skip range shuffle entirely.
-        // get_partition_boundaries_from_samples returns empty boundaries for n=1
-        // (no splits needed), which would error with "No boundaries found".
         if num_partitions == 1 {
             let left_refs = left_materialized
                 .into_iter()
@@ -413,8 +410,8 @@ impl AsofJoinNode {
 
         if right_materialized.is_empty() {
             let all_left: Vec<PartitionRef> = left_materialized
-                .iter()
-                .flat_map(|o| o.partitions().iter().cloned())
+                .into_iter()
+                .flat_map(|o| o.into_inner().0)
                 .collect();
             return self
                 .create_and_submit_join_task(0, all_left, vec![], None, &result_tx)
@@ -473,9 +470,6 @@ impl PipelineNodeImpl for AsofJoinNode {
 
 /// Find the single row with the lexicographically maximum composite key `(by..., on)` in
 /// `batch`. Returns `None` if `batch` is empty.
-///
-/// `composite_keys` is `[by_keys..., on_key]` sorted ascending — the max row is the one
-/// that sorts last under `(by ASC..., on ASC)`.
 fn record_batch_max_composite(
     batch: &RecordBatch,
     composite_keys: &[BoundExpr],
