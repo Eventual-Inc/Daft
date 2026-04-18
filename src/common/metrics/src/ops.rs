@@ -17,6 +17,7 @@ pub enum NodeType {
 
     // Intermediate Ops
     // Consumes a MicroPartition and immediately produces a resulting one. Little internal state
+    CheckpointFilter,
     DistributedActorPoolProject,
     Explode,
     Filter,

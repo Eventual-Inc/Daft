@@ -144,6 +144,10 @@ class LogicalPlanBuilder:
         builder = self._builder.select(to_select_pyexprs)
         return LogicalPlanBuilder(builder)
 
+    def with_checkpoint(self, store_config: Any, key_column: str) -> LogicalPlanBuilder:
+        builder = self._builder.with_checkpoint(store_config, key_column)
+        return LogicalPlanBuilder(builder)
+
     def with_columns(self, columns: list[Expression]) -> LogicalPlanBuilder:
         column_pyexprs = [expr._expr for expr in columns]
         builder = self._builder.with_columns(column_pyexprs)

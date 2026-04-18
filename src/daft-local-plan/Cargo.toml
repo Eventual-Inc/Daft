@@ -1,4 +1,5 @@
 [dependencies]
+common-checkpoint-config = {path = "../common/checkpoint-config", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}

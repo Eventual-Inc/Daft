@@ -70,6 +70,7 @@ fn translate_helper(
                         source.output_schema.clone(),
                         source.stats_state.clone(),
                         LocalNodeContext::default(),
+                        source.checkpoint.clone(),
                     )
                 }
                 SourceInfo::GlobScan(info) => {

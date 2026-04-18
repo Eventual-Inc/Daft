@@ -237,6 +237,7 @@ impl LocalPhysicalPlan {
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
+        checkpoint: Option<common_checkpoint_config::CheckpointConfig>,
     ) -> LocalPhysicalPlanRef {
         Self::PhysicalScan(PhysicalScan {
             source_id,
@@ -245,6 +246,7 @@ impl LocalPhysicalPlan {
             schema,
             stats_state,
             context,
+            checkpoint,
         })
         .arced()
     }
@@ -1777,6 +1779,7 @@ pub struct PhysicalScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
+    pub checkpoint: Option<common_checkpoint_config::CheckpointConfig>,
 }
 
 #[derive(Serialize, Deserialize)]

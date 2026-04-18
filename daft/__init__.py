@@ -61,6 +61,7 @@ from daft.catalog import (
     Identifier,
     Table,
 )
+from daft.checkpoint import CheckpointStore
 from daft.context import (
     get_context,
     attach_subscriber,
@@ -178,6 +179,7 @@ def __getattr__(name: str) -> object:
 __all__ = [
     "AudioFile",
     "Catalog",
+    "CheckpointStore",
     "DataFrame",
     "DataType",
     "Expression",

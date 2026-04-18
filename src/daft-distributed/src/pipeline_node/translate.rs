@@ -149,6 +149,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                                 info.pushdowns.clone(),
                                 scan_tasks,
                                 source.output_schema.clone(),
+                                source.checkpoint.clone(),
                             )),
                             &self.meter,
                         )
