@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from daft.daft import CheckpointStoreConfig, IOConfig as _IOConfig, build_checkpoint_store
+from daft.daft import CheckpointStoreConfig, build_checkpoint_store
+from daft.daft import IOConfig as _IOConfig
 
 if TYPE_CHECKING:
     from daft.daft import IOConfig
@@ -22,6 +23,19 @@ class CheckpointStore:
     Example:
         >>> checkpoint = daft.CheckpointStore("s3://bucket/ckpt", io_config=io)
         >>> df = daft.read_parquet("s3://input/", checkpoint=checkpoint, on="file_id")
+
+    Assumptions:
+        - **Map-only pipelines.** Only supports pipelines where every operator
+          between source and sink is map-only (project, filter, explode, UDF,
+          etc.). Shuffle/materialization operators (aggregate, sort, distinct,
+          join, pivot, window, repartition) are rejected at plan build time.
+        - **Source has a checkpoint key.** The ``on=`` column must exist in the
+          source schema and uniquely identify source inputs (e.g., a file hash
+          or document ID). The key is written to the checkpoint store on every
+          run, so it should be lightweight.
+        - **Strong consistency.** The backing object store must provide
+          read-after-write consistency. After ``checkpoint()``, the next run's
+          anti-join must be able to see the newly checkpointed keys.
     """
 
     _config: CheckpointStoreConfig

@@ -1356,7 +1356,7 @@ class DataFrame:
 
             merge.commit()
 
-        # Mark all sealed checkpoints as committed after successful catalog commit.
+        # Mark all checkpointed entries as committed after successful catalog commit.
         if checkpoint is not None:
             ckpts = checkpoint.list_checkpoints()
             ids = [c.id for c in ckpts if c.status == CheckpointStatus.Checkpointed]
@@ -1661,7 +1661,7 @@ class DataFrame:
                 )
             table.update_incremental()
 
-        # Mark all sealed checkpoints as committed after successful catalog commit.
+        # Mark all checkpointed entries as committed after successful catalog commit.
         if checkpoint is not None:
             ckpts = checkpoint.list_checkpoints()
             ids = [c.id for c in ckpts if c.status == CheckpointStatus.Checkpointed]
