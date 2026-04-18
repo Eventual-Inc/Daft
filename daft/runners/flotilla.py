@@ -27,6 +27,7 @@ from daft.daft import (
     set_compute_runtime_num_worker_threads,
 )
 from daft.event_loop import set_event_loop
+from daft.execution.file_resource_manager import file_resource_manager
 from daft.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import (
@@ -176,11 +177,15 @@ class RaySwordfishActor:
         plan: LocalPhysicalPlan,
         exec_cfg: PyDaftExecutionConfig,
         context: dict[str, str] | None,
+        added_resources: dict[str, int] | None = None,
         **inputs: (
             Input | list[ray.ObjectRef]
         ),  # PyMicroPartitions are separated from Inputs because they are Ray ObjectRefs, which will be resolved by Ray.
     ) -> AsyncGenerator[MicroPartition | SwordfishTaskMetadata, None]:
         """Run a plan on swordfish and yield partitions."""
+        if added_resources:
+            file_resource_manager.resolve(added_resources)
+
         # We import PyDaftContext inside the function because PyDaftContext is not serializable.
         from daft.daft import PyDaftContext
 
@@ -214,8 +219,12 @@ class RaySwordfishActor:
         plan: LocalPhysicalPlan,
         exec_cfg: PyDaftExecutionConfig,
         context: dict[str, str] | None,
+        added_resources: dict[str, int] | None = None,
         **inputs: Input | list[ray.ObjectRef],
     ) -> ShufflePlanResult:
+        if added_resources:
+            file_resource_manager.resolve(added_resources)
+
         from daft.daft import PyDaftContext
 
         with profile():
@@ -380,12 +389,14 @@ class RaySwordfishActorHandle:
             inputs[str(source_id)] = py_input
         for source_id, refs in task.psets().items():
             inputs[str(source_id)] = [ref.object_ref for ref in refs]
+        added_resources = task.added_resources()
         shuffle_write_info = plan.shuffle_write_info()
         if shuffle_write_info is None:
             result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
                 plan,
                 task.config(),
                 task.context(),
+                added_resources=added_resources or None,
                 **inputs,
             )
         else:
@@ -393,6 +404,7 @@ class RaySwordfishActorHandle:
                 plan,
                 task.config(),
                 task.context(),
+                added_resources=added_resources or None,
                 **inputs,
             )
         return RaySwordfishTaskHandle(
