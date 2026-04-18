@@ -2,13 +2,13 @@ use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_partitioning::{Partition, PartitionRef};
-use daft_local_plan::{ExecutionStats, PyLocalPhysicalPlan, SourceId, python::PyInput};
+use daft_local_plan::{ExecutionStats, PyLocalPhysicalPlan, Sentinels, SourceId, python::PyInput};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
     pipeline_node::{
         FlightShufflePartitionRef as RustFlightShufflePartitionRef, MaterializedOutput,
-        ShufflePartitionRef, ShuffleWriteOutput, TaskOutput,
+        ShufflePartitionRef, ShuffleWriteOutput, ShuffleWriteWithSentinelOutput, TaskOutput,
     },
     scheduling::{
         task::{SwordfishTask, Task, TaskContext, TaskResultHandle, TaskStatus},
@@ -21,6 +21,7 @@ use crate::{
 pub(crate) enum RayTaskResult {
     Success(Vec<RayPartitionRef>, Vec<u8>),
     RayShuffleSuccess(Vec<RayPartitionRef>, Vec<u8>),
+    RayShuffleWithSentinelSuccess(Vec<RayPartitionRef>, Vec<u8>, Vec<u8>), // refs, sentinels_serialized, stats_serialized
     FlightShuffleSuccess(Vec<FlightShufflePartitionRef>, Vec<u8>),
     WorkerDied(),
     WorkerUnavailable(),
@@ -39,6 +40,19 @@ impl RayTaskResult {
         stats_serialized: Vec<u8>,
     ) -> Self {
         Self::RayShuffleSuccess(shuffle_part_refs, stats_serialized)
+    }
+
+    #[staticmethod]
+    fn ray_shuffle_with_sentinel_success(
+        shuffle_part_refs: Vec<RayPartitionRef>,
+        sentinels_serialized: Vec<u8>,
+        stats_serialized: Vec<u8>,
+    ) -> Self {
+        Self::RayShuffleWithSentinelSuccess(
+            shuffle_part_refs,
+            sentinels_serialized,
+            stats_serialized,
+        )
     }
 
     #[staticmethod]
@@ -145,6 +159,30 @@ impl TaskResultHandle for RayTaskResultHandle {
 
                     TaskStatus::Success {
                         result: TaskOutput::ShuffleWrite(shuffle_output),
+                        stats,
+                    }
+                }
+                Ok(RayTaskResult::RayShuffleWithSentinelSuccess(
+                    ray_part_refs,
+                    sentinels_serialized,
+                    stats_serialized,
+                )) => {
+                    let stats: ExecutionStats = ExecutionStats::decode(&stats_serialized);
+                    let sentinels = Sentinels::decode(&sentinels_serialized);
+                    let shuffle_output = ShuffleWriteWithSentinelOutput::new(
+                        ray_part_refs
+                            .into_iter()
+                            .map(|ray_part_ref| {
+                                ShufflePartitionRef::Ray(Arc::new(ray_part_ref) as PartitionRef)
+                            })
+                            .collect(),
+                        sentinels,
+                        worker_id.clone(),
+                        task_id,
+                    );
+
+                    TaskStatus::Success {
+                        result: TaskOutput::ShuffleWriteWithSentinel(shuffle_output),
                         stats,
                     }
                 }

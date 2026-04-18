@@ -12,6 +12,7 @@ daft-micropartition = {path = "../daft-micropartition", default-features = false
 daft-scan = {path = "../daft-scan", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 bincode = {workspace = true}
+serde_bytes = {workspace = true}
 arrow-schema = {workspace = true}
 arrow-array = {workspace = true}
 log = {workspace = true}
