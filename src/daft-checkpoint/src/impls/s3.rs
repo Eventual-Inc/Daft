@@ -96,7 +96,6 @@ impl StagedEntry {
 pub struct S3CheckpointStore {
     prefix: String,
     client: Arc<IOClient>,
-    io_config: Arc<IOConfig>,
     staged: Mutex<HashMap<CheckpointId, StagedEntry>>,
     /// Cached result of the last `sealed_manifests()` S3 fetch.
     /// Invalidated by `checkpoint()` and `mark_committed()`.
@@ -106,14 +105,12 @@ pub struct S3CheckpointStore {
 impl S3CheckpointStore {
     /// Create a new checkpoint store rooted at `prefix` (trailing slashes stripped).
     pub fn new(prefix: impl Into<String>, io_config: Arc<IOConfig>) -> CheckpointResult<Self> {
-        let client =
-            get_io_client(true, io_config.clone()).map_err(|e| CheckpointError::Internal {
-                message: format!("failed to create IO client: {e}"),
-            })?;
+        let client = get_io_client(true, io_config).map_err(|e| CheckpointError::Internal {
+            message: format!("failed to create IO client: {e}"),
+        })?;
         Ok(Self {
             prefix: prefix.into().trim_end_matches('/').to_string(),
             client,
-            io_config,
             staged: Mutex::new(HashMap::new()),
             manifest_cache: AsyncMutex::new(None),
         })

@@ -388,6 +388,7 @@ fn physical_plan_to_pipeline(
             schema,
             stats_state,
             context,
+            ..
         }) => {
             let (tx, rx) = create_unbounded_channel::<(InputId, Vec<ScanTaskRef>)>();
             input_senders.insert(*source_id, InputSender::ScanTasks(tx));

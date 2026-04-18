@@ -11,7 +11,7 @@ use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::StaticBatchingStrategy,
-    pipeline::{MorselSizeRequirement, NodeName},
+    pipeline::{InputId, MorselSizeRequirement, NodeName},
 };
 
 /// Checkpoint operator that records which source keys are being processed.
@@ -56,6 +56,7 @@ impl IntermediateOperator for StageCheckpointKeysOperator {
         state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
+        _input_id: InputId,
     ) -> IntermediateOpExecuteResult<Self> {
         let key_expr = self.key_expr.clone();
         let store = self.store.clone();

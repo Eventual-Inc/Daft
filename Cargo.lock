@@ -3046,7 +3046,6 @@ dependencies = [
  "common-resource-request",
  "common-treenode",
  "daft-algebra",
- "daft-checkpoint",
  "daft-core",
  "daft-dsl",
  "daft-functions",
