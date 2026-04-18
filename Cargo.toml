@@ -76,6 +76,8 @@ python = [
   "common-metrics/python",
   "daft-ai/python",
   "daft-catalog/python",
+  "daft-checkpoint/python",
+  "daft-checkpoint/s3",
   "daft-cli/python",
   "daft-context/python",
   "daft-core/python",
@@ -176,6 +178,7 @@ tikv-jemallocator = {version = "0.6.0", features = [
 
 [workspace]
 members = [
+  "src/common/checkpoint-config",
   "src/common/daft-config",
   "src/common/display",
   "src/common/error",

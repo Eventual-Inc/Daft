@@ -41,7 +41,7 @@ use crate::{
     dynamic_batching::{
         DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
     },
-    pipeline::{MorselSizeRequirement, NodeName},
+    pipeline::{InputId, MorselSizeRequirement, NodeName},
     runtime_stats::RuntimeStats,
 };
 
@@ -440,6 +440,7 @@ impl IntermediateOperator for UdfOperator {
         mut state: Self::State,
         runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
+        _input_id: InputId,
     ) -> IntermediateOpExecuteResult<Self> {
         let memory_request = self.memory_request;
         let params = self.params.clone();

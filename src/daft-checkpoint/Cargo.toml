@@ -4,39 +4,42 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+arrow-array = {workspace = true}
+arrow-schema = {workspace = true}
 async-trait = {workspace = true}
 bytes = {workspace = true}
 chrono = {workspace = true}
+common-checkpoint-config = {path = "../common/checkpoint-config", default-features = false}
 common-error = {path = "../common/error", default-features = false}
+common-io-config = {path = "../common/io-config", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-scan = {path = "../daft-scan", default-features = false}
+daft-schema = {path = "../daft-schema", default-features = false}
 futures = {workspace = true}
+parquet = {workspace = true}
+pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
+serde_json = {workspace = true}
 snafu = {workspace = true}
 uuid = {workspace = true}
-
-[dependencies.serde_json]
-optional = true
-workspace = true
 
 [dependencies.daft-io]
 optional = true
 path = "../daft-io"
 default-features = false
 
-[dependencies.daft-recordbatch]
-optional = true
-path = "../daft-recordbatch"
-default-features = false
-
 [features]
-s3 = ["daft-io", "daft-recordbatch", "serde_json"]
+python = ["dep:pyo3", "common-checkpoint-config/python", "daft-dsl/python"]
+s3 = ["daft-io"]
 test-utils = []
 
 [dev-dependencies]
 daft-checkpoint = {path = ".", features = ["test-utils", "s3"]}
 daft-core = {path = "../daft-core", default-features = false}
 futures = {workspace = true}
-tempfile = "3"
+tempfile = "3.23.0"
 tokio = {workspace = true, features = ["rt", "macros"]}
 
 [lints]

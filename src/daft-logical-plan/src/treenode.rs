@@ -190,6 +190,7 @@ impl LogicalPlan {
                 output_schema,
                 source_info,
                 stats_state,
+                checkpoint,
             }) => match source_info.as_ref() {
                 SourceInfo::Physical(
                     physical_scan_info @ PhysicalScanInfo {
@@ -219,6 +220,7 @@ impl LogicalPlan {
                                     .with_pushdowns(pushdowns.with_filters(Some(new_filter))),
                             )),
                             stats_state: stats_state.clone(),
+                            checkpoint: checkpoint.clone(),
                         })
                         .into()
                     })
