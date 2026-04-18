@@ -9,8 +9,7 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
-#[cfg(feature = "python")]
-use daft_partition_refs::{PyFlightPartitionRef, RayPartitionRef};
+use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::{
     server::flight_server::ShuffleFlightServer,
     shuffle_cache::{InProgressShuffleCache, partition_ref_id},
@@ -271,36 +270,9 @@ impl BlockingSink for RepartitionSink {
                                 .unwrap()
                                 .into_iter()
                                 .collect::<DaftResult<Vec<_>>>()?;
-                            #[cfg(feature = "python")]
-                            {
-                                use pyo3::{Python, types::PyAnyMethods};
-
-                                let mut partition_refs = Vec::with_capacity(partitions.len());
-                                Python::attach(|py| -> DaftResult<()> {
-                                    let ray = py.import("ray")?;
-                                    for partition in partitions {
-                                        let py_partition =
-                                            daft_micropartition::python::PyMicroPartition::from(
-                                                partition.clone(),
-                                            );
-                                        let object_ref =
-                                            ray.call_method1("put", (py_partition,))?.unbind();
-                                        partition_refs.push(RayPartitionRef::new(
-                                            object_ref,
-                                            partition.len(),
-                                            partition.size_bytes(),
-                                        ));
-                                    }
-                                    Ok(())
-                                })?;
-                                Ok(BlockingSinkOutput::ShuffleMetadata(
-                                    ShufflePartitionRefs::Ray(partition_refs),
-                                ))
-                            }
-                            #[cfg(not(feature = "python"))]
-                            {
-                                unreachable!("RepartitionSink requires python feature")
-                            }
+                            Ok(BlockingSinkOutput::ShuffleMetadata(
+                                ShufflePartitionRefs::Ray(partitions),
+                            ))
                         },
                         Span::current(),
                     )
@@ -340,29 +312,20 @@ impl BlockingSink for RepartitionSink {
                             local_server
                                 .register_shuffle_partitions(shuffle_id, finalized.clone())
                                 .await?;
-                            #[cfg(feature = "python")]
-                            {
-                                Ok(BlockingSinkOutput::ShuffleMetadata(
-                                    ShufflePartitionRefs::Flight(
-                                        finalized
-                                            .into_iter()
-                                            .map(|partition| {
-                                                PyFlightPartitionRef::new(
-                                                    shuffle_id,
-                                                    shuffle_address.clone(),
-                                                    partition.partition_ref_id,
-                                                    partition.num_rows,
-                                                    partition.size_bytes,
-                                                )
-                                            })
-                                            .collect(),
-                                    ),
-                                ))
-                            }
-                            #[cfg(not(feature = "python"))]
-                            {
-                                unreachable!("RepartitionSink requires python feature")
-                            }
+                            Ok(BlockingSinkOutput::ShuffleMetadata(
+                                ShufflePartitionRefs::Flight(
+                                    finalized
+                                        .into_iter()
+                                        .map(|partition| FlightPartitionRef {
+                                            shuffle_id,
+                                            server_address: shuffle_address.clone(),
+                                            partition_ref_id: partition.partition_ref_id,
+                                            num_rows: partition.num_rows,
+                                            size_bytes: partition.size_bytes,
+                                        })
+                                        .collect(),
+                                ),
+                            ))
                         },
                         Span::current(),
                     )

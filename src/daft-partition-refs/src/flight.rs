@@ -1,3 +1,6 @@
+use std::any::Any;
+
+use common_partitioning::Partition;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -9,11 +12,22 @@ pub struct FlightPartitionRef {
     pub size_bytes: usize,
 }
 
+impl Partition for FlightPartitionRef {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn size_bytes(&self) -> usize {
+        self.size_bytes
+    }
+
+    fn num_rows(&self) -> usize {
+        self.num_rows
+    }
+}
+
 #[cfg(feature = "python")]
 mod python {
-    use std::any::Any;
-
-    use common_partitioning::Partition;
     use common_py_serde::impl_bincode_py_state_serialization;
     use pyo3::{Bound, PyResult, Python, pyclass, pymethods, types::PyModuleMethods};
     use serde::{Deserialize, Serialize};
@@ -29,20 +43,6 @@ mod python {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PyFlightPartitionRef {
         pub inner: FlightPartitionRef,
-    }
-
-    impl Partition for PyFlightPartitionRef {
-        fn as_any(&self) -> &dyn Any {
-            self
-        }
-
-        fn size_bytes(&self) -> usize {
-            self.inner.size_bytes
-        }
-
-        fn num_rows(&self) -> usize {
-            self.inner.num_rows
-        }
     }
 
     impl_bincode_py_state_serialization!(PyFlightPartitionRef);

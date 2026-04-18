@@ -2300,7 +2300,7 @@ class PyResultReceiver:
     async def try_finish(
         self,
     ) -> tuple[
-        list[RayPartitionRef] | list[FlightPartitionRef] | None,
+        list[PyMicroPartition] | list[FlightPartitionRef] | None,
         PyExecutionStats,
     ]: ...
 

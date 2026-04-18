@@ -3,7 +3,7 @@ use std::{collections::HashMap, future::Future, sync::Arc};
 use common_daft_config::PyDaftExecutionConfig;
 use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::{ExecutionStats, PyLocalPhysicalPlan, SourceId, python::PyInput};
-use daft_partition_refs::{PyFlightPartitionRef, RayPartitionRef};
+use daft_partition_refs::{FlightPartitionRef, PyFlightPartitionRef, RayPartitionRef};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
@@ -114,9 +114,11 @@ impl TaskResultHandle for RayTaskResultHandle {
                     }
                 }
                 Ok(RayTaskResult::SuccessFlight(flight_part_refs, stats_serialized)) => {
+                    let inner_refs: Vec<FlightPartitionRef> =
+                        flight_part_refs.into_iter().map(Into::into).collect();
                     TaskStatus::Success {
                         result: MaterializedOutput::new(
-                            into_partition_refs(flight_part_refs),
+                            into_partition_refs(inner_refs),
                             worker_id.clone(),
                             ip_address,
                             task_id,

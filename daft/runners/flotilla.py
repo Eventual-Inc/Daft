@@ -200,7 +200,20 @@ class RaySwordfishActor:
             if not shuffle_partition_refs:
                 raise ValueError("Expected shuffle metadata to be present")
 
-            return shuffle_partition_refs, stats.encode()
+            if isinstance(shuffle_partition_refs[0], FlightPartitionRef):
+                return cast("list[FlightPartitionRef]", shuffle_partition_refs), stats.encode()
+
+            ray_shuffle_refs: list[RayPartitionRef] = []
+            for py_mp in cast("list[PyMicroPartition]", shuffle_partition_refs):
+                mp = MicroPartition._from_pymicropartition(py_mp)
+                ray_shuffle_refs.append(
+                    RayPartitionRef(
+                        ray.put(mp),
+                        len(mp),
+                        mp.size_bytes() or 0,
+                    )
+                )
+            return ray_shuffle_refs, stats.encode()
 
 
 @ray.remote  # type: ignore[untyped-decorator]

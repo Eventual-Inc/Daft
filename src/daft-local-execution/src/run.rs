@@ -14,6 +14,7 @@ use daft_context::{DaftContext, Subscriber};
 use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
+use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::server::flight_server::{
     FlightServerConnectionHandle, ShuffleFlightServer, start_server_loop,
 };
@@ -27,7 +28,7 @@ use {
     daft_local_plan::python::PyExecutionStats,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    daft_partition_refs::{PyFlightPartitionRef, RayPartitionRef},
+    daft_partition_refs::PyFlightPartitionRef,
     pyo3::{
         Bound, IntoPyObject, PyAny, PyRef, PyResult, Python, pyclass, pymethods, sync::MutexExt,
     },
@@ -51,10 +52,8 @@ enum ExecutionEngineResultItem {
 
 #[derive(Debug)]
 pub(crate) enum ShufflePartitionRefs {
-    #[cfg(feature = "python")]
-    Ray(Vec<RayPartitionRef>),
-    #[cfg(feature = "python")]
-    Flight(Vec<PyFlightPartitionRef>),
+    Ray(Vec<MicroPartition>),
+    Flight(Vec<FlightPartitionRef>),
 }
 
 /// Global tokio runtime shared by all NativeExecutor instances
@@ -664,12 +663,20 @@ impl PyResultReceiver {
             Python::attach(|py| {
                 let py_shuffle_partition_refs = match shuffle_partition_refs {
                     None => py.None(),
-                    Some(ShufflePartitionRefs::Ray(ray_refs)) => {
-                        ray_refs.into_pyobject(py)?.unbind().into_any()
-                    }
-                    Some(ShufflePartitionRefs::Flight(flight_refs)) => {
-                        flight_refs.into_pyobject(py)?.unbind().into_any()
-                    }
+                    Some(ShufflePartitionRefs::Ray(partitions)) => partitions
+                        .into_iter()
+                        .map(PyMicroPartition::from)
+                        .collect::<Vec<_>>()
+                        .into_pyobject(py)?
+                        .unbind()
+                        .into_any(),
+                    Some(ShufflePartitionRefs::Flight(flight_refs)) => flight_refs
+                        .into_iter()
+                        .map(PyFlightPartitionRef::from)
+                        .collect::<Vec<_>>()
+                        .into_pyobject(py)?
+                        .unbind()
+                        .into_any(),
                 };
                 Ok((py_shuffle_partition_refs, PyExecutionStats::from(stats))
                     .into_pyobject(py)?
