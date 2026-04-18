@@ -326,7 +326,8 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                     | LogicalPlan::IntoBatches(_)
                     | LogicalPlan::Concat(_)
                     | LogicalPlan::AsofJoin(..)
-                    | LogicalPlan::VLLMProject(..) => {}
+                    | LogicalPlan::VLLMProject(..)
+                    | LogicalPlan::StageCheckpointKeys(..) => {}
                 }
             }
 

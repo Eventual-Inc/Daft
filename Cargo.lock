@@ -1714,6 +1714,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-checkpoint-config"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+ "common-io-config",
+ "pyo3",
+ "serde",
+ "uuid",
+]
+
+[[package]]
 name = "common-daft-config"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2341,15 +2352,24 @@ dependencies = [
 name = "daft-checkpoint"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
+ "arrow-schema 57.3.0",
  "async-trait",
  "bytes",
  "chrono",
+ "common-checkpoint-config",
  "common-error",
+ "common-io-config",
+ "common-runtime",
  "daft-checkpoint",
  "daft-core",
+ "daft-dsl",
  "daft-io",
- "daft-recordbatch",
+ "daft-scan",
+ "daft-schema",
  "futures",
+ "parquet",
+ "pyo3",
  "serde",
  "serde_json",
  "snafu",
@@ -2520,6 +2540,7 @@ dependencies = [
 name = "daft-distributed"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-checkpoint-config",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -2531,7 +2552,6 @@ dependencies = [
  "common-resource-request",
  "common-runtime",
  "common-treenode",
- "daft-checkpoint",
  "daft-context",
  "daft-dsl",
  "daft-functions",
@@ -2919,8 +2939,12 @@ name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
  "arc-swap",
+ "arrow-array",
  "arrow-buffer 57.3.0",
+ "arrow-ipc",
+ "arrow-schema 57.3.0",
  "async-trait",
+ "common-checkpoint-config",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -2983,6 +3007,7 @@ dependencies = [
  "arrow-array",
  "arrow-schema 57.3.0",
  "bincode",
+ "common-checkpoint-config",
  "common-error",
  "common-io-config",
  "common-metrics",
@@ -3009,6 +3034,7 @@ dependencies = [
 name = "daft-logical-plan"
 version = "0.3.0-dev0"
 dependencies = [
+ "common-checkpoint-config",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -3020,6 +3046,7 @@ dependencies = [
  "common-resource-request",
  "common-treenode",
  "daft-algebra",
+ "daft-checkpoint",
  "daft-core",
  "daft-dsl",
  "daft-functions",

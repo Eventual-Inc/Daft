@@ -112,6 +112,18 @@ fn translate_helper(
                 inputs,
             ))
         }
+        LogicalPlan::StageCheckpointKeys(stage) => {
+            let (input_plan, inputs) = translate_helper(&stage.input, source_counter, psets)?;
+            Ok((
+                LocalPhysicalPlan::stage_checkpoint_keys(
+                    input_plan,
+                    stage.checkpoint_config.clone(),
+                    stage.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
+        }
         LogicalPlan::IntoBatches(into_batches) => {
             let (input_plan, inputs) =
                 translate_helper(&into_batches.input, source_counter, psets)?;

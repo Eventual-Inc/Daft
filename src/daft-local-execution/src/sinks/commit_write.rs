@@ -38,6 +38,10 @@ impl CommitWriteState {
     }
 }
 
+// TODO(DF-1917): Catalog commits (Iceberg/Delta) must be idempotent.
+// Iceberg: tag snapshots with `daft.checkpoint-store` + `daft.epoch-id`,
+// skip if duplicate. Delta: use `txn` action with `appId` + `version`.
+// See DF-1771 for the design.
 pub(crate) struct CommitWriteSink {
     data_schema: SchemaRef,
     file_schema: SchemaRef,

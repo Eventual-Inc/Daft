@@ -118,6 +118,7 @@ pub mod pylib {
         common_metrics::register_modules(m)?;
         daft_ai::register_modules(m)?;
         daft_catalog::register_modules(m)?;
+        daft_checkpoint::register_modules(m)?;
         daft_context::register_modules(m)?;
         daft_runners::register_modules(m)?;
         daft_core::register_modules(m)?;

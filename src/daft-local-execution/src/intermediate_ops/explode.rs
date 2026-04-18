@@ -15,7 +15,11 @@ use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
+    runtime_stats::RuntimeStats,
+};
 
 pub struct ExplodeStats {
     duration_us: Counter,
@@ -121,6 +125,7 @@ impl IntermediateOperator for ExplodeOperator {
         state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
+        _input_id: InputId,
     ) -> IntermediateOpExecuteResult<Self> {
         let to_explode = self.to_explode.clone();
         let index_column = self.index_column.clone();
