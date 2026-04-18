@@ -2240,20 +2240,18 @@ class RayPartitionRef:
 
     def __init__(self, object_ref: ray.ObjectRef, num_rows: int, size_bytes: int): ...
 
-class FlightShufflePartitionRef:
+class FlightPartitionRef:
     shuffle_id: int
-    partition_idx: int
     server_address: str
-    cache_id: int
+    partition_ref_id: int
     num_rows: int
     size_bytes: int
 
     def __init__(
         self,
         shuffle_id: int,
-        partition_idx: int,
         server_address: str,
-        cache_id: int,
+        partition_ref_id: int,
         num_rows: int,
         size_bytes: int,
     ): ...
@@ -2269,11 +2267,9 @@ class RaySwordfishTask:
 
 class RayTaskResult:
     @staticmethod
-    def success(ray_part_refs: list[RayPartitionRef], stats: bytes) -> RayTaskResult: ...
+    def success_ray(ray_part_refs: list[RayPartitionRef], stats: bytes) -> RayTaskResult: ...
     @staticmethod
-    def ray_shuffle_success(shuffle_part_refs: list[RayPartitionRef], stats: bytes) -> RayTaskResult: ...
-    @staticmethod
-    def flight_shuffle_success(shuffle_part_refs: list[FlightShufflePartitionRef], stats: bytes) -> RayTaskResult: ...
+    def success_flight(shuffle_part_refs: list[FlightPartitionRef], stats: bytes) -> RayTaskResult: ...
     @staticmethod
     def worker_died() -> RayTaskResult: ...
     @staticmethod
@@ -2300,19 +2296,8 @@ class PyExecutionStats:
 
 class PyResultReceiver:
     def __aiter__(self) -> PyResultReceiver: ...
-    async def __anext__(self) -> PyMicroPartition | None: ...
+    async def __anext__(self) -> PyMicroPartition | FlightPartitionRef | None: ...
     async def try_finish(self) -> PyExecutionStats: ...
-    async def try_finish_with_shuffle_metadata(
-        self,
-    ) -> tuple[PyExecutionStats, list[tuple[object | None, int, int]] | None]: ...
-
-class ShuffleWriteInfo:
-    @property
-    def backend(self) -> str: ...
-    @property
-    def shuffle_id(self) -> int: ...
-    @property
-    def num_partitions(self) -> int: ...
 
 class LocalPhysicalPlan:
     @staticmethod
@@ -2320,7 +2305,6 @@ class LocalPhysicalPlan:
         builder: LogicalPlanBuilder,
         psets: dict[str, list[PyMicroPartition]],
     ) -> tuple[LocalPhysicalPlan, dict[int, Input]]: ...
-    def shuffle_write_info(self) -> ShuffleWriteInfo | None: ...
 
 class Input:
     """Input for NativeExecutor execution. Holds ScanTasks or GlobPaths."""

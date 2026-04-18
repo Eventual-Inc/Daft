@@ -1,60 +1,58 @@
 pub mod flight_client;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use daft_recordbatch::RecordBatch;
 use futures::{StreamExt, stream::BoxStream};
+use tokio::sync::Mutex;
 
 use crate::client::flight_client::ShuffleFlightClient;
 
+#[derive(Clone)]
 pub struct FlightClientManager {
-    clients: HashMap<String, ShuffleFlightClient>,
+    clients: Arc<Mutex<HashMap<String, Arc<Mutex<ShuffleFlightClient>>>>>,
 }
 
 impl FlightClientManager {
     pub fn new() -> Self {
-        Self {
-            clients: HashMap::new(),
-        }
+        Self::default()
     }
 
     pub async fn fetch_partition(
-        &mut self,
+        &self,
         shuffle_id: u64,
-        partition: usize,
-        server_cache_mapping: &HashMap<String, Vec<u32>>,
+        server_address: &str,
+        partition_ref_ids: &[u64],
         schema: SchemaRef,
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-        // Ensure clients exist for all addresses before collecting futures
-        for address in server_cache_mapping.keys() {
-            self.clients
-                .entry(address.clone())
-                .or_insert_with(|| ShuffleFlightClient::new(address.clone()));
-        }
+        let client = {
+            let mut clients = self.clients.lock().await;
+            clients
+                .entry(server_address.to_string())
+                .or_insert_with(|| {
+                    Arc::new(Mutex::new(ShuffleFlightClient::new(
+                        server_address.to_string(),
+                    )))
+                })
+                .clone()
+        };
 
-        let mut futures = Vec::new();
-        for (address, client) in &mut self.clients {
-            if let Some(cache_ids) = server_cache_mapping.get(address) {
-                futures.push(client.get_partition(
-                    shuffle_id,
-                    partition,
-                    cache_ids.as_slice(),
-                    schema.clone(),
-                ));
-            }
-        }
-
-        let remote_streams = futures::future::try_join_all(futures).await?;
-        let record_batches =
-            futures::stream::iter(remote_streams.into_iter()).flatten_unordered(None);
-        Ok(record_batches.boxed())
+        let stream = client
+            .lock()
+            .await
+            .get_partition(shuffle_id, partition_ref_ids, schema)
+            .await?
+            .boxed();
+        Ok(stream)
     }
 }
 
 impl Default for FlightClientManager {
     fn default() -> Self {
-        Self::new()
+        Self {
+            clients: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 }
