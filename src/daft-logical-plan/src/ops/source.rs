@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_checkpoint_config::CheckpointConfig;
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use daft_scan::{PhysicalScanInfo, ScanState};
@@ -22,6 +23,9 @@ pub struct Source {
     /// Information about the source data location.
     pub source_info: Arc<SourceInfo>,
     pub stats_state: StatsState,
+
+    /// Checkpoint configuration for progress tracking.
+    pub checkpoint: Option<CheckpointConfig>,
 }
 
 impl Source {
@@ -32,7 +36,25 @@ impl Source {
             output_schema,
             source_info,
             stats_state: StatsState::NotMaterialized,
+            checkpoint: None,
         }
+    }
+
+    pub fn with_checkpoint(mut self, config: CheckpointConfig) -> Self {
+        self.checkpoint = Some(config);
+        self
+    }
+
+    /// Return a copy of this `Source` with a replaced `source_info`, preserving
+    /// every other field (output schema, plan/node ids, stats state, checkpoint
+    /// config). Use this when an optimizer rule replaces a source node with a
+    /// semantically equivalent one (e.g. pushing a predicate into the scan);
+    /// constructing via `Source::new` would reset fields like `checkpoint` that
+    /// should carry across the rewrite.
+    #[must_use]
+    pub fn with_source_info(mut self, source_info: Arc<SourceInfo>) -> Self {
+        self.source_info = source_info;
+        self
     }
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {

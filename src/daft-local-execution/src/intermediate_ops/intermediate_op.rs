@@ -48,6 +48,7 @@ pub(crate) trait IntermediateOperator: Send + Sync {
         state: Self::State,
         runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
+        input_id: InputId,
     ) -> IntermediateOpExecuteResult<Self>;
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
@@ -125,7 +126,7 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
             self.task_set.spawn(async move {
                 let now = Instant::now();
                 let (new_state, result) = op
-                    .execute(batch, state, runtime_stats, &task_spawner)
+                    .execute(batch, state, runtime_stats, &task_spawner, input_id)
                     .await??;
                 let elapsed = now.elapsed();
                 Ok(WorkerResult {
