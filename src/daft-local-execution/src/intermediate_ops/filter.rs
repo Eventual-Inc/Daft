@@ -12,8 +12,11 @@ use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
-use crate::pipeline::InputId;
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
+    runtime_stats::RuntimeStats,
+};
 
 pub struct FilterStats {
     duration_us: Counter,

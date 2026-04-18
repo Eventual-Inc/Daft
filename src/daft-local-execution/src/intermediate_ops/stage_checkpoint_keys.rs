@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
+use common_checkpoint_config::CheckpointIdMap;
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use daft_checkpoint::{CheckpointId, CheckpointStoreRef};
+use daft_checkpoint::CheckpointStoreRef;
 use daft_dsl::{Expr, expr::bound_expr::BoundExpr};
 use daft_micropartition::MicroPartition;
 use tracing::{Span, instrument};
@@ -18,20 +19,16 @@ use crate::{
 ///
 /// Extracts the key column from each morsel, stages it to the
 /// CheckpointStore, and passes the morsel through unchanged.
-#[allow(dead_code)]
+/// Uses `CheckpointIdMap` to derive a per-input `CheckpointId` so that
+/// tasks sharing a pipeline each checkpoint their own entry.
 pub struct StageCheckpointKeysOperator {
     key_expr: BoundExpr,
     store: CheckpointStoreRef,
-    checkpoint_id: CheckpointId,
+    id_map: CheckpointIdMap,
 }
 
 impl StageCheckpointKeysOperator {
-    #[allow(dead_code)]
-    pub fn new(
-        key_expr: BoundExpr,
-        store: CheckpointStoreRef,
-        checkpoint_id: CheckpointId,
-    ) -> Self {
+    pub fn new(key_expr: BoundExpr, store: CheckpointStoreRef, id_map: CheckpointIdMap) -> Self {
         // Checkpoint keys must be column references only — no computed expressions.
         assert!(
             matches!(key_expr.inner().as_ref(), Expr::Column(..)),
@@ -40,7 +37,7 @@ impl StageCheckpointKeysOperator {
         Self {
             key_expr,
             store,
-            checkpoint_id,
+            id_map,
         }
     }
 }
@@ -56,11 +53,11 @@ impl IntermediateOperator for StageCheckpointKeysOperator {
         state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
-        _input_id: InputId,
+        input_id: InputId,
     ) -> IntermediateOpExecuteResult<Self> {
         let key_expr = self.key_expr.clone();
         let store = self.store.clone();
-        let checkpoint_id = self.checkpoint_id.clone();
+        let checkpoint_id = self.id_map.get_or_generate(input_id);
 
         task_spawner
             .spawn(

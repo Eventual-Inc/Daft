@@ -11,10 +11,10 @@ use super::{
         EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey,
         LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAggregation,
         PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
-        PushDownProjection, PushDownShard, ReorderJoins, RewriteCountDistinct, RewriteOffset,
-        ShardScans, SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitExplodeFromProject,
-        SplitGranularProjection, SplitUDFs, SplitUDFsFromFilters, UnnestPredicateSubquery,
-        UnnestScalarSubquery,
+        PushDownProjection, PushDownShard, ReorderJoins, RewriteCheckpointSource,
+        RewriteCountDistinct, RewriteOffset, ShardScans, SimplifyExpressionsRule,
+        SimplifyNullFilteredJoin, SplitExplodeFromProject, SplitGranularProjection, SplitUDFs,
+        SplitUDFsFromFilters, UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::{LogicalPlan, optimization::rules::SplitVLLM};
@@ -213,6 +213,11 @@ impl OptimizerBuilder {
             // --- Shard pushdowns ---
             RuleBatch::new(
                 vec![Box::new(PushDownShard::new())],
+                RuleExecutionStrategy::Once,
+            ),
+            // --- Checkpoint filter: must run before MaterializeScans.
+            RuleBatch::new(
+                vec![Box::new(RewriteCheckpointSource::new())],
                 RuleExecutionStrategy::Once,
             ),
             // --- Simplify expressions before scans are materialized ---

@@ -15,13 +15,12 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
-use crate::pipeline::InputId;
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::{
         DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
     },
-    pipeline::{MorselSizeRequirement, NodeName},
+    pipeline::{InputId, MorselSizeRequirement, NodeName},
 };
 
 fn num_parallel_exprs(projection: &[BoundExpr]) -> usize {

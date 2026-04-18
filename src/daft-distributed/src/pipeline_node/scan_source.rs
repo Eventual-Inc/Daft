@@ -76,7 +76,6 @@ pub(crate) struct ScanSourceNode {
     context: PipelineNodeContext,
     pushdowns: Pushdowns,
     scan_tasks: Arc<Vec<ScanTaskRef>>,
-    checkpoint: Option<common_checkpoint_config::CheckpointConfig>,
 }
 
 impl ScanSourceNode {
@@ -88,7 +87,6 @@ impl ScanSourceNode {
         pushdowns: Pushdowns,
         scan_tasks: Arc<Vec<ScanTaskRef>>,
         schema: SchemaRef,
-        checkpoint: Option<common_checkpoint_config::CheckpointConfig>,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
@@ -110,7 +108,6 @@ impl ScanSourceNode {
             context,
             pushdowns,
             scan_tasks,
-            checkpoint,
         }
     }
 
@@ -122,7 +119,6 @@ impl ScanSourceNode {
             self.config.schema.clone(),
             StatsState::NotMaterialized,
             LocalNodeContext::new(Some(self.node_id() as usize)),
-            self.checkpoint.clone(),
         );
 
         SwordfishTaskBuilder::new(physical_scan, self.as_ref(), self.node_id())
@@ -233,7 +229,6 @@ impl PipelineNodeImpl for ScanSourceNode {
                 self.config.schema.clone(),
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(self.node_id() as usize)),
-                self.checkpoint.clone(),
             );
 
             let empty_scan_task =

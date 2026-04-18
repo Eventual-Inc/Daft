@@ -21,10 +21,9 @@ use rand::Rng;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
-use crate::pipeline::InputId;
 use crate::{
     ExecutionTaskSpawner,
-    pipeline::{MorselSizeRequirement, NodeName},
+    pipeline::{InputId, MorselSizeRequirement, NodeName},
 };
 
 #[derive(Clone, Debug)]

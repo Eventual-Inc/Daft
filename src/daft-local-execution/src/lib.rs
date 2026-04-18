@@ -3,6 +3,7 @@
 mod batch_manager;
 mod buffer;
 mod channel;
+mod checkpoint_terminus;
 mod concat;
 mod dynamic_batching;
 mod input_sender;

@@ -75,6 +75,7 @@ pub enum LocalPhysicalPlan {
     // Split(Split),
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
+    StageCheckpointKeys(StageCheckpointKeys),
     // Coalesce(Coalesce),
     // Flatten(Flatten),
     // FanoutRandom(FanoutRandom),
@@ -150,6 +151,7 @@ impl LocalPhysicalPlan {
             | Self::TopN(TopN { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { stats_state, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { stats_state, .. })
             | Self::HashAggregate(HashAggregate { stats_state, .. })
             | Self::Dedup(Dedup { stats_state, .. })
@@ -200,6 +202,7 @@ impl LocalPhysicalPlan {
             | Self::TopN(TopN { context, .. })
             | Self::Sample(Sample { context, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { context, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { context, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { context, .. })
             | Self::HashAggregate(HashAggregate { context, .. })
             | Self::Dedup(Dedup { context, .. })
@@ -237,7 +240,6 @@ impl LocalPhysicalPlan {
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
-        checkpoint: Option<common_checkpoint_config::CheckpointConfig>,
     ) -> LocalPhysicalPlanRef {
         Self::PhysicalScan(PhysicalScan {
             source_id,
@@ -246,7 +248,6 @@ impl LocalPhysicalPlan {
             schema,
             stats_state,
             context,
-            checkpoint,
         })
         .arced()
     }
@@ -310,6 +311,23 @@ impl LocalPhysicalPlan {
         Self::Filter(Filter {
             input,
             predicate,
+            schema,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
+    pub fn stage_checkpoint_keys(
+        input: LocalPhysicalPlanRef,
+        checkpoint_config: common_checkpoint_config::CheckpointConfig,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        let schema = input.schema().clone();
+        Self::StageCheckpointKeys(StageCheckpointKeys {
+            input,
+            checkpoint_config,
             schema,
             stats_state,
             context,
@@ -1049,6 +1067,7 @@ impl LocalPhysicalPlan {
             | Self::Unpivot(Unpivot { schema, .. })
             | Self::Concat(Concat { schema, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { schema, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -1125,6 +1144,7 @@ impl LocalPhysicalPlan {
             | Self::Unpivot(Unpivot { input, .. })
             | Self::Concat(Concat { input, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. })
+            | Self::StageCheckpointKeys(StageCheckpointKeys { input, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { input, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { input, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -1375,6 +1395,16 @@ impl LocalPhysicalPlan {
                     column_name.clone(),
                     *starting_offset,
                     schema.clone(),
+                    StatsState::NotMaterialized,
+                    context.clone(),
+                ),
+                Self::StageCheckpointKeys(StageCheckpointKeys {
+                    checkpoint_config,
+                    context,
+                    ..
+                }) => Self::stage_checkpoint_keys(
+                    new_child.clone(),
+                    checkpoint_config.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
@@ -1779,7 +1809,6 @@ pub struct PhysicalScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
-    pub checkpoint: Option<common_checkpoint_config::CheckpointConfig>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1853,6 +1882,16 @@ pub struct DistributedActorPoolProject {
 pub struct Filter {
     pub input: LocalPhysicalPlanRef,
     pub predicate: BoundExpr,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct StageCheckpointKeys {
+    pub input: LocalPhysicalPlanRef,
+    pub checkpoint_config: common_checkpoint_config::CheckpointConfig,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,

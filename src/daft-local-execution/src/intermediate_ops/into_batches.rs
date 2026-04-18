@@ -6,10 +6,9 @@ use daft_micropartition::MicroPartition;
 use tracing::Span;
 
 use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
-use crate::pipeline::InputId;
 use crate::{
     ExecutionTaskSpawner,
-    pipeline::{MorselSizeRequirement, NodeName},
+    pipeline::{InputId, MorselSizeRequirement, NodeName},
 };
 
 pub struct IntoBatchesOperator {

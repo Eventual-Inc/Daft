@@ -70,7 +70,6 @@ fn translate_helper(
                         source.output_schema.clone(),
                         source.stats_state.clone(),
                         LocalNodeContext::default(),
-                        source.checkpoint.clone(),
                     )
                 }
                 SourceInfo::GlobScan(info) => {
@@ -108,6 +107,18 @@ fn translate_helper(
                     input_plan,
                     predicate,
                     filter.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
+        }
+        LogicalPlan::StageCheckpointKeys(stage) => {
+            let (input_plan, inputs) = translate_helper(&stage.input, source_counter, psets)?;
+            Ok((
+                LocalPhysicalPlan::stage_checkpoint_keys(
+                    input_plan,
+                    stage.checkpoint_config.clone(),
+                    stage.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
                 inputs,

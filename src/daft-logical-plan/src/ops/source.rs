@@ -45,6 +45,18 @@ impl Source {
         self
     }
 
+    /// Return a copy of this `Source` with a replaced `source_info`, preserving
+    /// every other field (output schema, plan/node ids, stats state, checkpoint
+    /// config). Use this when an optimizer rule replaces a source node with a
+    /// semantically equivalent one (e.g. pushing a predicate into the scan);
+    /// constructing via `Source::new` would reset fields like `checkpoint` that
+    /// should carry across the rewrite.
+    #[must_use]
+    pub fn with_source_info(mut self, source_info: Arc<SourceInfo>) -> Self {
+        self.source_info = source_info;
+        self
+    }
+
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
         self.plan_id = Some(plan_id);
         self

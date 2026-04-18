@@ -36,13 +36,12 @@ use pyo3::{Py, prelude::*};
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
-use crate::pipeline::InputId;
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::{
         DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
     },
-    pipeline::{MorselSizeRequirement, NodeName},
+    pipeline::{InputId, MorselSizeRequirement, NodeName},
     runtime_stats::RuntimeStats,
 };
 

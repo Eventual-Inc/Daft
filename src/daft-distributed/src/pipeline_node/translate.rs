@@ -27,7 +27,8 @@ use crate::{
         into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
         project::ProjectNode, random_shuffle::RandomShuffleNode, sample::SampleNode,
-        scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode, top_n::TopNNode, udf::UDFNode,
+        scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode,
+        stage_checkpoint_keys::StageCheckpointKeysNode, top_n::TopNNode, udf::UDFNode,
         unpivot::UnpivotNode, vllm::VLLMNode, window::WindowNode,
     },
     plan::PlanConfig,
@@ -149,7 +150,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                                 info.pushdowns.clone(),
                                 scan_tasks,
                                 source.output_schema.clone(),
-                                source.checkpoint.clone(),
                             )),
                             &self.meter,
                         )
@@ -226,6 +226,16 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     &self.meter,
                 )
             }
+            LogicalPlan::StageCheckpointKeys(stage) => DistributedPipelineNode::new(
+                Arc::new(StageCheckpointKeysNode::new(
+                    self.get_next_pipeline_node_id(),
+                    &self.plan_config,
+                    stage.checkpoint_config.clone(),
+                    node.schema(),
+                    self.curr_node.pop().unwrap(),
+                )),
+                &self.meter,
+            ),
             LogicalPlan::IntoBatches(into_batches) => DistributedPipelineNode::new(
                 Arc::new(IntoBatchesNode::new(
                     self.get_next_pipeline_node_id(),
