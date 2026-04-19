@@ -4023,6 +4023,8 @@ class DataFrame:
             return expr.string_agg()
         elif op == "skew":
             return expr.skew()
+        elif op == "count_distinct":
+            return expr.count_distinct()
 
         raise NotImplementedError(f"Aggregation {op} is not implemented.")
 
@@ -4269,6 +4271,32 @@ class DataFrame:
             (Showing first 1 of 1 rows)
         """
         return self._apply_agg_fn(Expression.any_value, cols)
+
+    @DataframePublicAPI
+    def count_distinct(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global count of distinct values on the DataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to count distinct values
+        Returns:
+            DataFrame: Globally aggregated count of distinct values. Should be a single row.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [1, 2, 2, 3, 3, 3]})
+            >>> df = df.count_distinct("col_a")
+            >>> df.show()
+            ╭────────╮
+            │ col_a  │
+            │ ---    │
+            │ UInt64 │
+            ╞════════╡
+            │ 3      │
+            ╰────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+        """
+        return self._apply_agg_fn(Expression.count_distinct, cols)
 
     @DataframePublicAPI
     def count(self, *cols: ColumnInputType | int) -> "DataFrame":
@@ -5662,6 +5690,36 @@ class GroupedDataFrame:
             DataFrame: DataFrame with the grouped skew per column.
         """
         return self.df._apply_agg_fn(Expression.skew, cols, self.group_by)
+
+    def count_distinct(self, *cols: ColumnInputType) -> DataFrame:
+        """Performs grouped count of distinct values on this GroupedDataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to count distinct values
+
+        Returns:
+            DataFrame: DataFrame with grouped count of distinct values per column.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b", "b", "b"], "vals": [1, 1, 2, 3, 3, 3]})
+            >>> df = df.groupby("keys").count_distinct("vals")
+            >>> df = df.sort("keys")
+            >>> df.show()
+            ╭────────┬────────╮
+            │ keys   ┆ vals   │
+            │ ---    ┆ ---    │
+            │ String ┆ UInt64 │
+            ╞════════╪════════╡
+            │ a      ┆ 2      │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ b      ┆ 1      │
+            ╰────────┴────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        """
+        return self.df._apply_agg_fn(Expression.count_distinct, cols, self.group_by)
 
     def list_agg(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped list on this GroupedDataFrame.
