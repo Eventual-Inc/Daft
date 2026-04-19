@@ -19,10 +19,11 @@
         * [Files and URLs](modalities/files.md)
         * [Embeddings](modalities/embeddings.md)
         * [Custom Modalities](modalities/custom.md)
-    * Scale Custom Python Code
-        * [New UDF Overview](custom-code/index.md)
+    * User Defined Functions
+        * [Overview](custom-code/index.md)
         * [Functions](custom-code/func.md)
         * [Classes & Methods](custom-code/cls.md)
+        * [Working with GPUs](custom-code/gpu.md)
         * [Legacy UDF Migration Guide](custom-code/migration.md)
         * [Legacy UDFs](custom-code/udfs.md)
     * Common Use Cases
@@ -56,7 +57,8 @@
         * [Turbopuffer](connectors/turbopuffer.md)
         * [Unity Catalog (Databricks)](connectors/unity_catalog.md)
     * Extensions
-        * [Extensions](extensions/index.md)
+        * [Community Extensions](extensions/community.md)
+        * [Authoring Guide](extensions/index.md)
     * Scaling Out and Deployment
         * [Distributed Execution](distributed/index.md)
         * [Running on Kubernetes](distributed/kubernetes.md)

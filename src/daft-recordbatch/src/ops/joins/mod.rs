@@ -2,14 +2,14 @@ use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::growable::make_growable, join::JoinSide, prelude::*, utils::supertype::try_get_supertype,
+    array::{growable::make_growable, ops::arrow::comparison::build_multi_array_is_equal},
+    join::JoinSide,
+    prelude::*,
+    utils::supertype::try_get_supertype,
 };
 use daft_dsl::{
-    Expr,
     expr::bound_expr::BoundExpr,
-    join::{
-        get_common_join_cols, get_right_cols_to_drop, infer_asof_join_schema, infer_join_schema,
-    },
+    join::{get_common_join_cols, infer_asof_join_schema, infer_join_schema},
 };
 use hash_join::hash_semi_anti_join;
 
@@ -81,62 +81,20 @@ impl RecordBatch {
     pub fn asof_join(
         &self,
         right: &Self,
-        left_by: &[BoundExpr],
-        right_by: &[BoundExpr],
+        right_cols_to_drop: &HashSet<String>,
         left_on: &BoundExpr,
         right_on: &BoundExpr,
     ) -> DaftResult<Self> {
-        if left_by.len() != right_by.len() {
-            return Err(DaftError::ValueError(format!(
-                "Mismatch of asof by clauses: left: {:?} vs right: {:?}",
-                left_by.len(),
-                right_by.len()
-            )));
-        }
+        let left = self.sort(std::slice::from_ref(left_on), &[false], &[false])?;
+        let right = right.sort(std::slice::from_ref(right_on), &[false], &[false])?;
 
-        let left_sort_keys = left_by
-            .iter()
-            .cloned()
-            .chain(std::iter::once(left_on.clone()))
-            .collect::<Vec<_>>();
-        let right_sort_keys = right_by
-            .iter()
-            .cloned()
-            .chain(std::iter::once(right_on.clone()))
-            .collect::<Vec<_>>();
-
-        let left = self.sort(
-            left_sort_keys.as_slice(),
-            std::iter::repeat_n(false, left_sort_keys.len())
-                .collect::<Vec<_>>()
-                .as_slice(),
-            std::iter::repeat_n(false, left_sort_keys.len())
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )?;
-        let right = right.sort(
-            right_sort_keys.as_slice(),
-            std::iter::repeat_n(false, right_sort_keys.len())
-                .collect::<Vec<_>>()
-                .as_slice(),
-            std::iter::repeat_n(false, right_sort_keys.len())
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )?;
-
-        let left_key_table = left.eval_expression_list(left_sort_keys.as_slice())?;
-        let right_key_table = right.eval_expression_list(right_sort_keys.as_slice())?;
+        let left_key_table = left.eval_expression_list(std::slice::from_ref(left_on))?;
+        let right_key_table = right.eval_expression_list(std::slice::from_ref(right_on))?;
         let (left_key_table, right_key_table) =
             match_types_for_tables(&left_key_table, &right_key_table)?;
         let (lidx, ridx) = asof_join::asof_join_backward(&left_key_table, &right_key_table)?;
 
-        let right_cols_to_drop = get_right_cols_to_drop(right_by, left_on, right_on, |e| {
-            match e.inner().unwrap_alias().0.as_ref() {
-                Expr::Column(_) => Some(e.inner().unwrap_alias().0.name().to_string()),
-                _ => None,
-            }
-        });
-        let join_schema = infer_asof_join_schema(&left.schema, &right.schema, &right_cols_to_drop)?;
+        let join_schema = infer_asof_join_schema(&left.schema, &right.schema, right_cols_to_drop)?;
 
         let num_rows = lidx.len();
         let mut join_series = Vec::with_capacity(join_schema.len());
@@ -319,6 +277,54 @@ impl RecordBatch {
 
         Self::new_with_size(join_schema, join_columns, num_rows)
     }
+}
+
+/// Builds a mapping from each left key index to its matching right key index.
+///
+/// Both `left_keys` and `right_keys` must contain **unique** rows (no duplicate key values).
+pub fn build_left_to_right_map(
+    left_keys: &RecordBatch,
+    right_keys: &RecordBatch,
+) -> DaftResult<Vec<Option<usize>>> {
+    let n_left = left_keys.len();
+    if n_left == 0 {
+        return Ok(vec![]);
+    }
+    if right_keys.is_empty() {
+        return Ok(vec![None; n_left]);
+    }
+
+    let (left_keys, right_keys) = match_types_for_tables(left_keys, right_keys)?;
+
+    let probe_table = left_keys.to_probe_hash_table()?;
+    let r_hashes = right_keys.hash_rows()?;
+
+    let lcols: Vec<Series> = left_keys
+        .as_materialized_series()
+        .into_iter()
+        .cloned()
+        .collect();
+    let rcols: Vec<Series> = right_keys
+        .as_materialized_series()
+        .into_iter()
+        .cloned()
+        .collect();
+    let n_cols = lcols.len();
+
+    let is_equal =
+        build_multi_array_is_equal(&lcols, &rcols, &vec![false; n_cols], &vec![false; n_cols])?;
+
+    let mut left_to_right = vec![None; n_left];
+    for (r_idx, h) in r_hashes.values().iter().enumerate() {
+        if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
+            *h == other.hash && is_equal(other.idx as usize, r_idx)
+        }) && let Some(&l_idx) = indices.first()
+        {
+            left_to_right[l_idx as usize] = Some(r_idx);
+        }
+    }
+
+    Ok(left_to_right)
 }
 
 #[deprecated(since = "TBD", note = "name-referenced columns")]

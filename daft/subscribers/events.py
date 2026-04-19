@@ -58,6 +58,7 @@ class OperatorStarted(Event):
     query_id: str
     node_id: int
     name: str
+    origin_node_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,7 @@ class OperatorFinished(Event):
     query_id: str
     node_id: int
     name: str
+    origin_node_id: int | None = None
 
 
 @dataclass(frozen=True)

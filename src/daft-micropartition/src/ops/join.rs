@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::DaftResult;
 use daft_core::{
     array::ops::DaftCompare,
@@ -8,8 +10,9 @@ use daft_dsl::{
     expr::bound_expr::BoundExpr,
     join::{get_right_cols_to_drop, infer_asof_join_schema, infer_join_schema},
 };
-use daft_recordbatch::RecordBatch;
+use daft_recordbatch::{RecordBatch, build_left_to_right_map};
 use daft_stats::TruthValue;
+use rayon::prelude::*;
 
 use crate::micropartition::MicroPartition;
 
@@ -151,12 +154,36 @@ impl MicroPartition {
             None => RecordBatch::empty(Some(right.schema())),
         };
 
-        let joined_table = RecordBatch::asof_join(&lt, &rt, left_by, right_by, left_on, right_on)?;
-        Ok(Self::new_loaded(
-            join_schema,
-            vec![joined_table].into(),
-            None,
-        ))
+        if left_by.is_empty() {
+            let joined = RecordBatch::asof_join(&lt, &rt, &right_cols_to_drop, left_on, right_on)?;
+            return Ok(Self::new_loaded(join_schema, Arc::new(vec![joined]), None));
+        }
+
+        let (left_groups, left_keys) = lt.partition_by_value(left_by)?;
+        let (right_groups, right_keys) = rt.partition_by_value(right_by)?;
+
+        let left_to_right = build_left_to_right_map(&left_keys, &right_keys)?;
+
+        let empty_right = RecordBatch::empty(Some(rt.schema));
+        let batches = left_groups
+            .par_iter()
+            .enumerate()
+            .map(|(i, left_group)| {
+                let right_group = match left_to_right[i] {
+                    Some(r_idx) => &right_groups[r_idx],
+                    None => &empty_right,
+                };
+                RecordBatch::asof_join(
+                    left_group,
+                    right_group,
+                    &right_cols_to_drop,
+                    left_on,
+                    right_on,
+                )
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        Ok(Self::new_loaded(join_schema, Arc::new(batches), None))
     }
 
     pub fn cross_join(&self, right: &Self, outer_loop_side: JoinSide) -> DaftResult<Self> {

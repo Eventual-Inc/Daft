@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timezone
 
 from ray.job_submission import JobDetails, JobSubmissionClient
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 import daft
+
+logger = logging.getLogger(__name__)
+
+
+def _is_retryable_gspread_error(exc: BaseException) -> bool:
+    from gspread.exceptions import APIError
+
+    if not isinstance(exc, APIError):
+        return False
+    code = exc.response.status_code
+    return code in (429, 500, 502, 503, 504)
 
 
 def daft_uv_runtime_env() -> dict:
@@ -21,6 +34,12 @@ def daft_uv_runtime_env() -> dict:
     return uv_env
 
 
+@retry(
+    retry=retry_if_exception(_is_retryable_gspread_error),
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=2, max=60),
+    before_sleep=lambda rs: logger.warning("Retrying Google Sheets upload (attempt %d) after %s", rs.attempt_number, rs.outcome.exception()),
+)
 def upload_to_google_sheets(worksheet, data):
     import gspread
 
