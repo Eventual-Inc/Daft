@@ -19,6 +19,11 @@ from daft.functions import (
     date_from_unix_date,
     date_sub,
     from_unixtime,
+    last_day,
+    make_date,
+    make_timestamp,
+    make_timestamp_ltz,
+    next_day,
     timestamp_micros,
     timestamp_millis,
     timestamp_seconds,
@@ -951,3 +956,104 @@ def test_temporal_batch2_sql() -> None:
     assert result["from_unix"] == [date(1970, 1, 11)]
     assert isinstance(result["ts_s"][0], datetime)
     assert result["fmt"] == ["2021-01-01 00:00:00"]
+
+
+# --- make_date ---
+
+
+def test_make_date() -> None:
+    df = daft.from_pydict({"y": [2021, 2020, 2000], "m": [1, 2, 12], "d": [15, 29, 31]})
+    df = df.with_column("dt", make_date(col("y"), col("m"), col("d")))
+    result = df.to_pydict()
+    assert result["dt"] == [date(2021, 1, 15), date(2020, 2, 29), date(2000, 12, 31)]
+
+
+def test_make_date_invalid() -> None:
+    df = daft.from_pydict({"y": [2021, 2021], "m": [2, 13], "d": [30, 1]})
+    df = df.with_column("dt", make_date(col("y"), col("m"), col("d")))
+    result = df.to_pydict()
+    assert result["dt"] == [None, None]
+
+
+# --- make_timestamp ---
+
+
+def test_make_timestamp() -> None:
+    df = daft.from_pydict({"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [30], "s": [45.0]})
+    df = df.with_column("ts", make_timestamp(col("y"), col("m"), col("d"), col("h"), col("mi"), col("s")))
+    result = df.to_pydict()
+    assert result["ts"] == [datetime(2021, 1, 1, 12, 30, 45)]
+
+
+def test_make_timestamp_with_timezone() -> None:
+    df = daft.from_pydict({"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [0], "s": [0.0]})
+    df = df.with_column(
+        "ts", make_timestamp(col("y"), col("m"), col("d"), col("h"), col("mi"), col("s"), timezone="UTC")
+    )
+    result = df.to_pydict()
+    assert result["ts"] == [datetime(2021, 1, 1, 12, 0, 0, tzinfo=timezone.utc)]
+
+
+# --- make_timestamp_ltz ---
+
+
+def test_make_timestamp_ltz() -> None:
+    df = daft.from_pydict({"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [0], "s": [0.0]})
+    df = df.with_column("ts", make_timestamp_ltz(col("y"), col("m"), col("d"), col("h"), col("mi"), col("s")))
+    result = df.to_pydict()
+    assert result["ts"] == [datetime(2021, 1, 1, 12, 0, 0, tzinfo=timezone.utc)]
+
+
+def test_make_timestamp_ltz_with_timezone() -> None:
+    df = daft.from_pydict({"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [0], "s": [0.0]})
+    df = df.with_column(
+        "ts", make_timestamp_ltz(col("y"), col("m"), col("d"), col("h"), col("mi"), col("s"), timezone="US/Eastern")
+    )
+    result = df.to_pydict()
+    # 12:00 EST = 17:00 UTC
+    assert result["ts"] == [datetime(2021, 1, 1, 17, 0, 0, tzinfo=timezone.utc)]
+
+
+# --- last_day ---
+
+
+def test_last_day() -> None:
+    df = daft.from_pydict({"dt": [date(2021, 1, 15), date(2021, 2, 10), date(2020, 2, 10), date(2021, 4, 1)]})
+    df = df.with_column("last", last_day(col("dt")))
+    result = df.to_pydict()
+    assert result["last"] == [
+        date(2021, 1, 31),
+        date(2021, 2, 28),
+        date(2020, 2, 29),
+        date(2021, 4, 30),
+    ]
+
+
+# --- next_day ---
+
+
+def test_next_day() -> None:
+    # 2021-01-01 is a Friday
+    df = daft.from_pydict({"dt": [date(2021, 1, 1), date(2021, 1, 1), date(2021, 1, 1)]})
+    results = {}
+    for dow in ["Monday", "Friday", "Sunday"]:
+        tmp = df.with_column("next_d", next_day(col("dt"), dow))
+        results[dow] = tmp.to_pydict()["next_d"]
+    assert results["Monday"] == [date(2021, 1, 4)] * 3  # next Mon
+    assert results["Friday"] == [date(2021, 1, 8)] * 3  # next Fri (not same day)
+    assert results["Sunday"] == [date(2021, 1, 3)] * 3  # next Sun
+
+
+# --- SQL integration ---
+
+
+def test_date_construction_sql() -> None:
+    df = daft.from_pydict({"y": [2021], "m": [1], "d": [15]})  # noqa: F841
+    result = daft.sql("SELECT make_date(y, m, d) as dt FROM df").to_pydict()
+    assert result["dt"] == [date(2021, 1, 15)]
+
+    result = daft.sql("SELECT last_day(make_date(y, m, d)) as ld FROM df").to_pydict()
+    assert result["ld"] == [date(2021, 1, 31)]
+
+    result = daft.sql("SELECT next_day(make_date(y, m, d), 'Monday') as next_d FROM df").to_pydict()
+    assert result["next_d"] == [date(2021, 1, 18)]
