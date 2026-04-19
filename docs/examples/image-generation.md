@@ -67,14 +67,14 @@ Great! Now we have a pretty good idea of what our dataset looks like.
 
 Let's now run the Stable Diffusion model over the `"TEXT"` column, and generate images for those texts!
 
-Using GPUs with Daft UDFs is simple. Just specify `num_gpus=N`, where `N` is the number of GPUs that your UDF is going to use.
+Using GPUs with Daft class UDFs is simple. Just specify `gpus=N` on the [`@daft.cls`][daft.cls] decorator, where `N` is the number of GPUs that each instance of your UDF should reserve.
 
 ```python
 import torch
 from diffusers import StableDiffusionPipeline
 
 
-@daft.udf(return_dtype=daft.DataType.python())
+@daft.cls(gpus=1 if USE_GPU else 0)
 class GenerateImageFromText:
     def __init__(self):
         model_id = "runwayml/stable-diffusion-v1-5"
@@ -87,15 +87,15 @@ class GenerateImageFromText:
     def generate_image(self, prompt):
         return self.pipe(prompt, num_inference_steps=20, height=512, width=512).images[0]
 
+    @daft.method.batch(return_dtype=daft.DataType.python())
     def __call__(self, text_col):
         return [self.generate_image(t) for t in text_col]
 
 
-if USE_GPU:
-    GenerateImageFromText = GenerateImageFromText.override_options(num_gpus=1)
+image_generator = GenerateImageFromText()
 
 images_df.with_column(
     "generated_image",
-    GenerateImageFromText(images_df["TEXT"]),
+    image_generator(images_df["TEXT"]),
 ).show(1)
 ```
