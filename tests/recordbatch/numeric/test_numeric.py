@@ -911,6 +911,59 @@ def test_factorial_bad_input() -> None:
         table.eval_expression_list([factorial(col("a"))])
 
 
+def test_bin() -> None:
+    from daft.functions import bin
+
+    table = MicroPartition.from_pydict({"a": [0, 1, 2, 7, 255, 1024, None]})
+    result = table.eval_expression_list([bin(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    expected = ["0", "1", "10", "111", "11111111", "10000000000", None]
+    assert values == expected
+
+
+def test_bin_negative() -> None:
+    from daft.functions import bin
+
+    table = MicroPartition.from_pydict({"a": [-1, -2]})
+    result = table.eval_expression_list([bin(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == ["1" * 64, "1" * 63 + "0"]
+
+
+def test_bin_unsigned_input() -> None:
+    from daft.functions import bin
+
+    table = MicroPartition.from_pydict({"a": pa.array([0, 7, 255], type=pa.uint16())})
+    result = table.eval_expression_list([bin(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == ["0", "111", "11111111"]
+
+
+def test_bin_uint64_max() -> None:
+    from daft.functions import bin
+
+    table = MicroPartition.from_pydict({"a": pa.array([0, 2**63, 2**64 - 1], type=pa.uint64())})
+    result = table.eval_expression_list([bin(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == ["0", "1" + "0" * 63, "1" * 64]
+
+
+def test_bin_float_input() -> None:
+    from daft.functions import bin
+
+    table = MicroPartition.from_pydict({"a": [3.5, 2.1]})
+    with pytest.raises(ValueError, match="Expected input to bin to be integer"):
+        table.eval_expression_list([bin(col("a"))])
+
+
+def test_bin_bad_input() -> None:
+    from daft.functions import bin
+
+    table = MicroPartition.from_pydict({"a": ["a", "b", "c"]})
+    with pytest.raises(ValueError, match="Expected input to bin to be integer"):
+        table.eval_expression_list([bin(col("a"))])
+
+
 def test_hypot() -> None:
     from daft.functions import hypot
 
