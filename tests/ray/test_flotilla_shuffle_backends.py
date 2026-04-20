@@ -54,7 +54,7 @@ def test_task_handle_converts_ray_shuffle_results(monkeypatch):
 
     object_ref = object()
     handle = flotilla.RaySwordfishTaskHandle(
-        result_handle=_AwaitableResultHandle(("ray", [(object_ref, 3, 24)], b"stats")),
+        result_handle=_AwaitableResultHandle(("ray", [(object_ref, 3, 24)], None, b"stats")),
         actor_handle=_FakeActorHandle("grpc://unused"),
         shuffle_write_info=("ray", 0, 1),
     )
@@ -84,7 +84,7 @@ def test_task_handle_converts_flight_shuffle_results(monkeypatch):
     monkeypatch.setattr(flotilla, "FlightShufflePartitionRef", _FlightPartitionRef)
 
     handle = flotilla.RaySwordfishTaskHandle(
-        result_handle=_AwaitableResultHandle(("flight", [(None, 4, 40), (None, 5, 50)], b"stats")),
+        result_handle=_AwaitableResultHandle(("flight", [(None, 4, 40), (None, 5, 50)], None, b"stats")),
         actor_handle=_FakeActorHandle("grpc://127.0.0.1:9000"),
         shuffle_write_info=("flight", 17, 2),
         cache_id=9,
