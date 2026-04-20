@@ -487,6 +487,17 @@ def test_datatype_property_call_is_same_instance():
         assert prop is call, f"DataType.{name}() should return the same instance as DataType.{name}"
 
 
+def test_only_simple_datatype_singletons_are_callable():
+    """Only the zero-arg singleton dtypes should preserve ``()`` compatibility."""
+    assert callable(DataType.int64)
+
+    complex_dtype = DataType.list(DataType.int64)
+    assert not callable(complex_dtype)
+
+    with pytest.raises(TypeError, match="'DataType' object is not callable"):
+        complex_dtype()
+
+
 def test_datatype_schema_from_field_name_and_types():
     """Schema accepts property-style DataType values."""
     from daft.schema import Schema

@@ -146,31 +146,27 @@ class DataType:
             "use a creator method like DataType.int32() or use DataType.from_arrow_type(pa_type)"
         )
 
-    def __call__(self) -> DataType:
-        """Allow DataType instances to be called as no-ops, enabling both ``DataType.int64`` and ``DataType.int64()``."""
-        return self
-
     # These are defined as class-level instances at module bottom via setattr for singleton behavior.
     # The TYPE_CHECKING stubs below tell mypy about their types.
     if TYPE_CHECKING:
-        int8: ClassVar[DataType]
-        int16: ClassVar[DataType]
-        int32: ClassVar[DataType]
-        int64: ClassVar[DataType]
-        uint8: ClassVar[DataType]
-        uint16: ClassVar[DataType]
-        uint32: ClassVar[DataType]
-        uint64: ClassVar[DataType]
-        float32: ClassVar[DataType]
-        float64: ClassVar[DataType]
-        string: ClassVar[DataType]
-        bool: ClassVar[DataType]
-        binary: ClassVar[DataType]
-        null: ClassVar[DataType]
-        date: ClassVar[DataType]
-        interval: ClassVar[DataType]
-        python: ClassVar[DataType]
-        uuid: ClassVar[DataType]
+        int8: ClassVar[_CallableSingletonDataType]
+        int16: ClassVar[_CallableSingletonDataType]
+        int32: ClassVar[_CallableSingletonDataType]
+        int64: ClassVar[_CallableSingletonDataType]
+        uint8: ClassVar[_CallableSingletonDataType]
+        uint16: ClassVar[_CallableSingletonDataType]
+        uint32: ClassVar[_CallableSingletonDataType]
+        uint64: ClassVar[_CallableSingletonDataType]
+        float32: ClassVar[_CallableSingletonDataType]
+        float64: ClassVar[_CallableSingletonDataType]
+        string: ClassVar[_CallableSingletonDataType]
+        bool: ClassVar[_CallableSingletonDataType]
+        binary: ClassVar[_CallableSingletonDataType]
+        null: ClassVar[_CallableSingletonDataType]
+        date: ClassVar[_CallableSingletonDataType]
+        interval: ClassVar[_CallableSingletonDataType]
+        python: ClassVar[_CallableSingletonDataType]
+        uuid: ClassVar[_CallableSingletonDataType]
 
     @classmethod
     def infer_from_type(cls, t: type | GenericAlias | UnionType) -> DataType:
@@ -1587,6 +1583,19 @@ def get_super_ext_type() -> type[pa.ExtensionType]:
     return _STATIC_DAFT_EXTENSION
 
 
+class _CallableSingletonDataType(DataType):
+    """Private subtype used for zero-arg singleton dtypes that keep ``()`` compatibility."""
+
+    def __call__(self) -> DataType:
+        return self
+
+
+def _make_simple_singleton(name: str) -> _CallableSingletonDataType:
+    dt = _CallableSingletonDataType.__new__(_CallableSingletonDataType)
+    dt._dtype = getattr(PyDataType, name)()
+    return dt
+
+
 # Create singleton instances for simple no-arg DataType constructors.
 # This allows both ``DataType.int64`` (property) and ``DataType.int64()`` (call) to work,
 # and isinstance(DataType.int64, DataType) is True everywhere.
@@ -1611,5 +1620,5 @@ for _simple_name in (
     "uuid",
 ):
     _DATATYPE_CONSTRUCTOR_SET.add(_simple_name)
-    setattr(DataType, _simple_name, DataType._from_pydatatype(getattr(PyDataType, _simple_name)()))
+    setattr(DataType, _simple_name, _make_simple_singleton(_simple_name))
 del _simple_name
