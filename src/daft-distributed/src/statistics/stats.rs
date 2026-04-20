@@ -206,9 +206,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        pipeline_node::PipelineNodeContext,
-        scheduling::task::TaskContext,
-        statistics::TaskEvent,
+        pipeline_node::PipelineNodeContext, scheduling::task::TaskContext, statistics::TaskEvent,
     };
 
     fn context() -> PipelineNodeContext {
