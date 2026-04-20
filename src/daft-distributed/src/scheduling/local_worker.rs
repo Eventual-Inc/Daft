@@ -3,8 +3,8 @@
 //!
 //! This entire module is gated behind `#[cfg(all(test, not(feature = "python")))]`
 //! at the parent `scheduling/mod.rs`, so it never compiles into production
-//! builds. It relies on `daft_local_execution::execute_local_plan`, which is
-//! itself only compiled without the python feature.
+//! builds. It relies on `daft_local_execution::testing::execute_local_plan`,
+//! which is itself only compiled without the python feature.
 
 use std::{
     collections::HashMap,
@@ -153,7 +153,7 @@ async fn execute_swordfish_task_locally(
     psets: HashMap<SourceId, Vec<PartitionRef>>,
     task_id: u32,
 ) -> DaftResult<(TaskOutput, ExecutionStats)> {
-    use daft_local_execution::LocalPlanOutput;
+    use daft_local_execution::testing::LocalPlanOutput;
 
     use crate::pipeline_node::{ShufflePartitionRef, ShuffleWriteOutput};
 
@@ -178,7 +178,8 @@ async fn execute_swordfish_task_locally(
         inputs.insert(source_id, Input::InMemory(micro_partitions));
     }
 
-    let (output, stats) = daft_local_execution::execute_local_plan(&plan, config, inputs).await?;
+    let (output, stats) =
+        daft_local_execution::testing::execute_local_plan(&plan, config, inputs).await?;
 
     let task_output = match output {
         LocalPlanOutput::Partitions(partitions) => {

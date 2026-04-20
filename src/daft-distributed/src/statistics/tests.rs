@@ -232,7 +232,7 @@ async fn run_task_locally(task: &SwordfishTask) -> DaftResult<ExecutionStats> {
     }
 
     let (_partitions, stats) =
-        daft_local_execution::execute_local_plan(&plan, config, inputs).await?;
+        daft_local_execution::testing::execute_local_plan(&plan, config, inputs).await?;
     Ok(stats)
 }
 

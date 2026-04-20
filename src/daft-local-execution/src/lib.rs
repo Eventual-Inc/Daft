@@ -29,8 +29,16 @@ use common_runtime::{JoinSet, RuntimeRef, RuntimeTask};
 use console::style;
 use resource_manager::MemoryManager;
 pub use run::ExecutionEngineResult;
+
+/// Test-only helpers for running local plans in-process.
+///
+/// Only compiled without the python feature. Used by distributed execution
+/// tests (e.g. `LocalSwordfishWorker` in `daft-distributed`) to exercise real
+/// local execution without Ray.
 #[cfg(not(feature = "python"))]
-pub use run::{LocalPlanOutput, execute_local_plan};
+pub mod testing {
+    pub use super::run::{LocalPlanOutput, execute_local_plan};
+}
 use runtime_stats::RuntimeStatsManagerHandle;
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};
 use tracing::Instrument;
