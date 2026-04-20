@@ -7,7 +7,7 @@
 use std::{
     collections::HashMap,
     future::Future,
-    sync::{Arc, Mutex, atomic::AtomicBool},
+    sync::{Arc, Mutex},
 };
 
 use common_error::DaftResult;
@@ -34,7 +34,6 @@ pub struct LocalSwordfishWorker {
     worker_id: WorkerId,
     total_num_cpus: f64,
     active_task_details: Arc<Mutex<HashMap<TaskContext, TaskDetails>>>,
-    is_shutdown: Arc<AtomicBool>,
 }
 
 impl LocalSwordfishWorker {
@@ -43,7 +42,6 @@ impl LocalSwordfishWorker {
             worker_id,
             total_num_cpus: 1.0,
             active_task_details: Arc::new(Mutex::new(HashMap::new())),
-            is_shutdown: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -59,11 +57,6 @@ impl LocalSwordfishWorker {
             .lock()
             .unwrap()
             .remove(&task_context);
-    }
-
-    pub fn shutdown(&self) {
-        self.is_shutdown
-            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -158,8 +151,9 @@ async fn execute_swordfish_task_locally(
     psets: HashMap<SourceId, Vec<PartitionRef>>,
     task_id: u32,
 ) -> DaftResult<(TaskOutput, ExecutionStats)> {
-    use crate::pipeline_node::{ShufflePartitionRef, ShuffleWriteOutput};
     use daft_local_execution::LocalPlanOutput;
+
+    use crate::pipeline_node::{ShufflePartitionRef, ShuffleWriteOutput};
 
     // Merge psets into inputs. Psets contain PartitionRefs that are Arc<MicroPartition>
     // in local execution. Convert them to Input::InMemory.
@@ -182,8 +176,7 @@ async fn execute_swordfish_task_locally(
         inputs.insert(source_id, Input::InMemory(micro_partitions));
     }
 
-    let (output, stats) =
-        daft_local_execution::execute_local_plan(&plan, config, inputs).await?;
+    let (output, stats) = daft_local_execution::execute_local_plan(&plan, config, inputs).await?;
 
     let task_output = match output {
         LocalPlanOutput::Partitions(partitions) => {
@@ -295,11 +288,6 @@ impl WorkerManager for LocalSwordfishWorkerManager {
     }
 
     fn shutdown(&self) -> DaftResult<()> {
-        self.workers
-            .lock()
-            .unwrap()
-            .values()
-            .for_each(|w| w.shutdown());
         Ok(())
     }
 }

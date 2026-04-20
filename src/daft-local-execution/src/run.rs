@@ -597,8 +597,9 @@ pub async fn execute_local_plan(
     config: std::sync::Arc<DaftExecutionConfig>,
     inputs: HashMap<SourceId, Input>,
 ) -> DaftResult<(LocalPlanOutput, ExecutionStats)> {
-    use crate::pipeline::{BuilderContext, PipelineMessage};
     use tokio::runtime::Handle;
+
+    use crate::pipeline::{BuilderContext, PipelineMessage};
 
     let handle = Handle::current();
     let query_id = QueryID::from("");
@@ -660,7 +661,9 @@ pub async fn execute_local_plan(
         }
     }
 
-    stats_manager.finish(common_metrics::QueryEndState::Finished).await;
+    stats_manager
+        .finish(common_metrics::QueryEndState::Finished)
+        .await;
 
     let stats = stats_handle
         .take_input_snapshot(input_id)

@@ -292,7 +292,7 @@ pub fn get_context() -> DaftContext {
             let ctx = DaftContext { state };
 
             // If another thread already set the context, use theirs.
-            let _ = DAFT_CONTEXT.set(ctx.clone());
+            let _ = DAFT_CONTEXT.set(ctx);
             DAFT_CONTEXT.get().unwrap().clone()
         }
     }

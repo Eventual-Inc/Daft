@@ -5,8 +5,7 @@ use common_error::DaftResult;
 use common_metrics::{Meter, QueryID, StatSnapshot};
 use common_partitioning::PartitionRef;
 use common_runtime::JoinSet;
-use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_dsl::expr::{BoundColumn, Expr};
+use daft_dsl::expr::{BoundColumn, Expr, bound_expr::BoundExpr};
 use daft_local_plan::{ExecutionStats, Input, SourceId};
 use daft_logical_plan::InMemoryInfo;
 use daft_micropartition::MicroPartition;
@@ -99,10 +98,8 @@ fn build_sort_pipeline(
     let total_bytes: usize = partitions.iter().map(|p| p.size_bytes()).sum();
     let num_partitions = partitions.len();
 
-    let partition_refs: Vec<PartitionRef> = partitions
-        .into_iter()
-        .map(|p| p as PartitionRef)
-        .collect();
+    let partition_refs: Vec<PartitionRef> =
+        partitions.into_iter().map(|p| p as PartitionRef).collect();
 
     let mut psets: HashMap<String, Vec<PartitionRef>> = HashMap::new();
     psets.insert(cache_key.clone(), partition_refs);
@@ -148,10 +145,8 @@ fn build_filter_pipeline(
     let total_bytes: usize = partitions.iter().map(|p| p.size_bytes()).sum();
     let num_partitions = partitions.len();
 
-    let partition_refs: Vec<PartitionRef> = partitions
-        .into_iter()
-        .map(|p| p as PartitionRef)
-        .collect();
+    let partition_refs: Vec<PartitionRef> =
+        partitions.into_iter().map(|p| p as PartitionRef).collect();
 
     let mut psets: HashMap<String, Vec<PartitionRef>> = HashMap::new();
     psets.insert(cache_key.clone(), partition_refs);
@@ -324,10 +319,7 @@ async fn test_sort_single_partition_stats() -> DaftResult<()> {
         StatSnapshot::Source(_) => {
             // Source stats are present — validates the SourceStats handler
         }
-        other => panic!(
-            "Expected Source snapshot for source node, got: {:?}",
-            other
-        ),
+        other => panic!("Expected Source snapshot for source node, got: {:?}", other),
     }
 
     Ok(())
