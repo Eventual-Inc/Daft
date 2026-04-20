@@ -2278,6 +2278,7 @@ dependencies = [
  "daft-micropartition",
  "daft-minhash",
  "daft-parquet",
+ "daft-partition-refs",
  "daft-recordbatch",
  "daft-runners",
  "daft-scan",
@@ -2539,6 +2540,7 @@ dependencies = [
  "daft-local-plan",
  "daft-logical-plan",
  "daft-micropartition",
+ "daft-partition-refs",
  "daft-recordbatch",
  "daft-scan",
  "daft-schema",
@@ -2948,6 +2950,7 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-parquet",
+ "daft-partition-refs",
  "daft-recordbatch",
  "daft-scan",
  "daft-shuffles",
@@ -2995,6 +2998,7 @@ dependencies = [
  "daft-functions-list",
  "daft-logical-plan",
  "daft-micropartition",
+ "daft-partition-refs",
  "daft-recordbatch",
  "daft-scan",
  "indexmap",
@@ -3118,6 +3122,16 @@ dependencies = [
  "tango-bench",
  "tokio",
  "tokio-stream",
+]
+
+[[package]]
+name = "daft-partition-refs"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-partitioning",
+ "common-py-serde",
+ "pyo3",
+ "serde",
 ]
 
 [[package]]
@@ -3262,7 +3276,6 @@ dependencies = [
  "daft-schema",
  "daft-writers",
  "futures",
- "itertools 0.14.0",
  "tokio",
  "tonic",
 ]
