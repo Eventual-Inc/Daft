@@ -511,11 +511,11 @@ impl Stream for TaskBuilderStream {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "python")))]
 pub(crate) use filter::FilterNode;
-#[cfg(test)]
+#[cfg(all(test, not(feature = "python")))]
 pub(crate) use in_memory_source::InMemorySourceNode;
-#[cfg(test)]
+#[cfg(all(test, not(feature = "python")))]
 pub(crate) use sort::SortNode;
 
 #[cfg(test)]
