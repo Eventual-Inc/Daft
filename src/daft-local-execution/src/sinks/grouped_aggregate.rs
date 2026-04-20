@@ -12,6 +12,7 @@ use daft_dsl::expr::{
     bound_expr::{BoundAggExpr, BoundExpr},
 };
 use daft_micropartition::MicroPartition;
+use daft_recordbatch::{InlineAggState, can_inline_agg_with_schema};
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
@@ -29,6 +30,8 @@ pub(crate) enum AggStrategy {
     AggThenPartition,
     PartitionThenAgg(usize),
     PartitionOnly,
+    /// Persistent hash table per worker — avoids per-morsel hash table rebuild.
+    InlineRecycle,
 }
 
 impl AggStrategy {
@@ -37,6 +40,7 @@ impl AggStrategy {
         inner_states: &mut [Option<SinglePartitionAggregateState>],
         input: MicroPartition,
         params: &GroupedAggregateParams,
+        inline_state: &mut Option<InlineAggState>,
     ) -> DaftResult<()> {
         match self {
             Self::AggThenPartition => Self::execute_agg_then_partition(inner_states, input, params),
@@ -44,6 +48,7 @@ impl AggStrategy {
                 Self::execute_partition_then_agg(inner_states, input, params, *threshold)
             }
             Self::PartitionOnly => Self::execute_partition_only(inner_states, input, params),
+            Self::InlineRecycle => Self::execute_inline_recycle(inline_state, input, params),
         }
     }
 
@@ -106,6 +111,22 @@ impl AggStrategy {
         }
         Ok(())
     }
+
+    fn execute_inline_recycle(
+        inline_state: &mut Option<InlineAggState>,
+        input: MicroPartition,
+        params: &GroupedAggregateParams,
+    ) -> DaftResult<()> {
+        let state = inline_state.get_or_insert_with(|| {
+            InlineAggState::try_new(&params.partial_agg_exprs, &params.group_by, &input.schema())
+                .expect("InlineRecycle strategy should only be used when InlineAggState is valid")
+                .expect("InlineRecycle strategy should only be used when InlineAggState is valid")
+        });
+        for rb in input.record_batches() {
+            state.push_batch(rb)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -118,6 +139,7 @@ pub(crate) struct SinglePartitionAggregateState {
 pub(crate) enum GroupedAggregateState {
     Accumulating {
         inner_states: Vec<Option<SinglePartitionAggregateState>>,
+        inline_state: Option<InlineAggState>,
         strategy: Option<AggStrategy>,
         partial_agg_threshold: usize,
         high_cardinality_threshold_ratio: f64,
@@ -134,6 +156,7 @@ impl GroupedAggregateState {
         let inner_states = (0..num_partitions).map(|_| None).collect::<Vec<_>>();
         Self::Accumulating {
             inner_states,
+            inline_state: None,
             strategy: None,
             partial_agg_threshold,
             high_cardinality_threshold_ratio,
@@ -148,6 +171,7 @@ impl GroupedAggregateState {
     ) -> DaftResult<()> {
         let Self::Accumulating {
             inner_states,
+            inline_state,
             strategy,
             partial_agg_threshold,
             high_cardinality_threshold_ratio,
@@ -158,7 +182,7 @@ impl GroupedAggregateState {
 
         // If we have determined a strategy, execute it.
         if let Some(strategy) = strategy {
-            strategy.execute_strategy(inner_states, input, params)?;
+            strategy.execute_strategy(inner_states, input, params, inline_state)?;
         } else {
             // Otherwise, determine the strategy and execute
             let decided_strategy = Self::determine_agg_strategy(
@@ -169,7 +193,7 @@ impl GroupedAggregateState {
                 strategy,
                 global_strategy_lock,
             )?;
-            decided_strategy.execute_strategy(inner_states, input, params)?;
+            decided_strategy.execute_strategy(inner_states, input, params, inline_state)?;
         }
         Ok(())
     }
@@ -203,10 +227,13 @@ impl GroupedAggregateState {
             .collect::<HashSet<_>>()
             .len();
 
-        let decided_strategy = if estimated_num_groups as f64 / input.len() as f64
-            >= high_cardinality_threshold_ratio
-        {
+        let is_high_cardinality =
+            estimated_num_groups as f64 / input.len() as f64 >= high_cardinality_threshold_ratio;
+
+        let decided_strategy = if is_high_cardinality {
             AggStrategy::PartitionThenAgg(partial_agg_threshold)
+        } else if can_inline_agg_with_schema(&params.partial_agg_exprs, &input.schema()) {
+            AggStrategy::InlineRecycle
         } else {
             AggStrategy::AggThenPartition
         };
@@ -216,14 +243,24 @@ impl GroupedAggregateState {
         Ok(decided_strategy)
     }
 
-    fn finalize(&mut self) -> Vec<Option<SinglePartitionAggregateState>> {
-        let res = if let Self::Accumulating { inner_states, .. } = self {
-            std::mem::take(inner_states)
+    fn finalize(
+        &mut self,
+    ) -> (
+        Vec<Option<SinglePartitionAggregateState>>,
+        Option<InlineAggState>,
+    ) {
+        let (inner_states, inline_state) = if let Self::Accumulating {
+            inner_states,
+            inline_state,
+            ..
+        } = self
+        {
+            (std::mem::take(inner_states), inline_state.take())
         } else {
             panic!("GroupedAggregateSink should be in Accumulating state");
         };
         *self = Self::Done;
-        res
+        (inner_states, inline_state)
     }
 }
 
@@ -346,22 +383,57 @@ impl BlockingSink for GroupedAggregateSink {
         spawner
             .spawn(
                 async move {
-                    let mut state_iters = states
-                        .into_iter()
-                        .map(|mut state| state.finalize().into_iter())
-                        .collect::<Vec<_>>();
+                    // Collect inline states and partition-based states separately.
+                    let mut inline_states: Vec<InlineAggState> = Vec::new();
+                    let mut state_iters: Vec<
+                        std::vec::IntoIter<Option<SinglePartitionAggregateState>>,
+                    > = Vec::new();
+
+                    for mut state in states {
+                        let (inner_states, inline_state) = state.finalize();
+                        if let Some(is) = inline_state {
+                            inline_states.push(is);
+                        }
+                        state_iters.push(inner_states.into_iter());
+                    }
+
+                    // Materialize inline partial results and partition them.
+                    let mut inline_per_partition: Vec<Vec<MicroPartition>> =
+                        (0..num_partitions).map(|_| Vec::new()).collect();
+                    for is in inline_states {
+                        if is.num_groups() > 0 {
+                            let materialized = is.finalize()?;
+                            let schema = materialized.schema.clone();
+                            let mp = MicroPartition::new_loaded(
+                                schema,
+                                Arc::new(vec![materialized]),
+                                None,
+                            );
+                            let partitioned = mp.partition_by_hash(
+                                params.final_group_by.as_slice(),
+                                num_partitions,
+                            )?;
+                            for (i, p) in partitioned.into_iter().enumerate() {
+                                if p.len() > 0 {
+                                    inline_per_partition[i].push(p);
+                                }
+                            }
+                        }
+                    }
 
                     let mut per_partition_finalize_tasks = tokio::task::JoinSet::new();
-                    for _ in 0..num_partitions {
-                        let per_partition_state = state_iters
-                            .iter_mut()
-                            .map(|state| {
-                                state.next().expect(
+                    for part_idx in 0..num_partitions {
+                        let per_partition_state: Vec<Option<SinglePartitionAggregateState>> =
+                            state_iters
+                                .iter_mut()
+                                .map(|state| {
+                                    state.next().expect(
                                 "GroupedAggregateState should have SinglePartitionAggregateState",
                             )
-                            })
-                            .collect::<Vec<_>>();
+                                })
+                                .collect();
                         let params = params.clone();
+                        let inline_parts = std::mem::take(&mut inline_per_partition[part_idx]);
                         per_partition_finalize_tasks.spawn(async move {
                             let mut unaggregated = vec![];
                             let mut partially_aggregated = vec![];
@@ -369,6 +441,8 @@ impl BlockingSink for GroupedAggregateSink {
                                 unaggregated.extend(state.unaggregated);
                                 partially_aggregated.extend(state.partially_aggregated);
                             }
+                            // Inline partial results are already partially aggregated.
+                            partially_aggregated.extend(inline_parts);
 
                             // If we have no partially aggregated partitions, aggregate the unaggregated partitions using the original aggregations
                             if params.partial_agg_exprs.is_empty() && !unaggregated.is_empty() {
@@ -379,6 +453,9 @@ impl BlockingSink for GroupedAggregateSink {
                             }
                             // If we have no unaggregated partitions, finalize the partially aggregated partitions
                             else if unaggregated.is_empty() {
+                                if partially_aggregated.is_empty() {
+                                    return Ok(MicroPartition::empty(None));
+                                }
                                 let concated = MicroPartition::concat(partially_aggregated)?;
                                 let agged = concated
                                     .agg(&params.final_agg_exprs, &params.final_group_by)?;
