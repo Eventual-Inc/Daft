@@ -233,7 +233,6 @@ impl ShuffleWriteOutput {
 }
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub(crate) struct ShuffleWriteWithSentinelOutput {
     pub partitions: Vec<ShufflePartitionRef>,
     pub sentinels: Sentinels,
@@ -254,7 +253,6 @@ impl ShuffleWriteWithSentinelOutput {
 }
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub(crate) enum TaskOutput {
     Materialized(MaterializedOutput),
     ShuffleWrite(ShuffleWriteOutput),

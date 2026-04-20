@@ -46,7 +46,7 @@ pub(crate) fn ray_partition_groups_from_outputs(
     Ok(partition_groups)
 }
 
-#[allow(dead_code, clippy::type_complexity)]
+#[allow(clippy::type_complexity)]
 pub(crate) fn ray_partition_groups_and_sentinels_from_outputs(
     outputs: Vec<TaskOutput>,
     num_partitions: usize,

@@ -213,7 +213,7 @@ pub(crate) fn create_sample_tasks(
         .collect::<DaftResult<Vec<_>>>()
 }
 
-#[allow(clippy::too_many_arguments, dead_code)]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn create_range_repartition_tasks_with_sentinels(
     materialized_outputs: Vec<MaterializedOutput>,
     input_schema: SchemaRef,
