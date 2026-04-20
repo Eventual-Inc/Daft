@@ -142,11 +142,63 @@ fn decode_hf_revision_component(revision: &str) -> String {
 }
 
 fn parse_hf_revision_and_path(revision_and_path: &str) -> (String, String) {
+    if let Some(rest) = revision_and_path.strip_prefix("refs%2Fconvert%2F") {
+        if let Some((revision_tail, path)) = rest.split_once('/') {
+            return (
+                decode_hf_revision_component(&format!("refs%2Fconvert%2F{revision_tail}")),
+                path.to_string(),
+            );
+        }
+        return (
+            decode_hf_revision_component(revision_and_path),
+            String::new(),
+        );
+    }
+
+    if let Some(rest) = revision_and_path.strip_prefix("refs%2fconvert%2f") {
+        if let Some((revision_tail, path)) = rest.split_once('/') {
+            return (
+                decode_hf_revision_component(&format!("refs%2fconvert%2f{revision_tail}")),
+                path.to_string(),
+            );
+        }
+        return (
+            decode_hf_revision_component(revision_and_path),
+            String::new(),
+        );
+    }
+
     if let Some(rest) = revision_and_path.strip_prefix("refs/convert/") {
         if let Some((revision_tail, path)) = rest.split_once('/') {
             return (format!("refs/convert/{revision_tail}"), path.to_string());
         }
         return (revision_and_path.to_string(), String::new());
+    }
+
+    if let Some(rest) = revision_and_path.strip_prefix("refs%2Fpr%2F") {
+        if let Some((revision_tail, path)) = rest.split_once('/') {
+            return (
+                decode_hf_revision_component(&format!("refs%2Fpr%2F{revision_tail}")),
+                path.to_string(),
+            );
+        }
+        return (
+            decode_hf_revision_component(revision_and_path),
+            String::new(),
+        );
+    }
+
+    if let Some(rest) = revision_and_path.strip_prefix("refs%2fpr%2f") {
+        if let Some((revision_tail, path)) = rest.split_once('/') {
+            return (
+                decode_hf_revision_component(&format!("refs%2fpr%2f{revision_tail}")),
+                path.to_string(),
+            );
+        }
+        return (
+            decode_hf_revision_component(revision_and_path),
+            String::new(),
+        );
     }
 
     if let Some(rest) = revision_and_path.strip_prefix("refs/pr/") {
@@ -157,9 +209,12 @@ fn parse_hf_revision_and_path(revision_and_path: &str) -> (String, String) {
     }
 
     if let Some((revision, path)) = revision_and_path.split_once('/') {
-        (revision.to_string(), path.to_string())
+        (decode_hf_revision_component(revision), path.to_string())
     } else {
-        (revision_and_path.to_string(), String::new())
+        (
+            decode_hf_revision_component(revision_and_path),
+            String::new(),
+        )
     }
 }
 
@@ -233,10 +288,8 @@ impl FromStr for HFPathParts {
             let (repository, revision, path) =
                 if let Some((repository, revision_prefix)) = repository_segment.split_once('@') {
                     let revision_and_path = match remaining_path {
-                        Some(path) if !path.is_empty() => {
-                            decode_hf_revision_component(&format!("{revision_prefix}/{path}"))
-                        }
-                        _ => decode_hf_revision_component(revision_prefix),
+                        Some(path) if !path.is_empty() => format!("{revision_prefix}/{path}"),
+                        _ => revision_prefix.to_string(),
                     };
                     let (revision, path) = parse_hf_revision_and_path(&revision_and_path);
                     (repository.to_string(), revision, path)
@@ -1043,6 +1096,38 @@ mod tests {
             bucket: "datasets".to_string(),
             repository: "user/repo".to_string(),
             revision: "refs/pr/10".to_string(),
+            path: "config.json".to_string(),
+        };
+
+        assert_eq!(parts, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_hf_parts_with_generic_encoded_slash_revision() -> DaftResult<()> {
+        let uri = "hf://datasets/user/repo@feature%2Fabc/config.json";
+        let parts = uri.parse::<HFPathParts>().unwrap();
+        let expected = HFPathParts {
+            bucket: "datasets".to_string(),
+            repository: "user/repo".to_string(),
+            revision: "feature/abc".to_string(),
+            path: "config.json".to_string(),
+        };
+
+        assert_eq!(parts, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_hf_parts_with_encoded_refs_heads_revision() -> DaftResult<()> {
+        let uri = "hf://datasets/user/repo@refs%2Fheads%2Fmain/config.json";
+        let parts = uri.parse::<HFPathParts>().unwrap();
+        let expected = HFPathParts {
+            bucket: "datasets".to_string(),
+            repository: "user/repo".to_string(),
+            revision: "refs/heads/main".to_string(),
             path: "config.json".to_string(),
         };
 
