@@ -465,3 +465,179 @@ impl StatSnapshot {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{NUM_TASKS_KEY, Stat};
+
+    fn num_tasks_stat(snapshot: &StatSnapshot) -> u64 {
+        snapshot
+            .to_stats()
+            .iter()
+            .find_map(|(name, stat)| {
+                (name == NUM_TASKS_KEY).then(|| match stat {
+                    Stat::Count(v) => *v,
+                    other => panic!("expected Count for num_tasks, got {:?}", other),
+                })
+            })
+            .expect("num_tasks key should be present in to_stats output")
+    }
+
+    #[test]
+    fn merge_sums_num_tasks_for_every_variant() {
+        // (left, right, expected_num_tasks)
+        let cases: Vec<(StatSnapshot, StatSnapshot, u64)> = vec![
+            (
+                StatSnapshot::Default(DefaultSnapshot {
+                    num_tasks: 2,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_out: 0,
+                    bytes_in: 0,
+                    bytes_out: 0,
+                }),
+                StatSnapshot::Default(DefaultSnapshot {
+                    num_tasks: 5,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_out: 0,
+                    bytes_in: 0,
+                    bytes_out: 0,
+                }),
+                7,
+            ),
+            (
+                StatSnapshot::Source(SourceSnapshot {
+                    num_tasks: 1,
+                    cpu_us: 0,
+                    rows_out: 0,
+                    bytes_read: 0,
+                    bytes_out: 0,
+                }),
+                StatSnapshot::Source(SourceSnapshot {
+                    num_tasks: 3,
+                    cpu_us: 0,
+                    rows_out: 0,
+                    bytes_read: 0,
+                    bytes_out: 0,
+                }),
+                4,
+            ),
+            (
+                StatSnapshot::Filter(FilterSnapshot {
+                    num_tasks: 4,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_out: 0,
+                    selectivity: 0.0,
+                    bytes_in: 0,
+                    bytes_out: 0,
+                }),
+                StatSnapshot::Filter(FilterSnapshot {
+                    num_tasks: 6,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_out: 0,
+                    selectivity: 0.0,
+                    bytes_in: 0,
+                    bytes_out: 0,
+                }),
+                10,
+            ),
+            (
+                StatSnapshot::Explode(ExplodeSnapshot {
+                    num_tasks: 2,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_out: 0,
+                    amplification: 0.0,
+                    bytes_in: 0,
+                    bytes_out: 0,
+                }),
+                StatSnapshot::Explode(ExplodeSnapshot {
+                    num_tasks: 2,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_out: 0,
+                    amplification: 0.0,
+                    bytes_in: 0,
+                    bytes_out: 0,
+                }),
+                4,
+            ),
+            (
+                StatSnapshot::Udf(UdfSnapshot {
+                    num_tasks: 1,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_out: 0,
+                    custom_counters: HashMap::new(),
+                    bytes_in: 0,
+                    bytes_out: 0,
+                }),
+                StatSnapshot::Udf(UdfSnapshot {
+                    num_tasks: 9,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_out: 0,
+                    custom_counters: HashMap::new(),
+                    bytes_in: 0,
+                    bytes_out: 0,
+                }),
+                10,
+            ),
+            (
+                StatSnapshot::Join(JoinSnapshot {
+                    num_tasks: 3,
+                    cpu_us: 0,
+                    build_rows_inserted: 0,
+                    probe_rows_in: 0,
+                    probe_rows_out: 0,
+                    build_bytes_inserted: 0,
+                    probe_bytes_in: 0,
+                    probe_bytes_out: 0,
+                }),
+                StatSnapshot::Join(JoinSnapshot {
+                    num_tasks: 8,
+                    cpu_us: 0,
+                    build_rows_inserted: 0,
+                    probe_rows_in: 0,
+                    probe_rows_out: 0,
+                    build_bytes_inserted: 0,
+                    probe_bytes_in: 0,
+                    probe_bytes_out: 0,
+                }),
+                11,
+            ),
+            (
+                StatSnapshot::Write(WriteSnapshot {
+                    num_tasks: 1,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_written: 0,
+                    bytes_written: 0,
+                    bytes_in: 0,
+                }),
+                StatSnapshot::Write(WriteSnapshot {
+                    num_tasks: 2,
+                    cpu_us: 0,
+                    rows_in: 0,
+                    rows_written: 0,
+                    bytes_written: 0,
+                    bytes_in: 0,
+                }),
+                3,
+            ),
+        ];
+
+        for (a, b, expected) in cases {
+            let merged = a.merge(&b);
+            assert_eq!(
+                num_tasks_stat(&merged),
+                expected,
+                "merged snapshot: {merged:?}"
+            );
+        }
+    }
+}

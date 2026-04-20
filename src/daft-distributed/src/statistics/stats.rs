@@ -198,3 +198,99 @@ impl RuntimeStats for DefaultRuntimeStats {
         self.base.add_num_tasks(num_tasks);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use common_metrics::{Meter, ops::NodeInfo};
+    use daft_local_plan::ExecutionStats;
+
+    use super::*;
+    use crate::{
+        pipeline_node::PipelineNodeContext,
+        scheduling::task::TaskContext,
+        statistics::TaskEvent,
+    };
+
+    fn context() -> PipelineNodeContext {
+        PipelineNodeContext::new(
+            0,
+            "test-query".into(),
+            7,
+            "Mock".into(),
+            common_metrics::ops::NodeType::Project,
+            common_metrics::ops::NodeCategory::Intermediate,
+        )
+    }
+
+    fn default_num_tasks(snapshot: &StatSnapshot) -> u64 {
+        match snapshot {
+            StatSnapshot::Default(s) => s.num_tasks,
+            other => panic!("expected Default snapshot, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn base_counters_num_tasks_round_trips_via_snapshot() {
+        let meter = Meter::test_scope("base_counters_num_tasks");
+        let base = BaseCounters::new(&meter, &context());
+        base.add_num_tasks(3);
+        base.add_num_tasks(4);
+        assert_eq!(default_num_tasks(&base.export_default_snapshot()), 7);
+    }
+
+    fn runtime_node_manager(node_origin_id: usize) -> RuntimeNodeManager {
+        let meter = Meter::test_scope("runtime_node_manager_num_tasks");
+        let node_info = Arc::new(NodeInfo {
+            id: node_origin_id,
+            node_origin_id,
+            ..Default::default()
+        });
+        let runtime_stats = Arc::new(DefaultRuntimeStats::new(&meter, &context()));
+        RuntimeNodeManager::new(&meter, runtime_stats, node_info)
+    }
+
+    fn completed_event(worker_node_origin_ids: &[usize]) -> TaskEvent {
+        let nodes = worker_node_origin_ids
+            .iter()
+            .map(|&origin| {
+                (
+                    Arc::new(NodeInfo {
+                        node_origin_id: origin,
+                        ..Default::default()
+                    }),
+                    StatSnapshot::Default(DefaultSnapshot {
+                        cpu_us: 0,
+                        rows_in: 0,
+                        rows_out: 0,
+                        bytes_in: 0,
+                        bytes_out: 0,
+                        num_tasks: 0,
+                    }),
+                )
+            })
+            .collect();
+        TaskEvent::Completed {
+            context: TaskContext::default(),
+            stats: ExecutionStats::new("q".into(), nodes),
+        }
+    }
+
+    #[test]
+    fn handle_task_event_increments_num_tasks_on_origin_match() {
+        let mgr = runtime_node_manager(42);
+        mgr.handle_task_event(&completed_event(&[42]));
+        mgr.handle_task_event(&completed_event(&[42, 42]));
+        // Two tasks matched; each increments by 1 regardless of how many
+        // worker-node snapshots inside share the same origin_node_id.
+        let (_, snapshot) = mgr.export_snapshot();
+        assert_eq!(default_num_tasks(&snapshot), 2);
+    }
+
+    #[test]
+    fn handle_task_event_does_not_increment_num_tasks_without_origin_match() {
+        let mgr = runtime_node_manager(42);
+        mgr.handle_task_event(&completed_event(&[1, 2, 3]));
+        let (_, snapshot) = mgr.export_snapshot();
+        assert_eq!(default_num_tasks(&snapshot), 0);
+    }
+}
