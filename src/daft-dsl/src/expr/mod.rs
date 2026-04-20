@@ -464,7 +464,7 @@ pub enum AggExpr {
         inputs: Vec<ExprRef>,
     },
 
-    /// Planner-internal step 1: produces a `Binary` column of serialized
+    /// Planner-internal step 1: produces a Struct column of typed
     /// accumulator states (one per group) from one input block.
     #[display("{handle}.__map({})", inputs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "))]
     AggFnMap {
@@ -472,7 +472,7 @@ pub enum AggExpr {
         inputs: Vec<ExprRef>,
     },
 
-    /// Planner-internal step 2: folds the `Binary` partial states from
+    /// Planner-internal step 2: folds the Struct partial states from
     /// `AggFnMap` per group and produces the final typed output.
     #[display("{handle}.__reduce({partial})")]
     AggFnReduce {
@@ -809,10 +809,7 @@ impl AggExpr {
                 return_field,
             } => Self::AggFnReduce {
                 handle: handle.clone(),
-                partial: children
-                    .into_iter()
-                    .next()
-                    .expect("AggFnReduce needs 1 child"),
+                partial: children.remove(0),
                 return_field: return_field.clone(),
             },
             Self::ApproxPercentile(ApproxPercentileParams {

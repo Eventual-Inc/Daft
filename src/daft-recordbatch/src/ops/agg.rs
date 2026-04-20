@@ -366,7 +366,7 @@ mod tests {
         unresolved_col,
     };
 
-    use crate::{GroupIndices, RecordBatch, ops::get_column_by_name};
+    use crate::{RecordBatch, ops::get_column_by_name};
 
     /// A sum UDAF that exercises the full three-stage pipeline.
     #[derive(serde::Serialize, serde::Deserialize)]

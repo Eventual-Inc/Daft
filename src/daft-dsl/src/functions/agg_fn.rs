@@ -7,61 +7,76 @@ use common_error::DaftResult;
 use daft_core::prelude::{DataType, Field, Literal, Series};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// Trait for native extension aggregate UDFs.
+/// Trait for user-defined aggregate functions (UDAFs) that plug into the native execution engine.
 ///
-/// Registered with `typetag::serde` so that plan serialization/deserialization works.
+/// Registered with `typetag::serde` so implementations survive plan serialization across
+/// worker boundaries without extra registration steps.
 ///
-/// Three mandatory stages:
+/// Execution follows a three-stage Map → Combine → Reduce pipeline:
 ///
 /// ```text
-/// Map:     call_agg_block(inputs) → Vec<Literal>
-///              One Literal per state field, for this group.
-///          ↓  [framework packs Literals into typed Struct columns]
-/// Combine: call_agg_combine(states) → Vec<Literal>   (associative)
-///              Folds all partial states for this group into one.
+/// Map:     call_agg_block(inputs) → Vec<Literal>          (one call per group per input block)
+///          ↓  [framework packs Literals into a typed Struct column]
+/// Combine: call_agg_combine(states) → Vec<Literal>        (one call per group, may be repeated)
 ///          ↓
-/// Reduce:  call_agg_finalize(state) → Literal
-///              Called once per group to produce the final value.
+/// Reduce:  call_agg_finalize(state) → Literal             (one call per group)
 /// ```
 ///
-/// The intermediate state is declared via `state_fields` and flows as a Struct column
-/// (one child field per state component). This avoids serialization overhead and lets
-/// the planner and Arrow pipeline work with properly typed data throughout.
+/// Intermediate state is typed: `state_fields` declares one Arrow [`Field`] per state component,
+/// and the framework carries them as a Struct column between stages. This avoids binary
+/// serialization and lets Arrow and the query planner reason about state types.
 #[typetag::serde(tag = "type")]
 pub trait AggFn: Send + Sync {
+    /// Globally unique name for this function.
+    ///
+    /// Used as the serde discriminant (`typetag` tag value) and as the sole basis for
+    /// [`AggFnHandle`]'s `Hash` and `PartialEq`. Two handles with the same name are
+    /// considered the same function — choose a name that cannot collide across crates.
     fn name(&self) -> &'static str;
+
+    /// Infer the output [`DataType`] from the types of the input columns.
+    ///
+    /// Called once during planning. `input_types` is parallel to the `inputs` slice
+    /// passed at execution time.
     fn return_dtype(&self, input_types: &[DataType]) -> DaftResult<DataType>;
 
-    /// Declare the typed Arrow fields for the intermediate accumulator state.
+    /// Declare the schema of the intermediate accumulator state.
     ///
-    /// Returns one `Field` per state component. The names and types declared here
-    /// are used to build the Struct column that carries intermediate state between
-    /// the Map and Reduce stages.
+    /// Returns one [`Field`] per state component. The framework uses these fields to
+    /// build the Struct column that carries partial results between Map and Combine stages.
+    /// `inputs` are the input column fields, available here to derive state types that
+    /// depend on the input schema (e.g., keeping the same dtype as the input).
     fn state_fields(&self, inputs: &[Field]) -> DaftResult<Vec<Field>>;
 
-    /// Process `inputs` for one group and return one [`Literal`] per state field.
+    /// **Map stage.** Consume all rows of `inputs` for one group and emit the initial
+    /// accumulator state as one [`Literal`] per field declared by [`state_fields`].
+    ///
+    /// `inputs` contains one [`Series`] per input column; every Series has the same length
+    /// (all rows belonging to this group). Nulls within a Series must be handled explicitly.
     fn call_agg_block(&self, inputs: Vec<Series>) -> DaftResult<Vec<Literal>>;
 
-    /// Merge all partial states for one group into a single state.
+    /// **Combine stage.** Merge all partial states for one group into a single state.
     ///
-    /// `states` contains one [`Series`] per state field (matching `state_fields`),
-    /// where each row is one partial result. Must be **associative**.
-    /// Returns one [`Literal`] per state field.
+    /// `states` contains one [`Series`] per state field declared by [`state_fields`];
+    /// each row in a Series is one partial result from a prior Map or Combine call.
+    /// Must be **associative and commutative** — the framework does not guarantee the
+    /// order in which partial states arrive. Returns one [`Literal`] per state field.
     fn call_agg_combine(&self, states: Vec<Series>) -> DaftResult<Vec<Literal>>;
 
-    /// Receives one [`Literal`] per state field for this group and returns the
-    /// final value.
+    /// **Reduce stage.** Produce the final output value from the fully-merged state.
     ///
-    /// For derived quantities (e.g. mean = sum/count) apply post-processing here.
+    /// Receives one [`Literal`] per state field. Called exactly once per group after all
+    /// Combine passes are complete. Apply any post-processing here (e.g., `mean = sum / count`).
     fn call_agg_finalize(&self, state: Vec<Literal>) -> DaftResult<Literal>;
 }
 
-/// A cloneable, hashable (by name) wrapper around `Arc<dyn AggFn>`.
+/// A cloneable, cheaply-shareable handle to an [`AggFn`] implementation.
 ///
-/// `Hash` and `PartialEq` compare by function name only, matching the
-/// expression-identity semantics used elsewhere in the planner.
+/// Wraps `Arc<dyn AggFn>` so handles can be embedded in expression trees that require
+/// `Clone`. Identity comparisons (`Hash`, `PartialEq`) use the function name only,
+/// consistent with how the planner treats other expression kinds.
 #[derive(Clone)]
-pub struct AggFnHandle(pub Arc<dyn AggFn>);
+pub struct AggFnHandle(Arc<dyn AggFn>);
 
 impl AggFnHandle {
     pub fn new(udf: Arc<dyn AggFn>) -> Self {

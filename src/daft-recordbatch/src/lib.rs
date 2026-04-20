@@ -130,7 +130,7 @@ fn dispatch_per_group(
         Some(groups) => groups
             .iter()
             .map(|indices| {
-                let idx = UInt64Array::from_vec("", indices.iter().map(|&i| i).collect());
+                let idx = UInt64Array::from_vec("", indices.iter().copied().collect());
                 let group_inputs: Vec<Series> = inputs
                     .iter()
                     .map(|s| s.take(&idx))
@@ -145,9 +145,7 @@ fn dispatch_per_group(
     }
     let num_fields = group_lits[0].len();
     (0..num_fields)
-        .map(|fi| {
-            series_from_literals_iter(group_lits.iter().map(|g| Ok(g[fi].clone())), None)
-        })
+        .map(|fi| series_from_literals_iter(group_lits.iter().map(|g| Ok(g[fi].clone())), None))
         .collect()
 }
 
@@ -713,9 +711,14 @@ impl RecordBatch {
             let struct_series = self.eval_agg_child(partial)?;
             let struct_field = struct_series.field().clone();
             let state_series = unpack_struct_state(&struct_series)?;
-            let field_names: Vec<String> = state_series.iter().map(|s| s.name().to_string()).collect();
+            let field_names: Vec<String> =
+                state_series.iter().map(|s| s.name().to_string()).collect();
             let merged = dispatch_per_group(state_series, groups, |s| handle.call_agg_combine(s))?;
-            let merged: Vec<Series> = merged.into_iter().zip(field_names.iter()).map(|(s, n)| s.rename(n)).collect();
+            let merged: Vec<Series> = merged
+                .into_iter()
+                .zip(field_names.iter())
+                .map(|(s, n)| s.rename(n))
+                .collect();
             pack_struct_state(struct_field, merged)
         } else {
             self.eval_agg_expression(agg_expr, groups)

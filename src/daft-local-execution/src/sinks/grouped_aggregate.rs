@@ -6,7 +6,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use daft_core::prelude::{Literal, SchemaRef};
+use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::{
     bound_col,
     bound_expr::{BoundAggExpr, BoundExpr},
@@ -109,6 +109,10 @@ impl AggStrategy {
         Ok(())
     }
 
+    /// How many partial-aggregate partitions may accumulate per hash-bucket before
+    /// an eager map-side combine is triggered. Only active when `AggFn` expressions are present.
+    const PARTIAL_AGG_COMBINE_THRESHOLD: usize = 4;
+
     /// Map-side combine to keep memory bounded. Uses `agg_combine_only` (not `agg`) so
     /// `AggFnReduce` columns stay as Struct and remain valid input for the final `agg()`.
     fn try_eager_combine(
@@ -119,7 +123,8 @@ impl AggStrategy {
             .final_agg_exprs
             .iter()
             .any(|e| matches!(e.as_ref(), daft_dsl::AggExpr::AggFnReduce { .. }));
-        if !needs_combine || state.partially_aggregated.len() < PARTIAL_AGG_COMBINE_THRESHOLD {
+        if !needs_combine || state.partially_aggregated.len() < Self::PARTIAL_AGG_COMBINE_THRESHOLD
+        {
             return Ok(());
         }
         let partitions = std::mem::take(&mut state.partially_aggregated);
@@ -249,10 +254,6 @@ impl GroupedAggregateState {
         res
     }
 }
-
-/// How many partial-aggregate partitions may accumulate per hash-bucket before
-/// an eager map-side combine is triggered. Only active when `AggFn` expressions are present.
-const PARTIAL_AGG_COMBINE_THRESHOLD: usize = 4;
 
 struct GroupedAggregateParams {
     // The original aggregations and group by expressions
@@ -501,10 +502,7 @@ mod tests {
     use daft_micropartition::MicroPartition;
     use daft_recordbatch::RecordBatch;
 
-    use super::{
-        AggStrategy, GroupedAggregateParams, PARTIAL_AGG_COMBINE_THRESHOLD,
-        SinglePartitionAggregateState,
-    };
+    use super::{AggStrategy, GroupedAggregateParams, SinglePartitionAggregateState};
 
     #[derive(serde::Serialize, serde::Deserialize)]
     struct TestSumAggSink;
@@ -600,7 +598,7 @@ mod tests {
     fn test_try_eager_combine_below_threshold() -> DaftResult<()> {
         let params = make_reduce_params();
         let mut state = SinglePartitionAggregateState::default();
-        for i in 1..(PARTIAL_AGG_COMBINE_THRESHOLD as i64) {
+        for i in 1..(AggStrategy::PARTIAL_AGG_COMBINE_THRESHOLD as i64) {
             state.partially_aggregated.push(make_struct_mp(i));
         }
         let before = state.partially_aggregated.len();
@@ -613,7 +611,7 @@ mod tests {
     fn test_try_eager_combine_no_agg_fn_reduce() -> DaftResult<()> {
         let params = make_empty_params();
         let mut state = SinglePartitionAggregateState::default();
-        for i in 0..(PARTIAL_AGG_COMBINE_THRESHOLD as i64 + 2) {
+        for i in 0..(AggStrategy::PARTIAL_AGG_COMBINE_THRESHOLD as i64 + 2) {
             state.partially_aggregated.push(make_struct_mp(i));
         }
         let before = state.partially_aggregated.len();
@@ -626,7 +624,7 @@ mod tests {
     fn test_try_eager_combine_triggers() -> DaftResult<()> {
         let params = make_reduce_params();
         let mut state = SinglePartitionAggregateState::default();
-        for i in 1..=(PARTIAL_AGG_COMBINE_THRESHOLD as i64) {
+        for i in 1..=(AggStrategy::PARTIAL_AGG_COMBINE_THRESHOLD as i64) {
             state.partially_aggregated.push(make_struct_mp(i));
         }
         AggStrategy::try_eager_combine(&mut state, &params)?;
@@ -663,14 +661,14 @@ mod tests {
         let mut state = SinglePartitionAggregateState::default();
 
         // Round 1: push exactly threshold MPs (1+2+3+4=10) → collapses to 1.
-        for i in 1..=(PARTIAL_AGG_COMBINE_THRESHOLD as i64) {
+        for i in 1..=(AggStrategy::PARTIAL_AGG_COMBINE_THRESHOLD as i64) {
             state.partially_aggregated.push(make_struct_mp(i));
         }
         AggStrategy::try_eager_combine(&mut state, &params)?;
         assert_eq!(state.partially_aggregated.len(), 1);
 
         // Round 2: add 3 more MPs (5+6+7) so total len=4 hits the threshold again.
-        for i in 5..=(PARTIAL_AGG_COMBINE_THRESHOLD as i64 + 3) {
+        for i in 5..=(AggStrategy::PARTIAL_AGG_COMBINE_THRESHOLD as i64 + 3) {
             state.partially_aggregated.push(make_struct_mp(i));
         }
         AggStrategy::try_eager_combine(&mut state, &params)?;
