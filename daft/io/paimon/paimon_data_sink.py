@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from daft.datatype import DataType
+from daft.dependencies import pa
 from daft.io.sink import DataSink, WriteResult
 from daft.recordbatch.micropartition import MicroPartition
 from daft.schema import Schema
@@ -10,7 +11,6 @@ from daft.schema import Schema
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    import pyarrow as pa
     from pypaimon.table.file_store_table import FileStoreTable
 
 
@@ -56,8 +56,6 @@ class PaimonDataSink(DataSink[list[Any]]):
         )
 
     def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[list[Any]]]:
-        import pyarrow as pa
-
         table_write = self._write_builder.new_write()
 
         # Lazily compute which fields need type casting on the first batch.
@@ -94,8 +92,6 @@ class PaimonDataSink(DataSink[list[Any]]):
         )
 
     def finalize(self, write_results: list[WriteResult[list[Any]]]) -> MicroPartition:
-        import pyarrow as pa
-
         all_commit_messages = [msg for wr in write_results for msg in wr.result]
 
         table_commit = self._write_builder.new_commit()
