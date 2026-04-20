@@ -84,8 +84,9 @@ pub(crate) enum QueryStatus {
         duration_sec: f64,
         message: Option<String>,
     },
-    /* TODO(void001): Implement dead state */
-    Dead {},
+    Dead {
+        duration_sec: f64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -148,14 +149,27 @@ pub(crate) enum QueryState {
         end_sec: f64,
         message: Option<String>,
     },
-    /* TODO(void001): Implement dead state */
-    Dead {},
+    Dead {
+        plan_info: Option<PlanInfo>,
+        exec_info: Option<ExecInfo>,
+        marked_dead_sec: f64,
+    },
+}
+
+impl QueryState {
+    pub(crate) fn is_active(&self) -> bool {
+        matches!(
+            self,
+            Self::Pending | Self::Optimizing { .. } | Self::Setup { .. } | Self::Executing { .. }
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct QueryInfo {
     pub id: QueryID,
     pub start_sec: f64,
+    pub last_heartbeat_sec: f64,
     pub unoptimized_plan: QueryPlan,
     pub runner: String,
     pub ray_dashboard_url: Option<String>,
@@ -167,6 +181,10 @@ pub(crate) struct QueryInfo {
 }
 
 impl QueryInfo {
+    pub fn is_active(&self) -> bool {
+        self.state.is_active()
+    }
+
     pub fn status(&self) -> QueryStatus {
         match &self.state {
             QueryState::Pending => QueryStatus::Pending {
@@ -197,7 +215,11 @@ impl QueryInfo {
                 duration_sec: end_sec - self.start_sec,
                 message: message.clone(),
             },
-            QueryState::Dead { .. } => QueryStatus::Dead {},
+            QueryState::Dead {
+                marked_dead_sec, ..
+            } => QueryStatus::Dead {
+                duration_sec: marked_dead_sec - self.start_sec,
+            },
         }
     }
 
@@ -272,6 +294,10 @@ impl DashboardState {
                     ..
                 }
                 | QueryState::Canceled {
+                    exec_info: Some(exec_info),
+                    ..
+                }
+                | QueryState::Dead {
                     exec_info: Some(exec_info),
                     ..
                 } => {

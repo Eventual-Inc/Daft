@@ -19,6 +19,11 @@ class QueryStarted(Event):
 
 
 @dataclass(frozen=True)
+class QueryHeartbeat(Event):
+    query_id: str
+
+
+@dataclass(frozen=True)
 class QueryFinished(Event):
     query_id: str
     result: PyQueryResult
@@ -53,6 +58,7 @@ class OperatorStarted(Event):
     query_id: str
     node_id: int
     name: str
+    origin_node_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -60,6 +66,7 @@ class OperatorFinished(Event):
     query_id: str
     node_id: int
     name: str
+    origin_node_id: int | None = None
 
 
 @dataclass(frozen=True)

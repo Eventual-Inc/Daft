@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     sync::{Arc, atomic::Ordering},
+    time::Instant,
 };
 
 use async_trait::async_trait;
@@ -237,7 +238,13 @@ impl PipelineNode for SourceNode {
                 let mut per_input_stats: HashMap<InputId, Arc<SourceStats>> = HashMap::new();
                 stats_manager.activate_node(node_id);
 
-                while let Some(msg) = source_stream.next().await {
+                let mut source_started = Instant::now();
+                loop {
+                    let next = source_stream.next().await;
+                    let elapsed = source_started.elapsed().as_micros() as u64;
+                    let Some(msg) = next else {
+                        break;
+                    };
                     has_data = true;
                     let msg = msg?;
                     match &msg {
@@ -254,19 +261,26 @@ impl PipelineNode for SourceNode {
                                 &stats_manager,
                                 node_id,
                             );
+                            stats.add_duration_us(elapsed);
                             stats.add_rows_out(partition.len() as u64);
                             stats.add_bytes_out(partition.size_bytes() as u64);
                         }
                         PipelineMessage::Flush(input_id) => {
+                            if let Some(stats) = per_input_stats.get(input_id) {
+                                stats.add_duration_us(elapsed);
+                            }
                             per_input_stats.remove(input_id);
                         }
-                        PipelineMessage::ShuffleMetadata { .. } => {
-                            unreachable!("SourceNode should not receive shuffle metadata")
+                        PipelineMessage::FlightPartitionRef { .. } => {
+                            unreachable!(
+                                "SourceNode should not receive flight partition refs from child"
+                            )
                         }
                     }
                     if destination_sender.send(msg).await.is_err() {
                         break;
                     }
+                    source_started = Instant::now();
                 }
 
                 if !has_data {

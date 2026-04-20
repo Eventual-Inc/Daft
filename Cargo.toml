@@ -47,6 +47,7 @@ daft-logical-plan = {path = "src/daft-logical-plan", default-features = false}
 daft-micropartition = {path = "src/daft-micropartition", default-features = false}
 daft-minhash = {path = "src/daft-minhash", default-features = false}
 daft-parquet = {path = "src/daft-parquet", default-features = false}
+daft-partition-refs = {path = "src/daft-partition-refs", default-features = false}
 daft-runners = {path = "src/daft-runners", default-features = false}
 daft-recordbatch = {path = "src/daft-recordbatch", default-features = false}
 daft-scan = {path = "src/daft-scan", default-features = false}
@@ -98,6 +99,7 @@ python = [
   "daft-logical-plan/python",
   "daft-micropartition/python",
   "daft-parquet/python",
+  "daft-partition-refs/python",
   "daft-scan/python",
   "daft-sql/python",
   "daft-session/python",
@@ -217,6 +219,7 @@ members = [
   "src/daft-logical-plan",
   "src/daft-micropartition",
   "src/daft-parquet",
+  "src/daft-partition-refs",
   "src/daft-runners",
   "src/daft-scan",
   "src/daft-session",

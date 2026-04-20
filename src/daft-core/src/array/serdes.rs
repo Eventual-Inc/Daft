@@ -2,14 +2,14 @@ use std::cell::RefCell;
 
 use serde::ser::SerializeMap;
 
-use super::{DataArray, FixedSizeListArray, ListArray, StructArray};
+use super::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
     datatypes::{
         BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, DataType, ExtensionArray,
-        Field, FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray, Utf8Array,
-        logical::LogicalArray,
+        Field, FixedSizeBinaryArray, Int8Array, Int32Array, Int64Array, IntervalArray, NullArray,
+        Utf8Array, logical::LogicalArray,
     },
     series::{IntoSeries, Series},
 };
@@ -147,6 +147,33 @@ impl serde::Serialize for StructArray {
                 .into_series()
         });
         values.push(nulls.as_ref());
+
+        s.serialize_entry("field", self.field.as_ref())?;
+        s.serialize_entry("values", &values)?;
+        s.end()
+    }
+}
+
+impl serde::Serialize for UnionArray {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut s = serializer.serialize_map(Some(2))?;
+        let mut values = Vec::with_capacity(self.children.len() + 2);
+        values.extend(self.children.iter().map(Some));
+
+        let ids = Int8Array::from_slice("ids", self.ids()).into_series();
+        values.push(Some(&ids));
+
+        let offsets = if let Some(offsets) = self.offsets() {
+            let offsets = Int32Array::from_slice("offsets", offsets).into_series();
+            Some(offsets)
+        } else {
+            None
+        };
+
+        values.push(offsets.as_ref());
 
         s.serialize_entry("field", self.field.as_ref())?;
         s.serialize_entry("values", &values)?;

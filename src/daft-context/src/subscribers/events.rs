@@ -11,6 +11,7 @@ use super::{QueryMetadata, QueryResult};
 #[derive(Debug, Clone)]
 pub enum Event {
     QueryStart(QueryStartEvent),
+    QueryHeartbeat(QueryHeartbeatEvent),
     QueryEnd(QueryEndEvent),
     OptimizationStart(OptimizationStartEvent),
     OptimizationComplete(OptimizationCompleteEvent),
@@ -98,6 +99,11 @@ pub struct ProcessStatsEvent {
 pub struct QueryStartEvent {
     pub header: EventHeader,
     pub metadata: Arc<QueryMetadata>,
+}
+
+#[derive(Debug, Clone)]
+pub struct QueryHeartbeatEvent {
+    pub header: EventHeader,
 }
 
 #[derive(Debug, Clone)]

@@ -8,7 +8,7 @@ use self::logical::{DurationArray, ImageArray, MapArray};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{ListArray, StructArray, UuidArray},
+    array::{ListArray, StructArray, UnionArray, UuidArray},
     datatypes::{
         logical::{DateArray, FixedShapeImageArray, TimeArray, TimestampArray},
         *,
@@ -174,6 +174,10 @@ impl Series {
         self.downcast()
     }
     pub fn file<T: DaftMediaType>(&self) -> DaftResult<&FileArray<T>> {
+        self.downcast()
+    }
+
+    pub fn union(&self) -> DaftResult<&UnionArray> {
         self.downcast()
     }
 }

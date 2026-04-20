@@ -1,5 +1,6 @@
 use std::{fmt, time::SystemTime};
 
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Opaque identifier for a checkpoint.
@@ -12,7 +13,7 @@ pub struct CheckpointId(String);
 
 impl CheckpointId {
     /// Characters permitted in a checkpoint ID: ASCII alphanumeric, `-`, `_`.
-    fn is_valid(s: &str) -> bool {
+    pub(crate) fn is_valid(s: &str) -> bool {
         !s.is_empty()
             && s.bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
@@ -116,7 +117,8 @@ impl Checkpoint {
 
 /// Tag indicating the format of the opaque file metadata blob.
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum FileFormat {
     Iceberg,
     Parquet,

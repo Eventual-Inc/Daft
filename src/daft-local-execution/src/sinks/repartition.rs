@@ -9,8 +9,10 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
+use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::{
-    server::flight_server::ShuffleFlightServer, shuffle_cache::InProgressShuffleCache,
+    server::flight_server::ShuffleFlightServer,
+    shuffle_cache::{InProgressShuffleCache, partition_ref_id},
 };
 use itertools::Itertools;
 use tracing::{Span, instrument};
@@ -21,7 +23,6 @@ use super::blocking_sink::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
-    shuffle_metadata::{ShuffleMetadata, ShufflePartitionMetadata},
 };
 
 pub(crate) struct RayRepartitionState {
@@ -41,7 +42,7 @@ impl RayRepartitionState {
 }
 
 pub(crate) struct FlightRepartitionState {
-    cache: Arc<InProgressShuffleCache>,
+    partitions: Arc<Vec<Arc<InProgressShuffleCache>>>,
 }
 
 pub(crate) enum RepartitionState {
@@ -61,9 +62,10 @@ enum RepartitionBackend {
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
         local_server: Arc<ShuffleFlightServer>,
+        shuffle_address: String,
         target_in_memory_size_per_partition: usize,
         // Only accessed from the single-threaded event loop; Mutex is just for Sync.
-        caches: Mutex<HashMap<InputId, Arc<InProgressShuffleCache>>>,
+        partitions: Mutex<HashMap<InputId, Arc<Vec<Arc<InProgressShuffleCache>>>>>,
     },
 }
 
@@ -87,6 +89,7 @@ impl RepartitionSink {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn try_new_flight(
         num_partitions: usize,
         shuffle_id: u64,
@@ -94,6 +97,7 @@ impl RepartitionSink {
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
         local_server: Arc<ShuffleFlightServer>,
+        shuffle_address: String,
     ) -> DaftResult<Self> {
         const TARGET_TOTAL_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 2000;
         Ok(Self {
@@ -104,10 +108,11 @@ impl RepartitionSink {
                 shuffle_dirs,
                 compression,
                 local_server,
+                shuffle_address,
                 target_in_memory_size_per_partition: (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES
                     / num_partitions)
                     .clamp(1024 * 1024 * 8, 1024 * 1024 * 128),
-                caches: Mutex::new(HashMap::new()),
+                partitions: Mutex::new(HashMap::new()),
             },
             num_partitions,
         })
@@ -193,10 +198,13 @@ impl BlockingSink for RepartitionSink {
                                 }
                                 None => input.partition_by_random(num_partitions, 0)?,
                             };
-                            state
-                                .cache
-                                .push_partitioned_data(partitioned.into_iter().collect())
-                                .await?;
+                            let mut push_futures = Vec::new();
+                            for (cache, partition) in
+                                state.partitions.iter().zip(partitioned.into_iter())
+                            {
+                                push_futures.push(cache.push_partition_data(partition));
+                            }
+                            futures::future::try_join_all(push_futures).await?;
                             Ok(RepartitionState::Flight(state))
                         },
                         Span::current(),
@@ -261,53 +269,7 @@ impl BlockingSink for RepartitionSink {
                                 .unwrap()
                                 .into_iter()
                                 .collect::<DaftResult<Vec<_>>>()?;
-                            #[cfg(feature = "python")]
-                            {
-                                use pyo3::{Python, types::PyAnyMethods};
-
-                                let mut metadata = Vec::with_capacity(partitions.len());
-                                Python::attach(|py| -> DaftResult<()> {
-                                    let ray = py.import("ray")?;
-                                    for partition in partitions {
-                                        let py_partition =
-                                            daft_micropartition::python::PyMicroPartition::from(
-                                                partition.clone(),
-                                            );
-                                        let object_ref =
-                                            ray.call_method1("put", (py_partition,))?.unbind();
-                                        metadata.push(ShufflePartitionMetadata::with_object_ref(
-                                            object_ref,
-                                            partition.len(),
-                                            partition.size_bytes(),
-                                        ));
-                                    }
-                                    Ok(())
-                                })?;
-                                Ok(BlockingSinkOutput::ShuffleMetadata(ShuffleMetadata {
-                                    partitions: metadata,
-                                }))
-                            }
-                            // Non-Python path: only exercised by Rust-only test runs.
-                            #[cfg(not(feature = "python"))]
-                            {
-                                use crate::shuffle_metadata::ShufflePartitionMetadata;
-
-                                let metadata = partitions
-                                    .into_iter()
-                                    .map(|p| {
-                                        let num_rows = p.len();
-                                        let size_bytes = p.size_bytes();
-                                        ShufflePartitionMetadata::with_data(
-                                            Arc::new(p),
-                                            num_rows,
-                                            size_bytes,
-                                        )
-                                    })
-                                    .collect();
-                                Ok(BlockingSinkOutput::ShuffleMetadata(ShuffleMetadata {
-                                    partitions: metadata,
-                                }))
-                            }
+                            Ok(BlockingSinkOutput::Partitions(partitions))
                         },
                         Span::current(),
                     )
@@ -316,6 +278,7 @@ impl BlockingSink for RepartitionSink {
             RepartitionBackend::Flight {
                 shuffle_id,
                 local_server,
+                shuffle_address,
                 ..
             } => {
                 let shuffle_id = *shuffle_id;
@@ -330,25 +293,34 @@ impl BlockingSink for RepartitionSink {
                     })
                     .collect::<Vec<_>>();
 
+                let shuffle_address = shuffle_address.clone();
                 spawner
                     .spawn(
                         async move {
-                            let cache = states.into_iter().next().unwrap().cache;
-                            let finalized = cache.close().await?;
-                            let all_rows = finalized.rows_per_partition();
-                            let all_bytes = finalized.bytes_per_partition();
+                            let partitions = states
+                                .into_iter()
+                                .next()
+                                .expect("Flight repartition finalize requires at least one state")
+                                .partitions;
+                            let finalized = futures::future::try_join_all(
+                                partitions.iter().map(|partition| partition.close()),
+                            )
+                            .await?;
                             local_server
-                                .register_shuffle_cache(shuffle_id, finalized.into())
+                                .register_shuffle_partitions(shuffle_id, finalized.clone())
                                 .await?;
-                            Ok(BlockingSinkOutput::ShuffleMetadata(ShuffleMetadata {
-                                partitions: all_rows
+                            Ok(BlockingSinkOutput::FlightPartitionRefs(
+                                finalized
                                     .into_iter()
-                                    .zip(all_bytes)
-                                    .map(|(num_rows, size_bytes)| {
-                                        ShufflePartitionMetadata::new(num_rows, size_bytes)
+                                    .map(|partition| FlightPartitionRef {
+                                        shuffle_id,
+                                        server_address: shuffle_address.clone(),
+                                        partition_ref_id: partition.partition_ref_id,
+                                        num_rows: partition.num_rows,
+                                        size_bytes: partition.size_bytes,
                                     })
                                     .collect(),
-                            }))
+                            ))
                         },
                         Span::current(),
                     )
@@ -424,26 +396,33 @@ impl BlockingSink for RepartitionSink {
                 shuffle_id,
                 target_in_memory_size_per_partition,
                 compression,
-                caches,
+                partitions,
                 ..
             } => {
-                let mut caches = caches.lock().unwrap();
-                let cache = match caches.entry(input_id) {
+                let mut partitions = partitions.lock().unwrap();
+                let partition_set = match partitions.entry(input_id) {
                     std::collections::hash_map::Entry::Occupied(e) => e.get().clone(),
                     std::collections::hash_map::Entry::Vacant(e) => {
-                        let cache = Arc::new(InProgressShuffleCache::try_new(
-                            *num_partitions,
-                            shuffle_dirs,
-                            input_id.to_string(),
-                            *shuffle_id,
-                            *target_in_memory_size_per_partition,
-                            compression.as_deref(),
-                        )?);
-                        e.insert(cache.clone());
-                        cache
+                        let partition_set = Arc::new(
+                            (0..*num_partitions)
+                                .map(|partition_idx| {
+                                    Ok(Arc::new(InProgressShuffleCache::try_new(
+                                        partition_ref_id(input_id, partition_idx),
+                                        shuffle_dirs,
+                                        *shuffle_id,
+                                        *target_in_memory_size_per_partition,
+                                        compression.as_deref(),
+                                    )?))
+                                })
+                                .collect::<DaftResult<Vec<_>>>()?,
+                        );
+                        e.insert(partition_set.clone());
+                        partition_set
                     }
                 };
-                Ok(RepartitionState::Flight(FlightRepartitionState { cache }))
+                Ok(RepartitionState::Flight(FlightRepartitionState {
+                    partitions: partition_set,
+                }))
             }
         }
     }

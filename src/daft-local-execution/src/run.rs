@@ -14,6 +14,7 @@ use daft_context::{DaftContext, Subscriber};
 use daft_local_plan::{ExecutionStats, Input, InputId, LocalPhysicalPlanRef, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
+use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::server::flight_server::{
     FlightServerConnectionHandle, ShuffleFlightServer, start_server_loop,
 };
@@ -27,6 +28,7 @@ use {
     daft_local_plan::python::PyExecutionStats,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
+    daft_partition_refs::PyFlightPartitionRef,
     pyo3::{
         Bound, IntoPyObject, PyAny, PyRef, PyResult, Python, pyclass, pymethods, sync::MutexExt,
     },
@@ -41,12 +43,11 @@ use crate::{
     },
     resource_manager::get_or_init_memory_manager,
     runtime_stats::{RuntimeStatsManager, RuntimeStatsManagerHandle},
-    shuffle_metadata::ShuffleMetadata,
 };
 
 enum ExecutionEngineResultItem {
     Partition(MicroPartition),
-    ShuffleMetadata(ShuffleMetadata),
+    FlightPartitionRef(FlightPartitionRef),
 }
 
 /// Global tokio runtime shared by all NativeExecutor instances
@@ -111,9 +112,13 @@ impl MessageRouter {
                     let _ = sender.send(ExecutionEngineResultItem::Partition(partition));
                 }
             }
-            PipelineMessage::ShuffleMetadata { input_id, metadata } => {
+            PipelineMessage::FlightPartitionRef {
+                input_id,
+                partition_ref,
+            } => {
                 if let Some(sender) = self.output_senders.get(&input_id) {
-                    let _ = sender.send(ExecutionEngineResultItem::ShuffleMetadata(metadata));
+                    let _ =
+                        sender.send(ExecutionEngineResultItem::FlightPartitionRef(partition_ref));
                 }
             }
         }
@@ -474,7 +479,6 @@ impl NativeExecutor {
                 }
                 Ok(ExecutionEngineResult {
                     receiver: result_rx,
-                    shuffle_metadata: None,
                 })
             }
             .boxed(),
@@ -576,14 +580,12 @@ impl Drop for NativeExecutor {
     }
 }
 
-/// Result of running a local plan. Either regular partitions or shuffle output.
+/// Result of running a local plan.
 /// Used by distributed execution test infrastructure (LocalSwordfishWorker).
 #[cfg(not(feature = "python"))]
 pub enum LocalPlanOutput {
-    /// Regular morsel partitions (e.g. from scan, filter, sort, project).
+    /// Output partitions (from any operator — scan, filter, sort, repartition, etc.).
     Partitions(Vec<daft_micropartition::MicroPartition>),
-    /// Repartition/shuffle output: each inner Vec is one output partition bucket.
-    Shuffle(Vec<Vec<std::sync::Arc<daft_micropartition::MicroPartition>>>),
 }
 
 /// Execute a local physical plan in-process and return results + execution statistics.
@@ -592,7 +594,7 @@ pub enum LocalPlanOutput {
 /// SwordfishTask local plans without Ray. Must be called from within a tokio runtime
 /// context (e.g. `#[tokio::test]`).
 ///
-/// Returns the output (partitions or shuffle data) and execution statistics.
+/// Returns the output partitions and execution statistics.
 #[cfg(not(feature = "python"))]
 pub async fn execute_local_plan(
     plan: &LocalPhysicalPlanRef,
@@ -636,9 +638,8 @@ pub async fn execute_local_plan(
         ExecutionRuntimeContext::new(memory_manager.clone(), stats_handle.clone());
     let mut output_receiver = pipeline.start(true, &mut runtime_handle)?;
 
-    // Collect output.
+    // Collect output partitions.
     let mut partitions = Vec::new();
-    let mut shuffle_metadata = None;
     loop {
         tokio::select! {
             Some(join_result) = runtime_handle.join_next() => {
@@ -649,9 +650,7 @@ pub async fn execute_local_plan(
                     Some(PipelineMessage::Morsel { partition, .. }) => {
                         partitions.push(partition);
                     }
-                    Some(PipelineMessage::ShuffleMetadata { metadata, .. }) => {
-                        shuffle_metadata = Some(metadata);
-                    }
+                    Some(PipelineMessage::FlightPartitionRef { .. }) => {}
                     Some(PipelineMessage::Flush(_)) => {}
                     None => {
                         // Pipeline finished.
@@ -671,60 +670,16 @@ pub async fn execute_local_plan(
         .take_input_snapshot(input_id)
         .await
         .unwrap_or_else(|_| ExecutionStats::new(QueryID::from(""), vec![]));
-
-    let output = if let Some(metadata) = shuffle_metadata {
-        // Convert shuffle metadata to partition vectors.
-        // In non-Python mode, each ShufflePartitionMetadata carries the actual data.
-        let mut shuffle_partitions = Vec::new();
-        for partition_meta in metadata.partitions {
-            #[cfg(not(feature = "python"))]
-            {
-                if let Some(data) = partition_meta.data {
-                    shuffle_partitions.push(vec![data]);
-                } else {
-                    shuffle_partitions.push(vec![]);
-                }
-            }
-            #[cfg(feature = "python")]
-            {
-                // In Python mode, partition data is in Ray — we only have metadata.
-                let _ = partition_meta;
-                shuffle_partitions.push(vec![]);
-            }
-        }
-        LocalPlanOutput::Shuffle(shuffle_partitions)
-    } else {
-        LocalPlanOutput::Partitions(partitions)
-    };
-
-    Ok((output, stats))
+    Ok((LocalPlanOutput::Partitions(partitions), stats))
 }
 
 pub struct ExecutionEngineResult {
     receiver: crate::channel::UnboundedReceiver<ExecutionEngineResultItem>,
-    shuffle_metadata: Option<ShuffleMetadata>,
 }
 
 impl ExecutionEngineResult {
-    async fn next(&mut self) -> Option<MicroPartition> {
-        while let Some(item) = self.receiver.recv().await {
-            match item {
-                ExecutionEngineResultItem::Partition(partition) => return Some(partition),
-                ExecutionEngineResultItem::ShuffleMetadata(metadata) => {
-                    self.shuffle_metadata = Some(metadata);
-                }
-            }
-        }
-        None
-    }
-
-    async fn into_shuffle_metadata(mut self) -> Option<ShuffleMetadata> {
-        while let Some(item) = self.receiver.recv().await {
-            if let ExecutionEngineResultItem::ShuffleMetadata(metadata) = item {
-                self.shuffle_metadata = Some(metadata);
-            }
-        }
-        self.shuffle_metadata
+    async fn next(&mut self) -> Option<ExecutionEngineResultItem> {
+        self.receiver.recv().await
     }
 }
 
@@ -755,7 +710,23 @@ impl PyResultReceiver {
                 .expect("PyResultReceiver.__anext__() should not be called after try_finish().")
                 .next()
                 .await;
-            Ok(part.map(PyMicroPartition::from))
+            Python::attach(|py| {
+                Ok(match part {
+                    None => py.None(),
+                    Some(ExecutionEngineResultItem::Partition(partition)) => {
+                        PyMicroPartition::from(partition)
+                            .into_pyobject(py)?
+                            .unbind()
+                            .into_any()
+                    }
+                    Some(ExecutionEngineResultItem::FlightPartitionRef(partition_ref)) => {
+                        PyFlightPartitionRef::from(partition_ref)
+                            .into_pyobject(py)?
+                            .unbind()
+                            .into_any()
+                    }
+                })
+            })
         })
     }
 
@@ -776,36 +747,6 @@ impl PyResultReceiver {
             let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
             let stats = finish_future.await?;
             Ok(PyExecutionStats::from(stats))
-        })
-    }
-
-    fn try_finish_with_shuffle_metadata<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let result = self.result.clone();
-        let executor = self.executor.clone();
-        let fingerprint = self.fingerprint;
-        let input_id = self.input_id;
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut result_guard = result.lock().await;
-            let execution_result = result_guard
-                .take()
-                .expect("PyResultReceiver.try_finish_with_shuffle_metadata() should not be called more than once.");
-            drop(result_guard);
-
-            let shuffle_metadata = execution_result.into_shuffle_metadata().await;
-            let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
-            let stats = finish_future.await?;
-            Python::attach(|py| {
-                let py_metadata = shuffle_metadata
-                    .as_ref()
-                    .map(|metadata| metadata.to_pyobject(py))
-                    .transpose()?;
-                Ok((PyExecutionStats::from(stats), py_metadata)
-                    .into_pyobject(py)?
-                    .unbind())
-            })
         })
     }
 }

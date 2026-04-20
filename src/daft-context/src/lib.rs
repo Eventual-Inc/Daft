@@ -20,8 +20,8 @@ use crate::subscribers::{
     event_header,
     events::{
         ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorMeta, OperatorStartEvent,
-        OptimizationCompleteEvent, OptimizationStartEvent, QueryEndEvent, QueryStartEvent,
-        ResultOutEvent, StatsEvent,
+        OptimizationCompleteEvent, OptimizationStartEvent, QueryEndEvent, QueryHeartbeatEvent,
+        QueryStartEvent, ResultOutEvent, StatsEvent,
     },
 };
 
@@ -145,6 +145,13 @@ impl DaftContext {
             metadata,
         });
         self.dispatch_event(&event, "notify query start")
+    }
+
+    pub fn notify_query_heartbeat(&self, query_id: QueryID) -> DaftResult<()> {
+        let event = Event::QueryHeartbeat(QueryHeartbeatEvent {
+            header: event_header(query_id),
+        });
+        self.dispatch_event(&event, "notify query heartbeat")
     }
 
     pub fn notify_query_end(&self, query_id: QueryID, result: QueryResult) {

@@ -25,7 +25,7 @@ use super::{
     },
     worker::{Worker, WorkerId, WorkerManager},
 };
-use crate::pipeline_node::{MaterializedOutput, TaskOutput};
+use crate::pipeline_node::MaterializedOutput;
 
 /// A worker that executes `SwordfishTask`s in-process via the local execution pipeline.
 ///
@@ -145,17 +145,14 @@ impl TaskResultHandle for LocalSwordfishTaskResultHandle {
 ///
 /// Converts the task's psets (partition refs containing MicroPartitions) into
 /// `Input::InMemory` entries and runs the plan via the local execution pipeline.
-/// Returns the appropriate `TaskOutput` variant (Materialized or ShuffleWrite).
 async fn execute_swordfish_task_locally(
     plan: daft_local_plan::LocalPhysicalPlanRef,
     config: Arc<common_daft_config::DaftExecutionConfig>,
     task_inputs: HashMap<SourceId, Input>,
     psets: HashMap<SourceId, Vec<PartitionRef>>,
     task_id: u32,
-) -> DaftResult<(TaskOutput, ExecutionStats)> {
+) -> DaftResult<(MaterializedOutput, ExecutionStats)> {
     use daft_local_execution::testing::LocalPlanOutput;
-
-    use crate::pipeline_node::{ShufflePartitionRef, ShuffleWriteOutput};
 
     // Merge psets into inputs. Psets contain PartitionRefs that are Arc<MicroPartition>
     // in local execution. Convert them to Input::InMemory.
@@ -181,48 +178,19 @@ async fn execute_swordfish_task_locally(
     let (output, stats) =
         daft_local_execution::testing::execute_local_plan(&plan, config, inputs).await?;
 
-    let task_output = match output {
-        LocalPlanOutput::Partitions(partitions) => {
-            let partition_refs: Vec<PartitionRef> = partitions
-                .into_iter()
-                .map(|mp| Arc::new(mp) as PartitionRef)
-                .collect();
-            TaskOutput::Materialized(MaterializedOutput::new(
-                partition_refs,
-                "local-worker".into(),
-                String::new(),
-                task_id,
-            ))
-        }
-        LocalPlanOutput::Shuffle(shuffle_partitions) => {
-            // Each entry in shuffle_partitions corresponds to one output partition bucket.
-            // Concatenate each bucket into a single MicroPartition for the ShufflePartitionRef.
-            let shuffle_refs: Vec<ShufflePartitionRef> = shuffle_partitions
-                .into_iter()
-                .map(|bucket| {
-                    if bucket.is_empty() {
-                        let empty = MicroPartition::empty(None);
-                        ShufflePartitionRef::Ray(Arc::new(empty) as PartitionRef)
-                    } else if bucket.len() == 1 {
-                        ShufflePartitionRef::Ray(bucket.into_iter().next().unwrap() as PartitionRef)
-                    } else {
-                        let parts: Vec<MicroPartition> =
-                            bucket.into_iter().map(|mp| (*mp).clone()).collect();
-                        let concatenated = MicroPartition::concat(parts)
-                            .expect("Failed to concatenate shuffle bucket partitions");
-                        ShufflePartitionRef::Ray(Arc::new(concatenated) as PartitionRef)
-                    }
-                })
-                .collect();
-            TaskOutput::ShuffleWrite(ShuffleWriteOutput::new(
-                shuffle_refs,
-                "local-worker".into(),
-                task_id,
-            ))
-        }
-    };
+    let LocalPlanOutput::Partitions(partitions) = output;
+    let partition_refs: Vec<PartitionRef> = partitions
+        .into_iter()
+        .map(|mp| Arc::new(mp) as PartitionRef)
+        .collect();
+    let materialized = MaterializedOutput::new(
+        partition_refs,
+        "local-worker".into(),
+        String::new(),
+        task_id,
+    );
 
-    Ok((task_output, stats))
+    Ok((materialized, stats))
 }
 
 /// A worker manager for LocalSwordfishWorkers.

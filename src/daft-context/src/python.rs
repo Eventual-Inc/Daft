@@ -235,6 +235,11 @@ impl PyDaftContext {
         Ok(())
     }
 
+    pub fn notify_query_heartbeat(&self, py: Python, query_id: String) -> PyResult<()> {
+        py.detach(|| self.inner.notify_query_heartbeat(query_id.into()))?;
+        Ok(())
+    }
+
     pub fn notify_query_end(&self, py: Python, query_id: String, query_result: PyQueryResult) {
         py.detach(|| {
             self.inner

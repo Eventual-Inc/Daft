@@ -19,13 +19,12 @@ use tonic::{Request, Response, Status, transport::Server};
 use super::stream::FlightDataStreamReader;
 use crate::{
     client::flight_client::FlightRecordBatchStreamToDaftRecordBatchStream,
-    shuffle_cache::ShuffleCache,
+    shuffle_cache::PartitionCache,
 };
 
 struct ParsedTicket {
     shuffle_id: u64,
-    partition_idx: usize,
-    cache_ids: Option<Vec<u32>>,
+    partition_ref_ids: Vec<u64>,
 }
 
 impl ParsedTicket {
@@ -33,44 +32,43 @@ impl ParsedTicket {
         let ticket_str = String::from_utf8(ticket.ticket.to_vec())
             .map_err(|e| Status::invalid_argument(e.to_string()))?;
 
-        // Ticket format: "shuffle_id:partition_idx:cache_ids" where cache_ids is comma-separated list of u32s
-        let parts: Vec<&str> = ticket_str.splitn(3, ':').collect();
+        // Ticket format: "shuffle_id:partition_ref_ids" where partition_ref_ids is comma-separated list of u64s
+        let parts: Vec<&str> = ticket_str.splitn(2, ':').collect();
         if parts.len() < 2 {
             return Err(Status::invalid_argument(
-                "Invalid ticket format. Expected 'shuffle_id:partition_idx' or 'shuffle_id:partition_idx:cache_ids'",
+                "Invalid ticket format. Expected 'shuffle_id:partition_ref_ids'",
             ));
         }
 
         let shuffle_id = parts[0]
             .parse::<u64>()
             .map_err(|e| Status::invalid_argument(format!("Invalid shuffle id: {}", e)))?;
-        let partition_idx = parts[1]
-            .parse::<usize>()
-            .map_err(|e| Status::invalid_argument(format!("Invalid partition index: {}", e)))?;
-
-        // Parse cache_ids if provided (third part of ticket)
-        let cache_ids: Option<Vec<u32>> = if parts.len() == 3 && !parts[2].is_empty() {
-            let ids = parts[2]
-                .split(',')
-                .map(|id| id.parse::<u32>())
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| Status::invalid_argument(format!("Invalid cache id: {}", e)))?;
-            Some(ids)
-        } else {
-            None
-        };
+        let partition_ref_ids = parts[1]
+            .split(',')
+            .filter(|id| !id.is_empty())
+            .map(|id| {
+                id.parse::<u64>().map_err(|e| {
+                    Status::invalid_argument(format!("Invalid partition ref id: {}", e))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
             shuffle_id,
-            partition_idx,
-            cache_ids,
+            partition_ref_ids,
         })
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct FlightPartitionKey {
+    shuffle_id: u64,
+    partition_ref_id: u64,
+}
+
 #[derive(Clone, Default)]
 pub struct ShuffleFlightServer {
-    shuffle_caches: Arc<Mutex<HashMap<u64, Vec<Arc<ShuffleCache>>>>>,
+    shuffle_partitions: Arc<Mutex<HashMap<FlightPartitionKey, PartitionCache>>>,
 }
 
 impl ShuffleFlightServer {
@@ -78,51 +76,53 @@ impl ShuffleFlightServer {
         Self::default()
     }
 
-    pub async fn register_shuffle_cache(
+    pub async fn register_shuffle_partitions(
         &self,
         shuffle_id: u64,
-        cache: Arc<ShuffleCache>,
+        partitions: Vec<PartitionCache>,
     ) -> DaftResult<()> {
-        let mut caches = self.shuffle_caches.lock().await;
-        caches.entry(shuffle_id).or_insert(Vec::new()).push(cache);
+        let mut shuffle_partitions = self.shuffle_partitions.lock().await;
+        for partition in partitions {
+            shuffle_partitions.insert(
+                FlightPartitionKey {
+                    shuffle_id,
+                    partition_ref_id: partition.partition_ref_id,
+                },
+                partition,
+            );
+        }
         Ok(())
     }
 
     async fn get_shuffle_file_paths(
         &self,
         shuffle_id: u64,
-        partition_idx: usize,
-        cache_ids: Option<&[u32]>,
+        partition_ref_ids: &[u64],
     ) -> Option<(Vec<String>, SchemaRef)> {
-        let caches = self.shuffle_caches.lock().await;
-        let shuffle_caches = caches.get(&shuffle_id).cloned()?;
+        let partitions = self.shuffle_partitions.lock().await;
 
-        let schema = shuffle_caches
-            .first()
-            .expect("Expected at least one cache")
-            .schema();
+        let schema = partitions
+            .get(&FlightPartitionKey {
+                shuffle_id,
+                partition_ref_id: *partition_ref_ids
+                    .first()
+                    .expect("Expected at least one partition"),
+            })
+            .expect("No partitions found")
+            .schema
+            .clone();
 
-        // Filter caches by cache_ids if provided
-        let filtered_caches: Vec<_> = if let Some(ids) = cache_ids {
-            shuffle_caches
-                .iter()
-                .filter(|cache| {
-                    // Parse cache_id from cache and check if it's in the requested ids
-                    cache
-                        .cache_id()
-                        .parse::<u32>()
-                        .map(|cache_id| ids.contains(&cache_id))
-                        .unwrap_or(false)
-                })
-                .cloned()
-                .collect()
-        } else {
-            shuffle_caches
-        };
-
-        let file_paths = filtered_caches
+        let file_paths = partition_ref_ids
             .iter()
-            .flat_map(|cache| cache.file_paths_for_partition(partition_idx))
+            .filter_map(|partition_ref_id| {
+                partitions
+                    .get(&FlightPartitionKey {
+                        shuffle_id,
+                        partition_ref_id: *partition_ref_id,
+                    })
+                    .map(|p| p.file_paths.clone())
+            })
+            .flatten()
             .collect::<Vec<_>>();
 
         Some((file_paths, schema))
@@ -133,14 +133,16 @@ impl ShuffleFlightServer {
     pub async fn get_partition_local(
         &self,
         shuffle_id: u64,
-        partition_idx: usize,
-        cache_ids: &[u32],
+        partition_ref_ids: &[u64],
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
         let (file_paths, schema) = self
-            .get_shuffle_file_paths(shuffle_id, partition_idx, Some(cache_ids))
+            .get_shuffle_file_paths(shuffle_id, partition_ref_ids)
             .await
             .ok_or_else(|| {
-                DaftError::ValueError(format!("Shuffle cache not found for id: {}", shuffle_id))
+                DaftError::ValueError(format!(
+                    "Shuffle partitions not found for shuffle {} refs {:?}",
+                    shuffle_id, partition_ref_ids
+                ))
             })?;
 
         let file_path_stream = futures::stream::iter(file_paths);
@@ -236,16 +238,12 @@ impl FlightService for ShuffleFlightServer {
         let ticket = ParsedTicket::from_ticket(&ticket)?;
 
         let (file_paths, schema) = self
-            .get_shuffle_file_paths(
-                ticket.shuffle_id,
-                ticket.partition_idx,
-                ticket.cache_ids.as_deref(),
-            )
+            .get_shuffle_file_paths(ticket.shuffle_id, &ticket.partition_ref_ids)
             .await
             .ok_or_else(|| {
                 Status::not_found(format!(
-                    "Shuffle cache not found for id: {}",
-                    ticket.shuffle_id
+                    "Shuffle partitions not found for shuffle {} refs {:?}",
+                    ticket.shuffle_id, ticket.partition_ref_ids
                 ))
             })?;
 

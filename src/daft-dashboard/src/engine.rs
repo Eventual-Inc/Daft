@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::Arc, time::SystemTime};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use axum::{
     Json, Router,
@@ -10,7 +14,9 @@ use common_metrics::{QueryEndState, QueryID, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KE
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
-fn secs_from_epoch() -> f64 {
+const DEAD_QUERY_THRESHOLD_SEC: f64 = 60.;
+
+pub(crate) fn secs_from_epoch() -> f64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
@@ -55,6 +61,7 @@ pub(crate) fn apply_query_start(
     let query_info = QueryInfo {
         id: query_id.clone(),
         start_sec: args.start_sec,
+        last_heartbeat_sec: secs_from_epoch(),
         unoptimized_plan: args.unoptimized_plan,
         runner: args
             .runner
@@ -75,6 +82,34 @@ pub(crate) fn apply_query_start(
     };
 
     state.ping_clients_on_query_update(query_info.value());
+    StatusCode::OK
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct QueryHeartbeatArgs {
+    pub timestamp_sec: f64,
+}
+
+async fn query_heartbeat(
+    State(state): State<Arc<DashboardState>>,
+    Path(query_id): Path<QueryID>,
+    Json(_args): Json<QueryHeartbeatArgs>,
+) -> StatusCode {
+    let query_info = state.queries.get_mut(&query_id);
+    let Some(mut query_info) = query_info else {
+        tracing::error!("Query `{}` not found", query_id);
+        return StatusCode::BAD_REQUEST;
+    };
+
+    // Record the dashboard server's clock as the heartbeat even though
+    // the request includes a timestamp according to the runner's clock,
+    // because we care about how *recent* the heartbeat is, and we don't
+    // have the runner's *current* clock to compare against.
+    query_info.last_heartbeat_sec = secs_from_epoch();
+
+    state.ping_clients_on_query_update(query_info.value());
+
     StatusCode::OK
 }
 
@@ -715,11 +750,46 @@ pub(crate) fn apply_query_end(
                 message: args.error_message,
             }
         }
-        QueryEndState::Dead => todo!(),
     };
 
     state.ping_clients_on_query_update(query_info.value());
     StatusCode::OK
+}
+
+/// periodic check for dead queries. Not an HTTP handler.
+pub(crate) async fn mark_dead_queries(state: Arc<DashboardState>) {
+    let dead_threshold = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64()
+        - DEAD_QUERY_THRESHOLD_SEC;
+
+    // Only check active queries (not already terminal)
+    let active_queries = state.queries.iter_mut().filter(|q| q.is_active());
+    for mut q in active_queries {
+        if q.last_heartbeat_sec < dead_threshold {
+            tracing::error!(
+                "Marking query {} as dead, last heartbeat {:?}",
+                q.id,
+                SystemTime::UNIX_EPOCH + Duration::from_secs_f64(q.last_heartbeat_sec),
+            );
+            let (plan_info, exec_info) = match &q.state {
+                QueryState::Setup { plan_info, .. } => (Some(plan_info.clone()), None),
+                QueryState::Executing {
+                    plan_info,
+                    exec_info,
+                } => (Some(plan_info.clone()), Some(exec_info.clone())),
+                _ => (None, None),
+            };
+            q.state = QueryState::Dead {
+                plan_info,
+                exec_info,
+                marked_dead_sec: secs_from_epoch(),
+            };
+
+            state.ping_clients_on_query_update(&q);
+        }
+    }
 }
 
 pub(crate) fn routes() -> Router<Arc<DashboardState>> {
@@ -727,6 +797,7 @@ pub(crate) fn routes() -> Router<Arc<DashboardState>> {
         // Query lifecycle
         // TODO: Consider replacing with websocket for active engine -> server communication
         .route("/query/{query_id}/start", post(query_start))
+        .route("/query/{query_id}/heartbeat", post(query_heartbeat))
         .route("/query/{query_id}/plan_start", post(plan_start))
         .route("/query/{query_id}/plan_end", post(plan_end))
         .route("/query/{query_id}/exec/start", post(exec_start))
