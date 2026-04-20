@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 
 use crate::{
     array::{
@@ -29,61 +29,32 @@ pub fn calculate_stats(array: &Float64Array) -> DaftResult<Stats> {
 }
 
 pub fn exact_percentile(values: &Float64Array, percentage: f64) -> DaftResult<Option<f64>> {
-    let valid_values: Float64Array = values.into_iter().flatten().map(Some).collect();
-
-    if valid_values.is_empty() {
-        return Ok(None);
-    }
-
-    let sorted = valid_values.sort(false, false)?;
-    let rank = percentage * (sorted.len() - 1) as f64;
-    let lower = rank.floor() as usize;
-    let upper = rank.ceil() as usize;
-
-    let lower_value = sorted.get(lower).ok_or_else(|| {
-        DaftError::ComputeError(
-            "Unexpected null while computing lower percentile bound".to_string(),
-        )
-    })?;
-
-    if lower == upper {
-        Ok(Some(lower_value))
-    } else {
-        let upper_value = sorted.get(upper).ok_or_else(|| {
-            DaftError::ComputeError(
-                "Unexpected null while computing upper percentile bound".to_string(),
-            )
-        })?;
-        let weight = rank - lower as f64;
-        let percentile = (upper_value - lower_value).mul_add(weight, lower_value);
-        Ok(Some(percentile))
-    }
-}
-
-pub fn exact_median(values: &Float64Array) -> DaftResult<Option<f64>> {
     let mut valid_values: Vec<f64> = values.into_iter().flatten().collect();
 
     if valid_values.is_empty() {
         return Ok(None);
     }
 
-    let len = valid_values.len();
-    let mid = len / 2;
+    let rank = percentage * (valid_values.len() - 1) as f64;
+    let lower = rank.floor() as usize;
+    let upper = rank.ceil() as usize;
 
-    let (lower_partition, median, _) = valid_values.select_nth_unstable_by(mid, f64::total_cmp);
+    let (_, lower_ref, greater_partition) =
+        valid_values.select_nth_unstable_by(lower, f64::total_cmp);
+    let lower_value = *lower_ref;
 
-    if len % 2 == 1 {
-        Ok(Some(*median))
+    if lower == upper {
+        Ok(Some(lower_value))
     } else {
-        // For even length, the median is the average of elements at mid-1 and mid.
-        // The lower partition contains all elements <= elements[mid] but is unsorted,
-        // so we need a linear scan to find its max.
-        let lower = lower_partition
+        // upper == lower + 1, so upper_value is the min of the greater partition.
+        let upper_value = greater_partition
             .iter()
             .copied()
-            .max_by(f64::total_cmp)
+            .min_by(f64::total_cmp)
             .unwrap();
-        Ok(Some(f64::midpoint(lower, *median)))
+        let weight = rank - lower as f64;
+        let percentile = (upper_value - lower_value).mul_add(weight, lower_value);
+        Ok(Some(percentile))
     }
 }
 

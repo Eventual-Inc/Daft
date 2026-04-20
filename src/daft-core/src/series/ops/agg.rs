@@ -8,9 +8,9 @@ use crate::{
         growable::make_growable,
         ops::{
             DaftApproxSketchAggable, DaftBoolAggable, DaftConcatAggable, DaftCountAggable,
-            DaftHllMergeAggable, DaftMeanAggable, DaftMedianAggable, DaftMergeSketchAggable,
-            DaftPercentileAggable, DaftProductAggable, DaftSetAggable, DaftSkewAggable,
-            DaftStddevAggable, DaftSumAggable, DaftVarianceAggable, GroupIndices,
+            DaftHllMergeAggable, DaftMeanAggable, DaftMergeSketchAggable, DaftPercentileAggable,
+            DaftProductAggable, DaftSetAggable, DaftSkewAggable, DaftStddevAggable, DaftSumAggable,
+            DaftVarianceAggable, GroupIndices,
         },
     },
     count_mode::CountMode,
@@ -238,34 +238,6 @@ impl Series {
             _ => Err(DaftError::not_implemented(format!(
                 "Mean not implemented for {target_type}, source type: {}",
                 self.data_type()
-            ))),
-        }
-    }
-
-    pub fn median(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
-        match self.data_type() {
-            dt if dt.is_numeric() => {
-                let casted = self.cast(&DataType::Float64)?;
-                let casted = casted.f64()?;
-                let result = match groups {
-                    Some(groups) => casted.grouped_median(groups),
-                    None => casted.median(),
-                }?;
-                Ok(result.into_series())
-            }
-            DataType::List(inner_dtype) | DataType::FixedSizeList(inner_dtype, _)
-                if inner_dtype.is_numeric() =>
-            {
-                let casted = self.cast(&DataType::List(Box::new(DataType::Float64)))?;
-                let downcasted = casted.downcast::<ListArray>()?;
-                let result = match groups {
-                    Some(groups) => downcasted.grouped_median(groups),
-                    None => downcasted.median(),
-                }?;
-                Ok(result.into_series())
-            }
-            other => Err(DaftError::TypeError(format!(
-                "Median is not implemented for type {other}"
             ))),
         }
     }

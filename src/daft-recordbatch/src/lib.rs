@@ -702,7 +702,7 @@ impl RecordBatch {
                 }
             }
             AggExpr::Mean(expr) => self.eval_agg_child(expr)?.mean(groups),
-            AggExpr::Median(expr) => self.eval_agg_child(expr)?.median(groups),
+            AggExpr::Median(expr) => self.eval_agg_child(expr)?.percentile(groups, 0.5),
             AggExpr::Percentile(expr, percentile) => {
                 self.eval_agg_child(expr)?.percentile(groups, percentile.0)
             }
