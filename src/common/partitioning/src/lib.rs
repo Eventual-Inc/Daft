@@ -188,7 +188,7 @@ impl PartitionCacheEntry {
     #[cfg(not(feature = "python"))]
     pub fn key(&self) -> String {
         match self {
-            Self::Rust { key, .. } => key.clone(),
+            PartitionCacheEntry::Rust { key, .. } => key.clone(),
         }
     }
 }
