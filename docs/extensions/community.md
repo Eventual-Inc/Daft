@@ -1,5 +1,9 @@
 # Community Extensions
 
+!!! tip "Want to build your own extension?"
+
+    See the [Authoring Guide](authoring.md) to learn how to write a native Daft extension in Rust.
+
 Community extensions are built by external contributors and maintained
 independently of Daft's release cadence. Extensions listed here have been
 reviewed by the Daft maintainers. Each is its own PyPI package, so install
