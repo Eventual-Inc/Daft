@@ -6,7 +6,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use daft_core::prelude::SchemaRef;
+use daft_core::prelude::{Literal, SchemaRef};
 use daft_dsl::expr::{
     bound_col,
     bound_expr::{BoundAggExpr, BoundExpr},
@@ -515,37 +515,26 @@ mod tests {
             "test_sum_sink"
         }
 
-        fn get_return_field(&self, _inputs: &[Field], _schema: &Schema) -> DaftResult<Field> {
-            Ok(Field::new("x", DataType::Int64))
+        fn return_dtype(&self, _input_types: &[DataType]) -> DaftResult<DataType> {
+            Ok(DataType::Int64)
         }
 
         fn state_fields(&self, _inputs: &[Field]) -> DaftResult<Vec<Field>> {
             Ok(vec![Field::new("sum", DataType::Int64)])
         }
 
-        fn call_agg_block(
-            &self,
-            inputs: Vec<Series>,
-            groups: Option<&daft_core::array::ops::GroupIndices>,
-        ) -> DaftResult<Vec<Series>> {
-            let partial = inputs[0].sum(groups)?;
-            let sums: Vec<i64> = partial.i64()?.into_iter().map(|v| v.unwrap_or(0)).collect();
-            Ok(vec![Int64Array::from_vec("sum", sums).into_series()])
+        fn call_agg_block(&self, inputs: Vec<Series>) -> DaftResult<Vec<Literal>> {
+            let sum: i64 = inputs[0].i64()?.into_iter().map(|v| v.unwrap_or(0)).sum();
+            Ok(vec![Literal::Int64(sum)])
         }
 
-        fn call_agg_combine(
-            &self,
-            states: Vec<Series>,
-            groups: Option<&daft_core::array::ops::GroupIndices>,
-        ) -> DaftResult<Vec<Series>> {
-            let merged = states[0].sum(groups)?;
-            let sums: Vec<i64> = merged.i64()?.into_iter().map(|v| v.unwrap_or(0)).collect();
-            Ok(vec![Int64Array::from_vec("sum", sums).into_series()])
+        fn call_agg_combine(&self, states: Vec<Series>) -> DaftResult<Vec<Literal>> {
+            let sum: i64 = states[0].i64()?.into_iter().map(|v| v.unwrap_or(0)).sum();
+            Ok(vec![Literal::Int64(sum)])
         }
 
-        fn call_agg_finalize(&self, states: Vec<Series>, return_field: &Field) -> DaftResult<Series> {
-            let values: Vec<i64> = states[0].i64()?.into_iter().map(|v| v.unwrap_or(0)).collect();
-            Ok(Int64Array::from_vec(&return_field.name, values).into_series())
+        fn call_agg_finalize(&self, state: Vec<Literal>) -> DaftResult<Literal> {
+            Ok(state.into_iter().next().unwrap_or(Literal::Null))
         }
     }
 

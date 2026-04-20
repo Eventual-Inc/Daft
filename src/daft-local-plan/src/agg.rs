@@ -340,7 +340,17 @@ pub fn populate_aggregation_stages_bound_with_schema(
                     .iter()
                     .map(|e| e.to_field(schema))
                     .collect::<DaftResult<Vec<_>>>()?;
-                let return_field = handle.get_return_field(&input_fields, schema)?;
+                let input_types: Vec<DataType> =
+                    input_fields.iter().map(|f| f.dtype.clone()).collect();
+                let inputs_str = input_fields
+                    .iter()
+                    .map(|f| f.name.as_ref())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let return_field = Field::new(
+                    format!("{}({})", handle.name(), inputs_str),
+                    handle.return_dtype(&input_types)?,
+                );
 
                 let partial_col = first_stage!(AggExpr::AggFnMap {
                     handle: handle.clone(),

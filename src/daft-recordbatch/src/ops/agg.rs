@@ -378,41 +378,26 @@ mod tests {
             "test_sum"
         }
 
-        fn get_return_field(&self, inputs: &[Field], _schema: &Schema) -> DaftResult<Field> {
-            Ok(inputs[0].clone())
+        fn return_dtype(&self, input_types: &[DataType]) -> DaftResult<DataType> {
+            Ok(input_types[0].clone())
         }
 
         fn state_fields(&self, _inputs: &[Field]) -> DaftResult<Vec<Field>> {
             Ok(vec![Field::new("sum", DataType::Int64)])
         }
 
-        fn call_agg_block(
-            &self,
-            inputs: Vec<Series>,
-            groups: Option<&GroupIndices>,
-        ) -> DaftResult<Vec<Series>> {
-            let partial = inputs[0].sum(groups)?;
-            let sums: Vec<i64> = partial
-                .i64()?
-                .into_iter()
-                .map(|v| v.unwrap_or(0))
-                .collect();
-            Ok(vec![Int64Array::from_vec("sum", sums).into_series()])
+        fn call_agg_block(&self, inputs: Vec<Series>) -> DaftResult<Vec<Literal>> {
+            let sum: i64 = inputs[0].i64()?.into_iter().map(|v| v.unwrap_or(0)).sum();
+            Ok(vec![Literal::Int64(sum)])
         }
 
-        fn call_agg_combine(
-            &self,
-            states: Vec<Series>,
-            groups: Option<&GroupIndices>,
-        ) -> DaftResult<Vec<Series>> {
-            let merged = states[0].sum(groups)?;
-            let sums: Vec<i64> = merged.i64()?.into_iter().map(|v| v.unwrap_or(0)).collect();
-            Ok(vec![Int64Array::from_vec("sum", sums).into_series()])
+        fn call_agg_combine(&self, states: Vec<Series>) -> DaftResult<Vec<Literal>> {
+            let sum: i64 = states[0].i64()?.into_iter().map(|v| v.unwrap_or(0)).sum();
+            Ok(vec![Literal::Int64(sum)])
         }
 
-        fn call_agg_finalize(&self, states: Vec<Series>, return_field: &Field) -> DaftResult<Series> {
-            let values: Vec<i64> = states[0].i64()?.into_iter().map(|v| v.unwrap_or(0)).collect();
-            Ok(Int64Array::from_vec(&return_field.name, values).into_series())
+        fn call_agg_finalize(&self, state: Vec<Literal>) -> DaftResult<Literal> {
+            Ok(state.into_iter().next().unwrap_or(Literal::Null))
         }
     }
 

@@ -986,7 +986,17 @@ impl AggExpr {
                     .iter()
                     .map(|e| e.to_field(schema))
                     .collect::<DaftResult<_>>()?;
-                handle.get_return_field(&input_fields, schema)
+                let input_types: Vec<DataType> =
+                    input_fields.iter().map(|f| f.dtype.clone()).collect();
+                let inputs_str = input_fields
+                    .iter()
+                    .map(|f| f.name.as_ref())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Ok(Field::new(
+                    format!("{}({})", handle.name(), inputs_str),
+                    handle.return_dtype(&input_types)?,
+                ))
             }
             Self::AggFnMap { handle, inputs } => {
                 // Including input field names in the column name avoids collisions when
