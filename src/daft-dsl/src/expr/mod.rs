@@ -989,18 +989,21 @@ impl AggExpr {
                 handle.get_return_field(&input_fields, schema)
             }
             Self::AggFnMap { handle, inputs } => {
-                // Produces a Binary column of serialized accumulator bytes.
-                // Include input field names in the column name to avoid collisions
-                // when the same handle is used on different columns in one aggregation
-                // (e.g. `my_agg(a), my_agg(b)` would both produce "my_agg" otherwise).
-                let inputs_str = inputs
+                // Including input field names in the column name avoids collisions when
+                // the same handle is used on different columns (e.g. `my_agg(a), my_agg(b)`).
+                let input_fields: Vec<Field> = inputs
                     .iter()
-                    .map(|e| e.to_field(schema).map(|f| f.name.to_string()))
-                    .collect::<DaftResult<Vec<_>>>()?
+                    .map(|e| e.to_field(schema))
+                    .collect::<DaftResult<Vec<_>>>()?;
+                let inputs_str = input_fields
+                    .iter()
+                    .map(|f| f.name.as_ref())
+                    .collect::<Vec<_>>()
                     .join(", ");
+                let state_fields = handle.state_fields(&input_fields)?;
                 Ok(Field::new(
                     format!("{}({})", handle.name(), inputs_str),
-                    DataType::Binary,
+                    DataType::Struct(state_fields),
                 ))
             }
             Self::AggFnReduce { return_field, .. } => Ok(return_field.clone()),

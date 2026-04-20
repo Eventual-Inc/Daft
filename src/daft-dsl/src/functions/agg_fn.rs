@@ -14,46 +14,59 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// Three mandatory stages:
 ///
 /// ```text
-/// Map:     call_agg_block(inputs, groups) → Binary Series
-///              One serialized accumulator state per group,
-///              produced independently per block.
-///          ↓  [binary columns travel through Arrow pipeline]
-/// Combine: call_agg_combine(&[u8], &[u8]) → Vec<u8>    (binary, associative)
-///              Called by the framework N-1 times per group to fold
-///              partial states into one.
+/// Map:     call_agg_block(inputs, groups) → Vec<Series>
+///              One typed Series per state field, one row per group.
+///          ↓  [typed state columns travel through the Arrow pipeline]
+/// Combine: call_agg_combine(states, groups) → Vec<Series>   (batched, associative)
+///              One call folds all partial states for all groups at once.
 ///          ↓
 /// Reduce:  call_agg_finalize(states, return_field) → typed Series
-///              Called once with the one-state-per-group Binary Series.
+///              Called once with one-row-per-group state to produce final output.
 /// ```
 ///
-/// All three methods are required — there is no single-pass fallback.
+/// The intermediate state is declared via `state_fields` and flows as a Struct column
+/// (one child field per state component). This avoids serialization overhead and lets
+/// the planner and Arrow pipeline work with properly typed data throughout.
 #[typetag::serde(tag = "type")]
 pub trait AggFn: Send + Sync {
     fn name(&self) -> &'static str;
     fn get_return_field(&self, inputs: &[Field], schema: &Schema) -> DaftResult<Field>;
 
-    /// Process `inputs` for one block and return a `Binary`-typed [`Series`]
-    /// containing one serialized accumulator state per group.
+    /// Declare the typed Arrow fields for the intermediate accumulator state.
+    ///
+    /// Returns one `Field` per state component. The names and types declared here
+    /// are used to build the Struct column that carries intermediate state between
+    /// the Map and Reduce stages.
+    fn state_fields(&self, inputs: &[Field]) -> DaftResult<Vec<Field>>;
+
+    /// Process `inputs` for one block and return one typed [`Series`] per state field,
+    /// each containing one row per group.
     fn call_agg_block(
         &self,
         inputs: Vec<Series>,
         groups: Option<&daft_core::array::ops::GroupIndices>,
-    ) -> DaftResult<Series>;
+    ) -> DaftResult<Vec<Series>>;
 
-    /// Merge two serialized accumulator states into one.  Must be **associative**
-    /// (and ideally commutative) so that the framework can fold partial states
-    /// in any order or tree-reduce them in parallel.
+    /// Merge all partial states in a single batched call.
     ///
-    /// The framework calls this N-1 times per group, where N is the number of
-    /// partial states produced by `call_agg_block` across all blocks.
-    fn call_agg_combine(&self, a: &[u8], b: &[u8]) -> DaftResult<Vec<u8>>;
+    /// `states` contains one [`Series`] per state field (matching `state_fields`),
+    /// each with one row per partial result across all groups.
+    /// `groups` maps rows to output groups (same contract as `call_agg_block`).
+    ///
+    /// Must be **associative** so that the framework can fold partial states in any
+    /// order. Returns one [`Series`] per state field, with one row per output group.
+    fn call_agg_combine(
+        &self,
+        states: Vec<Series>,
+        groups: Option<&daft_core::array::ops::GroupIndices>,
+    ) -> DaftResult<Vec<Series>>;
 
-    /// Receives a `Binary`-typed [`Series`] with one combined accumulator per
-    /// group and returns the final typed output column.
+    /// Receives one [`Series`] per state field (one row per group) and returns the
+    /// final typed output column.
     ///
-    /// For simple accumulators (e.g. sum, count) this is just deserialization.
+    /// For simple accumulators (e.g. sum) this is just a rename/cast.
     /// For derived quantities (e.g. mean = sum/count) apply post-processing here.
-    fn call_agg_finalize(&self, states: Series, return_field: &Field) -> DaftResult<Series>;
+    fn call_agg_finalize(&self, states: Vec<Series>, return_field: &Field) -> DaftResult<Series>;
 }
 
 /// A cloneable, hashable (by name) wrapper around `Arc<dyn AggFn>`.
@@ -76,19 +89,27 @@ impl AggFnHandle {
         self.0.get_return_field(inputs, schema)
     }
 
+    pub fn state_fields(&self, inputs: &[Field]) -> DaftResult<Vec<Field>> {
+        self.0.state_fields(inputs)
+    }
+
     pub fn call_agg_block(
         &self,
         inputs: Vec<Series>,
         groups: Option<&daft_core::array::ops::GroupIndices>,
-    ) -> DaftResult<Series> {
+    ) -> DaftResult<Vec<Series>> {
         self.0.call_agg_block(inputs, groups)
     }
 
-    pub fn call_agg_combine(&self, a: &[u8], b: &[u8]) -> DaftResult<Vec<u8>> {
-        self.0.call_agg_combine(a, b)
+    pub fn call_agg_combine(
+        &self,
+        states: Vec<Series>,
+        groups: Option<&daft_core::array::ops::GroupIndices>,
+    ) -> DaftResult<Vec<Series>> {
+        self.0.call_agg_combine(states, groups)
     }
 
-    pub fn call_agg_finalize(&self, states: Series, return_field: &Field) -> DaftResult<Series> {
+    pub fn call_agg_finalize(&self, states: Vec<Series>, return_field: &Field) -> DaftResult<Series> {
         self.0.call_agg_finalize(states, return_field)
     }
 }
@@ -160,19 +181,27 @@ mod tests {
             Ok(inputs[0].clone())
         }
 
+        fn state_fields(&self, inputs: &[Field]) -> DaftResult<Vec<Field>> {
+            Ok(vec![inputs[0].clone()])
+        }
+
         fn call_agg_block(
             &self,
             _inputs: Vec<Series>,
             _groups: Option<&GroupIndices>,
-        ) -> DaftResult<Series> {
+        ) -> DaftResult<Vec<Series>> {
             unimplemented!("only used for handle identity tests")
         }
 
-        fn call_agg_combine(&self, _a: &[u8], _b: &[u8]) -> DaftResult<Vec<u8>> {
+        fn call_agg_combine(
+            &self,
+            _states: Vec<Series>,
+            _groups: Option<&GroupIndices>,
+        ) -> DaftResult<Vec<Series>> {
             unimplemented!("only used for handle identity tests")
         }
 
-        fn call_agg_finalize(&self, _states: Series, _return_field: &Field) -> DaftResult<Series> {
+        fn call_agg_finalize(&self, _states: Vec<Series>, _return_field: &Field) -> DaftResult<Series> {
             unimplemented!("only used for handle identity tests")
         }
     }
@@ -190,19 +219,27 @@ mod tests {
             Ok(inputs[0].clone())
         }
 
+        fn state_fields(&self, inputs: &[Field]) -> DaftResult<Vec<Field>> {
+            Ok(vec![inputs[0].clone()])
+        }
+
         fn call_agg_block(
             &self,
             _inputs: Vec<Series>,
             _groups: Option<&GroupIndices>,
-        ) -> DaftResult<Series> {
+        ) -> DaftResult<Vec<Series>> {
             unimplemented!("NoopB is only used for handle identity tests")
         }
 
-        fn call_agg_combine(&self, _a: &[u8], _b: &[u8]) -> DaftResult<Vec<u8>> {
+        fn call_agg_combine(
+            &self,
+            _states: Vec<Series>,
+            _groups: Option<&GroupIndices>,
+        ) -> DaftResult<Vec<Series>> {
             unimplemented!("NoopB is only used for handle identity tests")
         }
 
-        fn call_agg_finalize(&self, _states: Series, _return_field: &Field) -> DaftResult<Series> {
+        fn call_agg_finalize(&self, _states: Vec<Series>, _return_field: &Field) -> DaftResult<Series> {
             unimplemented!("NoopB is only used for handle identity tests")
         }
     }

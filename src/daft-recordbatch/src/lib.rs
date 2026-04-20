@@ -101,57 +101,21 @@ fn validate_schema(schema: &Schema, columns: &[Series]) -> DaftResult<()> {
     Ok(())
 }
 
-/// Framework-side fold for `AggFnReduce`: for each group, left-folds the
-/// partial `Binary` states produced by `call_agg_block` into a single state
-/// by calling `call_agg_combine` N-1 times.
-///
-/// Returns a `Binary`-typed [`Series`] with one combined state per group
-/// (or one state total for the ungrouped case).
-fn fold_agg_states(
-    handle: &daft_dsl::functions::AggFnHandle,
-    states: &Series,
-    groups: Option<&GroupIndices>,
-) -> DaftResult<Series> {
-    let binary = states.binary()?;
-    let name = states.name();
+fn unpack_struct_state(struct_series: &Series) -> DaftResult<Vec<Series>> {
+    let DataType::Struct(fields) = struct_series.data_type() else {
+        return Err(DaftError::InternalError(format!(
+            "Expected Struct series for AggFn state, got {}",
+            struct_series.data_type()
+        )));
+    };
+    fields
+        .iter()
+        .map(|f| struct_series.struct_get(&f.name))
+        .collect()
+}
 
-    match groups {
-        None => {
-            let mut acc: Option<Vec<u8>> = None;
-            for i in 0..binary.len() {
-                if let Some(state) = binary.get(i) {
-                    acc = Some(match acc {
-                        None => state.to_vec(),
-                        Some(a) => handle.call_agg_combine(&a, state)?,
-                    });
-                }
-            }
-            let result = acc.unwrap_or_default();
-            Ok(
-                BinaryArray::from_iter(name, std::iter::once(Some(result.as_slice())))
-                    .into_series(),
-            )
-        }
-        Some(groups) => {
-            let mut group_results: Vec<Option<Vec<u8>>> = Vec::with_capacity(groups.len());
-            for indices in groups {
-                let mut acc: Option<Vec<u8>> = None;
-                for &row_idx in indices {
-                    if let Some(state) = binary.get(row_idx as usize) {
-                        acc = Some(match acc {
-                            None => state.to_vec(),
-                            Some(a) => handle.call_agg_combine(&a, state)?,
-                        });
-                    }
-                }
-                group_results.push(acc);
-            }
-            Ok(
-                BinaryArray::from_iter(name, group_results.iter().map(|s| s.as_deref()))
-                    .into_series(),
-            )
-        }
-    }
+fn pack_struct_state(struct_field: Field, state_series: Vec<Series>) -> DaftResult<Series> {
+    Ok(StructArray::new(struct_field, state_series, None).into_series())
 }
 
 impl RecordBatch {
@@ -702,7 +666,7 @@ impl RecordBatch {
     }
 
     /// Like [`eval_agg_expression`] but stops before `call_agg_finalize` for
-    /// [`AggExpr::AggFnReduce`], keeping the `Binary` column type.  Output schema
+    /// [`AggExpr::AggFnReduce`], keeping the Struct column type.  Output schema
     /// matches stage-1 (`AggFnMap`) output — valid input for a subsequent full `agg()`.
     pub(crate) fn eval_agg_expression_combine_only(
         &self,
@@ -713,8 +677,11 @@ impl RecordBatch {
             handle, partial, ..
         } = agg_expr.as_ref()
         {
-            let evaled_partial = self.eval_agg_child(partial)?;
-            fold_agg_states(handle, &evaled_partial, groups)
+            let struct_series = self.eval_agg_child(partial)?;
+            let struct_field = struct_series.field().clone();
+            let state_series = unpack_struct_state(&struct_series)?;
+            let merged = handle.call_agg_combine(state_series, groups)?;
+            pack_struct_state(struct_field, merged)
         } else {
             self.eval_agg_expression(agg_expr, groups)
         }
@@ -802,24 +769,29 @@ impl RecordBatch {
                     .iter()
                     .map(|e| self.eval_agg_child(e))
                     .collect::<DaftResult<_>>()?;
-                let inputs_str = evaled_inputs
+                let input_fields: Vec<Field> =
+                    evaled_inputs.iter().map(|s| s.field().clone()).collect();
+                let inputs_str = input_fields
                     .iter()
-                    .map(|s| s.name())
+                    .map(|f| f.name.as_ref())
                     .collect::<Vec<_>>()
                     .join(", ");
                 let expected_name = format!("{}({})", handle.name(), inputs_str);
-                Ok(handle
-                    .call_agg_block(evaled_inputs, groups)?
-                    .rename(&expected_name))
+                let state_fields = handle.state_fields(&input_fields)?;
+                let state_series = handle.call_agg_block(evaled_inputs, groups)?;
+                let struct_field =
+                    Field::new(expected_name, DataType::Struct(state_fields));
+                Ok(StructArray::new(struct_field, state_series, None).into_series())
             }
             AggExpr::AggFnReduce {
                 handle,
                 partial,
                 return_field,
             } => {
-                let evaled_partial = self.eval_agg_child(partial)?;
-                let combined = fold_agg_states(handle, &evaled_partial, groups)?;
-                handle.call_agg_finalize(combined, return_field)
+                let struct_series = self.eval_agg_child(partial)?;
+                let state_series = unpack_struct_state(&struct_series)?;
+                let merged = handle.call_agg_combine(state_series, groups)?;
+                handle.call_agg_finalize(merged, return_field)
             }
         }
     }

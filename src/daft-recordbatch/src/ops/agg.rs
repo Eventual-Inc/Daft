@@ -89,8 +89,8 @@ impl RecordBatch {
 
     /// Runs a combine-only pass over `to_agg` on partially-aggregated data.
     ///
-    /// - [`AggExpr::AggFnReduce`]: calls `call_agg_combine` N-1 times per group,
-    ///   returning a `Binary` column — identical schema to stage-1 (`AggFnMap`) output.
+    /// - [`AggExpr::AggFnReduce`]: calls `call_agg_combine` in one batched call per group,
+    ///   returning a Struct column — identical schema to stage-1 (`AggFnMap`) output.
     /// - All other expressions: evaluated normally (they are associative, so the result
     ///   is a valid intermediate state for a subsequent [`Self::agg`] call).
     ///
@@ -369,29 +369,8 @@ mod tests {
     use crate::{GroupIndices, RecordBatch, ops::get_column_by_name};
 
     /// A sum UDAF that exercises the full three-stage pipeline.
-    ///
-    /// Accumulator encoding: one i64 serialized as 8 little-endian bytes.
     #[derive(serde::Serialize, serde::Deserialize)]
     struct TestSumAgg;
-
-    fn encode_i64s(name: &str, values: &[i64]) -> Series {
-        let byte_rows: Vec<Option<Vec<u8>>> = values
-            .iter()
-            .map(|v| Some(v.to_le_bytes().to_vec()))
-            .collect();
-        BinaryArray::from_iter(name, byte_rows.iter().map(|b| b.as_deref())).into_series()
-    }
-
-    fn decode_i64s(series: &Series) -> Vec<i64> {
-        let binary = series.binary().unwrap();
-        (0..binary.len())
-            .map(|i| {
-                binary
-                    .get(i)
-                    .map_or(0, |b| i64::from_le_bytes(b.try_into().unwrap()))
-            })
-            .collect()
-    }
 
     #[typetag::serde(name = "TestSumAgg")]
     impl AggFn for TestSumAgg {
@@ -403,28 +382,36 @@ mod tests {
             Ok(inputs[0].clone())
         }
 
+        fn state_fields(&self, _inputs: &[Field]) -> DaftResult<Vec<Field>> {
+            Ok(vec![Field::new("sum", DataType::Int64)])
+        }
+
         fn call_agg_block(
             &self,
             inputs: Vec<Series>,
             groups: Option<&GroupIndices>,
-        ) -> DaftResult<Series> {
+        ) -> DaftResult<Vec<Series>> {
             let partial = inputs[0].sum(groups)?;
-            let values = partial
+            let sums: Vec<i64> = partial
                 .i64()?
                 .into_iter()
                 .map(|v| v.unwrap_or(0))
-                .collect::<Vec<_>>();
-            Ok(encode_i64s(partial.name(), &values))
+                .collect();
+            Ok(vec![Int64Array::from_vec("sum", sums).into_series()])
         }
 
-        fn call_agg_combine(&self, a: &[u8], b: &[u8]) -> DaftResult<Vec<u8>> {
-            let sum_a = i64::from_le_bytes(a.try_into().unwrap());
-            let sum_b = i64::from_le_bytes(b.try_into().unwrap());
-            Ok((sum_a + sum_b).to_le_bytes().to_vec())
+        fn call_agg_combine(
+            &self,
+            states: Vec<Series>,
+            groups: Option<&GroupIndices>,
+        ) -> DaftResult<Vec<Series>> {
+            let merged = states[0].sum(groups)?;
+            let sums: Vec<i64> = merged.i64()?.into_iter().map(|v| v.unwrap_or(0)).collect();
+            Ok(vec![Int64Array::from_vec("sum", sums).into_series()])
         }
 
-        fn call_agg_finalize(&self, state: Series, return_field: &Field) -> DaftResult<Series> {
-            let values = decode_i64s(&state);
+        fn call_agg_finalize(&self, states: Vec<Series>, return_field: &Field) -> DaftResult<Series> {
+            let values: Vec<i64> = states[0].i64()?.into_iter().map(|v| v.unwrap_or(0)).collect();
             Ok(Int64Array::from_vec(&return_field.name, values).into_series())
         }
     }
@@ -576,7 +563,7 @@ mod tests {
     }
 
     #[test]
-    fn test_agg_combine_only_preserves_binary() -> DaftResult<()> {
+    fn test_agg_combine_only_preserves_struct() -> DaftResult<()> {
         let rb1 = RecordBatch::from_nonempty_columns(vec![
             Int64Array::from_vec("x", vec![1i64, 2]).into_series(),
         ])?;
@@ -591,10 +578,10 @@ mod tests {
         let combined = merged.agg_combine_only(&[bound_combine(&merged.schema)], &[])?;
         assert_eq!(combined.len(), 1);
         let col = get_column_by_name(&combined, &partial_col_name())?;
-        assert_eq!(
-            col.data_type(),
-            &DataType::Binary,
-            "should remain Binary after combine-only"
+        assert!(
+            matches!(col.data_type(), DataType::Struct(_)),
+            "should remain Struct after combine-only, got {}",
+            col.data_type()
         );
 
         // Now finalize — result should be 1+2+3 = 6 typed as Int64.
@@ -627,7 +614,7 @@ mod tests {
         )?;
         assert_eq!(combined.len(), 2);
         let partial_col = get_column_by_name(&combined, &partial_col_name())?;
-        assert_eq!(partial_col.data_type(), &DataType::Binary);
+        assert!(matches!(partial_col.data_type(), DataType::Struct(_)));
 
         // Finalize the combined state — a: 10+20=30, b: 1+2=3.
         let bound_g_c = BoundExpr::try_new(unresolved_col("g"), &combined.schema)?;
