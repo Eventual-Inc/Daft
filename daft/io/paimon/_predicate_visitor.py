@@ -7,6 +7,7 @@ for filter pushdown optimization using the Visitor pattern.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from daft.expressions.visitor import PredicateVisitor
@@ -23,14 +24,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Use Any as type parameter since Predicate comes from optional pypaimon dependency
-# At runtime, the actual Predicate type from pypaimon will be used
-class PaimonPredicateVisitor(PredicateVisitor[Any]):
-    """Converts Daft expressions to Paimon predicates using the Visitor pattern.
+@dataclass(frozen=True, slots=True)
+class _ColRef:
+    """Column reference marker to distinguish columns from literal values in the tree fold."""
 
-    This converter supports a subset of Daft expressions that can be
-    translated to Paimon's predicate API. Unsupported expressions
-    return None for post-scan evaluation.
+    name: str
+
+
+class PaimonPredicateVisitor(PredicateVisitor[Any]):
+    """Tree fold visitor that converts Daft expressions to Paimon predicates.
+
+    Leaf nodes return their values (_ColRef for columns, raw values for literals).
+    Predicate nodes return Paimon Predicate objects, or None if unsupported.
 
     Supported operations:
     - Comparison: ==, !=, <, <=, >, >=
@@ -42,232 +47,126 @@ class PaimonPredicateVisitor(PredicateVisitor[Any]):
     """
 
     def __init__(self, builder: PredicateBuilder) -> None:
-        """Initialize the converter with a Paimon PredicateBuilder.
-
-        Args:
-            builder: Paimon's predicate builder instance
-        """
         self._builder = builder
 
-    # -------------------------------------------------------------------------
-    # Base expression handlers (from ExpressionVisitor)
-    # -------------------------------------------------------------------------
+    # -- Leaf nodes --
 
-    def visit_col(self, name: str) -> Predicate | None:
-        """Column references are not valid predicates on their own."""
-        return None
+    def visit_col(self, name: str) -> _ColRef:
+        return _ColRef(name)
 
-    def visit_lit(self, value: Any) -> Predicate | None:
-        """Literals are not valid predicates on their own."""
-        return None
+    def visit_lit(self, value: Any) -> Any:
+        return value
 
-    def visit_alias(self, expr: Expression, alias: str) -> Predicate | None:
-        """Strip alias and visit the underlying expression."""
+    def visit_alias(self, expr: Expression, alias: str) -> Any:
         return self.visit(expr)
 
-    def visit_cast(self, expr: Expression, dtype: Any) -> Predicate | None:
-        """Cast expressions are not directly supported for pushdown."""
+    def visit_cast(self, expr: Expression, dtype: Any) -> None:
         return None
 
-    def visit_coalesce(self, args: list[Expression]) -> Predicate | None:
-        """Coalesce expressions are not supported for pushdown."""
+    def visit_coalesce(self, args: list[Expression]) -> None:
         return None
 
-    def visit_function(self, name: str, args: list[Expression]) -> Predicate | None:
-        """Handle function calls like string operations.
-
-        This is called for functions that don't have a dedicated visit_{name} method.
-        """
-        # String operations
-        if name == "starts_with" and len(args) == 2:
-            return self._convert_string_op(args[0], args[1], "startswith")
-        elif name == "ends_with" and len(args) == 2:
-            return self._convert_string_op(args[0], args[1], "endswith")
-        elif name == "contains" and len(args) == 2:
-            return self._convert_string_op(args[0], args[1], "contains")
-
-        # Unsupported function
+    def visit_function(self, name: str, args: list[Expression]) -> None:
         logger.debug("Function '%s' is not supported for Paimon pushdown", name)
-        return None
 
-    # -------------------------------------------------------------------------
-    # Predicate handlers (from PredicateVisitor)
-    # -------------------------------------------------------------------------
+    # -- Logical operators --
 
     def visit_and(self, left: Expression, right: Expression) -> Predicate | None:
-        """Convert AND logical operation."""
         left_pred = self.visit(left)
         right_pred = self.visit(right)
-
-        # Only push down if both sides can be converted
         if left_pred is not None and right_pred is not None:
             return self._builder.and_predicates([left_pred, right_pred])
-
-        # If either side cannot be converted, we don't push down this predicate
-        # The parent expression will handle post-scan filtering
         return None
 
     def visit_or(self, left: Expression, right: Expression) -> Predicate | None:
-        """Convert OR logical operation."""
         left_pred = self.visit(left)
         right_pred = self.visit(right)
-
-        # Only push down if both sides can be converted
         if left_pred is not None and right_pred is not None:
             return self._builder.or_predicates([left_pred, right_pred])
-
         return None
 
-    def visit_not(self, expr: Expression) -> Predicate | None:
-        """NOT expressions are not directly supported for pushdown."""
-        logger.debug("NOT expression is not supported for Paimon pushdown")
+    def visit_not(self, expr: Expression) -> None:
+        return None
+
+    # -- Comparison operators --
+
+    def _cmp(self, left: Expression, right: Expression, fn: Any) -> Predicate | None:
+        """Fold a binary comparison: extract col ref and literal value, then apply fn."""
+        lhs, rhs = self.visit(left), self.visit(right)
+        if isinstance(lhs, _ColRef) and not isinstance(rhs, _ColRef):
+            return fn(lhs.name, rhs)
+        if isinstance(rhs, _ColRef) and not isinstance(lhs, _ColRef):
+            return fn(rhs.name, lhs)
         return None
 
     def visit_equal(self, left: Expression, right: Expression) -> Predicate | None:
-        """Convert equality comparison."""
-        col_name, value = self._extract_col_and_value(left, right)
-        if col_name is not None and value is not None:
-            return self._builder.equal(col_name, value)
-        return None
+        return self._cmp(left, right, self._builder.equal)
 
     def visit_not_equal(self, left: Expression, right: Expression) -> Predicate | None:
-        """Convert not-equal comparison."""
-        col_name, value = self._extract_col_and_value(left, right)
-        if col_name is not None and value is not None:
-            return self._builder.not_equal(col_name, value)
-        return None
+        return self._cmp(left, right, self._builder.not_equal)
 
     def visit_less_than(self, left: Expression, right: Expression) -> Predicate | None:
-        """Convert less-than comparison."""
-        col_name, value = self._extract_col_and_value(left, right)
-        if col_name is not None and value is not None:
-            return self._builder.less_than(col_name, value)
-        return None
+        return self._cmp(left, right, self._builder.less_than)
 
     def visit_less_than_or_equal(self, left: Expression, right: Expression) -> Predicate | None:
-        """Convert less-than-or-equal comparison."""
-        col_name, value = self._extract_col_and_value(left, right)
-        if col_name is not None and value is not None:
-            return self._builder.less_or_equal(col_name, value)
-        return None
+        return self._cmp(left, right, self._builder.less_or_equal)
 
     def visit_greater_than(self, left: Expression, right: Expression) -> Predicate | None:
-        """Convert greater-than comparison."""
-        col_name, value = self._extract_col_and_value(left, right)
-        if col_name is not None and value is not None:
-            return self._builder.greater_than(col_name, value)
-        return None
+        return self._cmp(left, right, self._builder.greater_than)
 
     def visit_greater_than_or_equal(self, left: Expression, right: Expression) -> Predicate | None:
-        """Convert greater-than-or-equal comparison."""
-        col_name, value = self._extract_col_and_value(left, right)
-        if col_name is not None and value is not None:
-            return self._builder.greater_or_equal(col_name, value)
-        return None
+        return self._cmp(left, right, self._builder.greater_or_equal)
+
+    # -- Set/range predicates --
 
     def visit_between(self, expr: Expression, lower: Expression, upper: Expression) -> Predicate | None:
-        """Convert BETWEEN predicate."""
-        col_name = self._get_col_name(expr)
-        lower_val = self._get_literal_value(lower)
-        upper_val = self._get_literal_value(upper)
-
-        if col_name is not None and lower_val is not None and upper_val is not None:
-            return self._builder.between(col_name, lower_val, upper_val)
-        return None
+        col = self.visit(expr)
+        if not isinstance(col, _ColRef):
+            return None
+        lower_val = self.visit(lower)
+        upper_val = self.visit(upper)
+        if lower_val is None or upper_val is None:
+            return None
+        return self._builder.between(col.name, lower_val, upper_val)
 
     def visit_is_in(self, expr: Expression, items: list[Expression]) -> Predicate | None:
-        """Convert IS IN predicate."""
-        col_name = self._get_col_name(expr)
-        if col_name is None:
+        col = self.visit(expr)
+        if not isinstance(col, _ColRef):
             return None
+        values = [self.visit(item) for item in items]
+        if any(v is None or isinstance(v, _ColRef) for v in values):
+            return None
+        return self._builder.is_in(col.name, values)
 
-        values = []
-        for item in items:
-            val = self._get_literal_value(item)
-            if val is None:
-                # Cannot push down if any item is not a literal
-                return None
-            values.append(val)
-
-        return self._builder.is_in(col_name, values)
+    # -- Null predicates --
 
     def visit_is_null(self, expr: Expression) -> Predicate | None:
-        """Convert IS NULL predicate."""
-        col_name = self._get_col_name(expr)
-        if col_name is not None:
-            return self._builder.is_null(col_name)
-        return None
+        col = self.visit(expr)
+        return self._builder.is_null(col.name) if isinstance(col, _ColRef) else None
 
     def visit_not_null(self, expr: Expression) -> Predicate | None:
-        """Convert IS NOT NULL predicate."""
-        col_name = self._get_col_name(expr)
-        if col_name is not None:
-            return self._builder.is_not_null(col_name)
-        return None
+        col = self.visit(expr)
+        return self._builder.is_not_null(col.name) if isinstance(col, _ColRef) else None
 
-    # -------------------------------------------------------------------------
-    # Helper methods
-    # -------------------------------------------------------------------------
+    # -- String predicates (dispatched via visit_ mechanism) --
 
-    def _get_col_name(self, expr: Expression) -> str | None:
-        """Extract column name from an expression.
-
-        Uses PyExpr API to check if expression is a column reference.
-        """
-        py_expr = expr._expr
-        if py_expr.is_column():
-            return py_expr.name()
-        return None
-
-    def _get_literal_value(self, expr: Expression) -> Any:
-        """Extract literal value from an expression.
-
-        Uses PyExpr API to check if expression is a literal and get its value.
-        """
-        py_expr = expr._expr
-        if py_expr.is_literal():
-            return py_expr.as_py()
-        return None
-
-    def _extract_col_and_value(self, left: Expression, right: Expression) -> tuple[str | None, Any]:
-        """Extract column name and literal value from a binary expression.
-
-        Handles both `col == lit` and `lit == col` orderings.
-
-        Returns:
-            Tuple of (column_name, value) or (None, None) if not extractable.
-        """
-        left_col = self._get_col_name(left)
-        right_col = self._get_col_name(right)
-        left_val = self._get_literal_value(left)
-        right_val = self._get_literal_value(right)
-
-        # Case 1: col op lit
-        if left_col is not None and right_val is not None:
-            return (left_col, right_val)
-
-        # Case 2: lit op col
-        if right_col is not None and left_val is not None:
-            return (right_col, left_val)
-
-        return (None, None)
-
-    def _convert_string_op(self, input_expr: Expression, pattern_expr: Expression, op: str) -> Predicate | None:
-        """Convert string operations (startswith, endswith, contains)."""
-        col_name = self._get_col_name(input_expr)
-        pattern = self._get_literal_value(pattern_expr)
-
-        if col_name is None or pattern is None:
+    def visit_starts_with(self, input: Expression, prefix: Expression) -> Predicate | None:
+        col = self.visit(input)
+        if not isinstance(col, _ColRef):
             return None
+        return self._builder.startswith(col.name, str(self.visit(prefix)))
 
-        if op == "startswith":
-            return self._builder.startswith(col_name, str(pattern))
-        elif op == "endswith":
-            return self._builder.endswith(col_name, str(pattern))
-        elif op == "contains":
-            return self._builder.contains(col_name, str(pattern))
+    def visit_ends_with(self, input: Expression, suffix: Expression) -> Predicate | None:
+        col = self.visit(input)
+        if not isinstance(col, _ColRef):
+            return None
+        return self._builder.endswith(col.name, str(self.visit(suffix)))
 
-        return None
+    def visit_contains(self, input: Expression, substring: Expression) -> Predicate | None:
+        col = self.visit(input)
+        if not isinstance(col, _ColRef):
+            return None
+        return self._builder.contains(col.name, str(self.visit(substring)))
 
 
 def convert_filters_to_paimon(
