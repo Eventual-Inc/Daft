@@ -101,11 +101,11 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
                         .values()
                         .map(|mgr| {
                             let (info, snapshot) = mgr.export_snapshot();
-                            (info.node_origin_id, snapshot.to_stats())
+                            // use `id` here because it's a distributed node
+                            // these nodes do not have an `origin_node_id`
+                            (info.id, snapshot.to_stats())
                         })
-                        .filter(|(node_origin_id, _)| {
-                            task_ctx.node_ids.contains(&(*node_origin_id as u32))
-                        })
+                        .filter(|(node_id, _)| task_ctx.node_ids.contains(&(*node_id as u32)))
                         .collect::<Vec<_>>();
 
                     if !relevant_stats.is_empty()
