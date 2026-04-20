@@ -1,8 +1,10 @@
 //! Test-only worker that executes `SwordfishTask`s in-process via the local
 //! execution pipeline, producing real `ExecutionStats` without needing Ray.
 //!
-//! This entire module is gated behind `#[cfg(test)]` at the parent
-//! `scheduling/mod.rs`, so it never compiles into production builds.
+//! This entire module is gated behind `#[cfg(all(test, not(feature = "python")))]`
+//! at the parent `scheduling/mod.rs`, so it never compiles into production
+//! builds. It relies on `daft_local_execution::execute_local_plan`, which is
+//! itself only compiled without the python feature.
 
 use std::{
     collections::HashMap,

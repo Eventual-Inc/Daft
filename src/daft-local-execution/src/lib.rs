@@ -28,7 +28,9 @@ use common_error::{DaftError, DaftResult};
 use common_runtime::{JoinSet, RuntimeRef, RuntimeTask};
 use console::style;
 use resource_manager::MemoryManager;
-pub use run::{ExecutionEngineResult, LocalPlanOutput, execute_local_plan};
+pub use run::ExecutionEngineResult;
+#[cfg(not(feature = "python"))]
+pub use run::{LocalPlanOutput, execute_local_plan};
 use runtime_stats::RuntimeStatsManagerHandle;
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};
 use tracing::Instrument;
