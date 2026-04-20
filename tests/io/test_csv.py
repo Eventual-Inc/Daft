@@ -146,6 +146,14 @@ def test_write_csv_parametrized(tmp_path, delimiter, header, quote, escape_char,
         }
         read_back = daft.read_csv(str(tmp_path), **read_kwargs)
         assert df.to_arrow() == read_back.to_arrow()
+    else:
+        # When writing without a header row, verify the headerless CSV can be
+        # read back correctly using has_headers=False. Column names are auto-assigned
+        # (e.g. "column_0", "column_1") since there is no header row in the file.
+        read_back = daft.read_csv(str(tmp_path), delimiter=delimiter, has_headers=False)
+        # Compare data values column-by-column (ignoring auto-assigned column names)
+        for orig_vals, read_vals in zip(df.to_pydict().values(), read_back.to_pydict().values()):
+            assert orig_vals == read_vals
 
 
 def test_write_csv_custom_date_format(tmp_path):
