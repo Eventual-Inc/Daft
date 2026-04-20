@@ -102,7 +102,7 @@ def assert_frame_equal(
         >>> import daft
         >>> df = daft.from_pydict({"a": [3, 1, 2], "b": ["z", "x", "y"]})
         >>> expected = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
-        >>> assert_frame_equal(df, expected)  # passes – row order ignored by default
+        >>> assert_frame_equal(df, expected)  # passes â row order ignored by default
     """
     # --- schema check ---
     actual_schema = actual.schema()
@@ -157,7 +157,7 @@ def assert_frame_equal(
     actual_pydict = actual_collected.to_pydict()
     expected_pydict = expected_collected.to_pydict()
 
-    col_names = expected_col_names if not check_columnOrder else actual_col_names
+    col_names = expected_col_names if not check_column_order else actual_col_names
 
     if not check_row_order:
         sort_cols = sort_by if sort_by else col_names
@@ -182,7 +182,7 @@ def assert_frame_equal(
             ev = expected_pydict[col][ei]
             if av != ev:
                 mismatches.append(
-                    f"  Row {rank}, column '{col}': actual={av!r}, expected={ev!}"
+                    f"  Row {rank}, column '{col}': actual={av!r}, expected={ev!r}"
                 )
         if len(mismatches) >= 10:
             mismatches.append("  ... (truncated after 10 mismatches)")
