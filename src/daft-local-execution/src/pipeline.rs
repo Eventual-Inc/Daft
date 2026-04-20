@@ -15,17 +15,19 @@ use common_metrics::{
 };
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
+pub use daft_local_plan::InputId;
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
-    HashAggregate, HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext,
+    AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
+    GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext,
     LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
-    Sample, Sort, SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot,
-    VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
-    WindowPartitionOnly,
+    RepartitionWrite, RepartitionWriteBackend, Sample, ShuffleReadBackend, Sort, SortMergeJoin,
+    SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
+    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use daft_scan::ScanTaskRef;
+use daft_shuffles::server::flight_server::ShuffleFlightServer;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
 use snafu::ResultExt;
@@ -41,14 +43,15 @@ use crate::{
         into_batches::IntoBatchesOperator, project::ProjectOperator, udf::UdfOperator,
         unpivot::UnpivotOperator,
     },
-    join::{CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator},
-    runtime_stats::RuntimeStats,
+    join::{
+        AsofJoinOperator, CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator,
+    },
+    shuffle_metadata::ShuffleMetadata,
     sinks::{
         aggregate::AggregateSink,
         blocking_sink::BlockingSinkNode,
         commit_write::CommitWriteSink,
         dedup::DedupSink,
-        flight_shuffle_write::FlightShuffleWriteSink,
         grouped_aggregate::GroupedAggregateSink,
         into_partitions::IntoPartitionsSink,
         pivot::PivotSink,
@@ -62,8 +65,8 @@ use crate::{
         write::{WriteFormat, WriteSink},
     },
     sources::{
-        flight_shuffle_read::FlightShuffleReadSource, glob_scan::GlobScanSource,
-        in_memory::InMemorySource, scan_task::ScanTaskSource, source::SourceNode,
+        glob_scan::GlobScanSource, in_memory::InMemorySource, scan_task::ScanTaskSource,
+        shuffle_read::ShuffleReadSource, source::SourceNode,
     },
     streaming_sink::{
         async_udf::AsyncUdfSink, base::StreamingSinkNode, limit::LimitSink,
@@ -71,6 +74,73 @@ use crate::{
         vllm::VLLMSink,
     },
 };
+
+/// Message that can flow through the pipeline - either data (Morsel) or a flush signal
+#[derive(Debug)]
+pub enum PipelineMessage {
+    /// Data morsel with input_id and partition
+    Morsel {
+        input_id: InputId,
+        partition: MicroPartition,
+    },
+    ShuffleMetadata {
+        input_id: InputId,
+        metadata: ShuffleMetadata,
+    },
+    /// Flush signal for a specific input_id - indicates that input is finished
+    Flush(InputId),
+}
+
+/// Events yielded by [`next_event`].
+pub(crate) enum PipelineEvent<TaskResult> {
+    TaskCompleted(TaskResult),
+    Morsel {
+        input_id: InputId,
+        partition: MicroPartition,
+    },
+    ShuffleMetadata,
+    Flush(InputId),
+    InputClosed,
+}
+
+/// Yield the next event from either the task set or the input receiver.
+/// Returns `Ok(None)` when both the input is closed and no tasks remain.
+pub(crate) async fn next_event<TaskResult: Send + 'static>(
+    task_set: &mut common_runtime::OrderingAwareJoinSet<DaftResult<TaskResult>>,
+    max_concurrency: usize,
+    receiver: &mut crate::channel::Receiver<PipelineMessage>,
+    input_closed: &mut bool,
+) -> DaftResult<Option<PipelineEvent<TaskResult>>> {
+    if *input_closed && task_set.is_empty() {
+        return Ok(None);
+    }
+    tokio::select! {
+        msg = receiver.recv(), if task_set.len() < max_concurrency && !*input_closed => {
+            match msg {
+                Some(PipelineMessage::Morsel { input_id, partition }) => {
+                    Ok(Some(PipelineEvent::Morsel { input_id, partition }))
+                }
+                Some(PipelineMessage::ShuffleMetadata { .. }) => {
+                    Ok(Some(PipelineEvent::ShuffleMetadata))
+                }
+                Some(PipelineMessage::Flush(input_id)) => {
+                    Ok(Some(PipelineEvent::Flush(input_id)))
+                }
+                None => {
+                    *input_closed = true;
+                    Ok(Some(PipelineEvent::InputClosed))
+                }
+            }
+        }
+        Some(task_result) = task_set.join_next(), if !task_set.is_empty() => {
+            match task_result {
+                Ok(Ok(result)) => Ok(Some(PipelineEvent::TaskCompleted(result))),
+                Ok(Err(e)) => Err(e),
+                Err(e) => Err(e.into()),
+            }
+        }
+    }
+}
 
 pub type NodeName = Cow<'static, str>;
 
@@ -162,7 +232,7 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<crate::channel::Receiver<MicroPartition>>;
+    ) -> crate::Result<crate::channel::Receiver<PipelineMessage>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 
@@ -170,8 +240,6 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     fn node_id(&self) -> usize;
     // General Node Info
     fn node_info(&self) -> Arc<NodeInfo>;
-    // Runtime Stats
-    fn runtime_stats(&self) -> Arc<dyn RuntimeStats>;
 }
 
 impl ConcreteTreeNode for Box<dyn PipelineNode> {
@@ -194,21 +262,31 @@ pub struct BuilderContext {
     index_counter: std::cell::RefCell<usize>,
     pub meter: Meter,
     context: HashMap<String, String>,
+    shuffle_server: Option<(Arc<ShuffleFlightServer>, String)>,
 }
 
 impl BuilderContext {
     pub fn new() -> Self {
-        Self::new_with_context("".into(), HashMap::new())
+        Self::new_with_context("".into(), HashMap::new(), None)
     }
 
-    pub fn new_with_context(query_id: QueryID, context: HashMap<String, String>) -> Self {
+    pub fn new_with_context(
+        query_id: QueryID,
+        context: HashMap<String, String>,
+        shuffle_server: Option<(Arc<ShuffleFlightServer>, String)>,
+    ) -> Self {
         let meter = Meter::query_scope(query_id, "daft.execution.local");
 
         Self {
             index_counter: std::cell::RefCell::new(0),
             meter,
             context,
+            shuffle_server,
         }
+    }
+
+    pub fn shuffle_server(&self) -> Option<(Arc<ShuffleFlightServer>, String)> {
+        self.shuffle_server.clone()
     }
 
     pub fn next_id(&self) -> usize {
@@ -1163,6 +1241,39 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
+        LocalPhysicalPlan::AsofJoin(AsofJoin {
+            left,
+            right,
+            left_by,
+            right_by,
+            left_on,
+            right_on,
+            stats_state,
+            context,
+            ..
+        }) => {
+            let left_node = physical_plan_to_pipeline(left, cfg, ctx, input_senders)?;
+            let right_node = physical_plan_to_pipeline(right, cfg, ctx, input_senders)?;
+
+            let asof_join_op = AsofJoinOperator::new(
+                left_by.clone(),
+                right_by.clone(),
+                left_on.clone(),
+                right_on.clone(),
+                left.schema().clone(),
+                right.schema().clone(),
+            );
+
+            JoinNode::new(
+                Arc::new(asof_join_op),
+                left_node,
+                right_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
+        }
         LocalPhysicalPlan::PhysicalWrite(PhysicalWrite {
             input,
             file_info,
@@ -1326,26 +1437,6 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
-        LocalPhysicalPlan::Repartition(daft_local_plan::Repartition {
-            input,
-            repartition_spec,
-            num_partitions,
-            stats_state,
-            schema,
-            context,
-        }) => {
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let repartition_op =
-                RepartitionSink::new(repartition_spec.clone(), *num_partitions, schema.clone());
-            BlockingSinkNode::new(
-                Arc::new(repartition_op),
-                child_node,
-                stats_state.clone(),
-                ctx,
-                context,
-            )
-            .boxed()
-        }
         LocalPhysicalPlan::IntoPartitions(daft_local_plan::IntoPartitions {
             input,
             num_partitions,
@@ -1364,56 +1455,105 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
-        LocalPhysicalPlan::FlightShuffleWrite(daft_local_plan::FlightShuffleWrite {
+        LocalPhysicalPlan::RepartitionWrite(RepartitionWrite {
             input,
             num_partitions,
-            partition_by,
-            shuffle_id,
-            shuffle_dirs,
-            compression,
+            schema,
+            backend,
+            repartition_spec,
             stats_state,
             context,
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            // Get cache_id (task_id) from context
-            let cache_id = ctx
-                .context
-                .get("task_id")
-                .cloned()
-                .expect("task_id must be set in context");
-            let flight_shuffle_write_sink = FlightShuffleWriteSink::try_new(
-                *num_partitions,
-                partition_by.clone(),
-                *shuffle_id,
-                shuffle_dirs.clone(),
-                compression.clone(),
-                cache_id,
-            )
-            .with_context(|_| PipelineCreationSnafu {
-                plan_name: physical_plan.name(),
-            })?;
+            match backend {
+                RepartitionWriteBackend::Ray => BlockingSinkNode::new(
+                    Arc::new(RepartitionSink::new_ray(
+                        repartition_spec.clone(),
+                        *num_partitions,
+                        schema.clone(),
+                    )),
+                    child_node,
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed(),
+                RepartitionWriteBackend::Flight {
+                    shuffle_id,
+                    shuffle_dirs,
+                    compression,
+                } => {
+                    let (shuffle_server, _) = ctx
+                        .shuffle_server()
+                        .expect("Flight shuffle server must be initialized for Flight repartition plans when using flight_shuffle algorithm");
+                    let repartition_sink = RepartitionSink::try_new_flight(
+                        *num_partitions,
+                        *shuffle_id,
+                        repartition_spec.clone(),
+                        shuffle_dirs.clone(),
+                        compression.clone(),
+                        shuffle_server,
+                    )
+                    .with_context(|_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    })?;
 
-            BlockingSinkNode::new(
-                Arc::new(flight_shuffle_write_sink),
-                child_node,
-                stats_state.clone(),
-                ctx,
-                context,
-            )
-            .boxed()
+                    BlockingSinkNode::new(
+                        Arc::new(repartition_sink),
+                        child_node,
+                        stats_state.clone(),
+                        ctx,
+                        context,
+                    )
+                    .boxed()
+                }
+            }
         }
-        LocalPhysicalPlan::FlightShuffleRead(daft_local_plan::FlightShuffleRead {
+        LocalPhysicalPlan::ShuffleRead(daft_local_plan::ShuffleRead {
             source_id,
+            backend,
             schema,
             stats_state,
             context,
-        }) => {
-            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
-            input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
-            let source = FlightShuffleReadSource::new(rx, schema.clone(), cfg);
-            SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
-        }
+        }) => match backend {
+            ShuffleReadBackend::Ray => {
+                let (tx, rx) = create_unbounded_channel::<(InputId, Vec<MicroPartitionRef>)>();
+                input_senders.insert(*source_id, InputSender::InMemory(tx));
+
+                let in_memory_source = InMemorySource::new(rx, schema.clone(), 0);
+                SourceNode::new(
+                    Box::new(in_memory_source),
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed()
+            }
+            ShuffleReadBackend::Flight {
+                shuffle_id,
+                server_cache_mapping,
+            } => {
+                let (shuffle_server, shuffle_address) = ctx
+                    .shuffle_server()
+                    .expect("Flight shuffle server must be initialized for FlightShuffleWrite plans when using flight_shuffle algorithm");
+                let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
+                input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
+                let source = ShuffleReadSource::try_new(
+                    rx,
+                    *shuffle_id,
+                    server_cache_mapping.clone(),
+                    shuffle_server,
+                    shuffle_address,
+                    schema.clone(),
+                    cfg,
+                )
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                })?;
+                SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
+            }
+        },
         LocalPhysicalPlan::VLLMProject(VLLMProject {
             input,
             expr,

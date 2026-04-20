@@ -6,6 +6,7 @@
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
 import io
+import logging
 import multiprocessing
 import os
 import pathlib
@@ -59,6 +60,7 @@ if TYPE_CHECKING:
     import pandas
     import pyarrow
     import pyiceberg
+    import pypaimon
     import ray
     import torch
     from sqlalchemy.engine import Connection
@@ -70,6 +72,8 @@ if TYPE_CHECKING:
     from daft.io.sink import WriteResultType
 
 from daft.schema import Schema
+
+logger = logging.getLogger(__name__)
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 T = TypeVar("T")
@@ -376,7 +380,7 @@ class DataFrame:
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.schema()
             ╭─────────────┬────────╮
-            │ column_name ┆ type   │
+            │ Column Name ┆ DType  │
             ╞═════════════╪════════╡
             │ x           ┆ Int64  │
             ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -916,6 +920,7 @@ class DataFrame:
         root_dir: str | pathlib.Path,
         compression: str = "snappy",
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
+        write_success_file: bool = False,
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
     ) -> "DataFrame":
@@ -927,6 +932,7 @@ class DataFrame:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
             write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
+            write_success_file (bool, optional): Whether to write a `_SUCCESS` file upon successful completion. Defaults to False.
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
@@ -962,6 +968,7 @@ class DataFrame:
             root_dir=root_dir,
             partition_cols=cols,
             write_mode=WriteMode.from_str(write_mode),
+            write_success_file=write_success_file,
             file_format=FileFormat.Parquet,
             compression=compression,
             io_config=io_config,
@@ -972,7 +979,10 @@ class DataFrame:
         assert write_df._result is not None
 
         # Populate and return a new disconnected DataFrame
-        result_df = DataFrame(write_df._builder)
+        # Keep the original logical plan so explain() can still show upstream operators
+        # (e.g. filters/projections before the write), instead of collapsing to an
+        # in-memory source after collect() caches the result.
+        result_df = DataFrame(write_df._get_current_builder())
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
         result_df._metadata = write_df._metadata
@@ -1085,7 +1095,10 @@ class DataFrame:
         assert write_df._result is not None
 
         # Populate and return a new disconnected DataFrame
-        result_df = DataFrame(write_df._builder)
+        # Keep the original logical plan so explain() can still show upstream operators
+        # (e.g. filters/projections before the write), instead of collapsing to an
+        # in-memory source after collect() caches the result.
+        result_df = DataFrame(write_df._get_current_builder())
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
         result_df._metadata = write_df._metadata
@@ -1183,7 +1196,10 @@ class DataFrame:
         assert write_df._result is not None
 
         # Populate and return a new disconnected DataFrame
-        result_df = DataFrame(write_df._builder)
+        # Keep the original logical plan so explain() can still show upstream operators
+        # (e.g. filters/projections before the write), instead of collapsing to an
+        # in-memory source after collect() caches the result.
+        result_df = DataFrame(write_df._get_current_builder())
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
         result_df._metadata = write_df._metadata
@@ -1356,6 +1372,44 @@ class DataFrame:
         df = from_pydict(with_operations)
         df._metadata = write_df._metadata
         return df
+
+    @DataframePublicAPI
+    def write_paimon(
+        self,
+        table: "pypaimon.table.Table",
+        mode: str = "append",
+    ) -> "DataFrame":
+        """Writes the DataFrame to an Apache Paimon table, returning a summary DataFrame.
+
+        Args:
+            table (pypaimon.table.Table): Destination Paimon table obtained via
+                ``pypaimon.CatalogFactory.create(options).get_table(identifier)``.
+            mode (str, optional): Write mode – ``"append"`` adds new data,
+                ``"overwrite"`` replaces existing data. Defaults to ``"append"``.
+
+        Returns:
+            DataFrame: A summary DataFrame with columns ``operation``, ``rows``,
+            ``file_size``, and ``file_name`` describing each written file.
+
+        Note:
+            This call is **blocking** and will execute the DataFrame when called.
+
+        Examples:
+            >>> import pypaimon, daft  # doctest: +SKIP
+            >>>
+            >>> catalog = pypaimon.CatalogFactory.create({"warehouse": "/tmp/warehouse"})  # doctest: +SKIP
+            >>> table = catalog.get_table("mydb.mytable")  # doctest: +SKIP
+            >>> df = daft.from_pydict({"id": [1, 2, 3], "name": ["a", "b", "c"]})  # doctest: +SKIP
+            >>> df.write_paimon(table)  # doctest: +SKIP
+        """
+        try:
+            import pypaimon  # noqa: F401
+        except ImportError:
+            raise ImportError("pypaimon is required to use write_paimon. Install it with: `pip install pypaimon`")
+
+        from daft.io.paimon.paimon_data_sink import PaimonDataSink
+
+        return self.write_sink(PaimonDataSink(table, mode))
 
     @DataframePublicAPI
     def write_deltalake(
@@ -2632,6 +2686,177 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def skip_existing(
+        self,
+        existing_path: str | pathlib.Path | list[str | pathlib.Path],
+        key_column: str | list[str],
+        file_format: str | FileFormat,
+        io_config: IOConfig | None = None,
+        num_workers: int = 4,
+        cpus_per_worker: float = 0.5,
+        keys_load_batch_size: int = 100000,
+        max_concurrency_per_worker: int = 1,
+        filter_batch_size: int = 10000,
+        **reader_args: Any,
+    ) -> "DataFrame":
+        """Filter out rows whose key(s) already exist in existing data (i.e., already processed rows).
+
+        This method reads existing data from the given path(s), builds a Ray actor-backed
+        distributed key filter from the existing key columns, and filters the current
+        DataFrame to only include rows whose key(s) are not present in the existing data.
+        This is useful for incremental data processing pipelines where you want to avoid
+        re-processing data that has already been written.
+
+        Missing paths are treated permissively:
+        if none of the provided paths exist, the current DataFrame is returned unchanged;
+        if only some paths exist, Daft logs a warning and continues with the existing subset.
+
+        Args:
+            existing_path: Path or list of paths to the existing data directory/file(s).
+            key_column: Column name(s) to use as the key for matching. Can be a single column name
+                or a list of column names for composite keys.
+            file_format: Format of the existing data files. Supported formats are Parquet, CSV,
+                and JSON/JSONL/NDJSON.
+            io_config: IO configuration for reading the existing data.
+            num_workers: Number of Ray actors to spawn for key filtering. Each actor holds a
+                shard of existing keys and filters incoming partitions in parallel. Higher values
+                increase parallelism and typically reduce per-actor memory usage.
+            cpus_per_worker: Number of CPUs to allocate per Ray actor.
+            keys_load_batch_size: Batch size when loading keys from existing data into actors.
+            max_concurrency_per_worker: Maximum concurrency for per-actor operations.
+            filter_batch_size: Batch size for the key filter operation. Controls how many rows
+                are sent to the key filter actors per RPC call. Larger values reduce RPC
+                overhead but increase memory usage proportionally across all concurrent tasks
+                (total memory ≈ num_tasks × filter_batch_size × avg_key_size). For lightweight
+                keys (int, short string), 10000-50000 works well. For large keys (URLs, long
+                strings), keep this lower to avoid excessive memory usage. Defaults to 10000.
+            **reader_args: Additional keyword arguments forwarded to the underlying reader for
+                `file_format` when scanning `existing_path`.
+
+        Returns:
+            DataFrame: A new DataFrame with rows filtered to exclude those whose keys exist
+                in the existing data.
+
+        Raises:
+            ValueError: If key columns are invalid, paths are empty, or parameters are out of range.
+            RuntimeError: If the existing data cannot be read during execution or key filter
+                resources cannot be allocated.
+
+        Examples:
+            >>> import daft
+            >>> import tempfile
+            >>> from pathlib import Path
+            >>> import pyarrow as pa
+            >>> import pyarrow.parquet as pq
+            >>> df = daft.from_pydict({"id": [1, 2, 3, 4], "value": ["a", "b", "c", "d"]})
+            >>> # Filter out rows where 'id' already exists in local Parquet data
+            >>> daft.set_runner_ray()  # doctest: +SKIP
+            >>> with tempfile.TemporaryDirectory() as tmpdir:  # doctest: +SKIP
+            ...     pq.write_table(pa.table({"id": [1, 3]}), Path(tmpdir) / "part-0.parquet")
+            ...     filtered_df = df.skip_existing(
+            ...         existing_path=tmpdir,
+            ...         key_column="id",
+            ...         file_format="parquet",
+            ...     ).collect()
+            ...     filtered_df.select("id").to_pydict()["id"]
+            [2, 4]
+        """
+        if isinstance(file_format, str):
+            fmt = file_format.strip().lower()
+            if fmt == "parquet":
+                file_format = FileFormat.Parquet
+            elif fmt == "csv":
+                file_format = FileFormat.Csv
+            elif fmt in ("json", "jsonl", "ndjson"):
+                file_format = FileFormat.Json
+            else:
+                raise ValueError(f"[skip_existing] Unsupported format: {file_format}")
+
+        if file_format not in (FileFormat.Parquet, FileFormat.Csv, FileFormat.Json):
+            raise ValueError(f"[skip_existing] Unsupported format: {file_format}")
+
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        existing_path_strs: list[str]
+        if isinstance(existing_path, list):
+            existing_path_strs = [str(p) for p in existing_path]
+        else:
+            existing_path_strs = [str(existing_path)]
+        if not existing_path_strs or any(path == "" for path in existing_path_strs):
+            raise ValueError("[skip_existing] existing_path must be a non-empty list of non-empty paths")
+
+        if not isinstance(key_column, list):
+            key_column = [key_column]
+        if not key_column or any(not isinstance(key, str) or key == "" for key in key_column):
+            raise ValueError("[skip_existing] key_column must be a non-empty list of non-empty column names")
+
+        from pyarrow.fs import FileType
+
+        from daft.filesystem import _resolve_paths_and_filesystem
+
+        resolved_paths, fs = _resolve_paths_and_filesystem(existing_path_strs, io_config=io_config)
+        infos = fs.get_file_info(resolved_paths)
+
+        original_existing_path_strs = existing_path_strs
+        existing_path_strs = [
+            path for path, info in zip(original_existing_path_strs, infos) if info.type != FileType.NotFound
+        ]
+        missing_path_strs = [
+            path for path, info in zip(original_existing_path_strs, infos) if info.type == FileType.NotFound
+        ]
+
+        if missing_path_strs:
+            if not existing_path_strs:
+                logger.warning(
+                    "[skip_existing] No existing data found at %s, processing all rows.",
+                    original_existing_path_strs,
+                )
+                return self
+
+            logger.warning(
+                "[skip_existing] Some existing data paths were not found at %s; continuing with existing paths %s.",
+                missing_path_strs,
+                existing_path_strs,
+            )
+
+        from daft.daft import KeyFilteringConfig
+
+        read_fn: Callable[..., DataFrame]
+        if file_format == FileFormat.Parquet:
+            from daft.io._parquet import read_parquet
+
+            read_fn = read_parquet
+        elif file_format == FileFormat.Csv:
+            from daft.io._csv import read_csv
+
+            read_fn = read_csv
+        else:
+            from daft.io._json import read_json
+
+            read_fn = read_json
+
+        key_exprs = column_inputs_to_expressions(tuple(key_column))
+        key_filtering_config = KeyFilteringConfig(
+            num_workers=num_workers,
+            cpus_per_worker=cpus_per_worker,
+            keys_load_batch_size=keys_load_batch_size,
+            max_concurrency_per_worker=max_concurrency_per_worker,
+            filter_batch_size=filter_batch_size,
+        )
+        read_kwargs = dict(reader_args)
+        right_df = read_fn(path=existing_path_strs, io_config=io_config, **read_kwargs)
+
+        builder = self._builder.join(
+            right=right_df._builder,
+            left_on=key_exprs,
+            right_on=key_exprs,
+            how=JoinType.Anti,
+            strategy=JoinStrategy.KeyFiltering,
+            key_filtering_config=key_filtering_config,
+        )
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def with_column(
         self,
         column_name: str,
@@ -3027,6 +3252,26 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def shuffle(self, seed: int | None = None) -> "DataFrame":
+        """Randomly reorders rows of the DataFrame.
+
+        This is analogous to ``shuffle`` operation in the Hugging Face ``datasets`` library.
+
+        Note:
+            This performs a global sort and is expensive. For randomly redistributing rows across
+            partitions see :meth:`DataFrame.repartition` with no ``partition_by`` (random partition shuffle).
+
+        Args:
+            seed: Optional RNG seed passed to ``random_int`` for best-effort reproducibility
+                on a fixed partition layout; not guaranteed across runners or plan changes.
+
+        Returns:
+            DataFrame: A new DataFrame with rows in random order.
+        """
+        builder = self._builder.shuffle(seed)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def into_partitions(self, num: int) -> "DataFrame":
         """Splits or coalesces DataFrame to ``num`` partitions. Order is preserved.
 
@@ -3166,6 +3411,113 @@ class DataFrame:
             right_on=right_exprs,
             how=join_type,
             strategy=join_strategy,
+            prefix=prefix,
+            suffix=suffix,
+        )
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def join_asof(
+        self,
+        other: "DataFrame",
+        *,
+        on: ColumnInputType | None = None,
+        left_on: ColumnInputType | None = None,
+        right_on: ColumnInputType | None = None,
+        by: list[ColumnInputType] | ColumnInputType | None = None,
+        left_by: list[ColumnInputType] | ColumnInputType | None = None,
+        right_by: list[ColumnInputType] | ColumnInputType | None = None,
+        strategy: Literal["backward"] = "backward",
+        prefix: str | None = None,
+        suffix: str | None = None,
+    ) -> "DataFrame":
+        """Point-in-time (asof) join: each left row matches the nearest right row according to the chosen strategy.
+
+        Args:
+            other: Right-hand DataFrame (e.g. feature table).
+            on: Asof key column when it has the same name on both sides. Exactly one column.
+            left_on: Asof key on the left when names differ. Exactly one column; use with ``right_on``.
+            right_on: Asof key on the right when names differ. Exactly one column; use with ``left_on``.
+            by: Equality key column(s) with the same name on both sides (entity / group columns).
+            left_by: Equality keys on the left when names differ; use with ``right_by``.
+            right_by: Equality keys on the right when names differ; use with ``left_by``.
+            strategy: Match strategy. Currently only ``"backward"`` is supported.
+
+        Returns:
+            DataFrame: Left-join-shaped result (every left row kept; unmatched right columns are null).
+
+        Raises:
+            ValueError: if ``on`` is set and ``left_on`` or ``right_on`` is not None.
+            ValueError: if ``on`` is None but ``left_on`` or ``right_on`` is missing.
+            ValueError: if both ``by`` and ``left_by`` / ``right_by`` are set.
+            ValueError: if only one of ``left_by`` and ``right_by`` is set.
+            ValueError: if ``left_by`` and ``right_by`` have different lengths.
+
+        Examples:
+            >>> import daft
+            >>> left = daft.from_pydict({"entity": ["A", "A", "B"], "timestamp": [10, 11, 10]})
+            >>> right = daft.from_pydict(
+            ...     {
+            ...         "entity": ["A", "A", "A", "B", "B"],
+            ...         "timestamp": [9, 10, 11, 9, 11],
+            ...         "value": [1.0, 2.0, 3.0, 5.0, 6.0],
+            ...     }
+            ... )
+            >>> left.join_asof(right, on="timestamp", by="entity").sort(["entity", "timestamp"]).show()
+            ╭────────┬───────────┬─────────╮
+            │ entity ┆ timestamp ┆ value   │
+            │ ---    ┆ ---       ┆ ---     │
+            │ String ┆ Int64     ┆ Float64 │
+            ╞════════╪═══════════╪═════════╡
+            │ A      ┆ 10        ┆ 2       │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ A      ┆ 11        ┆ 3       │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ B      ┆ 10        ┆ 5       │
+            ╰────────┴───────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+        """
+        if on is not None:
+            if left_on is not None or right_on is not None:
+                raise ValueError("If `on` is set then `left_on` and `right_on` must be None")
+            left_on_expr = column_input_to_expression(on)
+            right_on_expr = column_input_to_expression(on)
+        else:
+            if left_on is None or right_on is None:
+                raise ValueError("If `on` is None then both `left_on` and `right_on` must be set")
+            left_on_expr = column_input_to_expression(left_on)
+            right_on_expr = column_input_to_expression(right_on)
+
+        if by is not None:
+            if left_by is not None or right_by is not None:
+                raise ValueError("Cannot specify both `by` and `left_by`/`right_by`")
+            by_tuple = tuple(by) if isinstance(by, list) else (by,)
+            left_by_exprs = column_inputs_to_expressions(by_tuple)
+            right_by_exprs = column_inputs_to_expressions(by_tuple)
+        else:
+            if left_by is None and right_by is None:
+                left_by_exprs = []
+                right_by_exprs = []
+            elif left_by is None or right_by is None:
+                raise ValueError("Specify both `left_by` and `right_by`, or neither")
+            else:
+                left_by_tuple = tuple(left_by) if isinstance(left_by, list) else (left_by,)
+                right_by_tuple = tuple(right_by) if isinstance(right_by, list) else (right_by,)
+                left_by_exprs = column_inputs_to_expressions(left_by_tuple)
+                right_by_exprs = column_inputs_to_expressions(right_by_tuple)
+                if len(left_by_exprs) != len(right_by_exprs):
+                    raise ValueError(
+                        "left_by and right_by must have the same number of columns, got "
+                        f"{len(left_by_exprs)} and {len(right_by_exprs)}"
+                    )
+
+        builder = self._builder.join_asof(
+            other._builder,
+            left_by=left_by_exprs,
+            right_by=right_by_exprs,
+            left_on=left_on_expr,
+            right_on=right_on_expr,
             prefix=prefix,
             suffix=suffix,
         )
@@ -3773,6 +4125,70 @@ class DataFrame:
 
         """
         return self._apply_agg_fn(lambda expr: Expression.stddev(expr, ddof), cols)
+
+    @DataframePublicAPI
+    def var(self, *cols: ColumnInputType, ddof: int = 1) -> "DataFrame":
+        """Performs a global variance on the DataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to compute variance for
+            ddof (int): Delta degrees of freedom used in the denominator `N - ddof`.
+                Defaults to 1 (sample variance).
+
+        Returns:
+            DataFrame: Globally aggregated variance. Should be a single row.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [0, 1, 2]})
+            >>> df = df.var("col_a")
+            >>> df.show()
+            ╭─────────╮
+            │ col_a   │
+            │ ---     │
+            │ Float64 │
+            ╞═════════╡
+            │ 1       │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        """
+        return self._apply_agg_fn(lambda expr: Expression.var(expr, ddof), cols)
+
+    @DataframePublicAPI
+    def skew(self, *cols: ColumnInputType) -> "DataFrame":
+        """Performs a global skew on the DataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to compute skewness for
+
+        Returns:
+            DataFrame: Globally aggregated skewness. Should be a single row.
+
+        Note:
+            Daft uses the **biased (population) skewness** formula, which is equivalent to
+            ``scipy.stats.skew(bias=True)``. This differs from pandas' default ``DataFrame.skew()``,
+            which uses the adjusted Fisher-Pearson (sample) formula. For small samples, the two
+            formulas can produce meaningfully different results.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"col_a": [1, 2, 3, 4, 5]})
+            >>> df = df.skew("col_a")
+            >>> df.show()
+            ╭─────────╮
+            │ col_a   │
+            │ ---     │
+            │ Float64 │
+            ╞═════════╡
+            │ 0       │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 1 of 1 rows)
+
+        """
+        return self._apply_agg_fn(Expression.skew, cols)
 
     @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
@@ -4562,7 +4978,7 @@ class DataFrame:
         Args:
             n: number of rows to show. Defaults to 8.
             format (PreviewFormat): the box-drawing format e.g. "fancy" or "markdown".
-            verbose (bool): verbose will print header info
+            verbose (bool): if True, headers include the column's data type.
             max_width (int): global max column width
             align (PreviewAlign): global column align
             columns (list[PreviewColumn]): column overrides
@@ -4910,21 +5326,35 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
             >>> ray_dataset = df.to_ray_dataset()  # doctest: +SKIP
 
         Note:
-            This function can only work if Daft is running using the RayRunner
+            This function requires Ray to be installed. It works with any Daft runner -
+            when using the native runner, partitions are converted to Arrow tables locally
+            and then handed to Ray.
         """
         from daft.runners.ray_runner import RayPartitionSet
 
         self.collect()
         partition_set = self._result
         assert partition_set is not None
-        if not isinstance(partition_set, RayPartitionSet):
-            raise ValueError("Cannot convert to Ray Dataset if not running on Ray backend")
-        return partition_set.to_ray_dataset()
+        if isinstance(partition_set, RayPartitionSet):
+            return partition_set.to_ray_dataset()
+
+        # Native runner path: convert MicroPartitions to Arrow tables locally,
+        # then create a Ray Dataset from them.
+        import ray.data
+
+        from daft.runners.ray_runner import _micropartition_to_ray_dataset_block
+
+        blocks = [_micropartition_to_ray_dataset_block(result.micropartition()) for _, result in partition_set.items()]
+        # All partitions share the same schema, so either all convert to Arrow or all
+        # fall back to pylist. Handle both cases.
+        if blocks and isinstance(blocks[0], list):
+            all_items = [item for block in blocks for item in block]
+            return ray.data.from_items(all_items)
+        return ray.data.from_arrow(blocks)
 
     @classmethod
     def _from_ray_dataset(cls, ds: "ray.data.dataset.DataSet") -> "DataFrame":
@@ -5149,6 +5579,38 @@ class GroupedDataFrame:
 
         """
         return self.df._apply_agg_fn(lambda expr: Expression.stddev(expr, ddof), cols, self.group_by)
+
+    def var(self, *cols: ColumnInputType, ddof: int = 1) -> DataFrame:
+        """Performs grouped variance on this GroupedDataFrame.
+
+        Args:
+            *cols (Union[str, Expression]): columns to compute variance for
+            ddof (int): Delta degrees of freedom used in the denominator `N - ddof`.
+                Defaults to 1 (sample variance).
+
+        Returns:
+            DataFrame: DataFrame with grouped variance.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"keys": ["a", "a", "a", "b"], "col_a": [0, 1, 2, 100]})
+            >>> df = df.groupby("keys").var()
+            >>> df = df.sort("keys")
+            >>> df.show()
+            ╭────────┬─────────╮
+            │ keys   ┆ col_a   │
+            │ ---    ┆ ---     │
+            │ String ┆ Float64 │
+            ╞════════╪═════════╡
+            │ a      ┆ 1       │
+            ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+            │ b      ┆ None    │
+            ╰────────┴─────────╯
+            <BLANKLINE>
+            (Showing first 2 of 2 rows)
+
+        """
+        return self.df._apply_agg_fn(lambda expr: Expression.var(expr, ddof), cols, self.group_by)
 
     def min(self, *cols: ColumnInputType) -> DataFrame:
         """Perform grouped min on this GroupedDataFrame.

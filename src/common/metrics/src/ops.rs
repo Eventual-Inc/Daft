@@ -23,6 +23,7 @@ pub enum NodeType {
     IntoBatches,
     Project,
     Sample,
+    StageCheckpointKeys,
     UDFProject,
     Unpivot,
     VLLMProject,
@@ -37,6 +38,7 @@ pub enum NodeType {
     IntoPartitions,
     Pivot,
     Repartition,
+    RandomShuffle,
     Sort,
     TopN,
     Window,
@@ -53,9 +55,11 @@ pub enum NodeType {
     // Join Operators
     HashJoin,
     SortMergeJoin,
+    AsofJoin,
     CrossJoin,
     // Specific to distributed only
     BroadcastJoin,
+    KeyFilteringJoin,
 }
 
 impl Display for NodeType {

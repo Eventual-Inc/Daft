@@ -30,21 +30,21 @@ class SearchResults(BaseModel):
 
 
 df = (
-    daft.from_glob_path("hf://datasets/Eventual-Inc/sample-files/papers/*.pdf").limit(1)
+    daft.from_glob_path("hf://datasets/Eventual-Inc/sample-files/papers/*.pdf")
+    .limit(1)
     .with_column(
         "results",
         prompt(
             messages=[
-                daft.lit("Find 5 closely related papers to the one attached"),
+                "Find 5 closely related papers to the one attached",
                 file(daft.col("path")),
             ],
-            model="gpt-4-turbo",
             tools=[{"type": "web_search"}],
             return_format=SearchResults,
             provider="openai",
-            unnest=True,
         ),
     )
+    .select(daft.col("path"), unnest(daft.col("results")))
 )
 results = df.to_pydict()
 print(results)

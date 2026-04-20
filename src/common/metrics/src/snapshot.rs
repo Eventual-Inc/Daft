@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
 use crate::{
-    BYTES_READ_KEY, BYTES_WRITTEN_KEY, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY,
-    Stat, Stats,
+    BYTES_IN_KEY, BYTES_OUT_KEY, BYTES_READ_KEY, BYTES_WRITTEN_KEY, DURATION_KEY,
+    JOIN_BUILD_BYTES_INSERTED_KEY, JOIN_PROBE_BYTES_IN_KEY, JOIN_PROBE_BYTES_OUT_KEY, ROWS_IN_KEY,
+    ROWS_OUT_KEY, ROWS_WRITTEN_KEY, Stat, Stats,
 };
 
 macro_rules! stats {
@@ -32,6 +33,10 @@ pub struct DefaultSnapshot {
     pub cpu_us: u64,
     pub rows_in: u64,
     pub rows_out: u64,
+    #[serde(default)]
+    pub bytes_in: u64,
+    #[serde(default)]
+    pub bytes_out: u64,
 }
 
 impl StatSnapshotImpl for DefaultSnapshot {
@@ -44,6 +49,8 @@ impl StatSnapshotImpl for DefaultSnapshot {
             DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
             ROWS_IN_KEY; Stat::Count(self.rows_in),
             ROWS_OUT_KEY; Stat::Count(self.rows_out),
+            BYTES_IN_KEY; Stat::Bytes(self.bytes_in),
+            BYTES_OUT_KEY; Stat::Bytes(self.bytes_out),
         ]
     }
 
@@ -51,8 +58,20 @@ impl StatSnapshotImpl for DefaultSnapshot {
         format!(
             "{} rows in, {} rows out",
             HumanCount(self.rows_in),
-            HumanCount(self.rows_out)
+            HumanCount(self.rows_out),
         )
+    }
+}
+
+impl DefaultSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        Self {
+            cpu_us: self.cpu_us + other.cpu_us,
+            rows_in: self.rows_in + other.rows_in,
+            rows_out: self.rows_out + other.rows_out,
+            bytes_in: self.bytes_in + other.bytes_in,
+            bytes_out: self.bytes_out + other.bytes_out,
+        }
     }
 }
 
@@ -61,6 +80,8 @@ pub struct SourceSnapshot {
     pub cpu_us: u64,
     pub rows_out: u64,
     pub bytes_read: u64,
+    #[serde(default)]
+    pub bytes_out: u64,
 }
 
 impl StatSnapshotImpl for SourceSnapshot {
@@ -73,6 +94,7 @@ impl StatSnapshotImpl for SourceSnapshot {
             DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
             ROWS_OUT_KEY; Stat::Count(self.rows_out),
             BYTES_READ_KEY; Stat::Bytes(self.bytes_read),
+            BYTES_OUT_KEY; Stat::Bytes(self.bytes_out),
         ]
     }
 
@@ -80,8 +102,19 @@ impl StatSnapshotImpl for SourceSnapshot {
         format!(
             "{} rows out, {} read",
             HumanCount(self.rows_out),
-            HumanBytes(self.bytes_read)
+            HumanBytes(self.bytes_read),
         )
+    }
+}
+
+impl SourceSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        Self {
+            cpu_us: self.cpu_us + other.cpu_us,
+            rows_out: self.rows_out + other.rows_out,
+            bytes_read: self.bytes_read + other.bytes_read,
+            bytes_out: self.bytes_out + other.bytes_out,
+        }
     }
 }
 
@@ -91,6 +124,10 @@ pub struct FilterSnapshot {
     pub rows_in: u64,
     pub rows_out: u64,
     pub selectivity: f64,
+    #[serde(default)]
+    pub bytes_in: u64,
+    #[serde(default)]
+    pub bytes_out: u64,
 }
 
 impl StatSnapshotImpl for FilterSnapshot {
@@ -104,6 +141,8 @@ impl StatSnapshotImpl for FilterSnapshot {
             ROWS_IN_KEY; Stat::Count(self.rows_in),
             ROWS_OUT_KEY; Stat::Count(self.rows_out),
             "selectivity"; Stat::Percent(self.selectivity),
+            BYTES_IN_KEY; Stat::Bytes(self.bytes_in),
+            BYTES_OUT_KEY; Stat::Bytes(self.bytes_out),
         ]
     }
 
@@ -112,8 +151,28 @@ impl StatSnapshotImpl for FilterSnapshot {
             "{} rows in, {} rows out, {:.2}% kept",
             HumanCount(self.rows_in),
             HumanCount(self.rows_out),
-            self.selectivity
+            self.selectivity,
         )
+    }
+}
+
+impl FilterSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        let rows_in = self.rows_in + other.rows_in;
+        let rows_out = self.rows_out + other.rows_out;
+        let selectivity = if rows_in > 0 {
+            (rows_out as f64 / rows_in as f64) * 100.0
+        } else {
+            0.0
+        };
+        Self {
+            cpu_us: self.cpu_us + other.cpu_us,
+            rows_in,
+            rows_out,
+            selectivity,
+            bytes_in: self.bytes_in + other.bytes_in,
+            bytes_out: self.bytes_out + other.bytes_out,
+        }
     }
 }
 
@@ -123,6 +182,10 @@ pub struct ExplodeSnapshot {
     pub rows_in: u64,
     pub rows_out: u64,
     pub amplification: f64,
+    #[serde(default)]
+    pub bytes_in: u64,
+    #[serde(default)]
+    pub bytes_out: u64,
 }
 
 impl StatSnapshotImpl for ExplodeSnapshot {
@@ -136,6 +199,8 @@ impl StatSnapshotImpl for ExplodeSnapshot {
             ROWS_IN_KEY; Stat::Count(self.rows_in),
             ROWS_OUT_KEY; Stat::Count(self.rows_out),
             "amplification"; Stat::Float(self.amplification),
+            BYTES_IN_KEY; Stat::Bytes(self.bytes_in),
+            BYTES_OUT_KEY; Stat::Bytes(self.bytes_out),
         ]
     }
 
@@ -144,8 +209,28 @@ impl StatSnapshotImpl for ExplodeSnapshot {
             "{} rows in, {} rows out, {:.2}x inc",
             HumanCount(self.rows_in),
             HumanCount(self.rows_out),
-            self.amplification
+            self.amplification,
         )
+    }
+}
+
+impl ExplodeSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        let rows_in = self.rows_in + other.rows_in;
+        let rows_out = self.rows_out + other.rows_out;
+        let amplification = if rows_in > 0 {
+            rows_out as f64 / rows_in as f64
+        } else {
+            0.0
+        };
+        Self {
+            cpu_us: self.cpu_us + other.cpu_us,
+            rows_in,
+            rows_out,
+            amplification,
+            bytes_in: self.bytes_in + other.bytes_in,
+            bytes_out: self.bytes_out + other.bytes_out,
+        }
     }
 }
 
@@ -155,6 +240,10 @@ pub struct UdfSnapshot {
     pub rows_in: u64,
     pub rows_out: u64,
     pub custom_counters: HashMap<Arc<str>, u64>,
+    #[serde(default)]
+    pub bytes_in: u64,
+    #[serde(default)]
+    pub bytes_out: u64,
 }
 
 impl StatSnapshotImpl for UdfSnapshot {
@@ -163,7 +252,7 @@ impl StatSnapshotImpl for UdfSnapshot {
     }
 
     fn to_stats(&self) -> Stats {
-        let mut entries = SmallVec::with_capacity(3 + self.custom_counters.len());
+        let mut entries = SmallVec::with_capacity(5 + self.custom_counters.len());
 
         entries.push((
             DURATION_KEY.into(),
@@ -171,6 +260,8 @@ impl StatSnapshotImpl for UdfSnapshot {
         ));
         entries.push((ROWS_IN_KEY.into(), Stat::Count(self.rows_in)));
         entries.push((ROWS_OUT_KEY.into(), Stat::Count(self.rows_out)));
+        entries.push((BYTES_IN_KEY.into(), Stat::Bytes(self.bytes_in)));
+        entries.push((BYTES_OUT_KEY.into(), Stat::Bytes(self.bytes_out)));
 
         for (name, value) in &self.custom_counters {
             entries.push((name.clone().into(), Stat::Count(*value)));
@@ -184,7 +275,7 @@ impl StatSnapshotImpl for UdfSnapshot {
             format!(
                 "{} rows in, {} rows out",
                 HumanCount(self.rows_in),
-                HumanCount(self.rows_out)
+                HumanCount(self.rows_out),
             )
         } else {
             format!(
@@ -200,12 +291,35 @@ impl StatSnapshotImpl for UdfSnapshot {
     }
 }
 
+impl UdfSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        let mut custom_counters = self.custom_counters;
+        for (k, v) in &other.custom_counters {
+            *custom_counters.entry(k.clone()).or_insert(0) += v;
+        }
+        Self {
+            cpu_us: self.cpu_us + other.cpu_us,
+            rows_in: self.rows_in + other.rows_in,
+            rows_out: self.rows_out + other.rows_out,
+            custom_counters,
+            bytes_in: self.bytes_in + other.bytes_in,
+            bytes_out: self.bytes_out + other.bytes_out,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]
 pub struct JoinSnapshot {
     pub cpu_us: u64,
     pub build_rows_inserted: u64,
     pub probe_rows_in: u64,
     pub probe_rows_out: u64,
+    #[serde(default)]
+    pub build_bytes_inserted: u64,
+    #[serde(default)]
+    pub probe_bytes_in: u64,
+    #[serde(default)]
+    pub probe_bytes_out: u64,
 }
 
 impl StatSnapshotImpl for JoinSnapshot {
@@ -219,6 +333,9 @@ impl StatSnapshotImpl for JoinSnapshot {
             "build rows inserted"; Stat::Count(self.build_rows_inserted),
             "probe rows in"; Stat::Count(self.probe_rows_in),
             "probe rows out"; Stat::Count(self.probe_rows_out),
+            JOIN_BUILD_BYTES_INSERTED_KEY; Stat::Bytes(self.build_bytes_inserted),
+            JOIN_PROBE_BYTES_IN_KEY; Stat::Bytes(self.probe_bytes_in),
+            JOIN_PROBE_BYTES_OUT_KEY; Stat::Bytes(self.probe_bytes_out),
         ]
     }
 
@@ -227,8 +344,22 @@ impl StatSnapshotImpl for JoinSnapshot {
             "{} build rows inserted, {} probe rows in, {} probe rows out",
             HumanCount(self.build_rows_inserted),
             HumanCount(self.probe_rows_in),
-            HumanCount(self.probe_rows_out)
+            HumanCount(self.probe_rows_out),
         )
+    }
+}
+
+impl JoinSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        Self {
+            cpu_us: self.cpu_us + other.cpu_us,
+            build_rows_inserted: self.build_rows_inserted + other.build_rows_inserted,
+            probe_rows_in: self.probe_rows_in + other.probe_rows_in,
+            probe_rows_out: self.probe_rows_out + other.probe_rows_out,
+            build_bytes_inserted: self.build_bytes_inserted + other.build_bytes_inserted,
+            probe_bytes_in: self.probe_bytes_in + other.probe_bytes_in,
+            probe_bytes_out: self.probe_bytes_out + other.probe_bytes_out,
+        }
     }
 }
 
@@ -238,6 +369,8 @@ pub struct WriteSnapshot {
     pub rows_in: u64,
     pub rows_written: u64,
     pub bytes_written: u64,
+    #[serde(default)]
+    pub bytes_in: u64,
 }
 
 impl StatSnapshotImpl for WriteSnapshot {
@@ -251,6 +384,7 @@ impl StatSnapshotImpl for WriteSnapshot {
             ROWS_IN_KEY; Stat::Count(self.rows_in),
             ROWS_WRITTEN_KEY; Stat::Count(self.rows_written),
             BYTES_WRITTEN_KEY; Stat::Bytes(self.bytes_written),
+            BYTES_IN_KEY; Stat::Bytes(self.bytes_in),
         ]
     }
 
@@ -259,8 +393,20 @@ impl StatSnapshotImpl for WriteSnapshot {
             "{} rows in, {} rows written, {} written",
             HumanCount(self.rows_in),
             HumanCount(self.rows_written),
-            HumanBytes(self.bytes_written)
+            HumanBytes(self.bytes_written),
         )
+    }
+}
+
+impl WriteSnapshot {
+    pub fn merge(self, other: &Self) -> Self {
+        Self {
+            cpu_us: self.cpu_us + other.cpu_us,
+            rows_in: self.rows_in + other.rows_in,
+            rows_written: self.rows_written + other.rows_written,
+            bytes_written: self.bytes_written + other.bytes_written,
+            bytes_in: self.bytes_in + other.bytes_in,
+        }
     }
 }
 
@@ -274,4 +420,20 @@ pub enum StatSnapshot {
     Udf(UdfSnapshot),
     Join(JoinSnapshot),
     Write(WriteSnapshot),
+}
+
+impl StatSnapshot {
+    /// Sum two same-variant snapshots. Mismatched variants return `self` unchanged.
+    pub fn merge(self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Default(a), Self::Default(b)) => Self::Default(a.merge(b)),
+            (Self::Source(a), Self::Source(b)) => Self::Source(a.merge(b)),
+            (Self::Filter(a), Self::Filter(b)) => Self::Filter(a.merge(b)),
+            (Self::Explode(a), Self::Explode(b)) => Self::Explode(a.merge(b)),
+            (Self::Udf(a), Self::Udf(b)) => Self::Udf(a.merge(b)),
+            (Self::Join(a), Self::Join(b)) => Self::Join(a.merge(b)),
+            (Self::Write(a), Self::Write(b)) => Self::Write(a.merge(b)),
+            (s, _) => s,
+        }
+    }
 }

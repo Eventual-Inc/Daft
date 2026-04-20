@@ -8,8 +8,16 @@ import pytest
 import daft
 from daft.context import get_context
 from daft.daft import PyQueryMetadata, PyQueryResult, QueryEndState
-from daft.subscribers import events as subscriber_events
-from daft.subscribers.events import _EVENT_LOG_ALIAS, EventLogSubscriber, disable_event_log, enable_event_log
+from daft.subscribers import event_log as subscriber_event_log
+from daft.subscribers.event_log import _EVENT_LOG_ALIAS, EventLogSubscriber, disable_event_log, enable_event_log
+from daft.subscribers.events import (
+    ExecutionFinished,
+    ExecutionStarted,
+    OperatorStarted,
+    OptimizationCompleted,
+    OptimizationStarted,
+    QueryFinished,
+)
 from tests.conftest import get_tests_daft_runner_name
 
 pytestmark = pytest.mark.skipif(
@@ -55,18 +63,61 @@ def test_event_log_subscriber_writes_query_lifecycle_events(tmp_path):
         metadata = _make_query_metadata()
 
         subscriber.on_query_start(query_id, metadata)
-        subscriber.on_query_end(query_id, PyQueryResult(QueryEndState.Finished, "Query finished"))
+        subscriber.on_event(
+            QueryFinished(
+                query_id=query_id,
+                result=PyQueryResult(QueryEndState.Finished, "Query finished"),
+                duration_ms=None,
+            )
+        )
     finally:
         subscriber.close()
 
     events = _load_events(tmp_path / query_id / "events.jsonl")
     event_names = [event["event"] for event in events]
-    assert event_names == ["event_log_started", "query_started", "plan_unoptimized", "query_ended"]
+    assert event_names == ["event_log_started", "query_started", "query_ended"]
+
+    query_started = events[1]
+    assert query_started["query_id"] == query_id
+    assert query_started["plan"] == metadata.unoptimized_plan
 
     query_ended = events[-1]
     assert query_ended["query_id"] == query_id
-    assert query_ended["status"] == "ok"
+    assert query_ended["state"] == "Finished"
     assert query_ended["duration_ms"] >= 0
+
+
+def test_event_log_subscriber_computes_execution_duration_locally(tmp_path):
+    subscriber = EventLogSubscriber(tmp_path)
+
+    try:
+        query_id = "q_exec"
+        subscriber.on_event(ExecutionStarted(query_id=query_id, physical_plan='{"nodes":{}}'))
+        subscriber.on_event(ExecutionFinished(query_id=query_id, duration_ms=None))
+    finally:
+        subscriber.close()
+
+    events = _load_events(tmp_path / query_id / "events.jsonl")
+    execution_ended = events[-1]
+    assert execution_ended["event"] == "execution_ended"
+    assert execution_ended["duration_ms"] >= 0
+
+
+def test_event_log_subscriber_preserves_optimization_lifecycle_schema(tmp_path):
+    subscriber = EventLogSubscriber(tmp_path)
+
+    try:
+        query_id = "q_opt"
+        subscriber.on_event(OptimizationStarted(query_id=query_id))
+        subscriber.on_event(OptimizationCompleted(query_id=query_id, optimized_plan='{"nodes":{}}'))
+    finally:
+        subscriber.close()
+
+    events = _load_events(tmp_path / query_id / "events.jsonl")
+    event_names = [event["event"] for event in events]
+    assert event_names == ["event_log_started", "optimization_started", "optimization_ended"]
+    assert events[2]["duration_ms"] >= 0
+    assert events[2]["plan"] == '{"nodes":{}}'
 
 
 def test_on_query_end_clears_stale_timing_state_for_failed_query(tmp_path):
@@ -77,12 +128,19 @@ def test_on_query_end_clears_stale_timing_state_for_failed_query(tmp_path):
         metadata = _make_query_metadata()
 
         subscriber.on_query_start(query_id, metadata)
-        subscriber.on_optimization_start(query_id)
-        subscriber.on_exec_start(query_id, '{"nodes":{}}')
-        subscriber.on_exec_operator_start(query_id, 1)
-        subscriber.on_exec_operator_start(query_id, 2)
+        subscriber.on_event(OptimizationStarted(query_id=query_id))
+        subscriber.on_event(OptimizationCompleted(query_id=query_id, optimized_plan='{"nodes":{}}'))
+        subscriber.on_event(ExecutionStarted(query_id=query_id, physical_plan='{"nodes":{}}'))
+        subscriber.on_event(OperatorStarted(query_id=query_id, node_id=1, name="op1"))
+        subscriber.on_event(OperatorStarted(query_id=query_id, node_id=2, name="op2"))
 
-        subscriber.on_query_end(query_id, PyQueryResult(QueryEndState.Failed, "boom"))
+        subscriber.on_event(
+            QueryFinished(
+                query_id=query_id,
+                result=PyQueryResult(QueryEndState.Failed, "boom"),
+                duration_ms=None,
+            )
+        )
 
         assert query_id not in subscriber._query_starts
         assert query_id not in subscriber._optimization_starts
@@ -101,16 +159,24 @@ def test_on_query_end_only_clears_ended_query_state(tmp_path):
         metadata = _make_query_metadata()
 
         subscriber.on_query_start(ended_query_id, metadata)
-        subscriber.on_optimization_start(ended_query_id)
-        subscriber.on_exec_start(ended_query_id, '{"nodes":{}}')
-        subscriber.on_exec_operator_start(ended_query_id, 1)
+        subscriber.on_event(OptimizationStarted(query_id=ended_query_id))
+        subscriber.on_event(OptimizationCompleted(query_id=ended_query_id, optimized_plan='{"nodes":{}}'))
+        subscriber.on_event(ExecutionStarted(query_id=ended_query_id, physical_plan='{"nodes":{}}'))
+        subscriber.on_event(OperatorStarted(query_id=ended_query_id, node_id=1, name="op1"))
 
         subscriber.on_query_start(live_query_id, metadata)
-        subscriber.on_optimization_start(live_query_id)
-        subscriber.on_exec_start(live_query_id, '{"nodes":{}}')
-        subscriber.on_exec_operator_start(live_query_id, 9)
+        subscriber.on_event(OptimizationStarted(query_id=live_query_id))
+        subscriber.on_event(OptimizationCompleted(query_id=live_query_id, optimized_plan='{"nodes":{}}'))
+        subscriber.on_event(ExecutionStarted(query_id=live_query_id, physical_plan='{"nodes":{}}'))
+        subscriber.on_event(OperatorStarted(query_id=live_query_id, node_id=9, name="op9"))
 
-        subscriber.on_query_end(ended_query_id, PyQueryResult(QueryEndState.Canceled, "canceled"))
+        subscriber.on_event(
+            QueryFinished(
+                query_id=ended_query_id,
+                result=PyQueryResult(QueryEndState.Canceled, "canceled"),
+                duration_ms=None,
+            )
+        )
 
         assert ended_query_id not in subscriber._query_starts
         assert ended_query_id not in subscriber._optimization_starts
@@ -118,7 +184,7 @@ def test_on_query_end_only_clears_ended_query_state(tmp_path):
         assert all(qid != ended_query_id for qid, _ in subscriber._operator_starts)
 
         assert live_query_id in subscriber._query_starts
-        assert live_query_id in subscriber._optimization_starts
+        assert live_query_id not in subscriber._optimization_starts  # consumed by OptimizationCompleted
         assert live_query_id in subscriber._exec_starts
         assert (live_query_id, 9) in subscriber._operator_starts
     finally:
@@ -127,7 +193,7 @@ def test_on_query_end_only_clears_ended_query_state(tmp_path):
 
 def test_enable_event_log_attach_and_disable_close(tmp_path):
     enable_event_log(tmp_path)
-    subscriber = subscriber_events._EVENT_LOG_SUBSCRIBER
+    subscriber = subscriber_event_log._EVENT_LOG_SUBSCRIBER
 
     assert subscriber is not None
 
@@ -136,7 +202,7 @@ def test_enable_event_log_attach_and_disable_close(tmp_path):
 
     disable_event_log()
 
-    assert subscriber_events._EVENT_LOG_SUBSCRIBER is None
+    assert subscriber_event_log._EVENT_LOG_SUBSCRIBER is None
     assert subscriber._closed is True
 
     event_logs = list(tmp_path.rglob("events.jsonl"))

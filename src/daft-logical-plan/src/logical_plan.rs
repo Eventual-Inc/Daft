@@ -11,7 +11,8 @@ use common_error::{DaftError, DaftResult};
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::join::JoinSide;
 use daft_dsl::{
-    Column, Expr, ResolvedColumn, Subquery, SubqueryPlan, optimization::get_required_columns,
+    Column, Expr, ExprRef, ResolvedColumn, Subquery, SubqueryPlan,
+    optimization::get_required_columns,
 };
 use daft_schema::{
     dtype::DataType,
@@ -28,6 +29,9 @@ use crate::stats::{PlanStats, StatsState};
 /// Logical plan for a Daft query.
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
+// Allow large enum variant (Join) since boxing it would require changes across 20+ files
+// for marginal benefit — LogicalPlan nodes are always Arc-wrapped in practice.
+#[allow(clippy::large_enum_variant)]
 pub enum LogicalPlan {
     Source(Source),
     Shard(Shard),
@@ -49,8 +53,10 @@ pub enum LogicalPlan {
     Intersect(Intersect),
     Union(Union),
     Join(Join),
+    AsofJoin(AsofJoin),
     Sink(Sink),
     Sample(Sample),
+    Shuffle(Shuffle),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
     SubqueryAlias(SubqueryAlias),
     Window(Window),
@@ -171,8 +177,10 @@ impl LogicalPlan {
             Self::Intersect(Intersect { lhs, .. }) => lhs.schema(),
             Self::Union(Union { lhs, .. }) => lhs.schema(),
             Self::Join(Join { output_schema, .. }) => output_schema.clone(),
+            Self::AsofJoin(AsofJoin { output_schema, .. }) => output_schema.clone(),
             Self::Sink(Sink { schema, .. }) => schema.clone(),
             Self::Sample(Sample { input, .. }) => input.schema(),
+            Self::Shuffle(Shuffle { input, .. }) => input.schema(),
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. }) => {
                 schema.clone()
             }
@@ -314,8 +322,50 @@ impl LogicalPlan {
                 }
                 RequiredCols::new(left, Some(right))
             }
+            Self::AsofJoin(AsofJoin {
+                left_by,
+                right_by,
+                left_on,
+                right_on,
+                ..
+            }) => {
+                let mut left = IndexSet::new();
+                let mut right = IndexSet::new();
+                let mut collect = |expr: &ExprRef| {
+                    expr.apply(|e| {
+                        match e.as_ref() {
+                            Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
+                                Field { name, .. },
+                                JoinSide::Left,
+                            ))) => {
+                                left.insert(name.to_string());
+                            }
+                            Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(
+                                Field { name, .. },
+                                JoinSide::Right,
+                            ))) => {
+                                right.insert(name.to_string());
+                            }
+                            _ => {}
+                        }
+
+                        Ok(TreeNodeRecursion::Continue)
+                    })
+                    .unwrap();
+                };
+                for e in left_by {
+                    collect(e);
+                }
+                for e in right_by {
+                    collect(e);
+                }
+                collect(left_on);
+                collect(right_on);
+                RequiredCols::new(left, Some(right))
+            }
             Self::Intersect(_) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
             Self::Union(_) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
+            Self::Shuffle(_) => RequiredCols::new(IndexSet::new(), None),
             Self::Source(_) => todo!(),
             Self::Sink(_) => todo!(),
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.required_columns(),
@@ -364,10 +414,12 @@ impl LogicalPlan {
             Self::Pivot(..) => "Pivot",
             Self::Concat(..) => "Concat",
             Self::Join(..) => "Join",
+            Self::AsofJoin(..) => "AsofJoin",
             Self::Intersect(..) => "Intersect",
             Self::Union(..) => "Union",
             Self::Sink(..) => "Sink",
             Self::Sample(..) => "Sample",
+            Self::Shuffle(..) => "Shuffle",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
             Self::SubqueryAlias(..) => "Alias",
             Self::Window(..) => "Window",
@@ -396,8 +448,10 @@ impl LogicalPlan {
             | Self::Pivot(Pivot { stats_state, .. })
             | Self::Concat(Concat { stats_state, .. })
             | Self::Join(Join { stats_state, .. })
+            | Self::AsofJoin(AsofJoin { stats_state, .. })
             | Self::Sink(Sink { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
+            | Self::Shuffle(Shuffle { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
             | Self::Window(Window { stats_state, .. })
             | Self::TopN(TopN { stats_state, .. })
@@ -437,8 +491,10 @@ impl LogicalPlan {
             Self::Pivot(plan) => Self::Pivot(plan.with_materialized_stats()),
             Self::Concat(plan) => Self::Concat(plan.with_materialized_stats()),
             Self::Join(plan) => Self::Join(plan.with_materialized_stats()),
+            Self::AsofJoin(plan) => Self::AsofJoin(plan.with_materialized_stats()),
             Self::Sink(plan) => Self::Sink(plan.with_materialized_stats()),
             Self::Sample(plan) => Self::Sample(plan.with_materialized_stats()),
+            Self::Shuffle(plan) => Self::Shuffle(plan.with_materialized_stats()),
             Self::MonotonicallyIncreasingId(plan) => {
                 Self::MonotonicallyIncreasingId(plan.with_materialized_stats())
             }
@@ -476,8 +532,10 @@ impl LogicalPlan {
             Self::Intersect(inner) => inner.multiline_display(),
             Self::Union(inner) => inner.multiline_display(),
             Self::Join(join) => join.multiline_display(),
+            Self::AsofJoin(asof_join) => asof_join.multiline_display(),
             Self::Sink(sink) => sink.multiline_display(),
             Self::Sample(sample) => sample.multiline_display(),
+            Self::Shuffle(shuffle) => shuffle.multiline_display(),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 monotonically_increasing_id.multiline_display()
             }
@@ -508,10 +566,12 @@ impl LogicalPlan {
             Self::Pivot(Pivot { input, .. }) => vec![input],
             Self::Concat(Concat { input, other, .. }) => vec![input, other],
             Self::Join(Join { left, right, .. }) => vec![left, right],
+            Self::AsofJoin(AsofJoin { left, right, .. }) => vec![left, right],
             Self::Sink(Sink { input, .. }) => vec![input],
             Self::Intersect(Intersect { lhs, rhs, .. }) => vec![lhs, rhs],
             Self::Union(Union { lhs, rhs, .. }) => vec![lhs, rhs],
             Self::Sample(Sample { input, .. }) => vec![input],
+            Self::Shuffle(Shuffle { input, .. }) => vec![input],
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
                 vec![input]
             }
@@ -665,6 +725,9 @@ impl LogicalPlan {
                     *with_replacement,
                     *seed,
                 )),
+                Self::Shuffle(Shuffle { seed, .. }) => {
+                    Self::Shuffle(Shuffle::new(input.clone(), *seed))
+                }
                 Self::SubqueryAlias(SubqueryAlias { name: id, .. }) => {
                     Self::SubqueryAlias(SubqueryAlias::new(input.clone(), id.clone()))
                 }
@@ -709,7 +772,11 @@ impl LogicalPlan {
                     expr.clone(),
                     output_column_name.clone(),
                 )),
-                Self::Concat(_) | Self::Intersect(_) | Self::Union(_) | Self::Join(_) => panic!(
+                Self::Concat(_)
+                | Self::Intersect(_)
+                | Self::Union(_)
+                | Self::Join(_)
+                | Self::AsofJoin(_) => panic!(
                     "{} ops should never have only one input, but got one",
                     input.name()
                 ),
@@ -737,6 +804,7 @@ impl LogicalPlan {
                     on,
                     join_type,
                     join_strategy,
+                    key_filtering_config,
                     ..
                 }) => Self::Join(
                     Join::try_new(
@@ -746,8 +814,41 @@ impl LogicalPlan {
                         *join_type,
                         *join_strategy,
                     )
-                    .unwrap(),
+                    .unwrap()
+                    .with_key_filtering_config(key_filtering_config.clone()),
                 ),
+                Self::AsofJoin(AsofJoin {
+                    left_by,
+                    right_by,
+                    left_on,
+                    right_on,
+                    ..
+                }) => {
+                    use daft_dsl::{Column, Expr, ResolvedColumn, join::get_right_cols_to_drop};
+
+                    let right_cols_to_drop =
+                        get_right_cols_to_drop(right_by, left_on, right_on, |e| {
+                            match e.unwrap_alias().0.as_ref() {
+                                Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
+                                    Some(name.to_string())
+                                }
+                                _ => None,
+                            }
+                        });
+
+                    Self::AsofJoin(
+                        AsofJoin::try_new(
+                            input1.clone(),
+                            input2.clone(),
+                            left_by.clone(),
+                            right_by.clone(),
+                            left_on.clone(),
+                            right_on.clone(),
+                            right_cols_to_drop,
+                        )
+                        .unwrap(),
+                    )
+                }
                 _ => panic!("Logical op {} has one input, but got two", self),
             },
             _ => panic!(
@@ -929,8 +1030,10 @@ impl LogicalPlan {
             | Self::Intersect(Intersect { plan_id, .. })
             | Self::Union(Union { plan_id, .. })
             | Self::Join(Join { plan_id, .. })
+            | Self::AsofJoin(AsofJoin { plan_id, .. })
             | Self::Sink(Sink { plan_id, .. })
             | Self::Sample(Sample { plan_id, .. })
+            | Self::Shuffle(Shuffle { plan_id, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { plan_id, .. })
             | Self::SubqueryAlias(SubqueryAlias { plan_id, .. })
             | Self::Window(Window { plan_id, .. })
@@ -961,8 +1064,10 @@ impl LogicalPlan {
             | Self::Intersect(Intersect { node_id, .. })
             | Self::Union(Union { node_id, .. })
             | Self::Join(Join { node_id, .. })
+            | Self::AsofJoin(AsofJoin { node_id, .. })
             | Self::Sink(Sink { node_id, .. })
             | Self::Sample(Sample { node_id, .. })
+            | Self::Shuffle(Shuffle { node_id, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { node_id, .. })
             | Self::SubqueryAlias(SubqueryAlias { node_id, .. })
             | Self::Window(Window { node_id, .. })
@@ -998,8 +1103,10 @@ impl LogicalPlan {
             Self::Intersect(intersect) => Self::Intersect(intersect.with_plan_id(plan_id)),
             Self::Union(union) => Self::Union(union.with_plan_id(plan_id)),
             Self::Join(join) => Self::Join(join.with_plan_id(plan_id)),
+            Self::AsofJoin(asof_join) => Self::AsofJoin(asof_join.with_plan_id(plan_id)),
             Self::Sink(sink) => Self::Sink(sink.with_plan_id(plan_id)),
             Self::Sample(sample) => Self::Sample(sample.with_plan_id(plan_id)),
+            Self::Shuffle(shuffle) => Self::Shuffle(shuffle.with_plan_id(plan_id)),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 Self::MonotonicallyIncreasingId(monotonically_increasing_id.with_plan_id(plan_id))
             }
@@ -1039,8 +1146,10 @@ impl LogicalPlan {
             Self::Intersect(intersect) => Self::Intersect(intersect.with_node_id(node_id)),
             Self::Union(union) => Self::Union(union.with_node_id(node_id)),
             Self::Join(join) => Self::Join(join.with_node_id(node_id)),
+            Self::AsofJoin(asof_join) => Self::AsofJoin(asof_join.with_node_id(node_id)),
             Self::Sink(sink) => Self::Sink(sink.with_node_id(node_id)),
             Self::Sample(sample) => Self::Sample(sample.with_node_id(node_id)),
+            Self::Shuffle(shuffle) => Self::Shuffle(shuffle.with_node_id(node_id)),
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 Self::MonotonicallyIncreasingId(monotonically_increasing_id.with_node_id(node_id))
             }
@@ -1154,8 +1263,10 @@ impl_from_data_struct_for_logical_plan!(Concat);
 impl_from_data_struct_for_logical_plan!(Intersect);
 impl_from_data_struct_for_logical_plan!(Union);
 impl_from_data_struct_for_logical_plan!(Join);
+impl_from_data_struct_for_logical_plan!(AsofJoin);
 impl_from_data_struct_for_logical_plan!(Sink);
 impl_from_data_struct_for_logical_plan!(Sample);
+impl_from_data_struct_for_logical_plan!(Shuffle);
 impl_from_data_struct_for_logical_plan!(MonotonicallyIncreasingId);
 impl_from_data_struct_for_logical_plan!(Window);
 impl_from_data_struct_for_logical_plan!(TopN);

@@ -17,6 +17,7 @@ common-version = {path = "src/common/version", default-features = false}
 daft-ai = {path = "src/daft-ai", default-features = false}
 daft-algebra = {path = "src/daft-algebra", default-features = false}
 daft-catalog = {path = "src/daft-catalog", default-features = false}
+daft-checkpoint = {path = "src/daft-checkpoint", default-features = false}
 daft-cli = {path = "src/daft-cli", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
 daft-context = {path = "src/daft-context", default-features = false}
@@ -100,7 +101,6 @@ python = [
   "daft-scan/python",
   "daft-sql/python",
   "daft-session/python",
-  "daft-shuffles/python",
   "daft-stats/python",
   "daft-recordbatch/python",
   "daft-writers/python"
@@ -111,10 +111,10 @@ crate-type = ["cdylib"]
 name = "daft"
 
 [package]
-edition = "2024"
+edition = {workspace = true}
 name = "daft"
 publish = false
-version = "0.3.0-dev0"
+version = {workspace = true}
 # Exclude unnecessary files from sdist
 exclude = [
   "examples/dvector",
@@ -151,6 +151,11 @@ inherits = "release"
 lto = 'thin'
 strip = "none"  # dont strip
 
+# LLVM's SLP vectorizer takes 75+ min on this crate at opt-level=3.
+# opt-level=2 disables it, bringing compile time down to ~15s.
+[profile.release.package.daft-parquet]
+opt-level = 2
+
 [profile.release-lto]
 codegen-units = 1
 inherits = "release"
@@ -184,8 +189,10 @@ members = [
   "src/daft-ai",
   "src/daft-algebra",
   "src/daft-catalog",
+  "src/daft-checkpoint",
   "src/daft-context",
   "src/daft-core",
+  "src/daft-groupby",
   "src/daft-csv",
   "src/daft-dashboard",
   "src/daft-dsl",
@@ -268,6 +275,7 @@ daft-algebra = {path = "src/daft-algebra"}
 daft-catalog = {path = "src/daft-catalog"}
 daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
+daft-groupby = {path = "src/daft-groupby"}
 daft-dsl = {path = "src/daft-dsl"}
 daft-ext-internal = {path = "src/daft-ext-internal"}
 daft-ext-macros = {path = "src/daft-ext-macros", version = "0.1.1"}
@@ -340,7 +348,7 @@ sysinfo = "0.38.4"
 tango-bench = "0.6.0"
 test-log = "0.2.19"
 thiserror = "2.0.17"
-tiktoken-rs = "0.7.0"
+tiktoken-rs = "0.9.1"
 tokio = {version = "1.48.0", features = [
   "net",
   "time",
@@ -356,8 +364,9 @@ tokio-util = "0.7.17"
 tonic = "0.14.2"
 tonic-build = "0.14.2"
 tracing = {version = "0.1", features = ["log"]}
-tracing-subscriber = {version = "0.3.22", default-features = false, features = ["std", "fmt", "ansi", "env-filter"]}
+tracing-subscriber = {version = "0.3.22", default-features = false, features = ["std", "fmt", "ansi", "env-filter", "json"]}
 typetag = "0.2.21"
+rustfft = "6"
 url = "2.4.0"
 uuid = {version = "1.19.0", features = ["v4"]}
 xxhash-rust = {version = "0.8.15", features = ["const_xxh3", "const_xxh64", "const_xxh32", "xxh64", "xxh3", "xxh32"]}

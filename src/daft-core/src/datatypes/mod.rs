@@ -31,7 +31,7 @@ pub use crate::array::{DataArray, FixedSizeListArray, file_array::FileArray};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{ListArray, StructArray},
+    array::{ListArray, StructArray, UnionArray},
     file::{DaftMediaType, FileType},
 };
 
@@ -241,6 +241,7 @@ impl_daft_arrow_datatype!(Decimal128Type, Unknown);
 impl_nested_datatype!(FixedSizeListType, FixedSizeListArray);
 impl_nested_datatype!(StructType, StructArray);
 impl_nested_datatype!(ListType, ListArray);
+impl_nested_datatype!(UnionType, UnionArray);
 
 impl_daft_logical_data_array_datatype!(TimestampType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DateType, Date, Int32Type);
@@ -250,6 +251,8 @@ impl_daft_logical_data_array_datatype!(ImageType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(TensorType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(SparseTensorType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(FixedShapeSparseTensorType, Unknown, StructType);
+impl_daft_logical_data_array_datatype!(UuidType, Uuid, FixedSizeBinaryType);
+
 impl_daft_logical_fixed_size_list_datatype!(EmbeddingType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeImageType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeTensorType, Unknown);

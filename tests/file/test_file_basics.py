@@ -9,7 +9,7 @@ import pytest
 
 import daft
 from daft import DataType as dt
-from daft.functions import file, file_size
+from daft.functions import file, file_path, file_size
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -278,3 +278,36 @@ def test_file_name_property_various_formats(url, expected_name):
     file = daft.File(url)
     assert file.name == expected_name
     assert file.path == url
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_path_function():
+    """Test file_path() extracts the URL from a File column."""
+    paths = ["s3://bucket/file1.csv", "/local/path/file2.txt", "https://example.com/file3.json"]
+    df = daft.from_pydict({"path": paths})
+    df = df.select(file(df["path"]).alias("file"))
+    df = df.with_column("extracted_path", file_path(daft.col("file")))
+    result = df.to_pydict()
+    assert result["extracted_path"] == paths
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_path_enables_string_operations():
+    """Test that file_path() output can be used with string expressions like endswith."""
+    paths = ["/data/report.pdf", "/data/image.png", "/data/notes.pdf"]
+    df = daft.from_pydict({"path": paths})
+    df = df.select(file(df["path"]).alias("file"))
+    df = df.where(file_path(daft.col("file")).endswith(".pdf"))
+    result = df.to_pydict()
+    assert len(result["file"]) == 2
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_path_expression_method():
+    """Test that .file_path() works as an expression method."""
+    paths = ["/data/report.pdf", "/data/image.png"]
+    df = daft.from_pydict({"path": paths})
+    df = df.select(file(df["path"]).alias("file"))
+    df = df.with_column("extracted_path", daft.col("file").file_path())
+    result = df.to_pydict()
+    assert result["extracted_path"] == paths

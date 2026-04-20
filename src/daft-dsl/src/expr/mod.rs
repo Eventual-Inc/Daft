@@ -299,6 +299,9 @@ pub enum Expr {
     #[display("exists {_0}")]
     Exists(Subquery),
 
+    #[display("coalesce({})", display::expr_list_display_without_formatter(_0)?)]
+    Coalesce(Vec<ExprRef>),
+
     #[display("vllm({_0})")]
     VLLM(VLLMExpr),
 }
@@ -388,6 +391,7 @@ impl MapGroupsFn {
 }
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[allow(clippy::large_enum_variant)]
 pub enum AggExpr {
     #[display("count({_0}, {_1})")]
     Count(ExprRef, CountMode),
@@ -1484,6 +1488,14 @@ impl Expr {
             }) => FieldID::new(format!(
                 "VLLM({model}, {input}, {concurrency}, {gpus_per_actor}, {do_prefix_routing}, {max_buffer_size}, {min_bucket_size}, {prefix_match_threshold:?}, {load_balance_threshold}, {batch_size:?}, {engine_args:?}, {generate_args:?})"
             )),
+            Self::Coalesce(inputs) => {
+                let inputs_id = inputs
+                    .iter()
+                    .map(|input| input.semantic_id(schema).id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                FieldID::new(format!("coalesce({})", inputs_id))
+            }
         }
     }
 
@@ -1614,6 +1626,13 @@ impl Expr {
                     .collect::<DaftResult<Vec<String>>>()?;
                 Ok(format!("{sf_id}({})", input_names.join(", ")))
             }
+            Self::Coalesce(inputs) => {
+                let input_names = inputs
+                    .iter()
+                    .map(|input| input.display_name(schema))
+                    .collect::<DaftResult<Vec<String>>>()?;
+                Ok(format!("coalesce({})", input_names.join(", ")))
+            }
             other => Err(DaftError::InternalError(format!(
                 "Expression type {other} is not be displayable"
             ))),
@@ -1659,6 +1678,7 @@ impl Expr {
             Self::ScalarFn(ScalarFn::Builtin(sf)) => sf.inputs.clone().into_inner(),
             Self::ScalarFn(ScalarFn::Python(udf)) => udf.args(),
             Self::VLLM(VLLMExpr { input, .. }) => vec![input.clone()],
+            Self::Coalesce(inputs) => inputs.clone(),
         }
     }
 
@@ -1806,6 +1826,14 @@ impl Expr {
                 engine_args: engine_args.clone(),
                 generate_args: generate_args.clone(),
             }),
+            Self::Coalesce(inputs) => {
+                assert_eq!(
+                    children.len(),
+                    inputs.len(),
+                    "Should have same number of children"
+                );
+                Self::Coalesce(children)
+            }
         }
     }
 
@@ -1839,6 +1867,8 @@ impl Expr {
                 let child_field = expr.to_field(schema)?;
                 match child_field.dtype {
                     DataType::Boolean => Ok(Field::new(expr.name(), DataType::Boolean)),
+                    // NOT of a null-typed expression produces a null boolean (SQL-1999 6.30.2: NOT (unknown) = unknown).
+                    DataType::Null => Ok(Field::new(expr.name(), DataType::Boolean)),
                     _ => Err(DaftError::TypeError(format!(
                         "Expected argument to be a Boolean expression, but received {child_field}",
                     ))),
@@ -2008,6 +2038,21 @@ impl Expr {
             Self::Over(expr, _) => expr.to_field(schema),
             Self::WindowFunction(expr) => expr.to_field(schema),
             Self::VLLM(VLLMExpr { input, .. }) => input.to_field(schema),
+            Self::Coalesce(inputs) => {
+                if inputs.is_empty() {
+                    return Err(DaftError::ValueError(
+                        "COALESCE requires at least one argument".to_string(),
+                    ));
+                }
+                let mut field_types = Vec::new();
+                let field_name = inputs[0].to_field(schema)?.name.to_string();
+                for input in inputs {
+                    let field = input.to_field(schema)?;
+                    field_types.push(field.dtype.clone());
+                }
+                let dtype = try_get_collection_supertype(field_types)?;
+                Ok(Field::new(field_name, dtype))
+            }
         }
     }
 
@@ -2045,6 +2090,7 @@ impl Expr {
             Self::ScalarFn(ScalarFn::Builtin(func)) => match func.name() {
                 "struct" => "struct", // FIXME: make struct its own expr variant
                 "monotonically_increasing_id" => "monotonically_increasing_id", // Special case for functions with no inputs
+                "uuid" => "",
                 _ => func.inputs.first().unwrap().name(),
             },
             Self::BinaryOp {
@@ -2077,6 +2123,7 @@ impl Expr {
                 }
             },
             Self::VLLM(VLLMExpr { input, .. }) => input.name(),
+            Self::Coalesce(inputs) => inputs.first().map(|e| e.name()).unwrap_or("coalesce"),
         }
     }
 
@@ -2164,7 +2211,8 @@ impl Expr {
                 | Expr::Over(..)
                 | Expr::WindowFunction(..)
                 | Expr::Column(_)
-                | Expr::VLLM(..) => Err(io::Error::other(
+                | Expr::VLLM(..)
+                | Expr::Coalesce(..) => Err(io::Error::other(
                     "Unsupported expression for SQL translation",
                 )),
             }
@@ -2220,6 +2268,7 @@ impl Expr {
             Self::InSubquery(expr, _) => expr.has_compute(),
             Self::List(..) => true,
             Self::VLLM(..) => true,
+            Self::Coalesce(inputs) => inputs.iter().any(|input| input.has_compute()),
         }
     }
 
@@ -2412,7 +2461,11 @@ pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {
         },
 
         // Everything else doesn't filter
-        Expr::Over(..) | Expr::WindowFunction(_) | Expr::Subquery(_) | Expr::List(_) => 1.0,
+        Expr::Over(..)
+        | Expr::WindowFunction(_)
+        | Expr::Subquery(_)
+        | Expr::List(_)
+        | Expr::Coalesce(_) => 1.0,
         Expr::Agg(_) => panic!("Aggregates are not allowed in WHERE clauses"),
     };
 

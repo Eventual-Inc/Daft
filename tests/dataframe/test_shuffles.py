@@ -16,8 +16,9 @@ from daft.recordbatch.recordbatch import RecordBatch
 from tests.conftest import get_tests_daft_runner_name
 
 
-def generate(num_rows: int, bytes_per_row: int):
+def generate(partition_id: int, num_rows: int, bytes_per_row: int):
     data = {
+        "ids": np.arange(num_rows) + partition_id * num_rows,
         "ints": np.random.randint(0, num_rows, num_rows, dtype=np.uint64),
         "bytes": pa.array(
             [np.random.bytes(bytes_per_row) for _ in range(num_rows)],
@@ -32,10 +33,10 @@ def generator(
     num_rows_fn: Callable[[], int],
     bytes_per_row_fn: Callable[[], int],
 ):
-    for _ in range(num_partitions):
+    for partition_id in range(num_partitions):
         num_rows = num_rows_fn()
         bytes_per_row = bytes_per_row_fn()
-        yield partial(generate, num_rows, bytes_per_row)
+        yield partial(generate, partition_id, num_rows, bytes_per_row)
 
 
 @pytest.fixture(scope="function")
@@ -88,6 +89,7 @@ def test_pre_shuffle_merge_small_partitions(pre_shuffle_merge_ctx, input_partiti
                 generator(input_partitions, num_rows_fn, bytes_per_row_fn),
                 schema=daft.Schema._from_field_name_and_types(
                     [
+                        ("ids", daft.DataType.uint64()),
                         ("ints", daft.DataType.uint64()),
                         ("bytes", daft.DataType.binary()),
                     ]
@@ -124,6 +126,7 @@ def test_pre_shuffle_merge_big_partitions(pre_shuffle_merge_ctx, input_partition
                 generator(input_partitions, num_rows_fn, bytes_per_row_fn),
                 schema=daft.Schema._from_field_name_and_types(
                     [
+                        ("ids", daft.DataType.uint64()),
                         ("ints", daft.DataType.uint64()),
                         ("bytes", daft.DataType.binary()),
                     ]
@@ -161,6 +164,7 @@ def test_pre_shuffle_merge_randomly_sized_partitions(pre_shuffle_merge_ctx, inpu
                 generator(input_partitions, num_rows_fn, bytes_per_row_fn),
                 schema=daft.Schema._from_field_name_and_types(
                     [
+                        ("ids", daft.DataType.uint64()),
                         ("ints", daft.DataType.uint64()),
                         ("bytes", daft.DataType.binary()),
                     ]
@@ -170,6 +174,19 @@ def test_pre_shuffle_merge_randomly_sized_partitions(pre_shuffle_merge_ctx, inpu
             .collect()
         )
         assert len(df) == input_partitions * output_partitions
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+def test_random_shuffle_uses_ray_shuffle_path_under_flight_shuffle_config(flight_shuffle_ctx):
+    with flight_shuffle_ctx():
+        df = daft.from_pydict({"id": list(range(32))}).repartition(4, "id")
+        shuffled = df.shuffle(seed=0).to_pydict()["id"]
+
+    assert sorted(shuffled) == list(range(32))
+    assert shuffled != list(range(32))
 
 
 @pytest.mark.skipif(
@@ -190,17 +207,18 @@ def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions)
         return 200
 
     with flight_shuffle_ctx():
-        df = (
-            read_generator(
-                generator(input_partitions, num_rows_fn, bytes_per_row_fn),
-                schema=daft.Schema._from_field_name_and_types(
-                    [
-                        ("ints", daft.DataType.uint64()),
-                        ("bytes", daft.DataType.fixed_size_binary(200)),
-                    ]
-                ),
-            )
-            .repartition(output_partitions, "ints")
-            .collect()
-        )
+        base_df = read_generator(
+            generator(input_partitions, num_rows_fn, bytes_per_row_fn),
+            schema=daft.Schema._from_field_name_and_types(
+                [
+                    ("ids", daft.DataType.uint64()),
+                    ("ints", daft.DataType.uint64()),
+                    ("bytes", daft.DataType.fixed_size_binary(200)),
+                ]
+            ),
+        ).collect()
+
+        df = base_df.repartition(output_partitions, "ints").collect()
+
+        assert base_df.to_arrow().sort_by("ids") == df.to_arrow().sort_by("ids")
         assert len(df) == input_partitions * output_partitions

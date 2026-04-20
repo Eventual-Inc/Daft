@@ -22,7 +22,11 @@ repos:
     exclude: (?x)^(tests/assets/mvp.csv|.*\.warc|tests/dataframe/test_show.py)$
   - id: end-of-file-fixer
     exclude: |
-      (?x)^(.*\.warc)$
+      (?x)^(
+          .*\.warc|
+          CLAUDE\.md|
+          docs/contributing/overview\.md
+      )$
   - id: check-yaml
     exclude: kubernetes-ops|k8s/charts/.*/templates/.*\.ya?ml$
     args:
@@ -77,7 +81,7 @@ repos:
 
 - repo: https://github.com/astral-sh/uv-pre-commit
   # uv version.
-  rev: 0.9.22
+  rev: 0.11.2
   hooks:
   - id: uv-lock
 

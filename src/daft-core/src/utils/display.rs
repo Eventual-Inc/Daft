@@ -64,14 +64,17 @@ pub fn display_timestamp(val: i64, unit: &TimeUnit, timezone: &Option<String>) -
         || timestamp_to_str_naive(val, unit),
         |timezone| {
             // In arrow, timezone string can be either:
-            // 1. a fixed offset "-07:00", parsed using parse_offset, or
-            // 2. a timezone name e.g. "America/Los_Angeles", parsed using parse_offset_tz.
-            if let Ok(offset) = daft_schema::time_unit::parse_offset(timezone) {
-                timestamp_to_str_offset(val, unit, &offset)
-            } else if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(timezone) {
-                timestamp_to_str_tz(val, unit, &tz)
-            } else {
-                panic!("Unable to parse timezone string {}", timezone)
+            // 1. a fixed offset, e.g. "-07:00", or
+            // 2. a timezone name, e.g. "America/Los_Angeles".
+            let tz_parsed = daft_schema::time_unit::parse_timezone(timezone)
+                .unwrap_or_else(|_| panic!("Unable to parse timezone string {timezone}"));
+            match tz_parsed {
+                daft_schema::time_unit::ParsedTimezone::Fixed(offset) => {
+                    timestamp_to_str_offset(val, unit, &offset)
+                }
+                daft_schema::time_unit::ParsedTimezone::Tz(tz) => {
+                    timestamp_to_str_tz(val, unit, &tz)
+                }
             }
         },
     )

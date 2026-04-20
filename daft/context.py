@@ -68,6 +68,9 @@ class DaftContext:
     def _notify_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
         self._ctx.notify_query_start(query_id, metadata)
 
+    def _notify_query_heartbeat(self, query_id: str) -> None:
+        self._ctx.notify_query_heartbeat(query_id)
+
     def _notify_query_end(self, query_id: str, query_result: PyQueryResult) -> None:
         """Notifies the query end to the subscribers. Exceptions from subscribers are logged and ignored."""
         self._ctx.notify_query_end(query_id, query_result)
@@ -104,6 +107,51 @@ class DaftContext:
 def get_context() -> DaftContext:
     """Returns the global singleton daft context."""
     return DaftContext(_get_context())
+
+
+@contextlib.contextmanager
+def with_subscriber(alias: str, subscriber: Subscriber) -> Generator[None, None, None]:
+    """Context manager that attaches a subscriber to the current context, and detaches it afterwards.
+
+    Args:
+        alias (str): Alias of subscriber to attach
+        subscriber (Subscriber): Subscriber instance that will receive events
+
+    Examples:
+        >>> with daft.with_subscriber("my_subscriber", ...):
+        ...     df = daft.from_pydict({"x": [1, 2, 3]})
+        ...     df = df.with_column("y", df["x"] + 1)
+        ...     df = df.limit(5)
+        ...     df.collect()
+    """
+    ctx = get_context()
+    ctx.attach_subscriber(alias, subscriber)
+    try:
+        yield
+    finally:
+        ctx.detach_subscriber(alias)
+
+
+def attach_subscriber(alias: str, subscriber: Subscriber) -> DaftContext:
+    """Attaches a subscriber to the current context.
+
+    Args:
+        alias (str): Name-based alias for the subscriber
+        subscriber (Subscriber): Subscriber instance that will receive events
+    """
+    ctx = get_context()
+    ctx.attach_subscriber(alias, subscriber)
+    return ctx
+
+
+def detach_subscriber(alias: str) -> None:
+    """Detaches a subscriber from the current context.
+
+    Args:
+        alias (str): Alias of subscriber to detach
+    """
+    ctx = get_context()
+    ctx.detach_subscriber(alias)
 
 
 @contextlib.contextmanager
@@ -186,6 +234,7 @@ def set_execution_config(
     native_parquet_writer: bool | None = None,
     min_cpu_per_task: float | None = None,
     actor_udf_ready_timeout: int | None = None,
+    worker_startup_timeout: int | None = None,
     maintain_order: bool | None = None,
     enable_dynamic_batching: bool | None = None,
     dynamic_batching_strategy: str | None = None,
@@ -234,6 +283,7 @@ def set_execution_config(
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
         min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
         actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 120 seconds.
+        worker_startup_timeout: Timeout for worker actors to report their addresses during startup. Defaults to 120 seconds.
         maintain_order: Whether to maintain order during execution. Defaults to True. Some blocking sink operators (e.g. write_parquet) won't respect this flag and will always keep maintain_order as false, and propagate to child operators. It's useful to set this to False for running df.collect() when no ordering is required.
         enable_dynamic_batching: Whether to enable dynamic batching. Defaults to False.
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
@@ -275,6 +325,7 @@ def set_execution_config(
             native_parquet_writer=native_parquet_writer,
             min_cpu_per_task=min_cpu_per_task,
             actor_udf_ready_timeout=actor_udf_ready_timeout,
+            worker_startup_timeout=worker_startup_timeout,
             maintain_order=maintain_order,
             enable_dynamic_batching=enable_dynamic_batching,
             dynamic_batching_strategy=dynamic_batching_strategy,

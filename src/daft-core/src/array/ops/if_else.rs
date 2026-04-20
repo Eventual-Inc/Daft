@@ -5,7 +5,7 @@ use super::as_arrow::AsArrow;
 use crate::prelude::PythonArray;
 use crate::{
     array::{
-        DataArray, FixedSizeListArray, ListArray, StructArray,
+        DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray,
         growable::{Growable, GrowableArray},
         ops::full::FullNull,
     },
@@ -13,6 +13,7 @@ use crate::{
     series::{IntoSeries, Series},
 };
 
+#[inline(never)]
 fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
     predicate: &BooleanArray,
     name: &str,
@@ -156,6 +157,8 @@ macro_rules! impl_if_else {
 impl_if_else!(ListArray);
 impl_if_else!(FixedSizeListArray);
 impl_if_else!(StructArray);
+
+impl_if_else!(UnionArray);
 
 #[cfg(feature = "python")]
 impl_if_else!(PythonArray);

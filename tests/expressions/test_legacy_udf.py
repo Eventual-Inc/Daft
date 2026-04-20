@@ -88,15 +88,15 @@ def test_class_udf_init_args(batch_size, use_actor_pool):
     field = expr._to_field(df.schema())
     assert field.name == "a"
     assert field.dtype == DataType.string()
-    result = df.select(expr)
-    assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
+    result = df.select(expr).sort("a")
+    assert result.to_pydict() == {"a": ["barbar", "bazbaz", "foofoo"]}
 
     expr = RepeatN.with_init_args(initial_n=3)(col("a"))
     field = expr._to_field(df.schema())
     assert field.name == "a"
     assert field.dtype == DataType.string()
-    result = df.select(expr)
-    assert result.to_pydict() == {"a": ["foofoofoo", "barbarbar", "bazbazbaz"]}
+    result = df.select(expr).sort("a")
+    assert result.to_pydict() == {"a": ["barbarbar", "bazbazbaz", "foofoofoo"]}
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
@@ -122,8 +122,8 @@ def test_class_udf_init_args_no_default(batch_size, use_actor_pool):
     field = expr._to_field(df.schema())
     assert field.name == "a"
     assert field.dtype == DataType.string()
-    result = df.select(expr)
-    assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
+    result = df.select(expr).sort("a")
+    assert result.to_pydict() == {"a": ["barbar", "bazbaz", "foofoo"]}
 
 
 @pytest.mark.parametrize("use_actor_pool", [False, True])
@@ -162,8 +162,8 @@ def test_actor_pool_udf_concurrency(concurrency):
     assert field.name == "a"
     assert field.dtype == DataType.string()
 
-    result = df.select(expr)
-    assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
+    result = df.select(expr).sort("a")
+    assert result.to_pydict() == {"a": ["barbar", "bazbaz", "foofoo"]}
 
 
 def test_udf_kwargs():
@@ -592,12 +592,12 @@ def test_multiple_udfs_different_columns(batch_size, use_actor_pool):
     )
 
     expected = {
-        "upper_strings": ["FOO", "BAR", "BAZ", "QUX", "HELLO", "WORLD", "TEST", "DATA", "MORE", "ITEMS"],
-        "mult_numbers": [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-        "squared_floats": [2.25, 6.25, 12.25, 20.25, 30.25, 42.25, 56.25, 72.25, 90.25, 110.25],
+        "upper_strings": ["BAR", "BAZ", "DATA", "FOO", "HELLO", "ITEMS", "MORE", "QUX", "TEST", "WORLD"],
+        "mult_numbers": [20, 30, 80, 10, 50, 100, 90, 40, 70, 60],
+        "squared_floats": [6.25, 12.25, 72.25, 2.25, 30.25, 110.25, 90.25, 20.25, 56.25, 42.25],
     }
 
-    assert result.to_pydict() == expected
+    assert result.sort("upper_strings").to_pydict() == expected
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
@@ -640,7 +640,7 @@ def test_multiple_udfs_same_column(batch_size, use_actor_pool):
         "squared_halved": [0.5, 2.0, 4.5, 8.0, 12.5, 18.0, 24.5, 32.0, 40.5, 50.0],
     }
 
-    assert result.to_pydict() == expected
+    assert result.sort("doubled").to_pydict() == expected
 
 
 @pytest.mark.skipif(

@@ -18,7 +18,7 @@ use crate::lit::Literal;
 use crate::prelude::PythonArray;
 use crate::{
     array::{
-        DataArray, FixedSizeListArray, ListArray, StructArray,
+        DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray, UuidArray,
         growable::make_growable,
         image_array::ImageArraySidecarData,
         ops::{DaftCompare, full::FullNull},
@@ -110,6 +110,10 @@ where
                 if is_binary_source && (dtype.is_numeric() || dtype.is_boolean()) {
                     let utf8_series = self.cast(&DataType::Utf8)?;
                     return utf8_series.cast(dtype);
+                }
+                if matches!(src, DataType::Utf8) && matches!(dtype, DataType::FixedSizeBinary(_)) {
+                    let binary_series = self.cast(&DataType::Binary)?;
+                    return binary_series.cast(dtype);
                 }
 
                 // Binary -> FixedSizeBinary: validate all non-null values match the target width
@@ -327,31 +331,26 @@ impl TimestampArray {
                 let DataType::Timestamp(unit, timezone) = self.data_type() else {
                     panic!("Wrong dtype for TimestampArray: {}", self.data_type())
                 };
+                let tz_parsed = timezone.as_ref().map(|tz| {
+                    daft_schema::time_unit::parse_timezone(tz)
+                        .unwrap_or_else(|_| panic!("Unable to parse timezone string {tz}"))
+                });
+                let str_array = Utf8Array::from_iter(
+                    self.name(),
+                    self.physical.into_iter().map(|val| {
+                        val.map(|val| match &tz_parsed {
+                            Some(daft_schema::time_unit::ParsedTimezone::Fixed(offset)) => {
+                                timestamp_to_str_offset(val, unit, offset)
+                            }
+                            Some(daft_schema::time_unit::ParsedTimezone::Tz(tz)) => {
+                                timestamp_to_str_tz(val, unit, tz)
+                            }
+                            None => timestamp_to_str_naive(val, unit),
+                        })
+                    }),
+                );
 
-                let str_iter: Box<dyn Iterator<Item = Option<String>>> = match timezone.as_ref() {
-                    None => Box::new(
-                        self.physical
-                            .into_iter()
-                            .map(|val| val.map(|val| timestamp_to_str_naive(val, unit))),
-                    ),
-                    Some(timezone) => {
-                        if let Ok(offset) = daft_schema::time_unit::parse_offset(timezone) {
-                            Box::new(self.physical.into_iter().map(move |val| {
-                                val.map(|val| timestamp_to_str_offset(val, unit, &offset))
-                            }))
-                        } else if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(timezone) {
-                            Box::new(
-                                self.physical.into_iter().map(move |val| {
-                                    val.map(|val| timestamp_to_str_tz(val, unit, &tz))
-                                }),
-                            )
-                        } else {
-                            panic!("Unable to parse timezone string {}", timezone)
-                        }
-                    }
-                };
-
-                Ok(Utf8Array::from_iter(self.name(), str_iter).into_series())
+                Ok(str_array.into_series())
             }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
@@ -1643,6 +1642,42 @@ impl MapArray {
     }
 }
 
+impl UuidArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::Null => {
+                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
+            }
+            DataType::Uuid => Ok(self.clone().into_series()),
+            DataType::Utf8 => {
+                // Convert UUID to string representation
+                let uuid_strings = self
+                    .into_iter()
+                    .map(|opt_bytes| opt_bytes.map(|bytes| bytes.to_string()));
+                Ok(Utf8Array::from_iter(self.name(), uuid_strings).into_series())
+            }
+            DataType::FixedSizeBinary(16) => Ok(self.physical.clone().into_series()),
+            DataType::Binary => {
+                // Convert UUID to binary representation
+                let binary_values = self.physical.iter();
+                Ok(
+                    DataArray::<crate::datatypes::BinaryType>::from_iter(
+                        self.name(),
+                        binary_values,
+                    )
+                    .into_series(),
+                )
+            }
+            #[cfg(feature = "python")]
+            DataType::Python => self.clone().into_series().cast_to_python(),
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot cast UUID to {}",
+                dtype
+            ))),
+        }
+    }
+}
+
 impl StructArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
         match (self.data_type(), dtype) {
@@ -1765,6 +1800,19 @@ impl StructArray {
                 dtype
             ),
         }
+    }
+}
+
+impl UnionArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        if dtype == self.data_type() {
+            return Ok(self.clone().into_series());
+        }
+
+        Err(DaftError::TypeError(format!(
+            "Union casting not implemented for dtype: {}",
+            dtype
+        )))
     }
 }
 

@@ -1,11 +1,14 @@
-use std::{cmp::Ordering, collections::HashMap};
+use std::{
+    cmp::Ordering,
+    collections::{BinaryHeap, HashMap},
+};
 
 use super::{
     task::{SchedulingStrategy, Task, TaskDetails},
     worker::{Worker, WorkerId},
 };
 use crate::{
-    pipeline_node::MaterializedOutput,
+    pipeline_node::TaskOutput,
     scheduling::task::{TaskContext, TaskResourceRequest},
     utils::channel::OneshotSender,
 };
@@ -28,16 +31,25 @@ pub(super) trait Scheduler<T: Task>: Send + Sync {
     fn num_pending_tasks(&self) -> usize;
 }
 
+fn pending_tasks_in_priority_order<T: Task>(
+    pending_tasks: &BinaryHeap<PendingTask<T>>,
+) -> Vec<&PendingTask<T>> {
+    let mut ordered_tasks = pending_tasks.iter().collect::<Vec<_>>();
+    // Match the order that repeated BinaryHeap::pop() calls would produce.
+    ordered_tasks.sort_unstable_by(|a, b| b.cmp(a));
+    ordered_tasks
+}
+
 pub(crate) struct PendingTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
+    result_tx: OneshotSender<DaftResult<Option<TaskOutput>>>,
     cancel_token: CancellationToken,
 }
 
 impl<T: Task> PendingTask<T> {
     pub fn new(
         task: T,
-        result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
+        result_tx: OneshotSender<DaftResult<Option<TaskOutput>>>,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
@@ -59,7 +71,7 @@ impl<T: Task> PendingTask<T> {
         self,
     ) -> (
         T,
-        OneshotSender<DaftResult<Option<MaterializedOutput>>>,
+        OneshotSender<DaftResult<Option<TaskOutput>>>,
         CancellationToken,
     ) {
         (self.task, self.result_tx, self.cancel_token)
@@ -99,7 +111,7 @@ impl<T: Task> Ord for PendingTask<T> {
 
 pub(super) struct ScheduledTask<T: Task> {
     task: T,
-    result_tx: OneshotSender<DaftResult<Option<MaterializedOutput>>>,
+    result_tx: OneshotSender<DaftResult<Option<TaskOutput>>>,
     cancel_token: CancellationToken,
     worker_id: WorkerId,
 }
@@ -132,7 +144,7 @@ impl<T: Task> ScheduledTask<T> {
     ) -> (
         WorkerId,
         T,
-        OneshotSender<DaftResult<Option<MaterializedOutput>>>,
+        OneshotSender<DaftResult<Option<TaskOutput>>>,
         CancellationToken,
     ) {
         (self.worker_id, self.task, self.result_tx, self.cancel_token)

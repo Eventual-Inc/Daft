@@ -1121,6 +1121,37 @@ def to_datetime(expr: Expression, format: str, timezone: str | None = None) -> E
     return Expression._call_builtin_scalar_fn("to_datetime", expr, format=format, timezone=timezone)
 
 
+def convert_time_zone(expr: Expression, to_timezone: str, from_timezone: str | None = None) -> Expression:
+    """Converts a timestamp to another timezone while preserving the instant in time.
+
+    If the timestamp has no timezone, `from_timezone` must be provided to interpret the local time before converting to `to_timezone`.
+
+    Args:
+        expr: Timestamp expression to convert.
+        to_timezone: Target timezone (e.g. "UTC", "+02:00", "America/New_York").
+        from_timezone: Source timezone for timestamps without a timezone.
+
+    Returns:
+        Expression: Timestamp expression with the target timezone.
+    """
+    return Expression._call_builtin_scalar_fn("convert_time_zone", expr, to_timezone, from_timezone)
+
+
+def replace_time_zone(expr: Expression, timezone: str | None = None) -> Expression:
+    """Replaces the timezone of a timestamp while preserving the local time.
+
+    If `timezone` is not provided, the timezone is removed.
+
+    Args:
+        expr: Timestamp expression to update.
+        timezone: New timezone (e.g. "UTC", "+02:00", "America/New_York").
+
+    Returns:
+        Expression: Timestamp expression with the updated timezone.
+    """
+    return Expression._call_builtin_scalar_fn("replace_time_zone", expr, timezone)
+
+
 def date_trunc(interval: str, expr: Expression, relative_to: Expression | None = None) -> Expression:
     """Truncates the datetime column to the specified interval.
 
@@ -1202,3 +1233,224 @@ def to_unix_epoch(expr: Expression, time_unit: str | TimeUnit | None = None) -> 
         (Showing first 4 of 4 rows)
     """
     return Expression._call_builtin_scalar_fn("to_unix_epoch", expr, time_unit=time_unit)
+
+
+def current_date() -> Expression:
+    """Returns the current date (UTC).
+
+    Returns:
+        Expression: a Date expression containing today's date, broadcast to every row.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import current_date
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
+        >>> df = df.with_column("today", current_date())
+        >>> df.schema()["today"].dtype == daft.DataType.date()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("current_date")
+
+
+def current_timestamp() -> Expression:
+    """Returns the current timestamp (UTC) with microsecond precision.
+
+    Returns:
+        Expression: a Timestamp[us] expression containing the current datetime, broadcast to every row.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import current_timestamp
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
+        >>> df = df.with_column("now", current_timestamp())
+        >>> df.schema()["now"].dtype == daft.DataType.timestamp("us")
+        True
+    """
+    return Expression._call_builtin_scalar_fn("current_timestamp")
+
+
+def current_timezone() -> Expression:
+    """Returns the current timezone as a string (always 'UTC' in Daft).
+
+    Returns:
+        Expression: a String expression containing 'UTC', broadcast to every row.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import current_timezone
+        >>> df = daft.from_pydict({"x": [1, 2, 3]})
+        >>> df = df.with_column("tz", current_timezone())
+        >>> df.schema()["tz"].dtype == daft.DataType.string()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("current_timezone")
+
+
+def date_add(expr: Expression, days: Expression) -> Expression:
+    """Adds a number of days to a date.
+
+    Args:
+        expr: A date expression.
+        days: An integer expression representing the number of days to add.
+
+    Returns:
+        Expression: a Date expression.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import date_add
+        >>> df = daft.from_pydict({"d": ["2021-01-01", "2021-06-15"], "n": [10, 5]})
+        >>> df = df.with_column("d", df["d"].cast(daft.DataType.date()))
+        >>> df = df.with_column("result", date_add(df["d"], df["n"]))
+        >>> df.schema()["result"].dtype == daft.DataType.date()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("date_add", expr, days)
+
+
+def date_sub(expr: Expression, days: Expression) -> Expression:
+    """Subtracts a number of days from a date.
+
+    Args:
+        expr: A date expression.
+        days: An integer expression representing the number of days to subtract.
+
+    Returns:
+        Expression: a Date expression.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import date_sub
+        >>> df = daft.from_pydict({"d": ["2021-01-10", "2021-06-15"], "n": [5, 10]})
+        >>> df = df.with_column("d", df["d"].cast(daft.DataType.date()))
+        >>> df = df.with_column("result", date_sub(df["d"], df["n"]))
+        >>> df.schema()["result"].dtype == daft.DataType.date()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("date_sub", expr, days)
+
+
+def date_diff(end: Expression, start: Expression) -> Expression:
+    """Returns the number of days between two dates.
+
+    Args:
+        end: The end date or timestamp expression.
+        start: The start date or timestamp expression.
+
+    Returns:
+        Expression: an Int32 expression with the number of days (end - start).
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import date_diff
+        >>> df = daft.from_pydict({"a": ["2021-01-10"], "b": ["2021-01-01"]})
+        >>> df = df.with_column("a", df["a"].cast(daft.DataType.date()))
+        >>> df = df.with_column("b", df["b"].cast(daft.DataType.date()))
+        >>> df = df.with_column("diff", date_diff(df["a"], df["b"]))
+        >>> df.schema()["diff"].dtype == daft.DataType.int32()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("date_diff", end, start)
+
+
+def date_from_unix_date(expr: Expression) -> Expression:
+    """Converts days since Unix epoch (1970-01-01) to a date.
+
+    Args:
+        expr: An integer expression representing days since epoch.
+
+    Returns:
+        Expression: a Date expression.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import date_from_unix_date
+        >>> df = daft.from_pydict({"days": [0, 18628]})
+        >>> df = df.with_column("d", date_from_unix_date(df["days"]))
+        >>> df.schema()["d"].dtype == daft.DataType.date()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("date_from_unix_date", expr)
+
+
+def timestamp_seconds(expr: Expression) -> Expression:
+    """Creates a timestamp from seconds since Unix epoch.
+
+    Args:
+        expr: A numeric expression representing seconds since epoch.
+
+    Returns:
+        Expression: a Timestamp[us] expression.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import timestamp_seconds
+        >>> df = daft.from_pydict({"s": [0, 1609459200]})
+        >>> df = df.with_column("ts", timestamp_seconds(df["s"]))
+        >>> df.schema()["ts"].dtype == daft.DataType.timestamp("us")
+        True
+    """
+    return Expression._call_builtin_scalar_fn("timestamp_seconds", expr)
+
+
+def timestamp_millis(expr: Expression) -> Expression:
+    """Creates a timestamp from milliseconds since Unix epoch.
+
+    Args:
+        expr: A numeric expression representing milliseconds since epoch.
+
+    Returns:
+        Expression: a Timestamp[us] expression.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import timestamp_millis
+        >>> df = daft.from_pydict({"ms": [0, 1609459200000]})
+        >>> df = df.with_column("ts", timestamp_millis(df["ms"]))
+        >>> df.schema()["ts"].dtype == daft.DataType.timestamp("us")
+        True
+    """
+    return Expression._call_builtin_scalar_fn("timestamp_millis", expr)
+
+
+def timestamp_micros(expr: Expression) -> Expression:
+    """Creates a timestamp from microseconds since Unix epoch.
+
+    Args:
+        expr: A numeric expression representing microseconds since epoch.
+
+    Returns:
+        Expression: a Timestamp[us] expression.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import timestamp_micros
+        >>> df = daft.from_pydict({"us": [0, 1609459200000000]})
+        >>> df = df.with_column("ts", timestamp_micros(df["us"]))
+        >>> df.schema()["ts"].dtype == daft.DataType.timestamp("us")
+        True
+    """
+    return Expression._call_builtin_scalar_fn("timestamp_micros", expr)
+
+
+def from_unixtime(expr: Expression, format: str | None = None) -> Expression:
+    """Converts a Unix timestamp (seconds) to a formatted string.
+
+    Args:
+        expr: A numeric expression representing seconds since epoch.
+        format: Optional strftime format string. Defaults to '%Y-%m-%d %H:%M:%S'.
+
+    Returns:
+        Expression: a Utf8 expression with the formatted timestamp.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import from_unixtime
+        >>> df = daft.from_pydict({"s": [0, 1609459200]})
+        >>> df = df.with_column("formatted", from_unixtime(df["s"]))
+        >>> df.schema()["formatted"].dtype == daft.DataType.string()
+        True
+    """
+    if format is not None:
+        return Expression._call_builtin_scalar_fn("from_unixtime", expr, format=format)
+    return Expression._call_builtin_scalar_fn("from_unixtime", expr)

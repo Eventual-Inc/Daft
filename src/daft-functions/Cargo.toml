@@ -10,6 +10,7 @@ typetag = {workspace = true}
 serde = {workspace = true}
 snafu = {workspace = true}
 uuid = {workspace = true}
+rand = {workspace = true}
 
 [features]
 python = [

@@ -4,6 +4,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftError;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
+use daft_checkpoint::CheckpointId;
 use daft_local_plan::{
     ExecutionStats, FlightShuffleReadInput, Input, LocalPhysicalPlanRef, SourceId,
 };
@@ -12,9 +13,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::worker::WorkerId;
 use crate::{
-    pipeline_node::{
-        MaterializedOutput, NodeID, PipelineNodeContext, PipelineNodeImpl, PlanFingerprint,
-    },
+    pipeline_node::{NodeID, PipelineNodeContext, PipelineNodeImpl, PlanFingerprint, TaskOutput},
     plan::{QueryIdx, TaskIDCounter},
     scheduling::scheduler::SubmittableTask,
     utils::channel::{OneshotReceiver, OneshotSender, create_oneshot_channel},
@@ -46,7 +45,7 @@ impl TaskResourceRequest {
 pub(crate) type TaskID = u32;
 pub(crate) type TaskName = String;
 
-#[derive(Clone, PartialEq, Eq, Hash, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[allow(clippy::struct_field_names)]
 pub(crate) struct TaskContext {
     /// The query index that the task belongs to.
@@ -61,6 +60,8 @@ pub(crate) struct TaskContext {
     /// Assigned by pipeline nodes: tasks with the same fingerprint have structurally
     /// identical plans and can share a single pipeline for execution.
     pub plan_fingerprint: PlanFingerprint,
+    /// Checkpoint identity for this task. Set at build time.
+    pub checkpoint_id: Option<CheckpointId>,
 }
 
 impl TaskContext {
@@ -72,22 +73,13 @@ impl TaskContext {
         plan_fingerprint: PlanFingerprint,
     ) -> Self {
         Self {
+            checkpoint_id: Some(CheckpointId::generate(task_id)),
             query_idx,
             last_node_id: node_id,
             task_id,
             node_ids,
             plan_fingerprint,
         }
-    }
-}
-
-impl std::fmt::Debug for TaskContext {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "TaskContext(query_idx = {}, last_node_id = {}, task_id = {}, plan_fingerprint = {})",
-            self.query_idx, self.last_node_id, self.task_id, self.plan_fingerprint
-        )
     }
 }
 
@@ -455,20 +447,26 @@ impl SwordfishTaskBuilder {
 
         let plan_fingerprint = hash_fingerprint(&[self.plan_fingerprint, query_idx as u32]);
 
+        let task_id = task_id_counter.next();
         let task_context = TaskContext {
             query_idx,
             last_node_id: *self
                 .pending_node_ids
                 .last()
                 .expect("Pending node_ids must be non-empty"),
-            task_id: task_id_counter.next(),
+            task_id,
             node_ids: self.pending_node_ids,
             plan_fingerprint,
+            checkpoint_id: Some(CheckpointId::generate(task_id)),
         };
 
-        // Build context HashMap with task_id
+        // Build context HashMap with task_id, plan_fingerprint, and checkpoint_id
         let mut context = self.context;
         context.insert("task_id".to_string(), task_context.task_id.to_string());
+        context.insert("plan_fingerprint".to_string(), plan_fingerprint.to_string());
+        if let Some(ref id) = task_context.checkpoint_id {
+            context.insert("checkpoint_id".to_string(), id.to_string());
+        }
 
         // Extract resource_request from plan
         let resource_request = TaskResourceRequest::new(self.plan.resource_request());
@@ -492,7 +490,7 @@ impl SwordfishTaskBuilder {
 #[derive(Debug)]
 pub(crate) enum TaskStatus {
     Success {
-        result: MaterializedOutput,
+        result: TaskOutput,
         stats: ExecutionStats,
     },
     Failed {
@@ -593,7 +591,7 @@ pub(super) mod tests {
         priority: MockTaskPriority,
         scheduling_strategy: SchedulingStrategy,
         resource_request: TaskResourceRequest,
-        task_result: MaterializedOutput,
+        task_result: TaskOutput,
         cancel_notifier: Arc<Mutex<Option<OneshotSender<()>>>>,
         sleep_duration: Option<std::time::Duration>,
         failure: Option<MockTaskFailure>,
@@ -613,7 +611,7 @@ pub(super) mod tests {
         task_name: TaskName,
         priority: MockTaskPriority,
         scheduling_strategy: SchedulingStrategy,
-        task_result: MaterializedOutput,
+        task_result: TaskOutput,
         resource_request: TaskResourceRequest,
         cancel_notifier: Arc<Mutex<Option<OneshotSender<()>>>>,
         sleep_duration: Option<Duration>,
@@ -637,11 +635,13 @@ pub(super) mod tests {
                 priority: MockTaskPriority { priority: 0 },
                 scheduling_strategy: SchedulingStrategy::Spread,
                 resource_request: TaskResourceRequest::new(ResourceRequest::default()),
-                task_result: MaterializedOutput::new(
-                    vec![partition_ref],
-                    "".into(),
-                    String::new(),
-                    task_id,
+                task_result: TaskOutput::Materialized(
+                    crate::pipeline_node::MaterializedOutput::new(
+                        vec![partition_ref],
+                        "".into(),
+                        String::new(),
+                        task_id,
+                    ),
                 ),
                 cancel_notifier: Arc::new(Mutex::new(None)),
                 sleep_duration: None,

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 import daft
-from daft.io.__shim import _drain_async_iter
+from daft.io.__internal import _drain_async_iter
 
 
 def test_read_kafka_is_exported() -> None:

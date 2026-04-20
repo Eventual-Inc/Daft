@@ -15,13 +15,18 @@ use opentelemetry::KeyValue;
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
+    runtime_stats::RuntimeStats,
+};
 
 pub(crate) struct WriteStats {
     duration_us: Counter,
     rows_in: Counter,
+    bytes_in: Counter,
     rows_written: Counter,
     bytes_written: Counter,
 
@@ -44,6 +49,7 @@ impl RuntimeStats for WriteStats {
         Self {
             duration_us: meter.duration_us_metric(),
             rows_in: meter.rows_in_metric(),
+            bytes_in: meter.bytes_in_metric(),
             rows_written: meter.u64_counter_with_desc_and_unit(
                 ROWS_WRITTEN_KEY,
                 None,
@@ -69,6 +75,7 @@ impl RuntimeStats for WriteStats {
             rows_in,
             rows_written,
             bytes_written,
+            bytes_in: self.bytes_in.load(ordering),
         })
     }
 
@@ -83,6 +90,13 @@ impl RuntimeStats for WriteStats {
     fn add_duration_us(&self, cpu_us: u64) {
         self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
+
+    fn add_bytes_in(&self, bytes: u64) {
+        self.bytes_in.add(bytes, self.node_kv.as_slice());
+    }
+
+    // bytes_out for WriteSink doesn't make sense — bytes_written is the meaningful metric.
+    fn add_bytes_out(&self, _bytes: u64) {}
 }
 
 #[derive(Debug)]
@@ -165,7 +179,7 @@ impl BlockingSink for WriteSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let file_schema = self.file_schema.clone();
         spawner
             .spawn(
@@ -175,7 +189,7 @@ impl BlockingSink for WriteSink {
                         results.extend(state.writer.close().await?);
                     }
                     let mp = MicroPartition::new_loaded(file_schema, results.into(), None);
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![mp]))
+                    Ok(BlockingSinkOutput::Partitions(vec![mp]))
                 },
                 Span::current(),
             )
@@ -203,7 +217,7 @@ impl BlockingSink for WriteSink {
         NodeType::Write
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         let writer = self.writer_factory.create_writer(0, None)?;
         Ok(WriteState::new(writer))
     }

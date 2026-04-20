@@ -1,27 +1,25 @@
 use std::{ops::ControlFlow, sync::Arc};
 
-use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
+    Meter,
     ops::{NodeCategory, NodeInfo, NodeType},
-    snapshot::StatSnapshotImpl,
 };
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
-use daft_micropartition::MicroPartition;
 
 use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, Sender, create_channel},
-    pipeline::{BuilderContext, MorselSizeRequirement, PipelineNode},
+    pipeline::{BuilderContext, MorselSizeRequirement, PipelineMessage, PipelineNode},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 
 pub struct ConcatNode {
     left: Box<dyn PipelineNode>,
     right: Box<dyn PipelineNode>,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    meter: Meter,
     plan_stats: StatsState,
     morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
@@ -38,13 +36,12 @@ impl ConcatNode {
         let name: Arc<str> = "Concat".into();
         let node_info =
             ctx.next_node_info(name, NodeType::Concat, NodeCategory::Intermediate, context);
-        let runtime_stats = Arc::new(DefaultRuntimeStats::new(&ctx.meter, &node_info));
         let morsel_size_requirement = MorselSizeRequirement::default();
 
         Self {
             left,
             right,
-            runtime_stats,
+            meter: ctx.meter.clone(),
             plan_stats,
             morsel_size_requirement,
             node_info: Arc::new(node_info),
@@ -57,21 +54,51 @@ impl ConcatNode {
 
     async fn process_child(
         node_id: usize,
-        mut receiver: Receiver<MicroPartition>,
-        sender: Sender<MicroPartition>,
+        mut receiver: Receiver<PipelineMessage>,
+        sender: Sender<PipelineMessage>,
         runtime_stats: Arc<dyn RuntimeStats>,
         stats_manager: &RuntimeStatsManagerHandle,
         node_initialized: &mut bool,
     ) -> DaftResult<ControlFlow<()>> {
-        while let Some(mp) = receiver.recv().await {
+        while let Some(msg) = receiver.recv().await {
             if !*node_initialized {
                 stats_manager.activate_node(node_id);
                 *node_initialized = true;
             }
-            runtime_stats.add_rows_in(mp.len() as u64);
-            runtime_stats.add_rows_out(mp.len() as u64);
-            if sender.send(mp).await.is_err() {
-                return Ok(ControlFlow::Break(()));
+            match msg {
+                PipelineMessage::Morsel {
+                    partition,
+                    input_id,
+                } => {
+                    assert_eq!(
+                        input_id, 0,
+                        "Concat only supports input_id = 0, got input_id = {}",
+                        input_id
+                    );
+                    runtime_stats.add_rows_in(partition.len() as u64);
+                    runtime_stats.add_rows_out(partition.len() as u64);
+                    if sender
+                        .send(PipelineMessage::Morsel {
+                            partition,
+                            input_id: 0,
+                        })
+                        .await
+                        .is_err()
+                    {
+                        return Ok(ControlFlow::Break(()));
+                    }
+                }
+                PipelineMessage::Flush(input_id) => {
+                    assert_eq!(
+                        input_id, 0,
+                        "Concat only supports input_id = 0, got input_id = {}",
+                        input_id
+                    );
+                    break;
+                }
+                PipelineMessage::ShuffleMetadata { .. } => {
+                    unreachable!("ConcatNode should not receive shuffle metadata")
+                }
             }
         }
 
@@ -93,17 +120,10 @@ impl TreeDisplay for ConcatNode {
             DisplayLevel::Compact => {
                 writeln!(display, "Concat").unwrap();
             }
-            level => {
+            _ => {
                 writeln!(display, "Concat").unwrap();
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
-                }
-                if matches!(level, DisplayLevel::Verbose) {
-                    writeln!(display).unwrap();
-                    let rt_result = self.runtime_stats.snapshot();
-                    for (name, value) in rt_result.to_stats() {
-                        writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
-                    }
                 }
             }
         }
@@ -169,7 +189,7 @@ impl PipelineNode for ConcatNode {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<MicroPartition>> {
+    ) -> crate::Result<Receiver<PipelineMessage>> {
         let node_id = self.node_id();
         let name = self.name();
 
@@ -179,19 +199,22 @@ impl PipelineNode for ConcatNode {
         let (destination_sender, destination_receiver) = create_channel(1);
 
         let stats_manager = runtime_handle.stats_manager();
-        let runtime_stats = self.runtime_stats.clone();
-        let left_sender = destination_sender.clone();
-        let right_sender = destination_sender;
+        let meter = self.meter.clone();
+        let node_info = self.node_info.clone();
 
         runtime_handle.spawn(
             async move {
+                let runtime_stats: Arc<dyn RuntimeStats> =
+                    Arc::new(DefaultRuntimeStats::new(&meter, &node_info));
+                stats_manager.register_runtime_stats(node_id, 0, runtime_stats.clone());
+
                 // Process both children sequentially - first left, then right
                 let mut node_initialized = false;
 
                 let control = Self::process_child(
                     node_id,
                     left_receiver,
-                    left_sender,
+                    destination_sender.clone(),
                     runtime_stats.clone(),
                     &stats_manager,
                     &mut node_initialized,
@@ -205,7 +228,7 @@ impl PipelineNode for ConcatNode {
                 let control = Self::process_child(
                     node_id,
                     right_receiver,
-                    right_sender,
+                    destination_sender.clone(),
                     runtime_stats.clone(),
                     &stats_manager,
                     &mut node_initialized,
@@ -215,6 +238,7 @@ impl PipelineNode for ConcatNode {
                     stats_manager.finalize_node(node_id);
                     return Ok(());
                 }
+                let _ = destination_sender.send(PipelineMessage::Flush(0)).await;
 
                 stats_manager.finalize_node(node_id);
                 Ok(())
@@ -235,9 +259,5 @@ impl PipelineNode for ConcatNode {
 
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()
-    }
-
-    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        self.runtime_stats.clone()
     }
 }

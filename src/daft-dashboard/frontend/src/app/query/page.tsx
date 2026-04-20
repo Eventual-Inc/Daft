@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { toHumanReadableDate, main, getEngineName } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import LoadingPage from "@/components/loading";
@@ -27,6 +27,7 @@ import ResultPreview from "./result-preview";
 function QueryPageInner() {
   const searchParams = useSearchParams();
   const queryId = searchParams.get("id");
+  const debug = useMemo(() => searchParams.has("debug"), [searchParams]);
   const [query, setQuery] = useState<QueryInfo | null>(null);
 
   useEffect(() => {
@@ -40,20 +41,23 @@ function QueryPageInner() {
     // These overwrite
     es.addEventListener("initial_state", event => {
       const data: QueryInfo = JSON.parse(event.data);
+      if (debug) console.log("[debug] initial_state (query)", data);
       setQuery(data);
     });
     // TODO: Consistent ordering of statistics
     es.addEventListener("query_info", event => {
       const data: QueryInfo = JSON.parse(event.data);
+      if (debug) console.log("[debug] query_info", data);
       setQuery(data);
     });
     // Merges with existing info, preserving the current status
     es.addEventListener("operator_info", event => {
+      const data: Record<number, OperatorInfo> = JSON.parse(event.data);
+      if (debug) console.log("[debug] operator_info", data);
       setQuery(prev => {
         if (!prev) return prev;
         if (!("exec_info" in prev.state)) return prev;
 
-        const data: Record<number, OperatorInfo> = JSON.parse(event.data);
         const new_exec_info = { ...prev.state.exec_info, operators: data };
         return {
           ...prev,
@@ -65,7 +69,7 @@ function QueryPageInner() {
       console.info("Closing query SSE endpoint");
       es.close();
     };
-  }, [queryId, setQuery]);
+  }, [queryId, debug, setQuery]);
 
   if (!query) {
     return <LoadingPage />;
@@ -74,7 +78,18 @@ function QueryPageInner() {
   const end_sec =
     query.state.status === "Finished" || query.state.status === "Canceled" || query.state.status === "Failed"
       ? query.state.end_sec
-      : null;
+      : query.state.status === "Dead"
+        ? query.state.marked_dead_sec
+        : null;
+
+  const isActive =
+    query.state.status === "Pending" ||
+    query.state.status === "Optimizing" ||
+    query.state.status === "Setup" ||
+    query.state.status === "Executing";
+  const last_heartbeat_sec = isActive || query.state.status === "Dead"
+    ? query.last_heartbeat_sec
+    : null;
 
   return (
     <div className="h-full flex flex-col">
@@ -105,6 +120,7 @@ function QueryPageInner() {
               status={query.state.status}
               start_sec={query.start_sec}
               end_sec={end_sec}
+              last_heartbeat_sec={last_heartbeat_sec}
             />
           </div>
           <div className="flex-1 px-6 py-4">
@@ -176,6 +192,40 @@ function QueryPageInner() {
                   </div>
                 )}
               </div>
+              {(query.daft_version || query.python_version || query.ray_version) && (
+              <div className="space-y-3">
+                {query.daft_version && (
+                  <div>
+                    <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
+                      Daft Version
+                    </h3>
+                    <p className={`${main.className} text-lg font-mono text-zinc-100`}>
+                      {query.daft_version}
+                    </p>
+                  </div>
+                )}
+                {query.python_version && (
+                  <div>
+                    <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
+                      Python Version
+                    </h3>
+                    <p className={`${main.className} text-lg font-mono text-zinc-100`}>
+                      {query.python_version}
+                    </p>
+                  </div>
+                )}
+                {query.ray_version && (
+                  <div>
+                    <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
+                      Ray Version
+                    </h3>
+                    <p className={`${main.className} text-lg font-mono text-zinc-100`}>
+                      {query.ray_version}
+                    </p>
+                  </div>
+                )}
+              </div>
+              )}
             </div>
           </div>
         </div>
@@ -188,7 +238,7 @@ function QueryPageInner() {
           defaultValue="progress-table"
           className="w-full h-full flex flex-col"
         >
-          <TabsList className="grid w-full grid-cols-4 flex-shrink-0">
+          <TabsList className={`grid w-full flex-shrink-0 ${getEngineName(query.runner) === "Swordfish" ? "grid-cols-4" : "grid-cols-3"}`}>
             <TabsTrigger
               value="progress-table"
               disabled={
@@ -201,17 +251,20 @@ function QueryPageInner() {
             </TabsTrigger>
             <TabsTrigger
               value="optimized-plan"
-              disabled={!("plan_info" in query.state)}
+              disabled={!("plan_info" in query.state && query.state.plan_info)}
             >
               Optimized Plan
             </TabsTrigger>
             <TabsTrigger value="unoptimized-plan">Unoptimized Plan</TabsTrigger>
-            <TabsTrigger
-              value="results"
-              disabled={query.state.status !== "Finished"}
-            >
-              Results
-            </TabsTrigger>
+            {/* Results preview only supported for Swordfish for now (#6559) */}
+            {getEngineName(query.runner) === "Swordfish" && (
+              <TabsTrigger
+                value="results"
+                disabled={query.state.status !== "Finished"}
+              >
+                Results
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent
@@ -219,15 +272,14 @@ function QueryPageInner() {
             className="mt-4 flex-1 overflow-auto"
           >
             <div className="bg-zinc-900 h-full">
-              {query.state.status === "Pending" ||
-                query.state.status === "Optimizing" ? (
+              {"exec_info" in query.state && query.state.exec_info !== null ? (
+                <PhysicalPlanTree exec_state={query.state as ExecutingState} />
+              ) : (
                 <div className="p-8 text-center">
                   <p className={`${main.className} text-zinc-400`}>
-                    Execution not yet started
+                    No execution data available
                   </p>
                 </div>
-              ) : (
-                <PhysicalPlanTree exec_state={query.state as ExecutingState} />
               )}
             </div>
           </TabsContent>
@@ -245,7 +297,7 @@ function QueryPageInner() {
             ) : (
               <PlanVisualizer
                 planJson={
-                  "plan_info" in query.state
+                  "plan_info" in query.state && query.state.plan_info
                     ? query.state.plan_info.optimized_plan
                     : ""
                 }

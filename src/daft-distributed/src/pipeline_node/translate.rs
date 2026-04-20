@@ -26,9 +26,9 @@ use crate::{
         in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode,
         into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
-        project::ProjectNode, sample::SampleNode, scan_source::ScanSourceNode, sink::SinkNode,
-        sort::SortNode, top_n::TopNNode, udf::UDFNode, unpivot::UnpivotNode, vllm::VLLMNode,
-        window::WindowNode,
+        project::ProjectNode, random_shuffle::RandomShuffleNode, sample::SampleNode,
+        scan_source::ScanSourceNode, sink::SinkNode, sort::SortNode, top_n::TopNNode, udf::UDFNode,
+        unpivot::UnpivotNode, vllm::VLLMNode, window::WindowNode,
     },
     plan::PlanConfig,
 };
@@ -345,7 +345,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 | RepartitionSpec::Random(_)
                 | RepartitionSpec::Range(_) => {
                     let child = self.curr_node.pop().unwrap();
-                    self.gen_shuffle_node(
+                    self.gen_repartition_node(
                         repartition.repartition_spec.clone(),
                         node.schema(),
                         child,
@@ -422,7 +422,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     );
 
                     // Second stage: Repartition to distribute the dataset
-                    let repartition = self.gen_shuffle_node(
+                    let repartition = self.gen_repartition_node(
                         RepartitionSpec::Hash(HashRepartitionConfig::new(
                             None,
                             columns.clone().into_iter().map(|e| e.into()).collect(),
@@ -459,7 +459,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 } else if Self::needs_hash_repartition(&input_node, &partition_by)? {
                     input_node
                 } else {
-                    self.gen_shuffle_node(
+                    self.gen_repartition_node(
                         RepartitionSpec::Hash(HashRepartitionConfig::new(
                             None,
                             partition_by.clone().into_iter().map(|e| e.into()).collect(),
@@ -495,6 +495,11 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let left_node = self.curr_node.pop().unwrap();
 
                 self.translate_join(join, left_node, right_node)?
+            }
+            LogicalPlan::AsofJoin(asof_join) => {
+                let right_node = self.curr_node.pop().unwrap();
+                let left_node = self.curr_node.pop().unwrap();
+                self.translate_asof_join(asof_join, left_node, right_node)?
             }
             LogicalPlan::Sort(sort) => {
                 let sort_by = BoundExpr::bind_all(&sort.sort_by, &sort.input.schema())?;
@@ -615,6 +620,16 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     &self.meter,
                 )
             }
+            LogicalPlan::Shuffle(shuffle) => DistributedPipelineNode::new(
+                Arc::new(RandomShuffleNode::new(
+                    self.get_next_pipeline_node_id(),
+                    &self.plan_config,
+                    shuffle.seed,
+                    shuffle.input.schema(),
+                    self.curr_node.pop().unwrap(),
+                )),
+                &self.meter,
+            ),
             LogicalPlan::SubqueryAlias(_)
             | LogicalPlan::Union(_)
             | LogicalPlan::Intersect(_)

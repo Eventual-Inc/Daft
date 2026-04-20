@@ -1890,6 +1890,26 @@ class Expression:
 
         return to_datetime(self, format, timezone)
 
+    def convert_time_zone(self, to_timezone: builtins.str, from_timezone: builtins.str | None = None) -> Expression:
+        """Converts a timestamp to another timezone while preserving the instant in time.
+
+        Tip: See Also
+            [`daft.functions.convert_time_zone`](https://docs.daft.ai/en/stable/api/functions/convert_time_zone/)
+        """
+        from daft.functions import convert_time_zone
+
+        return convert_time_zone(self, to_timezone, from_timezone)
+
+    def replace_time_zone(self, timezone: builtins.str | None = None) -> Expression:
+        """Replaces the timezone of a timestamp while preserving the local time.
+
+        Tip: See Also
+            [`daft.functions.replace_time_zone`](https://docs.daft.ai/en/stable/api/functions/replace_time_zone/)
+        """
+        from daft.functions import replace_time_zone
+
+        return replace_time_zone(self, timezone)
+
     def contains(self, substr: builtins.str | Expression) -> Expression:
         """Checks whether each string contains the given pattern in a string column.
 
@@ -2760,6 +2780,41 @@ class Expression:
 
         return image_mode(self)
 
+    def image_hash(
+        self,
+        *,
+        method: Literal[
+            "phash",
+            "phash_simple",
+            "dhash",
+            "dhash_vertical",
+            "ahash",
+            "whash",
+            "crop_resistant",
+            "colorhash",
+        ] = "phash",
+        hash_size: int = 8,
+        binbits: int = 3,
+    ) -> Expression:
+        """Computes a perceptual hash of an image.
+
+        Tip: See Also
+            [`daft.functions.image_hash`](https://docs.daft.ai/en/stable/api/functions/image_hash/)
+        """
+        from daft.functions import image_hash
+
+        return image_hash(self, method=method, hash_size=hash_size, binbits=binbits)
+
+    def file_path(self) -> Expression:
+        """Gets the path (URL) of a file as a string.
+
+        Tip: See Also
+            [`daft.functions.file_path`](https://docs.daft.ai/en/stable/api/functions/file_path/)
+        """
+        from daft.functions import file_path
+
+        return file_path(self)
+
     def file_size(self) -> Expression:
         """Gets the size of a file in bytes.
 
@@ -2769,6 +2824,51 @@ class Expression:
         from daft.functions import file_size
 
         return file_size(self)
+
+    def video_metadata(self) -> Expression:
+        """Gets metadata for a video file.
+
+        Tip: See Also
+            [`daft.functions.video_metadata`](https://docs.daft.ai/en/stable/api/functions/video_metadata/)
+        """
+        from daft.functions import video_metadata
+
+        return video_metadata(self)
+
+    def video_keyframes(self, *, start_time: float = 0, end_time: float | None = None) -> Expression:
+        """Gets keyframes for a video file.
+
+        Tip: See Also
+            [`daft.functions.video_keyframes`](https://docs.daft.ai/en/stable/api/functions/video_keyframes/)
+        """
+        from daft.functions import video_keyframes
+
+        return video_keyframes(self, start_time=start_time, end_time=end_time)
+
+    def video_frames(
+        self,
+        *,
+        start_time: float = 0,
+        end_time: float | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        is_key_frame: bool | None = None,
+    ) -> Expression:
+        """Decodes video frames from a video file.
+
+        Tip: See Also
+            [`daft.functions.video_frames`](https://docs.daft.ai/en/stable/api/functions/video_frames/)
+        """
+        from daft.functions import video_frames
+
+        return video_frames(
+            self,
+            start_time=start_time,
+            end_time=end_time,
+            width=width,
+            height=height,
+            is_key_frame=is_key_frame,
+        )
 
 
 class WhenExpr(Expression):

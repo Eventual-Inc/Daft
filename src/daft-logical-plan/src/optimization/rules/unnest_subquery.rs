@@ -528,6 +528,7 @@ fn pull_up_correlated_cols(
         | LogicalPlan::Union(..)
         | LogicalPlan::Intersect(..)
         | LogicalPlan::Sort(..)
+        | LogicalPlan::Shuffle(..)
         | LogicalPlan::SubqueryAlias(..) => Ok((plan.clone(), subquery_on, outer_on)),
 
         // ops that cannot pull up correlated columns
@@ -543,6 +544,7 @@ fn pull_up_correlated_cols(
         | LogicalPlan::Pivot(..)
         | LogicalPlan::Concat(..)
         | LogicalPlan::Join(..)
+        | LogicalPlan::AsofJoin(..)
         | LogicalPlan::Sink(..)
         | LogicalPlan::Window(..)
         | LogicalPlan::VLLMProject(..) => {

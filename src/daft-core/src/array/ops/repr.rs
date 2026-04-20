@@ -4,7 +4,7 @@ use common_error::DaftResult;
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray, UuidArray},
     datatypes::{
         BinaryArray, BooleanArray, DaftNumericType, DataType, Decimal128Array, ExtensionArray,
         FileArray, FixedSizeBinaryArray, IntervalArray, IntervalValue, NullArray, UInt64Array,
@@ -20,7 +20,6 @@ use crate::{
     utils::display::{
         display_date32, display_decimal128, display_duration, display_time64, display_timestamp,
     },
-    with_match_daft_types,
 };
 
 // Default implementation of str_value: format the value with the given format string.
@@ -250,14 +249,15 @@ impl Decimal128Array {
 
 /// Helper that prints a Series as a list ("[e1, e2, e3, ...]")
 fn series_as_list_str(series: &Series) -> DaftResult<String> {
-    with_match_daft_types!(series.data_type(), |$T| {
-        let arr = series.downcast::<<$T as DaftDataType>::ArrayType>()?;
-        let mut s = String::new();
-        s += "[";
-        s += (0..series.len()).map(|i| arr.str_value(i)).collect::<DaftResult<Vec<String>>>()?.join(", ").as_str();
-        s += "]";
-        Ok(s)
-    })
+    let mut s = String::new();
+    s += "[";
+    s += (0..series.len())
+        .map(|i| series.str_value_result(i))
+        .collect::<DaftResult<Vec<String>>>()?
+        .join(", ")
+        .as_str();
+    s += "]";
+    Ok(s)
 }
 
 impl ListArray {
@@ -472,12 +472,35 @@ impl StructArray {
         }
     }
 }
+
+impl UnionArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        Ok(self.get_lit(idx).to_string())
+    }
+}
+
 impl<T> FileArray<T>
 where
     T: DaftMediaType,
 {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         Ok(self.get_lit(idx).to_string())
+    }
+}
+
+impl UuidArray {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.physical.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            Some(bytes) => {
+                if let Ok(uuid) = uuid::Uuid::from_slice(bytes) {
+                    Ok(uuid.to_string())
+                } else {
+                    Ok("invalid-uuid".to_string())
+                }
+            }
+        }
     }
 }
 
@@ -535,6 +558,7 @@ impl_array_html_value!(BooleanArray);
 impl_array_html_value!(NullArray);
 impl_array_html_value!(BinaryArray);
 impl_array_html_value!(FixedSizeBinaryArray);
+impl_array_html_value!(UuidArray);
 impl_array_html_value!(ListArray);
 impl_array_html_value!(FixedSizeListArray);
 impl_array_html_value!(MapArray);
@@ -547,6 +571,7 @@ impl_array_html_value!(DurationArray);
 impl_array_html_value!(IntervalArray);
 impl_array_html_value!(TimestampArray);
 impl_array_html_value!(EmbeddingArray);
+impl_array_html_value!(UnionArray);
 
 #[cfg(feature = "python")]
 impl PythonArray {

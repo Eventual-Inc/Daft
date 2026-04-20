@@ -6,9 +6,8 @@ use std::{
     time::SystemTime,
 };
 
-use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::{NodeID, QueryID, QueryPlan, Stats};
+use common_metrics::{QueryID, QueryPlan};
 use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use dashmap::DashMap;
@@ -16,7 +15,10 @@ use reqwest::{Client, RequestBuilder};
 use tokio::{sync::mpsc, task::JoinHandle};
 use uuid::Uuid;
 
-use crate::subscribers::{QueryMetadata, QueryResult, Subscriber};
+use crate::subscribers::{
+    Event, QueryMetadata, QueryResult, Subscriber,
+    events::{OperatorEndEvent, OperatorStartEvent, StatsEvent},
+};
 
 const TOTAL_ROWS: usize = 10;
 const DASHBOARD_EVENT_LIMIT: usize = 512;
@@ -145,6 +147,12 @@ impl DashboardSubscriber {
         }))
     }
 
+    /// Returns true if this process is a flotilla worker.
+    /// Workers should not emit most lifecycle events (they race with the driver).
+    fn is_worker(&self) -> bool {
+        self.worker_id.is_some()
+    }
+
     async fn handle_request(request: RequestBuilder) -> DaftResult<()> {
         request
             .send()
@@ -205,6 +213,252 @@ impl DashboardSubscriber {
             }
         }
     }
+
+    // ---- event handlers ----
+
+    fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.preview_rows.insert(
+            query_id.clone(),
+            vec![MicroPartition::empty(Some(metadata.output_schema.clone()))],
+        );
+
+        self.enqueue_json(
+            format!("engine/query/{}/start", query_id),
+            "query_start",
+            &daft_dashboard::engine::StartQueryArgs {
+                start_sec: secs_from_epoch(),
+                unoptimized_plan: metadata.unoptimized_plan.clone(),
+                runner: Some(metadata.runner.clone()),
+                ray_dashboard_url: metadata.ray_dashboard_url.clone(),
+                entrypoint: metadata.entrypoint.clone(),
+                python_version: metadata.python_version.clone(),
+                daft_version: metadata.daft_version.clone(),
+                ray_version: metadata.ray_version.clone(),
+            },
+        );
+        Ok(())
+    }
+
+    fn on_query_heartbeat(&self, query_id: QueryID) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.enqueue_json(
+            format!("engine/query/{}/heartbeat", query_id),
+            "query_heartbeat",
+            &daft_dashboard::engine::QueryHeartbeatArgs {
+                timestamp_sec: secs_from_epoch(),
+            },
+        );
+        Ok(())
+    }
+
+    fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()> {
+        // Limit to TOTAL_ROWS rows
+        // TODO: Limit by X MB and # of rows
+        let Some(mut entry) = self.preview_rows.get_mut(&query_id) else {
+            return Err(DaftError::ValueError(format!(
+                "Query `{}` not started or already ended in DashboardSubscriber",
+                query_id
+            )));
+        };
+
+        let all_results = entry.value_mut();
+        let num_rows = all_results.iter().map(|r| r.len()).sum::<usize>();
+        if num_rows < TOTAL_ROWS && !result.is_empty() {
+            let result = result.head(TOTAL_ROWS - num_rows)?;
+            all_results.push(result);
+        }
+        Ok(())
+    }
+
+    fn on_query_end(&self, query_id: QueryID, end_result: QueryResult) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+        let results = self.preview_rows.remove(&query_id);
+        let results_ipc = if let Some((_, results)) = results {
+            let result = MicroPartition::concat(results)?;
+            debug_assert!(result.len() <= TOTAL_ROWS);
+            if result.is_empty() {
+                // Flotilla queries never call on_result_out, so preview is empty (#6559)
+                None
+            } else {
+                let results_ipc = result.write_to_ipc_stream()?;
+                if results_ipc.len() > 1024 * 1024 * 2 {
+                    // 2MB, our dashboard cap
+                    None
+                } else {
+                    Some(results_ipc)
+                }
+            }
+        } else {
+            None
+        };
+
+        self.enqueue_json(
+            format!("engine/query/{}/end", query_id),
+            "query_end",
+            &daft_dashboard::engine::FinalizeArgs {
+                end_sec: secs_from_epoch(),
+                end_state: end_result.end_state,
+                error_message: end_result.error_message,
+                results: results_ipc,
+            },
+        );
+        Ok(())
+    }
+
+    fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.enqueue_json(
+            format!("engine/query/{}/plan_start", query_id),
+            "optimization_start",
+            &daft_dashboard::engine::PlanStartArgs {
+                plan_start_sec: secs_from_epoch(),
+            },
+        );
+        Ok(())
+    }
+
+    fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.enqueue_json(
+            format!("engine/query/{}/plan_end", query_id),
+            "optimization_end",
+            &daft_dashboard::engine::PlanEndArgs {
+                plan_end_sec: secs_from_epoch(),
+                optimized_plan,
+            },
+        );
+        Ok(())
+    }
+
+    fn on_exec_start_with_id(
+        &self,
+        query_id: QueryID,
+        execution_id: &str,
+        physical_plan: QueryPlan,
+    ) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.execution_ids
+            .insert(query_id.clone(), execution_id.to_string());
+
+        self.enqueue_json(
+            format!("engine/query/{}/exec/start", query_id),
+            "exec_start",
+            &daft_dashboard::engine::ExecStartArgs {
+                exec_start_sec: secs_from_epoch(),
+                physical_plan,
+            },
+        );
+        Ok(())
+    }
+
+    fn on_exec_start(&self, query_id: QueryID, physical_plan: QueryPlan) -> DaftResult<()> {
+        self.on_exec_start_with_id(query_id.clone(), &query_id, physical_plan)
+    }
+
+    fn on_exec_end_with_id(&self, query_id: QueryID, _execution_id: &str) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.execution_ids.remove(&query_id);
+
+        self.enqueue_json(
+            format!("engine/query/{}/exec/end", query_id),
+            "exec_end",
+            &daft_dashboard::engine::ExecEndArgs {
+                exec_end_sec: secs_from_epoch(),
+            },
+        );
+        Ok(())
+    }
+
+    fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
+        self.on_exec_end_with_id(query_id, "unknown")
+    }
+
+    fn on_operator_start(&self, event: &OperatorStartEvent) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.enqueue_no_body(
+            format!(
+                "engine/query/{}/exec/{}/start",
+                event.header.query_id, event.operator.node_id
+            ),
+            "exec_operator_start",
+        );
+        Ok(())
+    }
+
+    fn on_stats(&self, event: &StatsEvent) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        let query_id = event.header.query_id.clone();
+        let source_id = self
+            .execution_ids
+            .get(&query_id)
+            .map(|id| id.clone())
+            .unwrap_or_else(|| "unknown".to_string());
+
+        self.enqueue_json(
+            format!("engine/query/{}/exec/emit_stats", query_id),
+            "exec_emit_stats",
+            &daft_dashboard::engine::ExecEmitStatsArgsSend {
+                source_id,
+                stats: event
+                    .stats
+                    .iter()
+                    .map(|(node_id, snapshot)| {
+                        (
+                            *node_id,
+                            snapshot
+                                .0
+                                .iter()
+                                .map(|(name, stat)| (name.to_string(), stat.clone()))
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            },
+        );
+        Ok(())
+    }
+
+    fn on_operator_end(&self, event: &OperatorEndEvent) -> DaftResult<()> {
+        if self.is_worker() {
+            return Ok(());
+        }
+
+        self.enqueue_no_body(
+            format!(
+                "engine/query/{}/exec/{}/end",
+                event.header.query_id, event.operator.node_id
+            ),
+            "exec_operator_end",
+        );
+        Ok(())
+    }
 }
 
 impl Drop for DashboardSubscriber {
@@ -234,218 +488,46 @@ impl Drop for DashboardSubscriber {
     }
 }
 
-#[async_trait]
 impl Subscriber for DashboardSubscriber {
-    fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
-            return Ok(());
-        }
-
-        self.preview_rows.insert(
-            query_id.clone(),
-            vec![MicroPartition::empty(Some(metadata.output_schema.clone()))],
-        );
-
-        self.enqueue_json(
-            format!("engine/query/{}/start", query_id),
-            "query_start",
-            &daft_dashboard::engine::StartQueryArgs {
-                start_sec: secs_from_epoch(),
-                unoptimized_plan: metadata.unoptimized_plan.clone(),
-                runner: Some(metadata.runner.clone()),
-                ray_dashboard_url: metadata.ray_dashboard_url.clone(),
-                entrypoint: metadata.entrypoint.clone(),
-            },
-        );
-        Ok(())
-    }
-
-    fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()> {
-        // Limit to TOTAL_ROWS rows
-        // TODO: Limit by X MB and # of rows
-        let Some(mut entry) = self.preview_rows.get_mut(&query_id) else {
-            return Err(DaftError::ValueError(format!(
-                "Query `{}` not started or already ended in DashboardSubscriber",
-                query_id
-            )));
-        };
-
-        let all_results = entry.value_mut();
-        let num_rows = all_results.iter().map(|r| r.len()).sum::<usize>();
-        if num_rows < TOTAL_ROWS && !result.is_empty() {
-            let result = result.head(TOTAL_ROWS - num_rows)?;
-            all_results.push(result);
-        }
-        Ok(())
-    }
-
-    fn on_query_end(&self, query_id: QueryID, end_result: QueryResult) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
-            return Ok(());
-        }
-        let results = self.preview_rows.remove(&query_id);
-        let results_ipc = if let Some((_, results)) = results {
-            let result = MicroPartition::concat(results)?;
-            debug_assert!(result.len() <= TOTAL_ROWS);
-            let results_ipc = result.write_to_ipc_stream()?;
-            if results_ipc.len() > 1024 * 1024 * 2 {
-                // 2MB, our dashboard cap
-                None
-            } else {
-                Some(results_ipc)
+    fn on_event(&self, event: Event) -> DaftResult<()> {
+        match event {
+            Event::QueryStart(e) => {
+                self.on_query_start(e.header.query_id, e.metadata)?;
             }
-        } else {
-            None
-        };
-
-        self.enqueue_json(
-            format!("engine/query/{}/end", query_id),
-            "query_end",
-            &daft_dashboard::engine::FinalizeArgs {
-                end_sec: secs_from_epoch(),
-                end_state: end_result.end_state,
-                error_message: end_result.error_message,
-                results: results_ipc,
-            },
-        );
-        Ok(())
-    }
-
-    fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
-            return Ok(());
+            Event::QueryHeartbeat(e) => {
+                self.on_query_heartbeat(e.header.query_id)?;
+            }
+            Event::QueryEnd(e) => {
+                self.on_query_end(e.header.query_id, e.result)?;
+            }
+            Event::OptimizationStart(e) => {
+                self.on_optimization_start(e.header.query_id)?;
+            }
+            Event::OptimizationComplete(e) => {
+                self.on_optimization_end(e.header.query_id, e.optimized_plan)?;
+            }
+            Event::ExecStart(e) => {
+                self.on_exec_start(e.header.query_id, e.physical_plan)?;
+            }
+            Event::ExecEnd(e) => {
+                self.on_exec_end(e.header.query_id)?;
+            }
+            Event::OperatorStart(e) => {
+                self.on_operator_start(&e)?;
+            }
+            Event::OperatorEnd(e) => {
+                self.on_operator_end(&e)?;
+            }
+            Event::Stats(e) => {
+                self.on_stats(&e)?;
+            }
+            Event::ProcessStats(_e) => {}
+            Event::ResultOut(e) => {
+                if let Some(result) = &e.data {
+                    self.on_result_out(e.header.query_id.clone(), result.clone())?;
+                }
+            }
         }
-
-        self.enqueue_json(
-            format!("engine/query/{}/plan_start", query_id),
-            "optimization_start",
-            &daft_dashboard::engine::PlanStartArgs {
-                plan_start_sec: secs_from_epoch(),
-            },
-        );
         Ok(())
-    }
-
-    fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
-            return Ok(());
-        }
-
-        self.enqueue_json(
-            format!("engine/query/{}/plan_end", query_id),
-            "optimization_end",
-            &daft_dashboard::engine::PlanEndArgs {
-                plan_end_sec: secs_from_epoch(),
-                optimized_plan,
-            },
-        );
-        Ok(())
-    }
-
-    fn on_exec_start_with_id(
-        &self,
-        query_id: QueryID,
-        execution_id: &str,
-        physical_plan: QueryPlan,
-    ) -> DaftResult<()> {
-        self.execution_ids
-            .insert(query_id.clone(), execution_id.to_string());
-
-        self.enqueue_json(
-            format!("engine/query/{}/exec/start", query_id),
-            "exec_start",
-            &daft_dashboard::engine::ExecStartArgs {
-                exec_start_sec: secs_from_epoch(),
-                physical_plan,
-            },
-        );
-        Ok(())
-    }
-
-    fn on_exec_start(&self, query_id: QueryID, physical_plan: QueryPlan) -> DaftResult<()> {
-        self.on_exec_start_with_id(query_id.clone(), &query_id, physical_plan)
-    }
-
-    async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
-        self.enqueue_no_body(
-            format!("engine/query/{}/exec/{}/start", query_id, node_id),
-            "exec_operator_start",
-        );
-        Ok(())
-    }
-
-    async fn on_exec_emit_stats_with_id(
-        &self,
-        query_id: QueryID,
-        execution_id: &str,
-        stats: Arc<Vec<(NodeID, Stats)>>,
-    ) -> DaftResult<()> {
-        self.enqueue_json(
-            format!("engine/query/{}/exec/emit_stats", query_id),
-            "exec_emit_stats",
-            &daft_dashboard::engine::ExecEmitStatsArgsSend {
-                source_id: execution_id.to_string(),
-                stats: stats
-                    .iter()
-                    .map(|(node_id, snapshot)| {
-                        (
-                            *node_id,
-                            snapshot
-                                .0
-                                .iter()
-                                .map(|(name, stat)| (name.to_string(), stat.clone()))
-                                .collect(),
-                        )
-                    })
-                    .collect(),
-            },
-        );
-        Ok(())
-    }
-
-    async fn on_exec_emit_stats(
-        &self,
-        query_id: QueryID,
-        stats: Arc<Vec<(NodeID, Stats)>>,
-    ) -> DaftResult<()> {
-        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
-            return Ok(());
-        }
-
-        let source_id = if let Some(worker_id) = &self.worker_id {
-            worker_id.clone()
-        } else {
-            self.execution_ids
-                .get(&query_id)
-                .map(|id| id.clone())
-                .unwrap_or_else(|| "unknown".to_string())
-        };
-        self.on_exec_emit_stats_with_id(query_id, &source_id, stats)
-            .await
-    }
-
-    async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
-        self.enqueue_no_body(
-            format!("engine/query/{}/exec/{}/end", query_id, node_id),
-            "exec_operator_end",
-        );
-        Ok(())
-    }
-
-    async fn on_exec_end_with_id(&self, query_id: QueryID, _execution_id: &str) -> DaftResult<()> {
-        self.execution_ids.remove(&query_id);
-
-        self.enqueue_json(
-            format!("engine/query/{}/exec/end", query_id),
-            "exec_end",
-            &daft_dashboard::engine::ExecEndArgs {
-                exec_end_sec: secs_from_epoch(),
-            },
-        );
-        Ok(())
-    }
-
-    async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
-        self.on_exec_end_with_id(query_id, "unknown").await
     }
 }

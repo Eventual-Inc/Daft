@@ -11,11 +11,19 @@ use std::{
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig, IOConfig};
 use common_error::{DaftError, DaftResult};
 use common_metrics::{QueryID, QueryPlan};
-use daft_micropartition::MicroPartitionRef;
+use daft_micropartition::{MicroPartitionRef, partitioning::Partition};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
+pub use subscribers::{Event, QueryMetadata, QueryResult, Subscriber};
 
-pub use crate::subscribers::{QueryMetadata, QueryResult, Subscriber};
+use crate::subscribers::{
+    event_header,
+    events::{
+        ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorMeta, OperatorStartEvent,
+        OptimizationCompleteEvent, OptimizationStartEvent, QueryEndEvent, QueryHeartbeatEvent,
+        QueryStartEvent, ResultOutEvent, StatsEvent,
+    },
+};
 
 #[derive(Default)]
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -132,22 +140,29 @@ impl DaftContext {
         query_id: QueryID,
         metadata: Arc<QueryMetadata>,
     ) -> DaftResult<()> {
-        self.with_state(|state| {
-            for subscriber in state.subscribers.values() {
-                subscriber.on_query_start(query_id.clone(), metadata.clone())?;
-            }
-            Ok::<(), DaftError>(())
-        })
+        let event = Event::QueryStart(QueryStartEvent {
+            header: event_header(query_id),
+            metadata,
+        });
+        self.dispatch_event(&event, "notify query start")
+    }
+
+    pub fn notify_query_heartbeat(&self, query_id: QueryID) -> DaftResult<()> {
+        let event = Event::QueryHeartbeat(QueryHeartbeatEvent {
+            header: event_header(query_id),
+        });
+        self.dispatch_event(&event, "notify query heartbeat")
     }
 
     pub fn notify_query_end(&self, query_id: QueryID, result: QueryResult) {
-        self.with_state(move |state| {
-            for subscriber in state.subscribers.values() {
-                if let Err(e) = subscriber.on_query_end(query_id.clone(), result.clone()) {
-                    log::error!("Failed to notify subscriber on query end: {}", e);
-                }
-            }
+        let event = Event::QueryEnd(QueryEndEvent {
+            header: event_header(query_id),
+            result,
+            duration_ms: None,
         });
+        if let Err(e) = self.dispatch_event(&event, "notify query end") {
+            log::error!("Failed to dispatch query end event: {}", e);
+        }
     }
 
     pub fn notify_result_out(
@@ -155,21 +170,19 @@ impl DaftContext {
         query_id: QueryID,
         result: MicroPartitionRef,
     ) -> DaftResult<()> {
-        self.with_state(|state| {
-            for subscriber in state.subscribers.values() {
-                subscriber.on_result_out(query_id.clone(), result.clone())?;
-            }
-            Ok::<(), DaftError>(())
-        })
+        let event = Event::ResultOut(ResultOutEvent {
+            header: event_header(query_id),
+            num_rows: (result.num_rows() as u64),
+            data: Some(result),
+        });
+        self.dispatch_event(&event, "notify result out")
     }
 
     pub fn notify_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
-        self.with_state(|state| {
-            for subscriber in state.subscribers.values() {
-                subscriber.on_optimization_start(query_id.clone())?;
-            }
-            Ok::<(), DaftError>(())
-        })
+        let event = Event::OptimizationStart(OptimizationStartEvent {
+            header: event_header(query_id),
+        });
+        self.dispatch_event(&event, "notify optimization start")
     }
 
     pub fn notify_optimization_end(
@@ -177,83 +190,43 @@ impl DaftContext {
         query_id: QueryID,
         optimized_plan: QueryPlan,
     ) -> DaftResult<()> {
-        self.with_state(|state| {
-            for subscriber in state.subscribers.values() {
-                subscriber.on_optimization_end(query_id.clone(), optimized_plan.clone())?;
-            }
-            Ok::<(), DaftError>(())
-        })
+        let event = Event::OptimizationComplete(OptimizationCompleteEvent {
+            header: event_header(query_id),
+            optimized_plan,
+        });
+        self.dispatch_event(&event, "notify optimization complete")
     }
 
     pub fn notify_exec_start(&self, query_id: QueryID, physical_plan: String) -> DaftResult<()> {
-        self.with_state(|state| {
-            for subscriber in state.subscribers.values() {
-                subscriber.on_exec_start(query_id.clone(), physical_plan.clone().into())?;
-            }
-            Ok::<(), DaftError>(())
-        })
+        let event = Event::ExecStart(ExecStartEvent {
+            header: event_header(query_id),
+            physical_plan: physical_plan.into(),
+        });
+        self.dispatch_event(&event, "notify exec start")
     }
 
     pub fn notify_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
-        let subscribers = self.with_state(|state| {
-            state
-                .subscribers
-                .values()
-                .cloned()
-                .collect::<Vec<Arc<dyn Subscriber>>>()
+        let event = Event::ExecEnd(ExecEndEvent {
+            header: event_header(query_id),
+            duration_ms: None,
         });
-        let rt = common_runtime::get_io_runtime(false);
-        for subscriber in subscribers {
-            let query_id = query_id.clone();
-            let _ = rt.block_within_async_context(async move {
-                if let Err(e) = subscriber.on_exec_end(query_id).await {
-                    log::error!("Failed to notify exec end: {}", e);
-                }
-            });
-        }
-        Ok(())
+        self.dispatch_event(&event, "notify exec end")
     }
 
     pub fn notify_exec_operator_start(&self, query_id: QueryID, node_id: usize) -> DaftResult<()> {
-        let subscribers = self.with_state(|state| {
-            state
-                .subscribers
-                .values()
-                .cloned()
-                .collect::<Vec<Arc<dyn Subscriber>>>()
+        let event = Event::OperatorStart(OperatorStartEvent {
+            header: event_header(query_id),
+            operator: Arc::new(OperatorMeta::from_id(node_id)),
         });
-        let rt = common_runtime::get_io_runtime(false);
-        let handle = rt.runtime.handle().clone();
-        for subscriber in subscribers {
-            let query_id = query_id.clone();
-            handle.spawn(async move {
-                if let Err(e) = subscriber.on_exec_operator_start(query_id, node_id).await {
-                    log::error!("Failed to notify exec operator start: {}", e);
-                }
-            });
-        }
-        Ok(())
+        self.dispatch_event(&event, "notify exec operator start")
     }
 
     pub fn notify_exec_operator_end(&self, query_id: QueryID, node_id: usize) -> DaftResult<()> {
-        let subscribers = self.with_state(|state| {
-            state
-                .subscribers
-                .values()
-                .cloned()
-                .collect::<Vec<Arc<dyn Subscriber>>>()
+        let event = Event::OperatorEnd(OperatorEndEvent {
+            header: event_header(query_id),
+            operator: Arc::new(OperatorMeta::from_id(node_id)),
         });
-        let rt = common_runtime::get_io_runtime(false);
-        let handle = rt.runtime.handle().clone();
-        for subscriber in subscribers {
-            let query_id = query_id.clone();
-            handle.spawn(async move {
-                if let Err(e) = subscriber.on_exec_operator_end(query_id, node_id).await {
-                    log::error!("Failed to notify exec operator end: {}", e);
-                }
-            });
-        }
-        Ok(())
+        self.dispatch_event(&event, "notify exec operator end")
     }
 
     pub fn notify_exec_emit_stats(
@@ -261,6 +234,14 @@ impl DaftContext {
         query_id: QueryID,
         stats: Vec<(usize, common_metrics::Stats)>,
     ) -> DaftResult<()> {
+        let event = Event::Stats(StatsEvent {
+            header: event_header(query_id),
+            stats: Arc::new(stats),
+        });
+        self.dispatch_event(&event, "notify exec emit stats")
+    }
+
+    fn dispatch_event(&self, event: &Event, err_context: &'static str) -> DaftResult<()> {
         let subscribers = self.with_state(|state| {
             state
                 .subscribers
@@ -268,17 +249,10 @@ impl DaftContext {
                 .cloned()
                 .collect::<Vec<Arc<dyn Subscriber>>>()
         });
-        let rt = common_runtime::get_io_runtime(false);
-        let handle = rt.runtime.handle().clone();
-        let stats = Arc::new(stats);
         for subscriber in subscribers {
-            let stats = stats.clone();
-            let query_id = query_id.clone();
-            handle.spawn(async move {
-                if let Err(e) = subscriber.on_exec_emit_stats(query_id, stats).await {
-                    log::error!("Failed to notify exec emit stats: {}", e);
-                }
-            });
+            if let Err(e) = subscriber.on_event(event.clone()) {
+                log::error!("Failed to {}: {}", err_context, e);
+            }
         }
         Ok(())
     }

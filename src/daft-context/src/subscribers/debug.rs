@@ -1,12 +1,15 @@
-use std::sync::Arc;
-
-use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{NodeID, QueryID, QueryPlan, Stats};
-use daft_micropartition::MicroPartitionRef;
+use common_metrics::{QueryID, Stat};
 use dashmap::DashMap;
 
-use crate::subscribers::{QueryMetadata, QueryResult, Subscriber};
+use crate::subscribers::{
+    Event, Subscriber,
+    events::{
+        ExecEndEvent, ExecStartEvent, OperatorEndEvent, OperatorStartEvent,
+        OptimizationCompleteEvent, OptimizationStartEvent, ProcessStatsEvent, QueryEndEvent,
+        QueryStartEvent, ResultOutEvent, StatsEvent,
+    },
+};
 
 #[derive(Debug)]
 pub struct DebugSubscriber {
@@ -19,96 +22,192 @@ impl DebugSubscriber {
             rows_out: DashMap::new(),
         }
     }
-}
 
-#[async_trait]
-impl Subscriber for DebugSubscriber {
-    fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
+    fn handle_query_start(&self, event: &QueryStartEvent) -> DaftResult<()> {
         eprintln!(
-            "Started query `{}` with unoptimized plan:\n{}",
-            query_id,
-            metadata.unoptimized_plan.as_ref()
+            "query_start query_id={} runner={} unoptimized_plan=\n{}",
+            event.header.query_id,
+            event.metadata.runner,
+            event.metadata.unoptimized_plan.as_ref()
         );
-        self.rows_out.insert(query_id, 0);
+        self.rows_out.insert(event.header.query_id.clone(), 0);
         Ok(())
     }
 
-    #[allow(unused_variables)]
-    fn on_query_end(&self, query_id: QueryID, end_result: QueryResult) -> DaftResult<()> {
-        eprintln!(
-            "Ended query `{}` with result of {} rows",
-            query_id,
-            self.rows_out
-                .get(&query_id)
-                .expect("Query not found")
-                .value()
-        );
-        Ok(())
-    }
-
-    fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()> {
-        *self
+    fn handle_query_end(&self, event: &QueryEndEvent) -> DaftResult<()> {
+        let rows_out = self
             .rows_out
-            .get_mut(&query_id)
-            .expect("Query not found")
-            .value_mut() += result.len();
+            .get(&event.header.query_id)
+            .map(|rows| *rows.value())
+            .unwrap_or(0);
+
+        match event.duration_ms {
+            Some(duration_ms) => eprintln!(
+                "query_end query_id={} end_state={:?} rows_out={} duration_ms={duration_ms}",
+                event.header.query_id, event.result.end_state, rows_out,
+            ),
+            None => eprintln!(
+                "query_end query_id={} end_state={:?} rows_out={}",
+                event.header.query_id, event.result.end_state, rows_out,
+            ),
+        }
+
+        if let Some(error_message) = event.result.error_message.as_deref() {
+            eprintln!(
+                "query_end_error query_id={} error=\"{}\"",
+                event.header.query_id, error_message
+            );
+        }
+
         Ok(())
     }
 
-    fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
-        eprintln!("Started planning query `{}`", query_id);
+    fn handle_optimization_start(&self, event: &OptimizationStartEvent) -> DaftResult<()> {
+        eprintln!("optimization_start query_id={}\n", event.header.query_id);
         Ok(())
     }
 
-    fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()> {
+    fn handle_optimization_complete(&self, event: &OptimizationCompleteEvent) -> DaftResult<()> {
         eprintln!(
-            "Finished planning query `{}` with optimized plan:\n{}",
-            query_id, optimized_plan
+            "optimization_complete query_id={} optimized_plan=\n{}",
+            event.header.query_id, event.optimized_plan
         );
         Ok(())
     }
 
-    fn on_exec_start(&self, query_id: QueryID, physical_plan: QueryPlan) -> DaftResult<()> {
+    fn handle_exec_start(&self, event: &ExecStartEvent) -> DaftResult<()> {
         eprintln!(
-            "Started executing query `{}` with physical plan:\n{}",
-            query_id, physical_plan
+            "exec_start query_id={} physical_plan=\n{}",
+            event.header.query_id, event.physical_plan
         );
         Ok(())
     }
 
-    async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
-        eprintln!(
-            "Started executing operator `{}` in query `{}`",
-            node_id, query_id
-        );
-        Ok(())
-    }
-
-    async fn on_exec_emit_stats(
-        &self,
-        query_id: QueryID,
-        stats: std::sync::Arc<Vec<(NodeID, Stats)>>,
-    ) -> DaftResult<()> {
-        eprintln!("Emitting execution stats for query `{}`", query_id);
-        for (node_id, node_stats) in stats.iter() {
-            eprintln!("  Node `{}`", node_id);
-            for (name, stat) in node_stats.iter() {
-                eprintln!("  - {} = {}", name, stat);
-            }
+    fn handle_exec_end(&self, event: &ExecEndEvent) -> DaftResult<()> {
+        match event.duration_ms {
+            Some(duration_ms) => eprintln!(
+                "exec_end query_id={} duration_ms={duration_ms}",
+                event.header.query_id
+            ),
+            None => eprintln!("exec_end query_id={}", event.header.query_id),
         }
         Ok(())
     }
 
-    async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
+    fn handle_operator_start(&self, event: &OperatorStartEvent) -> DaftResult<()> {
+        if event.operator.origin_node_id == event.operator.node_id {
+            eprintln!(
+                "operator_start query_id={} node_id={} name=\"{}\" type={:?} category={:?}",
+                event.header.query_id,
+                event.operator.node_id,
+                event.operator.name,
+                event.operator.node_type,
+                event.operator.node_category,
+            );
+        } else {
+            eprintln!(
+                "operator_start query_id={} node_id={} origin_node_id={} name=\"{}\" type={:?} category={:?}",
+                event.header.query_id,
+                event.operator.node_id,
+                event.operator.origin_node_id,
+                event.operator.name,
+                event.operator.node_type,
+                event.operator.node_category,
+            );
+        }
+        Ok(())
+    }
+
+    fn handle_operator_end(&self, event: &OperatorEndEvent) -> DaftResult<()> {
+        if event.operator.origin_node_id == event.operator.node_id {
+            eprintln!(
+                "operator_end query_id={} node_id={} name=\"{}\"",
+                event.header.query_id, event.operator.node_id, event.operator.name,
+            );
+        } else {
+            eprintln!(
+                "operator_end query_id={} node_id={} origin_node_id={} name=\"{}\"",
+                event.header.query_id,
+                event.operator.node_id,
+                event.operator.origin_node_id,
+                event.operator.name,
+            );
+        }
+        Ok(())
+    }
+
+    fn handle_stats(&self, event: &StatsEvent) -> DaftResult<()> {
+        for (node_id, stats) in event.stats.iter() {
+            let rendered = stats
+                .0
+                .iter()
+                .map(|(key, stat)| format!("{key}={}", render_stat(stat)))
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            eprintln!(
+                "stats query_id={} node_id={} {}",
+                event.header.query_id, node_id, rendered,
+            );
+        }
+        Ok(())
+    }
+
+    fn handle_process_stats(&self, event: &ProcessStatsEvent) -> DaftResult<()> {
+        let rendered = event
+            .stats
+            .0
+            .iter()
+            .map(|(key, stat)| format!("{key}={}", render_stat(stat)))
+            .collect::<Vec<_>>()
+            .join(" ");
+
         eprintln!(
-            "Finished executing operator `{}` in query `{}`",
-            node_id, query_id
+            "process_stats query_id={} {}",
+            event.header.query_id, rendered,
         );
         Ok(())
     }
 
-    async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
-        eprintln!("Finished executing query `{}`", query_id);
+    fn handle_result_out(&self, event: &ResultOutEvent) -> DaftResult<()> {
+        if let Some(mut rows_out) = self.rows_out.get_mut(&event.header.query_id) {
+            *rows_out.value_mut() += event.num_rows as usize;
+        }
+        eprintln!(
+            "result_out query_id={} num_rows={}",
+            event.header.query_id, event.num_rows
+        );
         Ok(())
+    }
+}
+
+impl Subscriber for DebugSubscriber {
+    fn on_event(&self, event: Event) -> DaftResult<()> {
+        match event {
+            Event::QueryStart(e) => self.handle_query_start(&e)?,
+            // ignore heartbeats for debug, too verbose
+            Event::QueryHeartbeat(_) => (),
+            Event::QueryEnd(e) => self.handle_query_end(&e)?,
+            Event::OptimizationStart(e) => self.handle_optimization_start(&e)?,
+            Event::OptimizationComplete(e) => self.handle_optimization_complete(&e)?,
+            Event::ExecStart(e) => self.handle_exec_start(&e)?,
+            Event::ExecEnd(e) => self.handle_exec_end(&e)?,
+            Event::OperatorStart(e) => self.handle_operator_start(&e)?,
+            Event::OperatorEnd(e) => self.handle_operator_end(&e)?,
+            Event::Stats(e) => self.handle_stats(&e)?,
+            Event::ProcessStats(e) => self.handle_process_stats(&e)?,
+            Event::ResultOut(e) => self.handle_result_out(&e)?,
+        }
+        Ok(())
+    }
+}
+
+fn render_stat(stat: &Stat) -> String {
+    match stat {
+        Stat::Count(v) => v.to_string(),
+        Stat::Bytes(v) => v.to_string(),
+        Stat::Duration(v) => format!("{v:?}"),
+        Stat::Percent(v) => format!("{v}%"),
+        Stat::Float(v) => v.to_string(),
     }
 }

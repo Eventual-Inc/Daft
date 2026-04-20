@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from daft.catalog import Catalog, Identifier, Properties, Table
+import pytest
+
+from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Table
 from daft.dataframe import DataFrame
+from daft.exceptions import DaftCoreException
 from daft.logical.schema import DataType as dt
 from daft.logical.schema import Schema
 
@@ -170,6 +173,12 @@ class MockCatalog(Catalog):
     def _list_tables(self, prefix: Identifier | None = None) -> list[Identifier]:
         raise NotImplementedError
 
+    def _create_function(self, ident, function):
+        raise NotImplementedError
+
+    def _get_function(self, ident):
+        raise NotFoundError(f"Function '{ident}' not found")
+
     def _has_namespace(self, ident):
         raise NotImplementedError
 
@@ -233,3 +242,101 @@ def test_session_create_table_with_properties():
     assert t2
     assert t2.name == "t2"
     assert t2.properties == properties
+
+
+###
+# _get_function tests
+###
+
+
+def test_catalog_get_function_default_raises():
+    """Test that the default _get_function raises NotFoundError."""
+    catalog = MockCatalog()
+    with pytest.raises(NotFoundError):
+        catalog.get_function("any_function")
+
+
+from daft.catalog.__internal import MemoryCatalog
+
+_function_catalog = MemoryCatalog._new("test_with_functions")
+
+
+def test_catalog_get_function_with_override():
+    """Test that a catalog with _get_function override returns the function."""
+    from tests.udf.my_funcs import catalog_udf
+
+    _function_catalog.create_function("my_func", catalog_udf)
+
+    # found
+    assert _function_catalog.get_function("my_func") is not None
+
+    # not found
+    with pytest.raises(DaftCoreException, match="function with name nonexistent not found"):
+        _function_catalog.get_function("nonexistent")
+
+
+def test_catalog_get_function_from_pydict_raises():
+    """Test that the built-in from_pydict catalog raises NotFoundError for get_function (default behavior)."""
+    catalog = Catalog.from_pydict({"t": {"x": [1, 2, 3]}})
+    with pytest.raises(DaftCoreException, match="function with name anything not found"):
+        catalog.get_function("anything")
+
+
+def test_catalog_create_and_get_function():
+    """Test that create_function stores a function and get_function retrieves it."""
+    from tests.udf.my_funcs import double_value
+
+    _function_catalog.create_function("double_fn", double_value)
+
+    func = _function_catalog.get_function("double_fn")
+    assert func is not None
+
+
+def test_create_table_catalog_qualified():
+    """Test that create_table routes to the correct catalog when using a catalog-qualified identifier."""
+    from daft.session import Session
+
+    catalog = MockCatalog()
+    sess = Session()
+    sess.attach_catalog(catalog, alias="my_cat")
+
+    schema = Schema.from_pydict({"a": dt.int64()})
+    sess.create_table("my_cat.my_schema.my_table", schema)
+
+    # The table should exist in the catalog with the catalog prefix stripped
+    t = catalog.get_table("my_schema.my_table")
+    assert t is not None
+    assert t.name == "my_schema.my_table"
+
+
+def test_create_table_if_not_exists_catalog_qualified():
+    """Test that create_table_if_not_exists routes to the correct catalog when using a catalog-qualified identifier."""
+    from daft.session import Session
+
+    catalog = MockCatalog()
+    sess = Session()
+    sess.attach_catalog(catalog, alias="my_cat")
+
+    schema = Schema.from_pydict({"a": dt.int64()})
+    t1 = sess.create_table_if_not_exists("my_cat.my_schema.my_table", schema)
+    t2 = sess.create_table_if_not_exists("my_cat.my_schema.my_table", schema)
+
+    assert t1 is not None
+    assert t2 is not None
+    assert t1.name == t2.name
+
+
+def test_drop_table_catalog_qualified():
+    """Test that drop_table routes to the correct catalog when using a catalog-qualified identifier."""
+    from daft.session import Session
+
+    catalog = MockCatalog()
+    sess = Session()
+    sess.attach_catalog(catalog, alias="my_cat")
+
+    schema = Schema.from_pydict({"a": dt.int64()})
+    sess.create_table("my_cat.my_schema.my_table", schema)
+    assert catalog.has_table("my_schema.my_table")
+
+    sess.drop_table("my_cat.my_schema.my_table")
+    assert not catalog.has_table("my_schema.my_table")

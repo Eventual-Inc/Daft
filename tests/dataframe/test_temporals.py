@@ -10,6 +10,19 @@ import pytz
 
 import daft
 from daft import DataType, col
+from daft.functions import (
+    current_date,
+    current_timestamp,
+    current_timezone,
+    date_add,
+    date_diff,
+    date_from_unix_date,
+    date_sub,
+    from_unixtime,
+    timestamp_micros,
+    timestamp_millis,
+    timestamp_seconds,
+)
 
 
 def test_temporal_arithmetic_with_same_type() -> None:
@@ -756,3 +769,185 @@ def test_datetime_to_string_errors(value):
 
     with pytest.raises(daft.exceptions.DaftCoreException):
         df.select(daft.col("invalid").strftime("%Y-%m-%d")).to_pydict()
+
+
+# --- Tests for current_date, current_timestamp, current_timezone and aliases ---
+
+
+def test_current_date_returns_date_type() -> None:
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    df = df.select(current_date().alias("today"))
+    assert df.schema()["today"].dtype == DataType.date()
+    result = df.to_pydict()
+    today = date.today()
+    for val in result["today"]:
+        assert isinstance(val, date)
+        # Allow for UTC date being +/- 1 day from local date
+        assert abs((val - today).days) <= 1
+
+
+def test_current_timestamp_returns_timestamp_type() -> None:
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    df = df.select(current_timestamp().alias("now"))
+    assert df.schema()["now"].dtype == DataType.timestamp("us")
+    result = df.to_pydict()
+    now_utc = datetime.now(timezone.utc)
+    for val in result["now"]:
+        assert isinstance(val, datetime)
+        # Value should be within 60 seconds of now
+        diff = abs((now_utc.replace(tzinfo=None) - val).total_seconds())
+        assert diff < 60
+
+
+def test_current_timezone_returns_utc() -> None:
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    df = df.select(current_timezone().alias("tz"))
+    result = df.to_pydict()
+
+    expected = {"tz": ["UTC", "UTC", "UTC"]}
+
+    assert result == expected
+
+
+def test_current_temporal_sql() -> None:
+    df = daft.from_pydict({"x": [1, 2, 3]})  # noqa: F841
+    sql = "SELECT current_date() as d, current_timestamp() as ts, current_timezone() as tz FROM df"
+    result = daft.sql(sql).to_pydict()
+    today = date.today()
+    now_utc = datetime.now(timezone.utc)
+    assert result["tz"] == ["UTC", "UTC", "UTC"]
+    for val in result["d"]:
+        assert isinstance(val, date)
+        assert abs((val - today).days) <= 1
+    for val in result["ts"]:
+        assert isinstance(val, datetime)
+        diff = abs((now_utc.replace(tzinfo=None) - val).total_seconds())
+        assert diff < 60
+
+
+# --- Tests for date_add, date_sub, date_diff ---
+
+
+def test_date_add() -> None:
+    df = daft.from_pydict({"d": [date(2021, 1, 1), date(2021, 6, 15)], "n": [10, 5]})
+    df = df.select(date_add(col("d"), col("n")).alias("result"))
+    result = df.to_pydict()
+
+    expected = {"result": [date(2021, 1, 11), date(2021, 6, 20)]}
+
+    assert result == expected
+
+
+def test_date_sub() -> None:
+    df = daft.from_pydict({"d": [date(2021, 1, 10), date(2021, 6, 15)], "n": [5, 10]})
+    df = df.select(date_sub(col("d"), col("n")).alias("result"))
+    result = df.to_pydict()
+
+    expected = {"result": [date(2021, 1, 5), date(2021, 6, 5)]}
+
+    assert result == expected
+
+
+def test_date_diff() -> None:
+    df = daft.from_pydict(
+        {
+            "a": [date(2021, 1, 10), date(2021, 7, 1)],
+            "b": [date(2021, 1, 1), date(2021, 6, 15)],
+        }
+    )
+    df = df.select(date_diff(col("a"), col("b")).alias("diff"))
+    result = df.to_pydict()
+
+    expected = {"diff": [9, 16]}
+
+    assert result == expected
+
+
+# --- Tests for epoch conversion functions ---
+
+
+def test_date_from_unix_date() -> None:
+    df = daft.from_pydict({"days": [0, 18628]})
+    df = df.select(date_from_unix_date(col("days")).alias("d"))
+    result = df.to_pydict()
+
+    expected = {"d": [date(1970, 1, 1), date(2021, 1, 1)]}
+
+    assert result == expected
+
+
+def test_timestamp_seconds() -> None:
+    df = daft.from_pydict({"s": [0, 1609459200]})
+    df = df.select(timestamp_seconds(col("s")).alias("ts"))
+    assert df.schema()["ts"].dtype == DataType.timestamp("us")
+    result = df.to_pydict()
+    assert result["ts"][0] == datetime(1970, 1, 1)
+    assert result["ts"][1] == datetime(2021, 1, 1)
+
+
+def test_timestamp_millis() -> None:
+    df = daft.from_pydict({"ms": [0, 1609459200000]})
+    df = df.select(timestamp_millis(col("ms")).alias("ts"))
+    assert df.schema()["ts"].dtype == DataType.timestamp("us")
+    result = df.to_pydict()
+    assert result["ts"][0] == datetime(1970, 1, 1)
+    assert result["ts"][1] == datetime(2021, 1, 1)
+
+
+def test_timestamp_micros() -> None:
+    df = daft.from_pydict({"us": [0, 1609459200000000]})
+    df = df.select(timestamp_micros(col("us")).alias("ts"))
+    assert df.schema()["ts"].dtype == DataType.timestamp("us")
+    result = df.to_pydict()
+    assert result["ts"][0] == datetime(1970, 1, 1)
+    assert result["ts"][1] == datetime(2021, 1, 1)
+
+
+def test_from_unixtime() -> None:
+    df = daft.from_pydict({"s": [0, 1609459200]})
+    df = df.select(from_unixtime(col("s")).alias("formatted"))
+    result = df.to_pydict()
+
+    expected = {"formatted": ["1970-01-01 00:00:00", "2021-01-01 00:00:00"]}
+
+    assert result == expected
+
+
+def test_from_unixtime_custom_format() -> None:
+    df = daft.from_pydict({"s": [1609459200]})
+    df = df.select(from_unixtime(col("s"), format="%Y/%m/%d").alias("formatted"))
+    result = df.to_pydict()
+
+    expected = {"formatted": ["2021/01/01"]}
+
+    assert result == expected
+
+
+def test_from_unixtime_utc_boundary() -> None:
+    # 1609466400 = 2021-01-01 02:00:00 UTC, but 2020-12-31 18:00:00 PST.
+    # Locks in that from_unixtime formats in UTC rather than local/session time.
+    df = daft.from_pydict({"s": [1609466400]})
+    df = df.select(from_unixtime(col("s")).alias("formatted"))
+    result = df.to_pydict()
+
+    expected = {"formatted": ["2021-01-01 02:00:00"]}
+
+    assert result == expected
+
+
+def test_temporal_batch2_sql() -> None:
+    df = daft.from_pydict(  # noqa: F841
+        {"d": [date(2021, 1, 1)], "s": [1609459200], "days_val": [10]}
+    )
+    sql = (
+        "SELECT date_add(d, days_val) as added, date_sub(d, days_val) as subbed,"
+        " date_diff(d, d) as diff, date_from_unix_date(days_val) as from_unix,"
+        " timestamp_seconds(s) as ts_s, from_unixtime(s) as fmt FROM df"
+    )
+    result = daft.sql(sql).to_pydict()
+    assert result["added"] == [date(2021, 1, 11)]
+    assert result["subbed"] == [date(2020, 12, 22)]
+    assert result["diff"] == [0]
+    assert result["from_unix"] == [date(1970, 1, 11)]
+    assert isinstance(result["ts_s"][0], datetime)
+    assert result["fmt"] == ["2021-01-01 00:00:00"]

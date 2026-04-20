@@ -80,16 +80,9 @@ impl ShuffleFlightClient {
                 .into(),
             )
         })?;
-        Ok(FlightRecordBatchStreamToDaftRecordBatchStream {
-            stream,
-            done: false,
-            schema: schema.clone(),
-            fields: schema
-                .fields()
-                .iter()
-                .map(|f| Arc::new(f.clone()))
-                .collect(),
-        })
+        Ok(FlightRecordBatchStreamToDaftRecordBatchStream::new(
+            stream, schema,
+        ))
     }
 }
 
@@ -98,6 +91,21 @@ pub struct FlightRecordBatchStreamToDaftRecordBatchStream {
     done: bool,
     schema: SchemaRef,
     fields: Vec<FieldRef>,
+}
+
+impl FlightRecordBatchStreamToDaftRecordBatchStream {
+    pub fn new(stream: FlightRecordBatchStream, schema: SchemaRef) -> Self {
+        Self {
+            stream,
+            done: false,
+            schema: schema.clone(),
+            fields: schema
+                .fields()
+                .iter()
+                .map(|f| Arc::new(f.clone()))
+                .collect(),
+        }
+    }
 }
 
 impl Stream for FlightRecordBatchStreamToDaftRecordBatchStream {

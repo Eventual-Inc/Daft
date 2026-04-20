@@ -20,6 +20,7 @@ pub struct RowBasedBuffer {
     upper_bound: NonZeroUsize,
 }
 
+#[allow(unused)]
 impl RowBasedBuffer {
     pub fn new(lower_bound: usize, upper_bound: NonZeroUsize) -> Self {
         assert!(
@@ -51,6 +52,36 @@ impl RowBasedBuffer {
     pub fn push(&mut self, part: MicroPartition) {
         self.curr_len += part.len();
         self.buffer.push_back(part);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.buffer.is_empty()
+    }
+
+    pub fn partitions(&self) -> &VecDeque<MicroPartition> {
+        &self.buffer
+    }
+
+    pub fn total_rows(&self) -> usize {
+        self.curr_len
+    }
+
+    pub fn take_rows(&mut self, n: usize) -> DaftResult<Option<MicroPartition>> {
+        if n == 0 || self.buffer.is_empty() {
+            return Ok(None);
+        }
+        let taken = std::mem::take(&mut self.buffer);
+        let concated = MicroPartition::concat(taken)?;
+        if n >= concated.len() {
+            self.curr_len = 0;
+            Ok(Some(concated))
+        } else {
+            let batch = concated.slice(0, n)?;
+            let remainder = concated.slice(n, concated.len())?;
+            self.curr_len = remainder.len();
+            self.buffer.push_back(remainder);
+            Ok(Some(batch))
+        }
     }
 
     fn buffer_state(&self) -> BufferState {
@@ -208,6 +239,63 @@ mod tests {
         buffer.push(MicroPartition::empty(None));
         assert!(buffer.pop_all()?.is_some());
         assert!(buffer.pop_all()?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_take_rows_exact() -> DaftResult<()> {
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(100).unwrap());
+        buffer.push(make_dummy_mp(10));
+        let batch = buffer.take_rows(10)?.unwrap();
+        assert_eq!(batch.len(), 10);
+        assert!(buffer.is_empty());
+        assert_eq!(buffer.total_rows(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_take_rows_partial() -> DaftResult<()> {
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(100).unwrap());
+        buffer.push(make_dummy_mp(20));
+        let batch = buffer.take_rows(8)?.unwrap();
+        assert_eq!(batch.len(), 8);
+        assert_eq!(buffer.total_rows(), 12);
+        Ok(())
+    }
+
+    #[test]
+    fn test_take_rows_more_than_available() -> DaftResult<()> {
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(100).unwrap());
+        buffer.push(make_dummy_mp(5));
+        let batch = buffer.take_rows(50)?.unwrap();
+        assert_eq!(batch.len(), 5);
+        assert!(buffer.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_take_rows_empty_buffer() -> DaftResult<()> {
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(100).unwrap());
+        assert!(buffer.take_rows(10)?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_take_rows_zero() -> DaftResult<()> {
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(100).unwrap());
+        buffer.push(make_dummy_mp(10));
+        assert!(buffer.take_rows(0)?.is_none());
+        assert_eq!(buffer.total_rows(), 10);
+        Ok(())
+    }
+
+    #[test]
+    fn test_partitions_peek() -> DaftResult<()> {
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(100).unwrap());
+        buffer.push(make_dummy_mp(5));
+        buffer.push(make_dummy_mp(10));
+        assert_eq!(buffer.partitions().len(), 2);
+        assert_eq!(buffer.total_rows(), 15);
         Ok(())
     }
 }

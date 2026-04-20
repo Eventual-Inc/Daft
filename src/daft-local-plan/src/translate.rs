@@ -10,6 +10,7 @@ use daft_dsl::{
     join::normalize_join_keys,
     resolved_col, window_to_agg_exprs,
 };
+use daft_functions::random::random_int_expr;
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState};
 use daft_micropartition::MicroPartitionRef;
 use daft_scan::{ScanState, ScanTaskRef};
@@ -379,6 +380,24 @@ fn translate_helper(
                 inputs,
             ))
         }
+        LogicalPlan::Shuffle(shuffle) => {
+            let (input_plan, inputs) = translate_helper(&shuffle.input, source_counter, psets)?;
+            let sort_by = BoundExpr::bind_all(
+                &[random_int_expr(i64::MIN, i64::MAX, shuffle.seed)],
+                input_plan.schema(),
+            )?;
+            Ok((
+                LocalPhysicalPlan::sort(
+                    input_plan,
+                    sort_by,
+                    vec![false],
+                    vec![false],
+                    shuffle.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
+        }
         LogicalPlan::TopN(top_n) => {
             let (input_plan, inputs) = translate_helper(&top_n.input, source_counter, psets)?;
 
@@ -410,6 +429,11 @@ fn translate_helper(
                         log::warn!(
                             "Sort merge join is not supported on the native runner, falling back to hash join."
                         );
+                    }
+                    JoinStrategy::KeyFiltering => {
+                        return Err(DaftError::not_implemented(
+                            "JoinStrategy::KeyFiltering is only supported on the Ray runner. Please use daft.set_runner_ray().",
+                        ));
                     }
                     _ => {}
                 }
@@ -460,6 +484,34 @@ fn translate_helper(
                     left_inputs,
                 ))
             }
+        }
+        LogicalPlan::AsofJoin(asof_join) => {
+            let (left_plan, mut left_inputs) =
+                translate_helper(&asof_join.left, source_counter, psets)?;
+            let (right_plan, right_inputs) =
+                translate_helper(&asof_join.right, source_counter, psets)?;
+
+            left_inputs.extend(right_inputs);
+
+            let left_by = BoundExpr::bind_all(&asof_join.left_by, left_plan.schema())?;
+            let right_by = BoundExpr::bind_all(&asof_join.right_by, right_plan.schema())?;
+            let left_on = BoundExpr::try_new(asof_join.left_on.clone(), left_plan.schema())?;
+            let right_on = BoundExpr::try_new(asof_join.right_on.clone(), right_plan.schema())?;
+
+            Ok((
+                LocalPhysicalPlan::asof_join(
+                    left_plan,
+                    right_plan,
+                    left_by,
+                    right_by,
+                    left_on,
+                    right_on,
+                    asof_join.output_schema.clone(),
+                    asof_join.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                left_inputs,
+            ))
         }
         LogicalPlan::Distinct(distinct) => {
             let schema = distinct.input.schema();

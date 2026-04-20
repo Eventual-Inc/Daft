@@ -3,20 +3,24 @@ use std::{collections::HashMap, pin::Pin, sync::Arc};
 use arrow_flight::{
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
     HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaAsIpc, SchemaResult, Ticket,
+    decode::FlightRecordBatchStream,
+    error::FlightError,
     flight_service_server::{FlightService, FlightServiceServer},
 };
 use arrow_ipc::writer::IpcWriteOptions;
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
-use futures::{Stream, StreamExt, TryStreamExt};
-use tokio::{
-    io::BufReader,
-    sync::{Mutex, OnceCell},
-};
+use daft_core::prelude::SchemaRef;
+use daft_recordbatch::RecordBatch;
+use futures::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
+use tokio::{io::BufReader, sync::Mutex};
 use tonic::{Request, Response, Status, transport::Server};
 
 use super::stream::FlightDataStreamReader;
-use crate::shuffle_cache::ShuffleCache;
+use crate::{
+    client::flight_client::FlightRecordBatchStreamToDaftRecordBatchStream,
+    shuffle_cache::ShuffleCache,
+};
 
 struct ParsedTicket {
     shuffle_id: u64,
@@ -64,28 +68,17 @@ impl ParsedTicket {
     }
 }
 
-#[derive(Clone)]
-struct ShuffleFlightServer {
+#[derive(Clone, Default)]
+pub struct ShuffleFlightServer {
     shuffle_caches: Arc<Mutex<HashMap<u64, Vec<Arc<ShuffleCache>>>>>,
 }
 
-static GLOBAL_FLIGHT_SERVER: OnceCell<Arc<ShuffleFlightServer>> = OnceCell::const_new();
-
 impl ShuffleFlightServer {
-    fn new() -> Self {
-        Self {
-            shuffle_caches: Arc::new(Mutex::new(HashMap::new())),
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    async fn get_or_create_global() -> Arc<Self> {
-        GLOBAL_FLIGHT_SERVER
-            .get_or_init(|| async { Arc::new(Self::new()) })
-            .await
-            .clone()
-    }
-
-    async fn register_shuffle_cache(
+    pub async fn register_shuffle_cache(
         &self,
         shuffle_id: u64,
         cache: Arc<ShuffleCache>,
@@ -95,9 +88,93 @@ impl ShuffleFlightServer {
         Ok(())
     }
 
-    async fn get_shuffle_caches(&self, shuffle_id: u64) -> Option<Vec<Arc<ShuffleCache>>> {
+    async fn get_shuffle_file_paths(
+        &self,
+        shuffle_id: u64,
+        partition_idx: usize,
+        cache_ids: Option<&[u32]>,
+    ) -> Option<(Vec<String>, SchemaRef)> {
         let caches = self.shuffle_caches.lock().await;
-        caches.get(&shuffle_id).cloned()
+        let shuffle_caches = caches.get(&shuffle_id).cloned()?;
+
+        let schema = shuffle_caches
+            .first()
+            .expect("Expected at least one cache")
+            .schema();
+
+        // Filter caches by cache_ids if provided
+        let filtered_caches: Vec<_> = if let Some(ids) = cache_ids {
+            shuffle_caches
+                .iter()
+                .filter(|cache| {
+                    // Parse cache_id from cache and check if it's in the requested ids
+                    cache
+                        .cache_id()
+                        .parse::<u32>()
+                        .map(|cache_id| ids.contains(&cache_id))
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect()
+        } else {
+            shuffle_caches
+        };
+
+        let file_paths = filtered_caches
+            .iter()
+            .flat_map(|cache| cache.file_paths_for_partition(partition_idx))
+            .collect::<Vec<_>>();
+
+        Some((file_paths, schema))
+    }
+
+    /// Get partition data in-process (no gRPC). Returns a stream of Daft RecordBatches.
+    /// Used when the reader runs on the same node as the shuffle server.
+    pub async fn get_partition_local(
+        &self,
+        shuffle_id: u64,
+        partition_idx: usize,
+        cache_ids: &[u32],
+    ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+        let (file_paths, schema) = self
+            .get_shuffle_file_paths(shuffle_id, partition_idx, Some(cache_ids))
+            .await
+            .ok_or_else(|| {
+                DaftError::ValueError(format!("Shuffle cache not found for id: {}", shuffle_id))
+            })?;
+
+        let file_path_stream = futures::stream::iter(file_paths);
+        let flight_data_stream = file_path_stream
+            .then(move |file_path| {
+                let schema = schema.clone();
+                async move {
+                    let file = tokio::fs::File::open(file_path)
+                        .await
+                        .map_err(DaftError::IoError)?;
+                    let reader = FlightDataStreamReader::try_new(BufReader::new(file))
+                        .await?
+                        .into_stream()
+                        .map_err(|e| FlightError::from_external_error(Box::new(e)));
+
+                    let arrow_schema = schema.to_arrow().map_err(|e| {
+                        DaftError::InternalError(format!("Error converting schema to arrow: {}", e))
+                    })?;
+                    let options = IpcWriteOptions::default();
+                    let flight_schema = SchemaAsIpc::new(&arrow_schema, &options).into();
+                    let flight_data =
+                        futures::stream::once(async { Ok(flight_schema) }).chain(reader);
+
+                    // Doing some shenanigans here to reuse existing code
+                    // TODO: Refactor this to get Arrow RecordBatchStream directly using async IO
+                    let arrow_stream = FlightRecordBatchStream::new_from_flight_data(flight_data);
+                    let daft_stream =
+                        FlightRecordBatchStreamToDaftRecordBatchStream::new(arrow_stream, schema);
+                    Ok::<_, DaftError>(daft_stream)
+                }
+            })
+            .try_flatten();
+
+        Ok(Box::pin(flight_data_stream))
     }
 }
 
@@ -158,8 +235,12 @@ impl FlightService for ShuffleFlightServer {
         let ticket = request.into_inner();
         let ticket = ParsedTicket::from_ticket(&ticket)?;
 
-        let shuffle_caches = self
-            .get_shuffle_caches(ticket.shuffle_id)
+        let (file_paths, schema) = self
+            .get_shuffle_file_paths(
+                ticket.shuffle_id,
+                ticket.partition_idx,
+                ticket.cache_ids.as_deref(),
+            )
             .await
             .ok_or_else(|| {
                 Status::not_found(format!(
@@ -167,29 +248,6 @@ impl FlightService for ShuffleFlightServer {
                     ticket.shuffle_id
                 ))
             })?;
-
-        // Filter caches by cache_ids if provided
-        let filtered_caches: Vec<_> = if let Some(ref ids) = ticket.cache_ids {
-            shuffle_caches
-                .iter()
-                .filter(|cache| {
-                    // Parse cache_id from cache and check if it's in the requested ids
-                    cache
-                        .cache_id()
-                        .parse::<u32>()
-                        .map(|cache_id| ids.contains(&cache_id))
-                        .unwrap_or(false)
-                })
-                .cloned()
-                .collect()
-        } else {
-            shuffle_caches
-        };
-
-        let file_paths = filtered_caches
-            .iter()
-            .flat_map(|cache| cache.file_paths_for_partition(ticket.partition_idx))
-            .collect::<Vec<_>>();
 
         let file_path_stream = futures::stream::iter(file_paths);
         let flight_data_stream = file_path_stream
@@ -210,15 +268,11 @@ impl FlightService for ShuffleFlightServer {
             })
             .try_flatten();
 
-        let schema = filtered_caches
-            .first()
-            .expect("Expected at least one cache")
-            .schema()
+        let options = IpcWriteOptions::default();
+        let arrow_schema = schema
             .to_arrow()
             .map_err(|e| Status::internal(format!("Error converting schema to arrow: {}", e)))?;
-
-        let options = IpcWriteOptions::default();
-        let flight_schema = SchemaAsIpc::new(&schema, &options).into();
+        let flight_schema = SchemaAsIpc::new(&arrow_schema, &options).into();
         let flight_data =
             futures::stream::once(async { Ok(flight_schema) }).chain(flight_data_stream);
 
@@ -255,6 +309,7 @@ impl FlightService for ShuffleFlightServer {
 }
 
 pub struct FlightServerConnectionHandle {
+    ip: String,
     port: u16,
     shutdown_signal: Option<tokio::sync::oneshot::Sender<()>>,
     server_task: Option<RuntimeTask<DaftResult<()>>>,
@@ -276,20 +331,16 @@ impl FlightServerConnectionHandle {
     pub fn port(&self) -> u16 {
         self.port
     }
+
+    pub fn shuffle_address(&self) -> String {
+        format!("grpc://{}:{}", self.ip, self.port)
+    }
 }
 
-pub async fn register_shuffle_cache(
-    shuffle_id: u64,
-    shuffle_cache: Arc<ShuffleCache>,
-) -> DaftResult<()> {
-    let server = ShuffleFlightServer::get_or_create_global().await;
-    server
-        .register_shuffle_cache(shuffle_id, shuffle_cache)
-        .await
-}
-
-#[allow(clippy::result_large_err)]
-pub fn start_flight_server(ip: &str) -> FlightServerConnectionHandle {
+pub fn start_server_loop(
+    ip: &str,
+    server: Arc<ShuffleFlightServer>,
+) -> FlightServerConnectionHandle {
     let io_runtime = common_runtime::get_io_runtime(true);
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     let (port_tx, port_rx) = tokio::sync::oneshot::channel();
@@ -311,9 +362,9 @@ pub fn start_flight_server(ip: &str) -> FlightServerConnectionHandle {
             .with_nodelay(Some(true))
             .with_keepalive(None);
 
-        let flight_server = ShuffleFlightServer::get_or_create_global().await;
+        let flight_server = server;
         Server::builder()
-            .add_service(FlightServiceServer::new((*flight_server).clone()))
+            .add_service(FlightServiceServer::from_arc(flight_server))
             .serve_with_incoming_shutdown(incoming, async move {
                 let _ = shutdown_rx.await;
             })
@@ -326,6 +377,7 @@ pub fn start_flight_server(ip: &str) -> FlightServerConnectionHandle {
     let port = port_rx.blocking_recv().expect("Failed to receive port");
 
     FlightServerConnectionHandle {
+        ip: ip.to_string(),
         port,
         shutdown_signal: Some(shutdown_tx),
         server_task: Some(server_task),

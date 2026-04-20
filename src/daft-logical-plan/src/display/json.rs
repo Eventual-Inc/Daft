@@ -83,12 +83,21 @@ pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
             "type": join.join_type,
             "strategy": join.join_strategy,
         }),
+        LogicalPlan::AsofJoin(asof_join) => json!({
+            "left_by": asof_join.left_by.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
+            "right_by": asof_join.right_by.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
+            "left_on": asof_join.left_on.to_string(),
+            "right_on": asof_join.right_on.to_string(),
+        }),
         LogicalPlan::Sink(_) => json!({}),
         LogicalPlan::Sample(sample) => json!({
             "fraction": sample.fraction,
             "size": sample.size,
             "with_replacement": sample.with_replacement,
             "seed": sample.seed,
+        }),
+        LogicalPlan::Shuffle(shuffle) => json!({
+            "seed": shuffle.seed,
         }),
         LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => json!({
             "column_name": vec![resolved_col(monotonically_increasing_id.column_name.clone()).to_string()]

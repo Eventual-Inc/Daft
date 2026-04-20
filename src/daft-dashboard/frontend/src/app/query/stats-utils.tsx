@@ -3,7 +3,30 @@ import { OperatorStatus, Stat } from "./types";
 
 export const ROWS_IN_STAT_KEY = "rows.in";
 export const ROWS_OUT_STAT_KEY = "rows.out";
+export const BYTES_IN_STAT_KEY = "bytes.in";
+export const BYTES_OUT_STAT_KEY = "bytes.out";
 export const DURATION_US_STAT_KEY = "duration";
+
+export const statNumericValue = (stat: Stat | undefined): number => {
+  if (!stat) return 0;
+  if (stat.type === "Duration") {
+    return stat.value.secs + stat.value.nanos / 1e9;
+  }
+  return Number(stat.value) || 0;
+};
+
+export const formatBytes = (bytes: number): string => {
+  if (!isFinite(bytes) || bytes <= 0) return "0 B";
+  if (bytes >= 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
+  } else if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+  } else if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(1)} KiB`;
+  } else {
+    return `${Math.round(bytes)} B`;
+  }
+};
 
 export const getStatusIcon = (status: OperatorStatus) => {
   switch (status) {
@@ -58,16 +81,7 @@ export const formatStatValue = (stat: Stat) => {
     case "Count":
       return stat.value.toLocaleString();
     case "Bytes":
-      const bytes = stat.value;
-      if (bytes >= 1024 * 1024 * 1024) {
-        return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
-      } else if (bytes >= 1024 * 1024) {
-        return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
-      } else if (bytes >= 1024) {
-        return `${(bytes / 1024).toFixed(1)} KiB`;
-      } else {
-        return `${bytes} B`;
-      }
+      return formatBytes(stat.value);
     case "Percent":
       return `${stat.value.toFixed(1)}%`;
     case "Duration":

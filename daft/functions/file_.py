@@ -59,6 +59,18 @@ def audio_file(url: Expression, verify: bool = False, io_config: IOConfig | None
     return url._eval_expressions("audio_file", verify=verify, io_config=io_config)
 
 
+def file_path(file: Expression) -> Expression:
+    """Returns the path (URL) of the file as a string.
+
+    Args:
+        file (File Expression): expression to evaluate.
+
+    Returns:
+        Expression (String Expression): expression containing the file path
+    """
+    return file._eval_expressions("file_path")
+
+
 def file_size(file: Expression) -> Expression:
     """Returns the size of the file in bytes.
 

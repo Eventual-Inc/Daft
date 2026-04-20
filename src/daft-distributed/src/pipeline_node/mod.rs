@@ -23,7 +23,8 @@ use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef}
 use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, stream::BoxStream};
-use materialize::materialize_all_pipeline_outputs;
+use materialize::{materialize_all_pipeline_outputs, task_outputs_from_pipeline};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     plan::{PlanExecutionContext, QueryIdx, TaskIDCounter},
@@ -54,6 +55,7 @@ pub(crate) mod metrics;
 mod monotonically_increasing_id;
 mod pivot;
 mod project;
+mod random_shuffle;
 mod sample;
 mod scan_source;
 mod shuffles;
@@ -112,10 +114,6 @@ impl MaterializedOutput {
     #[allow(dead_code)]
     pub fn ip_address(&self) -> &String {
         &self.ip_address
-    }
-
-    pub fn task_id(&self) -> TaskID {
-        self.task_id
     }
 
     pub fn into_inner(self) -> (Vec<PartitionRef>, WorkerId, String) {
@@ -200,6 +198,54 @@ impl MaterializedOutput {
             .collect::<Vec<_>>();
 
         (in_memory_scan, partition_refs)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct FlightShufflePartitionRef {
+    pub shuffle_id: u64,
+    pub partition_idx: usize,
+    pub server_address: String,
+    pub cache_id: u32,
+    pub num_rows: usize,
+    pub size_bytes: usize,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum ShufflePartitionRef {
+    Ray(PartitionRef),
+    Flight(FlightShufflePartitionRef),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ShuffleWriteOutput {
+    pub partitions: Vec<ShufflePartitionRef>,
+}
+
+impl ShuffleWriteOutput {
+    pub fn new(
+        partitions: Vec<ShufflePartitionRef>,
+        _worker_id: WorkerId,
+        _task_id: TaskID,
+    ) -> Self {
+        Self { partitions }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum TaskOutput {
+    Materialized(MaterializedOutput),
+    ShuffleWrite(ShuffleWriteOutput),
+}
+
+impl TaskOutput {
+    pub fn into_materialized(self) -> DaftResult<MaterializedOutput> {
+        match self {
+            Self::Materialized(materialized_output) => Ok(materialized_output),
+            Self::ShuffleWrite(_) => Err(common_error::DaftError::InternalError(
+                "Expected materialized task output but received shuffle write output".to_string(),
+            )),
+        }
     }
 }
 
@@ -431,6 +477,18 @@ impl TaskBuilderStream {
             .task_builder_stream
             .map(move |builder| builder.build(query_idx, &task_id_counter));
         materialize_all_pipeline_outputs(stream, scheduler_handle, None)
+    }
+
+    pub fn task_outputs(
+        self,
+        scheduler_handle: SchedulerHandle<SwordfishTask>,
+        query_idx: QueryIdx,
+        task_id_counter: TaskIDCounter,
+    ) -> impl Stream<Item = DaftResult<TaskOutput>> + Send + Unpin + 'static {
+        let stream = self
+            .task_builder_stream
+            .map(move |builder| builder.build(query_idx, &task_id_counter));
+        task_outputs_from_pipeline(stream, scheduler_handle, None)
     }
 
     pub fn pipeline_instruction<F>(self, node: Arc<dyn PipelineNodeImpl>, plan_builder: F) -> Self

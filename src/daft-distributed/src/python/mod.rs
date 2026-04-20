@@ -14,7 +14,7 @@ use dashboard::DashboardStatisticsSubscriber;
 use futures::StreamExt;
 use progress_bar::FlotillaProgressBar;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
-use ray::{RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
+use ray::{FlightShufflePartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
@@ -25,7 +25,7 @@ use crate::{
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
     python::ray::{RayPartitionRef, RayTaskResult},
-    statistics::{StatisticsManagerRef, StatisticsSubscriber},
+    statistics::{StatisticsManager, StatisticsManagerRef, StatisticsSubscriber},
 };
 
 #[pyclass(frozen)]
@@ -159,16 +159,33 @@ impl PyDistributedPhysicalPlan {
         ))
     }
 
-    fn repr_json(&self) -> PyResult<String> {
+    #[pyo3(signature = (psets=None))]
+    fn repr_json(&self, psets: Option<HashMap<String, Vec<RayPartitionRef>>>) -> PyResult<String> {
         let plan_config = PlanConfig::new(
             self.plan.idx(),
             self.plan.query_id(),
             self.plan.execution_config().clone(),
         );
+        let psets = match psets {
+            Some(psets) => Arc::new(
+                psets
+                    .into_iter()
+                    .map(|(k, v)| {
+                        (
+                            k,
+                            v.into_iter()
+                                .map(|v| Arc::new(v) as Arc<dyn Partition>)
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            ),
+            None => Arc::new(HashMap::new()),
+        };
         let pipeline_node = logical_plan_to_pipeline_node(
             plan_config,
             self.plan.logical_plan().clone(),
-            Arc::new(HashMap::new()), // No psets needed for repr_json
+            psets,
             &Meter::global_scope("daft.execution.distributed.repr_json"),
         )
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
@@ -222,8 +239,26 @@ impl PyDistributedPhysicalPlanRunner {
             )));
         }
 
-        let plan_result = self.runner.run_plan(&plan.plan, psets, subscribers)?;
-        let statistics_manager = plan_result.statistics_manager.clone();
+        let query_idx = plan.plan.idx();
+        let query_id = plan.plan.query_id();
+        let logical_plan = plan.plan.logical_plan().clone();
+
+        let meter = Meter::query_scope(query_id, "daft.execution.distributed");
+
+        let pipeline_node = logical_plan_to_pipeline_node(
+            (&plan.plan).into(),
+            logical_plan,
+            Arc::new(psets),
+            &meter,
+        )?;
+
+        let statistics_manager =
+            StatisticsManager::from_pipeline_node(&pipeline_node, subscribers, &meter)?;
+
+        let plan_result =
+            self.runner
+                .run_plan(query_idx, pipeline_node, statistics_manager.clone())?;
+
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(plan_result.into_stream())),
             statistics_manager,
@@ -237,6 +272,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDistributedPhysicalPlanRunner>()?;
     parent.add_class::<RaySwordfishTask>()?;
     parent.add_class::<RayPartitionRef>()?;
+    parent.add_class::<FlightShufflePartitionRef>()?;
     parent.add_class::<RaySwordfishWorker>()?;
     parent.add_class::<RayTaskResult>()?;
     Ok(())

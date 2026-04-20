@@ -3,7 +3,7 @@ mod azure_blob;
 mod counting_reader;
 mod google_cloud;
 #[cfg(feature = "python")]
-mod gravitino;
+pub mod gravitino;
 mod http;
 mod huggingface;
 mod local;
@@ -27,7 +27,7 @@ use common_file_formats::FileFormat;
 pub use counting_reader::CountingReader;
 use google_cloud::GCSSource;
 #[cfg(feature = "python")]
-use gravitino::GravitinoSource;
+pub use gravitino::GravitinoSource;
 use huggingface::HFSource;
 use opendal_source::OpenDALSource;
 use tos::TosSource;
@@ -381,8 +381,28 @@ impl IOClient {
             });
         }
 
-        let get_result = source
-            .get(path.as_ref(), range.clone(), io_stats.clone())
+        let path: Arc<str> = Arc::from(path.as_ref());
+        let get_result = crate::retry::ExponentialBackoff::default()
+            .retry(|| {
+                let source = source.clone();
+                let path = path.clone();
+                let range = range.clone();
+                let io_stats = io_stats.clone();
+                async move {
+                    source
+                        .get(&path, range, io_stats)
+                        .await
+                        .map_err(|e| match &e {
+                            Error::MiscTransient { .. }
+                            | Error::SocketError { .. }
+                            | Error::ConnectTimeout { .. } => {
+                                log::warn!("Transient error during GET, will retry: {}", &e);
+                                crate::retry::RetryError::Transient(e)
+                            }
+                            _ => crate::retry::RetryError::Permanent(e),
+                        })
+                }
+            })
             .await?;
         Ok(get_result.with_retry(StreamingRetryParams::new(source, input, range, io_stats)))
     }

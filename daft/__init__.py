@@ -62,8 +62,12 @@ from daft.catalog import (
     Table,
 )
 from daft.context import (
+    get_context,
+    attach_subscriber,
+    detach_subscriber,
     set_execution_config,
     set_planning_config,
+    with_subscriber,
     execution_config_ctx,
     planning_config_ctx,
 )
@@ -75,7 +79,7 @@ from daft.convert import (
     from_pylist,
     from_ray_dataset,
 )
-from daft.daft import ImageFormat, ImageMode, ImageProperty, ResourceRequest
+from daft.daft import ImageFormat, ImageMode, UnionMode, ImageProperty, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit, MediaType
@@ -128,11 +132,13 @@ from daft.udf import udf, func, cls, method, metrics
 from daft.io._range import _range
 from daft.io import (
     IOConfig,
+    from_files,
     from_glob_path,
     read_csv,
     read_deltalake,
     read_hudi,
     read_iceberg,
+    read_paimon,
     read_json,
     read_kafka,
     read_parquet,
@@ -188,12 +194,14 @@ __all__ = [
     "Session",
     "Table",
     "TimeUnit",
+    "UnionMode",
     "VideoFile",
     "Window",
     "attach",
     "attach_catalog",
     "attach_function",
     "attach_provider",
+    "attach_subscriber",
     "attach_table",
     "cls",
     "col",
@@ -212,6 +220,7 @@ __all__ = [
     "detach_catalog",
     "detach_function",
     "detach_provider",
+    "detach_subscriber",
     "detach_table",
     "drop_namespace",
     "drop_table",
@@ -219,6 +228,7 @@ __all__ = [
     "execution_config_ctx",
     "from_arrow",
     "from_dask_dataframe",
+    "from_files",
     "from_glob_path",
     "from_pandas",
     "from_pydict",
@@ -227,6 +237,7 @@ __all__ = [
     "func",
     "functions",
     "get_catalog",
+    "get_context",
     "get_function",
     "get_or_create_runner",
     "get_or_infer_runner_type",
@@ -255,6 +266,7 @@ __all__ = [
     "read_kafka",
     "read_lance",
     "read_mcap",
+    "read_paimon",
     "read_parquet",
     "read_sql",
     "read_table",
@@ -277,5 +289,6 @@ __all__ = [
     "sql",
     "sql_expr",
     "udf",
+    "with_subscriber",
     "write_table",
 ]

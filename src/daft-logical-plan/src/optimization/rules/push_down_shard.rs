@@ -55,6 +55,7 @@ impl PushDownShard {
                     | LogicalPlan::Pivot(_)
                     | LogicalPlan::Sink(_)
                     | LogicalPlan::Sample(_)
+                    | LogicalPlan::Shuffle(_)
                     | LogicalPlan::MonotonicallyIncreasingId(_)
                     | LogicalPlan::Window(_)
                     | LogicalPlan::TopN(_)
@@ -108,7 +109,7 @@ impl PushDownShard {
                     LogicalPlan::Shard(_) => Err(DaftError::ValueError(
                         "Shards cannot be folded together".to_string(),
                     )),
-                    LogicalPlan::Join(_) => Err(DaftError::ValueError(
+                    LogicalPlan::Join(_) | LogicalPlan::AsofJoin(_) => Err(DaftError::ValueError(
                         "Shard cannot exist above join".to_string(),
                     )),
                     LogicalPlan::Intersect(_)

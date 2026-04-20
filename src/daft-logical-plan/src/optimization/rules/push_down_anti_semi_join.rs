@@ -9,7 +9,7 @@ use daft_schema::field::Field;
 use super::OptimizerRule;
 use crate::{
     LogicalPlan, LogicalPlanRef,
-    ops::{Distinct, Filter, Join, Project, Sort, join::JoinPredicate},
+    ops::{Distinct, Filter, Join, Project, Shuffle, Sort, join::JoinPredicate},
 };
 
 /// Optimizer rule to push anti and semi joins down a plan tree.
@@ -113,6 +113,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                 on,
                 join_type,
                 join_strategy,
+                key_filtering_config,
                 ..
             }) = node.as_ref()
                 && matches!(join_type, JoinType::Anti | JoinType::Semi)
@@ -201,6 +202,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                                 *join_type,
                                 *join_strategy,
                             )?
+                            .with_key_filtering_config(key_filtering_config.clone())
                             .into();
 
                             return Ok(Transformed::yes(Arc::new(
@@ -248,6 +250,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                                     *join_type,
                                     *join_strategy,
                                 )?
+                                .with_key_filtering_config(key_filtering_config.clone())
                                 .into();
 
                                 return Ok(Transformed::yes(Arc::new(
@@ -263,6 +266,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                                     *join_type,
                                     *join_strategy,
                                 )?
+                                .with_key_filtering_config(key_filtering_config.clone())
                                 .into();
 
                                 return Ok(Transformed::yes(Arc::new(
@@ -284,6 +288,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                     // Anti/semi join can be trivially pushed down these ops
                     LogicalPlan::Filter(Filter { input, .. })
                     | LogicalPlan::Sort(Sort { input, .. })
+                    | LogicalPlan::Shuffle(Shuffle { input, .. })
                     | LogicalPlan::Distinct(Distinct { input, .. }) => {
                         let new_child = Join::try_new(
                             input.clone(),
@@ -292,6 +297,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                             *join_type,
                             *join_strategy,
                         )?
+                        .with_key_filtering_config(key_filtering_config.clone())
                         .into();
 
                         return Ok(Transformed::yes(Arc::new(
@@ -319,6 +325,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                     | LogicalPlan::IntoPartitions(_)
                     | LogicalPlan::IntoBatches(_)
                     | LogicalPlan::Concat(_)
+                    | LogicalPlan::AsofJoin(..)
                     | LogicalPlan::VLLMProject(..) => {}
                 }
             }
