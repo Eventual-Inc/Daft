@@ -1,6 +1,7 @@
 pub use crate::{
     dtype::DataType,
     field::{Field, FieldID, FieldRef},
+    geospatial_mode::{CoordType, Crs, CrsType, Dimension, Edges, GeospatialMode, Metadata},
     image_format::ImageFormat,
     image_mode::ImageMode,
     image_property::ImageProperty,

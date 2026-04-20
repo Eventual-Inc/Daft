@@ -23,8 +23,10 @@ use crate::{
         IntervalArray, NullArray, NumericNative, Utf8Array,
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, GeometryArray,
+            GeometryCollectionArray, ImageArray, LineStringArray, MapArray, MultiLineStringArray,
+            MultiPointArray, MultiPolygonArray, PointArray, PolygonArray, RectArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray, WkbArray, WktArray,
         },
     },
     file::DaftMediaType,
@@ -660,6 +662,72 @@ impl FixedShapeSparseTensorArray {
 impl FixedShapeTensorArray {
     pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for FixedShapeTensorArray")
+    }
+}
+
+impl WktArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for WKTArray")
+    }
+}
+
+impl WkbArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for WKBArray")
+    }
+}
+
+impl PointArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for PointArray")
+    }
+}
+
+impl LineStringArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for LineStringArray")
+    }
+}
+
+impl PolygonArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for PolygonArray")
+    }
+}
+
+impl MultiPointArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for MultiPointArray")
+    }
+}
+
+impl MultiLineStringArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for MultiLineStringArray")
+    }
+}
+
+impl MultiPolygonArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for MultiPolygonArray")
+    }
+}
+
+impl GeometryCollectionArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for GeometryCollectionArray")
+    }
+}
+
+impl GeometryArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for GeometryArray")
+    }
+}
+
+impl RectArray {
+    pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
+        todo!("impl sort for RectArray")
     }
 }
 

@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
     import jaxtyping
 
+    from daft.geospatial_mode import GeospatialMode
+
 
 class MediaType:
     _media_type: PyMediaType
@@ -957,6 +959,116 @@ class DataType:
         if isinstance(mode, str):
             mode = UnionMode.from_mode_string(mode)
         return cls._from_pydatatype(PyDataType.union({name: dt._dtype for name, dt in fields.items()}, type_ids, mode))
+
+    @datatype_constructor
+    @classmethod
+    def wkt(cls, mode: GeospatialMode | None = None) -> DataType:
+        """Create a WKT (Well-Known Text) geospatial DataType.
+
+        Args:
+            mode: Optional geospatial mode specifying dimension and coordinate type.
+        """
+        return cls._from_pydatatype(PyDataType.wkt(mode._inner if mode is not None else None))
+
+    @datatype_constructor
+    @classmethod
+    def wkb(cls, mode: GeospatialMode | None = None) -> DataType:
+        """Create a WKB (Well-Known Binary) geospatial DataType.
+
+        Args:
+            mode: Optional geospatial mode specifying dimension and coordinate type.
+        """
+        return cls._from_pydatatype(PyDataType.wkb(mode._inner if mode is not None else None))
+
+    @datatype_constructor
+    @classmethod
+    def point(cls, mode: GeospatialMode | None = None) -> DataType:
+        """Create a Point geospatial DataType.
+
+        Args:
+            mode: Optional geospatial mode specifying dimension and coordinate type.
+        """
+        return cls._from_pydatatype(PyDataType.point(mode._inner if mode is not None else None))
+
+    @datatype_constructor
+    @classmethod
+    def linestring(cls, mode: GeospatialMode | None = None) -> DataType:
+        """Create a LineString geospatial DataType.
+
+        Args:
+            mode: Optional geospatial mode specifying dimension and coordinate type.
+        """
+        return cls._from_pydatatype(PyDataType.linestring(mode._inner if mode is not None else None))
+
+    @datatype_constructor
+    @classmethod
+    def polygon(cls, mode: GeospatialMode | None = None) -> DataType:
+        """Create a Polygon geospatial DataType.
+
+        Args:
+            mode: Optional geospatial mode specifying dimension and coordinate type.
+        """
+        return cls._from_pydatatype(PyDataType.polygon(mode._inner if mode is not None else None))
+
+    @datatype_constructor
+    @classmethod
+    def multipoint(cls, mode: GeospatialMode | None = None) -> DataType:
+        """Create a MultiPoint geospatial DataType.
+
+        Args:
+            mode: Optional geospatial mode specifying dimension and coordinate type.
+        """
+        return cls._from_pydatatype(PyDataType.multipoint(mode._inner if mode is not None else None))
+
+    @datatype_constructor
+    @classmethod
+    def multilinestring(cls, mode: GeospatialMode | None = None) -> DataType:
+        """Create a MultiLineString geospatial DataType.
+
+        Args:
+            mode: Optional geospatial mode specifying dimension and coordinate type.
+        """
+        return cls._from_pydatatype(PyDataType.multilinestring(mode._inner if mode is not None else None))
+
+    @datatype_constructor
+    @classmethod
+    def multipolygon(cls, mode: GeospatialMode | None = None) -> DataType:
+        """Create a MultiPolygon geospatial DataType.
+
+        Args:
+            mode: Optional geospatial mode specifying dimension and coordinate type.
+        """
+        return cls._from_pydatatype(PyDataType.multipolygon(mode._inner if mode is not None else None))
+
+    @datatype_constructor
+    @classmethod
+    def geometry_collection(cls, mode: GeospatialMode | None = None) -> DataType:
+        """Create a GeometryCollection geospatial DataType.
+
+        Args:
+            mode: Optional geospatial mode specifying dimension and coordinate type.
+        """
+        return cls._from_pydatatype(PyDataType.geometry_collection(mode._inner if mode is not None else None))
+
+    @datatype_constructor
+    @classmethod
+    def geometry(cls, mode: GeospatialMode | None = None) -> DataType:
+        """Create a Geometry geospatial DataType representing any geometry type.
+
+        Args:
+            mode: Optional geospatial mode specifying dimension and coordinate type.
+        """
+        return cls._from_pydatatype(PyDataType.geometry(mode._inner if mode is not None else None))
+
+    @datatype_constructor
+    @classmethod
+    def rect(cls, mode: GeospatialMode | None = None) -> DataType:
+        """Create a Rect (bounding box) geospatial DataType.
+
+        Args:
+            mode: Optional geospatial mode specifying dimension and coordinate type.
+        """
+        return cls._from_pydatatype(PyDataType.rect(mode._inner if mode is not None else None))
 
     def is_null(self) -> builtins.bool:
         """Check if this is a null type.

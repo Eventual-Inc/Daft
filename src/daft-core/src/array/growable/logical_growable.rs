@@ -91,6 +91,17 @@ impl_logical_growable!(
 impl_logical_growable!(LogicalImageGrowable, ImageType);
 impl_logical_growable!(LogicalTensorGrowable, TensorType);
 impl_logical_growable!(LogicalMapGrowable, MapType);
+impl_logical_growable!(LogicalWKTGrowable, WKTType);
+impl_logical_growable!(LogicalWKBGrowable, WKBType);
+impl_logical_growable!(LogicalPointGrowable, PointType);
+impl_logical_growable!(LogicalLineStringGrowable, LineStringType);
+impl_logical_growable!(LogicalPolygonGrowable, PolygonType);
+impl_logical_growable!(LogicalMultiPointGrowable, MultiPointType);
+impl_logical_growable!(LogicalMultiLineStringGrowable, MultiLineStringType);
+impl_logical_growable!(LogicalMultiPolygonGrowable, MultiPolygonType);
+impl_logical_growable!(LogicalGeometryCollectionGrowable, GeometryCollectionType);
+impl_logical_growable!(LogicalGeometryGrowable, GeometryType);
+impl_logical_growable!(LogicalRectGrowable, RectType);
 pub type LogicalFileGrowable<'a, T> = LogicalGrowable<FileType<T>, <<<FileType<T> as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType as GrowableArray>::GrowableType<'a>>;
 
 impl<'a, T> LogicalFileGrowable<'a, T>

@@ -80,6 +80,7 @@ from daft.convert import (
     from_ray_dataset,
 )
 from daft.daft import ImageFormat, ImageMode, UnionMode, ImageProperty, ResourceRequest
+from daft.geospatial_mode import GeospatialMode
 from daft.dataframe import DataFrame
 from daft.schema import Schema
 from daft.datatype import DataType, TimeUnit, MediaType
@@ -182,6 +183,7 @@ __all__ = [
     "DataType",
     "Expression",
     "File",
+    "GeospatialMode",
     "IOConfig",
     "Identifier",
     "ImageFormat",

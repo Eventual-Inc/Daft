@@ -8,7 +8,11 @@ use common_error::{DaftError, DaftResult};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    field::Field, image_mode::ImageMode, media_type::MediaType, time_unit::TimeUnit,
+    field::Field,
+    geospatial_mode::{Dimension, GeospatialMode},
+    image_mode::ImageMode,
+    media_type::MediaType,
+    time_unit::TimeUnit,
     union_mode::UnionMode,
 };
 pub type DaftDataType = DataType;
@@ -146,6 +150,38 @@ pub enum DataType {
     File(MediaType),
 
     Union(Vec<Field>, Vec<i8>, UnionMode),
+
+    // A logical type for geometries in WKT format
+    WKT(GeospatialMode),
+
+    // A logical type for geometries in WKB format
+    WKB(GeospatialMode),
+
+    // Point geometry
+    Point(GeospatialMode),
+
+    // Multi-point geometry
+    MultiPoint(GeospatialMode),
+
+    // LineString geometry
+    LineString(GeospatialMode),
+
+    // Multi-linestring geometry
+    MultiLineString(GeospatialMode),
+
+    // Polygon geometry
+    Polygon(GeospatialMode),
+
+    // Multi-polygon geometry
+    MultiPolygon(GeospatialMode),
+
+    GeometryCollection(GeospatialMode),
+
+    // A union type that supports all geometry types in all dimensions
+    Geometry(GeospatialMode),
+
+    // A bounding rectangle type
+    Rect(GeospatialMode),
 }
 
 impl Display for DataType {
@@ -239,6 +275,17 @@ impl Display for DataType {
                     contents, ids, mode
                 )
             }
+            Self::WKT(mode) => write!(f, "WKT[{mode}]"),
+            Self::WKB(mode) => write!(f, "WKB[{mode}]"),
+            Self::Point(mode) => write!(f, "Point[{mode}]"),
+            Self::LineString(mode) => write!(f, "LineString[{mode}]"),
+            Self::Polygon(mode) => write!(f, "Polygon[{mode}]"),
+            Self::MultiPoint(mode) => write!(f, "MultiPoint[{mode}]"),
+            Self::MultiLineString(mode) => write!(f, "MultiLineString[{mode}]"),
+            Self::MultiPolygon(mode) => write!(f, "MultiPolygon[{mode}]"),
+            Self::GeometryCollection(mode) => write!(f, "GeometryCollection[{mode}]"),
+            Self::Geometry(mode) => write!(f, "Geometry[{mode}]"),
+            Self::Rect(mode) => write!(f, "Rect[{mode}]"),
         }
     }
 }
@@ -260,6 +307,58 @@ impl DataTypePayload {
     }
 }
 pub const DAFT_SUPER_EXTENSION_NAME: &str = "daft.super_extension";
+
+fn generate_point_coordinate(dim: &Dimension) -> DataType {
+    use DataType::*;
+    match dim {
+        Dimension::XY => Struct(vec![Field::new("x", Float64), Field::new("y", Float64)]),
+        Dimension::XYZ => Struct(vec![
+            Field::new("x", Float64),
+            Field::new("y", Float64),
+            Field::new("z", Float64),
+        ]),
+        Dimension::XYM => Struct(vec![
+            Field::new("x", Float64),
+            Field::new("y", Float64),
+            Field::new("m", Float64),
+        ]),
+        Dimension::XYZM => Struct(vec![
+            Field::new("x", Float64),
+            Field::new("y", Float64),
+            Field::new("z", Float64),
+            Field::new("m", Float64),
+        ]),
+    }
+}
+
+fn generate_geometry_collection(dim: &Dimension) -> DataType {
+    use DataType::*;
+    let (type_ids, suffix): (Vec<i8>, &str) = match dim {
+        Dimension::XY => (vec![1, 2, 3, 4, 5, 6], ""),
+        Dimension::XYZ => (vec![11, 12, 13, 14, 15, 16], " Z"),
+        Dimension::XYM => (vec![21, 22, 23, 24, 25, 26], " M"),
+        Dimension::XYZM => (vec![31, 32, 33, 34, 35, 36], " ZM"),
+    };
+    let pt = generate_point_coordinate(dim);
+    let fields = vec![
+        Field::new(format!("Point{suffix}"), pt.clone()),
+        Field::new(format!("LineString{suffix}"), List(Box::new(pt.clone()))),
+        Field::new(
+            format!("Polygon{suffix}"),
+            List(Box::new(List(Box::new(pt.clone())))),
+        ),
+        Field::new(format!("MultiPoint{suffix}"), List(Box::new(pt.clone()))),
+        Field::new(
+            format!("MultiLineString{suffix}"),
+            List(Box::new(List(Box::new(pt.clone())))),
+        ),
+        Field::new(
+            format!("MultiPolygon{suffix}"),
+            List(Box::new(List(Box::new(List(Box::new(pt)))))),
+        ),
+    ];
+    Union(fields, type_ids, UnionMode::Dense)
+}
 
 impl DataType {
     pub fn new_null() -> Self {
@@ -419,6 +518,108 @@ impl DataType {
                 Field::new("url", Utf8),
                 Field::new("io_config", Binary),
             ]),
+            WKT(_) => Utf8,
+            WKB(_) => Binary,
+            Point(mode) => generate_point_coordinate(&mode.dimension),
+            MultiPoint(mode) => {
+                let point = generate_point_coordinate(&mode.dimension);
+                List(Box::new(point))
+            }
+            LineString(mode) => {
+                let point = generate_point_coordinate(&mode.dimension);
+                List(Box::new(point))
+            }
+            MultiLineString(mode) => {
+                let point = generate_point_coordinate(&mode.dimension);
+                List(Box::new(List(Box::new(point))))
+            }
+            Polygon(mode) => {
+                let point = generate_point_coordinate(&mode.dimension);
+                List(Box::new(List(Box::new(point))))
+            }
+            MultiPolygon(mode) => {
+                let point = generate_point_coordinate(&mode.dimension);
+                List(Box::new(List(Box::new(List(Box::new(point))))))
+            }
+            GeometryCollection(mode) => {
+                let collection = generate_geometry_collection(&mode.dimension);
+                List(Box::new(collection))
+            }
+            Geometry(_) => {
+                let type_ids = vec![
+                    1, 2, 3, 4, 5, 6, 7, 11, 12, 13, 14, 15, 16, 17, 21, 22, 23, 24, 25, 26, 27,
+                    31, 32, 33, 34, 35, 36, 37,
+                ];
+                let mut fields = vec![];
+                for (dim, suffix) in [
+                    (Dimension::XY, ""),
+                    (Dimension::XYZ, " Z"),
+                    (Dimension::XYM, " M"),
+                    (Dimension::XYZM, " ZM"),
+                ] {
+                    let pt = generate_point_coordinate(&dim);
+                    fields.push(Field::new(format!("Point{suffix}"), pt.clone()));
+                    fields.push(Field::new(
+                        format!("LineString{suffix}"),
+                        List(Box::new(pt.clone())),
+                    ));
+                    fields.push(Field::new(
+                        format!("Polygon{suffix}"),
+                        List(Box::new(List(Box::new(pt.clone())))),
+                    ));
+                    fields.push(Field::new(
+                        format!("MultiPoint{suffix}"),
+                        List(Box::new(pt.clone())),
+                    ));
+                    fields.push(Field::new(
+                        format!("MultiLineString{suffix}"),
+                        List(Box::new(List(Box::new(pt.clone())))),
+                    ));
+                    fields.push(Field::new(
+                        format!("MultiPolygon{suffix}"),
+                        List(Box::new(List(Box::new(List(Box::new(pt)))))),
+                    ));
+                    fields.push(Field::new(
+                        format!("GeometryCollection{suffix}"),
+                        generate_geometry_collection(&dim),
+                    ));
+                }
+                Union(fields, type_ids, UnionMode::Dense)
+            }
+            Rect(mode) => match mode.dimension {
+                Dimension::XY => Struct(vec![
+                    Field::new("xmin", List(Box::new(Self::Float64))),
+                    Field::new("ymin", List(Box::new(Self::Float64))),
+                    Field::new("xmax", List(Box::new(Self::Float64))),
+                    Field::new("ymax", List(Box::new(Self::Float64))),
+                ]),
+                Dimension::XYZ => Struct(vec![
+                    Field::new("xmin", List(Box::new(Self::Float64))),
+                    Field::new("ymin", List(Box::new(Self::Float64))),
+                    Field::new("zmin", List(Box::new(Self::Float64))),
+                    Field::new("xmax", List(Box::new(Self::Float64))),
+                    Field::new("ymax", List(Box::new(Self::Float64))),
+                    Field::new("zmax", List(Box::new(Self::Float64))),
+                ]),
+                Dimension::XYM => Struct(vec![
+                    Field::new("xmin", List(Box::new(Self::Float64))),
+                    Field::new("ymin", List(Box::new(Self::Float64))),
+                    Field::new("mmin", List(Box::new(Self::Float64))),
+                    Field::new("xmax", List(Box::new(Self::Float64))),
+                    Field::new("ymax", List(Box::new(Self::Float64))),
+                    Field::new("mmax", List(Box::new(Self::Float64))),
+                ]),
+                Dimension::XYZM => Struct(vec![
+                    Field::new("xmin", List(Box::new(Self::Float64))),
+                    Field::new("ymin", List(Box::new(Self::Float64))),
+                    Field::new("zmin", List(Box::new(Self::Float64))),
+                    Field::new("mmin", List(Box::new(Self::Float64))),
+                    Field::new("xmax", List(Box::new(Self::Float64))),
+                    Field::new("ymax", List(Box::new(Self::Float64))),
+                    Field::new("zmax", List(Box::new(Self::Float64))),
+                    Field::new("mmax", List(Box::new(Self::Float64))),
+                ]),
+            },
             _ => {
                 assert!(self.is_physical());
                 self.clone()
@@ -846,6 +1047,17 @@ impl DataType {
                 | Self::FixedShapeSparseTensor(..)
                 | Self::Map { .. }
                 | Self::File(..)
+                | Self::WKT(..)
+                | Self::WKB(..)
+                | Self::Point(..)
+                | Self::LineString(..)
+                | Self::MultiPoint(..)
+                | Self::MultiLineString(..)
+                | Self::Polygon(..)
+                | Self::MultiPolygon(..)
+                | Self::GeometryCollection(..)
+                | Self::Geometry(..)
+                | Self::Rect(..)
         )
     }
 

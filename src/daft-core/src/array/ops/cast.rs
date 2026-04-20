@@ -28,8 +28,10 @@ use crate::{
         NullArray, TimeUnit, UInt64Array, Utf8Array,
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, GeometryArray,
+            GeometryCollectionArray, ImageArray, LineStringArray, MapArray, MultiLineStringArray,
+            MultiPointArray, MultiPolygonArray, PointArray, PolygonArray, RectArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray, WkbArray, WktArray,
         },
     },
     file::{DaftMediaType, MediaTypeAudio, MediaTypeUnknown, MediaTypeVideo},
@@ -1813,6 +1815,78 @@ impl UnionArray {
             "Union casting not implemented for dtype: {}",
             dtype
         )))
+    }
+}
+
+impl WktArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        unimplemented!("Wkt casting not implemented for dtype: {}", dtype)
+    }
+}
+
+impl WkbArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        unimplemented!("Wkb casting not implemented for dtype: {}", dtype)
+    }
+}
+
+impl PointArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        unimplemented!("Point casting not implemented for dtype: {}", dtype)
+    }
+}
+
+impl LineStringArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        unimplemented!("LineString casting not implemented for dtype: {}", dtype)
+    }
+}
+
+impl PolygonArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        unimplemented!("Polygon casting not implemented for dtype: {}", dtype)
+    }
+}
+
+impl MultiPointArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        unimplemented!("MultiPoint casting not implemented for dtype: {}", dtype)
+    }
+}
+
+impl MultiLineStringArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        unimplemented!(
+            "MultiLineString casting not implemented for dtype: {}",
+            dtype
+        )
+    }
+}
+
+impl MultiPolygonArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        unimplemented!("MultiPolygon casting not implemented for dtype: {}", dtype)
+    }
+}
+
+impl GeometryCollectionArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        unimplemented!(
+            "GeometryCollection casting not implemented for dtype: {}",
+            dtype
+        )
+    }
+}
+
+impl GeometryArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        unimplemented!("Geometry casting not implemented for dtype: {}", dtype)
+    }
+}
+
+impl RectArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        unimplemented!("Rect casting not implemented for dtype: {}", dtype)
     }
 }
 

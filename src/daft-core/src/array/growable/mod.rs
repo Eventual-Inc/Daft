@@ -220,6 +220,32 @@ impl_growable_array!(
 impl_growable_array!(ImageArray, logical_growable::LogicalImageGrowable<'a>);
 impl_growable_array!(TensorArray, logical_growable::LogicalTensorGrowable<'a>);
 impl_growable_array!(MapArray, map_growable::MapGrowable<'a>);
+impl_growable_array!(WktArray, logical_growable::LogicalWKTGrowable<'a>);
+impl_growable_array!(WkbArray, logical_growable::LogicalWKBGrowable<'a>);
+impl_growable_array!(PointArray, logical_growable::LogicalPointGrowable<'a>);
+impl_growable_array!(
+    LineStringArray,
+    logical_growable::LogicalLineStringGrowable<'a>
+);
+impl_growable_array!(PolygonArray, logical_growable::LogicalPolygonGrowable<'a>);
+impl_growable_array!(
+    MultiPointArray,
+    logical_growable::LogicalMultiPointGrowable<'a>
+);
+impl_growable_array!(
+    MultiLineStringArray,
+    logical_growable::LogicalMultiLineStringGrowable<'a>
+);
+impl_growable_array!(
+    MultiPolygonArray,
+    logical_growable::LogicalMultiPolygonGrowable<'a>
+);
+impl_growable_array!(
+    GeometryCollectionArray,
+    logical_growable::LogicalGeometryCollectionGrowable<'a>
+);
+impl_growable_array!(GeometryArray, logical_growable::LogicalGeometryGrowable<'a>);
+impl_growable_array!(RectArray, logical_growable::LogicalRectGrowable<'a>);
 impl<T> GrowableArray for FileArray<T>
 where
     T: DaftMediaType,

@@ -6,10 +6,12 @@ use common_error::DaftResult;
 use super::{
     DaftArrayType, DaftDataType, DataArray, DataType, DurationType, EmbeddingType,
     FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, FixedSizeListArray,
-    ImageType, MapType, SparseTensorType, TensorType, TimeType, TimestampType,
+    GeometryCollectionType, GeometryType, ImageType, LineStringType, MapType, MultiLineStringType,
+    MultiPointType, MultiPolygonType, PointType, PolygonType, RectType, SparseTensorType,
+    TensorType, TimeType, TimestampType, WKBType, WKTType,
 };
 use crate::{
-    array::{ListArray, StructArray},
+    array::{ListArray, StructArray, UnionArray},
     datatypes::{DaftLogicalType, DateType, Field},
 };
 
@@ -180,6 +182,70 @@ impl MapArray {
     }
 }
 
+/// Implementation for a LogicalArray that wraps a UnionArray
+impl<L: DaftLogicalType> LogicalArrayImpl<L, UnionArray> {
+    impl_logical_type!(UnionArray);
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let union_arrow_array = self.physical.to_arrow()?;
+        Ok(union_arrow_array)
+    }
+}
+
+impl LineStringArray {
+    impl_logical_type!(ListArray);
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let list_arrow_array = self.physical.to_arrow()?;
+        Ok(list_arrow_array)
+    }
+}
+
+impl PolygonArray {
+    impl_logical_type!(ListArray);
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let list_arrow_array = self.physical.to_arrow()?;
+        Ok(list_arrow_array)
+    }
+}
+
+impl MultiPointArray {
+    impl_logical_type!(ListArray);
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let list_arrow_array = self.physical.to_arrow()?;
+        Ok(list_arrow_array)
+    }
+}
+
+impl MultiLineStringArray {
+    impl_logical_type!(ListArray);
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let list_arrow_array = self.physical.to_arrow()?;
+        Ok(list_arrow_array)
+    }
+}
+
+impl MultiPolygonArray {
+    impl_logical_type!(ListArray);
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let list_arrow_array = self.physical.to_arrow()?;
+        Ok(list_arrow_array)
+    }
+}
+
+impl GeometryCollectionArray {
+    impl_logical_type!(ListArray);
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let list_arrow_array = self.physical.to_arrow()?;
+        Ok(list_arrow_array)
+    }
+}
+
 pub type LogicalArray<L> =
     LogicalArrayImpl<L, <<L as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType>;
 // pub type Decimal128Array = LogicalArray<Decimal128Type>;
@@ -194,8 +260,33 @@ pub type FixedShapeTensorArray = LogicalArray<FixedShapeTensorType>;
 pub type SparseTensorArray = LogicalArray<SparseTensorType>;
 pub type FixedShapeSparseTensorArray = LogicalArray<FixedShapeSparseTensorType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
+pub type WktArray = LogicalArray<WKTType>;
+pub type WkbArray = LogicalArray<WKBType>;
+pub type PointArray = LogicalArray<PointType>;
+pub type LineStringArray = LogicalArray<LineStringType>;
+pub type PolygonArray = LogicalArray<PolygonType>;
+pub type MultiPointArray = LogicalArray<MultiPointType>;
+pub type MultiLineStringArray = LogicalArray<MultiLineStringType>;
+pub type MultiPolygonArray = LogicalArray<MultiPolygonType>;
+pub type GeometryCollectionArray = LogicalArray<GeometryCollectionType>;
+pub type GeometryArray = LogicalArray<GeometryType>;
+pub type RectArray = LogicalArray<RectType>;
 
 pub trait DaftImageryType: DaftLogicalType {}
 
 impl DaftImageryType for ImageType {}
 impl DaftImageryType for FixedShapeImageType {}
+
+pub trait DaftGeometryType: DaftLogicalType {}
+
+impl DaftGeometryType for WKTType {}
+impl DaftGeometryType for WKBType {}
+impl DaftGeometryType for PointType {}
+impl DaftGeometryType for LineStringType {}
+impl DaftGeometryType for PolygonType {}
+impl DaftGeometryType for MultiPointType {}
+impl DaftGeometryType for MultiLineStringType {}
+impl DaftGeometryType for MultiPolygonType {}
+impl DaftGeometryType for GeometryCollectionType {}
+impl DaftGeometryType for GeometryType {}
+impl DaftGeometryType for RectType {}

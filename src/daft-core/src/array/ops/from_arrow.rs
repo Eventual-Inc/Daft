@@ -400,6 +400,39 @@ impl_logical_from_arrow!(FixedShapeTensorType);
 impl_logical_from_arrow!(SparseTensorType);
 impl_logical_from_arrow!(FixedShapeSparseTensorType);
 impl_logical_from_arrow!(FixedShapeImageType);
+impl_logical_from_arrow!(WKTType);
+impl_logical_from_arrow!(WKBType);
+impl_logical_from_arrow!(PointType);
+impl_logical_from_arrow!(LineStringType);
+impl_logical_from_arrow!(PolygonType);
+impl_logical_from_arrow!(MultiPointType);
+impl_logical_from_arrow!(MultiLineStringType);
+impl_logical_from_arrow!(MultiPolygonType);
+
+impl FromArrow for LogicalArray<GeometryCollectionType> {
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        let field: FieldRef = field.into();
+        let target_convert = field.to_physical();
+        // Skip arrow::compute::cast — it doesn't support Union child types.
+        // ListArray::from_arrow handles the Union child recursively via Series::from_arrow.
+        let physical = ListArray::from_arrow(Arc::new(target_convert), arrow_arr)?;
+        Ok(Self::new(field, physical))
+    }
+}
+
+impl FromArrow for LogicalArray<GeometryType> {
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        let field: FieldRef = field.into();
+        let target_convert = field.to_physical();
+        // Skip arrow::compute::cast — it doesn't support Union child types.
+        // UnionArray::from_arrow handles the Union child recursively via Series::from_arrow.
+        let physical = UnionArray::from_arrow(Arc::new(target_convert), arrow_arr)?;
+        Ok(Self::new(field, physical))
+    }
+}
+
+impl_logical_from_arrow!(RectType);
+
 impl<T> FromArrow for LogicalArray<FileType<T>>
 where
     T: DaftMediaType,

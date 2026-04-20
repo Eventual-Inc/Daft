@@ -98,7 +98,7 @@ impl ColumnRangeStatistics {
 
             // UNSUPPORTED TYPES:
             // Types that don't support comparisons and can't be used as ColumnRangeStatistics
-            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Uuid | DataType::Image(..) | DataType::FixedShapeImage(..) | DataType::Tensor(..) | DataType::SparseTensor(..) | DataType::FixedShapeSparseTensor(..) | DataType::FixedShapeTensor(..) | DataType::Struct(..) | DataType::Map { .. } | DataType::Extension(..) | DataType::Embedding(..) | DataType::Unknown | DataType::File(_) | DataType::Union(..) => false,
+            DataType::List(..) | DataType::FixedSizeList(..) | DataType::Uuid | DataType::Image(..) | DataType::FixedShapeImage(..) | DataType::Tensor(..) | DataType::SparseTensor(..) | DataType::FixedShapeSparseTensor(..) | DataType::FixedShapeTensor(..) | DataType::Struct(..) | DataType::Map { .. } | DataType::Extension(..) | DataType::Embedding(..) | DataType::Unknown | DataType::File(_) | DataType::Union(..) | DataType::WKT(_) | DataType::WKB(_) | DataType::Point(_) | DataType::LineString(_) | DataType::Polygon(_) | DataType::MultiPoint(_) | DataType::MultiLineString(_) | DataType::MultiPolygon(_) | DataType::GeometryCollection(_) | DataType::Geometry(_) | DataType::Rect(_) => false,
             #[cfg(feature = "python")]
             DataType::Python => false,
         }

@@ -19,6 +19,7 @@ pub use agg_ops::{
 pub use daft_schema::dtype::DataType;
 pub use daft_schema::{
     field::{Field, FieldID, FieldRef},
+    geospatial_mode::{CoordType, Crs, CrsType, Dimension, Edges, GeospatialMode, Metadata},
     image_format::ImageFormat,
     image_mode::ImageMode,
     time_unit::{TimeUnit, format_string_has_offset, infer_timeunit_from_format_string},
@@ -257,6 +258,17 @@ impl_daft_logical_fixed_size_list_datatype!(EmbeddingType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeImageType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeTensorType, Unknown);
 impl_daft_logical_list_datatype!(MapType, Unknown);
+impl_daft_logical_data_array_datatype!(WKTType, Unknown, Utf8Type);
+impl_daft_logical_data_array_datatype!(WKBType, Unknown, BinaryType);
+impl_daft_logical_data_array_datatype!(GeometryType, Unknown, UnionType);
+impl_daft_logical_data_array_datatype!(RectType, Unknown, StructType);
+impl_daft_logical_data_array_datatype!(PointType, Unknown, StructType);
+impl_daft_logical_list_datatype!(LineStringType, Unknown);
+impl_daft_logical_list_datatype!(PolygonType, Unknown);
+impl_daft_logical_list_datatype!(MultiPointType, Unknown);
+impl_daft_logical_list_datatype!(MultiLineStringType, Unknown);
+impl_daft_logical_list_datatype!(MultiPolygonType, Unknown);
+impl_daft_logical_list_datatype!(GeometryCollectionType, Unknown);
 
 impl<T> DaftDataType for FileType<T>
 where

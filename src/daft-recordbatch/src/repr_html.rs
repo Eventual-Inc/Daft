@@ -158,5 +158,49 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
             let arr = s.union().unwrap();
             arr.html_value(idx, truncate)
         }
+        DataType::WKT(_) => {
+            let arr = s.wkt().unwrap();
+            arr.html_value(idx, truncate)
+        }
+        DataType::WKB(_) => {
+            let arr = s.wkb().unwrap();
+            arr.html_value(idx, truncate)
+        }
+        DataType::Point(_) => {
+            let arr = s.point().unwrap();
+            arr.html_value(idx, truncate)
+        }
+        DataType::LineString(_) => {
+            let arr = s.line_string().unwrap();
+            arr.html_value(idx, truncate)
+        }
+        DataType::Polygon(_) => {
+            let arr = s.polygon().unwrap();
+            arr.html_value(idx, truncate)
+        }
+        DataType::MultiPoint(_) => {
+            let arr = s.multi_point().unwrap();
+            arr.html_value(idx, truncate)
+        }
+        DataType::MultiLineString(_) => {
+            let arr = s.multi_line_string().unwrap();
+            arr.html_value(idx, truncate)
+        }
+        DataType::MultiPolygon(_) => {
+            let arr = s.multi_polygon().unwrap();
+            arr.html_value(idx, truncate)
+        }
+        DataType::GeometryCollection(_) => {
+            let arr = s.geometry_collection().unwrap();
+            arr.html_value(idx, truncate)
+        }
+        DataType::Geometry(_) => {
+            let arr = s.geometry().unwrap();
+            arr.html_value(idx, truncate)
+        }
+        DataType::Rect(_) => {
+            let arr = s.rect().unwrap();
+            arr.html_value(idx, truncate)
+        }
     }
 }

@@ -21,6 +21,9 @@ pub use super::{
 };
 pub use crate::datatypes::{
     DateType, Decimal128Type, DurationType, EmbeddingType, FixedShapeImageType,
-    FixedShapeSparseTensorType, FixedShapeTensorType, ImageType, IntervalType, MapType,
-    SparseTensorType, TensorType, TimeType, TimestampType, UuidType, logical::DaftImageryType,
+    FixedShapeSparseTensorType, FixedShapeTensorType, GeometryCollectionType, GeometryType,
+    ImageType, IntervalType, LineStringType, MapType, MultiLineStringType, MultiPointType,
+    MultiPolygonType, PointType, PolygonType, RectType, SparseTensorType, TensorType, TimeType,
+    TimestampType, UuidType, WKBType, WKTType,
+    logical::{DaftGeometryType, DaftImageryType},
 };

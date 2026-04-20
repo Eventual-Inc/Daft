@@ -11,8 +11,10 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, GeometryArray,
+            GeometryCollectionArray, ImageArray, LineStringArray, MapArray, MultiLineStringArray,
+            MultiPointArray, MultiPolygonArray, PointArray, PolygonArray, RectArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray, WkbArray, WktArray,
         },
         *,
     },
@@ -366,6 +368,104 @@ impl<'d> serde::Deserialize<'d> for Series {
                         Ok(PythonArray::from_iter_pickled(&field.name, pickled)
                             .unwrap()
                             .into_series())
+                    }
+                    DataType::WKT(..) => {
+                        type PType =
+                            <<WKTType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(
+                            WktArray::new(field, physical.downcast::<PType>().unwrap().clone())
+                                .into_series(),
+                        )
+                    }
+                    DataType::WKB(..) => {
+                        type PType =
+                            <<WKBType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(
+                            WkbArray::new(field, physical.downcast::<PType>().unwrap().clone())
+                                .into_series(),
+                        )
+                    }
+                    DataType::Point(..) => {
+                        type PType = <<PointType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(
+                            PointArray::new(field, physical.downcast::<PType>().unwrap().clone())
+                                .into_series(),
+                        )
+                    }
+                    DataType::LineString(..) => {
+                        type PType = <<LineStringType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(LineStringArray::new(
+                            field,
+                            physical.downcast::<PType>().unwrap().clone(),
+                        )
+                        .into_series())
+                    }
+                    DataType::Polygon(..) => {
+                        type PType = <<PolygonType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(
+                            PolygonArray::new(field, physical.downcast::<PType>().unwrap().clone())
+                                .into_series(),
+                        )
+                    }
+                    DataType::MultiPoint(..) => {
+                        type PType = <<MultiPointType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(MultiPointArray::new(
+                            field,
+                            physical.downcast::<PType>().unwrap().clone(),
+                        )
+                        .into_series())
+                    }
+                    DataType::MultiLineString(..) => {
+                        type PType = <<MultiLineStringType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(MultiLineStringArray::new(
+                            field,
+                            physical.downcast::<PType>().unwrap().clone(),
+                        )
+                        .into_series())
+                    }
+                    DataType::MultiPolygon(..) => {
+                        type PType = <<MultiPolygonType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(MultiPolygonArray::new(
+                            field,
+                            physical.downcast::<PType>().unwrap().clone(),
+                        )
+                        .into_series())
+                    }
+                    DataType::GeometryCollection(..) => {
+                        type PType = <<GeometryCollectionType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(GeometryCollectionArray::new(
+                            field,
+                            physical.downcast::<PType>().unwrap().clone(),
+                        )
+                        .into_series())
+                    }
+                    DataType::Geometry(..) => {
+                        type PType = <<GeometryType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(
+                            GeometryArray::new(
+                                field,
+                                physical.downcast::<PType>().unwrap().clone(),
+                            )
+                            .into_series(),
+                        )
+                    }
+                    DataType::Rect(..) => {
+                        type PType = <<RectType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
+                        let physical = map.next_value::<Series>()?;
+                        Ok(
+                            RectArray::new(field, physical.downcast::<PType>().unwrap().clone())
+                                .into_series(),
+                        )
                     }
                     DataType::Unknown => {
                         panic!("Unable to deserialize Unknown DataType");

@@ -1,5 +1,6 @@
 pub mod dtype;
 pub mod field;
+pub mod geospatial_mode;
 pub mod image_format;
 pub mod image_mode;
 pub mod image_property;
