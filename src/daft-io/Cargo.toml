@@ -30,7 +30,8 @@ opendal = {workspace = true, features = [
   "services-obs",  # Huawei Cloud Object Storage
   "services-memory",  # In-memory backend (used for testing)
   "services-fs",  # Local filesystem (used for integration testing)
-  "services-github"  # GitHub repository contents
+  "services-github",  # GitHub repository contents
+  "services-huggingface"  # Hugging Face repositories and storage buckets
 ]}
 pyo3 = {workspace = true, optional = true}
 rand = {workspace = true}

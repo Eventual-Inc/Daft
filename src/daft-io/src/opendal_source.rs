@@ -3,7 +3,7 @@ use std::{any::Any, collections::BTreeMap, sync::Arc};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
-use opendal::{EntryMode, Operator, Scheme};
+use opendal::{EntryMode, Operator};
 use snafu::ResultExt;
 
 use crate::{
@@ -23,40 +23,28 @@ pub(crate) struct OpenDALSource {
 impl OpenDALSource {
     /// List the OpenDAL service schemes that are compiled into this build.
     fn available_schemes() -> &'static [&'static str] {
-        &["oss", "cos", "obs", "memory", "fs", "github"]
+        &["oss", "cos", "obs", "memory", "fs", "github", "huggingface"]
     }
 
     pub async fn get_client(
         scheme: &str,
         config: &BTreeMap<String, String>,
     ) -> super::Result<Arc<dyn ObjectSource>> {
-        let parsed_scheme: Scheme =
-            scheme
-                .parse()
-                .map_err(|e: opendal::Error| super::Error::UnableToCreateClient {
-                    store: super::SourceType::OpenDAL {
-                        scheme: scheme.to_string(),
-                    },
-                    source: format!(
-                        "Unknown scheme '{}'. Available OpenDAL schemes: [{}]. Error: {}",
-                        scheme,
-                        Self::available_schemes().join(", "),
-                        e
-                    )
-                    .into(),
-                })?;
+        opendal::init_default_registry();
 
-        let operator =
-            Operator::via_iter(parsed_scheme, config.clone()).map_err(|e: opendal::Error| {
+        let operator = Operator::via_iter(scheme, config.clone()).map_err(|e: opendal::Error| {
                 super::Error::UnableToCreateClient {
                     store: super::SourceType::OpenDAL {
                         scheme: scheme.to_string(),
                     },
                     source: format!(
-                        "Failed to create OpenDAL operator for '{}'. \
+                        "Failed to create OpenDAL operator for '{}'. Available OpenDAL schemes: [{}]. \
                          You may need to configure it via IOConfig(opendal_backends={{\"{}\": {{...}}}}). \
                          Error: {}",
-                        scheme, scheme, e
+                        scheme,
+                        Self::available_schemes().join(", "),
+                        scheme,
+                        e
                     )
                     .into(),
                 }

@@ -23,7 +23,9 @@ use super::object_io::{GetResult, ObjectSource};
 use crate::{
     FileFormat, InvalidRangeRequestSnafu,
     http::HttpSource,
+    multipart::MultipartWriter,
     object_io::{FileMetadata, FileType, LSResult},
+    opendal_source::OpenDALSource,
     range::GetRange,
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
@@ -106,6 +108,87 @@ struct HFPathParts {
     path: String,
 }
 
+impl HFPathParts {
+    fn is_storage_bucket(&self) -> bool {
+        self.bucket == "buckets"
+    }
+
+    fn is_dataset(&self) -> bool {
+        matches!(self.bucket.as_str(), "dataset" | "datasets")
+    }
+
+    fn opendal_uri(&self) -> String {
+        if self.path.is_empty() {
+            "huggingface://repo/".to_string()
+        } else {
+            format!("huggingface://repo/{}", self.path)
+        }
+    }
+
+    fn from_opendal_uri(&self, uri: &str) -> super::Result<String> {
+        let parsed = url::Url::parse(uri).context(super::InvalidUrlSnafu { path: uri })?;
+        let path = parsed.path().trim_start_matches('/');
+
+        if path.is_empty() {
+            Ok(format!("hf://buckets/{}", self.repository))
+        } else {
+            Ok(format!("hf://buckets/{}/{}", self.repository, path))
+        }
+    }
+}
+
+fn decode_hf_revision_component(revision: &str) -> String {
+    revision.replace("%2F", "/").replace("%2f", "/")
+}
+
+fn parse_hf_revision_and_path(revision_and_path: &str) -> (String, String) {
+    if let Some(rest) = revision_and_path.strip_prefix("refs/convert/") {
+        if let Some((revision_tail, path)) = rest.split_once('/') {
+            return (format!("refs/convert/{revision_tail}"), path.to_string());
+        }
+        return (revision_and_path.to_string(), String::new());
+    }
+
+    if let Some(rest) = revision_and_path.strip_prefix("refs/pr/") {
+        if let Some((revision_tail, path)) = rest.split_once('/') {
+            return (format!("refs/pr/{revision_tail}"), path.to_string());
+        }
+        return (revision_and_path.to_string(), String::new());
+    }
+
+    if let Some((revision, path)) = revision_and_path.split_once('/') {
+        (revision.to_string(), path.to_string())
+    } else {
+        (revision_and_path.to_string(), String::new())
+    }
+}
+
+fn encode_hf_path_component(component: &str) -> String {
+    if component.is_empty() {
+        return String::new();
+    }
+
+    let mut url = url::Url::parse("https://huggingface.co").expect("hardcoded URL should be valid");
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .expect("hardcoded URL should allow path mutation");
+        segments.push(component);
+    }
+    url.path().trim_start_matches('/').to_string()
+}
+
+fn encode_hf_path(path: &str) -> String {
+    if path.is_empty() {
+        return String::new();
+    }
+
+    path.split('/')
+        .map(encode_hf_path_component)
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 impl FromStr for HFPath {
     type Err = Error;
 
@@ -121,7 +204,7 @@ impl FromStr for HFPath {
 impl FromStr for HFPathParts {
     type Err = Error;
     /// Extracts path components from a hugging face path:
-    /// `hf:// [datasets | spaces] / {username} / {reponame} @ {revision} / {path from root}`
+    /// `hf:// [datasets | spaces | buckets] / {username} / {reponame} @ {revision} / {path from root}`
     fn from_str(uri: &str) -> Result<Self, Self::Err> {
         // hf:// [datasets] / {username} / {reponame} @ {revision} / {path from root}
         //       !>
@@ -139,38 +222,40 @@ impl FromStr for HFPathParts {
             // {username} / {reponame} @ {revision} / {path from root}
             // ^--------^   !>
             let (username, uri) = uri.split_once('/')?;
-            // {reponame} @ {revision} / {path from root}
-            // ^--------^   !>
-            let (repository, uri) = if let Some((repo, uri)) = uri.split_once('/') {
-                (repo, uri)
-            } else {
-                return Some(Self {
-                    bucket: bucket.to_string(),
-                    repository: format!("{username}/{uri}"),
-                    revision: "main".to_string(),
-                    path: String::new(),
-                });
-            };
 
-            // {revision} / {path from root}
-            // ^--------^   !>
-            let (repository, revision) = if let Some((repo, rev)) = repository.split_once('@') {
-                (repo, rev.to_string())
-            } else {
-                (repository, "main".to_string())
-            };
+            let (repository_segment, remaining_path) =
+                if let Some((repository, path)) = uri.split_once('/') {
+                    (repository, Some(path))
+                } else {
+                    (uri, None)
+                };
 
-            // {username}/{reponame}
-            let repository = format!("{username}/{repository}");
-            // {path from root}
-            // ^--------------^
-            let path = uri.to_string().trim_end_matches('/').to_string();
+            let (repository, revision, path) =
+                if let Some((repository, revision_prefix)) = repository_segment.split_once('@') {
+                    let revision_and_path = match remaining_path {
+                        Some(path) if !path.is_empty() => {
+                            decode_hf_revision_component(&format!("{revision_prefix}/{path}"))
+                        }
+                        _ => decode_hf_revision_component(revision_prefix),
+                    };
+                    let (revision, path) = parse_hf_revision_and_path(&revision_and_path);
+                    (repository.to_string(), revision, path)
+                } else {
+                    (
+                        repository_segment.to_string(),
+                        "main".to_string(),
+                        remaining_path
+                            .unwrap_or("")
+                            .trim_end_matches('/')
+                            .to_string(),
+                    )
+                };
 
             Some(Self {
                 bucket: bucket.to_string(),
-                repository,
+                repository: format!("{username}/{repository}"),
                 revision,
-                path,
+                path: path.trim_end_matches('/').to_string(),
             })
         })()
         .ok_or_else(|| Error::InvalidPath {
@@ -199,15 +284,20 @@ impl HFPath {
     fn get_file_uri(&self, cache_bust: bool) -> String {
         let base = match self {
             Self::Http(base) => base.clone(),
-            Self::Hf(parts) => {
-                format!(
+            Self::Hf(parts) => match parts.is_storage_bucket() {
+                true => format!(
+                    "https://huggingface.co/buckets/{REPOSITORY}/resolve/{PATH}",
+                    REPOSITORY = parts.repository,
+                    PATH = encode_hf_path(&parts.path),
+                ),
+                false => format!(
                     "https://huggingface.co/{BUCKET}/{REPOSITORY}/resolve/{REVISION}/{PATH}",
                     BUCKET = parts.bucket,
                     REPOSITORY = parts.repository,
-                    REVISION = parts.revision,
-                    PATH = parts.path,
-                )
-            }
+                    REVISION = encode_hf_path_component(&parts.revision),
+                    PATH = encode_hf_path(&parts.path),
+                ),
+            },
         };
         if cache_bust {
             let cachebuster = Uuid::new_v4();
@@ -225,16 +315,23 @@ impl HFPath {
     fn get_api_uri(&self) -> String {
         match self {
             Self::Http(path) => path.clone(),
-            Self::Hf(parts) => {
-                // "https://huggingface.co/api/ [datasets] / {username} / {reponame} / tree / {revision} / {path from root}"
-                format!(
-                    "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/tree/{REVISION}/{PATH}",
-                    BUCKET = parts.bucket,
+            Self::Hf(parts) => match parts.is_storage_bucket() {
+                true => format!(
+                    "https://huggingface.co/api/buckets/{REPOSITORY}/tree/{PATH}?expand=True&recursive=false",
                     REPOSITORY = parts.repository,
-                    REVISION = parts.revision,
-                    PATH = parts.path,
-                )
-            }
+                    PATH = encode_hf_path(&parts.path),
+                ),
+                false => {
+                    // "https://huggingface.co/api/ [datasets] / {username} / {reponame} / tree / {revision} / {path from root}"
+                    format!(
+                        "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/tree/{REVISION}/{PATH}",
+                        BUCKET = parts.bucket,
+                        REPOSITORY = parts.repository,
+                        REVISION = encode_hf_path_component(&parts.revision),
+                        PATH = encode_hf_path(&parts.path),
+                    )
+                }
+            },
         }
     }
 
@@ -252,6 +349,8 @@ impl HFPath {
 
 pub struct HFSource {
     http_source: HttpSource,
+    hf_config: HuggingFaceConfig,
+    bucket_sources: tokio::sync::RwLock<HashMap<String, Arc<dyn ObjectSource>>>,
 }
 
 impl From<Error> for super::Error {
@@ -300,8 +399,53 @@ impl HFSource {
         let client = http_source.client;
         Ok(Self {
             http_source: HttpSource { client },
+            hf_config: hf_config.clone(),
+            bucket_sources: tokio::sync::RwLock::new(HashMap::new()),
         }
         .into())
+    }
+
+    async fn bucket_source(
+        &self,
+        path_parts: &HFPathParts,
+    ) -> super::Result<Option<Arc<dyn ObjectSource>>> {
+        if !path_parts.is_storage_bucket() {
+            return Ok(None);
+        }
+
+        let source_key = path_parts.repository.clone();
+
+        if let Some(source) = self.bucket_sources.read().await.get(&source_key) {
+            return Ok(Some(source.clone()));
+        }
+
+        let mut write_handle = self.bucket_sources.write().await;
+        if let Some(source) = write_handle.get(&source_key) {
+            return Ok(Some(source.clone()));
+        }
+
+        let config = self
+            .hf_config
+            .to_opendal_config("bucket", &path_parts.repository, None);
+        let source =
+            OpenDALSource::get_client("huggingface", &config).await? as Arc<dyn ObjectSource>;
+        write_handle.insert(source_key, source.clone());
+        Ok(Some(source))
+    }
+
+    async fn bucket_source_and_uri(
+        &self,
+        uri: &str,
+    ) -> super::Result<Option<(Arc<dyn ObjectSource>, String)>> {
+        let HFPath::Hf(path_parts) = uri.parse::<HFPath>()? else {
+            return Ok(None);
+        };
+
+        let Some(source) = self.bucket_source(&path_parts).await? else {
+            return Ok(None);
+        };
+
+        Ok(Some((source, path_parts.opendal_uri())))
     }
 
     #[async_recursion]
@@ -366,10 +510,25 @@ impl HFSource {
 #[async_trait]
 impl ObjectSource for HFSource {
     async fn supports_range(&self, uri: &str) -> super::Result<bool> {
+        if let Some((source, bucket_uri)) = self.bucket_source_and_uri(uri).await? {
+            return source.supports_range(&bucket_uri).await;
+        }
+
         let path = uri.parse::<HFPath>()?;
         let uri = path.get_file_uri(false);
 
         self.http_source.supports_range(&uri).await
+    }
+
+    async fn create_multipart_writer(
+        self: Arc<Self>,
+        uri: &str,
+    ) -> super::Result<Option<Box<dyn MultipartWriter>>> {
+        let Some((source, bucket_uri)) = self.bucket_source_and_uri(uri).await? else {
+            return Ok(None);
+        };
+
+        source.create_multipart_writer(&bucket_uri).await
     }
 
     async fn get(
@@ -378,6 +537,10 @@ impl ObjectSource for HFSource {
         range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
+        if let Some((source, bucket_uri)) = self.bucket_source_and_uri(uri).await? {
+            return source.get(&bucket_uri, range, io_stats).await;
+        }
+
         let (response, range_applied) = self
             .request(uri, false, range.as_ref(), &self.http_source.client)
             .await?;
@@ -436,14 +599,22 @@ impl ObjectSource for HFSource {
 
     async fn put(
         &self,
-        _uri: &str,
-        _data: bytes::Bytes,
-        _io_stats: Option<IOStatsRef>,
+        uri: &str,
+        data: bytes::Bytes,
+        io_stats: Option<IOStatsRef>,
     ) -> super::Result<()> {
+        if let Some((source, bucket_uri)) = self.bucket_source_and_uri(uri).await? {
+            return source.put(&bucket_uri, data, io_stats).await;
+        }
+
         todo!("PUTs to HTTP URLs are not yet supported! Please file an issue.");
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
+        if let Some((source, bucket_uri)) = self.bucket_source_and_uri(uri).await? {
+            return source.get_size(&bucket_uri, io_stats).await;
+        }
+
         let path = uri.parse::<HFPath>()?;
         let uri = &path.get_file_uri(false);
 
@@ -493,6 +664,33 @@ impl ObjectSource for HFSource {
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
         use crate::object_store_glob::glob;
 
+        if let Some((source, bucket_uri)) = self.bucket_source_and_uri(glob_path).await? {
+            let HFPath::Hf(path_parts) = glob_path.parse::<HFPath>()? else {
+                unreachable!("bucket_source_and_uri only returns Some for Hugging Face paths");
+            };
+
+            return source
+                .glob(
+                    &bucket_uri,
+                    _fanout_limit,
+                    _page_size,
+                    limit,
+                    io_stats,
+                    file_format,
+                )
+                .await
+                .map(|stream| {
+                    stream
+                        .map_ok(move |mut file| {
+                            file.filepath = path_parts
+                                .from_opendal_uri(&file.filepath)
+                                .expect("OpenDAL bucket glob returned an invalid URI");
+                            file
+                        })
+                        .boxed()
+                });
+        }
+
         let path = glob_path.parse::<HFPath>()?;
 
         // Ensure fanout_limit is None because HTTP ObjectSource does not support prefix listing
@@ -513,7 +711,7 @@ impl ObjectSource for HFSource {
                 // hf://datasets/user/repo
                 // but not
                 // hf://datasets/user/repo/file.parquet
-                if file_format == Some(FileFormat::Parquet) {
+                if file_format == Some(FileFormat::Parquet) && parts.is_dataset() {
                     let res =
                         try_parquet_api(parts, limit, io_stats.clone(), &self.http_source.client)
                             .await;
@@ -542,6 +740,19 @@ impl ObjectSource for HFSource {
     ) -> super::Result<LSResult> {
         if !posix {
             unimplemented!("Prefix-listing is not implemented for HTTP listing");
+        }
+
+        if let Some((source, bucket_uri)) = self.bucket_source_and_uri(path).await? {
+            let HFPath::Hf(path_parts) = path.parse::<HFPath>()? else {
+                unreachable!("bucket_source_and_uri only returns Some for Hugging Face paths");
+            };
+            let mut result = source
+                .ls(&bucket_uri, posix, continuation_token, page_size, io_stats)
+                .await?;
+            for file in &mut result.files {
+                file.filepath = path_parts.from_opendal_uri(&file.filepath)?;
+            }
+            return Ok(result);
         }
 
         let hf_path = path.parse::<HFPath>()?;
@@ -616,6 +827,17 @@ impl ObjectSource for HFSource {
             files,
             continuation_token: None,
         })
+    }
+
+    async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<()> {
+        let Some((source, bucket_uri)) = self.bucket_source_and_uri(uri).await? else {
+            return Err(super::Error::NotImplementedMethod {
+                method: "Deletes is not yet supported for non-bucket Hugging Face paths."
+                    .to_string(),
+            });
+        };
+
+        source.delete(&bucket_uri, io_stats).await
     }
 
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
@@ -695,11 +917,15 @@ async fn try_parquet_api(
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+
+    use bytes::Bytes;
     use common_error::DaftResult;
-    use common_io_config::{HTTPConfig, HuggingFaceConfig};
+    use common_io_config::{HTTPConfig, HuggingFaceConfig, ObfuscatedString};
+    use uuid::Uuid;
 
     use crate::{
-        huggingface::{HFPathParts, HFSource},
+        huggingface::{HFPath, HFPathParts, HFSource},
         integrations::test_full_get,
         object_io::ObjectSource,
     };
@@ -781,6 +1007,213 @@ mod tests {
 
         assert_eq!(parts, expected);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_hf_parts_with_refs_convert_revision() -> DaftResult<()> {
+        let uri = "hf://datasets/user/repo@refs/convert/parquet/data/file.parquet";
+        let parts = uri.parse::<HFPathParts>().unwrap();
+        let expected = HFPathParts {
+            bucket: "datasets".to_string(),
+            repository: "user/repo".to_string(),
+            revision: "refs/convert/parquet".to_string(),
+            path: "data/file.parquet".to_string(),
+        };
+
+        assert_eq!(parts, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_hf_parts_with_encoded_refs_pr_revision() -> DaftResult<()> {
+        let uri = "hf://datasets/user/repo@refs%2Fpr%2F10/config.json";
+        let parts = uri.parse::<HFPathParts>().unwrap();
+        let expected = HFPathParts {
+            bucket: "datasets".to_string(),
+            repository: "user/repo".to_string(),
+            revision: "refs/pr/10".to_string(),
+            path: "config.json".to_string(),
+        };
+
+        assert_eq!(parts, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_hf_parts_with_at_in_path() -> DaftResult<()> {
+        let uri = "hf://datasets/user/repo/path/to/@not-a-revision.txt";
+        let parts = uri.parse::<HFPathParts>().unwrap();
+        let expected = HFPathParts {
+            bucket: "datasets".to_string(),
+            repository: "user/repo".to_string(),
+            revision: "main".to_string(),
+            path: "path/to/@not-a-revision.txt".to_string(),
+        };
+
+        assert_eq!(parts, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_bucket_hf_parts() -> DaftResult<()> {
+        let uri = "hf://buckets/user/bucket/path/to/file.parquet";
+        let parts = uri.parse::<HFPathParts>().unwrap();
+        let expected = HFPathParts {
+            bucket: "buckets".to_string(),
+            repository: "user/bucket".to_string(),
+            revision: "main".to_string(),
+            path: "path/to/file.parquet".to_string(),
+        };
+
+        assert_eq!(parts, expected);
+        assert!(parts.is_storage_bucket());
+        assert_eq!(
+            parts.opendal_uri(),
+            "huggingface://repo/path/to/file.parquet"
+        );
+        assert_eq!(
+            parts.from_opendal_uri("huggingface://repo/path/to/file.parquet")?,
+            "hf://buckets/user/bucket/path/to/file.parquet"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_hf_bucket_uris() {
+        let parts = HFPathParts {
+            bucket: "buckets".to_string(),
+            repository: "user/bucket".to_string(),
+            revision: "main".to_string(),
+            path: "data/my file.parquet".to_string(),
+        };
+        let path = HFPath::Hf(parts);
+
+        assert_eq!(
+            path.get_file_uri(false),
+            "https://huggingface.co/buckets/user/bucket/resolve/data/my%20file.parquet"
+        );
+        assert_eq!(
+            path.get_api_uri(),
+            "https://huggingface.co/api/buckets/user/bucket/tree/data/my%20file.parquet?expand=True&recursive=false"
+        );
+    }
+
+    #[test]
+    fn test_get_hf_dataset_uris_encode_ref_revisions() {
+        let parts = HFPathParts {
+            bucket: "datasets".to_string(),
+            repository: "user/repo".to_string(),
+            revision: "refs/convert/parquet".to_string(),
+            path: "data/my file.parquet".to_string(),
+        };
+        let path = HFPath::Hf(parts);
+
+        assert_eq!(
+            path.get_file_uri(false),
+            "https://huggingface.co/datasets/user/repo/resolve/refs%2Fconvert%2Fparquet/data/my%20file.parquet"
+        );
+        assert_eq!(
+            path.get_api_uri(),
+            "https://huggingface.co/api/datasets/user/repo/tree/refs%2Fconvert%2Fparquet/data/my%20file.parquet"
+        );
+    }
+
+    fn setup_online_bucket_test_config() -> Option<(HuggingFaceConfig, String)> {
+        let token = env::var("HF_TOKEN").ok()?;
+        let bucket = env::var("HF_BUCKET").ok()?;
+
+        Some((
+            HuggingFaceConfig {
+                token: Some(ObfuscatedString::from(token)),
+                anonymous: false,
+                ..Default::default()
+            },
+            bucket,
+        ))
+    }
+
+    fn generate_test_object_prefix() -> String {
+        format!("daft-io-tests/{}", Uuid::new_v4())
+    }
+
+    #[tokio::test]
+    #[ignore = "requires network access"]
+    async fn test_full_get_from_xet_backed_hf_dataset() -> crate::Result<()> {
+        const PARQUET_MAGIC: &[u8] = b"PAR1";
+
+        let test_file_path =
+            "hf://datasets/google-research-datasets/mbpp/full/train-00000-of-00001.parquet";
+        let client =
+            HFSource::get_client(&HuggingFaceConfig::default(), &HTTPConfig::default()).await?;
+        let parquet_file = client.get(test_file_path, None, None).await?;
+        let bytes = parquet_file.bytes().await?;
+
+        assert!(bytes.len() > 8);
+        assert_eq!(&bytes[..4], PARQUET_MAGIC);
+        assert_eq!(&bytes[bytes.len() - 4..], PARQUET_MAGIC);
+
+        test_full_get(client, test_file_path, &bytes).await
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_hf_bucket_put_get_roundtrip() -> crate::Result<()> {
+        let (cfg, bucket) = match setup_online_bucket_test_config() {
+            Some(c) => c,
+            None => return Ok(()),
+        };
+
+        let uri = format!(
+            "hf://buckets/{}/{}/hello.txt",
+            bucket,
+            generate_test_object_prefix()
+        );
+        let client = HFSource::get_client(&cfg, &HTTPConfig::default()).await?;
+
+        let data = Bytes::from_static(b"hello huggingface bucket");
+        client.put(&uri, data.clone(), None).await?;
+
+        let bytes = client.get(&uri, None, None).await?.bytes().await?;
+        assert_eq!(bytes, data);
+
+        client.delete(&uri, None).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_hf_bucket_multipart_and_ls_roundtrip() -> crate::Result<()> {
+        let (cfg, bucket) = match setup_online_bucket_test_config() {
+            Some(c) => c,
+            None => return Ok(()),
+        };
+
+        let prefix = generate_test_object_prefix();
+        let dir_uri = format!("hf://buckets/{}/{}/", bucket, prefix);
+        let file_uri = format!("{dir_uri}multipart.txt");
+        let client = HFSource::get_client(&cfg, &HTTPConfig::default()).await?;
+
+        let mut writer = client
+            .clone()
+            .create_multipart_writer(&file_uri)
+            .await?
+            .expect("bucket multipart writer should be available");
+        writer.put_part(Bytes::from_static(b"multipart ")).await?;
+        writer.put_part(Bytes::from_static(b"roundtrip")).await?;
+        writer.complete().await?;
+
+        let bytes = client.get(&file_uri, None, None).await?.bytes().await?;
+        assert_eq!(bytes, Bytes::from_static(b"multipart roundtrip"));
+
+        let listing = client.ls(&dir_uri, true, None, None, None).await?;
+        assert!(listing.files.iter().any(|file| file.filepath == file_uri));
+
+        client.delete(&file_uri, None).await?;
         Ok(())
     }
 }

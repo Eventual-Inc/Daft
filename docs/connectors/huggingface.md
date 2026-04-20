@@ -1,6 +1,6 @@
-# Hugging Face Datasets
+# Hugging Face Datasets and Storage Buckets
 
-Daft has native support for reading from and writing to [Hugging Face datasets](https://huggingface.co/datasets).
+Daft has native support for reading from and writing to [Hugging Face datasets](https://huggingface.co/datasets) and [Hugging Face Storage Buckets](https://huggingface.co/docs/hub/storage-buckets).
 
 To install all dependencies required for Daft's Hugging Face integrations, use the `huggingface` feature:
 ```
@@ -51,6 +51,39 @@ Not only can you read entire datasets, but you can also read individual files fr
     df = daft.read_parquet("hf://datasets/username/dataset_name/**/*.parquet")
     ```
 
+## Reading and Writing Storage Buckets
+
+Daft can read from and write to Hugging Face Storage Buckets using the canonical `hf://buckets/<owner>/<bucket>/...` path format.
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+
+    df = daft.read_parquet("hf://buckets/username/my-bucket/data/input.parquet")
+    df.write_parquet("hf://buckets/username/my-bucket/data/output/")
+    ```
+
+For private buckets, configure a Hugging Face token via [`IOConfig`][daft.io.IOConfig] and [`HuggingFaceConfig`][daft.io.HuggingFaceConfig]:
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    from daft.io import IOConfig, HuggingFaceConfig
+
+    io_config = IOConfig(hf=HuggingFaceConfig(token="your_token"))
+
+    df = daft.read_parquet(
+        "hf://buckets/username/my-private-bucket/data/input.parquet",
+        io_config=io_config,
+    )
+    df.write_parquet(
+        "hf://buckets/username/my-private-bucket/data/output/",
+        io_config=io_config,
+    )
+    ```
+
 ## Writing to a Dataset
 
 Daft is able to write Parquet files to Hugging Face datasets using [`DataFrame.write_huggingface`][daft.DataFrame.write_huggingface]. Daft supports [Content-Defined Chunking](https://huggingface.co/blog/parquet-cdc) and [Xet](https://huggingface.co/blog/xet-on-the-hub) for faster, deduplicated writes.
@@ -97,7 +130,7 @@ See the [`HuggingFaceConfig`][daft.io.HuggingFaceConfig] API page for more infor
 
 ## Authentication
 
-The `token` parameter in [`HuggingFaceConfig`][daft.io.HuggingFaceConfig] can be used to specify a Hugging Face access token for requests that require authentication (e.g. reading private datasets or writing to a dataset).
+The `token` parameter in [`HuggingFaceConfig`][daft.io.HuggingFaceConfig] can be used to specify a Hugging Face access token for requests that require authentication, such as reading private datasets, accessing private storage buckets, or writing to Hugging Face datasets and storage buckets.
 
 Example of reading a dataset with a specified token:
 
