@@ -388,6 +388,7 @@ pub fn read_parquet(
             None,
         )
         .await
+        .map_err(|e| e.with_context(format!("reading {uri}")))
     })
 }
 pub type ArrowChunk = Vec<ArrayRef>;
@@ -423,7 +424,7 @@ pub fn read_parquet_into_pyarrow(
         );
         if let Some(timeout) = file_timeout_ms {
             match tokio::time::timeout(Duration::from_millis(timeout as u64), fut).await {
-                Ok(result) => result,
+                Ok(result) => result.map_err(|e| e.with_context(format!("reading {uri}"))),
                 Err(_) => Err(crate::Error::FileReadTimeout {
                     path: uri.to_string(),
                     duration_ms: timeout,
@@ -432,6 +433,7 @@ pub fn read_parquet_into_pyarrow(
             }
         } else {
             fut.await
+                .map_err(|e| e.with_context(format!("reading {uri}")))
         }
     })
 }
@@ -531,6 +533,7 @@ pub async fn read_parquet_bulk_async(
                 chunk_size,
             )
             .await
+            .map_err(|e| e.with_context(format!("reading {uri}")))
         })
     }));
 
@@ -634,7 +637,8 @@ pub fn read_parquet_into_pyarrow_bulk<T: AsRef<str>>(
                             schema_infer_options,
                             None,
                         )
-                        .await?,
+                        .await
+                        .map_err(|e| e.with_context(format!("reading {uri}")))?,
                     ))
                 })
             }))
@@ -663,7 +667,8 @@ pub async fn read_parquet_schema_and_metadata(
         field_id_mapping,
         None,
     )
-    .await?;
+    .await
+    .map_err(|e| common_error::DaftError::from(e).with_context(format!("reading {uri}")))?;
     let adapter = DaftParquetMetadata::from_arrowrs(metadata);
     let schema = infer_schema_from_daft_metadata(&adapter, schema_inference_options)?;
     Ok((schema, adapter))
@@ -683,7 +688,8 @@ pub async fn read_parquet_metadata(
         field_id_mapping,
         None,
     )
-    .await?;
+    .await
+    .map_err(|e| common_error::DaftError::from(e).with_context(format!("reading {uri}")))?;
     Ok(DaftParquetMetadata::from_arrowrs(metadata))
 }
 pub async fn read_parquet_metadata_bulk(

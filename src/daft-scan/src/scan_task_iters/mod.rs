@@ -247,7 +247,8 @@ fn split_by_row_groups(
                                 io_client,
                                 Some(io_stats),
                                 field_id_mapping.clone(),
-                            ))?;
+                            ))
+                            .map_err(|e| e.with_context(format!("reading {path}")))?;
 
                         let mut new_tasks: Vec<DaftResult<ScanTaskRef>> = Vec::new();
                         let mut curr_row_group_indices = Vec::new();

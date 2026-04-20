@@ -447,7 +447,9 @@ fn infer_schema(
         serde_json::Deserializer::from_slice(bytes).into_iter::<&serde_json::value::RawValue>();
 
     for value in iter.take(max_records) {
-        let value = value?;
+        let value = value.map_err(|e| super::Error::JsonDeserializationError {
+            string: e.to_string(),
+        })?;
         let bytes = value.get().as_bytes();
         total_bytes += bytes.len();
 
