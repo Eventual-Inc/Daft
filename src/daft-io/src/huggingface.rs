@@ -397,9 +397,18 @@ impl HFSource {
         let http_source = HttpSource::get_client(&combined_config).await?;
         let http_source = Arc::try_unwrap(http_source).expect("Could not unwrap Arc<HttpSource>");
         let client = http_source.client;
+        let hf_config = if hf_config.token.is_none() && !hf_config.anonymous {
+            HuggingFaceConfig {
+                token: combined_config.bearer_token.clone(),
+                ..hf_config.clone()
+            }
+        } else {
+            hf_config.clone()
+        };
+
         Ok(Self {
             http_source: HttpSource { client },
-            hf_config: hf_config.clone(),
+            hf_config,
             bucket_sources: tokio::sync::RwLock::new(HashMap::new()),
         }
         .into())
@@ -681,11 +690,11 @@ impl ObjectSource for HFSource {
                 .await
                 .map(|stream| {
                     stream
-                        .map_ok(move |mut file| {
-                            file.filepath = path_parts
-                                .from_opendal_uri(&file.filepath)
-                                .expect("OpenDAL bucket glob returned an invalid URI");
-                            file
+                        .map(move |result| {
+                            result.and_then(|mut file| {
+                                file.filepath = path_parts.from_opendal_uri(&file.filepath)?;
+                                Ok(file)
+                            })
                         })
                         .boxed()
                 });
