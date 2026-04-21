@@ -91,11 +91,16 @@ pub fn cast_record_batch_to_schema(
     rb: &arrow::record_batch::RecordBatch,
     target_fields: &arrow::datatypes::Fields,
 ) -> DaftResult<arrow::record_batch::RecordBatch> {
-    let arrays: Vec<ArrayRef> = rb
-        .columns()
+    let arrays: Vec<ArrayRef> = target_fields
         .iter()
-        .zip(target_fields.iter())
-        .map(|(array, target_field)| {
+        .map(|target_field| {
+            let idx = rb.schema().index_of(target_field.name()).map_err(|_| {
+                common_error::DaftError::ValueError(format!(
+                    "requested_schema field '{}' not found in record batch",
+                    target_field.name()
+                ))
+            })?;
+            let array = rb.column(idx);
             if array.data_type() != target_field.data_type() {
                 arrow::compute::cast(array, target_field.data_type())
                     .map_err(common_error::DaftError::from)

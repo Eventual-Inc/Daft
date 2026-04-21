@@ -43,6 +43,30 @@ class TestSeriesPyCapsule:
         assert result.type == target_field.type
         assert result.to_pylist() == [1, 2, 3]
 
+
+class TestRequestedSchemaColumnOrder:
+    """Regression: requested_schema with reordered columns must match by name, not position."""
+
+    def test_record_batch_reorder_by_name(self):
+        source = pa.RecordBatch.from_arrays(
+            [pa.array([1, 2, 3], type=pa.int32()), pa.array([1.5, 2.5, 3.5], type=pa.float64())],
+            names=["a", "b"],
+        )
+        mp = MicroPartition.from_arrow_record_batches([source], source.schema)
+        rb = mp.to_record_batch()
+        target = pa.schema([("b", pa.float32()), ("a", pa.int64())])
+        result = pa.record_batch(rb._recordbatch, schema=target)
+        assert result.column("a").type == pa.int64()
+        assert result.column("b").type == pa.float32()
+        assert result.column("a").to_pylist() == [1, 2, 3]
+        assert result.column("b").to_pylist() == [1.5, 2.5, 3.5]
+
+    def test_missing_name_errors(self):
+        rb = MicroPartition.from_pydict({"a": [1, 2, 3]}).to_record_batch()
+        target = pa.schema([("nonexistent", pa.int64())])
+        with pytest.raises(Exception, match="nonexistent"):
+            pa.record_batch(rb._recordbatch, schema=target)
+
     def test_requested_schema_rejects_non_capsule(self):
         series = daft.Series.from_arrow(pa.array([1, 2, 3]), name="test")
         with pytest.raises(TypeError):
@@ -179,7 +203,9 @@ class TestFromArrowStream:
 
     def test_fixed_shape_tensor_extension(self):
         tensor_type = pa.fixed_shape_tensor(pa.float32(), [2, 3])
-        storage = pa.array([[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]], type=pa.list_(pa.float32(), 6))
+        storage = pa.array(
+            [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]], type=pa.list_(pa.float32(), 6)
+        )
         tensor_array = pa.ExtensionArray.from_storage(tensor_type, storage)
         schema = pa.schema([("t", tensor_type)])
         reader = pa.RecordBatchReader.from_batches(schema, [pa.record_batch([tensor_array], schema=schema)])
@@ -187,9 +213,11 @@ class TestFromArrowStream:
         assert df.schema()["t"].dtype == DataType.tensor(DataType.float32(), (2, 3))
 
     def test_daft_embedding_roundtrip(self):
-        original = daft.from_pydict({"e": [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]}).with_column(
-            "e", daft.col("e").cast(DataType.embedding(DataType.float32(), 3))
-        ).collect()
+        original = (
+            daft.from_pydict({"e": [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]})
+            .with_column("e", daft.col("e").cast(DataType.embedding(DataType.float32(), 3)))
+            .collect()
+        )
         assert original.schema()["e"].dtype == DataType.embedding(DataType.float32(), 3)
 
         # Re-import via pycapsule stream; Daft super-extension metadata preserves dtype.
@@ -204,7 +232,9 @@ class TestFromArrowStream:
         assert result.column("b").to_pylist() == ["x", "y", "z"]
 
     def test_null_heavy_roundtrip(self):
-        table = pa.table({"a": pa.array([None, None, None], type=pa.int32()), "b": pa.array([1, None, 3], type=pa.int64())})
+        table = pa.table(
+            {"a": pa.array([None, None, None], type=pa.int32()), "b": pa.array([1, None, 3], type=pa.int64())}
+        )
         df = daft.from_arrow(table)
         result = df.to_arrow()
         assert result.column("a").to_pylist() == [None, None, None]
