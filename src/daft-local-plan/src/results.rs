@@ -37,7 +37,11 @@ impl ExecutionStats {
         mut self,
         skipped_corrupt_files: Vec<(String, String)>,
     ) -> Self {
-        self.skipped_corrupt_files = skipped_corrupt_files;
+        let mut seen = std::collections::HashSet::new();
+        self.skipped_corrupt_files = skipped_corrupt_files
+            .into_iter()
+            .filter(|(path, _)| seen.insert(path.clone()))
+            .collect();
         self
     }
 
