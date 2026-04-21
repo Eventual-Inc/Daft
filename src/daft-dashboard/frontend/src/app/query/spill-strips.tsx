@@ -21,7 +21,7 @@ import {
  */
 export const GLOBAL_AGG_NODE_TYPES = new Set<string>([
   "Aggregate",
-  "GroupedAggregate",
+  "GroupByAgg",
   "Repartition",
   "Sort",
   "TopN",
@@ -76,25 +76,27 @@ function StripBar({
     <div className="flex flex-col gap-0.5">
       <div className="flex items-center gap-2 text-[10px]">
         <span
-          className={`${main.className} uppercase tracking-wider text-zinc-500 w-10 shrink-0`}
+          className={`${main.className} uppercase tracking-wider text-zinc-500 w-8 shrink-0`}
         >
           {label}
         </span>
-        <div className="flex-1 h-1.5 rounded-sm bg-zinc-800/80 overflow-hidden">
+        <div className="flex-1 h-1.5 rounded-sm bg-zinc-800/80 overflow-hidden min-w-0">
           <div
-            className="h-full rounded-sm transition-[width] duration-500 ease-out"
+            className="h-full rounded-sm"
             style={{ width: `${pct}%`, backgroundColor: color }}
           />
         </div>
         <span
-          className={`${main.className} text-xs text-zinc-300 font-mono tabular-nums`}
+          className={`${main.className} text-xs text-zinc-300 font-mono tabular-nums
+            w-20 shrink-0 text-right whitespace-nowrap`}
         >
           {value}
         </span>
       </div>
       {sub && (
         <div
-          className={`${main.className} pl-12 text-[10px] text-zinc-500 font-mono`}
+          className={`${main.className} pl-10 text-[10px] text-zinc-500 font-mono
+            whitespace-nowrap overflow-hidden text-ellipsis`}
         >
           {sub}
         </div>

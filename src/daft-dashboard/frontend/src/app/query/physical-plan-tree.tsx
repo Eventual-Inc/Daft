@@ -13,7 +13,6 @@ import {
   BYTES_IN_STAT_KEY,
   BYTES_OUT_STAT_KEY,
   DURATION_US_STAT_KEY,
-  SPILL_STRIP_STAT_KEYS,
 } from "./stats-utils";
 import ProgressTable from "./progress-table";
 import TreeLayout from "./tree-layout";
@@ -130,17 +129,14 @@ function PhysicalNodeCard({
   const rowsOut = operator?.stats[ROWS_OUT_STAT_KEY]?.value ?? 0;
 
   const showSpillStrips = hasSpillStrips(node.type);
-  const hiddenKeys = new Set<string>([
-    ROWS_IN_STAT_KEY,
-    ROWS_OUT_STAT_KEY,
-    DURATION_US_STAT_KEY,
-    ...(showSpillStrips ? SPILL_STRIP_STAT_KEYS : []),
-  ]);
 
   const cpuTimeStat = operator?.stats[DURATION_US_STAT_KEY];
   const extraStats = operator
     ? Object.entries(operator.stats)
-        .filter(([key]) => !hiddenKeys.has(key))
+        .filter(
+          ([key]) =>
+            ![ROWS_IN_STAT_KEY, ROWS_OUT_STAT_KEY, DURATION_US_STAT_KEY].includes(key),
+        )
         .sort(([a], [b]) => a.localeCompare(b))
     : [];
   const hasExpandable = extraStats.length > 0 || cpuTimeStat;
