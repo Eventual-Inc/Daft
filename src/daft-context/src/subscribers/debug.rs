@@ -95,21 +95,21 @@ impl DebugSubscriber {
     }
 
     fn handle_operator_start(&self, event: &OperatorStartEvent) -> DaftResult<()> {
-        if event.operator.origin_node_id == event.operator.node_id {
+        if let Some(origin_node_id) = event.operator.origin_node_id {
             eprintln!(
-                "operator_start query_id={} node_id={} name=\"{}\" type={:?} category={:?}",
+                "operator_start query_id={} node_id={} origin_node_id={} name=\"{}\" type={:?} category={:?}",
                 event.header.query_id,
                 event.operator.node_id,
+                origin_node_id,
                 event.operator.name,
                 event.operator.node_type,
                 event.operator.node_category,
             );
         } else {
             eprintln!(
-                "operator_start query_id={} node_id={} origin_node_id={} name=\"{}\" type={:?} category={:?}",
+                "operator_start query_id={} node_id={} name=\"{}\" type={:?} category={:?}",
                 event.header.query_id,
                 event.operator.node_id,
-                event.operator.origin_node_id,
                 event.operator.name,
                 event.operator.node_type,
                 event.operator.node_category,
@@ -119,18 +119,15 @@ impl DebugSubscriber {
     }
 
     fn handle_operator_end(&self, event: &OperatorEndEvent) -> DaftResult<()> {
-        if event.operator.origin_node_id == event.operator.node_id {
+        if let Some(origin_node_id) = event.operator.origin_node_id {
             eprintln!(
-                "operator_end query_id={} node_id={} name=\"{}\"",
-                event.header.query_id, event.operator.node_id, event.operator.name,
+                "operator_end query_id={} node_id={} origin_node_id={} name=\"{}\"",
+                event.header.query_id, event.operator.node_id, origin_node_id, event.operator.name,
             );
         } else {
             eprintln!(
-                "operator_end query_id={} node_id={} origin_node_id={} name=\"{}\"",
-                event.header.query_id,
-                event.operator.node_id,
-                event.operator.origin_node_id,
-                event.operator.name,
+                "operator_end query_id={} node_id={} name=\"{}\"",
+                event.header.query_id, event.operator.node_id, event.operator.name,
             );
         }
         Ok(())
