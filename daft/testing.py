@@ -102,7 +102,7 @@ def assert_frame_equal(
         >>> import daft
         >>> df = daft.from_pydict({"a": [3, 1, 2], "b": ["z", "x", "y"]})
         >>> expected = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
-        >>> assert_frame_equal(df, expected)  # passes â row order ignored by default
+        >>> assert_frame_equal(df, expected)  # passes Ã¢ÂÂ row order ignored by default
     """
     # --- schema check ---
     actual_schema = actual.schema()
@@ -173,7 +173,7 @@ def assert_frame_equal(
         # Build sort keys as tuples
         def _row_key(pydict: dict, idx: int) -> tuple:
             return tuple(
-                (pydict[c][idx] is None, pydict[c][idx])
+                (pydict[c][idx] is None, pydict[c][idx] != pydict[c][idx], pydict[c][idx])
                 for c in sort_cols
                 if c in pydict
             )
