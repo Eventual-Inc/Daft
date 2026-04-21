@@ -11,7 +11,7 @@ use opentelemetry::KeyValue;
 
 use crate::{
     pipeline_node::{PipelineNodeContext, metrics::key_values_from_context},
-    statistics::RuntimeStats,
+    statistics::{RuntimeStats, stats::SpillRollupCounters},
 };
 
 pub(crate) struct BasicJoinStats {
@@ -22,6 +22,7 @@ pub(crate) struct BasicJoinStats {
     build_bytes_inserted: Counter,
     probe_bytes_in: Counter,
     probe_bytes_out: Counter,
+    spill: SpillRollupCounters,
     node_kv: Vec<KeyValue>,
 }
 
@@ -60,6 +61,7 @@ impl BasicJoinStats {
                 None,
                 Some(Cow::Borrowed(UNIT_BYTES)),
             ),
+            spill: SpillRollupCounters::new(meter, node_kv.clone()),
             node_kv,
         }
     }
@@ -69,6 +71,9 @@ impl RuntimeStats for BasicJoinStats {
     fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
         self.duration_us
             .add(snapshot.duration_us(), self.node_kv.as_slice());
+        // Spill/buffer rollup is variant-agnostic.
+        self.spill.absorb(snapshot);
+
         let StatSnapshot::Join(snapshot) = snapshot else {
             return;
         };
@@ -96,7 +101,8 @@ impl RuntimeStats for BasicJoinStats {
             build_bytes_inserted: self.build_bytes_inserted.load(Ordering::SeqCst),
             probe_bytes_in: self.probe_bytes_in.load(Ordering::SeqCst),
             probe_bytes_out: self.probe_bytes_out.load(Ordering::SeqCst),
-            ..Default::default()
+            spill: self.spill.export_spill(),
+            in_memory_buffer_bytes: self.spill.export_buffer(),
         })
     }
 }

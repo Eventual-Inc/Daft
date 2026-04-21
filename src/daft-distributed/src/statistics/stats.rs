@@ -1,10 +1,13 @@
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
 use common_metrics::{
     Counter, Meter, StatSnapshot, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY, TASK_COMPLETED_KEY,
     TASK_FAILED_KEY, UNIT_TASKS, UpDownCounter,
     ops::NodeInfo,
-    snapshot::{DefaultSnapshot, StatSnapshotImpl as _},
+    snapshot::{DefaultSnapshot, SpillMetrics, SpillSource, StatSnapshotImpl as _},
 };
 use opentelemetry::KeyValue;
 
@@ -96,12 +99,109 @@ impl RuntimeNodeManager {
     }
 }
 
+/// Shared spill + in-memory-buffer rollup counters. Rolls worker-side snapshots
+/// up to the distributed pipeline node. Used by any distributed-side rollup that
+/// wants the `spill.*` metrics and `bytes.in_memory_buffer` to appear on its
+/// exported snapshot.
+pub(crate) struct SpillRollupCounters {
+    spill_bytes_written: Counter,
+    spill_bytes_read: Counter,
+    spill_write_duration_ns: Counter,
+    spill_read_duration_ns: Counter,
+    spill_file_count: Counter,
+    // Gauge-like: peak in-memory buffer observed across any worker task.
+    // Atomic is owned by us; we take `fetch_max` rather than sum, since buffer
+    // size is instantaneous, not cumulative.
+    max_in_memory_buffer_bytes: AtomicU64,
+    // Sum of resident-files counts reported from workers. Each task reports its
+    // own still-resident count at task end; summed gives cluster-wide residency.
+    spill_files_resident: AtomicU64,
+    node_kv: Vec<KeyValue>,
+}
+
+impl SpillRollupCounters {
+    pub fn new(meter: &Meter, node_kv: Vec<KeyValue>) -> Self {
+        Self {
+            spill_bytes_written: meter.u64_counter(common_metrics::SPILL_BYTES_WRITTEN_STAT_KEY),
+            spill_bytes_read: meter.u64_counter(common_metrics::SPILL_BYTES_READ_STAT_KEY),
+            spill_write_duration_ns: meter
+                .u64_counter(common_metrics::SPILL_WRITE_DURATION_NS_STAT_KEY),
+            spill_read_duration_ns: meter
+                .u64_counter(common_metrics::SPILL_READ_DURATION_NS_STAT_KEY),
+            spill_file_count: meter.u64_counter(common_metrics::SPILL_FILE_COUNT_STAT_KEY),
+            max_in_memory_buffer_bytes: AtomicU64::new(0),
+            spill_files_resident: AtomicU64::new(0),
+            node_kv,
+        }
+    }
+
+    /// Pull spill + buffer fields off an incoming worker snapshot and fold
+    /// them into the rollup counters.
+    pub fn absorb(&self, snapshot: &StatSnapshot) {
+        if let Some(spill) = snapshot.spill_metrics() {
+            self.spill_bytes_written
+                .add(spill.bytes_written, self.node_kv.as_slice());
+            self.spill_bytes_read
+                .add(spill.bytes_read, self.node_kv.as_slice());
+            self.spill_write_duration_ns
+                .add(spill.write_duration_ns, self.node_kv.as_slice());
+            self.spill_read_duration_ns
+                .add(spill.read_duration_ns, self.node_kv.as_slice());
+            self.spill_file_count
+                .add(spill.file_count, self.node_kv.as_slice());
+            // Task-final resident count; summing gives total outstanding files
+            // across all tasks that contributed to this distributed node.
+            self.spill_files_resident
+                .fetch_add(spill.files_resident, Ordering::Relaxed);
+        }
+        if let Some(buf) = snapshot.in_memory_buffer_bytes() {
+            self.max_in_memory_buffer_bytes
+                .fetch_max(buf, Ordering::Relaxed);
+        }
+    }
+
+    /// Produce a `SpillMetrics` from the accumulated counters, or `None` if
+    /// nothing has been recorded.
+    pub fn export_spill(&self) -> Option<SpillMetrics> {
+        let bytes_written = self.spill_bytes_written.load(Ordering::Relaxed);
+        let bytes_read = self.spill_bytes_read.load(Ordering::Relaxed);
+        let write_duration_ns = self.spill_write_duration_ns.load(Ordering::Relaxed);
+        let read_duration_ns = self.spill_read_duration_ns.load(Ordering::Relaxed);
+        let file_count = self.spill_file_count.load(Ordering::Relaxed);
+        let files_resident = self.spill_files_resident.load(Ordering::Relaxed);
+        if bytes_written == 0
+            && bytes_read == 0
+            && write_duration_ns == 0
+            && read_duration_ns == 0
+            && file_count == 0
+            && files_resident == 0
+        {
+            return None;
+        }
+        Some(SpillMetrics {
+            source: SpillSource::Native,
+            bytes_written,
+            bytes_read,
+            write_duration_ns,
+            read_duration_ns,
+            file_count,
+            files_resident,
+        })
+    }
+
+    pub fn export_buffer(&self) -> Option<u64> {
+        let v = self.max_in_memory_buffer_bytes.load(Ordering::Relaxed);
+        (v > 0).then_some(v)
+    }
+}
+
 pub struct BaseCounters {
     duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
     bytes_in: Counter,
     bytes_out: Counter,
+    spill: SpillRollupCounters,
     node_kv: Vec<KeyValue>,
 }
 
@@ -114,8 +214,16 @@ impl BaseCounters {
             rows_out: meter.rows_out_metric(),
             bytes_in: meter.bytes_in_metric(),
             bytes_out: meter.bytes_out_metric(),
+            spill: SpillRollupCounters::new(meter, node_kv.clone()),
             node_kv,
         }
+    }
+
+    /// Fold the spill + buffer fields from an incoming worker snapshot into
+    /// the distributed-node rollup. Callers should invoke this alongside the
+    /// existing `add_*` row/byte methods.
+    pub fn absorb_spill_and_buffer(&self, snapshot: &StatSnapshot) {
+        self.spill.absorb(snapshot);
     }
 
     pub fn add_duration_us(&self, v: u64) {
@@ -145,7 +253,8 @@ impl BaseCounters {
             rows_out: self.rows_out.load(Ordering::Relaxed),
             bytes_in: self.bytes_in.load(Ordering::Relaxed),
             bytes_out: self.bytes_out.load(Ordering::Relaxed),
-            ..Default::default()
+            spill: self.spill.export_spill(),
+            in_memory_buffer_bytes: self.spill.export_buffer(),
         })
     }
 }
@@ -165,6 +274,8 @@ impl DefaultRuntimeStats {
 impl RuntimeStats for DefaultRuntimeStats {
     fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
         self.base.add_duration_us(snapshot.duration_us());
+        // Spill/buffer rollup is variant-agnostic (uses trait methods).
+        self.base.absorb_spill_and_buffer(snapshot);
 
         let StatSnapshot::Default(snapshot) = snapshot else {
             // TODO: Return immediately for now, but ideally should error
