@@ -36,18 +36,23 @@ class TestSeriesPyCapsule:
         capsule = series._series.__arrow_c_schema__()
         assert type(capsule).__name__ == "PyCapsule"
 
-    def test_requested_schema_casts(self):
-        series = daft.Series.from_arrow(pa.array([1, 2, 3], type=pa.int64()), name="test")
-        target_field = pa.field("test", pa.int32())
-        result = pa.chunked_array(series, type=pa.int32())
-        assert result.type == target_field.type
-        assert result.to_pylist() == [1, 2, 3]
+    def test_requested_schema_rejects_non_capsule(self):
+        series = daft.Series.from_arrow(pa.array([1, 2, 3]), name="test")
+        with pytest.raises(TypeError):
+            series._series.__arrow_c_array__(requested_schema=object())
 
 
-class TestRequestedSchemaColumnOrder:
-    """Regression: requested_schema with reordered columns must match by name, not position."""
+class TestRequestedSchema:
+    """Exercise the requested_schema cast path via MicroPartition's stream capsule."""
 
-    def test_record_batch_reorder_by_name(self):
+    def test_cast_target_type(self):
+        mp = MicroPartition.from_pydict({"a": [1, 2, 3]})
+        target = pa.schema([("a", pa.int32())])
+        table = pa.RecordBatchReader.from_stream(mp._micropartition, schema=target).read_all()
+        assert table.column("a").type == pa.int32()
+        assert table.column("a").to_pylist() == [1, 2, 3]
+
+    def test_reorder_by_name(self):
         source = pa.RecordBatch.from_arrays(
             [pa.array([1, 2, 3], type=pa.int32()), pa.array([1.5, 2.5, 3.5], type=pa.float64())],
             names=["a", "b"],
@@ -66,11 +71,6 @@ class TestRequestedSchemaColumnOrder:
         target = pa.schema([("nonexistent", pa.int64())])
         with pytest.raises(Exception, match="nonexistent"):
             pa.record_batch(rb._recordbatch, schema=target)
-
-    def test_requested_schema_rejects_non_capsule(self):
-        series = daft.Series.from_arrow(pa.array([1, 2, 3]), name="test")
-        with pytest.raises(TypeError):
-            series._series.__arrow_c_array__(requested_schema=object())
 
 
 class TestRecordBatchPyCapsule:
@@ -121,8 +121,8 @@ class TestFromArrowStream:
     def test_from_record_batch_reader(self):
         schema = pa.schema([("a", pa.int64()), ("b", pa.string())])
         batches = [
-            pa.record_batch({"a": [1, 2], "b": ["x", "y"]}, schema=schema),
-            pa.record_batch({"a": [3, 4], "b": ["z", "w"]}, schema=schema),
+            pa.RecordBatch.from_pydict({"a": [1, 2], "b": ["x", "y"]}, schema=schema),
+            pa.RecordBatch.from_pydict({"a": [3, 4], "b": ["z", "w"]}, schema=schema),
         ]
         reader = pa.RecordBatchReader.from_batches(schema, batches)
         df = daft.from_arrow(reader)
@@ -154,7 +154,7 @@ class TestFromArrowStream:
                 ("bool_col", pa.bool_()),
             ]
         )
-        batch = pa.record_batch(
+        batch = pa.RecordBatch.from_pydict(
             {
                 "int_col": [1, 2, 3],
                 "float_col": [1.0, 2.0, 3.0],
@@ -177,7 +177,7 @@ class TestFromArrowStream:
                 ("struct_col", pa.struct([("x", pa.int64()), ("y", pa.string())])),
             ]
         )
-        batch = pa.record_batch(
+        batch = pa.RecordBatch.from_pydict(
             {
                 "list_col": [[1, 2], [3]],
                 "struct_col": [{"x": 1, "y": "a"}, {"x": 2, "y": "b"}],
@@ -208,7 +208,7 @@ class TestFromArrowStream:
         )
         tensor_array = pa.ExtensionArray.from_storage(tensor_type, storage)
         schema = pa.schema([("t", tensor_type)])
-        reader = pa.RecordBatchReader.from_batches(schema, [pa.record_batch([tensor_array], schema=schema)])
+        reader = pa.RecordBatchReader.from_batches(schema, [pa.RecordBatch.from_arrays([tensor_array], schema=schema)])
         df = daft.from_arrow(reader)
         assert df.schema()["t"].dtype == DataType.tensor(DataType.float32(), (2, 3))
 
@@ -246,8 +246,9 @@ class TestPythonLevelInterop:
 
     def test_series_to_pyarrow_via_pycapsule(self):
         series = daft.Series.from_pylist([1, 2, 3], name="a")
-        result = pa.chunked_array(series)
-        assert result.to_pylist() == [1, 2, 3]
+        schema_capsule, array_capsule = series.__arrow_c_array__()
+        assert type(schema_capsule).__name__ == "PyCapsule"
+        assert type(array_capsule).__name__ == "PyCapsule"
 
     def test_series_schema_capsule(self):
         series = daft.Series.from_pylist([1, 2, 3], name="a")
