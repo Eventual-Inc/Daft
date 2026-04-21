@@ -2,48 +2,18 @@ use std::sync::Arc;
 
 use async_stream::try_stream;
 use common_error::{DaftError, DaftResult};
-use daft_compression::CompressionCodec;
 use daft_core::prelude::*;
-use daft_io::{GetResult, IOClient, IOStatsRef};
+use daft_io::{IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{Stream, StreamExt, stream::BoxStream};
-use tokio::{
-    fs::File,
-    io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader},
+use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+
+use crate::{
+    open::open_reader,
+    text::options::{TextConvertOptions, TextReadOptions},
 };
-use tokio_util::io::StreamReader;
 
-use crate::options::{TextConvertOptions, TextReadOptions};
-
-async fn open_reader(
-    uri: &str,
-    buffer_size: usize,
-    io_client: Arc<IOClient>,
-    io_stats: Option<IOStatsRef>,
-) -> DaftResult<Box<dyn AsyncBufRead + Unpin + Send>> {
-    let reader: Box<dyn AsyncBufRead + Unpin + Send> = match io_client
-        .single_url_get(uri.to_string(), None, io_stats)
-        .await?
-    {
-        GetResult::File(file) => Box::new(BufReader::with_capacity(
-            buffer_size,
-            File::open(file.path).await?,
-        )),
-        GetResult::Stream(stream, ..) => Box::new(BufReader::with_capacity(
-            buffer_size,
-            StreamReader::new(stream),
-        )),
-    };
-    Ok(match CompressionCodec::from_uri(uri) {
-        Some(codec) => Box::new(BufReader::with_capacity(
-            buffer_size,
-            codec.to_decoder(reader),
-        )),
-        None => reader,
-    })
-}
-
-/// Stream text lines from a URI into `RecordBatch` chunks with a single Utf8 column named "text".
+/// Stream text lines from a URI into `RecordBatch` chunks with a single Utf8 column named "content".
 ///
 /// The `encoding` argument is currently restricted to UTF-8 (case-insensitive). Any other encoding
 /// will result in a `ValueError`.
@@ -62,23 +32,25 @@ pub async fn stream_text(
         )));
     }
 
-    // Schema for the output RecordBatches, default is a single UTF8 column named "text".
+    // Schema for the output RecordBatches, default is a single UTF8 column named "content".
     let schema: SchemaRef = convert_options
         .schema
         .clone()
-        .unwrap_or_else(|| Arc::new(Schema::new(vec![Field::new("text", DataType::Utf8)])));
+        .unwrap_or_else(|| Arc::new(Schema::new(vec![Field::new("content", DataType::Utf8)])));
 
     // Check if we're reading the whole file as a single row
     if convert_options.whole_text {
         let whole_text_stream =
             read_into_whole_text_stream(uri, convert_options, read_options, io_client, io_stats)
                 .await?;
-        return Ok(Box::pin(whole_text_stream.map(move |content_res| {
-            let content = content_res?;
-            let array = Utf8Array::from_values("text", std::iter::once(content.as_str()));
-            let series = array.into_series();
-            RecordBatch::new_with_size(schema.clone(), vec![series], 1)
-        })));
+        let out: BoxStream<'static, DaftResult<RecordBatch>> =
+            Box::pin(whole_text_stream.map(move |content_res| {
+                let content = content_res?;
+                let array = Utf8Array::from_values("content", std::iter::once(content.as_str()));
+                let series = array.into_series();
+                RecordBatch::new_with_size(schema.clone(), vec![series], 1)
+            }));
+        return Ok(out);
     }
 
     // Build a stream of line chunks
@@ -93,12 +65,13 @@ pub async fn stream_text(
             return Ok(RecordBatch::empty(Some(schema.clone())));
         }
 
-        let array = Utf8Array::from_values("text", lines.iter().map(|s| s.as_str()));
+        let array = Utf8Array::from_values("content", lines.iter().map(|s| s.as_str()));
         let series = array.into_series();
         RecordBatch::new_with_size(schema.clone(), vec![series], row_count)
     });
 
-    Ok(Box::pin(table_stream))
+    let out: BoxStream<'static, DaftResult<RecordBatch>> = Box::pin(table_stream);
+    Ok(out)
 }
 
 async fn read_into_whole_text_stream(
@@ -109,7 +82,7 @@ async fn read_into_whole_text_stream(
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<impl Stream<Item = DaftResult<String>> + Send> {
     let buffer_size = read_options.buffer_size.unwrap_or(8 * 1024 * 1024);
-    let mut reader = open_reader(&uri, buffer_size, io_client, io_stats).await?;
+    let mut reader = open_reader(&uri, buffer_size, true, io_client, io_stats).await?;
 
     Ok(try_stream! {
         // Check limit first, and skip read if limit is 0
@@ -138,7 +111,7 @@ async fn read_into_line_chunk_stream(
 ) -> DaftResult<impl Stream<Item = DaftResult<Vec<String>>> + Send> {
     let buffer_size = read_options.buffer_size.unwrap_or(8 * 1024 * 1024);
     let chunk_size = read_options.chunk_size.unwrap_or(64 * 1024);
-    let reader = open_reader(&uri, buffer_size, io_client, io_stats).await?;
+    let reader = open_reader(&uri, buffer_size, true, io_client, io_stats).await?;
 
     let line_stream = tokio_stream::wrappers::LinesStream::new(reader.lines());
     Ok(try_stream! {
@@ -199,7 +172,7 @@ mod tests {
             .expect("system time before UNIX_EPOCH")
             .as_nanos();
         let counter = COUNTER.fetch_add(1, Ordering::SeqCst);
-        path.push(format!("daft_text_test_{unique}_{counter}.{extension}"));
+        path.push(format!("daft_raw_text_test_{unique}_{counter}.{extension}"));
         path
     }
 

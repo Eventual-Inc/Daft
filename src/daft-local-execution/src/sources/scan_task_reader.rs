@@ -6,12 +6,12 @@ use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
+use daft_raw::{TextConvertOptions, TextReadOptions};
 use daft_recordbatch::RecordBatch;
 use daft_scan::{
     ChunkSpec, CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, ScanTask,
     SourceConfig, TextSourceConfig,
 };
-use daft_text::{TextConvertOptions, TextReadOptions};
 use daft_warc::WarcConvertOptions;
 use futures::stream::BoxStream;
 
@@ -263,7 +263,7 @@ async fn read_text(
     );
     let text_chunk_size = cfg.chunk_size.or(Some(chunk_size));
     let read_options = TextReadOptions::new(cfg.buffer_size, text_chunk_size);
-    daft_text::read::stream_text(
+    daft_raw::text::read::stream_text(
         url.to_string(),
         convert_options,
         read_options,

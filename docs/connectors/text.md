@@ -41,9 +41,9 @@ Read a text file where each line becomes a row:
 
 The `read_text` function returns a DataFrame with a single column:
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `text` | `string` | Lines from the input files (or entire file content when `whole_text=True`) |
+| Column    | Type     | Description                                                                  |
+|-----------|----------|------------------------------------------------------------------------------|
+| `content` | `string` | Lines from the input files (or entire file content when `whole_text=True`)   |
 
 ## Reading Options
 
@@ -51,11 +51,11 @@ The `read_text` function returns a DataFrame with a single column:
 
 Read each file as a single row instead of splitting by lines:
 
-```python
-# Each file becomes a single row
-df = daft.read_text("/path/to/files/*.txt", whole_text=True)
-df.show()
-```
+    ```python
+    # Each file becomes a single row
+    df = daft.read_text("/path/to/files/*.txt", whole_text=True)
+    df.show()
+    ```
 
 This is useful when you need to process entire file contents at once, such as for document processing or when the file content shouldn't be split by newlines.
 
@@ -63,9 +63,9 @@ This is useful when you need to process entire file contents at once, such as fo
 
 By default, empty lines (after stripping whitespace) are skipped. To include them:
 
-```python
-df = daft.read_text("/path/to/file.txt", skip_blank_lines=False)
-```
+    ```python
+    df = daft.read_text("/path/to/file.txt", skip_blank_lines=False)
+    ```
 
 When `whole_text=True`, this option skips files that are entirely blank.
 
@@ -73,39 +73,39 @@ When `whole_text=True`, this option skips files that are entirely blank.
 
 Specify the character encoding of input files (defaults to UTF-8):
 
-```python
-df = daft.read_text("/path/to/file.txt", encoding="latin-1")
-```
+    ```python
+    df = daft.read_text("/path/to/file.txt", encoding="latin-1")
+    ```
 
 ### Include File Path
 
 Add a column with the source file path:
 
-```python
-df = daft.read_text("/path/to/files/*.txt", file_path_column="source_file")
-df.show()
-```
+    ```python
+    df = daft.read_text("/path/to/files/*.txt", file_path_column="source_file")
+    df.show()
+    ```
 
 ### Hive Partitioning
 
 Infer partition columns from the file path:
 
-```python
-# For paths like /data/year=2024/month=01/file.txt
-df = daft.read_text("/data/**/*.txt", hive_partitioning=True)
-df.show()  # Includes 'year' and 'month' columns
-```
+    ```python
+    # For paths like /data/year=2024/month=01/file.txt
+    df = daft.read_text("/data/**/*.txt", hive_partitioning=True)
+    df.show()  # Includes 'year' and 'month' columns
+    ```
 
 ## Wildcard Patterns
 
 `read_text` supports glob patterns for reading multiple files:
 
-| Pattern | Description |
-|---------|-------------|
-| `*` | Matches any number of characters |
-| `?` | Matches any single character |
-| `[...]` | Matches any single character in the brackets |
-| `**` | Recursively matches directories |
+| Pattern | Description                                   |
+|---------|-----------------------------------------------|
+| `*`     | Matches any number of characters              |
+| `?`     | Matches any single character                  |
+| `[...]` | Matches any single character in the brackets  |
+| `**`    | Recursively matches directories               |
 
 === "Examples"
 
@@ -124,24 +124,24 @@ df.show()  # Includes 'year' and 'month' columns
 
 ### Processing Log Files
 
-```python
-import daft
-from daft import col
+    ```python
+    import daft
+    from daft import col
 
-# Read log files and filter for errors
-df = daft.read_text("/var/log/app/*.log", file_path_column="log_file")
-errors = df.where(col("text").str.contains("ERROR"))
-errors.show()
-```
+    # Read log files and filter for errors
+    df = daft.read_text("/var/log/app/*.log", file_path_column="log_file")
+    errors = df.where(col("content").str.contains("ERROR"))
+    errors.show()
+    ```
 
 ### Document Processing
 
-```python
-import daft
+    ```python
+    import daft
 
-# Read entire documents
-df = daft.read_text("/documents/*.txt", whole_text=True, file_path_column="doc_path")
+    # Read entire documents
+    df = daft.read_text("/documents/*.txt", whole_text=True, file_path_column="doc_path")
 
-# Process with embeddings or other analysis
-df.show()
-```
+    # Process with embeddings or other analysis
+    df.show()
+    ```
