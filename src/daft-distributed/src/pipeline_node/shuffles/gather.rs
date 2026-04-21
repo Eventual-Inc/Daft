@@ -10,6 +10,7 @@ use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -22,17 +23,18 @@ use crate::{
 pub(crate) struct GatherNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
+    shuffle_backend: ShuffleBackend,
     child: DistributedPipelineNode,
 }
 
 impl GatherNode {
     const NODE_NAME: &'static str = "Gather";
 
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
         plan_config: &PlanConfig,
         schema: SchemaRef,
+        backend: DistributedShuffleBackend,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -44,45 +46,40 @@ impl GatherNode {
             NodeCategory::BlockingSink,
         );
         let config = PipelineNodeConfig::new(
-            schema,
+            schema.clone(),
             plan_config.config.clone(),
             Arc::new(UnknownClusteringConfig::new(1).into()),
         );
+        let shuffle_backend = ShuffleBackend::new(&context, schema, backend);
         Self {
             config,
             context,
+            shuffle_backend,
             child,
         }
     }
 
-    // Async execution to get all partitions out
     async fn execution_loop(
         self: Arc<Self>,
-        input_node: TaskBuilderStream,
+        local_gather_write_node: TaskBuilderStream,
         task_id_counter: TaskIDCounter,
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
-        // Trigger materialization of all inputs
-        let materialized = input_node
+        // Drive all upstream gather-write tasks to completion and collect their outputs.
+        let materialized = local_gather_write_node
             .materialize(
                 scheduler_handle.clone(),
                 self.context.query_idx,
-                task_id_counter.clone(),
+                task_id_counter,
             )
-            .try_collect::<Vec<_>>()
+            .try_collect::<Vec<MaterializedOutput>>()
             .await?;
 
-        let (plan, psets) = MaterializedOutput::into_in_memory_scan_with_psets(
-            materialized,
-            self.config.schema.clone(),
-            self.node_id(),
-        );
-        let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
-            .with_psets(self.node_id(), psets);
-
-        let _ = result_tx.send(builder).await;
-        Ok(())
+        // Gather = single read task that consumes every ref from every worker.
+        self.shuffle_backend
+            .emit_read_tasks(vec![materialized], self.as_ref(), result_tx)
+            .await
     }
 }
 
@@ -100,7 +97,11 @@ impl PipelineNodeImpl for GatherNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        vec!["Gather".to_string()]
+        let backend_name = match self.shuffle_backend.backend() {
+            DistributedShuffleBackend::Ray => "RayGather",
+            DistributedShuffleBackend::Flight(_) => "FlightGather",
+        };
+        vec![backend_name.to_string()]
     }
 
     fn produce_tasks(
@@ -108,17 +109,29 @@ impl PipelineNodeImpl for GatherNode {
         plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
+        self.shuffle_backend.register_cleanup(plan_context);
+        let local_gather_write_node = self
+            .shuffle_backend
+            .build_gather_write_stage(self.clone(), input_node);
 
-        // Materialize and gather all partitions to a single node
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(
-            input_node,
-            plan_context.task_id_counter(),
-            result_tx,
-            plan_context.scheduler_handle(),
-        );
-        plan_context.spawn(execution_loop);
 
+        let self_arc = self.clone();
+        let task_id_counter = plan_context.task_id_counter();
+        let scheduler_handle = plan_context.scheduler_handle();
+
+        let execution = async move {
+            self_arc
+                .execution_loop(
+                    local_gather_write_node,
+                    task_id_counter,
+                    result_tx,
+                    scheduler_handle,
+                )
+                .await
+        };
+
+        plan_context.spawn(execution);
         TaskBuilderStream::from(result_rx)
     }
 }

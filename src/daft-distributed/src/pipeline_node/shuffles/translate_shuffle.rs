@@ -117,12 +117,22 @@ impl LogicalPlanToPipelineNodeTranslator {
             return input_node;
         }
 
+        let backend = if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
+            DistributedShuffleBackend::Flight(FlightShuffleBackendConfig {
+                shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),
+                ..Default::default()
+            })
+        } else {
+            DistributedShuffleBackend::Ray
+        };
+
         let node_id = self.get_next_pipeline_node_id();
         DistributedPipelineNode::new(
             Arc::new(GatherNode::new(
                 node_id,
                 &self.plan_config,
                 input_node.config().schema.clone(),
+                backend,
                 input_node,
             )),
             &self.meter,

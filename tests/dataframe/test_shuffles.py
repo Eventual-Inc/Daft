@@ -222,3 +222,27 @@ def test_flight_shuffle(flight_shuffle_ctx, input_partitions, output_partitions)
 
         assert base_df.to_arrow().sort_by("ids") == df.to_arrow().sort_by("ids")
         assert len(df) == input_partitions * output_partitions
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+@pytest.mark.parametrize("input_partitions", [1, 8, 32])
+def test_flight_gather(flight_shuffle_ctx, input_partitions):
+    """Gather is triggered by top_n and ungrouped agg on multi-partition inputs.
+
+    Under `shuffle_algorithm="flight_shuffle"` this exercises the GatherWrite
+    blocking sink → ShuffleRead path (rather than the in-memory-scan shortcut).
+    """
+    rows = 1000
+    with flight_shuffle_ctx():
+        df = daft.from_pydict({"x": list(range(rows))}).into_partitions(input_partitions)
+
+        # UnGroupedAggregate → gather
+        total = df.sum("x").collect().to_pydict()["x"]
+        assert total == [sum(range(rows))]
+
+        # TopN → gather
+        top = df.sort("x", desc=True).limit(5).collect().to_pydict()["x"]
+        assert top == [rows - 1, rows - 2, rows - 3, rows - 4, rows - 5]

@@ -73,6 +73,7 @@ impl RepartitionState {
     }
 }
 
+// TODO: unify shuffle backends in all local operations
 enum RepartitionBackend {
     Ray,
     Flight {
