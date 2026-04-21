@@ -31,10 +31,8 @@ pub use run::ExecutionEngineResult;
 
 /// Test-only helpers for running local plans in-process.
 ///
-/// Only compiled without the python feature. Used by distributed execution
-/// tests (e.g. `LocalSwordfishWorker` in `daft-distributed`) to exercise real
-/// local execution without Ray.
-#[cfg(not(feature = "python"))]
+/// Used by distributed execution tests (e.g. `LocalSwordfishWorker` in
+/// `daft-distributed`) to exercise real local execution without Ray.
 pub mod testing {
     pub use super::run::{LocalPlanOutput, execute_local_plan};
 }

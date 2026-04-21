@@ -309,7 +309,7 @@ impl<T: Task> SubmittableTask<T> {
         }
     }
 
-    #[cfg(all(test, not(feature = "python")))]
+    #[cfg(test)]
     pub fn into_task(self) -> T {
         self.task
     }

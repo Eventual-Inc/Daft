@@ -1,7 +1,5 @@
 pub(crate) mod stats;
-// Tests use `LocalSwordfishWorker`, which requires the non-Python
-// `daft_local_execution::execute_local_plan`. See `scheduling/mod.rs`.
-#[cfg(all(test, not(feature = "python")))]
+#[cfg(test)]
 mod tests;
 
 use std::{

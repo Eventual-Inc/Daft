@@ -582,7 +582,6 @@ impl Drop for NativeExecutor {
 
 /// Result of running a local plan.
 /// Used by distributed execution test infrastructure (LocalSwordfishWorker).
-#[cfg(not(feature = "python"))]
 pub enum LocalPlanOutput {
     /// Output partitions (from any operator — scan, filter, sort, repartition, etc.).
     Partitions(Vec<daft_micropartition::MicroPartition>),
@@ -595,7 +594,6 @@ pub enum LocalPlanOutput {
 /// context (e.g. `#[tokio::test]`).
 ///
 /// Returns the output partitions and execution statistics.
-#[cfg(not(feature = "python"))]
 pub async fn execute_local_plan(
     plan: &LocalPhysicalPlanRef,
     config: std::sync::Arc<DaftExecutionConfig>,
