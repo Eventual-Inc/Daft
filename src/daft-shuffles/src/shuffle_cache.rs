@@ -1,4 +1,7 @@
-use std::time::Instant;
+use std::{
+    sync::{Arc, OnceLock},
+    time::Instant,
+};
 
 use common_error::{DaftError, DaftResult};
 use common_metrics::SpillReporter;
@@ -44,6 +47,12 @@ pub struct InProgressShuffleCache {
     writer_senders_weak: Vec<async_channel::WeakSender<MicroPartition>>,
     shuffle_dirs: Vec<String>,
     cache_id: String,
+    /// Set at most once by the owning sink after the cache is constructed. Writer
+    /// tasks hold an `Arc` clone of this and read it on each write. When unset,
+    /// spill I/O isn't recorded — keeping eager cache construction cheap and
+    /// allowing `SpillReporter` attachment to happen later (in `sink()`, which
+    /// has access to `runtime_stats`).
+    spill: Arc<OnceLock<SpillReporter>>,
 }
 
 impl InProgressShuffleCache {
@@ -54,7 +63,6 @@ impl InProgressShuffleCache {
         shuffle_id: u64,
         target_filesize: usize,
         compression: Option<&str>,
-        spill: SpillReporter,
     ) -> DaftResult<Self> {
         // Create the directories
         // TODO: Add checks here, as well as periodic checks to ensure that the dirs are not too full. If so, we switch to directories with more space.
@@ -88,16 +96,16 @@ impl InProgressShuffleCache {
         }
 
         // Create the InProgressShuffleCache with the writers
-        Self::try_new_with_writers(writers, shuffle_dirs, cache_id, spill)
+        Self::try_new_with_writers(writers, shuffle_dirs, cache_id)
     }
 
     fn try_new_with_writers(
         writers: Vec<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>>,
         shuffle_dirs: Vec<String>,
         cache_id: String,
-        spill: SpillReporter,
     ) -> DaftResult<Self> {
         let num_cpus = std::thread::available_parallelism().unwrap().get();
+        let spill: Arc<OnceLock<SpillReporter>> = Arc::new(OnceLock::new());
 
         // Spawn the writer tasks
         let (writer_tasks, writer_senders): (Vec<_>, Vec<_>) = writers
@@ -116,11 +124,6 @@ impl InProgressShuffleCache {
         // Store weak senders so we can access them without locking
         let weak_senders: Vec<_> = writer_senders.iter().map(|s| s.downgrade()).collect();
 
-        // `spill` is cloned into each writer task above; the parent handle
-        // is dropped here because `ShuffleCache` (the post-finalization
-        // read-side type) does not currently instrument reads.
-        drop(spill);
-
         Ok(Self {
             state: Mutex::new(InProgressShuffleCacheState {
                 writer_senders: Some(writer_senders),
@@ -130,7 +133,15 @@ impl InProgressShuffleCache {
             writer_senders_weak: weak_senders,
             shuffle_dirs,
             cache_id,
+            spill,
         })
+    }
+
+    /// Attach a `SpillReporter` so subsequent writes are accounted for against
+    /// the owning operator's runtime stats. No-op if already attached (only the
+    /// first caller wins — later calls are silently ignored).
+    pub fn set_spill_reporter(&self, reporter: SpillReporter) {
+        let _ = self.spill.set(reporter);
     }
 
     /// Push already-partitioned data to the writers.
@@ -249,7 +260,7 @@ impl InProgressShuffleCache {
 async fn writer_task(
     rx: async_channel::Receiver<MicroPartition>,
     mut writer: Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Vec<RecordBatch>>>,
-    spill: SpillReporter,
+    spill: Arc<OnceLock<SpillReporter>>,
 ) -> DaftResult<WriterTaskResult> {
     let io_runtime = get_io_runtime(true);
     let mut schema = None;
@@ -263,7 +274,6 @@ async fn writer_task(
         let bytes = partition.size_bytes();
         total_rows_written += rows;
         total_bytes_written += bytes;
-        let spill_for_task = spill.clone();
         let write_start = Instant::now();
         writer = io_runtime
             .spawn(async move {
@@ -271,14 +281,18 @@ async fn writer_task(
                 DaftResult::Ok(writer)
             })
             .await??;
-        spill_for_task.record_bytes_written(bytes as u64);
-        spill_for_task.record_write_duration_ns(write_start.elapsed().as_nanos() as u64);
+        if let Some(reporter) = spill.get() {
+            reporter.record_bytes_written(bytes as u64);
+            reporter.record_write_duration_ns(write_start.elapsed().as_nanos() as u64);
+        }
     }
     // IPC writer buffers and flushes on close — record close time under the
     // same write-duration counter so the counter reflects actual disk I/O.
     let close_start = Instant::now();
     let file_path_tables = writer.close().await?;
-    spill.record_write_duration_ns(close_start.elapsed().as_nanos() as u64);
+    if let Some(reporter) = spill.get() {
+        reporter.record_write_duration_ns(close_start.elapsed().as_nanos() as u64);
+    }
 
     let file_paths = file_path_tables
         .into_iter()
@@ -297,8 +311,10 @@ async fn writer_task(
 
     let bytes_per_file = writer.bytes_per_file();
     assert!(bytes_per_file.len() == file_paths.len());
-    for _ in 0..file_paths.len() {
-        spill.record_file_created();
+    if let Some(reporter) = spill.get() {
+        for _ in 0..file_paths.len() {
+            reporter.record_file_created();
+        }
     }
     Ok(WriterTaskResult {
         schema,
@@ -407,7 +423,6 @@ mod tests {
             writers,
             vec![],
             "test_cache".to_string(),
-            SpillReporter::noop(),
         )?;
 
         // Create and push some partitions
@@ -458,7 +473,6 @@ mod tests {
             writers,
             vec![],
             "test_cache".to_string(),
-            SpillReporter::noop(),
         )?;
 
         // Create and push some partitions
@@ -492,7 +506,6 @@ mod tests {
             writers,
             vec![],
             "test_cache".to_string(),
-            SpillReporter::noop(),
         )?;
 
         // 1000 empty partitions, distributed across 5 writers
@@ -535,7 +548,6 @@ mod tests {
             writers,
             vec![],
             "test_cache".to_string(),
-            SpillReporter::noop(),
         )?;
 
         let mut found_failure = false;
@@ -606,7 +618,6 @@ mod tests {
             writers,
             vec![],
             "test_cache".to_string(),
-            SpillReporter::noop(),
         )?;
 
         // Create and push a partition
