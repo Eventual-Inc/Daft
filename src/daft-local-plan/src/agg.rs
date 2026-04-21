@@ -1,7 +1,7 @@
 use common_error::DaftResult;
-use daft_core::prelude::{CountMode, DataType, Schema};
+use daft_core::prelude::{CountMode, DataType, Literal, Operator, Schema};
 use daft_dsl::{
-    AggExpr, ApproxPercentileParams, ExprRef, SketchType, bound_col,
+    AggExpr, ApproxPercentileParams, Column, Expr, ExprRef, SketchType, bound_col,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
     functions::agg::merge_mean,
     lit, null_lit,
@@ -36,6 +36,90 @@ pub fn populate_aggregation_stages_bound_with_schema(
 )> {
     let mut first_stage_aggs = IndexSet::new();
     let mut second_stage_aggs = IndexSet::new();
+
+    #[derive(Clone, Copy)]
+    enum SumLiteralRewriteKind {
+        Add,
+        SubtractLiteral,
+        LiteralMinusInput,
+    }
+
+    struct SumLiteralRewrite {
+        input_expr: ExprRef,
+        literal_expr: ExprRef,
+        kind: SumLiteralRewriteKind,
+    }
+
+    fn extract_rewrite_input(expr: &ExprRef, schema: &Schema) -> DaftResult<Option<ExprRef>> {
+        let field = expr.to_field(schema)?;
+        if !field.dtype.is_integer() {
+            return Ok(None);
+        }
+
+        match expr.as_ref() {
+            Expr::Column(Column::Bound(_)) => Ok(Some(expr.clone())),
+            Expr::Alias(inner, _) => extract_rewrite_input(inner, schema),
+            _ => Ok(None),
+        }
+    }
+
+    fn extract_rewrite_literal(expr: &ExprRef) -> Option<ExprRef> {
+        match expr.as_ref() {
+            Expr::Literal(literal)
+                if literal.get_type().is_integer() && !matches!(literal, Literal::Null) =>
+            {
+                Some(expr.clone())
+            }
+            _ => None,
+        }
+    }
+
+    fn extract_sum_literal_rewrite(
+        expr: &ExprRef,
+        schema: &Schema,
+        output_dtype: &DataType,
+    ) -> DaftResult<Option<SumLiteralRewrite>> {
+        if !output_dtype.is_integer() {
+            return Ok(None);
+        }
+
+        let Expr::BinaryOp { op, left, right } = expr.as_ref() else {
+            return Ok(None);
+        };
+
+        let left_input = extract_rewrite_input(left, schema)?;
+        let right_input = extract_rewrite_input(right, schema)?;
+        let left_literal = extract_rewrite_literal(left);
+        let right_literal = extract_rewrite_literal(right);
+
+        let rewrite = match op {
+            Operator::Plus => match (left_input, right_input, left_literal, right_literal) {
+                (Some(input_expr), None, None, Some(literal_expr))
+                | (None, Some(input_expr), Some(literal_expr), None) => Some(SumLiteralRewrite {
+                    input_expr,
+                    literal_expr,
+                    kind: SumLiteralRewriteKind::Add,
+                }),
+                _ => None,
+            },
+            Operator::Minus => match (left_input, right_input, left_literal, right_literal) {
+                (Some(input_expr), None, None, Some(literal_expr)) => Some(SumLiteralRewrite {
+                    input_expr,
+                    literal_expr,
+                    kind: SumLiteralRewriteKind::SubtractLiteral,
+                }),
+                (None, Some(input_expr), Some(literal_expr), None) => Some(SumLiteralRewrite {
+                    input_expr,
+                    literal_expr,
+                    kind: SumLiteralRewriteKind::LiteralMinusInput,
+                }),
+                _ => None,
+            },
+            _ => None,
+        };
+
+        Ok(rewrite)
+    }
 
     let group_by_fields = group_by
         .iter()
@@ -126,9 +210,38 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 final_stage(count_distinct(concat_col));
             }
             AggExpr::Sum(expr) => {
-                let sum_col = first_stage!(AggExpr::Sum(expr.clone()));
-                let global_sum_col = second_stage!(AggExpr::Sum(sum_col));
-                final_stage(global_sum_col);
+                if let Some(rewrite) =
+                    extract_sum_literal_rewrite(expr, schema, &output_field.dtype)?
+                {
+                    let sum_col = first_stage!(AggExpr::Sum(rewrite.input_expr.clone()));
+                    let count_col =
+                        first_stage!(AggExpr::Count(rewrite.input_expr, CountMode::Valid));
+
+                    let global_sum_col =
+                        second_stage!(AggExpr::Sum(sum_col)).cast(&output_field.dtype);
+                    let global_count_col =
+                        second_stage!(AggExpr::Sum(count_col)).cast(&output_field.dtype);
+                    let literal_contribution = rewrite
+                        .literal_expr
+                        .cast(&output_field.dtype)
+                        .mul(global_count_col);
+
+                    let final_expr = match rewrite.kind {
+                        SumLiteralRewriteKind::Add => global_sum_col.add(literal_contribution),
+                        SumLiteralRewriteKind::SubtractLiteral => {
+                            global_sum_col.sub(literal_contribution)
+                        }
+                        SumLiteralRewriteKind::LiteralMinusInput => {
+                            literal_contribution.sub(global_sum_col)
+                        }
+                    };
+
+                    final_stage(final_expr);
+                } else {
+                    let sum_col = first_stage!(AggExpr::Sum(expr.clone()));
+                    let global_sum_col = second_stage!(AggExpr::Sum(sum_col));
+                    final_stage(global_sum_col);
+                }
             }
             AggExpr::ApproxPercentile(ApproxPercentileParams {
                 child,
@@ -359,4 +472,172 @@ pub fn populate_aggregation_stages_bound_with_schema(
         (second_stage_aggs.into_iter().collect(), second_stage_schema),
         final_exprs,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+    use daft_core::prelude::{DataType, Field, Schema};
+    use daft_dsl::{
+        Expr,
+        expr::bound_expr::{BoundAggExpr, BoundExpr},
+        lit, resolved_col,
+    };
+
+    use super::populate_aggregation_stages_bound_with_schema;
+
+    fn bound_sum(expr: daft_dsl::ExprRef, schema: &Schema) -> DaftResult<BoundAggExpr> {
+        let expr = expr.sum();
+        let Expr::Agg(agg) = expr.as_ref() else {
+            panic!("expected aggregate expression");
+        };
+        BoundAggExpr::try_new(agg.clone(), schema)
+    }
+
+    #[test]
+    fn rewrites_integer_sum_with_literals_into_shared_sum_and_count() -> DaftResult<()> {
+        let schema = Schema::new(vec![Field::new("x", DataType::Int16)]);
+        let aggregations = vec![
+            bound_sum(resolved_col("x").add(lit(1i64)), &schema)?,
+            bound_sum(resolved_col("x").add(lit(2i64)), &schema)?,
+        ];
+
+        let ((first_stage_aggs, _), (second_stage_aggs, _), final_exprs) =
+            populate_aggregation_stages_bound_with_schema(&aggregations, &schema, &[])?;
+
+        assert_eq!(
+            first_stage_aggs
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["sum(col(0: x))", "count(col(0: x), Valid)"]
+        );
+        assert_eq!(
+            second_stage_aggs
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["sum(col(0: x))", "sum(col(1: x))"]
+        );
+        assert_eq!(
+            final_exprs
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec![
+                "cast(col(0: x) as Int64) + [cast(lit(1) as Int64) * cast(col(1: x) as Int64)] as x",
+                "cast(col(0: x) as Int64) + [cast(lit(2) as Int64) * cast(col(1: x) as Int64)] as x",
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn rewrites_grouped_integer_sum_minus_literal() -> DaftResult<()> {
+        let schema = Schema::new(vec![
+            Field::new("g", DataType::Utf8),
+            Field::new("x", DataType::Int16),
+        ]);
+        let aggregations = vec![bound_sum(resolved_col("x").sub(lit(3i64)), &schema)?];
+        let group_by = vec![BoundExpr::try_new(resolved_col("g"), &schema)?];
+
+        let ((first_stage_aggs, _), (second_stage_aggs, _), final_exprs) =
+            populate_aggregation_stages_bound_with_schema(&aggregations, &schema, &group_by)?;
+
+        assert_eq!(
+            first_stage_aggs
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["sum(col(1: x))", "count(col(1: x), Valid)"]
+        );
+        assert_eq!(
+            second_stage_aggs
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["sum(col(1: x))", "sum(col(2: x))"]
+        );
+        assert_eq!(
+            final_exprs
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec![
+                "col(0: g)",
+                "cast(col(1: x) as Int64) - [cast(lit(3) as Int64) * cast(col(2: x) as Int64)] as x",
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn rewrites_integer_sum_literal_minus_input() -> DaftResult<()> {
+        let schema = Schema::new(vec![Field::new("x", DataType::Int16)]);
+        let aggregations = vec![bound_sum(lit(3i64).sub(resolved_col("x")), &schema)?];
+
+        let ((first_stage_aggs, _), (second_stage_aggs, _), final_exprs) =
+            populate_aggregation_stages_bound_with_schema(&aggregations, &schema, &[])?;
+
+        assert_eq!(
+            first_stage_aggs
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["sum(col(0: x))", "count(col(0: x), Valid)"]
+        );
+        assert_eq!(
+            second_stage_aggs
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["sum(col(0: x))", "sum(col(1: x))"]
+        );
+        assert_eq!(
+            final_exprs
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec![
+                "[cast(lit(3) as Int64) * cast(col(1: x) as Int64)] - cast(col(0: x) as Int64) as literal",
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn leaves_float_sum_with_literal_on_original_path() -> DaftResult<()> {
+        let schema = Schema::new(vec![Field::new("x", DataType::Float64)]);
+        let aggregations = vec![bound_sum(resolved_col("x").add(lit(1.5)), &schema)?];
+
+        let ((first_stage_aggs, _), (second_stage_aggs, _), final_exprs) =
+            populate_aggregation_stages_bound_with_schema(&aggregations, &schema, &[])?;
+
+        assert_eq!(
+            first_stage_aggs
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["sum(col(0: x) + lit(1.5))"]
+        );
+        assert_eq!(
+            second_stage_aggs
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["sum(col(0: x))"]
+        );
+        assert_eq!(
+            final_exprs
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["col(0: x) as x"]
+        );
+
+        Ok(())
+    }
 }
