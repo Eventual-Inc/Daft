@@ -42,7 +42,7 @@ impl GatherNode {
             plan_config.query_id.clone(),
             node_id,
             Arc::from(Self::NODE_NAME),
-            NodeType::Repartition,
+            NodeType::Gather,
             NodeCategory::BlockingSink,
         );
         let config = PipelineNodeConfig::new(

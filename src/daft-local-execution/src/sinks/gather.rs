@@ -152,7 +152,10 @@ impl GatherSink {
         local_server: Arc<ShuffleFlightServer>,
         shuffle_address: String,
     ) -> DaftResult<Self> {
-        const TARGET_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 64;
+        // Each input MP gets its own cache (unlike repartition, which keeps N open caches per
+        // input and divides a global budget by `num_partitions`). Matches the upper end of
+        // `RepartitionSink`'s per-partition clamp so the two sinks spill at similar sizes.
+        const TARGET_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 128;
         Ok(Self {
             backend: GatherBackend::Flight(Arc::new(FlightShared {
                 shuffle_id,
@@ -209,7 +212,7 @@ impl BlockingSink for GatherSink {
     }
 
     fn op_type(&self) -> NodeType {
-        NodeType::Repartition
+        NodeType::Gather
     }
 
     fn multiline_display(&self) -> Vec<String> {
