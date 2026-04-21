@@ -10,7 +10,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 
 DAFT_INDEX_URL=""
 PASSTHROUGH_ARGS=()
@@ -42,14 +42,14 @@ done
 
 $SSH "bash -s" "${DAFT_INDEX_URL}" < "${SCRIPT_DIR}/setup.sh"
 
-$SSH "mkdir -p ~/benchmarking && touch ~/benchmarking/__init__.py"
+$SSH "mkdir -p ~/benchmarking/asof_join && touch ~/benchmarking/__init__.py ~/benchmarking/asof_join/__init__.py"
 rsync -az --exclude '__pycache__' --exclude '*.pyc' \
     -e "ssh -i ${HOME}/.ssh/${KEY_NAME}.pem -o StrictHostKeyChecking=no" \
-    "${REPO_ROOT}/benchmarking/asof_join/" \
-    "ec2-user@${IP}:~/benchmarking/asof_join/"
+    "${REPO_ROOT}/benchmarking/asof_join/single_node/" \
+    "ec2-user@${IP}:~/benchmarking/asof_join/single_node/"
 
 $SSH "tmux new-session -d -s bench \
-    'python3.11 -m benchmarking.asof_join ${PASSTHROUGH_ARGS[*]} 2>&1 | tee ~/bench.log'"
+    'python3.11 -m benchmarking.asof_join.single_node ${PASSTHROUGH_ARGS[*]} 2>&1 | tee ~/bench.log'"
 
 echo "--------------------------------"
 echo "Logs:          $SSH 'tail -f ~/bench.log'"
