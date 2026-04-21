@@ -13,6 +13,19 @@ use crate::{
     text::options::{TextConvertOptions, TextReadOptions},
 };
 
+const READ_BLOB_HINT: &str =
+    "For non-UTF-8 or arbitrary binary data, use `daft.read_blob()` instead.";
+
+fn map_decode_err(e: std::io::Error) -> DaftError {
+    if e.kind() == std::io::ErrorKind::InvalidData {
+        DaftError::ValueError(format!(
+            "Failed to decode file as UTF-8: {e}. {READ_BLOB_HINT}"
+        ))
+    } else {
+        e.into()
+    }
+}
+
 /// Stream text lines from a URI into `RecordBatch` chunks with a single Utf8 column named "content".
 ///
 /// The `encoding` argument is currently restricted to UTF-8 (case-insensitive). Any other encoding
@@ -28,7 +41,7 @@ pub async fn stream_text(
     let encoding = convert_options.encoding.as_str();
     if !encoding.eq_ignore_ascii_case("utf-8") && !encoding.eq_ignore_ascii_case("utf8") {
         return Err(DaftError::ValueError(format!(
-            "Unsupported text encoding: {encoding}. Only UTF-8 is currently supported.",
+            "Unsupported text encoding: {encoding}. Only UTF-8 is currently supported. {READ_BLOB_HINT}",
         )));
     }
 
@@ -91,7 +104,7 @@ async fn read_into_whole_text_stream(
         }
 
         let mut content = String::new();
-        reader.read_to_string(&mut content).await?;
+        reader.read_to_string(&mut content).await.map_err(map_decode_err)?;
 
         // Apply skip_blank_lines if needed (for whole file, this means skip if entire content is blank)
         if convert_options.skip_blank_lines && content.trim().is_empty() {
@@ -124,7 +137,7 @@ async fn read_into_line_chunk_stream(
         while remaining > 0 {
             match stream.next().await {
                 Some(line_res) => {
-                    let line = line_res?;
+                    let line = line_res.map_err(map_decode_err)?;
                     if skip_blank_lines && line.trim().is_empty() {
                         continue;
                     }
