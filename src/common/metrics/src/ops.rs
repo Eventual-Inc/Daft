@@ -103,7 +103,9 @@ impl NodeInfo {
             KeyValue::new(ATTR_NODE_TYPE, self.node_type.to_string()),
         ];
         // Add node_origin_id if present. This is used by distributed
-        // pipeline nodes that have multiple execution phases.
+        // pipeline nodes, which create one or more local plan nodes
+        // for local execution, to associate those local nodes back to the
+        // distributed node that created them.
         if let Some(node_origin_id) = &self.node_origin_id {
             kvs.push(KeyValue::new(
                 ATTR_NODE_ORIGIN_ID,

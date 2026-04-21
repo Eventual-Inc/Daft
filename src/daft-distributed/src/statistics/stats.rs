@@ -83,7 +83,10 @@ impl RuntimeNodeManager {
                                 .handle_worker_node_stats(node_info, snapshot);
                         }
                     } else {
-                        tracing::debug!("expected `origin_node_id` for node_info: {:?}", node_info);
+                        tracing::debug!(
+                            "local node stats missing `origin_node_id`, skipping attribution: {:?}",
+                            node_info
+                        );
                     }
                 }
             }
