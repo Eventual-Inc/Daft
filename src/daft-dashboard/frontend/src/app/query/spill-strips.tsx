@@ -94,6 +94,18 @@ function StripBar({
 }
 
 export default function SpillStrips({ operator }: { operator?: OperatorInfo }) {
+  // Track whether this operator has ever reported an in-memory buffer
+  // gauge. The backend only emits `bytes.in_memory_buffer` when the gauge
+  // was set to a non-zero value at least once — so for sinks that never
+  // call `set_in_memory_buffer_bytes` (e.g. Flight-path Repartition),
+  // the key is perpetually absent and we should suppress the mem bar
+  // entirely. Without this, the bar would render flat at 0 and mislead
+  // users into thinking there's no memory pressure tracking at all.
+  const memObserved = useRef(false);
+  const memKeyPresent =
+    operator?.stats[IN_MEMORY_BUFFER_BYTES_STAT_KEY] !== undefined;
+  if (memKeyPresent) memObserved.current = true;
+
   const memBytes = operator
     ? statNumericValue(operator.stats[IN_MEMORY_BUFFER_BYTES_STAT_KEY])
     : 0;
@@ -130,14 +142,18 @@ export default function SpillStrips({ operator }: { operator?: OperatorInfo }) {
     .filter(Boolean)
     .join(" · ");
 
+  const showMem = memObserved.current;
+
   return (
     <div className="mt-2 pt-2 border-t border-zinc-700/50 space-y-1.5">
-      <StripBar
-        label="mem"
-        fill={memBytes / memScale}
-        value={formatBytes(memBytes)}
-        color="rgb(217, 70, 219)"
-      />
+      {showMem && (
+        <StripBar
+          label="mem"
+          fill={memBytes / memScale}
+          value={formatBytes(memBytes)}
+          color="rgb(217, 70, 219)"
+        />
+      )}
       <div className="pt-1 space-y-1">
         <div
           className={`${main.className} text-[10px] uppercase tracking-wider text-zinc-500`}
