@@ -30,7 +30,7 @@ use crate::{
     },
 };
 
-type SkippedFilesCollector = Option<Arc<std::sync::Mutex<Vec<(String, String)>>>>;
+type SkippedCorruptFilesCollector = Option<Arc<std::sync::Mutex<Vec<(String, String)>>>>;
 
 pub struct ScanTaskSource {
     receiver: UnboundedReceiver<(InputId, Vec<ScanTaskRef>)>,
@@ -38,7 +38,7 @@ pub struct ScanTaskSource {
     pushdowns: Pushdowns,
     schema: SchemaRef,
     num_parallel_tasks: usize,
-    skipped_files: SkippedFilesCollector,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 }
 
 impl ScanTaskSource {
@@ -48,7 +48,7 @@ impl ScanTaskSource {
         pushdowns: Pushdowns,
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
-        skipped_files: SkippedFilesCollector,
+        skipped_corrupt_files: SkippedCorruptFilesCollector,
     ) -> Self {
         let num_cpus = get_compute_pool_num_threads();
         let num_parallel_tasks = if cfg.scantask_max_parallel > 0 {
@@ -62,7 +62,7 @@ impl ScanTaskSource {
             pushdowns,
             schema,
             num_parallel_tasks,
-            skipped_files,
+            skipped_corrupt_files,
         }
     }
 
@@ -75,7 +75,7 @@ impl ScanTaskSource {
         chunk_size: usize,
         schema: SchemaRef,
         maintain_order: bool,
-        skipped_files: SkippedFilesCollector,
+        skipped_corrupt_files: SkippedCorruptFilesCollector,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
 
@@ -123,7 +123,7 @@ impl ScanTaskSource {
                         chunk_size,
                         sender,
                         input_id,
-                        skipped_files.clone(),
+                        skipped_corrupt_files.clone(),
                     ));
                 }
 
@@ -241,7 +241,7 @@ impl Source for ScanTaskSource {
             chunk_size,
             self.schema.clone(),
             maintain_order,
-            self.skipped_files.clone(),
+            self.skipped_corrupt_files.clone(),
         );
         let result_stream = output_receiver.into_stream().map(Ok);
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
@@ -494,7 +494,7 @@ async fn forward_scan_task_stream(
     chunk_size: usize,
     sender: ScanTaskOutputSender,
     input_id: InputId,
-    skipped_files: SkippedFilesCollector,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<InputId> {
     let schema = scan_task.materialized_schema();
     let mut stream = stream_scan_task(
@@ -503,7 +503,7 @@ async fn forward_scan_task_stream(
         delete_map,
         maintain_order,
         chunk_size,
-        skipped_files,
+        skipped_corrupt_files,
     )
     .await?;
     let mut has_data = false;
@@ -557,7 +557,7 @@ async fn stream_scan_task(
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
     chunk_size: usize,
-    skipped_files: SkippedFilesCollector,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<impl Stream<Item = DaftResult<MicroPartition>> + Send> {
     let pushdown_columns = scan_task
         .pushdowns
@@ -613,7 +613,7 @@ async fn stream_scan_task(
         delete_map,
         maintain_order,
         chunk_size,
-        skipped_files,
+        skipped_corrupt_files,
     )
     .await?;
 

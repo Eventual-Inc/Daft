@@ -47,7 +47,7 @@ def read_parquet(
         hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
         coerce_int96_timestamp_unit: TimeUnit to coerce Int96 TimeStamps to. e.g.: [ns, us, ms], Defaults to None.
         ignore_corrupt_files: If True, corrupt or unreadable Parquet files are silently skipped
-            instead of raising an error. Skipped files are recorded in ``df.skipped_files`` after
+            instead of raising an error. Skipped files are recorded in ``df.skipped_corrupt_files`` after
             collection. Only genuine format errors (bad magic bytes, truncated footer, corrupt
             row-group data) are ignored; network errors and permission errors are still raised.
             Defaults to False.

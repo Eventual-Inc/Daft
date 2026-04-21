@@ -15,7 +15,7 @@ use daft_text::{TextConvertOptions, TextReadOptions};
 use daft_warc::WarcConvertOptions;
 use futures::stream::BoxStream;
 
-type SkippedFilesCollector = Option<Arc<std::sync::Mutex<Vec<(String, String)>>>>;
+type SkippedCorruptFilesCollector = Option<Arc<std::sync::Mutex<Vec<(String, String)>>>>;
 
 /// Dispatches a ScanTask to the appropriate reader based on its SourceConfig,
 /// returning a stream of RecordBatches.
@@ -31,7 +31,7 @@ pub(crate) async fn read_scan_task(
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
     chunk_size: usize,
-    skipped_files: SkippedFilesCollector,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     match scan_task.source_config.as_ref() {
         SourceConfig::File(ffc) => match ffc {
@@ -46,7 +46,7 @@ pub(crate) async fn read_scan_task(
                     delete_map,
                     maintain_order,
                     chunk_size,
-                    skipped_files,
+                    skipped_corrupt_files,
                 )
                 .await
             }
@@ -59,7 +59,7 @@ pub(crate) async fn read_scan_task(
                     io_client,
                     io_stats,
                     chunk_size,
-                    skipped_files,
+                    skipped_corrupt_files,
                 )
                 .await
             }
@@ -98,7 +98,7 @@ async fn read_parquet(
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
     chunk_size: usize,
-    skipped_files: SkippedFilesCollector,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let source = scan_task.sources.first().unwrap();
 
@@ -115,7 +115,7 @@ async fn read_parquet(
             cfg.field_id_mapping.clone(),
             aggregation,
             cfg.ignore_corrupt_files,
-            skipped_files,
+            skipped_corrupt_files,
         )
         .await
     } else {
@@ -148,7 +148,7 @@ async fn read_parquet(
             delete_rows,
             parquet_chunk_size,
             cfg.ignore_corrupt_files,
-            skipped_files,
+            skipped_corrupt_files,
         )
         .await
     }
@@ -163,7 +163,7 @@ async fn read_csv(
     io_client: Arc<daft_io::IOClient>,
     io_stats: IOStatsRef,
     chunk_size: usize,
-    skipped_files: SkippedFilesCollector,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let schema_of_file = scan_task.schema.clone();
     let col_names = if !cfg.has_headers {
@@ -202,7 +202,7 @@ async fn read_csv(
         Some(io_stats),
         None,
         cfg.ignore_corrupt_files,
-        skipped_files,
+        skipped_corrupt_files,
     )
     .await
 }

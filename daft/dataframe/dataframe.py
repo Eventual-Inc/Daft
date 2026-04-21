@@ -188,7 +188,7 @@ class DataFrame:
             return self._metadata.to_recordbatch() if self._metadata else None
 
     @property
-    def skipped_files(self) -> list[tuple[str, str]]:
+    def skipped_corrupt_files(self) -> list[tuple[str, str]]:
         """Files skipped during the last execution due to ignore_corrupt_files=True.
 
         Returns a list of ``(path, reason)`` tuples for every file that was skipped.
@@ -198,12 +198,12 @@ class DataFrame:
 
             df = daft.read_parquet("s3://bucket/data/", ignore_corrupt_files=True)
             df.collect()
-            for path, reason in df.skipped_files:
+            for path, reason in df.skipped_corrupt_files:
                 print(f"Skipped {path}: {reason}")
         """
         if self._result_cache is None:
-            raise ValueError("skipped_files is not available until the DataFrame has been collected")
-        return self._metadata.skipped_files if self._metadata else []
+            raise ValueError("skipped_corrupt_files is not available until the DataFrame has been collected")
+        return self._metadata.skipped_corrupt_files if self._metadata else []
 
     def pipe(
         self,
@@ -4931,12 +4931,12 @@ class DataFrame:
             assert result is not None
             result.wait()
             self._metadata.write_mermaid()
-            skipped = self._metadata.skipped_files if self._metadata else []
+            skipped = self._metadata.skipped_corrupt_files if self._metadata else []
             if skipped:
                 paths = "\n".join(f"  - {path}" for path, _ in skipped)
                 logger.warning(
                     "%d file(s) were skipped due to corruption or being missing "
-                    "(ignore_corrupt_files=True). Use df.skipped_files for details.\n%s",
+                    "(ignore_corrupt_files=True). Use df.skipped_corrupt_files for details.\n%s",
                     len(skipped),
                     paths,
                 )

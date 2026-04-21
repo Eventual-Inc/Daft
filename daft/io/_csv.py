@@ -50,7 +50,7 @@ def read_csv(
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
         hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
         ignore_corrupt_files: If True, corrupt or unreadable CSV files are silently skipped instead
-            of raising an error. Skipped files are recorded in ``df.skipped_files`` after collection.
+            of raising an error. Skipped files are recorded in ``df.skipped_corrupt_files`` after collection.
             Defaults to False.
 
     Returns:

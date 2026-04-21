@@ -88,7 +88,7 @@ pub struct ParquetSourceConfig {
     pub row_groups: Option<Vec<Option<Vec<i64>>>>,
     pub chunk_size: Option<usize>,
     /// If true, corrupt or unreadable Parquet files are silently skipped instead of raising an
-    /// error. Skipped files are recorded in `df.skipped_files` after collection. Only genuine
+    /// error. Skipped files are recorded in `df.skipped_corrupt_files` after collection. Only genuine
     /// format errors (bad magic bytes, truncated footer, corrupt row-group data) are ignored;
     /// network errors and permission errors are still raised.
     pub ignore_corrupt_files: bool,
@@ -198,7 +198,7 @@ pub struct CsvSourceConfig {
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
     /// If true, corrupt or unreadable CSV files are silently skipped instead of raising an
-    /// error. Skipped files are recorded in `df.skipped_files` after collection. Only genuine
+    /// error. Skipped files are recorded in `df.skipped_corrupt_files` after collection. Only genuine
     /// format errors (bad encoding, wrong field counts, truncated file) are ignored;
     /// network errors and permission errors are still raised.
     pub ignore_corrupt_files: bool,

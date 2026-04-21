@@ -30,7 +30,7 @@ use tokio_util::io::StreamReader;
 
 use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions, metadata::read_csv_schema_single};
 
-type SkippedFilesCollector = Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>;
+type SkippedCorruptFilesCollector = Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>;
 
 trait ByteRecordChunkStream: Stream<Item = super::Result<Vec<csv_async::ByteRecord>>> {}
 impl<S> ByteRecordChunkStream for S where S: Stream<Item = super::Result<Vec<csv_async::ByteRecord>>>
@@ -171,7 +171,7 @@ pub async fn stream_csv(
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
     ignore_corrupt_files: bool,
-    skipped_files: SkippedFilesCollector,
+    skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let (source_type, _) = parse_url(&uri)?;
     let is_compressed = CompressionCodec::from_uri(&uri).is_some();
@@ -207,10 +207,10 @@ pub async fn stream_csv(
                 // Level 2: filter per-chunk errors that indicate format corruption
                 // (e.g. bad encoding or wrong field count discovered mid-stream).
                 let uri_for_warn = uri.clone();
-                let skipped_files_inner = skipped_files.clone();
+                let skipped_corrupt_files_inner = skipped_corrupt_files.clone();
                 let filtered = stream.filter_map(move |result| {
                     let uri_w = uri_for_warn.clone();
-                    let skipped = skipped_files_inner.clone();
+                    let skipped = skipped_corrupt_files_inner.clone();
                     futures::future::ready(match result {
                         Ok(batch) => Some(Ok(batch)),
                         Err(ref e) if is_csv_corrupt(e) => {
@@ -233,7 +233,7 @@ pub async fn stream_csv(
         // Level 1: file-open / schema-inference errors (format error or truncated file).
         Err(ref e) if ignore_corrupt_files && is_csv_corrupt(e) => {
             log::warn!("Skipping unreadable/corrupt CSV file {uri}: {e}");
-            if let Some(ref collector) = skipped_files
+            if let Some(ref collector) = skipped_corrupt_files
                 && let Ok(mut v) = collector.lock()
             {
                 v.push((uri, e.to_string()));

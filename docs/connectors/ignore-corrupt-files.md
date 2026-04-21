@@ -60,24 +60,24 @@ import logging
 logging.basicConfig(level=logging.WARNING)
 ```
 
-### `df.skipped_files` — programmatic access
+### `df.skipped_corrupt_files` — programmatic access
 
-After calling `.collect()`, the `skipped_files` property returns the list of skipped `(path, reason)` pairs as structured data, so your pipeline code can act on them:
+After calling `.collect()`, the `skipped_corrupt_files` property returns the list of skipped `(path, reason)` pairs as structured data, so your pipeline code can act on them:
 
 ```python
 df = daft.read_parquet("s3://my-bucket/data/**/*.parquet", ignore_corrupt_files=True)
 df.collect()
 
-skipped = df.skipped_files  # list[tuple[str, str]]
+skipped = df.skipped_corrupt_files  # list[tuple[str, str]]
 for path, reason in skipped:
     print(f"Skipped: {path}\n  Reason: {reason}")
 ```
 
-`skipped_files` is available after any action that triggers execution (`.collect()`, `.write_parquet()`, etc.).
+`skipped_corrupt_files` is available after any action that triggers execution (`.collect()`, `.write_parquet()`, etc.).
 
 ## Handling skipped files in production
 
-Because `skipped_files` is plain Python data, you can plug it directly into your existing alerting or data-quality workflows:
+Because `skipped_corrupt_files` is plain Python data, you can plug it directly into your existing alerting or data-quality workflows:
 
 ```python
 import daft
@@ -85,7 +85,7 @@ import daft
 df = daft.read_parquet("s3://my-bucket/nightly/**/*.parquet", ignore_corrupt_files=True)
 df.write_parquet("s3://my-bucket/processed/")
 
-skipped = df.skipped_files
+skipped = df.skipped_corrupt_files
 if skipped:
     # Option 1: send an alert
     send_alert(f"{len(skipped)} file(s) skipped during nightly run", details=skipped)

@@ -81,7 +81,7 @@ def _basename(path: str) -> str:
 
 
 def test_parquet_ignore_corrupt_skips_and_reports(tmp_path):
-    """Corrupt Parquet file is skipped, valid rows returned, and skipped_files is populated."""
+    """Corrupt Parquet file is skipped, valid rows returned, and skipped_corrupt_files is populated."""
     d = str(tmp_path)
     _write_parquet(d, "good1.parquet", {"a": [1, 2, 3]})
     _write_corrupt_parquet(d, "bad.parquet")
@@ -92,7 +92,7 @@ def test_parquet_ignore_corrupt_skips_and_reports(tmp_path):
 
     assert sorted(df.to_pydict()["a"]) == [1, 2, 3, 4, 5, 6]
 
-    skipped = df.skipped_files
+    skipped = df.skipped_corrupt_files
     assert len(skipped) == 1
     path, reason = skipped[0]
     assert _basename(path) == "bad.parquet"
@@ -110,7 +110,7 @@ def test_parquet_ignore_corrupt_false_raises(tmp_path):
 
 
 def test_parquet_ignore_corrupt_all_good_no_skips(tmp_path):
-    """All valid files: all rows returned, skipped_files is empty."""
+    """All valid files: all rows returned, skipped_corrupt_files is empty."""
     d = str(tmp_path)
     _write_parquet(d, "a.parquet", {"x": [10, 20]})
     _write_parquet(d, "b.parquet", {"x": [30, 40]})
@@ -119,7 +119,7 @@ def test_parquet_ignore_corrupt_all_good_no_skips(tmp_path):
     df.collect()
 
     assert sorted(df.to_pydict()["x"]) == [10, 20, 30, 40]
-    assert df.skipped_files == []
+    assert df.skipped_corrupt_files == []
 
 
 def test_parquet_ignore_corrupt_schema_inference_fallback(tmp_path):
@@ -133,7 +133,7 @@ def test_parquet_ignore_corrupt_schema_inference_fallback(tmp_path):
 
     assert "col_a" in df.schema().column_names()
     assert sorted(df.to_pydict()["col_a"]) == [7, 8, 9]
-    assert any(_basename(p) == "aaa_bad.parquet" for p, _ in df.skipped_files)
+    assert any(_basename(p) == "aaa_bad.parquet" for p, _ in df.skipped_corrupt_files)
 
 
 def test_parquet_ignore_corrupt_count_correct(tmp_path):
@@ -155,7 +155,7 @@ def test_parquet_ignore_corrupt_rowgroup_data(tmp_path):
     df.collect()
 
     assert sorted(df.to_pydict()["a"]) == [10, 20, 30]
-    skipped = df.skipped_files
+    skipped = df.skipped_corrupt_files
     assert len(skipped) == 1
     path, reason = skipped[0]
     assert _basename(path) == "zzz_bad_rowgroup.parquet"
@@ -178,7 +178,7 @@ def test_parquet_ignore_corrupt_all_corrupt_raises(tmp_path):
 
 
 def test_parquet_ignore_corrupt_multiple_corrupt_files(tmp_path):
-    """Multiple corrupt files are all recorded in skipped_files."""
+    """Multiple corrupt files are all recorded in skipped_corrupt_files."""
     d = str(tmp_path)
     _write_parquet(d, "good.parquet", {"a": [1, 2, 3]})
     _write_corrupt_parquet(d, "bad1.parquet")
@@ -188,7 +188,7 @@ def test_parquet_ignore_corrupt_multiple_corrupt_files(tmp_path):
     df.collect()
 
     assert sorted(df.to_pydict()["a"]) == [1, 2, 3]
-    skipped_names = {_basename(p) for p, _ in df.skipped_files}
+    skipped_names = {_basename(p) for p, _ in df.skipped_corrupt_files}
     assert skipped_names == {"bad1.parquet", "bad2.parquet"}
 
 
@@ -196,7 +196,7 @@ def test_parquet_ignore_corrupt_multiple_corrupt_files(tmp_path):
 
 
 def test_csv_ignore_corrupt_skips_and_reports(tmp_path):
-    """Corrupt CSV file is skipped, valid rows returned, and skipped_files is populated."""
+    """Corrupt CSV file is skipped, valid rows returned, and skipped_corrupt_files is populated."""
     d = str(tmp_path)
     _write_csv(d, "good1.csv", "a\n1\n2\n3\n")
     _write_csv(d, "good2.csv", "a\n4\n5\n6\n")
@@ -207,7 +207,7 @@ def test_csv_ignore_corrupt_skips_and_reports(tmp_path):
 
     assert sorted(df.to_pydict()["a"]) == [1, 2, 3, 4, 5, 6]
 
-    skipped = df.skipped_files
+    skipped = df.skipped_corrupt_files
     assert len(skipped) == 1
     path, reason = skipped[0]
     assert _basename(path) == "zzz_bad.csv"
@@ -225,7 +225,7 @@ def test_csv_ignore_corrupt_false_raises(tmp_path):
 
 
 def test_csv_ignore_corrupt_all_good_no_skips(tmp_path):
-    """All valid CSV files: all rows returned, skipped_files is empty."""
+    """All valid CSV files: all rows returned, skipped_corrupt_files is empty."""
     d = str(tmp_path)
     _write_csv(d, "a.csv", "n\n10\n20\n")
     _write_csv(d, "b.csv", "n\n30\n40\n")
@@ -234,7 +234,7 @@ def test_csv_ignore_corrupt_all_good_no_skips(tmp_path):
     df.collect()
 
     assert sorted(df.to_pydict()["n"]) == [10, 20, 30, 40]
-    assert df.skipped_files == []
+    assert df.skipped_corrupt_files == []
 
 
 def test_csv_ignore_corrupt_field_count_mismatch(tmp_path):
@@ -249,7 +249,7 @@ def test_csv_ignore_corrupt_field_count_mismatch(tmp_path):
     result = df.to_pydict()
     assert sorted(result["a"]) == [1, 3]
     assert sorted(result["b"]) == [2, 4]
-    assert any(_basename(p) == "zzz_bad.csv" for p, _ in df.skipped_files)
+    assert any(_basename(p) == "zzz_bad.csv" for p, _ in df.skipped_corrupt_files)
 
 
 def test_csv_ignore_corrupt_all_corrupt_raises(tmp_path):
@@ -263,7 +263,7 @@ def test_csv_ignore_corrupt_all_corrupt_raises(tmp_path):
 
 
 def test_csv_ignore_corrupt_multiple_corrupt_files(tmp_path):
-    """Multiple corrupt CSV files are all recorded in skipped_files."""
+    """Multiple corrupt CSV files are all recorded in skipped_corrupt_files."""
     d = str(tmp_path)
     _write_csv(d, "good.csv", "a\n1\n2\n3\n")
     # Binary garbage fails during reading. Provide an explicit schema to bypass
@@ -280,7 +280,7 @@ def test_csv_ignore_corrupt_multiple_corrupt_files(tmp_path):
     df.collect()
 
     assert sorted(df.to_pydict()["a"]) == [1, 2, 3]
-    skipped_names = {_basename(p) for p, _ in df.skipped_files}
+    skipped_names = {_basename(p) for p, _ in df.skipped_corrupt_files}
     assert skipped_names == {"zzz_bad1.csv", "zzz_bad2.csv"}
 
 
@@ -290,7 +290,7 @@ def test_csv_ignore_corrupt_multiple_corrupt_files(tmp_path):
 # package is not installed (pytest.importorskip inside the fixture).
 #
 # Iceberg data files go through the Rust Parquet reader, so corrupt files are
-# reflected in df.skipped_files just like plain read_parquet.
+# reflected in df.skipped_corrupt_files just like plain read_parquet.
 
 
 @pytest.fixture
@@ -316,7 +316,7 @@ def _iceberg_data_file_local_paths(table) -> list[str]:
 
 
 def test_iceberg_ignore_corrupt_skips_and_reports(local_iceberg_catalog):
-    """Corrupt Iceberg data file is skipped, valid rows returned, and skipped_files is populated."""
+    """Corrupt Iceberg data file is skipped, valid rows returned, and skipped_corrupt_files is populated."""
     from pyiceberg.schema import Schema
     from pyiceberg.types import LongType, NestedField
 
@@ -339,7 +339,7 @@ def test_iceberg_ignore_corrupt_skips_and_reports(local_iceberg_catalog):
     assert len(result) == 3
     assert set(result).issubset({1, 2, 3, 4, 5, 6})
 
-    skipped = df.skipped_files
+    skipped = df.skipped_corrupt_files
     assert len(skipped) == 1
     _, reason = skipped[0]
     assert reason
@@ -363,7 +363,7 @@ def test_iceberg_ignore_corrupt_false_raises(local_iceberg_catalog):
 
 
 def test_iceberg_ignore_corrupt_all_good_no_skips(local_iceberg_catalog):
-    """All valid Iceberg files: all rows returned, skipped_files is empty."""
+    """All valid Iceberg files: all rows returned, skipped_corrupt_files is empty."""
     from pyiceberg.schema import Schema
     from pyiceberg.types import LongType, NestedField
 
@@ -376,4 +376,4 @@ def test_iceberg_ignore_corrupt_all_good_no_skips(local_iceberg_catalog):
     df.collect()
 
     assert sorted(df.to_pydict()["id"]) == [1, 2, 3, 4, 5, 6]
-    assert df.skipped_files == []
+    assert df.skipped_corrupt_files == []
