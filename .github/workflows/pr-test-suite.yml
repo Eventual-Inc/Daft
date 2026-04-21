@@ -215,7 +215,7 @@ jobs:
       env:
           # output of `cargo llvm-cov show-env --export-prefix`
         RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
-        LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
+        LLVM_PROFILE_FILE: ${{ github.workspace }}/target/daft-coverage-%p-%m.profraw
         CARGO_LLVM_COV: 1
         CARGO_LLVM_COV_SHOW_ENV: 1
         CARGO_LLVM_COV_TARGET_DIR: ./target
@@ -417,7 +417,7 @@ jobs:
         maturin develop --uv
       env:
         RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
-        LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
+        LLVM_PROFILE_FILE: ${{ github.workspace }}/target/daft-coverage-%p-%m.profraw
         CARGO_LLVM_COV: 1
         CARGO_LLVM_COV_SHOW_ENV: 1
         CARGO_LLVM_COV_TARGET_DIR: ./target
@@ -432,7 +432,7 @@ jobs:
       env:
         DAFT_RUNNER: native
         RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
-        LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
+        LLVM_PROFILE_FILE: ${{ github.workspace }}/target/daft-coverage-%p-%m.profraw
         CARGO_LLVM_COV: 1
         CARGO_LLVM_COV_SHOW_ENV: 1
         CARGO_LLVM_COV_TARGET_DIR: ./target
@@ -446,7 +446,7 @@ jobs:
       env:
         DAFT_RUNNER: ray
         RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
-        LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
+        LLVM_PROFILE_FILE: ${{ github.workspace }}/target/daft-coverage-%p-%m.profraw
         CARGO_LLVM_COV: 1
         CARGO_LLVM_COV_SHOW_ENV: 1
         CARGO_LLVM_COV_TARGET_DIR: ./target
@@ -459,7 +459,7 @@ jobs:
         cargo llvm-cov report --lcov --output-path report-output/rust-coverage-integration-tpch.lcov
       env:
         RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
-        LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
+        LLVM_PROFILE_FILE: ${{ github.workspace }}/target/daft-coverage-%p-%m.profraw
         CARGO_LLVM_COV: 1
         CARGO_LLVM_COV_SHOW_ENV: 1
         CARGO_LLVM_COV_TARGET_DIR: ./target
@@ -1286,7 +1286,7 @@ jobs:
       env:
         # Mirror the unit-test coverage env block.
         RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
-        LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
+        LLVM_PROFILE_FILE: ${{ github.workspace }}/target/daft-coverage-%p-%m.profraw
         CARGO_LLVM_COV: 1
         CARGO_LLVM_COV_SHOW_ENV: 1
         CARGO_LLVM_COV_TARGET_DIR: ./target
