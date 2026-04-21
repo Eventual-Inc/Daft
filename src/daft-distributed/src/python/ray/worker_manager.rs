@@ -269,13 +269,21 @@ impl WorkerManager for RayWorkerManager {
         }
 
         // 5. Send the selected bundles to Ray's autoscaler via request_resources().
+        //    Strip zero-valued GPU/memory keys so Ray doesn't interpret them as a demand
+        //    for zero-resource bundles on specialized nodes.
         let python_bundles = selected_bundles
             .iter()
             .map(|bundle| {
                 let mut dict = HashMap::new();
                 dict.insert("CPU", bundle.num_cpus().ceil() as i64);
-                dict.insert("GPU", bundle.num_gpus().ceil() as i64);
-                dict.insert("memory", bundle.memory_bytes() as i64);
+                let gpu = bundle.num_gpus().ceil() as i64;
+                if gpu > 0 {
+                    dict.insert("GPU", gpu);
+                }
+                let memory = bundle.memory_bytes() as i64;
+                if memory > 0 {
+                    dict.insert("memory", memory);
+                }
                 dict
             })
             .collect::<Vec<_>>();
