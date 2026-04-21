@@ -10,7 +10,6 @@ pub(super) struct DefaultScheduler<T: Task> {
     pending_tasks: BinaryHeap<PendingTask<T>>,
     worker_snapshots: HashMap<WorkerId, WorkerSnapshot>,
     autoscaling_threshold: f64,
-    last_scheduled_count: usize,
 }
 
 impl<T: Task> Default for DefaultScheduler<T> {
@@ -35,7 +34,6 @@ impl<T: Task> DefaultScheduler<T> {
             pending_tasks: BinaryHeap::new(),
             worker_snapshots: HashMap::new(),
             autoscaling_threshold,
-            last_scheduled_count: 0,
         }
     }
 
@@ -98,17 +96,14 @@ impl<T: Task> DefaultScheduler<T> {
             return true;
         }
 
-        // Use total demand (pending + just-dispatched) to compute the ratio. schedule_tasks()
-        // drains pending tasks before this check runs, so without the dispatched count the
-        // ratio would only reflect residual demand and under-fire when the cluster is saturated.
+        // If the ratio of pending tasks to total capacity is greater than the autoscaling threshold, we need to autoscale
         let total_capacity: usize = self
             .worker_snapshots
             .values()
             .map(|worker| worker.total_num_cpus() as usize)
             .sum();
 
-        let total_demand = self.pending_tasks.len() + self.last_scheduled_count;
-        let ratio = total_demand as f64 / total_capacity as f64;
+        let ratio = self.pending_tasks.len() as f64 / total_capacity as f64;
 
         ratio > self.autoscaling_threshold
     }
@@ -139,7 +134,6 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
             }
         }
         self.pending_tasks.extend(unscheduled);
-        self.last_scheduled_count = scheduled.len();
         scheduled
     }
 
@@ -155,12 +149,8 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
     }
 
     fn get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>> {
-        // If we need to autoscale, return the resource requests of the pending tasks.
-        // Only pending tasks are included in the request - dispatched tasks already have
-        // workers assigned. last_scheduled_count only affects the threshold check.
+        // If we need to autoscale, return the resource requests of the pending tasks
         let needs_autoscaling = self.needs_autoscaling();
-        // Reset to prevent double-counting if called multiple times before next schedule_tasks()
-        self.last_scheduled_count = 0;
         needs_autoscaling.then(|| {
             super::pending_tasks_in_priority_order(&self.pending_tasks)
                 .into_iter()
@@ -709,86 +699,6 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(requested_cpus, vec![3.0, 2.0, 1.0]);
-    }
-
-    #[test]
-    fn test_autoscaling_fires_when_dispatched_tasks_tip_ratio_over_threshold() {
-        let worker_1: WorkerId = Arc::from("worker1");
-
-        // 1 worker with 4 CPU slots, threshold = 1.25 (default)
-        let workers = setup_workers(&[(worker_1, 4)]);
-        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
-
-        // Enqueue 8 tasks (true ratio = 8/4 = 2.0 > 1.25)
-        let tasks = (0..8).map(|i| create_spread_task(Some(i))).collect();
-        scheduler.enqueue_tasks(tasks);
-
-        // schedule_tasks() dispatches 4, leaves 4 pending
-        let result = scheduler.schedule_tasks();
-        assert_eq!(result.len(), 4);
-        assert_eq!(scheduler.num_pending_tasks(), 4);
-
-        // Without the fix: ratio = 4/4 = 1.0 < 1.25 -> no autoscale (BUG)
-        // With the fix: ratio = (4+4)/4 = 2.0 > 1.25 -> autoscale fires
-        let autoscale_request = scheduler.get_autoscaling_request();
-        assert!(
-            autoscale_request.is_some(),
-            "Autoscaling should fire: true demand ratio is 8/4 = 2.0 > 1.25 threshold"
-        );
-        assert_eq!(autoscale_request.unwrap().len(), 4);
-    }
-
-    #[test]
-    fn test_autoscaling_does_not_double_count_across_rounds() {
-        let worker_1: WorkerId = Arc::from("worker1");
-
-        // 1 worker with 4 CPU slots, threshold = 1.25
-        let workers = setup_workers(&[(worker_1, 4)]);
-        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
-
-        // Round 1: Enqueue 8 tasks, dispatch 4, 4 pending
-        let tasks = (0..8).map(|i| create_spread_task(Some(i))).collect();
-        scheduler.enqueue_tasks(tasks);
-        let result = scheduler.schedule_tasks();
-        assert_eq!(result.len(), 4);
-        assert_eq!(scheduler.num_pending_tasks(), 4);
-
-        // Ratio = (4+4)/4 = 2.0 > 1.25 -> autoscale fires
-        assert!(scheduler.get_autoscaling_request().is_some());
-
-        // Round 2: No new tasks, worker is full so dispatches 0
-        let result = scheduler.schedule_tasks();
-        assert_eq!(result.len(), 0);
-        assert_eq!(scheduler.num_pending_tasks(), 4);
-
-        // Ratio = (4+0)/4 = 1.0 < 1.25 -> autoscale should NOT fire
-        assert!(
-            scheduler.get_autoscaling_request().is_none(),
-            "Autoscaling should not fire: ratio is 4/4 = 1.0 < 1.25 threshold"
-        );
-    }
-
-    #[test]
-    fn test_autoscaling_not_triggered_when_ratio_below_threshold_with_pending_tasks() {
-        let worker_1: WorkerId = Arc::from("worker1");
-        let worker_2: WorkerId = Arc::from("worker2");
-
-        // 2 workers with 5 CPU slots each (10 total), threshold = 1.25
-        let workers = setup_workers(&[(worker_1, 5), (worker_2, 5)]);
-        let mut scheduler: DefaultScheduler<MockTask> = setup_scheduler(&workers);
-
-        // Enqueue 12 tasks; 10 dispatched, 2 pending
-        // total_demand = 2 + 10 = 12, ratio = 12/10 = 1.2 < 1.25 -> no autoscale
-        let tasks = (0..12).map(|i| create_spread_task(Some(i))).collect();
-        scheduler.enqueue_tasks(tasks);
-        let result = scheduler.schedule_tasks();
-        assert_eq!(result.len(), 10);
-        assert_eq!(scheduler.num_pending_tasks(), 2);
-
-        assert!(
-            scheduler.get_autoscaling_request().is_none(),
-            "Autoscaling should not fire: ratio is 12/10 = 1.2 < 1.25 threshold"
-        );
     }
 
     #[test]

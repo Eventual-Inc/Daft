@@ -109,9 +109,16 @@ where
 
             self.scheduler.update_worker_state(&worker_snapshots);
 
-            // 1: Get all tasks that are ready to be scheduled
+            // 1: Send autoscaling request if needed
+            // We do this before scheduling tasks to ensure that the autoscaler sees the true demand and not just the residual demand after scheduling.
+            if let Some(request) = self.scheduler.get_autoscaling_request() {
+                tracing::info!(target: SCHEDULER_LOG_TARGET, autoscaling_request = %format!("{:#?}", request), "Sending autoscaling request");
+                self.worker_manager.try_autoscale(request)?;
+            }
+
+            // 2: Get all tasks that are ready to be scheduled
             let scheduled_tasks = self.scheduler.schedule_tasks();
-            // 2: Dispatch tasks directly to the dispatcher
+            // 3: Dispatch tasks directly to the dispatcher
             if !scheduled_tasks.is_empty() {
                 tracing::info!(target: SCHEDULER_LOG_TARGET, num_tasks = scheduled_tasks.len(), "Scheduling tasks for dispatch");
                 tracing::debug!(target: SCHEDULER_LOG_TARGET, scheduled_tasks = %format!("{:#?}", scheduled_tasks));
@@ -124,12 +131,6 @@ where
 
                 self.dispatcher
                     .dispatch_tasks(scheduled_tasks, &self.worker_manager)?;
-            }
-
-            // 3: Send autoscaling request if needed
-            if let Some(request) = self.scheduler.get_autoscaling_request() {
-                tracing::info!(target: SCHEDULER_LOG_TARGET, autoscaling_request = %format!("{:#?}", request), "Sending autoscaling request");
-                self.worker_manager.try_autoscale(request)?;
             }
 
             // 4: Concurrently wait for new tasks, task completions, or periodic tick.
