@@ -216,15 +216,20 @@ impl PyMicroPartition {
         let target_fields = target_schema.fields().clone();
         let chunks = self.inner.record_batches();
         let arrow_batches: Vec<Result<arrow::record_batch::RecordBatch, arrow::error::ArrowError>> =
-            chunks
-                .iter()
-                .map(|rb| {
-                    let arrow_rb = daft_recordbatch::ffi::record_batch_to_arrow_rs(rb)
-                        .map_err(|e| arrow::error::ArrowError::ExternalError(Box::new(e)))?;
-                    daft_recordbatch::ffi::cast_record_batch_to_schema(&arrow_rb, &target_fields)
+            py.detach(|| {
+                chunks
+                    .iter()
+                    .map(|rb| {
+                        let arrow_rb = daft_recordbatch::ffi::record_batch_to_arrow_rs(rb)
+                            .map_err(|e| arrow::error::ArrowError::ExternalError(Box::new(e)))?;
+                        daft_recordbatch::ffi::cast_record_batch_to_schema(
+                            &arrow_rb,
+                            &target_fields,
+                        )
                         .map_err(|e| arrow::error::ArrowError::ExternalError(Box::new(e)))
-                })
-                .collect();
+                    })
+                    .collect()
+            });
 
         let reader = arrow::array::RecordBatchIterator::new(arrow_batches, target_schema);
         let boxed: Box<dyn arrow::array::RecordBatchReader + Send> = Box::new(reader);
