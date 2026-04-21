@@ -1,4 +1,4 @@
-use std::{collections::HashMap, pin::Pin, sync::Arc, time::Instant};
+use std::{collections::HashMap, pin::Pin, sync::Arc};
 
 use arrow_flight::{
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
@@ -136,103 +136,45 @@ impl ShuffleFlightServer {
         partition_idx: usize,
         cache_ids: &[u32],
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-        // Grab per-cache file lists so each cache's spill reporter can be
-        // credited with its own reads. Flattening later via chain keeps the
-        // observable stream semantics identical to the previous flat_map.
-        let per_cache = {
-            let caches = self.shuffle_caches.lock().await;
-            let shuffle_caches = caches.get(&shuffle_id).cloned().ok_or_else(|| {
+        let (file_paths, schema) = self
+            .get_shuffle_file_paths(shuffle_id, partition_idx, Some(cache_ids))
+            .await
+            .ok_or_else(|| {
                 DaftError::ValueError(format!("Shuffle cache not found for id: {}", shuffle_id))
             })?;
-            let filtered: Vec<Arc<ShuffleCache>> = if cache_ids.is_empty() {
-                shuffle_caches
-            } else {
-                shuffle_caches
-                    .into_iter()
-                    .filter(|cache| {
-                        cache
-                            .cache_id()
-                            .parse::<u32>()
-                            .map(|cid| cache_ids.contains(&cid))
-                            .unwrap_or(false)
-                    })
-                    .collect()
-            };
-            filtered
-        };
 
-        let schema = per_cache
-            .first()
-            .ok_or_else(|| {
-                DaftError::ValueError(format!(
-                    "No caches found for shuffle {} after filtering",
-                    shuffle_id
-                ))
-            })?
-            .schema();
+        let file_path_stream = futures::stream::iter(file_paths);
+        let flight_data_stream = file_path_stream
+            .then(move |file_path| {
+                let schema = schema.clone();
+                async move {
+                    let file = tokio::fs::File::open(file_path)
+                        .await
+                        .map_err(DaftError::IoError)?;
+                    let reader = FlightDataStreamReader::try_new(BufReader::new(file))
+                        .await?
+                        .into_stream()
+                        .map_err(|e| FlightError::from_external_error(Box::new(e)));
 
-        // Build a single merged stream: for each cache, yield its per-partition
-        // files with that cache's spill reporter attached to each read.
-        let mut streams: Vec<BoxStream<'static, DaftResult<_>>> =
-            Vec::with_capacity(per_cache.len());
-        for cache in per_cache {
-            let files = cache.file_paths_for_partition(partition_idx);
-            let file_sizes = cache.bytes_per_file_for_partition(partition_idx);
-            let cache_for_stream = cache.clone();
-            let schema_for_stream = schema.clone();
-            let per_cache_stream = futures::stream::iter(files.into_iter().zip(file_sizes))
-                .then(move |(file_path, file_size)| {
-                    let schema = schema_for_stream.clone();
-                    let cache = cache_for_stream.clone();
-                    async move {
-                        let read_start = Instant::now();
-                        let file = tokio::fs::File::open(&file_path)
-                            .await
-                            .map_err(DaftError::IoError)?;
-                        let reader = FlightDataStreamReader::try_new(BufReader::new(file))
-                            .await?
-                            .into_stream()
-                            .map_err(|e| FlightError::from_external_error(Box::new(e)));
+                    let arrow_schema = schema.to_arrow().map_err(|e| {
+                        DaftError::InternalError(format!("Error converting schema to arrow: {}", e))
+                    })?;
+                    let options = IpcWriteOptions::default();
+                    let flight_schema = SchemaAsIpc::new(&arrow_schema, &options).into();
+                    let flight_data =
+                        futures::stream::once(async { Ok(flight_schema) }).chain(reader);
 
-                        let arrow_schema = schema.to_arrow().map_err(|e| {
-                            DaftError::InternalError(format!(
-                                "Error converting schema to arrow: {}",
-                                e
-                            ))
-                        })?;
-                        let options = IpcWriteOptions::default();
-                        let flight_schema = SchemaAsIpc::new(&arrow_schema, &options).into();
-                        let flight_data =
-                            futures::stream::once(async { Ok(flight_schema) }).chain(reader);
+                    // Doing some shenanigans here to reuse existing code
+                    // TODO: Refactor this to get Arrow RecordBatchStream directly using async IO
+                    let arrow_stream = FlightRecordBatchStream::new_from_flight_data(flight_data);
+                    let daft_stream =
+                        FlightRecordBatchStreamToDaftRecordBatchStream::new(arrow_stream, schema);
+                    Ok::<_, DaftError>(daft_stream)
+                }
+            })
+            .try_flatten();
 
-                        let arrow_stream =
-                            FlightRecordBatchStream::new_from_flight_data(flight_data);
-                        let daft_stream = FlightRecordBatchStreamToDaftRecordBatchStream::new(
-                            arrow_stream,
-                            schema,
-                        );
-
-                        // We record bytes_read + file_removed at stream-setup
-                        // time (not post-consumption) because the downstream
-                        // stream is owned by the caller and there's no
-                        // completion callback. `read.duration_ns` captures
-                        // open-to-stream-ready latency — underreports actual
-                        // consumption time, same class of limitation as
-                        // `write.duration_ns`.
-                        cache.report_file_read(
-                            file_size as u64,
-                            read_start.elapsed().as_nanos() as u64,
-                        );
-                        Ok::<_, DaftError>(daft_stream)
-                    }
-                })
-                .try_flatten()
-                .boxed();
-            streams.push(per_cache_stream);
-        }
-
-        let merged = futures::stream::iter(streams).flatten();
-        Ok(Box::pin(merged))
+        Ok(Box::pin(flight_data_stream))
     }
 }
 
@@ -293,89 +235,46 @@ impl FlightService for ShuffleFlightServer {
         let ticket = request.into_inner();
         let ticket = ParsedTicket::from_ticket(&ticket)?;
 
-        // Per-cache iteration so each cache's spill reporter gets credited
-        // with its own reads. Mirrors `get_partition_local`.
-        let per_cache = {
-            let caches = self.shuffle_caches.lock().await;
-            let shuffle_caches = caches.get(&ticket.shuffle_id).cloned().ok_or_else(|| {
+        let (file_paths, schema) = self
+            .get_shuffle_file_paths(
+                ticket.shuffle_id,
+                ticket.partition_idx,
+                ticket.cache_ids.as_deref(),
+            )
+            .await
+            .ok_or_else(|| {
                 Status::not_found(format!(
                     "Shuffle cache not found for id: {}",
                     ticket.shuffle_id
                 ))
             })?;
-            let filtered: Vec<Arc<ShuffleCache>> = if let Some(ids) = ticket.cache_ids.as_deref() {
-                shuffle_caches
-                    .into_iter()
-                    .filter(|cache| {
-                        cache
-                            .cache_id()
-                            .parse::<u32>()
-                            .map(|cid| ids.contains(&cid))
-                            .unwrap_or(false)
-                    })
-                    .collect()
-            } else {
-                shuffle_caches
-            };
-            filtered
-        };
 
-        let schema = per_cache
-            .first()
-            .ok_or_else(|| {
-                Status::not_found(format!(
-                    "No caches for shuffle {} after filtering",
-                    ticket.shuffle_id
-                ))
-            })?
-            .schema();
-
-        let mut streams: Vec<BoxStream<'static, Result<FlightData, Status>>> =
-            Vec::with_capacity(per_cache.len());
-        for cache in per_cache {
-            let files = cache.file_paths_for_partition(ticket.partition_idx);
-            let file_sizes = cache.bytes_per_file_for_partition(ticket.partition_idx);
-            let cache_for_stream = cache.clone();
-            let per_cache_stream = futures::stream::iter(files.into_iter().zip(file_sizes))
-                .then(move |(file_path, file_size)| {
-                    let cache = cache_for_stream.clone();
-                    async move {
-                        let read_start = Instant::now();
-                        let file = tokio::fs::File::open(&file_path).await.map_err(|e| {
-                            Status::internal(format!("Error opening file: {}", e))
-                        })?;
-                        let reader = FlightDataStreamReader::try_new(BufReader::new(file))
-                            .await
-                            .map_err(|e| {
-                                Status::internal(format!(
-                                    "Error creating flight data reader: {}",
-                                    e
-                                ))
-                            })?;
-                        cache.report_file_read(
-                            file_size as u64,
-                            read_start.elapsed().as_nanos() as u64,
-                        );
-                        Ok::<_, Status>(
-                            reader
-                                .into_stream()
-                                .map_err(|e| Status::internal(e.to_string())),
-                        )
-                    }
-                })
-                .try_flatten()
-                .boxed();
-            streams.push(per_cache_stream);
-        }
+        let file_path_stream = futures::stream::iter(file_paths);
+        let flight_data_stream = file_path_stream
+            .then(|file_path| async move {
+                let file = tokio::fs::File::open(file_path)
+                    .await
+                    .map_err(|e| Status::internal(format!("Error opening file: {}", e)))?;
+                let reader = FlightDataStreamReader::try_new(BufReader::new(file))
+                    .await
+                    .map_err(|e| {
+                        Status::internal(format!("Error creating flight data reader: {}", e))
+                    })?;
+                Ok::<_, Status>(
+                    reader
+                        .into_stream()
+                        .map_err(|e| Status::internal(e.to_string())),
+                )
+            })
+            .try_flatten();
 
         let options = IpcWriteOptions::default();
         let arrow_schema = schema
             .to_arrow()
             .map_err(|e| Status::internal(format!("Error converting schema to arrow: {}", e)))?;
         let flight_schema = SchemaAsIpc::new(&arrow_schema, &options).into();
-        let merged_reads = futures::stream::iter(streams).flatten();
         let flight_data =
-            futures::stream::once(async { Ok(flight_schema) }).chain(merged_reads);
+            futures::stream::once(async { Ok(flight_schema) }).chain(flight_data_stream);
 
         Ok(Response::new(Box::pin(flight_data)))
     }

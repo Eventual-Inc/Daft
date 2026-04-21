@@ -6,6 +6,9 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use common_metrics::SpillReporter;
 use common_runtime::{RuntimeTask, get_io_runtime};
+// `Arc<OnceLock<SpillReporter>>` on `InProgressShuffleCache` is still used by
+// writer tasks (write-side spill accounting). Read-side instrumentation is
+// done at the consumer (`ShuffleReadSource`) via `IOStatsRef`, not here.
 use daft_io::{SourceType, parse_url};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -237,7 +240,6 @@ impl InProgressShuffleCache {
             bytes_per_partition,
             self.shuffle_dirs.clone(),
             self.cache_id.clone(),
-            self.spill.clone(),
         ))
     }
 
@@ -335,11 +337,6 @@ pub struct ShuffleCache {
     bytes_per_partition: Vec<usize>,
     shuffle_dirs: Vec<String>,
     cache_id: String,
-    /// Carried forward from `InProgressShuffleCache` so the read side (flight
-    /// server) can attribute bytes-read / files-consumed to the owning operator.
-    /// Same `Arc<OnceLock<...>>` shared with the writer tasks — once set, both
-    /// write and read paths emit to the same reporter.
-    spill: Arc<OnceLock<SpillReporter>>,
 }
 
 impl ShuffleCache {
@@ -351,7 +348,6 @@ impl ShuffleCache {
         bytes_per_partition: Vec<usize>,
         shuffle_dirs: Vec<String>,
         cache_id: String,
-        spill: Arc<OnceLock<SpillReporter>>,
     ) -> Self {
         Self {
             schema,
@@ -361,17 +357,6 @@ impl ShuffleCache {
             bytes_per_partition,
             shuffle_dirs,
             cache_id,
-            spill,
-        }
-    }
-
-    /// Report bytes read from a spill file and decrement the resident file
-    /// count. Called by the flight server when serving a partition.
-    pub fn report_file_read(&self, bytes: u64, duration_ns: u64) {
-        if let Some(reporter) = self.spill.get() {
-            reporter.record_bytes_read(bytes);
-            reporter.record_read_duration_ns(duration_ns);
-            reporter.record_file_removed();
         }
     }
 

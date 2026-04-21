@@ -258,7 +258,7 @@ impl Source for ShuffleReadSource {
     fn get_data(
         self: Box<Self>,
         _maintain_order: bool,
-        _io_stats: IOStatsRef,
+        io_stats: IOStatsRef,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
@@ -267,6 +267,17 @@ impl Source for ShuffleReadSource {
         let result_stream = output_receiver.into_stream().map(Ok);
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
 
-        Ok(Box::pin(combined_stream))
+        // Count bytes per morsel so they land on `SourceSnapshot.bytes_read`
+        // (and therefore roll up as `bytes.read` on the Repartition distributed
+        // node via `node_origin_id`). Attributes spill reads to the consumer's
+        // live runtime-stats rather than the producer's dead reporter.
+        let metered_stream = combined_stream.map(move |msg| {
+            if let Ok(PipelineMessage::Morsel { partition, .. }) = &msg {
+                io_stats.mark_bytes_read(partition.size_bytes());
+            }
+            msg
+        });
+
+        Ok(Box::pin(metered_stream))
     }
 }
