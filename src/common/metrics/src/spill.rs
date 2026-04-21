@@ -26,6 +26,14 @@ pub struct SpillReporter {
     inner: Option<Arc<SpillReporterInner>>,
 }
 
+impl std::fmt::Debug for SpillReporter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpillReporter")
+            .field("attached", &self.inner.is_some())
+            .finish()
+    }
+}
+
 struct SpillReporterInner {
     source: SpillSource,
     bytes_written: Counter,
