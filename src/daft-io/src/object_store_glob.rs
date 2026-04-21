@@ -374,7 +374,7 @@ pub async fn glob(
                 // If doesn't have a glob character and doesn't end with a delimiter, assume its a file first.
                 let maybe_size = source.get_size(&glob, io_stats.clone()).await;
                 match maybe_size {
-                    Ok(size_bytes) => yield Ok(FileMetadata{filepath: glob.clone(), size: Some(size_bytes as u64), filetype: FileType::File  }),
+                    Ok(size_bytes) => yield Ok(FileMetadata{filepath: glob.clone(), size: Some(size_bytes as u64), filetype: FileType::File, last_modified: None  }),
                     Err(crate::Error::NotAFile {..} | crate::Error::NotFound { .. } | crate::Error::UnableToDetermineSize { .. }) => {attempt_as_dir = true;},
                     Err(err) => yield Err(err),
                 }

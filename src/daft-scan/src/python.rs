@@ -115,6 +115,7 @@ impl PyDataSourceTask {
 
         let source = ScanSource {
             size_bytes,
+            last_modified: None,
             metadata: num_rows.map(|n| TableMetadata { length: n as usize }),
             statistics,
             partition_spec: Some(pspec),
@@ -742,6 +743,7 @@ pub mod pylib {
 
             let data_source = ScanSource {
                 size_bytes,
+                last_modified: None,
                 metadata,
                 statistics,
                 partition_spec: Some(pspec),
@@ -792,6 +794,7 @@ pub mod pylib {
                 .transpose()?;
             let data_source = ScanSource {
                 size_bytes,
+                last_modified: None,
                 metadata: num_rows.map(|n| TableMetadata { length: n as usize }),
                 statistics,
                 partition_spec: None,
@@ -838,6 +841,7 @@ pub mod pylib {
                 .transpose()?;
             let data_source = ScanSource {
                 size_bytes,
+                last_modified: None,
                 metadata: num_rows.map(|num_rows| TableMetadata {
                     length: num_rows as usize,
                 }),
@@ -928,6 +932,7 @@ pub mod pylib {
         )?;
         let data_source = ScanSource {
             size_bytes: Some(file_size),
+            last_modified: None,
             metadata: if has_metadata.unwrap_or(false) {
                 Some(TableMetadata {
                     length: metadata.num_rows(),

@@ -271,6 +271,7 @@ pub struct FileMetadata {
     pub filepath: String,
     pub size: Option<u64>,
     pub filetype: FileType,
+    pub last_modified: Option<jiff::Timestamp>,
 }
 #[derive(Debug)]
 pub struct LSResult {

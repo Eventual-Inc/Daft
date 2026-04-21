@@ -507,6 +507,7 @@ impl AzureBlobSource {
             filepath: format!("{protocol}://{}/", &container.name),
             size: None,
             filetype: FileType::Directory,
+            last_modified: None,
         }
     }
 
@@ -521,11 +522,17 @@ impl AzureBlobSource {
                 filepath: format!("{protocol}://{}/{}", container_name, &blob.name),
                 size: Some(blob.properties.content_length),
                 filetype: FileType::File,
+                last_modified: jiff::Timestamp::new(
+                    blob.properties.last_modified.unix_timestamp(),
+                    blob.properties.last_modified.nanosecond() as i32,
+                )
+                .ok(),
             },
             BlobItem::BlobPrefix(prefix) => FileMetadata {
                 filepath: format!("{protocol}://{}/{}", container_name, &prefix.name),
                 size: None,
                 filetype: FileType::Directory,
+                last_modified: None,
             },
         }
     }

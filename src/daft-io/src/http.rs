@@ -139,6 +139,7 @@ fn get_file_metadata_from_html(path: &str, text: &str) -> super::Result<Vec<File
                 // for populating `size` if necessary
                 size: None,
                 filetype,
+                last_modified: None,
             }))
         })
         .collect::<super::Result<Vec<_>>>()?;
@@ -395,6 +396,7 @@ impl ObjectSource for HttpSource {
                     filepath: path.clone(),
                     filetype: FileType::File,
                     size: response.content_length(),
+                    last_modified: None,
                 }],
                 continuation_token: None,
             }),

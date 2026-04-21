@@ -32,6 +32,12 @@ const PATH_SEGMENT_DELIMITER: &str = "/";
 
 use crate::strip_file_uri_to_path;
 
+fn last_modified_from_fs(meta: &std::fs::Metadata) -> Option<jiff::Timestamp> {
+    meta.modified()
+        .ok()
+        .and_then(|t| jiff::Timestamp::try_from(t).ok())
+}
+
 pub struct LocalSource {}
 
 #[derive(Debug, Snafu)]
@@ -327,6 +333,7 @@ impl ObjectSource for LocalSource {
                 filepath: format!("{LOCAL_PROTOCOL}{uri}"),
                 size: Some(meta.len()),
                 filetype: object_io::FileType::File,
+                last_modified: last_modified_from_fs(&meta),
             })])
             .boxed());
         }
@@ -357,6 +364,7 @@ impl ObjectSource for LocalSource {
                         path: entry.path().to_string_lossy().to_string(),
                     }
                 })?;
+                let last_modified = last_modified_from_fs(&meta);
                 Ok(FileMetadata {
                     filepath: format!(
                         "{}{}{}",
@@ -374,6 +382,7 @@ impl ObjectSource for LocalSource {
                             path: entry.path().to_string_lossy().to_string(),
                         }
                     })?,
+                    last_modified,
                 })
             }
         });
@@ -427,6 +436,7 @@ pub async fn collect_file(local_file: LocalFile) -> Result<Bytes> {
 mod tests {
     use std::{default, io::Write};
 
+    use super::last_modified_from_fs;
     use crate::{
         HttpSource, LocalSource, Result,
         integrations::test_full_get,
@@ -486,6 +496,7 @@ mod tests {
                 ),
                 size: Some(file1.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
+                last_modified: last_modified_from_fs(&file1.as_file().metadata().unwrap()),
             },
             FileMetadata {
                 filepath: format!(
@@ -495,6 +506,7 @@ mod tests {
                 ),
                 size: Some(file2.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
+                last_modified: last_modified_from_fs(&file2.as_file().metadata().unwrap()),
             },
             FileMetadata {
                 filepath: format!(
@@ -504,6 +516,7 @@ mod tests {
                 ),
                 size: Some(file3.as_file().metadata().unwrap().len()),
                 filetype: FileType::File,
+                last_modified: last_modified_from_fs(&file3.as_file().metadata().unwrap()),
             },
         ];
         expected.sort_by(|a, b| a.filepath.cmp(&b.filepath));

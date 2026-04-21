@@ -991,11 +991,15 @@ impl S3LikeSource {
                         filepath: format!("{scheme}://{bucket}/{}", d.prefix().unwrap_or_default()),
                         size: None,
                         filetype: FileType::Directory,
+                        last_modified: None,
                     })
                     .chain(files.iter().map(|f| FileMetadata {
                         filepath: format!("{scheme}://{bucket}/{}", f.key().unwrap_or_default()),
                         size: f.size().map(|size| size as u64),
                         filetype: FileType::File,
+                        last_modified: f.last_modified().and_then(|dt| {
+                            jiff::Timestamp::new(dt.secs(), dt.subsec_nanos() as i32).ok()
+                        }),
                     }))
                     .collect();
 

@@ -88,6 +88,7 @@ fn generate_metadata_from_manifest(
             filepath: path.clone(),
             size: None,
             filetype: FileType::File,
+            last_modified: None,
         })
     })
 }
@@ -548,6 +549,7 @@ impl ScanOperator for GlobScanOperator {
                     let FileMetadata {
                         filepath: path,
                         size: size_bytes,
+                        last_modified,
                         ..
                     } = f?;
                     // Create partition values from hive partitions, if any.
@@ -604,6 +606,7 @@ impl ScanOperator for GlobScanOperator {
                                 None
                             },
                             size_bytes,
+                            last_modified,
                             partition_spec,
                             statistics: None,
                             kind: ScanSourceKind::File {
