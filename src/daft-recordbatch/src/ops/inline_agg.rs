@@ -8,6 +8,7 @@ use daft_core::{
     array::ops::{arrow::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
     count_mode::CountMode,
     datatypes::*,
+    prelude::SchemaRef,
     series::{IntoSeries, Series},
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };
@@ -34,17 +35,23 @@ struct GroupingResult {
 struct CountAccum {
     counts: Vec<u64>,
     mode: CountMode,
-    nulls: Option<arrow::buffer::NullBuffer>,
     is_null_type: bool,
 }
 
 impl CountAccum {
-    fn new(source: &Series, mode: CountMode) -> Self {
+    fn new_from_source(source: &Series, mode: CountMode) -> Self {
         Self {
             counts: Vec::new(),
             mode,
-            nulls: source.nulls().cloned(),
             is_null_type: source.data_type() == &DataType::Null,
+        }
+    }
+
+    fn new_from_dtype(dtype: &DataType, mode: CountMode) -> Self {
+        Self {
+            counts: Vec::new(),
+            mode,
+            is_null_type: *dtype == DataType::Null,
         }
     }
 
@@ -54,33 +61,38 @@ impl CountAccum {
 
     /// Use pre-computed group sizes when no per-row null checking is needed.
     /// Returns true if the optimization was applied, false if caller must use update_batch.
-    fn try_use_group_sizes(&mut self, group_sizes: &[u64]) -> bool {
+    fn try_use_group_sizes(&mut self, group_sizes: &[u64], source: &Series) -> bool {
+        let nulls = source.nulls();
         if self.is_null_type {
             match self.mode {
                 CountMode::All | CountMode::Null => {
-                    self.counts = group_sizes.to_vec();
+                    // Persistent: add group_sizes to existing counts
+                    for (i, &sz) in group_sizes.iter().enumerate() {
+                        self.counts[i] += sz;
+                    }
                     return true;
                 }
                 CountMode::Valid => {
                     // Null type + Valid mode = always 0
-                    // counts already zeroed from init_groups
                     return true;
                 }
             }
         }
         match self.mode {
             CountMode::All => {
-                self.counts = group_sizes.to_vec();
+                for (i, &sz) in group_sizes.iter().enumerate() {
+                    self.counts[i] += sz;
+                }
                 true
             }
-            CountMode::Valid if self.nulls.is_none() => {
-                // No nulls → every row is valid → count = group size
-                self.counts = group_sizes.to_vec();
+            CountMode::Valid if nulls.is_none() => {
+                for (i, &sz) in group_sizes.iter().enumerate() {
+                    self.counts[i] += sz;
+                }
                 true
             }
-            CountMode::Null if self.nulls.is_none() => {
-                // No nulls → null count is 0 for all groups
-                // counts already zeroed from init_groups
+            CountMode::Null if nulls.is_none() => {
+                // No nulls → null count stays 0
                 true
             }
             _ => false, // Has nulls — need per-row scatter loop
@@ -88,27 +100,31 @@ impl CountAccum {
     }
 
     /// Vectorized batch update: process all rows given a pre-computed group_ids array.
-    fn update_batch(&mut self, group_ids: &[u32]) {
+    fn update_batch(&mut self, group_ids: &[u32], source: &Series) {
         let counts = &mut self.counts;
+        let nulls = source.nulls();
         match self.mode {
             CountMode::Valid => {
-                if let Some(ref nulls) = self.nulls {
+                if let Some(nulls) = nulls {
                     for (row_idx, &gid) in group_ids.iter().enumerate() {
                         counts[gid as usize] += nulls.is_valid(row_idx) as u64;
                     }
+                } else {
+                    // No nulls — every row is valid.
+                    for &gid in group_ids {
+                        counts[gid as usize] += 1;
+                    }
                 }
-                // else case handled by try_use_group_sizes
             }
             CountMode::Null => {
-                if let Some(ref nulls) = self.nulls {
+                if let Some(nulls) = nulls {
                     for (row_idx, &gid) in group_ids.iter().enumerate() {
                         counts[gid as usize] += !nulls.is_valid(row_idx) as u64;
                     }
                 }
-                // else case handled by try_use_group_sizes
+                // No nulls → null count stays 0, nothing to do.
             }
             CountMode::All => {
-                // Should have been handled by try_use_group_sizes
                 for &gid in group_ids {
                     counts[gid as usize] += 1;
                 }
@@ -125,14 +141,14 @@ macro_rules! define_sum_accum {
     ($name:ident, $daft_type:ty, $native:ty) => {
         struct $name {
             accumulators: Vec<Option<$native>>,
-            source: DataArray<$daft_type>,
+            field: Field,
         }
 
         impl $name {
-            fn new(source: DataArray<$daft_type>) -> Self {
+            fn new(field: Field) -> Self {
                 Self {
                     accumulators: Vec::new(),
-                    source,
+                    field,
                 }
             }
 
@@ -141,11 +157,11 @@ macro_rules! define_sum_accum {
             }
 
             /// Vectorized batch update over pre-computed group_ids.
-            fn update_batch(&mut self, group_ids: &[u32]) {
+            fn update_batch(&mut self, group_ids: &[u32], source: &DataArray<$daft_type>) {
                 let accs = &mut self.accumulators;
-                if self.source.null_count() == 0 {
+                if source.null_count() == 0 {
                     // Tight loop: no null checks needed on source values.
-                    for (&gid, &val) in group_ids.iter().zip(self.source.values().iter()) {
+                    for (&gid, &val) in group_ids.iter().zip(source.values().iter()) {
                         let acc = &mut accs[gid as usize];
                         *acc = Some(match *acc {
                             Some(a) => a + val,
@@ -155,7 +171,7 @@ macro_rules! define_sum_accum {
                 } else {
                     // Source has nulls: check each value.
                     for (row_idx, &gid) in group_ids.iter().enumerate() {
-                        if let Some(val) = self.source.get(row_idx) {
+                        if let Some(val) = source.get(row_idx) {
                             let acc = &mut accs[gid as usize];
                             *acc = Some(match *acc {
                                 Some(a) => a + val,
@@ -170,14 +186,14 @@ macro_rules! define_sum_accum {
                 let has_nulls = self.accumulators.iter().any(|a| a.is_none());
                 if has_nulls {
                     Ok(DataArray::<$daft_type>::from_iter(
-                        self.source.field.clone(),
+                        self.field,
                         self.accumulators.into_iter(),
                     )
                     .rename(name)
                     .into_series())
                 } else {
                     Ok(DataArray::<$daft_type>::from_field_and_values(
-                        self.source.field.clone(),
+                        self.field,
                         self.accumulators.into_iter().map(|opt| opt.unwrap()),
                     )
                     .rename(name)
@@ -197,14 +213,14 @@ macro_rules! define_minmax_accum {
     ($name:ident, $daft_type:ty, $native:ty, $cmp_fn:expr) => {
         struct $name {
             accumulators: Vec<Option<$native>>,
-            source: DataArray<$daft_type>,
+            field: Field,
         }
 
         impl $name {
-            fn new(source: DataArray<$daft_type>) -> Self {
+            fn new(field: Field) -> Self {
                 Self {
                     accumulators: Vec::new(),
-                    source,
+                    field,
                 }
             }
 
@@ -212,11 +228,11 @@ macro_rules! define_minmax_accum {
                 self.accumulators.resize(n, None);
             }
 
-            fn update_batch(&mut self, group_ids: &[u32]) {
+            fn update_batch(&mut self, group_ids: &[u32], source: &DataArray<$daft_type>) {
                 let accs = &mut self.accumulators;
                 let cmp_fn: fn($native, $native) -> $native = $cmp_fn;
-                if self.source.null_count() == 0 {
-                    for (&gid, &val) in group_ids.iter().zip(self.source.values().iter()) {
+                if source.null_count() == 0 {
+                    for (&gid, &val) in group_ids.iter().zip(source.values().iter()) {
                         let acc = &mut accs[gid as usize];
                         *acc = Some(match *acc {
                             Some(a) => cmp_fn(a, val),
@@ -225,7 +241,7 @@ macro_rules! define_minmax_accum {
                     }
                 } else {
                     for (row_idx, &gid) in group_ids.iter().enumerate() {
-                        if let Some(val) = self.source.get(row_idx) {
+                        if let Some(val) = source.get(row_idx) {
                             let acc = &mut accs[gid as usize];
                             *acc = Some(match *acc {
                                 Some(a) => cmp_fn(a, val),
@@ -240,14 +256,14 @@ macro_rules! define_minmax_accum {
                 let has_nulls = self.accumulators.iter().any(|a| a.is_none());
                 if has_nulls {
                     Ok(DataArray::<$daft_type>::from_iter(
-                        self.source.field.clone(),
+                        self.field,
                         self.accumulators.into_iter(),
                     )
                     .rename(name)
                     .into_series())
                 } else {
                     Ok(DataArray::<$daft_type>::from_field_and_values(
-                        self.source.field.clone(),
+                        self.field,
                         self.accumulators.into_iter().map(|opt| opt.unwrap()),
                     )
                     .rename(name)
@@ -304,8 +320,11 @@ define_minmax_accum!(MaxAccumF64, Float64Type, f64, |a, b| if a.gt(&b) {
 ///
 /// Each accumulator struct must implement inherent methods:
 ///   - `init_groups(&mut self, n: usize)`
-///   - `update_batch(&mut self, group_ids: &[u32])`
 ///   - `finalize(self, name: &str) -> DaftResult<Series>`
+///
+/// Note: `update_batch` is NOT generated here because accumulator types
+/// have non-uniform signatures (Count takes `&Series`, Sum/Min/Max take
+/// `&DataArray<T>`). See `update_batch_with_source` on `AggAccumulator`.
 macro_rules! define_agg_accumulator_enum {
     ($($variant:ident($accum:ty)),+ $(,)?) => {
         enum AggAccumulator {
@@ -318,13 +337,6 @@ macro_rules! define_agg_accumulator_enum {
                 let n = n as usize;
                 match self {
                     $(Self::$variant(s) => s.init_groups(n),)+
-                }
-            }
-
-            /// Vectorized batch update: tight loop per accumulator type over group_ids.
-            fn update_batch(&mut self, group_ids: &[u32]) {
-                match self {
-                    $(Self::$variant(s) => s.update_batch(group_ids),)+
                 }
             }
 
@@ -370,14 +382,49 @@ define_agg_accumulator_enum!(
 impl AggAccumulator {
     /// Try to use pre-computed group sizes for O(groups) count instead of O(rows).
     /// Returns true if the accumulator was fully updated (no scatter loop needed).
-    ///
-    /// Only `Count` benefits from this optimization today; all other accumulators
-    /// must still iterate per-row to combine values.
-    fn try_use_group_sizes(&mut self, group_sizes: &[u64]) -> bool {
+    fn try_use_group_sizes(&mut self, group_sizes: &[u64], source: &Series) -> bool {
         match self {
-            Self::Count(s) => s.try_use_group_sizes(group_sizes),
+            Self::Count(s) => s.try_use_group_sizes(group_sizes, source),
             _ => false,
         }
+    }
+
+    /// Vectorized batch update: tight loop per accumulator type over group_ids.
+    fn update_batch_with_source(&mut self, group_ids: &[u32], source: &Series) -> DaftResult<()> {
+        match self {
+            Self::Count(s) => s.update_batch(group_ids, source),
+            Self::SumI64(s) => {
+                let casted = source.cast(&DataType::Int64)?;
+                s.update_batch(group_ids, casted.i64()?);
+            }
+            Self::SumU64(s) => {
+                let casted = source.cast(&DataType::UInt64)?;
+                s.update_batch(group_ids, casted.u64()?);
+            }
+            Self::SumF32(s) => s.update_batch(group_ids, source.downcast::<Float32Array>()?),
+            Self::SumF64(s) => s.update_batch(group_ids, source.downcast::<Float64Array>()?),
+            Self::MinI8(s) => s.update_batch(group_ids, source.downcast::<Int8Array>()?),
+            Self::MinI16(s) => s.update_batch(group_ids, source.downcast::<Int16Array>()?),
+            Self::MinI32(s) => s.update_batch(group_ids, source.downcast::<Int32Array>()?),
+            Self::MinI64(s) => s.update_batch(group_ids, source.downcast::<Int64Array>()?),
+            Self::MinU8(s) => s.update_batch(group_ids, source.downcast::<UInt8Array>()?),
+            Self::MinU16(s) => s.update_batch(group_ids, source.downcast::<UInt16Array>()?),
+            Self::MinU32(s) => s.update_batch(group_ids, source.downcast::<UInt32Array>()?),
+            Self::MinU64(s) => s.update_batch(group_ids, source.downcast::<UInt64Array>()?),
+            Self::MinF32(s) => s.update_batch(group_ids, source.downcast::<Float32Array>()?),
+            Self::MinF64(s) => s.update_batch(group_ids, source.downcast::<Float64Array>()?),
+            Self::MaxI8(s) => s.update_batch(group_ids, source.downcast::<Int8Array>()?),
+            Self::MaxI16(s) => s.update_batch(group_ids, source.downcast::<Int16Array>()?),
+            Self::MaxI32(s) => s.update_batch(group_ids, source.downcast::<Int32Array>()?),
+            Self::MaxI64(s) => s.update_batch(group_ids, source.downcast::<Int64Array>()?),
+            Self::MaxU8(s) => s.update_batch(group_ids, source.downcast::<UInt8Array>()?),
+            Self::MaxU16(s) => s.update_batch(group_ids, source.downcast::<UInt16Array>()?),
+            Self::MaxU32(s) => s.update_batch(group_ids, source.downcast::<UInt32Array>()?),
+            Self::MaxU64(s) => s.update_batch(group_ids, source.downcast::<UInt64Array>()?),
+            Self::MaxF32(s) => s.update_batch(group_ids, source.downcast::<Float32Array>()?),
+            Self::MaxF64(s) => s.update_batch(group_ids, source.downcast::<Float64Array>()?),
+        }
+        Ok(())
     }
 }
 
@@ -385,111 +432,161 @@ impl AggAccumulator {
 // Factory: create accumulator from a BoundAggExpr
 // ---------------------------------------------------------------------------
 
-/// Matches `$evaluated`'s dtype and constructs the corresponding typed
-/// `AggAccumulator` variant by downcasting to the matching array type.
-macro_rules! dispatch_typed_accum {
-    ($evaluated:expr, $name:expr,
-        $($dtype:ident => $arr_ty:ident => $variant:ident($accum:ident)),+ $(,)?
-    ) => {
-        match $evaluated.data_type() {
-            $(
-                DataType::$dtype => {
-                    let arr = $evaluated.downcast::<$arr_ty>()?;
-                    Ok(Some((
-                        AggAccumulator::$variant($accum::new(arr.clone())),
-                        $name,
-                    )))
-                }
-            )+
-            _ => Ok(None),
-        }
-    };
-}
-
+/// Create an accumulator from a BoundAggExpr, evaluating the source expression.
+/// Returns (accumulator, output_name, evaluated_source) for the one-shot path.
 fn try_create_accumulator(
     agg_expr: &BoundAggExpr,
     source: &RecordBatch,
-) -> DaftResult<Option<(AggAccumulator, String)>> {
+) -> DaftResult<Option<(AggAccumulator, String, Series)>> {
     match agg_expr.as_ref() {
-        &AggExpr::Count(ref expr, mode) => {
+        AggExpr::Count(expr, mode) => {
             let evaluated = source.eval_agg_child(expr)?;
             let name = evaluated.name().to_string();
-            Ok(Some((
-                AggAccumulator::Count(CountAccum::new(&evaluated, mode)),
-                name,
-            )))
+            let acc = AggAccumulator::Count(CountAccum::new_from_source(&evaluated, *mode));
+            Ok(Some((acc, name, evaluated)))
         }
-        AggExpr::Sum(expr) => {
+        AggExpr::Sum(expr) | AggExpr::Min(expr) | AggExpr::Max(expr) => {
             let evaluated = source.eval_agg_child(expr)?;
             let name = evaluated.name().to_string();
-            match evaluated.data_type() {
-                DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
-                    let casted = evaluated.cast(&DataType::Int64)?;
-                    let arr = casted.i64()?;
-                    Ok(Some((
-                        AggAccumulator::SumI64(SumAccumI64::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
-                    let casted = evaluated.cast(&DataType::UInt64)?;
-                    let arr = casted.u64()?;
-                    Ok(Some((
-                        AggAccumulator::SumU64(SumAccumU64::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::Float32 => {
-                    let arr = evaluated.downcast::<Float32Array>()?;
-                    Ok(Some((
-                        AggAccumulator::SumF32(SumAccumF32::new(arr.clone())),
-                        name,
-                    )))
-                }
-                DataType::Float64 => {
-                    let arr = evaluated.downcast::<Float64Array>()?;
-                    Ok(Some((
-                        AggAccumulator::SumF64(SumAccumF64::new(arr.clone())),
-                        name,
-                    )))
-                }
-                _ => Ok(None),
+            let acc = create_numeric_accumulator(agg_expr.as_ref(), &evaluated)?;
+            match acc {
+                Some(acc) => Ok(Some((acc, name, evaluated))),
+                None => Ok(None),
             }
         }
-        AggExpr::Min(expr) => {
-            let evaluated = source.eval_agg_child(expr)?;
-            let name = evaluated.name().to_string();
-            dispatch_typed_accum!(
-                evaluated, name,
-                Int8 => Int8Array => MinI8(MinAccumI8),
-                Int16 => Int16Array => MinI16(MinAccumI16),
-                Int32 => Int32Array => MinI32(MinAccumI32),
-                Int64 => Int64Array => MinI64(MinAccumI64),
-                UInt8 => UInt8Array => MinU8(MinAccumU8),
-                UInt16 => UInt16Array => MinU16(MinAccumU16),
-                UInt32 => UInt32Array => MinU32(MinAccumU32),
-                UInt64 => UInt64Array => MinU64(MinAccumU64),
-                Float32 => Float32Array => MinF32(MinAccumF32),
-                Float64 => Float64Array => MinF64(MinAccumF64),
-            )
+        _ => Ok(None),
+    }
+}
+
+/// Create accumulator from expression metadata + schema (no data needed).
+/// Used by InlineAggState for persistent accumulators.
+fn try_create_accumulator_from_expr(
+    agg_expr: &BoundAggExpr,
+    schema: &SchemaRef,
+) -> DaftResult<Option<(AggAccumulator, String)>> {
+    match agg_expr.as_ref() {
+        AggExpr::Count(expr, mode) => {
+            let field = expr.to_field(schema)?;
+            let name = field.name.to_string();
+            let acc = AggAccumulator::Count(CountAccum::new_from_dtype(&field.dtype, *mode));
+            Ok(Some((acc, name)))
         }
-        AggExpr::Max(expr) => {
-            let evaluated = source.eval_agg_child(expr)?;
-            let name = evaluated.name().to_string();
-            dispatch_typed_accum!(
-                evaluated, name,
-                Int8 => Int8Array => MaxI8(MaxAccumI8),
-                Int16 => Int16Array => MaxI16(MaxAccumI16),
-                Int32 => Int32Array => MaxI32(MaxAccumI32),
-                Int64 => Int64Array => MaxI64(MaxAccumI64),
-                UInt8 => UInt8Array => MaxU8(MaxAccumU8),
-                UInt16 => UInt16Array => MaxU16(MaxAccumU16),
-                UInt32 => UInt32Array => MaxU32(MaxAccumU32),
-                UInt64 => UInt64Array => MaxU64(MaxAccumU64),
-                Float32 => Float32Array => MaxF32(MaxAccumF32),
-                Float64 => Float64Array => MaxF64(MaxAccumF64),
-            )
+        AggExpr::Sum(expr) | AggExpr::Min(expr) | AggExpr::Max(expr) => {
+            let field = expr.to_field(schema)?;
+            let name = field.name.to_string();
+            let acc = create_numeric_accumulator_from_field(agg_expr.as_ref(), &field)?;
+            match acc {
+                Some(acc) => Ok(Some((acc, name))),
+                None => Ok(None),
+            }
         }
+        _ => Ok(None),
+    }
+}
+
+/// Helper: create a Sum/Min/Max accumulator from an evaluated series.
+fn create_numeric_accumulator(
+    agg_expr: &AggExpr,
+    evaluated: &Series,
+) -> DaftResult<Option<AggAccumulator>> {
+    let dtype = evaluated.data_type();
+    // For Sum, we need the widened field.
+    let field = match agg_expr {
+        AggExpr::Sum(_) => match dtype {
+            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                Field::new(evaluated.name(), DataType::Int64)
+            }
+            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+                Field::new(evaluated.name(), DataType::UInt64)
+            }
+            _ => Field::new(evaluated.name(), dtype.clone()),
+        },
+        _ => Field::new(evaluated.name(), dtype.clone()),
+    };
+    create_numeric_accumulator_from_field(agg_expr, &field)
+}
+
+/// Helper: create a Sum/Min/Max accumulator from dtype info only.
+fn create_numeric_accumulator_from_field(
+    agg_expr: &AggExpr,
+    field: &Field,
+) -> DaftResult<Option<AggAccumulator>> {
+    match agg_expr {
+        AggExpr::Sum(_) => match &field.dtype {
+            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                let f = Field::new(field.name.clone(), DataType::Int64);
+                Ok(Some(AggAccumulator::SumI64(SumAccumI64::new(f))))
+            }
+            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+                let f = Field::new(field.name.clone(), DataType::UInt64);
+                Ok(Some(AggAccumulator::SumU64(SumAccumU64::new(f))))
+            }
+            DataType::Float32 => Ok(Some(AggAccumulator::SumF32(SumAccumF32::new(
+                field.clone(),
+            )))),
+            DataType::Float64 => Ok(Some(AggAccumulator::SumF64(SumAccumF64::new(
+                field.clone(),
+            )))),
+            _ => Ok(None),
+        },
+        AggExpr::Min(_) => match &field.dtype {
+            DataType::Int8 => Ok(Some(AggAccumulator::MinI8(MinAccumI8::new(field.clone())))),
+            DataType::Int16 => Ok(Some(AggAccumulator::MinI16(MinAccumI16::new(
+                field.clone(),
+            )))),
+            DataType::Int32 => Ok(Some(AggAccumulator::MinI32(MinAccumI32::new(
+                field.clone(),
+            )))),
+            DataType::Int64 => Ok(Some(AggAccumulator::MinI64(MinAccumI64::new(
+                field.clone(),
+            )))),
+            DataType::UInt8 => Ok(Some(AggAccumulator::MinU8(MinAccumU8::new(field.clone())))),
+            DataType::UInt16 => Ok(Some(AggAccumulator::MinU16(MinAccumU16::new(
+                field.clone(),
+            )))),
+            DataType::UInt32 => Ok(Some(AggAccumulator::MinU32(MinAccumU32::new(
+                field.clone(),
+            )))),
+            DataType::UInt64 => Ok(Some(AggAccumulator::MinU64(MinAccumU64::new(
+                field.clone(),
+            )))),
+            DataType::Float32 => Ok(Some(AggAccumulator::MinF32(MinAccumF32::new(
+                field.clone(),
+            )))),
+            DataType::Float64 => Ok(Some(AggAccumulator::MinF64(MinAccumF64::new(
+                field.clone(),
+            )))),
+            _ => Ok(None),
+        },
+        AggExpr::Max(_) => match &field.dtype {
+            DataType::Int8 => Ok(Some(AggAccumulator::MaxI8(MaxAccumI8::new(field.clone())))),
+            DataType::Int16 => Ok(Some(AggAccumulator::MaxI16(MaxAccumI16::new(
+                field.clone(),
+            )))),
+            DataType::Int32 => Ok(Some(AggAccumulator::MaxI32(MaxAccumI32::new(
+                field.clone(),
+            )))),
+            DataType::Int64 => Ok(Some(AggAccumulator::MaxI64(MaxAccumI64::new(
+                field.clone(),
+            )))),
+            DataType::UInt8 => Ok(Some(AggAccumulator::MaxU8(MaxAccumU8::new(field.clone())))),
+            DataType::UInt16 => Ok(Some(AggAccumulator::MaxU16(MaxAccumU16::new(
+                field.clone(),
+            )))),
+            DataType::UInt32 => Ok(Some(AggAccumulator::MaxU32(MaxAccumU32::new(
+                field.clone(),
+            )))),
+            DataType::UInt64 => Ok(Some(AggAccumulator::MaxU64(MaxAccumU64::new(
+                field.clone(),
+            )))),
+            DataType::Float32 => Ok(Some(AggAccumulator::MaxF32(MaxAccumF32::new(
+                field.clone(),
+            )))),
+            DataType::Float64 => Ok(Some(AggAccumulator::MaxF64(MaxAccumF64::new(
+                field.clone(),
+            )))),
+            _ => Ok(None),
+        },
         _ => Ok(None),
     }
 }
@@ -507,6 +604,11 @@ fn try_create_accumulator(
 /// Uses schema-level type inference (`to_field`) instead of expression evaluation
 /// to avoid materializing computed columns just for a dtype check.
 pub(super) fn can_inline_agg(to_agg: &[BoundAggExpr], source: &RecordBatch) -> bool {
+    can_inline_agg_with_schema(to_agg, &source.schema)
+}
+
+/// Schema-only version of `can_inline_agg` for use without data.
+pub fn can_inline_agg_with_schema(to_agg: &[BoundAggExpr], schema: &SchemaRef) -> bool {
     // Quick check: bail immediately if any agg type isn't supported.
     if !to_agg.iter().all(|e| {
         matches!(
@@ -520,7 +622,7 @@ pub(super) fn can_inline_agg(to_agg: &[BoundAggExpr], source: &RecordBatch) -> b
     to_agg.iter().all(|e| match e.as_ref() {
         AggExpr::Count(..) => true,
         AggExpr::Sum(expr) | AggExpr::Min(expr) | AggExpr::Max(expr) => {
-            if let Ok(field) = expr.to_field(&source.schema) {
+            if let Ok(field) = expr.to_field(schema) {
                 matches!(
                     field.dtype,
                     DataType::Int8
@@ -551,13 +653,14 @@ pub(super) fn can_inline_agg(to_agg: &[BoundAggExpr], source: &RecordBatch) -> b
 /// For Count accumulators that don't need per-row null checks, uses pre-computed
 /// group_sizes in O(groups) instead of scatter-looping in O(rows). This matches
 /// the fallback path's efficiency for Count(All) and Count(Valid, no nulls).
-fn accumulate(accumulators: &mut [AggAccumulator], result: &GroupingResult) {
+fn accumulate(accumulators: &mut [(AggAccumulator, Series)], result: &GroupingResult) {
     let num_groups = result.group_sizes.len() as u32;
-    for acc in accumulators.iter_mut() {
+    for (acc, source) in accumulators.iter_mut() {
         acc.init_groups(num_groups);
         // Try O(groups) path first; fall back to O(rows) scatter loop.
-        if !acc.try_use_group_sizes(&result.group_sizes) {
-            acc.update_batch(&result.group_ids);
+        if !acc.try_use_group_sizes(&result.group_sizes, source) {
+            acc.update_batch_with_source(&result.group_ids, source)
+                .expect("update_batch_with_source failed in accumulate");
         }
     }
 }
@@ -568,7 +671,7 @@ fn accumulate(accumulators: &mut [AggAccumulator], result: &GroupingResult) {
 
 fn agg_single_col_int<T>(
     keys: &DataArray<T>,
-    accumulators: &mut [AggAccumulator],
+    accumulators: &mut [(AggAccumulator, Series)],
 ) -> DaftResult<Vec<u64>>
 where
     T: DaftIntegerType,
@@ -654,7 +757,7 @@ where
 /// Used when the groupby has multiple columns or non-integer types.
 fn agg_generic_hash_path(
     groupby_physical: &RecordBatch,
-    accumulators: &mut [AggAccumulator],
+    accumulators: &mut [(AggAccumulator, Series)],
 ) -> DaftResult<Vec<u64>> {
     let num_rows = groupby_physical.len();
     let hashes = groupby_physical.hash_rows()?;
@@ -810,7 +913,7 @@ where
 /// Returns None if no Utf8/Binary columns are present.
 fn agg_symbolized_path(
     groupby_physical: &RecordBatch,
-    accumulators: &mut [AggAccumulator],
+    accumulators: &mut [(AggAccumulator, Series)],
 ) -> DaftResult<Option<Vec<u64>>> {
     let cols = groupby_physical.as_materialized_series();
 
@@ -858,6 +961,875 @@ fn agg_symbolized_path(
 }
 
 // ---------------------------------------------------------------------------
+// InlineAggState — persistent hash table + accumulators across batches
+// ---------------------------------------------------------------------------
+
+/// Persistent aggregation state that can receive multiple batches without
+/// rebuilding the hash table each time.
+pub struct InlineAggState {
+    accumulators: Vec<AggAccumulator>,
+    output_names: Vec<String>,
+    grouping: GroupingState,
+    group_sizes: Vec<u64>,
+    num_groups: u32,
+    group_by: Vec<BoundExpr>,
+    agg_exprs: Vec<BoundAggExpr>,
+}
+
+enum GroupingState {
+    /// Single non-nullable integer column — FNV hash map.
+    SingleColIntNonNull(SingleColIntNonNullState),
+    /// Single nullable integer column — FNV hash map with Option keys.
+    SingleColIntNullable(SingleColIntNullableState),
+    /// Multi-column or non-integer — generic hash table with comparators.
+    Generic(GenericGroupingState),
+}
+
+/// Macro to generate the single-column integer state enum variants.
+macro_rules! define_single_col_int_state {
+    ($name:ident, $nullable_name:ident, $( $variant:ident($native:ty) ),+ $(,)? ) => {
+        enum $name {
+            $( $variant(FnvHashMap<$native, u32>), )+
+        }
+
+        enum $nullable_name {
+            $( $variant(FnvHashMap<Option<$native>, u32>), )+
+        }
+    };
+}
+
+define_single_col_int_state!(
+    SingleColIntNonNullState,
+    SingleColIntNullableState,
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+);
+
+struct GenericGroupingState {
+    group_table: HashMap<IndexHash, u32, IdentityBuildHasher>,
+    /// One row per group, in group_id order, storing representative key values.
+    representative_keys: Option<RecordBatch>,
+}
+
+/// Helper macro to probe a single-col int map for a batch.
+macro_rules! probe_single_col_int_map {
+    ($map:expr, $keys:expr, $num_groups:expr, $group_ids:expr, $group_sizes:expr, $groupkey_indices:expr) => {{
+        for (row_idx, val) in $keys.values().iter().enumerate() {
+            let gid = match $map.entry(*val) {
+                Vacant(e) => {
+                    let gid = *$num_groups;
+                    *$num_groups = gid.checked_add(1).ok_or_else(|| {
+                        common_error::DaftError::ComputeError(
+                            "Number of groups exceeds u32::MAX in inline aggregation".into(),
+                        )
+                    })?;
+                    e.insert(gid);
+                    $groupkey_indices.push(row_idx as u64);
+                    $group_sizes.push(1);
+                    gid
+                }
+                Occupied(e) => {
+                    let gid = *e.get();
+                    $group_sizes[gid as usize] += 1;
+                    gid
+                }
+            };
+            $group_ids.push(gid);
+        }
+    }};
+}
+
+/// Helper macro to probe a nullable single-col int map for a batch.
+macro_rules! probe_single_col_int_nullable_map {
+    ($map:expr, $keys:expr, $num_groups:expr, $group_ids:expr, $group_sizes:expr, $groupkey_indices:expr) => {{
+        for (row_idx, val) in $keys.into_iter().enumerate() {
+            let gid = match $map.entry(val) {
+                Vacant(e) => {
+                    let gid = *$num_groups;
+                    *$num_groups = gid.checked_add(1).ok_or_else(|| {
+                        common_error::DaftError::ComputeError(
+                            "Number of groups exceeds u32::MAX in inline aggregation".into(),
+                        )
+                    })?;
+                    e.insert(gid);
+                    $groupkey_indices.push(row_idx as u64);
+                    $group_sizes.push(1);
+                    gid
+                }
+                Occupied(e) => {
+                    let gid = *e.get();
+                    $group_sizes[gid as usize] += 1;
+                    gid
+                }
+            };
+            $group_ids.push(gid);
+        }
+    }};
+}
+
+impl InlineAggState {
+    /// Try to create an InlineAggState. Returns None if any agg expression
+    /// is not inline-eligible.
+    pub fn try_new(
+        agg_exprs: &[BoundAggExpr],
+        group_by: &[BoundExpr],
+        schema: &SchemaRef,
+    ) -> DaftResult<Option<Self>> {
+        if !can_inline_agg_with_schema(agg_exprs, schema) {
+            return Ok(None);
+        }
+
+        let mut accumulators = Vec::with_capacity(agg_exprs.len());
+        let mut output_names = Vec::with_capacity(agg_exprs.len());
+
+        for agg_expr in agg_exprs {
+            let (acc, name) =
+                try_create_accumulator_from_expr(agg_expr, schema)?.ok_or_else(|| {
+                    common_error::DaftError::ComputeError(
+                        "InlineAggState: unsupported agg type; this is a bug".into(),
+                    )
+                })?;
+            accumulators.push(acc);
+            output_names.push(name);
+        }
+
+        // Determine grouping strategy based on group_by expressions.
+        // We'll determine single-col-int vs generic on first batch.
+        // For now, start with Generic and possibly specialize on first push.
+        let grouping = GroupingState::Generic(GenericGroupingState {
+            group_table: HashMap::with_capacity_and_hasher(1024, Default::default()),
+            representative_keys: None,
+        });
+
+        Ok(Some(Self {
+            accumulators,
+            output_names,
+            grouping,
+            group_sizes: Vec::new(),
+            num_groups: 0,
+            group_by: group_by.to_vec(),
+            agg_exprs: agg_exprs.to_vec(),
+        }))
+    }
+
+    /// Push a batch into the persistent state, updating accumulators.
+    pub fn push_batch(&mut self, batch: &RecordBatch) -> DaftResult<()> {
+        // 1. Evaluate group-by columns.
+        let groupby_table = batch.eval_expression_list(&self.group_by)?;
+        let groupby_physical = groupby_table.as_physical()?;
+
+        // 2. Evaluate agg sources.
+        let sources: Vec<Series> = self
+            .agg_exprs
+            .iter()
+            .map(|agg_expr| match agg_expr.as_ref() {
+                AggExpr::Count(expr, _)
+                | AggExpr::Sum(expr)
+                | AggExpr::Min(expr)
+                | AggExpr::Max(expr) => batch.eval_agg_child(expr),
+                _ => unreachable!("InlineAggState only handles Count/Sum/Min/Max"),
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        // 3. Try to specialize grouping on first batch.
+        self.maybe_specialize_grouping(&groupby_physical)?;
+
+        // 4. Probe hash table and get group_ids.
+        let (group_ids, groupkey_indices) = match &mut self.grouping {
+            GroupingState::SingleColIntNonNull(state) => probe_single_col_int_non_null(
+                state,
+                &groupby_physical,
+                &mut self.num_groups,
+                &mut self.group_sizes,
+            )?,
+            GroupingState::SingleColIntNullable(state) => probe_single_col_int_nullable(
+                state,
+                &groupby_physical,
+                &mut self.num_groups,
+                &mut self.group_sizes,
+            )?,
+            GroupingState::Generic(state) => probe_generic(
+                state,
+                &groupby_physical,
+                &mut self.num_groups,
+                &mut self.group_sizes,
+            )?,
+        };
+
+        // 5. Update accumulators.
+        let old_num_groups = self.accumulators.first().map_or(0, accum_len);
+
+        let new_num_groups = self.num_groups as usize;
+        if new_num_groups > old_num_groups {
+            for acc in self.accumulators.iter_mut() {
+                acc.init_groups(new_num_groups as u32);
+            }
+        }
+
+        // In the persistent path, always use the scatter loop (update_batch_with_source).
+        // The try_use_group_sizes optimization only works for the one-shot path where
+        // group_sizes represent the final per-group counts, not cumulative state.
+        for (acc, source) in self.accumulators.iter_mut().zip(sources.iter()) {
+            acc.update_batch_with_source(&group_ids, source)?;
+        }
+
+        // 6. Update representative keys for generic path.
+        if let GroupingState::Generic(state) = &mut self.grouping {
+            if !groupkey_indices.is_empty() {
+                let new_keys_indices = UInt64Array::from_vec("", groupkey_indices);
+                let new_rep_keys = groupby_table.take(&new_keys_indices)?;
+                state.representative_keys = Some(match state.representative_keys.take() {
+                    Some(existing) => RecordBatch::concat(&[existing, new_rep_keys])?,
+                    None => new_rep_keys,
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Finalize and produce the output RecordBatch.
+    pub fn finalize(self) -> DaftResult<RecordBatch> {
+        let InlineAggState {
+            accumulators,
+            output_names,
+            grouping,
+            num_groups,
+            group_by,
+            ..
+        } = self;
+
+        if num_groups == 0 {
+            // No data was pushed; return empty with correct schema.
+            return Ok(RecordBatch::empty(None));
+        }
+
+        // Get group key columns from representative keys or by reconstructing.
+        let group_key_series: Vec<Series> = match grouping {
+            GroupingState::Generic(state) => match state.representative_keys {
+                Some(rep) => rep.as_materialized_series().into_iter().cloned().collect(),
+                None => Vec::new(),
+            },
+            GroupingState::SingleColIntNonNull(state) => {
+                reconstruct_single_col_keys_non_null(num_groups, &group_by, state)
+            }
+            GroupingState::SingleColIntNullable(state) => {
+                reconstruct_single_col_keys_nullable(num_groups, &group_by, state)
+            }
+        };
+
+        let grouped_cols: Vec<Series> = accumulators
+            .into_iter()
+            .zip(output_names.iter())
+            .map(|(acc, name)| acc.finalize(name))
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        let all_series: Vec<Series> = group_key_series.into_iter().chain(grouped_cols).collect();
+        RecordBatch::from_nonempty_columns(all_series)
+    }
+
+    pub fn num_groups(&self) -> u32 {
+        self.num_groups
+    }
+
+    /// On first batch, decide whether to use single-col int specialization.
+    fn maybe_specialize_grouping(&mut self, groupby_physical: &RecordBatch) -> DaftResult<()> {
+        // Only specialize if still in Generic state with no data yet.
+        if self.num_groups > 0 {
+            return Ok(());
+        }
+        if let GroupingState::Generic(_) = &self.grouping {
+            if groupby_physical.num_columns() == 1 {
+                let col = groupby_physical.get_column(0);
+                let cap = std::cmp::min(groupby_physical.len(), 1024).max(1);
+                if col.nulls().is_none() || col.nulls().is_some_and(|n| n.null_count() == 0) {
+                    // Try non-nullable specialization.
+                    let specialized = match col.data_type() {
+                        DataType::Int8 => Some(GroupingState::SingleColIntNonNull(
+                            SingleColIntNonNullState::I8(FnvHashMap::with_capacity_and_hasher(
+                                cap,
+                                BuildHasherDefault::default(),
+                            )),
+                        )),
+                        DataType::Int16 => Some(GroupingState::SingleColIntNonNull(
+                            SingleColIntNonNullState::I16(FnvHashMap::with_capacity_and_hasher(
+                                cap,
+                                BuildHasherDefault::default(),
+                            )),
+                        )),
+                        DataType::Int32 => Some(GroupingState::SingleColIntNonNull(
+                            SingleColIntNonNullState::I32(FnvHashMap::with_capacity_and_hasher(
+                                cap,
+                                BuildHasherDefault::default(),
+                            )),
+                        )),
+                        DataType::Int64 => Some(GroupingState::SingleColIntNonNull(
+                            SingleColIntNonNullState::I64(FnvHashMap::with_capacity_and_hasher(
+                                cap,
+                                BuildHasherDefault::default(),
+                            )),
+                        )),
+                        DataType::UInt8 => Some(GroupingState::SingleColIntNonNull(
+                            SingleColIntNonNullState::U8(FnvHashMap::with_capacity_and_hasher(
+                                cap,
+                                BuildHasherDefault::default(),
+                            )),
+                        )),
+                        DataType::UInt16 => Some(GroupingState::SingleColIntNonNull(
+                            SingleColIntNonNullState::U16(FnvHashMap::with_capacity_and_hasher(
+                                cap,
+                                BuildHasherDefault::default(),
+                            )),
+                        )),
+                        DataType::UInt32 => Some(GroupingState::SingleColIntNonNull(
+                            SingleColIntNonNullState::U32(FnvHashMap::with_capacity_and_hasher(
+                                cap,
+                                BuildHasherDefault::default(),
+                            )),
+                        )),
+                        DataType::UInt64 => Some(GroupingState::SingleColIntNonNull(
+                            SingleColIntNonNullState::U64(FnvHashMap::with_capacity_and_hasher(
+                                cap,
+                                BuildHasherDefault::default(),
+                            )),
+                        )),
+                        _ => None,
+                    };
+                    if let Some(s) = specialized {
+                        self.grouping = s;
+                    }
+                } else {
+                    // Nullable integer.
+                    let specialized = match col.data_type() {
+                        DataType::Int8 => Some(GroupingState::SingleColIntNullable(
+                            SingleColIntNullableState::I8(FnvHashMap::with_capacity_and_hasher(
+                                cap,
+                                BuildHasherDefault::default(),
+                            )),
+                        )),
+                        DataType::Int16 => Some(GroupingState::SingleColIntNullable(
+                            SingleColIntNullableState::I16(FnvHashMap::with_capacity_and_hasher(
+                                cap,
+                                BuildHasherDefault::default(),
+                            )),
+                        )),
+                        DataType::Int32 => Some(GroupingState::SingleColIntNullable(
+                            SingleColIntNullableState::I32(FnvHashMap::with_capacity_and_hasher(
+                                cap,
+                                BuildHasherDefault::default(),
+                            )),
+                        )),
+                        DataType::Int64 => Some(GroupingState::SingleColIntNullable(
+                            SingleColIntNullableState::I64(FnvHashMap::with_capacity_and_hasher(
+                                cap,
+                                BuildHasherDefault::default(),
+                            )),
+                        )),
+                        DataType::UInt8 => Some(GroupingState::SingleColIntNullable(
+                            SingleColIntNullableState::U8(FnvHashMap::with_capacity_and_hasher(
+                                cap,
+                                BuildHasherDefault::default(),
+                            )),
+                        )),
+                        DataType::UInt16 => Some(GroupingState::SingleColIntNullable(
+                            SingleColIntNullableState::U16(FnvHashMap::with_capacity_and_hasher(
+                                cap,
+                                BuildHasherDefault::default(),
+                            )),
+                        )),
+                        DataType::UInt32 => Some(GroupingState::SingleColIntNullable(
+                            SingleColIntNullableState::U32(FnvHashMap::with_capacity_and_hasher(
+                                cap,
+                                BuildHasherDefault::default(),
+                            )),
+                        )),
+                        DataType::UInt64 => Some(GroupingState::SingleColIntNullable(
+                            SingleColIntNullableState::U64(FnvHashMap::with_capacity_and_hasher(
+                                cap,
+                                BuildHasherDefault::default(),
+                            )),
+                        )),
+                        _ => None,
+                    };
+                    if let Some(s) = specialized {
+                        self.grouping = s;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn probe_single_col_int_non_null(
+    state: &mut SingleColIntNonNullState,
+    groupby_physical: &RecordBatch,
+    num_groups: &mut u32,
+    group_sizes: &mut Vec<u64>,
+) -> DaftResult<(Vec<u32>, Vec<u64>)> {
+    let col = groupby_physical.get_column(0);
+    let len = col.len();
+    let mut group_ids = Vec::with_capacity(len);
+    let mut groupkey_indices = Vec::new();
+
+    match col.data_type() {
+        DataType::Int8 => {
+            if let SingleColIntNonNullState::I8(map) = state {
+                let keys = col.i8()?;
+                probe_single_col_int_map!(
+                    map,
+                    keys,
+                    num_groups,
+                    group_ids,
+                    group_sizes,
+                    groupkey_indices
+                );
+            }
+        }
+        DataType::Int16 => {
+            if let SingleColIntNonNullState::I16(map) = state {
+                let keys = col.i16()?;
+                probe_single_col_int_map!(
+                    map,
+                    keys,
+                    num_groups,
+                    group_ids,
+                    group_sizes,
+                    groupkey_indices
+                );
+            }
+        }
+        DataType::Int32 => {
+            if let SingleColIntNonNullState::I32(map) = state {
+                let keys = col.i32()?;
+                probe_single_col_int_map!(
+                    map,
+                    keys,
+                    num_groups,
+                    group_ids,
+                    group_sizes,
+                    groupkey_indices
+                );
+            }
+        }
+        DataType::Int64 => {
+            if let SingleColIntNonNullState::I64(map) = state {
+                let keys = col.i64()?;
+                probe_single_col_int_map!(
+                    map,
+                    keys,
+                    num_groups,
+                    group_ids,
+                    group_sizes,
+                    groupkey_indices
+                );
+            }
+        }
+        DataType::UInt8 => {
+            if let SingleColIntNonNullState::U8(map) = state {
+                let keys = col.u8()?;
+                probe_single_col_int_map!(
+                    map,
+                    keys,
+                    num_groups,
+                    group_ids,
+                    group_sizes,
+                    groupkey_indices
+                );
+            }
+        }
+        DataType::UInt16 => {
+            if let SingleColIntNonNullState::U16(map) = state {
+                let keys = col.u16()?;
+                probe_single_col_int_map!(
+                    map,
+                    keys,
+                    num_groups,
+                    group_ids,
+                    group_sizes,
+                    groupkey_indices
+                );
+            }
+        }
+        DataType::UInt32 => {
+            if let SingleColIntNonNullState::U32(map) = state {
+                let keys = col.u32()?;
+                probe_single_col_int_map!(
+                    map,
+                    keys,
+                    num_groups,
+                    group_ids,
+                    group_sizes,
+                    groupkey_indices
+                );
+            }
+        }
+        DataType::UInt64 => {
+            if let SingleColIntNonNullState::U64(map) = state {
+                let keys = col.u64()?;
+                probe_single_col_int_map!(
+                    map,
+                    keys,
+                    num_groups,
+                    group_ids,
+                    group_sizes,
+                    groupkey_indices
+                );
+            }
+        }
+        _ => unreachable!("SingleColIntNonNull only for integer types"),
+    }
+
+    Ok((group_ids, groupkey_indices))
+}
+
+fn probe_single_col_int_nullable(
+    state: &mut SingleColIntNullableState,
+    groupby_physical: &RecordBatch,
+    num_groups: &mut u32,
+    group_sizes: &mut Vec<u64>,
+) -> DaftResult<(Vec<u32>, Vec<u64>)> {
+    let col = groupby_physical.get_column(0);
+    let len = col.len();
+    let mut group_ids = Vec::with_capacity(len);
+    let mut groupkey_indices = Vec::new();
+
+    match col.data_type() {
+        DataType::Int8 => {
+            if let SingleColIntNullableState::I8(map) = state {
+                let keys = col.i8()?;
+                probe_single_col_int_nullable_map!(
+                    map,
+                    keys,
+                    num_groups,
+                    group_ids,
+                    group_sizes,
+                    groupkey_indices
+                );
+            }
+        }
+        DataType::Int16 => {
+            if let SingleColIntNullableState::I16(map) = state {
+                let keys = col.i16()?;
+                probe_single_col_int_nullable_map!(
+                    map,
+                    keys,
+                    num_groups,
+                    group_ids,
+                    group_sizes,
+                    groupkey_indices
+                );
+            }
+        }
+        DataType::Int32 => {
+            if let SingleColIntNullableState::I32(map) = state {
+                let keys = col.i32()?;
+                probe_single_col_int_nullable_map!(
+                    map,
+                    keys,
+                    num_groups,
+                    group_ids,
+                    group_sizes,
+                    groupkey_indices
+                );
+            }
+        }
+        DataType::Int64 => {
+            if let SingleColIntNullableState::I64(map) = state {
+                let keys = col.i64()?;
+                probe_single_col_int_nullable_map!(
+                    map,
+                    keys,
+                    num_groups,
+                    group_ids,
+                    group_sizes,
+                    groupkey_indices
+                );
+            }
+        }
+        DataType::UInt8 => {
+            if let SingleColIntNullableState::U8(map) = state {
+                let keys = col.u8()?;
+                probe_single_col_int_nullable_map!(
+                    map,
+                    keys,
+                    num_groups,
+                    group_ids,
+                    group_sizes,
+                    groupkey_indices
+                );
+            }
+        }
+        DataType::UInt16 => {
+            if let SingleColIntNullableState::U16(map) = state {
+                let keys = col.u16()?;
+                probe_single_col_int_nullable_map!(
+                    map,
+                    keys,
+                    num_groups,
+                    group_ids,
+                    group_sizes,
+                    groupkey_indices
+                );
+            }
+        }
+        DataType::UInt32 => {
+            if let SingleColIntNullableState::U32(map) = state {
+                let keys = col.u32()?;
+                probe_single_col_int_nullable_map!(
+                    map,
+                    keys,
+                    num_groups,
+                    group_ids,
+                    group_sizes,
+                    groupkey_indices
+                );
+            }
+        }
+        DataType::UInt64 => {
+            if let SingleColIntNullableState::U64(map) = state {
+                let keys = col.u64()?;
+                probe_single_col_int_nullable_map!(
+                    map,
+                    keys,
+                    num_groups,
+                    group_ids,
+                    group_sizes,
+                    groupkey_indices
+                );
+            }
+        }
+        _ => unreachable!("SingleColIntNullable only for integer types"),
+    }
+
+    Ok((group_ids, groupkey_indices))
+}
+
+fn probe_generic(
+    state: &mut GenericGroupingState,
+    groupby_physical: &RecordBatch,
+    num_groups: &mut u32,
+    group_sizes: &mut Vec<u64>,
+) -> DaftResult<(Vec<u32>, Vec<u64>)> {
+    let num_rows = groupby_physical.len();
+    let hashes = groupby_physical.hash_rows()?;
+    let new_cols: Vec<Series> = groupby_physical
+        .as_materialized_series()
+        .into_iter()
+        .cloned()
+        .collect();
+
+    let num_cols = new_cols.len();
+    let g = *num_groups; // Number of existing groups before this batch.
+
+    // Build two comparators:
+    // cross_cmp: new_batch row i vs representative row j
+    // self_cmp: new_batch row i vs new_batch row j
+    let self_cmp = build_multi_array_is_equal(
+        new_cols.as_slice(),
+        new_cols.as_slice(),
+        vec![true; num_cols].as_slice(),
+        vec![true; num_cols].as_slice(),
+    )?;
+
+    let cross_cmp = if let Some(ref rep) = state.representative_keys {
+        let rep_cols: Vec<Series> = rep.as_materialized_series().into_iter().cloned().collect();
+        Some(build_multi_array_is_equal(
+            new_cols.as_slice(),
+            rep_cols.as_slice(),
+            vec![true; num_cols].as_slice(),
+            vec![true; num_cols].as_slice(),
+        )?)
+    } else {
+        None
+    };
+
+    let mut group_ids = Vec::with_capacity(num_rows);
+    let mut new_group_batch_rows: Vec<u64> = Vec::new();
+
+    for (row_idx, h) in hashes.values().iter().enumerate() {
+        let entry = state.group_table.raw_entry_mut().from_hash(*h, |other| {
+            (*h == other.hash) && {
+                let j = other.idx;
+                if j < g as u64 {
+                    cross_cmp.as_ref().unwrap()(row_idx, j as usize)
+                } else {
+                    self_cmp(row_idx, (j - g as u64) as usize)
+                }
+            }
+        });
+
+        let gid = match entry {
+            RawEntryMut::Vacant(entry) => {
+                let gid = *num_groups;
+                *num_groups = gid.checked_add(1).ok_or_else(|| {
+                    common_error::DaftError::ComputeError(
+                        "Number of groups exceeds u32::MAX in inline aggregation".into(),
+                    )
+                })?;
+                entry.insert_hashed_nocheck(
+                    *h,
+                    IndexHash {
+                        idx: g as u64 + row_idx as u64,
+                        hash: *h,
+                    },
+                    gid,
+                );
+                new_group_batch_rows.push(row_idx as u64);
+                group_sizes.push(1);
+                gid
+            }
+            RawEntryMut::Occupied(entry) => {
+                let gid = *entry.get();
+                group_sizes[gid as usize] += 1;
+                gid
+            }
+        };
+        group_ids.push(gid);
+    }
+
+    // Remap new entries' idx from (g + batch_row_idx) to (g + discovery_order).
+    if !new_group_batch_rows.is_empty() {
+        let mut remap: FnvHashMap<u64, u64> = FnvHashMap::with_capacity_and_hasher(
+            new_group_batch_rows.len(),
+            BuildHasherDefault::default(),
+        );
+        for (order, &batch_row) in new_group_batch_rows.iter().enumerate() {
+            remap.insert(batch_row, order as u64);
+        }
+
+        let base = match &state.representative_keys {
+            Some(rep) => rep.len() as u64,
+            None => 0,
+        };
+
+        for bucket in state.group_table.iter_mut() {
+            let idx_hash = bucket.0;
+            if idx_hash.idx >= g as u64 {
+                let batch_row = idx_hash.idx - g as u64;
+                if let Some(&order) = remap.get(&batch_row) {
+                    // SAFETY: we're modifying the key's idx field but not its hash,
+                    // so the bucket position remains valid.
+                    unsafe {
+                        let key_ptr = bucket.0 as *const IndexHash as *mut IndexHash;
+                        (*key_ptr).idx = base + order;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok((group_ids, new_group_batch_rows))
+}
+
+/// Reconstruct group keys for single-col int non-nullable path.
+fn reconstruct_single_col_keys_non_null(
+    num_groups: u32,
+    group_by: &[BoundExpr],
+    state: SingleColIntNonNullState,
+) -> Vec<Series> {
+    macro_rules! reconstruct {
+        ($map:expr, $daft_type:ty, $name:expr) => {{
+            let n = num_groups as usize;
+            let mut vals: Vec<Option<<$daft_type as DaftNumericType>::Native>> = vec![None; n];
+            for (key, gid) in $map.into_iter() {
+                vals[gid as usize] = Some(key);
+            }
+            let series = DataArray::<$daft_type>::from_iter(
+                Field::new(*$name, <$daft_type as DaftDataType>::get_dtype()),
+                vals.into_iter(),
+            )
+            .into_series();
+            vec![series]
+        }};
+    }
+
+    let name = &group_by[0].as_ref().name();
+    match state {
+        SingleColIntNonNullState::I8(map) => reconstruct!(map, Int8Type, name),
+        SingleColIntNonNullState::I16(map) => reconstruct!(map, Int16Type, name),
+        SingleColIntNonNullState::I32(map) => reconstruct!(map, Int32Type, name),
+        SingleColIntNonNullState::I64(map) => reconstruct!(map, Int64Type, name),
+        SingleColIntNonNullState::U8(map) => reconstruct!(map, UInt8Type, name),
+        SingleColIntNonNullState::U16(map) => reconstruct!(map, UInt16Type, name),
+        SingleColIntNonNullState::U32(map) => reconstruct!(map, UInt32Type, name),
+        SingleColIntNonNullState::U64(map) => reconstruct!(map, UInt64Type, name),
+    }
+}
+
+/// Reconstruct group keys for single-col int nullable path.
+fn reconstruct_single_col_keys_nullable(
+    num_groups: u32,
+    group_by: &[BoundExpr],
+    state: SingleColIntNullableState,
+) -> Vec<Series> {
+    macro_rules! reconstruct {
+        ($map:expr, $daft_type:ty, $name:expr) => {{
+            let n = num_groups as usize;
+            let mut vals: Vec<Option<<$daft_type as DaftNumericType>::Native>> = vec![None; n];
+            for (key, gid) in $map.into_iter() {
+                vals[gid as usize] = key;
+            }
+            let series = DataArray::<$daft_type>::from_iter(
+                Field::new(*$name, <$daft_type as DaftDataType>::get_dtype()),
+                vals.into_iter(),
+            )
+            .into_series();
+            vec![series]
+        }};
+    }
+
+    let name = &group_by[0].as_ref().name();
+    match state {
+        SingleColIntNullableState::I8(map) => reconstruct!(map, Int8Type, name),
+        SingleColIntNullableState::I16(map) => reconstruct!(map, Int16Type, name),
+        SingleColIntNullableState::I32(map) => reconstruct!(map, Int32Type, name),
+        SingleColIntNullableState::I64(map) => reconstruct!(map, Int64Type, name),
+        SingleColIntNullableState::U8(map) => reconstruct!(map, UInt8Type, name),
+        SingleColIntNullableState::U16(map) => reconstruct!(map, UInt16Type, name),
+        SingleColIntNullableState::U32(map) => reconstruct!(map, UInt32Type, name),
+        SingleColIntNullableState::U64(map) => reconstruct!(map, UInt64Type, name),
+    }
+}
+
+/// Get the length of an accumulator's internal storage.
+fn accum_len(acc: &AggAccumulator) -> usize {
+    match acc {
+        AggAccumulator::Count(s) => s.counts.len(),
+        AggAccumulator::SumI64(s) => s.accumulators.len(),
+        AggAccumulator::SumU64(s) => s.accumulators.len(),
+        AggAccumulator::SumF32(s) => s.accumulators.len(),
+        AggAccumulator::SumF64(s) => s.accumulators.len(),
+        AggAccumulator::MinI8(s) => s.accumulators.len(),
+        AggAccumulator::MinI16(s) => s.accumulators.len(),
+        AggAccumulator::MinI32(s) => s.accumulators.len(),
+        AggAccumulator::MinI64(s) => s.accumulators.len(),
+        AggAccumulator::MinU8(s) => s.accumulators.len(),
+        AggAccumulator::MinU16(s) => s.accumulators.len(),
+        AggAccumulator::MinU32(s) => s.accumulators.len(),
+        AggAccumulator::MinU64(s) => s.accumulators.len(),
+        AggAccumulator::MinF32(s) => s.accumulators.len(),
+        AggAccumulator::MinF64(s) => s.accumulators.len(),
+        AggAccumulator::MaxI8(s) => s.accumulators.len(),
+        AggAccumulator::MaxI16(s) => s.accumulators.len(),
+        AggAccumulator::MaxI32(s) => s.accumulators.len(),
+        AggAccumulator::MaxI64(s) => s.accumulators.len(),
+        AggAccumulator::MaxU8(s) => s.accumulators.len(),
+        AggAccumulator::MaxU16(s) => s.accumulators.len(),
+        AggAccumulator::MaxU32(s) => s.accumulators.len(),
+        AggAccumulator::MaxU64(s) => s.accumulators.len(),
+        AggAccumulator::MaxF32(s) => s.accumulators.len(),
+        AggAccumulator::MaxF64(s) => s.accumulators.len(),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // RecordBatch methods
 // ---------------------------------------------------------------------------
 
@@ -881,17 +1853,17 @@ impl RecordBatch {
         let groupby_table = self.eval_expression_list(group_by)?;
         let groupby_physical = groupby_table.as_physical()?;
 
-        // 2. Create accumulators for each agg expression.
-        let mut accumulators: Vec<AggAccumulator> = Vec::with_capacity(to_agg.len());
+        // 2. Create accumulators for each agg expression (with evaluated sources).
+        let mut accumulators: Vec<(AggAccumulator, Series)> = Vec::with_capacity(to_agg.len());
         let mut output_names: Vec<String> = Vec::with_capacity(to_agg.len());
 
         for agg_expr in to_agg {
-            let (acc, name) = try_create_accumulator(agg_expr, self)?.ok_or_else(|| {
+            let (acc, name, source) = try_create_accumulator(agg_expr, self)?.ok_or_else(|| {
                 common_error::DaftError::ComputeError(
                     "Inline aggregation reached an unsupported type; this is a bug".into(),
                 )
             })?;
-            accumulators.push(acc);
+            accumulators.push((acc, source));
             output_names.push(name);
         }
 
@@ -924,7 +1896,7 @@ impl RecordBatch {
         let grouped_cols: Vec<Series> = accumulators
             .into_iter()
             .zip(output_names.iter())
-            .map(|(acc, name)| acc.finalize(name))
+            .map(|((acc, _source), name)| acc.finalize(name))
             .collect::<DaftResult<Vec<_>>>()?;
 
         let all_series: Vec<Series> = groupkeys_table
@@ -1674,5 +2646,224 @@ mod tests {
         let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
         let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
         assert_batches_equal_multi_key(&inline_result, &fallback_result, &["key1", "key2"]);
+    }
+
+    // -----------------------------------------------------------------------
+    // InlineAggState tests — persistent hash table across multiple batches
+    // -----------------------------------------------------------------------
+
+    use super::InlineAggState;
+
+    /// Helper: split a RecordBatch into multiple smaller batches for multi-push testing.
+    fn split_batch(rb: &RecordBatch, sizes: &[usize]) -> Vec<RecordBatch> {
+        let mut result = Vec::new();
+        let mut offset = 0;
+        for &size in sizes {
+            let end = std::cmp::min(offset + size, rb.len());
+            if offset >= end {
+                break;
+            }
+            let sliced = rb.slice(offset, end).unwrap();
+            result.push(sliced);
+            offset = end;
+        }
+        result
+    }
+
+    #[test]
+    fn test_inline_agg_state_int_key_sum_multi_batch() {
+        let (rb, group_by, schema) = make_int_key_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap()];
+
+        // One-shot result for comparison.
+        let expected = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+
+        // Multi-batch via InlineAggState.
+        let schema_ref: Arc<Schema> = Arc::new(schema);
+        let mut state = InlineAggState::try_new(&bound_agg, &group_by, &schema_ref)
+            .unwrap()
+            .unwrap();
+
+        let batches = split_batch(&rb, &[2, 2, 1]);
+        for batch in &batches {
+            state.push_batch(batch).unwrap();
+        }
+        let result = state.finalize().unwrap();
+
+        assert_batches_equal(&result, &expected);
+    }
+
+    #[test]
+    fn test_inline_agg_state_int_key_count_multi_batch() {
+        let (rb, group_by, schema) = make_int_key_test_batch();
+        let bound_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
+                .unwrap(),
+        ];
+
+        let expected = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+
+        let schema_ref: Arc<Schema> = Arc::new(schema);
+        let mut state = InlineAggState::try_new(&bound_agg, &group_by, &schema_ref)
+            .unwrap()
+            .unwrap();
+
+        let batches = split_batch(&rb, &[1, 1, 1, 1, 1]);
+        for batch in &batches {
+            state.push_batch(batch).unwrap();
+        }
+        let result = state.finalize().unwrap();
+
+        assert_batches_equal(&result, &expected);
+    }
+
+    #[test]
+    fn test_inline_agg_state_int_key_min_max_multi_batch() {
+        let (rb, group_by, schema) = make_int_key_test_batch();
+        let bound_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Min(resolved_col("val")), &schema).unwrap(),
+            BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap(),
+        ];
+
+        let expected = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+
+        let schema_ref: Arc<Schema> = Arc::new(schema);
+        let mut state = InlineAggState::try_new(&bound_agg, &group_by, &schema_ref)
+            .unwrap()
+            .unwrap();
+
+        let batches = split_batch(&rb, &[3, 2]);
+        for batch in &batches {
+            state.push_batch(batch).unwrap();
+        }
+        let result = state.finalize().unwrap();
+
+        assert_batches_equal(&result, &expected);
+    }
+
+    #[test]
+    fn test_inline_agg_state_int_key_with_nulls_multi_batch() {
+        let (rb, group_by, schema) = make_int_key_with_nulls_test_batch();
+        let bound_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
+                .unwrap(),
+            BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap(),
+        ];
+
+        let expected = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+
+        let schema_ref: Arc<Schema> = Arc::new(schema);
+        let mut state = InlineAggState::try_new(&bound_agg, &group_by, &schema_ref)
+            .unwrap()
+            .unwrap();
+
+        let batches = split_batch(&rb, &[2, 2, 1]);
+        for batch in &batches {
+            state.push_batch(batch).unwrap();
+        }
+        let result = state.finalize().unwrap();
+
+        assert_batches_equal(&result, &expected);
+    }
+
+    #[test]
+    fn test_inline_agg_state_string_key_generic_path() {
+        let (rb, group_by, schema) = make_test_batch();
+        let bound_agg = vec![
+            BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
+                .unwrap(),
+            BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap(),
+            BoundAggExpr::try_new(AggExpr::Min(resolved_col("val")), &schema).unwrap(),
+            BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap(),
+        ];
+
+        let expected = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+
+        let schema_ref: Arc<Schema> = Arc::new(schema);
+        let mut state = InlineAggState::try_new(&bound_agg, &group_by, &schema_ref)
+            .unwrap()
+            .unwrap();
+
+        let batches = split_batch(&rb, &[2, 2, 1]);
+        for batch in &batches {
+            state.push_batch(batch).unwrap();
+        }
+        let result = state.finalize().unwrap();
+
+        assert_batches_equal(&result, &expected);
+    }
+
+    #[test]
+    fn test_inline_agg_state_multi_col_generic_path() {
+        let (rb, group_by, schema) = make_multi_col_string_test_batch();
+        let bound_agg =
+            vec![BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap()];
+
+        let expected = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+
+        let schema_ref: Arc<Schema> = Arc::new(schema);
+        let mut state = InlineAggState::try_new(&bound_agg, &group_by, &schema_ref)
+            .unwrap()
+            .unwrap();
+
+        let batches = split_batch(&rb, &[2, 2, 1]);
+        for batch in &batches {
+            state.push_batch(batch).unwrap();
+        }
+        let result = state.finalize().unwrap();
+
+        assert_batches_equal_multi_key(&result, &expected, &["key1", "key2"]);
+    }
+
+    #[test]
+    fn test_inline_agg_state_single_batch_equals_one_shot() {
+        let (rb, group_by, schema) = make_int_key_test_batch();
+        let bound_agg = vec![
+            BoundAggExpr::try_new(
+                AggExpr::Count(resolved_col("val"), CountMode::Valid),
+                &schema,
+            )
+            .unwrap(),
+            BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap(),
+        ];
+
+        let expected = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+
+        let schema_ref: Arc<Schema> = Arc::new(schema);
+        let mut state = InlineAggState::try_new(&bound_agg, &group_by, &schema_ref)
+            .unwrap()
+            .unwrap();
+        state.push_batch(&rb).unwrap();
+        let result = state.finalize().unwrap();
+
+        assert_batches_equal(&result, &expected);
+    }
+
+    #[test]
+    fn test_inline_agg_state_count_valid_no_nulls_multi_batch() {
+        // Regression test: CountMode::Valid with a source column that has no nulls
+        // must still count rows correctly in the persistent path.
+        let (rb, group_by, schema) = make_int_key_test_batch();
+        let bound_agg = vec![BoundAggExpr::try_new(
+            AggExpr::Count(resolved_col("val"), CountMode::Valid),
+            &schema,
+        )
+        .unwrap()];
+
+        let expected = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
+
+        let schema_ref: Arc<Schema> = Arc::new(schema);
+        let mut state = InlineAggState::try_new(&bound_agg, &group_by, &schema_ref)
+            .unwrap()
+            .unwrap();
+
+        let batches = split_batch(&rb, &[2, 2, 1]);
+        for batch in &batches {
+            state.push_batch(batch).unwrap();
+        }
+        let result = state.finalize().unwrap();
+
+        assert_batches_equal(&result, &expected);
     }
 }
