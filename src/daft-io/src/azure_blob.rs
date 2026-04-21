@@ -544,6 +544,16 @@ impl AzureBlobSource {
         uri: &str,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<usize> {
+        let (size, _) = self.head_internal(uri, io_stats).await?;
+        Ok(size)
+    }
+
+    /// Internal HEAD that does NOT acquire the semaphore.
+    async fn head_internal(
+        &self,
+        uri: &str,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<(usize, Option<jiff::Timestamp>)> {
         let parsed_uri = parse_azure_uri(uri)?;
         let (container, key) = parsed_uri
             .container_and_key
@@ -566,7 +576,13 @@ impl AzureBlobSource {
             is.mark_head_requests(1);
         }
 
-        Ok(metadata.blob.properties.content_length as usize)
+        let props = &metadata.blob.properties;
+        let last_modified = jiff::Timestamp::new(
+            props.last_modified.unix_timestamp(),
+            props.last_modified.nanosecond() as i32,
+        )
+        .ok();
+        Ok((props.content_length as usize, last_modified))
     }
 }
 
@@ -658,6 +674,25 @@ impl ObjectSource for AzureBlobSource {
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
         self.get_size_internal(uri, io_stats).await
+    }
+
+    async fn get_file_metadata(
+        &self,
+        uri: &str,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<FileMetadata> {
+        let _permit = self
+            .connection_pool_sema
+            .acquire()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+        let (size, last_modified) = self.head_internal(uri, io_stats).await?;
+        Ok(FileMetadata {
+            filepath: uri.to_string(),
+            size: Some(size as u64),
+            filetype: FileType::File,
+            last_modified,
+        })
     }
 
     async fn glob(

@@ -91,6 +91,64 @@ struct Item {
     oid: String,
     size: u64,
     path: String,
+    #[serde(default, rename = "lastCommit")]
+    last_commit: Option<LastCommit>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct LastCommit {
+    date: jiff::Timestamp,
+}
+
+/// Body for `POST /api/{bucket}/{repo}/paths-info/{revision}`.
+#[derive(Serialize)]
+struct PathsInfoRequest<'a> {
+    paths: [&'a str; 1],
+    expand: bool,
+}
+
+/// Hit the paths-info API for a single path. Returns the matching `Item` when one exists.
+async fn fetch_paths_info(
+    client: &ClientWithMiddleware,
+    parts: &HFPathParts,
+    io_stats: Option<&IOStatsRef>,
+) -> super::Result<Option<Item>> {
+    let api_uri = format!(
+        "https://huggingface.co/api/{bucket}/{repository}/paths-info/{revision}",
+        bucket = parts.bucket,
+        repository = parts.repository,
+        revision = parts.revision,
+    );
+    let body = PathsInfoRequest {
+        paths: [parts.path.as_str()],
+        expand: true,
+    };
+    let response =
+        client
+            .post(&api_uri)
+            .json(&body)
+            .send()
+            .await
+            .context(UnableToConnectSnafu::<String> {
+                path: api_uri.clone(),
+            })?;
+    let response = response.error_for_status().map_err(|e| {
+        if e.status().map(|s| s.as_u16()) == Some(401) {
+            Error::Unauthorized
+        } else {
+            Error::UnableToOpenFile {
+                path: api_uri.clone(),
+                source: e,
+            }
+        }
+    })?;
+    if let Some(is) = io_stats {
+        is.mark_head_requests(1);
+    }
+    let items: Vec<Item> = response.json().await.context(UnableToReadBytesSnafu {
+        path: api_uri.clone(),
+    })?;
+    Ok(items.into_iter().next())
 }
 
 enum HFPath {
@@ -228,7 +286,7 @@ impl HFPath {
             Self::Hf(parts) => {
                 // "https://huggingface.co/api/ [datasets] / {username} / {reponame} / tree / {revision} / {path from root}"
                 format!(
-                    "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/tree/{REVISION}/{PATH}",
+                    "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/tree/{REVISION}/{PATH}?expand=true",
                     BUCKET = parts.bucket,
                     REPOSITORY = parts.repository,
                     REVISION = parts.revision,
@@ -482,6 +540,33 @@ impl ObjectSource for HFSource {
         }
     }
 
+    async fn get_file_metadata(
+        &self,
+        uri: &str,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<FileMetadata> {
+        let hf_path = uri.parse::<HFPath>()?;
+        let HFPath::Hf(parts) = &hf_path else {
+            // Bare http(s):// HF URLs don't carry enough info to hit paths-info; fall back.
+            return Ok(FileMetadata {
+                filepath: uri.to_string(),
+                size: Some(self.get_size(uri, io_stats).await? as u64),
+                filetype: FileType::File,
+                last_modified: None,
+            });
+        };
+        let item = fetch_paths_info(&self.http_source.client, parts, io_stats.as_ref()).await?;
+        Ok(FileMetadata {
+            filepath: uri.to_string(),
+            size: item.as_ref().map(|it| it.size),
+            filetype: FileType::File,
+            last_modified: item
+                .as_ref()
+                .and_then(|it| it.last_commit.as_ref())
+                .map(|c| c.date),
+        })
+    }
+
     async fn glob(
         self: Arc<Self>,
         glob_path: &str,
@@ -605,11 +690,13 @@ impl ObjectSource for HFSource {
                     ItemType::Directory => FileType::Directory,
                 };
 
+                let last_modified = item.last_commit.as_ref().map(|c| c.date);
+
                 FileMetadata {
                     filepath,
                     size,
                     filetype,
-                    last_modified: None,
+                    last_modified,
                 }
             })
             .collect();

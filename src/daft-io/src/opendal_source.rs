@@ -259,6 +259,25 @@ impl ObjectSource for OpenDALSource {
         Ok(meta.content_length() as usize)
     }
 
+    async fn get_file_metadata(
+        &self,
+        uri: &str,
+        _io_stats: Option<IOStatsRef>,
+    ) -> super::Result<FileMetadata> {
+        let path = url_to_opendal_path(uri)?;
+        let meta = self
+            .operator
+            .stat(&path)
+            .await
+            .map_err(|e| opendal_err_to_daft_err(e, uri, &self.scheme))?;
+        Ok(FileMetadata {
+            filepath: uri.to_string(),
+            size: Some(meta.content_length()),
+            filetype: FileType::File,
+            last_modified: meta.last_modified().map(|t| t.into_inner()),
+        })
+    }
+
     async fn glob(
         self: Arc<Self>,
         glob_path: &str,
@@ -330,11 +349,12 @@ impl ObjectSource for OpenDALSource {
                 } else {
                     None
                 };
+                let last_modified = entry.metadata().last_modified().map(|t| t.into_inner());
                 Some(FileMetadata {
                     filepath,
                     size,
                     filetype,
-                    last_modified: None,
+                    last_modified,
                 })
             })
             .collect();

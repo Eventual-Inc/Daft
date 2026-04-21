@@ -33,7 +33,7 @@ def test_read_with_empty_file(tmp_path: Path):
     data = df.to_pydict()
     assert data["content"] == [b""]
     assert data["size"] == [0]
-    assert "last_modified" in data
+    assert data["last_modified"][0] is not None
 
 
 def test_read_basic_bytes(tmp_path: Path):
@@ -118,17 +118,15 @@ def test_size_matches_listing(tmp_path: Path):
     assert sorted(df.to_pydict()["size"]) == [4, 7]
 
 
-def test_last_modified_column_present(tmp_path: Path):
+def test_last_modified_nonnull_for_local(tmp_path: Path):
     path = tmp_path / "f.bin"
     path.write_bytes(b"hi")
 
     df = daft.read_blob(str(path))
-    data = df.to_pydict()
-    assert "last_modified" in data
-    ts = data["last_modified"][0]
-    if ts is not None:
-        assert isinstance(ts, datetime.datetime)
-        assert ts.tzinfo is not None
+    ts = df.to_pydict()["last_modified"][0]
+    assert ts is not None
+    assert isinstance(ts, datetime.datetime)
+    assert ts.tzinfo is not None
 
 
 def test_read_with_buffer_size(tmp_path: Path):

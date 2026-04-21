@@ -278,6 +278,49 @@ impl GCSClientWrapper {
         }
         Ok(response.size as usize)
     }
+
+    async fn get_file_metadata(
+        &self,
+        uri: &str,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<FileMetadata> {
+        let (bucket, key) = parse_raw_uri(uri)?;
+        if key.is_empty() {
+            return Err(Error::NotAFile { path: uri.into() }.into());
+        }
+
+        let _permit = self
+            .connection_pool_sema
+            .acquire()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let client = &self.client;
+        let req = GetObjectRequest {
+            bucket: bucket.into(),
+            object: key.into(),
+            ..Default::default()
+        };
+
+        let response = client
+            .get_object(&req)
+            .await
+            .context(UnableToOpenFileSnafu {
+                path: uri.to_string(),
+            })?;
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_head_requests(1);
+        }
+        let last_modified = response
+            .updated
+            .and_then(|dt| jiff::Timestamp::new(dt.unix_timestamp(), dt.nanosecond() as i32).ok());
+        Ok(FileMetadata {
+            filepath: uri.to_string(),
+            size: Some(response.size as u64),
+            filetype: FileType::File,
+            last_modified,
+        })
+    }
     #[allow(clippy::too_many_arguments)]
     async fn ls_impl(
         &self,
@@ -575,6 +618,14 @@ impl ObjectSource for GCSSource {
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
         self.client.get_size(uri, io_stats).await
+    }
+
+    async fn get_file_metadata(
+        &self,
+        uri: &str,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<FileMetadata> {
+        self.client.get_file_metadata(uri, io_stats).await
     }
 
     async fn glob(
