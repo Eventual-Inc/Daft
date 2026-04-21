@@ -64,6 +64,25 @@ impl RuntimeNodeManager {
         (self.node_info.clone(), self.runtime_stats.export_snapshot())
     }
 
+    /// Number of tasks currently in flight for this node. Clamped at 0 —
+    /// increments and decrements are paired through `handle_task_event`,
+    /// so the underlying signed counter should not observably go negative.
+    pub fn active_task_count(&self) -> u64 {
+        self.active_tasks.load(Ordering::Relaxed).max(0) as u64
+    }
+
+    pub fn completed_task_count(&self) -> u64 {
+        self.completed_tasks.load(Ordering::Relaxed)
+    }
+
+    pub fn failed_task_count(&self) -> u64 {
+        self.failed_tasks.load(Ordering::Relaxed)
+    }
+
+    pub fn cancelled_task_count(&self) -> u64 {
+        self.cancelled_tasks.load(Ordering::Relaxed)
+    }
+
     fn dec_active_tasks(&self) {
         self.active_tasks.add(-1, self.node_kv.as_slice());
     }
@@ -290,5 +309,51 @@ mod tests {
         mgr.handle_task_event(&completed_event(&[1, 2, 3]));
         let (_, snapshot) = mgr.export_snapshot();
         assert_eq!(default_num_tasks(&snapshot), 0);
+    }
+
+    fn scheduled_event() -> TaskEvent {
+        TaskEvent::Scheduled {
+            context: TaskContext::default(),
+        }
+    }
+
+    fn failed_event() -> TaskEvent {
+        TaskEvent::Failed {
+            context: TaskContext::default(),
+            reason: "boom".into(),
+        }
+    }
+
+    fn cancelled_event() -> TaskEvent {
+        TaskEvent::Cancelled {
+            context: TaskContext::default(),
+        }
+    }
+
+    #[test]
+    fn task_count_getters_reflect_task_events() {
+        let mgr = runtime_node_manager(42);
+        // 3 scheduled; 1 completes, 1 fails, 1 is cancelled — net active 0.
+        mgr.handle_task_event(&scheduled_event());
+        mgr.handle_task_event(&scheduled_event());
+        mgr.handle_task_event(&scheduled_event());
+        mgr.handle_task_event(&completed_event(&[42]));
+        mgr.handle_task_event(&failed_event());
+        mgr.handle_task_event(&cancelled_event());
+
+        assert_eq!(mgr.active_task_count(), 0);
+        assert_eq!(mgr.completed_task_count(), 1);
+        assert_eq!(mgr.failed_task_count(), 1);
+        assert_eq!(mgr.cancelled_task_count(), 1);
+    }
+
+    #[test]
+    fn active_task_count_clamps_at_zero_if_never_scheduled() {
+        // Failure without a prior Scheduled would push the underlying
+        // signed counter below zero; the getter must not leak a negative.
+        let mgr = runtime_node_manager(42);
+        mgr.handle_task_event(&failed_event());
+        assert_eq!(mgr.active_task_count(), 0);
+        assert_eq!(mgr.failed_task_count(), 1);
     }
 }
