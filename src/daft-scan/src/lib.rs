@@ -53,7 +53,7 @@ pub use source::{
     DataSource, DataSourceRef, DataSourceTask, DataSourceTaskRef, DataSourceTaskStream,
     ReadOptions, RecordBatchStream, ShimSourceTask,
 };
-pub use statistics::{Precision, Statistics};
+pub use statistics::{ColumnStatistics, Precision, Statistics};
 
 #[cfg(feature = "python")]
 pub mod python;

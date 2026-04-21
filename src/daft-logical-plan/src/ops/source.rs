@@ -79,12 +79,12 @@ impl Source {
         if let Some(stats) = &scan_stats
             && let Precision::Exact(num_rows) = &stats.num_rows
         {
-            let num_rows = *num_rows as usize;
+            let acc_selectivity = scan_pushdowns.estimated_selectivity(self.output_schema.as_ref());
+            let num_rows = (*num_rows as f64 * acc_selectivity) as usize;
             let size_bytes = match stats.size_bytes {
                 Precision::Exact(n) | Precision::Inexact(n) => n as usize,
-                Precision::Absent => 0,
+                Precision::Absent => 0, // unknown size; treated as 0 like ApproxStats::empty()
             };
-            let acc_selectivity = scan_pushdowns.estimated_selectivity(self.output_schema.as_ref());
             let approx_stats = ApproxStats {
                 num_rows,
                 size_bytes,
