@@ -189,7 +189,7 @@ def assert_frame_equal(
         for col in col_names:
             av = actual_pydict[col][ai]
             ev = expected_pydict[col][ei]
-            if av != ev:
+            if av != ev and not (av != av and ev != ev):
                 mismatches.append(
                     f"  Row {rank}, column '{col}': actual={av!r}, expected={ev!r}"
                 )
