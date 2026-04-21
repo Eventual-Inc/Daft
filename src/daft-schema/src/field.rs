@@ -129,7 +129,18 @@ impl Field {
             | dtype @ DataType::FixedShapeTensor(..)
             | dtype @ DataType::SparseTensor(..)
             | dtype @ DataType::FixedShapeSparseTensor(..)
-            | dtype @ DataType::File(..) => {
+            | dtype @ DataType::File(..)
+            | dtype @ DataType::WKT(..)
+            | dtype @ DataType::WKB(..)
+            | dtype @ DataType::Point(..)
+            | dtype @ DataType::LineString(..)
+            | dtype @ DataType::Polygon(..)
+            | dtype @ DataType::MultiPoint(..)
+            | dtype @ DataType::MultiLineString(..)
+            | dtype @ DataType::MultiPolygon(..)
+            | dtype @ DataType::GeometryCollection(..)
+            | dtype @ DataType::Geometry(..)
+            | dtype @ DataType::Rect(..) => {
                 let physical = Box::new(self.to_physical());
 
                 let mut metadata_map = HashMap::new();

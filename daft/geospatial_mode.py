@@ -32,4 +32,18 @@ class GeospatialMode:
         crs_type: str | None = None,
         edges: str | None = None,
     ) -> None:
+        if coord_type != "separated":
+            raise NotImplementedError("Only separated coordinate type is supported")
+
         self._inner = _PyGeospatialMode.from_user_defined_mode(dimension, coord_type, crs, crs_type, edges)
+
+    def __repr__(self) -> str:
+        return repr(self._inner)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, GeospatialMode):
+            return NotImplemented
+        return self._inner == other._inner
+
+    def __hash__(self) -> int:
+        return hash(self._inner)

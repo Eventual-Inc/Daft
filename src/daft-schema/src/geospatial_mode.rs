@@ -186,6 +186,20 @@ impl std::fmt::Display for GeospatialMode {
 #[cfg(feature = "python")]
 #[pymethods]
 impl GeospatialMode {
+    pub fn __repr__(&self) -> String {
+        format!("{self}")
+    }
+
+    pub fn __hash__(&self) -> u64 {
+        use std::{
+            collections::hash_map::DefaultHasher,
+            hash::{Hash, Hasher},
+        };
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        hasher.finish()
+    }
+
     #[staticmethod]
     #[pyo3(signature = (dimension, coord_type, crs=None, crs_type=None, edges=None))]
     pub fn from_user_defined_mode(
