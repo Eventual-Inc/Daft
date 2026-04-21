@@ -87,8 +87,7 @@ pub struct NextDay;
 #[derive(FunctionArgs)]
 struct NextDayArgs<T> {
     input: T,
-    #[arg(optional)]
-    day_of_week: Option<String>,
+    day_of_week: String,
 }
 
 fn parse_weekday(s: &str) -> DaftResult<Weekday> {
@@ -118,12 +117,7 @@ impl ScalarUDF for NextDay {
         _ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
         let NextDayArgs { input, day_of_week } = inputs.try_into()?;
-        let dow_str = day_of_week.ok_or_else(|| {
-            common_error::DaftError::ValueError(
-                "next_day requires a day_of_week argument".to_string(),
-            )
-        })?;
-        let target_weekday = parse_weekday(&dow_str)?;
+        let target_weekday = parse_weekday(&day_of_week)?;
 
         let date_series = input.cast(&DataType::Date)?;
         let date_arr = date_series.date()?;

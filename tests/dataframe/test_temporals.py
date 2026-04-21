@@ -994,6 +994,23 @@ def test_make_timestamp_with_timezone() -> None:
     assert result["ts"] == [datetime(2021, 1, 1, 12, 0, 0, tzinfo=timezone.utc)]
 
 
+def test_make_timestamp_with_non_utc_timezone() -> None:
+    df = daft.from_pydict({"y": [2021], "m": [1], "d": [1], "h": [12], "mi": [0], "s": [0.0]})
+    df = df.with_column(
+        "ts",
+        make_timestamp(col("y"), col("m"), col("d"), col("h"), col("mi"), col("s"), timezone="America/New_York"),
+    )
+    result = df.to_pydict()
+    ts = result["ts"][0]
+    # 12:00 EST = 17:00 UTC. Verify the underlying UTC value is correct
+    # by checking the UTC hour via astimezone.
+    assert ts.tzinfo is not None
+    utc_ts = ts.astimezone(timezone.utc)
+    assert utc_ts.hour == 17
+    # And the local representation should be 12:00 EST.
+    assert ts.hour == 12
+
+
 # --- make_timestamp_ltz ---
 
 
@@ -1036,12 +1053,12 @@ def test_next_day() -> None:
     # 2021-01-01 is a Friday
     df = daft.from_pydict({"dt": [date(2021, 1, 1), date(2021, 1, 1), date(2021, 1, 1)]})
     results = {}
-    for dow in ["Monday", "Friday", "Sunday"]:
+    for dow in ["Mon", "Fri", "Sun"]:
         tmp = df.with_column("next_d", next_day(col("dt"), dow))
         results[dow] = tmp.to_pydict()["next_d"]
-    assert results["Monday"] == [date(2021, 1, 4)] * 3  # next Mon
-    assert results["Friday"] == [date(2021, 1, 8)] * 3  # next Fri (not same day)
-    assert results["Sunday"] == [date(2021, 1, 3)] * 3  # next Sun
+    assert results["Mon"] == [date(2021, 1, 4)] * 3  # next Mon
+    assert results["Fri"] == [date(2021, 1, 8)] * 3  # next Fri (not same day)
+    assert results["Sun"] == [date(2021, 1, 3)] * 3  # next Sun
 
 
 # --- SQL integration ---

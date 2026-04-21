@@ -141,6 +141,14 @@ impl ScalarUDF for MakeTimestamp {
 
         let field_name = year_arr.name().to_string();
 
+        // If a timezone is provided, parse it for offset conversion
+        let src_tz: Option<chrono_tz::Tz> = match &timezone {
+            Some(tz_str) => Some(tz_str.parse::<chrono_tz::Tz>().map_err(|_| {
+                common_error::DaftError::ValueError(format!("Invalid timezone: {tz_str}"))
+            })?),
+            None => None,
+        };
+
         let values: Vec<Option<i64>> = year_arr
             .into_iter()
             .zip(month_arr.into_iter())
@@ -164,9 +172,16 @@ impl ScalarUDF for MakeTimestamp {
                         whole_secs,
                         frac_micros,
                     )?;
-                    let dt = chrono::NaiveDateTime::new(date, time);
-                    let epoch = chrono::NaiveDateTime::new(UNIX_EPOCH, chrono::NaiveTime::MIN);
-                    dt.signed_duration_since(epoch).num_microseconds()
+                    let naive_dt = chrono::NaiveDateTime::new(date, time);
+
+                    if let Some(tz) = src_tz {
+                        use chrono::TimeZone;
+                        let local_dt = tz.from_local_datetime(&naive_dt).single()?;
+                        Some(local_dt.timestamp_micros())
+                    } else {
+                        let epoch = chrono::NaiveDateTime::new(UNIX_EPOCH, chrono::NaiveTime::MIN);
+                        naive_dt.signed_duration_since(epoch).num_microseconds()
+                    }
                 }
                 _ => None,
             })
