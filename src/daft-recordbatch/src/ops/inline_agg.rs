@@ -842,6 +842,10 @@ where
     let mut symbols = Vec::with_capacity(len);
 
     if null_count == 0 {
+        // When there are no nulls, symbol IDs start from 0. In the nullable path below,
+        // 0 is reserved for null and non-null symbols start from 1. This asymmetry is
+        // intentional because symbols are only compared within this column's current
+        // symbolization output; IDs are not persisted or reused across batches.
         let mut next_id: u32 = 0;
         let mut map = FnvHashMap::<&'a K, u32>::with_capacity_and_hasher(
             initial_capacity,
@@ -1926,6 +1930,8 @@ mod tests {
             BoundAggExpr::try_new(AggExpr::Count(resolved_col("val"), CountMode::All), &schema)
                 .unwrap(),
             BoundAggExpr::try_new(AggExpr::Sum(resolved_col("val")), &schema).unwrap(),
+            BoundAggExpr::try_new(AggExpr::Min(resolved_col("val")), &schema).unwrap(),
+            BoundAggExpr::try_new(AggExpr::Max(resolved_col("val")), &schema).unwrap(),
         ];
         let inline_result = rb.agg_groupby_inline(&bound_agg, &group_by).unwrap();
         let fallback_result = rb.agg_groupby_fallback(&bound_agg, &group_by).unwrap();
