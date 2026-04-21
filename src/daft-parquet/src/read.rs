@@ -714,6 +714,12 @@ pub async fn read_parquet_metadata_bulk(
 }
 
 /// Optimized for count pushdowns: we can get the count from metadata without reading all data.
+fn make_count_batch(name: &str, count: u64) -> DaftResult<RecordBatch> {
+    let field = daft_core::datatypes::Field::new(name, DataType::UInt64);
+    let array = UInt64Array::from_iter(field.clone(), std::iter::once(Some(count)));
+    RecordBatch::new_with_size(Schema::new(vec![field]), vec![array.into_series()], 1)
+}
+
 pub async fn stream_parquet_count_pushdown(
     url: &str,
     io_client: Arc<IOClient>,
@@ -724,22 +730,53 @@ pub async fn stream_parquet_count_pushdown(
     let parquet_metadata =
         read_parquet_metadata(url, io_client, io_stats, field_id_mapping.clone()).await?;
 
-    // Currently only CountMode::All is supported for count pushdown.
-    let count = parquet_metadata.num_rows();
-    let count_field = daft_core::datatypes::Field::new(
-        aggregation.name(),
-        daft_core::datatypes::DataType::UInt64,
-    );
-    let count_array =
-        UInt64Array::from_iter(count_field.clone(), std::iter::once(Some(count as u64)));
-    let count_batch = daft_recordbatch::RecordBatch::new_with_size(
-        Schema::new(vec![count_field]),
-        vec![count_array.into_series()],
-        1,
-    )?;
+    let count = parquet_metadata.num_rows() as u64;
+    let count_batch = make_count_batch(aggregation.name(), count)?;
     Ok(Box::pin(futures::stream::once(
         async move { Ok(count_batch) },
     )))
+}
+
+/// Count rows that survive a filter predicate without materializing non-filter columns.
+///
+/// Reads only the columns referenced by the filter, applies the predicate via
+/// the parquet reader's row filter, and returns a single RecordBatch with the count.
+pub async fn stream_parquet_filtered_count(
+    url: &str,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    predicate: ExprRef,
+    aggregation: &ExprRef,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let schema_infer_options = ParquetSchemaInferenceOptions::default();
+    let batches = stream_parquet_single(
+        url.to_string(),
+        None, // columns - reader infers from predicate
+        None, // num_rows
+        None, // row_groups
+        Some(predicate),
+        io_client,
+        io_stats,
+        schema_infer_options,
+        field_id_mapping,
+        None,  // metadata
+        None,  // delete_rows
+        false, // maintain_order
+        None,  // chunk_size
+    )
+    .await?;
+
+    let agg_name = aggregation.name().to_string();
+
+    Ok(Box::pin(futures::stream::once(async move {
+        let mut total_count: u64 = 0;
+        futures::pin_mut!(batches);
+        while let Some(batch) = batches.next().await {
+            total_count += batch?.len() as u64;
+        }
+        make_count_batch(&agg_name, total_count)
+    })))
 }
 
 pub fn read_parquet_statistics(
