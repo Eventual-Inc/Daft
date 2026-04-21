@@ -95,6 +95,7 @@ impl RuntimeStats for JoinStats {
             build_bytes_inserted: self.build_bytes_inserted.load(ordering),
             probe_bytes_in: self.probe_bytes_in.load(ordering),
             probe_bytes_out: self.probe_bytes_out.load(ordering),
+            ..Default::default()
         })
     }
 

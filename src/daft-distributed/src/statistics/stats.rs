@@ -145,6 +145,7 @@ impl BaseCounters {
             rows_out: self.rows_out.load(Ordering::Relaxed),
             bytes_in: self.bytes_in.load(Ordering::Relaxed),
             bytes_out: self.bytes_out.load(Ordering::Relaxed),
+            ..Default::default()
         })
     }
 }

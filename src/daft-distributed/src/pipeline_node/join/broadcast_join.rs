@@ -118,6 +118,7 @@ impl RuntimeStats for BroadcastJoinStats {
             build_bytes_inserted: self.build_bytes_inserted.load(Ordering::SeqCst),
             probe_bytes_in: self.probe_bytes_in.load(Ordering::SeqCst),
             probe_bytes_out: self.probe_bytes_out.load(Ordering::SeqCst),
+            ..Default::default()
         })
     }
 }

@@ -44,6 +44,13 @@ impl TopNState {
         top_values.push(part);
     }
 
+    fn buffer_bytes(&self) -> u64 {
+        match self {
+            Self::Building(parts) => parts.iter().map(|p| p.size_bytes() as u64).sum(),
+            Self::Done => 0,
+        }
+    }
+
     /// Finalize the TopN operation and return the top N values
     fn finalize(&mut self) -> Vec<MicroPartition> {
         let Self::Building(top_values) = self else {
@@ -88,7 +95,7 @@ impl BlockingSink for TopNSink {
         &self,
         input: MicroPartition,
         mut state: Self::State,
-        _runtime_stats: Arc<Self::Stats>,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.params.clone();
@@ -108,6 +115,7 @@ impl BlockingSink for TopNSink {
 
                     // Append to the collection of existing top N values
                     state.append(top_input_rows);
+                    runtime_stats.set_in_memory_buffer_bytes(state.buffer_bytes());
                     Ok(state)
                 },
                 Span::current(),

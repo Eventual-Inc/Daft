@@ -35,13 +35,25 @@ impl RayRepartitionState {
         }
     }
 
+    fn buffer_bytes(&self) -> u64 {
+        self.states
+            .iter()
+            .flatten()
+            .map(|p| p.size_bytes() as u64)
+            .sum()
+    }
+
     fn emit(&mut self) -> Option<Vec<MicroPartition>> {
         self.states.pop_front()
     }
 }
 
 pub(crate) struct FlightRepartitionState {
-    cache: Arc<InProgressShuffleCache>,
+    /// Lazily-initialized to the shared cache for this `input_id`. The cache
+    /// is built on the first `sink()` call so it can be wired with the
+    /// per-node `SpillReporter` from `runtime_stats`.
+    cache: Arc<tokio::sync::OnceCell<Arc<InProgressShuffleCache>>>,
+    input_id: InputId,
 }
 
 pub(crate) enum RepartitionState {
@@ -62,8 +74,11 @@ enum RepartitionBackend {
         compression: Option<String>,
         local_server: Arc<ShuffleFlightServer>,
         target_in_memory_size_per_partition: usize,
-        // Only accessed from the single-threaded event loop; Mutex is just for Sync.
-        caches: Mutex<HashMap<InputId, Arc<InProgressShuffleCache>>>,
+        // One `OnceCell` per input_id, shared across concurrent states for that
+        // input so they resolve to the same `InProgressShuffleCache`. Built
+        // lazily on the first `sink()` call to pick up the `SpillReporter`.
+        // Only mutated from the single-threaded event loop; Mutex is just for Sync.
+        caches: Mutex<HashMap<InputId, Arc<tokio::sync::OnceCell<Arc<InProgressShuffleCache>>>>>,
     },
 }
 
@@ -122,7 +137,7 @@ impl BlockingSink for RepartitionSink {
         &self,
         input: MicroPartition,
         state: Self::State,
-        _runtime_stats: Arc<Self::Stats>,
+        runtime_stats: Arc<Self::Stats>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         match (&self.backend, state) {
@@ -136,6 +151,7 @@ impl BlockingSink for RepartitionSink {
                 let repartition_spec = repartition_spec.clone();
                 let num_partitions = self.num_partitions;
                 let schema = schema.clone();
+                let runtime_stats = runtime_stats.clone();
                 spawner
                     .spawn(
                         async move {
@@ -159,6 +175,7 @@ impl BlockingSink for RepartitionSink {
                                 )?,
                             };
                             state.push(partitioned);
+                            runtime_stats.set_in_memory_buffer_bytes(state.buffer_bytes());
                             Ok(RepartitionState::Ray(state))
                         },
                         Span::current(),
@@ -169,6 +186,10 @@ impl BlockingSink for RepartitionSink {
                 RepartitionBackend::Flight {
                     repartition_spec,
                     num_partitions,
+                    shuffle_dirs,
+                    shuffle_id,
+                    target_in_memory_size_per_partition,
+                    compression,
                     ..
                 },
                 RepartitionState::Flight(state),
@@ -181,10 +202,32 @@ impl BlockingSink for RepartitionSink {
                         unreachable!("Range repartition is not supported for flight shuffle")
                     }
                 };
+                let shuffle_dirs = shuffle_dirs.clone();
+                let shuffle_id = *shuffle_id;
+                let target_in_memory_size_per_partition = *target_in_memory_size_per_partition;
+                let compression = compression.clone();
+                let spill = runtime_stats.spill().clone();
 
                 spawner
                     .spawn(
                         async move {
+                            let cache = state
+                                .cache
+                                .get_or_try_init(|| async {
+                                    Ok::<_, common_error::DaftError>(Arc::new(
+                                        InProgressShuffleCache::try_new(
+                                            num_partitions,
+                                            &shuffle_dirs,
+                                            state.input_id.to_string(),
+                                            shuffle_id,
+                                            target_in_memory_size_per_partition,
+                                            compression.as_deref(),
+                                            spill,
+                                        )?,
+                                    ))
+                                })
+                                .await?
+                                .clone();
                             let partitioned = match &partition_by {
                                 Some(partition_by) => {
                                     let partition_by =
@@ -193,8 +236,7 @@ impl BlockingSink for RepartitionSink {
                                 }
                                 None => input.partition_by_random(num_partitions, 0)?,
                             };
-                            state
-                                .cache
+                            cache
                                 .push_partitioned_data(partitioned.into_iter().collect())
                                 .await?;
                             Ok(RepartitionState::Flight(state))
@@ -316,7 +358,13 @@ impl BlockingSink for RepartitionSink {
                 spawner
                     .spawn(
                         async move {
-                            let cache = states.into_iter().next().unwrap().cache;
+                            let cache_cell = states.into_iter().next().unwrap().cache;
+                            let cache = cache_cell.get().cloned().ok_or_else(|| {
+                                common_error::DaftError::InternalError(
+                                    "shuffle cache was never initialized before finalize"
+                                        .to_string(),
+                                )
+                            })?;
                             let finalized = cache.close().await?;
                             let all_rows = finalized.rows_per_partition();
                             let all_bytes = finalized.bytes_per_partition();
@@ -401,32 +449,13 @@ impl BlockingSink for RepartitionSink {
             RepartitionBackend::Ray { .. } => Ok(RepartitionState::Ray(RayRepartitionState {
                 states: (0..self.num_partitions).map(|_| vec![]).collect(),
             })),
-            RepartitionBackend::Flight {
-                num_partitions,
-                shuffle_dirs,
-                shuffle_id,
-                target_in_memory_size_per_partition,
-                compression,
-                caches,
-                ..
-            } => {
+            RepartitionBackend::Flight { caches, .. } => {
                 let mut caches = caches.lock().unwrap();
-                let cache = match caches.entry(input_id) {
-                    std::collections::hash_map::Entry::Occupied(e) => e.get().clone(),
-                    std::collections::hash_map::Entry::Vacant(e) => {
-                        let cache = Arc::new(InProgressShuffleCache::try_new(
-                            *num_partitions,
-                            shuffle_dirs,
-                            input_id.to_string(),
-                            *shuffle_id,
-                            *target_in_memory_size_per_partition,
-                            compression.as_deref(),
-                        )?);
-                        e.insert(cache.clone());
-                        cache
-                    }
-                };
-                Ok(RepartitionState::Flight(FlightRepartitionState { cache }))
+                let cache = caches.entry(input_id).or_default().clone();
+                Ok(RepartitionState::Flight(FlightRepartitionState {
+                    cache,
+                    input_id,
+                }))
             }
         }
     }

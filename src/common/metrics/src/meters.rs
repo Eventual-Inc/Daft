@@ -11,6 +11,15 @@ use crate::{
     UNIT_BYTES, UNIT_MICROSECONDS, UNIT_ROWS,
 };
 
+/// Counter keys for spill metrics. Kept flat (not a namespace) to match the
+/// rest of the metric naming convention (`bytes.in`, `rows.out`, etc.).
+pub const SPILL_BYTES_WRITTEN_KEY: &str = "spill.bytes.written";
+pub const SPILL_BYTES_READ_KEY: &str = "spill.bytes.read";
+pub const SPILL_WRITE_DURATION_NS_KEY: &str = "spill.write.duration_ns";
+pub const SPILL_READ_DURATION_NS_KEY: &str = "spill.read.duration_ns";
+pub const SPILL_FILE_COUNT_KEY: &str = "spill.files.created";
+pub const SPILL_FILES_RESIDENT_KEY: &str = "spill.files.resident";
+
 pub fn normalize_name(name: impl Into<Cow<'static, str>>) -> String {
     let name = name.into();
     if name.starts_with("daft.") {
